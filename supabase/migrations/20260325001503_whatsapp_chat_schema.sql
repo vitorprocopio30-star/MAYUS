@@ -34,42 +34,32 @@ CREATE TABLE IF NOT EXISTS public.whatsapp_messages (
 ALTER TABLE public.whatsapp_contacts ENABLE ROW LEVEL SECURITY;
 ALTER TABLE public.whatsapp_messages ENABLE ROW LEVEL SECURITY;
 
--- POLICIES (Users só podem ver conversas do seu próprio tenant)
-CREATE POLICY "Users can view contacts of their tenant"
+-- POLICIES (padrão JWT do projeto — sem subquery em profiles)
+CREATE POLICY "Membros do tenant veem contatos"
     ON public.whatsapp_contacts FOR SELECT
-    USING (tenant_id IN (
-        SELECT tenant_id FROM public.profiles WHERE id = auth.uid()
-    ));
+    USING ((auth.jwt()->'app_metadata'->>'tenant_id')::uuid = tenant_id);
 
-CREATE POLICY "Users can insert contacts for their tenant"
-    ON public.whatsapp_contacts FOR INSERT
-    WITH CHECK (tenant_id IN (
-        SELECT tenant_id FROM public.profiles WHERE id = auth.uid()
-    ));
-
-CREATE POLICY "Users can update contacts of their tenant"
+CREATE POLICY "Membros do tenant atualizam contatos"
     ON public.whatsapp_contacts FOR UPDATE
-    USING (tenant_id IN (
-        SELECT tenant_id FROM public.profiles WHERE id = auth.uid()
-    ));
+    USING ((auth.jwt()->'app_metadata'->>'tenant_id')::uuid = tenant_id);
 
-CREATE POLICY "Users can view messages of their tenant"
+-- Service role insere contatos (webhook Evolution/Meta não tem sessão de usuário)
+CREATE POLICY "Service role insere contatos"
+    ON public.whatsapp_contacts FOR INSERT
+    WITH CHECK (true);
+
+CREATE POLICY "Membros do tenant veem mensagens"
     ON public.whatsapp_messages FOR SELECT
-    USING (tenant_id IN (
-        SELECT tenant_id FROM public.profiles WHERE id = auth.uid()
-    ));
+    USING ((auth.jwt()->'app_metadata'->>'tenant_id')::uuid = tenant_id);
 
-CREATE POLICY "Users can insert messages for their tenant"
+-- Service role insere mensagens (webhook)
+CREATE POLICY "Service role insere mensagens"
     ON public.whatsapp_messages FOR INSERT
-    WITH CHECK (tenant_id IN (
-        SELECT tenant_id FROM public.profiles WHERE id = auth.uid()
-    ));
+    WITH CHECK (true);
 
-CREATE POLICY "Users can update messages of their tenant"
+CREATE POLICY "Membros do tenant atualizam mensagens"
     ON public.whatsapp_messages FOR UPDATE
-    USING (tenant_id IN (
-        SELECT tenant_id FROM public.profiles WHERE id = auth.uid()
-    ));
+    USING ((auth.jwt()->'app_metadata'->>'tenant_id')::uuid = tenant_id);
 
 -- INDEXES para velocidade astronômica nas queries do chat
 CREATE INDEX IF NOT EXISTS idx_whatsapp_contacts_tenant ON public.whatsapp_contacts(tenant_id);

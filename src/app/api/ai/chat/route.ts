@@ -1,12 +1,46 @@
 import { NextResponse } from "next/server";
+import { createClient } from "@supabase/supabase-js";
+
+const ALLOWED_PROVIDERS = ["openai", "gemini", "openrouter", "n8n", "anthropic", "deepseek", "grok", "kimi"];
 
 export async function POST(req: Request) {
   try {
-    const { message, provider, apiKey, model, history = [], tenantId, userId } = await req.json();
+    const { message, provider, model, history = [], tenantId, userId } = await req.json();
 
-    if (!message || !provider || !apiKey) {
-      return NextResponse.json({ error: "Faltando dados de conexão. Configure sua chave em Integrações." }, { status: 400 });
+    if (!message || !provider || !tenantId) {
+      return NextResponse.json({ error: "Faltando dados de conexão (message, provider ou tenantId)." }, { status: 400 });
     }
+
+    if (typeof message !== "string" || message.length > 20000) {
+      return NextResponse.json({ error: "Mensagem inválida ou muito longa." }, { status: 400 });
+    }
+
+    if (!ALLOWED_PROVIDERS.includes(provider)) {
+      return NextResponse.json({ error: "Provedor não permitido." }, { status: 400 });
+    }
+
+    if (!Array.isArray(history) || history.length > 200) {
+      return NextResponse.json({ error: "Histórico inválido." }, { status: 400 });
+    }
+
+    // [CORREÇÃO CRÍTICA DE SEGURANÇA]: A Chave não transita mais pelo Frontend
+    const supabase = createClient(
+      process.env.NEXT_PUBLIC_SUPABASE_URL!,
+      process.env.SUPABASE_SERVICE_ROLE_KEY!
+    );
+
+    const { data: integration, error: intErr } = await supabase
+      .from("tenant_integrations")
+      .select("api_key")
+      .eq("tenant_id", tenantId)
+      .eq("provider", provider)
+      .single();
+
+    if (intErr || !integration?.api_key) {
+       return NextResponse.json({ error: "Integração não configurada no painel ou chave ausente." }, { status: 400 });
+    }
+
+    const apiKey = integration.api_key;
 
     if (provider === "openai") {
       const messages = [
@@ -66,6 +100,8 @@ export async function POST(req: Request) {
         }
       ];
 
+      const openaiController = new AbortController();
+      const openaiTimeout = setTimeout(() => openaiController.abort(), 30000);
       const response = await fetch("https://api.openai.com/v1/chat/completions", {
         method: "POST",
         headers: {
@@ -73,12 +109,14 @@ export async function POST(req: Request) {
           Authorization: `Bearer ${apiKey}`,
         },
         body: JSON.stringify({
-          model: model || "gpt-4o-mini", // GPT-4o-mini é excepcionalmente superior e mais barato
+          model: model || "gpt-4o-mini",
           messages: messages,
           tools: tools,
           tool_choice: "auto",
         }),
+        signal: openaiController.signal,
       });
+      clearTimeout(openaiTimeout);
 
       if (!response.ok) throw new Error("Erro na OpenAI ao gerar resposta.");
       
@@ -93,22 +131,30 @@ export async function POST(req: Request) {
     }
 
     if (provider === "n8n") {
-      // Essa é a URL Magistral onde sua Nuvem do n8n atende o telefone
-      const webhookUrl = "https://n8n-dgfor3z98ea5lkal7s135lu7.187.77.240.109.sslip.io/webhook-test/7c177cf3-cf25-445a-86f4-a7d9a80e5afb";
-      
-       const payload = {
+      const webhookUrl = process.env.N8N_WEBHOOK_URL;
+      if (!webhookUrl) throw new Error("N8N_WEBHOOK_URL não configurada no servidor.");
+
+      const payload = {
         message: message,
         history: history,
         tenant_id: tenantId,
         user_id: userId,
-        openai_key: apiKey // Enviamos sua Chave OpenAI pro n8n usar nos Tools dele!
-       };
+        // Chave OpenAI NÃO é enviada — n8n busca do próprio ambiente
+      };
+
+      const controller = new AbortController();
+      const timeout = setTimeout(() => controller.abort(), 10000);
 
       const response = await fetch(webhookUrl, {
         method: "POST",
-        headers: { "Content-Type": "application/json" },
+        headers: {
+          "Content-Type": "application/json",
+          ...(process.env.N8N_WEBHOOK_SECRET ? { "Authorization": `Bearer ${process.env.N8N_WEBHOOK_SECRET}` } : {}),
+        },
         body: JSON.stringify(payload),
+        signal: controller.signal,
       });
+      clearTimeout(timeout);
 
       if (!response.ok) throw new Error("Erro de comunicação com o Cérebro n8n.");
       
@@ -134,11 +180,15 @@ export async function POST(req: Request) {
       };
 
       const aiModel = model || "gemini-1.5-flash";
+      const geminiController = new AbortController();
+      const geminiTimeout = setTimeout(() => geminiController.abort(), 30000);
       const response = await fetch(`https://generativelanguage.googleapis.com/v1beta/models/${aiModel}:generateContent?key=${apiKey}`, {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify(payload),
+        signal: geminiController.signal,
       });
+      clearTimeout(geminiTimeout);
 
       if (!response.ok) throw new Error("Erro no Google Gemini ao gerar resposta.");
       
@@ -154,6 +204,8 @@ export async function POST(req: Request) {
         { role: "user", content: message }
       ];
 
+      const orController = new AbortController();
+      const orTimeout = setTimeout(() => orController.abort(), 30000);
       const response = await fetch("https://openrouter.ai/api/v1/chat/completions", {
         method: "POST",
         headers: {
@@ -161,10 +213,12 @@ export async function POST(req: Request) {
           Authorization: `Bearer ${apiKey}`,
         },
         body: JSON.stringify({
-          model: model || "openrouter/auto", 
+          model: model || "openrouter/auto",
           messages: messages,
         }),
+        signal: orController.signal,
       });
+      clearTimeout(orTimeout);
 
       if (!response.ok) throw new Error("Erro no OpenRouter ao gerar resposta.");
       

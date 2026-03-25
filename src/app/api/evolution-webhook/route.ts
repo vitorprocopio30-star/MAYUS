@@ -1,16 +1,34 @@
 import { NextResponse } from "next/server";
 import { createClient } from "@supabase/supabase-js";
+import crypto from "crypto";
 
-// Usamos a Service Role Key para garantir permissão de escrita no webhook
-const supabaseUrl = process.env.NEXT_PUBLIC_SUPABASE_URL!;
-const supabaseKey = process.env.SUPABASE_SERVICE_ROLE_KEY!; // Precisamos da role key no .env ou usar a ANON se as RLS permitirem anônimo para certas instâncias (o que não é ideal).
-// Vamos usar anon para teste caso service_role não exista, mas O IDEAL é service_role.
-const supabase = createClient(supabaseUrl, supabaseKey || process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY!);
+const supabase = createClient(
+  process.env.NEXT_PUBLIC_SUPABASE_URL!,
+  process.env.SUPABASE_SERVICE_ROLE_KEY!
+);
+
+function verifySignature(body: string, signature: string | null): boolean {
+  const secret = process.env.EVOLUTION_WEBHOOK_SECRET;
+  if (!secret) return true; // Se não configurado, permite (compatibilidade)
+  if (!signature) return false;
+  const expected = crypto.createHmac("sha256", secret).update(body).digest("hex");
+  const expectedBuf = Buffer.from(expected);
+  const signatureBuf = Buffer.from(signature);
+  if (expectedBuf.length !== signatureBuf.length) return false;
+  return crypto.timingSafeEqual(expectedBuf, signatureBuf);
+}
 
 export async function POST(req: Request) {
   try {
-    const payload = await req.json();
-    console.log("Evolution Webhook Recebido:", JSON.stringify(payload, null, 2));
+    const rawBody = await req.text();
+    const signature = req.headers.get("x-evolution-signature") || req.headers.get("apikey");
+
+    if (!verifySignature(rawBody, signature)) {
+      return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
+    }
+
+    const payload = JSON.parse(rawBody);
+    console.log("Evolution Webhook:", { event: payload.event, instance: payload.instance });
 
     // A Evolution dispara vários eventos. Só nos importamos com novas mensagens.
     if (payload.event === "messages.upsert" || payload.event === "messages.update") {
@@ -44,22 +62,22 @@ export async function POST(req: Request) {
       const instanceName = payload.instance;
 
       // 1. Descobrir qual o tenant_id dono desta instância
-      // O instanceName salva no bd é do tipo: "https://url.com|NomeInstancia"
       const { data: integrations, error: intErr } = await supabase
         .from("tenant_integrations")
-        .select("tenant_id")
-        .eq("provider", "evolution")
-        .ilike("instance_name", `%|${instanceName}`);
+        .select("tenant_id, instance_name")
+        .eq("provider", "evolution");
 
-      if (intErr || !integrations || integrations.length === 0) {
-         console.warn(`Instância ${instanceName} não localizada no banco.`);
-         return NextResponse.json({ success: false, error: "Tenant not found for instance" });
+      const matched = integrations?.find(i => i.instance_name?.split("|")[1] === instanceName);
+
+      if (intErr || !matched) {
+        console.warn(`Instância ${instanceName} não localizada no banco.`);
+        return NextResponse.json({ success: false, error: "Tenant not found for instance" });
       }
 
-      const tenantId = integrations[0].tenant_id;
+      const tenantId = matched.tenant_id;
 
       // 2. Verificar/Criar o Contato (Lead/Cliente)
-      let { data: contact, error: contactErr } = await supabase
+      let { data: contact } = await supabase
         .from("whatsapp_contacts")
         .select("id")
         .eq("tenant_id", tenantId)
