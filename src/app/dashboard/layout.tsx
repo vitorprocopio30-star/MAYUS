@@ -23,12 +23,10 @@ export default function DashboardLayout({
 
         {/* Home/Content de Cada Tela */}
         <main className="flex-1 p-4 md:p-8 overflow-x-hidden relative">
-          {/* Assistente Inteligente MAYUS Global (ElevenLabs Oficial) */}
-          <div className="fixed bottom-6 right-6 z-50">
-            <MAYUSOrb />
-          </div>
+        {/* Assistente Inteligente MAYUS Global (ElevenLabs Oficial) */}
+        <MAYUSOrb />
 
-          {children}
+        {children}
         </main>
         
       </div>

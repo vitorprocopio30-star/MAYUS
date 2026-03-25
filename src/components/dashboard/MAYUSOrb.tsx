@@ -107,7 +107,13 @@ export function MAYUSOrb() {
         setTranscribedText(message.message);
       }
     },
+    onError: (error: any) => {
+      console.error("ElevenLabs Error:", error);
+      toast.error("Erro na Maya (ElevenLabs): " + (error.message || "Falha na conexão"));
+    }
   });
+
+  const isElevenLabsActive = !!process.env.NEXT_PUBLIC_ELEVENLABS_AGENT_ID;
 
   // ===== MOTOR NATIVO OPENAI DE EMERGÊNCIA / TESTES (Sem Custo ElevenLabs) =====
   const [apiKeyData, setApiKeyData] = useState<string | null>(null);
@@ -258,7 +264,16 @@ export function MAYUSOrb() {
   const toggleListening = useCallback(async () => {
     if (isExpanded) {
        // Desligando o MAYUS
-       if (recognitionRef.current) recognitionRef.current.stop();
+       if (isElevenLabsActive) {
+         try {
+           await conversation.endSession();
+         } catch (e) {
+           console.error("Error ending session:", e);
+         }
+       } else {
+         if (recognitionRef.current) recognitionRef.current.stop();
+       }
+       
        isAutoListeningRef.current = false;
        isBusyRef.current = false;
        setIsListening(false);
@@ -269,9 +284,32 @@ export function MAYUSOrb() {
        setIsExpanded(true);
        isAutoListeningRef.current = true;
        setChatHistory([]);
-       setTimeout(() => { startListening(); }, 500); // 500ms de caridade visual pra tela subir antes de gravar
+       
+       if (isElevenLabsActive) {
+         console.log("MAYUS: Iniciando conexão ElevenLabs com Agent ID:", process.env.NEXT_PUBLIC_ELEVENLABS_AGENT_ID);
+         setTimeout(async () => {
+           try {
+             const agentId = process.env.NEXT_PUBLIC_ELEVENLABS_AGENT_ID;
+             if (!agentId) throw new Error("Agent ID não configurado no .env.local");
+             
+             // Inicia a Sessão ElevenLabs (Maya) com o tipo de conexão correto (Casting para evitar erro de lint)
+             await (conversation as any).startSession({
+               agentId: agentId,
+               connectionType: 'websocket'
+             });
+             console.log("MAYUS: Sessão iniciada com sucesso.");
+           } catch (err: any) {
+             console.error("ElevenLabs Connect Error:", err);
+             toast.error("Falha ao ativar Maya: " + err.message);
+             setIsExpanded(false);
+           }
+         }, 500);
+       } else {
+         console.log("MAYUS: ElevenLabs inativo, caindo para motor nativo.");
+         setTimeout(() => { startListening(); }, 500); 
+       }
     }
-  }, [isExpanded, startListening]);
+  }, [isExpanded, startListening, conversation, isElevenLabsActive]);
 
   // ==============================================================================
   // MOTOR CSS/CANVAS DA REDE NEURAL VÍVA NO FUNDO
@@ -350,14 +388,22 @@ export function MAYUSOrb() {
     let animationId: number;
     const animateVisual = () => {
       let dataBuf: any = new Uint8Array(32);
-      if (isSpeaking && analyserRef.current && dataArrayRef.current) {
+      
+      // Se ElevenLabs estiver ativo, usamos o analisador nativo do SDK!
+      const sdkData = conversation.getOutputByteFrequencyData();
+      
+      if (sdkData) {
+          dataBuf = sdkData;
+      } else if (isSpeaking && analyserRef.current && dataArrayRef.current) {
           analyserRef.current.getByteFrequencyData(dataArrayRef.current as any);
           dataBuf = dataArrayRef.current;
       }
       
       let sum = 0;
-      for (let i = 0; i < dataBuf.length; i++) sum += dataBuf[i];
-      const avg = sum / dataBuf.length;
+      for (let i = 0; i < 32; i++) {
+        if (dataBuf[i]) sum += dataBuf[i];
+      }
+      let avg = sum / 32;
 
       // Dinâmica de Extensão Espacial do Agente Sensiente
       const scaleBase = 1.0 + (avg / 80);
@@ -402,7 +448,7 @@ export function MAYUSOrb() {
     <>
       {/* MODO EXPANDIDO (FULL SCREEN CORTEX) */}
       <div 
-        className={`fixed inset-0 z-[100] flex items-center justify-center bg-[#020104] transition-all duration-[1500ms] ${
+        className={`fixed inset-0 z-[100] flex items-center justify-center bg-[#020104] transition-all duration-[600ms] ease-out ${
           isExpanded ? "opacity-100 pointer-events-auto" : "opacity-0 pointer-events-none scale-105"
         }`}
       >
@@ -465,11 +511,18 @@ export function MAYUSOrb() {
                  />
              </div>
              
-             {isListening && (
-                 <div className="absolute top-[-100px] bg-black/60 px-6 py-2 rounded-full border border-orange-500/30 text-orange-400 text-sm font-light uppercase tracking-widest animate-pulse backdrop-blur-md z-50">Gravando sua voz...</div>
+             {isListening || conversation.status === 'connected' && !conversation.isSpeaking && (
+                 <div className="absolute top-[-100px] bg-black/60 px-6 py-2 rounded-full border border-orange-500/30 text-orange-400 text-sm font-light uppercase tracking-widest animate-pulse backdrop-blur-md z-50">
+                   {conversation.status === 'connected' ? "Maya ouvindo..." : "Gravando sua voz..."}
+                 </div>
              )}
-             {isProcessing && (
-                 <div className="absolute top-[-100px] bg-black/60 px-6 py-2 rounded-full border border-orange-500/30 text-yellow-400 text-sm font-light uppercase tracking-widest animate-pulse backdrop-blur-md z-50">Córtex Processando...</div>
+             {(isProcessing || conversation.status === 'connecting') && (
+                 <div className="absolute top-[-100px] bg-black/60 px-6 py-2 rounded-full border border-orange-500/30 text-yellow-400 text-sm font-light uppercase tracking-widest animate-pulse backdrop-blur-md z-50">
+                   {conversation.status === 'connecting' ? "Conectando à Maya..." : "Córtex Processando..."}
+                 </div>
+             )}
+             {conversation.isSpeaking && (
+                 <div className="absolute top-[-100px] bg-black/60 px-6 py-2 rounded-full border border-orange-500/30 text-orange-400 text-sm font-light uppercase tracking-widest animate-pulse backdrop-blur-md z-50">Maya falando...</div>
              )}
           </div>
           

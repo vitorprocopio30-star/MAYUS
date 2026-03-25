@@ -40,10 +40,10 @@ export async function POST(req: NextRequest) {
       return NextResponse.json({ error: "Nenhuma integração de WhatsApp encontrada" }, { status: 404 });
     }
 
-    // Priorizar Oficial se existir, senão Evolution
-    let provider = integrations.find(i => i.provider === "meta_cloud");
+    // Priorizar Evolution (Sem limites) se existir, senão Oficial Meta Cloud
+    let provider = integrations.find(i => i.provider === "evolution");
     if (!provider) {
-       provider = integrations.find(i => i.provider === "evolution");
+       provider = integrations.find(i => i.provider === "meta_cloud");
     }
 
     // 2. Disparar Mensagem de acordo com o Motor Encontrado
