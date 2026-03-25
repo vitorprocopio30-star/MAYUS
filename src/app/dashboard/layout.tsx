@@ -2,7 +2,7 @@
 
 import { AdminSidebar } from "@/components/layout/AdminSidebar";
 import { AdminHeader } from "@/components/layout/AdminHeader";
-import { MayosOrb } from "@/components/dashboard/MayosOrb";
+import { MAYUSOrb } from "@/components/dashboard/MAYUSOrb";
 
 export default function DashboardLayout({
   children,
@@ -23,10 +23,9 @@ export default function DashboardLayout({
 
         {/* Home/Content de Cada Tela */}
         <main className="flex-1 p-4 md:p-8 overflow-x-hidden relative">
-          
-          {/* Assistente Inteligente MAYUS Global */}
+          {/* Assistente Inteligente MAYUS Global (ElevenLabs Oficial) */}
           <div className="fixed bottom-6 right-6 z-50">
-            <MayosOrb />
+            <MAYUSOrb />
           </div>
 
           {children}

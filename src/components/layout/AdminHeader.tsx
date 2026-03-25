@@ -2,10 +2,12 @@
 
 import { Bell, Search, User, LogOut, Settings } from "lucide-react";
 import { Montserrat } from "next/font/google";
-import { useState } from "react";
+import { useState, useEffect } from "react";
 import { useRouter } from "next/navigation";
 import { createClient } from "@/lib/supabase/client";
 import { useUserProfile } from "@/hooks/useUserProfile";
+import { useNotifications } from "@/hooks/useNotifications";
+import Link from "next/link";
 
 const montserrat = Montserrat({ subsets: ["latin"], weight: ["400", "500", "600"] });
 
@@ -21,9 +23,77 @@ const roleLabels: Record<string, string> = {
 
 export function AdminHeader() {
   const [profileOpen, setProfileOpen] = useState(false);
+  const [globalName, setGlobalName] = useState("");
   const router = useRouter();
   const supabase = createClient();
   const { profile, role, isLoading } = useUserProfile();
+
+  
+  const [notifOpen, setNotifOpen] = useState(false);
+  const [notifications, setNotifications] = useState<any[]>([]);
+  const [unreadCount, setUnreadCount] = useState(0);
+
+  useEffect(() => {
+    if (typeof window !== "undefined") {
+      const g = localStorage.getItem("MTO_COMMERCIAL_GENERAL");
+      if (g) {
+        try { 
+           const parsed = JSON.parse(g);
+           setGlobalName(parsed.companyName || "SEU ESCRITÓRIO AQUI"); 
+        } catch(e){
+           setGlobalName("SEU ESCRITÓRIO AQUI");
+        }
+      } else {
+        setGlobalName("SEU ESCRITÓRIO AQUI");
+      }
+    }
+  }, []);
+
+  // Hook Ativo: Realtime WebSocket (apenas ativa se logado)
+  useNotifications(profile?.id, profile?.tenant_id);
+
+  useEffect(() => {
+    if (!profile?.tenant_id) return;
+    
+    // Busca inicial de histórico
+    async function fetchNotifications() {
+      const { data } = await supabase
+        .from('notifications')
+        .select('*')
+        .eq('tenant_id', profile!.tenant_id)
+        .or('user_id.eq.' + profile!.id + ',user_id.is.null')
+        .order('created_at', { ascending: false })
+        .limit(20);
+        
+      if (data) {
+        setNotifications(data);
+        setUnreadCount(data.filter(n => !n.is_read).length);
+      }
+    }
+    fetchNotifications();
+
+    // Listener para o evento customizado disparado pelo Hook para atualizar na hora
+    const handleNewNotif = (e: any) => {
+      const newNotif = e.detail;
+      setNotifications(prev => [newNotif, ...prev]);
+      setUnreadCount(prev => prev + 1);
+    };
+
+    window.addEventListener('new-notification', handleNewNotif);
+    return () => window.removeEventListener('new-notification', handleNewNotif);
+  }, [profile?.id, profile?.tenant_id, supabase]);
+
+  const markAllAsRead = async () => {
+    if (!profile?.tenant_id || unreadCount === 0) return;
+    setUnreadCount(0);
+    setNotifications(prev => prev.map(n => ({ ...n, is_read: true })));
+    
+    await supabase.from('notifications')
+      .update({ is_read: true })
+      .eq('tenant_id', profile.tenant_id)
+      .eq('is_read', false)
+      .or('user_id.eq.' + profile!.id + ',user_id.is.null');
+  };
 
   const handleLogout = async () => {
     await supabase.auth.signOut();
@@ -43,32 +113,84 @@ export function AdminHeader() {
   return (
     <header className={`h-20 border-b border-white/10 bg-white/5 backdrop-blur-md sticky top-0 z-30 px-6 flex items-center justify-between ${montserrat.className}`}>
       
-      {/* Search Layout (Hidden on very small screens) */}
-      <div className="hidden md:flex items-center gap-3 bg-gray-100 dark:bg-[#111111] px-4 py-2.5 rounded-xl flex-1 max-w-md border border-transparent dark:border-[#222] focus-within:border-[#CCA761] transition-colors">
-        <Search size={18} className="text-gray-400" />
-        <input 
-          type="text" 
-          placeholder="Buscar clientes, contratos ou processos..." 
-          className="bg-transparent border-none outline-none text-sm w-full text-gray-800 dark:text-gray-200 placeholder:text-gray-500"
-        />
+      {/* Search Layout / Dynamic Company Name */}
+      <div className="hidden md:flex items-center gap-4 flex-1">
+         {globalName ? (
+            <div className="px-4 py-2 border border-white/5 bg-[#111111]/50 rounded-xl shadow-inner flex items-center gap-3">
+               <div className="w-6 h-6 rounded-full bg-gradient-to-tr from-[#CCA761] to-[#e4ce99] flex items-center justify-center text-black font-black text-xs shadow-[0_0_10px_rgba(204,167,97,0.4)]">
+                  {globalName.charAt(0).toUpperCase()}
+               </div>
+               <span className="text-[#CCA761] font-bold tracking-[0.15em] text-sm uppercase">{globalName}</span>
+            </div>
+         ) : (
+            <div className="flex items-center gap-3 bg-gray-100 dark:bg-[#111111] px-4 py-2.5 rounded-xl max-w-md border border-transparent dark:border-[#222] focus-within:border-[#CCA761] transition-colors w-full">
+              <Search size={18} className="text-gray-400" />
+              <input 
+                type="text" 
+                placeholder="Buscar clientes, contratos ou processos..." 
+                className="bg-transparent border-none outline-none text-sm w-full text-gray-800 dark:text-gray-200 placeholder:text-gray-500"
+              />
+            </div>
+         )}
       </div>
       <div className="md:hidden" /> {/* Spacer for mobile where search is hidden */}
 
       {/* Right side actions */}
       <div className="flex items-center gap-4">
         
-        {/* Notifications */}
-        <button className="relative p-2 rounded-full hover:bg-gray-100 dark:hover:bg-[#1a1a1a] transition-colors">
-          <Bell size={20} className="text-gray-600 dark:text-gray-300" />
-          <span className="absolute top-1.5 right-1.5 w-2 h-2 bg-red-500 rounded-full border-2 border-white dark:border-[#0C0C0C]"></span>
-        </button>
+       {/* Notifications */}
+        <div className="relative">
+          <button 
+            onClick={() => { setNotifOpen(!notifOpen); setProfileOpen(false); }}
+            className="relative p-2 rounded-full hover:bg-gray-100 dark:hover:bg-[#1a1a1a] transition-colors"
+          >
+            <Bell size={20} className="text-gray-600 dark:text-gray-300" />
+            {unreadCount > 0 && (
+              <span className="absolute top-1 right-1 w-4 h-4 bg-red-500 rounded-full border-2 border-white dark:border-[#0C0C0C] text-[8px] flex items-center justify-center text-white font-bold animate-pulse">
+                {unreadCount > 9 ? '9+' : unreadCount}
+              </span>
+            )}
+          </button>
+
+          {/* Modal Dropdown Notifications */}
+          {notifOpen && (
+            <div className="absolute right-0 mt-3 w-80 max-h-96 md:w-96 bg-white dark:bg-[#111111] rounded-xl shadow-xl border border-gray-100 dark:border-[#222] overflow-hidden flex flex-col z-50 animate-fade-in-up" style={{ animationDuration: '0.15s' }}>
+              <div className="p-4 border-b border-gray-100 dark:border-[#222] flex items-center justify-between bg-[#0a0a0a]">
+                <h3 className="font-bold text-sm text-gray-900 dark:text-white flex items-center gap-2">
+                  Notificações do Sistema {unreadCount > 0 && <span className="bg-[#CCA761] text-black px-2 py-0.5 rounded-full text-xs">{unreadCount}</span>}
+                </h3>
+                {unreadCount > 0 && (
+                  <button onClick={markAllAsRead} className="text-xs text-[#CCA761] hover:underline font-semibold">Marcar lidas</button>
+                )}
+              </div>
+              <div className="overflow-y-auto flex-1 p-2 space-y-1 bg-[#0f0f0f] min-h-[100px] max-h-[300px]">
+                {notifications.length === 0 ? (
+                  <div className="text-center py-8 text-gray-500 text-sm">Nenhuma aba invisível, você está em dia.</div>
+                ) : (
+                  notifications.map(n => (
+                    <div key={n.id} className={`p-3 rounded-lg flex items-start gap-3 transition-colors ${!n.is_read ? 'bg-white/5 border border-white/5' : 'hover:bg-white/[0.02]'}`}>
+                      <div className={`mt-1 w-2 h-2 rounded-full shrink-0 ${n.type === 'success' ? 'bg-green-500' : n.type === 'alert' ? 'bg-red-500' : 'bg-[#CCA761]'}`} />
+                      <div className="flex-1 min-w-0">
+                        <p className={`text-sm font-semibold truncate ${!n.is_read ? 'text-white' : 'text-gray-400'}`}>{n.title}</p>
+                        <p className="text-xs text-gray-500 mt-1 line-clamp-2">{n.message}</p>
+                        {n.link_url && (
+                          <Link href={n.link_url} onClick={() => setNotifOpen(false)} className="text-xs text-[#CCA761] hover:underline mt-2 inline-block font-medium">Ver detalhes &rarr;</Link>
+                        )}
+                      </div>
+                    </div>
+                  ))
+                )}
+              </div>
+            </div>
+          )}
+        </div>
 
         <div className="h-8 w-px bg-gray-200 dark:bg-[#222]" />
 
         {/* User Profile */}
         <div className="relative">
           <button 
-            onClick={() => setProfileOpen(!profileOpen)}
+            onClick={() => { setProfileOpen(!profileOpen); setNotifOpen(false); }}
             className="flex items-center gap-3 hover:opacity-80 transition-opacity"
           >
             <div className="text-right hidden sm:block">

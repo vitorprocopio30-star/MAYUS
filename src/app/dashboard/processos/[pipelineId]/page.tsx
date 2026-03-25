@@ -20,44 +20,14 @@ import LostLeadModal from "@/components/Processos/LostLeadModal";
 
 // Import CSS for ReactQuill
 import "react-quill/dist/quill.snow.css";
+import { Pipeline, Stage, Profile, Task } from "@/types/processos";
+import ProcessosTaskModal from "@/components/Processos/ProcessosTaskModal";
 
 // Dynamic import for ReactQuill to avoid SSR issues
 const ReactQuill = dynamic(() => import("react-quill"), { 
   ssr: false,
   loading: () => <div className="h-[250px] w-full bg-white/5 animate-pulse rounded-lg" />
 });
-
-type Pipeline = { id: string; name: string; description: string; tags: string[]; sectors: string[] };
-type Stage = { id: string; name: string; color: string; order_index: number; is_loss: boolean; is_win: boolean };
-type Profile = { id: string; full_name: string; avatar_url: string | null };
-type Task = { 
-  id: string; 
-  stage_id: string; 
-  title: string; 
-  description: string; 
-  position_index: number; 
-  client_id: string | null; 
-  value: number | null;
-  assigned_to: string | null;
-  tags: string[];
-  created_at: string;
-  motivo_perda?: string;
-  phone?: string | null;
-  sector?: string | null;
-  processo_1grau?: string | null;
-  processo_2grau?: string | null;
-  demanda?: string | null;
-  andamento_1grau?: string | null;
-  andamento_2grau?: string | null;
-  orgao_julgador?: string | null;
-  tutela_urgencia?: string | null;
-  sentenca?: string | null;
-  reu?: string | null;
-  valor_causa?: number | null;
-  prazo_fatal?: string | null;
-  liminar_deferida?: boolean | null;
-  data_ultima_movimentacao?: string;
-};
 
 export default function PipelinePage() {
   const { pipelineId } = useParams() as { pipelineId: string };
@@ -78,30 +48,8 @@ export default function PipelinePage() {
   const [isTaskModalOpen, setIsTaskModalOpen] = useState(false);
   const [editingTask, setEditingTask] = useState<Task | null>(null);
 
-  // Task Form State
-  const [taskTitle, setTaskTitle] = useState("");
-  const [taskDesc, setTaskDesc] = useState("");
-  const [taskStageId, setTaskStageId] = useState("");
-  const [taskAssignedTo, setTaskAssignedTo] = useState<string | null>(null);
-  const [taskTags, setTaskTags] = useState<string[]>([]);
-  const [tagColor, setTagColor] = useState<string>("#CCA761");
-  const [taskPhone, setTaskPhone] = useState("");
-  const [taskSector, setTaskSector] = useState("");
-  const [taskProcesso1Grau, setTaskProcesso1Grau] = useState("");
-  const [taskProcesso2Grau, setTaskProcesso2Grau] = useState("");
-  const [taskDemanda, setTaskDemanda] = useState("");
-  const [taskAndamento1Grau, setTaskAndamento1Grau] = useState("");
-  const [taskAndamento2Grau, setTaskAndamento2Grau] = useState("");
-  const [taskOrgaoJulgador, setTaskOrgaoJulgador] = useState("");
-  const [taskTutelaUrgencia, setTaskTutelaUrgencia] = useState("");
-  const [taskSentenca, setTaskSentenca] = useState("");
-  const [taskReu, setTaskReu] = useState("");
-  const [taskValorCausa, setTaskValorCausa] = useState("");
-  const [taskPrazoFatal, setTaskPrazoFatal] = useState("");
-  const [taskLiminarDeferida, setTaskLiminarDeferida] = useState(false);
   
-  // Pending Move State for Win/Loss
-  const [pendingMove, setPendingMove] = useState<{ 
+const [pendingMove, setPendingMove] = useState<{ 
     taskId: string; 
     fromStageId: string; 
     toStageId: string; 
@@ -287,149 +235,21 @@ export default function PipelinePage() {
     }
   };
 
+  
+  const [defaultStageId, setDefaultStageId] = useState("");
+
   const openNewTaskModal = (stageId?: string) => {
-    setTaskTitle("");
-    setTaskDesc("");
-    setTaskStageId(stageId || (stages[0]?.id ?? ""));
-    setTaskAssignedTo(null);
-    setTaskTags([]);
-    setTaskPhone("");
-    setTaskSector("");
-    setTaskProcesso1Grau("");
-    setTaskProcesso2Grau("");
-    setTaskDemanda("");
-    setTaskAndamento1Grau("");
-    setTaskAndamento2Grau("");
-    setTaskOrgaoJulgador("");
-    setTaskTutelaUrgencia("");
-    setTaskSentenca("");
-    setTaskReu("");
-    setTaskValorCausa("");
-    setTaskPrazoFatal("");
-    setTaskLiminarDeferida(false);
+    setDefaultStageId(stageId || (stages[0]?.id ?? ""));
     setEditingTask(null);
     setIsTaskModalOpen(true);
   };
 
   const openEditTaskModal = (task: Task) => {
-    setTaskTitle(task.title);
-    setTaskDesc(task.description || "");
-    setTaskStageId(task.stage_id);
-    setTaskAssignedTo(task.assigned_to);
-    setTaskTags(task.tags || []);
-    setTaskPhone(task.phone || "");
-    setTaskSector(task.sector || "");
-    setTaskProcesso1Grau(task.processo_1grau || "");
-    setTaskProcesso2Grau(task.processo_2grau || "");
-    setTaskDemanda(task.demanda || "");
-    setTaskAndamento1Grau(task.andamento_1grau || "");
-    setTaskAndamento2Grau(task.andamento_2grau || "");
-    setTaskOrgaoJulgador(task.orgao_julgador || "");
-    setTaskTutelaUrgencia(task.tutela_urgencia || "");
-    setTaskSentenca(task.sentenca || "");
-    setTaskReu(task.reu || "");
-    setTaskValorCausa(task.valor_causa ? task.valor_causa.toString() : "");    
-    setTaskPrazoFatal(task.prazo_fatal ? task.prazo_fatal.split('T')[0] : "");
-    setTaskLiminarDeferida(task.liminar_deferida || false);
     setEditingTask(task);
     setIsTaskModalOpen(true);
   };
 
-  const handeSaveTask = async () => {
-    if (!taskTitle.trim()) { toast.error("Título é obrigatório."); return; }
-    if (!taskStageId) return;
-
-    setIsSaving(true);
-    try {
-      if (editingTask) {
-        const { data, error } = await supabase.from("process_tasks").update({
-          title: taskTitle,
-          description: taskDesc,
-          stage_id: taskStageId,
-          assigned_to: taskAssignedTo,
-          tags: taskTags,
-          phone: taskPhone,
-          sector: taskSector,
-          processo_1grau: taskProcesso1Grau || null,
-          processo_2grau: taskProcesso2Grau || null,
-          demanda: taskDemanda || null,
-          andamento_1grau: taskAndamento1Grau || null,
-          andamento_2grau: taskAndamento2Grau || null,
-          orgao_julgador: taskOrgaoJulgador || null,
-          tutela_urgencia: taskTutelaUrgencia || null,
-          sentenca: taskSentenca || null,
-          reu: taskReu || null,
-          valor_causa: taskValorCausa ? parseFloat(taskValorCausa) : null,
-          prazo_fatal: taskPrazoFatal ? new Date(taskPrazoFatal).toISOString() : null,
-          liminar_deferida: taskLiminarDeferida
-        }).eq("id", editingTask.id).select().single();
-        if (error) throw error;
-        
-        setTasks(tasks.map(t => t.id === editingTask.id ? data : t));
-        toast.success("Processo atualizado.");
-      } else {
-        const maxPos = tasks.filter(t => t.stage_id === taskStageId).length;
-        const { data, error } = await supabase.from("process_tasks").insert({
-          tenant_id: profile!.tenant_id,
-          pipeline_id: pipelineId,
-          stage_id: taskStageId,
-          title: taskTitle,
-          description: taskDesc,
-          position_index: maxPos,
-          assigned_to: taskAssignedTo,
-          tags: taskTags,
-          phone: taskPhone,
-          sector: taskSector,
-          processo_1grau: taskProcesso1Grau || null,
-          processo_2grau: taskProcesso2Grau || null,
-          demanda: taskDemanda || null,
-          andamento_1grau: taskAndamento1Grau || null,
-          andamento_2grau: taskAndamento2Grau || null,
-          orgao_julgador: taskOrgaoJulgador || null,
-          tutela_urgencia: taskTutelaUrgencia || null,
-          sentenca: taskSentenca || null,
-          reu: taskReu || null,
-          valor_causa: taskValorCausa ? parseFloat(taskValorCausa) : null,
-          prazo_fatal: taskPrazoFatal ? new Date(taskPrazoFatal).toISOString() : null,
-          liminar_deferida: taskLiminarDeferida
-        }).select().single();
-        if (error) throw error;
-        setTasks([...tasks, data]);
-        toast.success("Processo criado.");
-      }
-      setIsTaskModalOpen(false);
-    } catch (err) {
-      toast.error("Erro ao salvar tarefa.");
-    } finally {
-      setIsSaving(false);
-    }
-  };
-
-  const handleDeleteTask = async () => {
-    if (!editingTask || !confirm("Tem certeza que deseja excluir esta tarefa?")) return;
-    
-    setIsSaving(true);
-    try {
-      const { error } = await supabase.from("process_tasks").delete().eq("id", editingTask.id);
-      if (error) throw error;
-      setTasks(tasks.filter(t => t.id !== editingTask.id));
-      toast.success("Processo excluído.");
-      setIsTaskModalOpen(false);
-    } catch (err) {
-      toast.error("Erro ao excluir tarefa.");
-    } finally {
-      setIsSaving(false);
-    }
-  };
-
-  const quillModules = {
-    toolbar: [
-      [{ 'header': [1, 2, false] }],
-      ['bold', 'italic', 'underline', 'strike', 'blockquote'],
-      [{'list': 'ordered'}, {'list': 'bullet'}, {'indent': '-1'}, {'indent': '+1'}],
-      ['link', 'clean']
-    ],
-  };
+  
 
   if (isLoading && stages.length === 0) {
     return (
@@ -604,6 +424,7 @@ export default function PipelinePage() {
                                       )}
                                       
                                       <div className="absolute top-3 bottom-3 left-0 w-[2px] shadow-[0_0_12px_currentColor] opacity-90 transition-opacity rounded-r-full group-hover:w-[3px]" style={{ backgroundColor: stage.color, color: stage.color }} />
+                                      {task.client_name && <div className="text-[#CCA761] text-[10px] font-black uppercase tracking-widest mb-1 line-clamp-1 flex items-center gap-1"><UserIcon size={10} /> {task.client_name}</div>}
                                       <h4 className="text-white text-[15px] font-bold tracking-wide mb-2 line-clamp-2 drop-shadow-sm group-hover:text-[#CCA761] transition-colors">{task.title}</h4>
                                       
                                       {task.description && (
@@ -645,6 +466,11 @@ export default function PipelinePage() {
                                         <div className="flex items-center gap-1.5">
                                           <Calendar size={12} />
                                           {new Date(task.created_at).toLocaleDateString('pt-BR', { day: '2-digit', month: 'short' })}
+                                          {task.drive_link && (
+                                            <a href={task.drive_link} target="_blank" rel="noopener noreferrer" className="ml-1 text-[#4285F4] hover:brightness-125 transition-all" title="Abrir Google Drive" onClick={e => e.stopPropagation()}>
+                                              <svg className="w-3.5 h-3.5" viewBox="0 0 24 24" fill="currentColor"><path d="M7 15l4.5-8h9L16 15H7zm-1.5-1l4.5-8L5.5 2 1 10l4.5 4zm6 1l-1.5 3h9l1.5-3h-9z" /></svg>
+                                            </a>
+                                          )}
                                         </div>
                                         
                                         {assignee && (
@@ -697,7 +523,15 @@ export default function PipelinePage() {
                     return (
                       <tr key={task.id} onClick={() => openEditTaskModal(task)} className="hover:bg-white/5 cursor-pointer transition-colors group">
                         <td className="p-4">
-                          <div className="font-semibold text-white mb-1 group-hover:text-[#CCA761] transition-colors">{task.title}</div>
+                          {task.client_name && <div className="text-[#CCA761] text-[10px] font-black uppercase tracking-widest mb-0.5">{task.client_name}</div>}
+                          <div className="font-semibold text-white mb-1 group-hover:text-[#CCA761] transition-colors flex items-center gap-2">
+                             {task.title}
+                             {task.drive_link && (
+                                <a href={task.drive_link} target="_blank" rel="noopener noreferrer" className="text-[#4285F4] hover:brightness-125 transition-all" title="Google Drive" onClick={e => e.stopPropagation()}>
+                                  <svg className="w-4 h-4" viewBox="0 0 24 24" fill="currentColor"><path d="M7 15l4.5-8h9L16 15H7zm-1.5-1l4.5-8L5.5 2 1 10l4.5 4zm6 1l-1.5 3h9l1.5-3h-9z" /></svg>
+                                </a>
+                             )}
+                          </div>
                           <div className="flex gap-1.5 flex-wrap">
                              {task.sector && (() => {
                                const [name, color] = task.sector.includes('|') ? task.sector.split('|') : [task.sector, '#60a5fa'];
@@ -758,313 +592,27 @@ export default function PipelinePage() {
       </main>
 
       {/* TASK MODAL */}
-      {isTaskModalOpen && (
-        <div className="fixed inset-0 z-50 flex items-center justify-center p-4">
-          <div className="absolute inset-0 bg-black/60 backdrop-blur-md" onClick={() => setIsTaskModalOpen(false)} />
-          <div className="relative w-full max-w-4xl bg-[#0f0f0f] border border-white/10 rounded-2xl shadow-[0_0_50px_rgba(0,0,0,0.8)] overflow-hidden flex flex-col max-h-[95vh] animate-in fade-in zoom-in-95 duration-200">
-            <div className="flex items-center justify-between p-5 border-b border-white/5 bg-[#141414] relative">
-               <div className="absolute top-0 left-0 w-full h-[2px] bg-gradient-to-r from-transparent via-[#CCA761] to-transparent opacity-50" />
-               <h2 className="text-lg font-bold text-white flex items-center gap-2">
-                 {editingTask ? "Editar Processo" : "Novo Processo"}
-               </h2>
-               <div className="flex items-center gap-2">
-                 {editingTask && (
-                   <button 
-                     onClick={handleDeleteTask}
-                     className="text-gray-500 hover:text-red-400 p-2 rounded-lg hover:bg-white/5 transition-colors"
-                     title="Excluir Tarefa"
-                   >
-                     <Trash2 size={20} />
-                   </button>
-                 )}
-                 <button onClick={() => setIsTaskModalOpen(false)} className="text-gray-500 hover:text-white bg-white/5 hover:bg-white/10 p-2 rounded-lg transition-colors">
-                   <X size={20} />
-                 </button>
-               </div>
-            </div>
-
-            <div className="flex-1 overflow-y-auto p-6 no-scrollbar grid grid-cols-1 lg:grid-cols-4 gap-8">
-              <div className="lg:col-span-3 space-y-6">
-                <div className="space-y-1.5">
-                  <label className="text-xs font-bold text-gray-400 uppercase tracking-widest">Título do Processo</label>
-                  <input type="text" value={taskTitle} onChange={e => setTaskTitle(e.target.value)}
-                    className="w-full bg-[#1a1a1a] border border-[#2a2a2a] text-white rounded-lg px-4 py-3 text-lg font-semibold focus:outline-none focus:border-[#CCA761]/50 placeholder-gray-700 transition-colors"
-                    placeholder="Ex: Novo Processo Contra a Empresa X" autoFocus />
-                </div>
-
-                <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
-                  <div className="space-y-1.5">
-                    <label className="text-xs font-bold text-gray-400 uppercase tracking-widest flex items-center gap-2">⚖️ Processo 1º Grau</label>
-                    <input type="text" value={taskProcesso1Grau} onChange={e => setTaskProcesso1Grau(e.target.value)}
-                      className="w-full bg-[#1a1a1a] border border-[#2a2a2a] text-white rounded-lg px-4 py-3 text-sm focus:outline-none focus:border-[#CCA761]/50 placeholder-gray-700 transition-colors" />
-                  </div>
-                  <div className="space-y-1.5">
-                    <label className="text-xs font-bold text-gray-400 uppercase tracking-widest flex items-center gap-2">⚖️ Processo 2º Grau</label>
-                    <input type="text" value={taskProcesso2Grau} onChange={e => setTaskProcesso2Grau(e.target.value)}
-                      className="w-full bg-[#1a1a1a] border border-[#2a2a2a] text-white rounded-lg px-4 py-3 text-sm focus:outline-none focus:border-[#CCA761]/50 placeholder-gray-700 transition-colors" />
-                  </div>
-
-                  <div className="space-y-1.5">
-                    <label className="text-xs font-bold text-gray-400 uppercase tracking-widest flex items-center gap-2">🎯 Demanda</label>
-                    <input type="text" value={taskDemanda} onChange={e => setTaskDemanda(e.target.value)}
-                      className="w-full bg-[#1a1a1a] border border-[#2a2a2a] text-white rounded-lg px-4 py-3 text-sm focus:outline-none focus:border-[#CCA761]/50 placeholder-gray-700 transition-colors" />
-                  </div>
-                  <div className="space-y-1.5">
-                    <label className="text-xs font-bold text-gray-400 uppercase tracking-widest flex items-center gap-2">👇 Andamento do Processo 1º Grau</label>
-                    <input type="text" value={taskAndamento1Grau} onChange={e => setTaskAndamento1Grau(e.target.value)}
-                      className="w-full bg-[#1a1a1a] border border-[#2a2a2a] text-white rounded-lg px-4 py-3 text-sm focus:outline-none focus:border-[#CCA761]/50 placeholder-gray-700 transition-colors" />
-                  </div>
-
-                  <div className="space-y-1.5">
-                    <label className="text-xs font-bold text-gray-400 uppercase tracking-widest flex items-center gap-2">👇 Andamento do Processo 2º Grau</label>
-                    <input type="text" value={taskAndamento2Grau} onChange={e => setTaskAndamento2Grau(e.target.value)}
-                      className="w-full bg-[#1a1a1a] border border-[#2a2a2a] text-white rounded-lg px-4 py-3 text-sm focus:outline-none focus:border-[#CCA761]/50 placeholder-gray-700 transition-colors" />
-                  </div>
-                  <div className="space-y-1.5">
-                    <label className="text-xs font-bold text-gray-400 uppercase tracking-widest flex items-center gap-2">👨‍⚖️ Órgão julgador</label>
-                    <input type="text" value={taskOrgaoJulgador} onChange={e => setTaskOrgaoJulgador(e.target.value)}
-                      className="w-full bg-[#1a1a1a] border border-[#2a2a2a] text-white rounded-lg px-4 py-3 text-sm focus:outline-none focus:border-[#CCA761]/50 placeholder-gray-700 transition-colors" />
-                  </div>
-
-                  <div className="space-y-1.5">
-                    <label className="text-xs font-bold text-gray-400 uppercase tracking-widest flex items-center gap-2">👩‍⚖️ Tutela de urgência</label>
-                    <input type="text" value={taskTutelaUrgencia} onChange={e => setTaskTutelaUrgencia(e.target.value)}
-                      className="w-full bg-[#1a1a1a] border border-[#2a2a2a] text-white rounded-lg px-4 py-3 text-sm focus:outline-none focus:border-[#CCA761]/50 placeholder-gray-700 transition-colors" />
-                  </div>
-                  <div className="space-y-1.5">
-                    <label className="text-xs font-bold text-gray-400 uppercase tracking-widest flex items-center gap-2">👩‍⚖️ Sentença</label>
-                    <input type="text" value={taskSentenca} onChange={e => setTaskSentenca(e.target.value)}
-                      className="w-full bg-[#1a1a1a] border border-[#2a2a2a] text-white rounded-lg px-4 py-3 text-sm focus:outline-none focus:border-[#CCA761]/50 placeholder-gray-700 transition-colors" />
-                  </div>
-
-                  <div className="space-y-1.5">
-                    <label className="text-xs font-bold text-gray-400 uppercase tracking-widest flex items-center gap-2">🦉 Réu</label>
-                    <input type="text" value={taskReu} onChange={e => setTaskReu(e.target.value)}
-                      className="w-full bg-[#1a1a1a] border border-[#2a2a2a] text-white rounded-lg px-4 py-3 text-sm focus:outline-none focus:border-[#CCA761]/50 placeholder-gray-700 transition-colors" />
-                  </div>
-                  <div className="space-y-1.5">
-                    <label className="text-xs font-bold text-gray-400 uppercase tracking-widest flex items-center gap-2">💵 Valor da Causa</label>
-                    <div className="relative">
-                      <span className="absolute left-4 top-1/2 -translate-y-1/2 text-gray-400 font-bold">R$</span>
-                      <input type="number" step="0.01" value={taskValorCausa} onChange={e => setTaskValorCausa(e.target.value)}
-                        className="w-full bg-[#1a1a1a] border border-[#2a2a2a] text-white rounded-lg px-10 py-3 text-sm focus:outline-none focus:border-[#CCA761]/50 placeholder-gray-700 transition-colors" />
-                    </div>
-                  </div>
-
-                  <div className="space-y-1.5">
-                    <label className="text-xs font-bold text-gray-400 uppercase tracking-widest flex items-center gap-2">📅 Fatal</label>
-                    <input type="date" value={taskPrazoFatal} onChange={e => setTaskPrazoFatal(e.target.value)}
-                      className="w-full bg-[#1a1a1a] border border-[#2a2a2a] text-white rounded-lg px-4 py-3 text-sm focus:outline-none focus:border-[#CCA761]/50 placeholder-gray-700 transition-colors appearance-none" style={{ colorScheme: 'dark' }} />
-                  </div>
-
-                  <div className="space-y-1.5 flex items-center mt-7 gap-3 h-full">
-                    <input type="checkbox" checked={taskLiminarDeferida} onChange={e => setTaskLiminarDeferida(e.target.checked)}
-                      className="w-5 h-5 bg-[#1a1a1a] border border-[#2a2a2a] rounded focus:ring-[#CCA761]/50 accent-[#CCA761] cursor-pointer" id="liminar_deferida" />
-                    <label htmlFor="liminar_deferida" className="text-xs font-bold text-gray-400 uppercase tracking-widest flex items-center gap-2 cursor-pointer pt-0">
-                      ✅ Liminar Deferida
-                    </label>
-                  </div>
-                </div>
-
-                <div className="space-y-1.5 mt-6">
-                  <label className="text-xs font-bold text-gray-400 uppercase tracking-widest flex items-center gap-2">
-                    <AlignLeft size={14} /> Resumo do Caso
-                  </label>
-                  <div className="prose prose-invert max-w-none">
-                    <ReactQuill 
-                      theme="snow"
-                      value={taskDesc}
-                      onChange={setTaskDesc}
-                      modules={quillModules}
-                      placeholder="Adicione informações, observações e detalhes do processo..."
-                    />
-                  </div>
-                </div>
-              </div>
-
-              <div className="space-y-6 lg:border-l lg:border-white/5 lg:pl-6">
-                <div className="space-y-1.5">
-                  <label className="text-xs font-bold text-gray-400 uppercase tracking-widest flex items-center gap-2">
-                    <MessageCircle size={14} /> WhatsApp (Telefone)
-                  </label>
-                  <div className="flex items-center gap-2">
-                    <input 
-                      type="text" 
-                      value={taskPhone} onChange={e => setTaskPhone(e.target.value)}
-                      className="flex-1 bg-[#1a1a1a] border border-[#2a2a2a] text-white rounded-lg px-4 py-3 text-sm focus:outline-none focus:border-[#CCA761]/50 placeholder-gray-700 transition-colors"
-                      placeholder="Ex: 11999999999"
-                    />
-                    {taskPhone && (
-                      <a 
-                        href={`https://wa.me/${taskPhone.replace(/\D/g, "")}`} 
-                        target="_blank" rel="noopener noreferrer"
-                        className="bg-[#25D366] hover:bg-[#20bd5a] text-white p-3 rounded-lg transition-colors flex items-center justify-center shadow-[0_0_15px_rgba(37,211,102,0.3)] shrink-0"
-                        title="Abrir no WhatsApp"
-                      >
-                        <MessageCircle size={20} />
-                      </a>
-                    )}
-                  </div>
-                </div>
-
-                 <div className="space-y-1.5">
-                  <label className="text-xs font-bold text-gray-400 uppercase tracking-widest flex items-center gap-2">
-                    <CheckCircle2 size={14} /> Etapa Atual
-                  </label>
-                  <div className="relative">
-                    <select 
-                      value={taskStageId} onChange={e => setTaskStageId(e.target.value)}
-                      className="w-full bg-[#1a1a1a] border border-[#2a2a2a] text-white rounded-lg px-4 py-3 text-sm focus:outline-none focus:border-[#CCA761]/50 transition-colors appearance-none cursor-pointer"
-                    >
-                      {stages.map(s => (
-                        <option key={s.id} value={s.id}>{s.name}</option>
-                      ))}
-                    </select>
-                    <div className="absolute right-3 top-1/2 -translate-y-1/2 pointer-events-none text-gray-500">
-                      <Plus size={14} className="rotate-45" />
-                    </div>
-                  </div>
-                </div>
-
-                <div className="space-y-1.5">
-                  <label className="text-xs font-bold text-gray-400 uppercase tracking-widest flex items-center gap-2">
-                    <UserIcon size={14} /> Responsável
-                  </label>
-                  <select 
-                    value={taskAssignedTo || ""} 
-                    onChange={e => setTaskAssignedTo(e.target.value || null)}
-                    className="w-full bg-[#1a1a1a] border border-[#2a2a2a] text-white rounded-lg px-4 py-3 text-sm focus:outline-none focus:border-[#CCA761]/50 transition-colors appearance-none cursor-pointer"
-                  >
-                    <option value="">Não atribuído</option>
-                    {agents.map(agent => (
-                      <option key={agent.id} value={agent.id}>{agent.full_name}</option>
-                    ))}
-                  </select>
-                </div>
-
-                {pipeline?.sectors && pipeline.sectors.length > 0 && (
-                  <div className="space-y-1.5 flex flex-col pt-2 border-t border-white/5">
-                    <label className="text-xs font-bold text-blue-400 uppercase tracking-widest flex items-center gap-2">
-                      <ArrowRight size={14} /> Atribuir a um Setor
-                    </label>
-                    <div className="relative">
-                      <select 
-                        value={taskSector} onChange={e => setTaskSector(e.target.value)}
-                        className="w-full bg-[#1a1a1a] border border-[#2a2a2a] text-white rounded-lg px-4 py-3 text-sm focus:outline-none focus:border-blue-500/50 transition-colors appearance-none cursor-pointer"
-                      >
-                        <option value="">Não atribuir (Padrão)</option>
-                        {pipeline.sectors.map(s => {
-                          const [name] = s.includes('|') ? s.split('|') : [s];
-                          return <option key={s} value={s}>{name}</option>;
-                        })}
-                      </select>
-                      <div className="absolute right-3 top-1/2 -translate-y-1/2 pointer-events-none text-blue-500">
-                        <ArrowRight size={14} />
-                      </div>
-                    </div>
-                  </div>
-                )}
-
-                <div className="space-y-1.5 flex flex-col pt-2 border-t border-white/5">
-                  <div className="flex flex-col gap-1 mb-1">
-                    <label className="text-xs font-bold text-gray-400 uppercase tracking-widest flex items-center gap-2">
-                      <TagIcon size={14} /> Etiquetas
-                    </label>
-                  </div>
-                  
-                  {/* Selector de Etiquetas */}
-                  <div className="flex flex-wrap gap-2 mb-2 p-3 bg-[#1a1a1a] border border-[#2a2a2a] rounded-lg min-h-[50px]">
-                    {pipeline?.tags && pipeline.tags.length > 0 ? (
-                      pipeline.tags.map(tag => {
-                        const [name, color] = tag.includes('|') ? tag.split('|') : [tag, '#CCA761'];
-                        const isSelected = taskTags.includes(tag);
-                        return (
-                          <button
-                            key={tag}
-                            type="button"
-                            onClick={() => {
-                              if (isSelected) {
-                                setTaskTags(taskTags.filter(t => t !== tag));
-                              } else {
-                                setTaskTags([...taskTags, tag]);
-                              }
-                            }}
-                            className={`flex items-center gap-1.5 px-2.5 py-1 text-[10px] uppercase tracking-wider font-bold rounded-md transition-all ${isSelected ? 'opacity-100 scale-100' : 'opacity-70 hover:opacity-100 scale-95 hover:scale-100'}`}
-                            style={isSelected ? {
-                              color: color,
-                              border: `1px solid ${color}`,
-                              backgroundColor: '#111',
-                              boxShadow: `0 0 8px ${color}30`
-                            } : {
-                              color: 'rgba(255, 255, 255, 0.6)',
-                              border: `1px solid rgba(255, 255, 255, 0.2)`,
-                              backgroundColor: 'transparent'
-                            }}
-                          >
-                            {name}
-                            {isSelected && <CheckCircle2 size={12} className="ml-0.5" />}
-                          </button>
-                        );
-                      })
-                    ) : (
-                      <span className="text-xs text-gray-500 italic flex items-center h-full">Nenhuma etiqueta configurada neste Processo. Acesse as Configurações para criar.</span>
-                    )}
-                  </div>
-                  <style jsx global>{`
-                    /* ReactQuill Dark Mode Overrides */
-                    .ql-editor {
-                      color: white !important;
-                      font-size: 0.875rem !important;
-                      min-height: 120px;
-                    }
-                    .ql-toolbar.ql-snow {
-                      border-color: #2a2a2a !important;
-                      background-color: #1a1a1a !important;
-                      border-top-left-radius: 0.5rem;
-                      border-top-right-radius: 0.5rem;
-                    }
-                    .ql-container.ql-snow {
-                      border-color: #2a2a2a !important;
-                      border-bottom-left-radius: 0.5rem;
-                      border-bottom-right-radius: 0.5rem;
-                      background-color: #1a1a1a !important;
-                    }
-                    .ql-snow .ql-stroke {
-                      stroke: #9ca3af !important;
-                    }
-                    .ql-snow .ql-fill {
-                      fill: #9ca3af !important;
-                    }
-                    .ql-snow .ql-picker {
-                      color: #9ca3af !important;
-                    }
-                    .ql-editor.ql-blank::before {
-                      color: #4b5563 !important;
-                    }
-                  `}</style>
-                </div>
-              </div>
-            </div>
-
-            <div className="p-5 border-t border-white/5 bg-[#141414] flex items-center justify-end gap-3">
-              <button 
-                onClick={() => setIsTaskModalOpen(false)} 
-                className="text-sm font-semibold text-gray-400 hover:text-white px-5 py-2.5 hover:bg-white/5 rounded-lg transition-colors"
-                disabled={isSaving}
-              >
-                Descartar
-              </button>
-              <button 
-                onClick={handeSaveTask} 
-                disabled={isSaving} 
-                className="flex items-center gap-2 bg-[#CCA761] hover:bg-[#b89552] text-black px-8 py-2.5 rounded-lg text-sm font-bold transition-all disabled:opacity-50 shadow-lg shadow-[#CCA761]/10"
-              >
-                {isSaving ? "Processando..." : (editingTask ? "Salvar Alterações" : "Criar Tarefa")}
-              </button>
-            </div>
-          </div>
-        </div>
-      )}
+      <ProcessosTaskModal 
+        isOpen={isTaskModalOpen}
+        onClose={() => setIsTaskModalOpen(false)}
+        editingTask={editingTask}
+        defaultStageId={defaultStageId}
+        pipeline={pipeline}
+        stages={stages}
+        agents={agents}
+        profile={profile}
+        onSaveSuccess={(updatedTask, isNew) => {
+          if (isNew) {
+            setTasks([...tasks, updatedTask]);
+          } else {
+            setTasks(tasks.map(t => t.id === updatedTask.id ? updatedTask : t));
+          }
+        }}
+        onDeleteSuccess={(taskId) => {
+          setTasks(tasks.filter(t => t.id !== taskId));
+          toast.success("Processo excluído.");
+        }}
+      />
 
       {/* WIN LEAD MODAL */}
       <WinLeadModal 

@@ -20,32 +20,14 @@ import LostLeadModal from "@/components/crm/LostLeadModal";
 
 // Import CSS for ReactQuill
 import "react-quill/dist/quill.snow.css";
+import { Pipeline, Stage, Profile, Task } from "@/types/crm";
+import CrmTaskModal from "@/components/crm/CrmTaskModal";
 
 // Dynamic import for ReactQuill to avoid SSR issues
 const ReactQuill = dynamic(() => import("react-quill"), { 
   ssr: false,
   loading: () => <div className="h-[250px] w-full bg-white/5 animate-pulse rounded-lg" />
 });
-
-type Pipeline = { id: string; name: string; description: string; tags: string[]; sectors: string[] };
-type Stage = { id: string; name: string; color: string; order_index: number; is_loss: boolean; is_win: boolean };
-type Profile = { id: string; full_name: string; avatar_url: string | null };
-type Task = { 
-  id: string; 
-  stage_id: string; 
-  title: string; 
-  description: string; 
-  position_index: number; 
-  client_id: string | null; 
-  value: number | null;
-  assigned_to: string | null;
-  tags: string[];
-  created_at: string;
-  motivo_perda?: string;
-  phone?: string | null;
-  sector?: string | null;
-  data_ultima_movimentacao?: string;
-};
 
 export default function PipelinePage() {
   const { pipelineId } = useParams() as { pipelineId: string };
@@ -66,17 +48,8 @@ export default function PipelinePage() {
   const [isTaskModalOpen, setIsTaskModalOpen] = useState(false);
   const [editingTask, setEditingTask] = useState<Task | null>(null);
 
-  // Task Form State
-  const [taskTitle, setTaskTitle] = useState("");
-  const [taskDesc, setTaskDesc] = useState("");
-  const [taskStageId, setTaskStageId] = useState("");
-  const [taskAssignedTo, setTaskAssignedTo] = useState<string | null>(null);
-  const [taskTags, setTaskTags] = useState<string[]>([]);
-  const [tagColor, setTagColor] = useState<string>("#CCA761");
-  const [taskPhone, setTaskPhone] = useState("");
-  const [taskSector, setTaskSector] = useState("");
   
-  // Pending Move State for Win/Loss
+// Pending Move State for Win/Loss
   const [pendingMove, setPendingMove] = useState<{ 
     taskId: string; 
     fromStageId: string; 
@@ -263,101 +236,21 @@ export default function PipelinePage() {
     }
   };
 
+  
+  const [defaultStageId, setDefaultStageId] = useState("");
+
   const openNewTaskModal = (stageId?: string) => {
-    setTaskTitle("");
-    setTaskDesc("");
-    setTaskStageId(stageId || (stages[0]?.id ?? ""));
-    setTaskAssignedTo(null);
-    setTaskTags([]);
-    setTaskPhone("");
-    setTaskSector("");
+    setDefaultStageId(stageId || (stages[0]?.id ?? ""));
     setEditingTask(null);
     setIsTaskModalOpen(true);
   };
 
   const openEditTaskModal = (task: Task) => {
-    setTaskTitle(task.title);
-    setTaskDesc(task.description || "");
-    setTaskStageId(task.stage_id);
-    setTaskAssignedTo(task.assigned_to);
-    setTaskTags(task.tags || []);
-    setTaskPhone(task.phone || "");
-    setTaskSector(task.sector || "");
     setEditingTask(task);
     setIsTaskModalOpen(true);
   };
 
-  const handeSaveTask = async () => {
-    if (!taskTitle.trim()) { toast.error("Título é obrigatório."); return; }
-    if (!taskStageId) return;
-
-    setIsSaving(true);
-    try {
-      if (editingTask) {
-        const { data, error } = await supabase.from("crm_tasks").update({
-          title: taskTitle,
-          description: taskDesc,
-          stage_id: taskStageId,
-          assigned_to: taskAssignedTo,
-          tags: taskTags,
-          phone: taskPhone,
-          sector: taskSector
-        }).eq("id", editingTask.id).select().single();
-        if (error) throw error;
-        
-        setTasks(tasks.map(t => t.id === editingTask.id ? data : t));
-        toast.success("Tarefa atualizada.");
-      } else {
-        const maxPos = tasks.filter(t => t.stage_id === taskStageId).length;
-        const { data, error } = await supabase.from("crm_tasks").insert({
-          tenant_id: profile!.tenant_id,
-          pipeline_id: pipelineId,
-          stage_id: taskStageId,
-          title: taskTitle,
-          description: taskDesc,
-          position_index: maxPos,
-          assigned_to: taskAssignedTo,
-          tags: taskTags,
-          phone: taskPhone,
-          sector: taskSector
-        }).select().single();
-        if (error) throw error;
-        setTasks([...tasks, data]);
-        toast.success("Tarefa criada.");
-      }
-      setIsTaskModalOpen(false);
-    } catch (err) {
-      toast.error("Erro ao salvar tarefa.");
-    } finally {
-      setIsSaving(false);
-    }
-  };
-
-  const handleDeleteTask = async () => {
-    if (!editingTask || !confirm("Tem certeza que deseja excluir esta tarefa?")) return;
-    
-    setIsSaving(true);
-    try {
-      const { error } = await supabase.from("crm_tasks").delete().eq("id", editingTask.id);
-      if (error) throw error;
-      setTasks(tasks.filter(t => t.id !== editingTask.id));
-      toast.success("Tarefa excluída.");
-      setIsTaskModalOpen(false);
-    } catch (err) {
-      toast.error("Erro ao excluir tarefa.");
-    } finally {
-      setIsSaving(false);
-    }
-  };
-
-  const quillModules = {
-    toolbar: [
-      [{ 'header': [1, 2, false] }],
-      ['bold', 'italic', 'underline', 'strike', 'blockquote'],
-      [{'list': 'ordered'}, {'list': 'bullet'}, {'indent': '-1'}, {'indent': '+1'}],
-      ['link', 'clean']
-    ],
-  };
+  
 
   if (isLoading && stages.length === 0) {
     return (
@@ -686,243 +579,27 @@ export default function PipelinePage() {
       </main>
 
       {/* TASK MODAL */}
-      {isTaskModalOpen && (
-        <div className="fixed inset-0 z-50 flex items-center justify-center p-4">
-          <div className="absolute inset-0 bg-black/60 backdrop-blur-md" onClick={() => setIsTaskModalOpen(false)} />
-          <div className="relative w-full max-w-4xl bg-[#0f0f0f] border border-white/10 rounded-2xl shadow-[0_0_50px_rgba(0,0,0,0.8)] overflow-hidden flex flex-col max-h-[95vh] animate-in fade-in zoom-in-95 duration-200">
-            <div className="flex items-center justify-between p-5 border-b border-white/5 bg-[#141414] relative">
-               <div className="absolute top-0 left-0 w-full h-[2px] bg-gradient-to-r from-transparent via-[#CCA761] to-transparent opacity-50" />
-               <h2 className="text-lg font-bold text-white flex items-center gap-2">
-                 {editingTask ? "Editar Tarefa" : "Nova Tarefa"}
-               </h2>
-               <div className="flex items-center gap-2">
-                 {editingTask && (
-                   <button 
-                     onClick={handleDeleteTask}
-                     className="text-gray-500 hover:text-red-400 p-2 rounded-lg hover:bg-white/5 transition-colors"
-                     title="Excluir Tarefa"
-                   >
-                     <Trash2 size={20} />
-                   </button>
-                 )}
-                 <button onClick={() => setIsTaskModalOpen(false)} className="text-gray-500 hover:text-white bg-white/5 hover:bg-white/10 p-2 rounded-lg transition-colors">
-                   <X size={20} />
-                 </button>
-               </div>
-            </div>
-
-            <div className="flex-1 overflow-y-auto p-6 no-scrollbar grid grid-cols-1 lg:grid-cols-4 gap-8">
-              <div className="lg:col-span-3 space-y-6">
-                <div className="space-y-1.5">
-                  <label className="text-xs font-bold text-gray-400 uppercase tracking-widest">Título da Oportunidade</label>
-                  <input 
-                    type="text" 
-                    value={taskTitle} onChange={e => setTaskTitle(e.target.value)}
-                    className="w-full bg-[#1a1a1a] border border-[#2a2a2a] text-white rounded-lg px-4 py-3 text-lg font-semibold focus:outline-none focus:border-[#CCA761]/50 placeholder-gray-700 transition-colors"
-                    placeholder="Ex: Empresa X - Implantação de Software"
-                    autoFocus
-                  />
-                </div>
-
-                <div className="space-y-1.5">
-                  <label className="text-xs font-bold text-gray-400 uppercase tracking-widest flex items-center gap-2">
-                    <MessageCircle size={14} /> WhatsApp (Telefone)
-                  </label>
-                  <div className="flex items-center gap-2">
-                    <input 
-                      type="text" 
-                      value={taskPhone} onChange={e => setTaskPhone(e.target.value)}
-                      className="flex-1 bg-[#1a1a1a] border border-[#2a2a2a] text-white rounded-lg px-4 py-3 text-sm focus:outline-none focus:border-[#CCA761]/50 placeholder-gray-700 transition-colors"
-                      placeholder="Ex: 11999999999"
-                    />
-                    {taskPhone && (
-                      <a 
-                        href={`https://wa.me/${taskPhone.replace(/\D/g, "")}`} 
-                        target="_blank" rel="noopener noreferrer"
-                        className="bg-[#25D366] hover:bg-[#20bd5a] text-white p-3 rounded-lg transition-colors flex items-center justify-center shadow-[0_0_15px_rgba(37,211,102,0.3)] shrink-0"
-                        title="Abrir no WhatsApp"
-                      >
-                        <MessageCircle size={20} />
-                      </a>
-                    )}
-                  </div>
-                </div>
-
-                <div className="space-y-1.5">
-                  <label className="text-xs font-bold text-gray-400 uppercase tracking-widest flex items-center gap-2">
-                    <AlignLeft size={14} /> Descrição Detalhada
-                  </label>
-                  <div className="prose prose-invert max-w-none">
-                    <ReactQuill 
-                      theme="snow"
-                      value={taskDesc}
-                      onChange={setTaskDesc}
-                      modules={quillModules}
-                      placeholder="Adicione informações, observações e detalhes da negociação..."
-                    />
-                  </div>
-                </div>
-              </div>
-
-              <div className="space-y-6 lg:border-l lg:border-white/5 lg:pl-6">
-                 <div className="space-y-1.5">
-                  <label className="text-xs font-bold text-gray-400 uppercase tracking-widest flex items-center gap-2">
-                    <CheckCircle2 size={14} /> Etapa Atual
-                  </label>
-                  <div className="relative">
-                    <select 
-                      value={taskStageId} onChange={e => setTaskStageId(e.target.value)}
-                      className="w-full bg-[#1a1a1a] border border-[#2a2a2a] text-white rounded-lg px-4 py-3 text-sm focus:outline-none focus:border-[#CCA761]/50 transition-colors appearance-none cursor-pointer"
-                    >
-                      {stages.map(s => (
-                        <option key={s.id} value={s.id}>{s.name}</option>
-                      ))}
-                    </select>
-                    <div className="absolute right-3 top-1/2 -translate-y-1/2 pointer-events-none text-gray-500">
-                      <Plus size={14} className="rotate-45" />
-                    </div>
-                  </div>
-                </div>
-
-                <div className="space-y-1.5">
-                  <label className="text-xs font-bold text-gray-400 uppercase tracking-widest flex items-center gap-2">
-                    <UserIcon size={14} /> Responsável
-                  </label>
-                  <select 
-                    value={taskAssignedTo || ""} 
-                    onChange={e => setTaskAssignedTo(e.target.value || null)}
-                    className="w-full bg-[#1a1a1a] border border-[#2a2a2a] text-white rounded-lg px-4 py-3 text-sm focus:outline-none focus:border-[#CCA761]/50 transition-colors appearance-none cursor-pointer"
-                  >
-                    <option value="">Não atribuído</option>
-                    {agents.map(agent => (
-                      <option key={agent.id} value={agent.id}>{agent.full_name}</option>
-                    ))}
-                  </select>
-                </div>
-
-                {pipeline?.sectors && pipeline.sectors.length > 0 && (
-                  <div className="space-y-1.5 flex flex-col pt-2 border-t border-white/5">
-                    <label className="text-xs font-bold text-blue-400 uppercase tracking-widest flex items-center gap-2">
-                      <ArrowRight size={14} /> Atribuir a um Setor
-                    </label>
-                    <div className="relative">
-                      <select 
-                        value={taskSector} onChange={e => setTaskSector(e.target.value)}
-                        className="w-full bg-[#1a1a1a] border border-[#2a2a2a] text-white rounded-lg px-4 py-3 text-sm focus:outline-none focus:border-blue-500/50 transition-colors appearance-none cursor-pointer"
-                      >
-                        <option value="">Não atribuir (Padrão)</option>
-                        {pipeline.sectors.map(s => {
-                          const [name] = s.includes('|') ? s.split('|') : [s];
-                          return <option key={s} value={s}>{name}</option>;
-                        })}
-                      </select>
-                      <div className="absolute right-3 top-1/2 -translate-y-1/2 pointer-events-none text-blue-500">
-                        <ArrowRight size={14} />
-                      </div>
-                    </div>
-                  </div>
-                )}
-
-                <div className="space-y-1.5 flex flex-col pt-2 border-t border-white/5">
-                  <div className="flex flex-col gap-1 mb-1">
-                    <label className="text-xs font-bold text-gray-400 uppercase tracking-widest flex items-center gap-2">
-                      <TagIcon size={14} /> Etiquetas
-                    </label>
-                  </div>
-                  
-                  {/* Selector de Etiquetas */}
-                  <div className="flex flex-wrap gap-2 mb-2 p-3 bg-[#1a1a1a] border border-[#2a2a2a] rounded-lg min-h-[50px]">
-                    {pipeline?.tags && pipeline.tags.length > 0 ? (
-                      pipeline.tags.map(tag => {
-                        const [name, color] = tag.includes('|') ? tag.split('|') : [tag, '#CCA761'];
-                        const isSelected = taskTags.includes(tag);
-                        return (
-                          <button
-                            key={tag}
-                            type="button"
-                            onClick={() => {
-                              if (isSelected) {
-                                setTaskTags(taskTags.filter(t => t !== tag));
-                              } else {
-                                setTaskTags([...taskTags, tag]);
-                              }
-                            }}
-                            className={`flex items-center gap-1.5 px-2.5 py-1 text-[10px] uppercase tracking-wider font-bold rounded-md transition-all ${isSelected ? 'opacity-100 scale-100' : 'opacity-70 hover:opacity-100 scale-95 hover:scale-100'}`}
-                            style={isSelected ? {
-                              color: color,
-                              border: `1px solid ${color}`,
-                              backgroundColor: '#111',
-                              boxShadow: `0 0 8px ${color}30`
-                            } : {
-                              color: 'rgba(255, 255, 255, 0.6)',
-                              border: `1px solid rgba(255, 255, 255, 0.2)`,
-                              backgroundColor: 'transparent'
-                            }}
-                          >
-                            {name}
-                            {isSelected && <CheckCircle2 size={12} className="ml-0.5" />}
-                          </button>
-                        );
-                      })
-                    ) : (
-                      <span className="text-xs text-gray-500 italic flex items-center h-full">Nenhuma etiqueta configurada neste funil. Acesse as Configurações para criar.</span>
-                    )}
-                  </div>
-                  <style jsx global>{`
-                    /* ReactQuill Dark Mode Overrides */
-                    .ql-editor {
-                      color: white !important;
-                      font-size: 0.875rem !important;
-                      min-height: 120px;
-                    }
-                    .ql-toolbar.ql-snow {
-                      border-color: #2a2a2a !important;
-                      background-color: #1a1a1a !important;
-                      border-top-left-radius: 0.5rem;
-                      border-top-right-radius: 0.5rem;
-                    }
-                    .ql-container.ql-snow {
-                      border-color: #2a2a2a !important;
-                      border-bottom-left-radius: 0.5rem;
-                      border-bottom-right-radius: 0.5rem;
-                      background-color: #1a1a1a !important;
-                    }
-                    .ql-snow .ql-stroke {
-                      stroke: #9ca3af !important;
-                    }
-                    .ql-snow .ql-fill {
-                      fill: #9ca3af !important;
-                    }
-                    .ql-snow .ql-picker {
-                      color: #9ca3af !important;
-                    }
-                    .ql-editor.ql-blank::before {
-                      color: #4b5563 !important;
-                    }
-                  `}</style>
-                </div>
-              </div>
-            </div>
-
-            <div className="p-5 border-t border-white/5 bg-[#141414] flex items-center justify-end gap-3">
-              <button 
-                onClick={() => setIsTaskModalOpen(false)} 
-                className="text-sm font-semibold text-gray-400 hover:text-white px-5 py-2.5 hover:bg-white/5 rounded-lg transition-colors"
-                disabled={isSaving}
-              >
-                Descartar
-              </button>
-              <button 
-                onClick={handeSaveTask} 
-                disabled={isSaving} 
-                className="flex items-center gap-2 bg-[#CCA761] hover:bg-[#b89552] text-black px-8 py-2.5 rounded-lg text-sm font-bold transition-all disabled:opacity-50 shadow-lg shadow-[#CCA761]/10"
-              >
-                {isSaving ? "Processando..." : (editingTask ? "Salvar Alterações" : "Criar Tarefa")}
-              </button>
-            </div>
-          </div>
-        </div>
-      )}
+      <CrmTaskModal 
+        isOpen={isTaskModalOpen}
+        onClose={() => setIsTaskModalOpen(false)}
+        editingTask={editingTask}
+        defaultStageId={defaultStageId}
+        pipelineId={pipelineId}
+        pipeline={pipeline}
+        stages={stages}
+        agents={agents}
+        profile={profile}
+        onSaveSuccess={(updatedTask, isNew) => {
+          if (isNew) {
+            setTasks([...tasks, updatedTask]);
+          } else {
+            setTasks(tasks.map(t => t.id === updatedTask.id ? updatedTask : t));
+          }
+        }}
+        onDeleteSuccess={(taskId) => {
+          setTasks(tasks.filter(t => t.id !== taskId));
+        }}
+      />
 
       {/* WIN LEAD MODAL */}
       <WinLeadModal 

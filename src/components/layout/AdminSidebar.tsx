@@ -4,15 +4,15 @@ import Image from "next/image";
 import Link from "next/link";
 import { usePathname } from "next/navigation";
 import { Cormorant_Garamond, Montserrat } from "next/font/google";
-import { 
-  ChevronDown, 
-  LayoutDashboard, 
-  Calendar, 
-  Users, 
-  FileText, 
-  Briefcase, 
-  Scale, 
-  Clock, 
+import {
+  ChevronDown,
+  LayoutDashboard,
+  Calendar,
+  Users,
+  FileText,
+  Briefcase,
+  Scale,
+  Clock,
   FolderOpen,
   DollarSign,
   LineChart,
@@ -25,7 +25,17 @@ import {
   X,
   Sun,
   Moon,
-  LayoutTemplate
+  LayoutTemplate,
+  Target,
+  Globe,
+  BrainCircuit,
+  MessageSquare,
+  MessageCircle,
+  Mail,
+  Send,
+  Bot,
+  MessagesSquare,
+  Share2
 } from "lucide-react";
 import { useState, useEffect } from "react";
 import { useTheme } from "next-themes";
@@ -67,10 +77,23 @@ export function AdminSidebar() {
   const menuSections = [
     {
       title: "VISÃO GERAL",
-      collapsible: false,
+      collapsible: true,
       items: [
         { name: "Dashboard", icon: LayoutDashboard, href: "/dashboard" },
-        { name: "Agenda Global", icon: Calendar, href: "/dashboard/agenda" },
+        { name: "Mural", icon: MessageSquare, href: "/dashboard/mural" },
+        { name: "Agenda Diária", icon: Calendar, href: "/dashboard/agenda" },
+        { name: "Agenda Global", icon: Globe, href: "/dashboard/agenda-global" },
+        { name: "Auditoria ADMIN", icon: ShieldCheck, href: "/dashboard/agenda-admin" },
+      ]
+    },
+    {
+      title: "CONVERSAS",
+      collapsible: true,
+      items: [
+        { name: "Todas as Conversas", icon: MessagesSquare, href: "/dashboard/conversas/todas" },
+        { name: "Chat da Equipe", icon: Users, href: "/dashboard/conversas/equipe" },
+        { name: "WhatsApp", icon: MessageCircle, href: "/dashboard/conversas/whatsapp" },
+        { name: "Sociais", icon: Share2, href: "/dashboard/conversas/sociais" },
       ]
     },
     {
@@ -78,6 +101,7 @@ export function AdminSidebar() {
       collapsible: true,
       items: [
         { name: "Painel CRM", icon: LayoutDashboard, href: "/dashboard/crm" },
+        { name: "Gestão de Vendas", icon: DollarSign, href: "/dashboard/vendas" },
         { name: "Clientes Base", icon: Briefcase, href: "/dashboard/clientes" },
         { name: "Leads & Contatos", icon: Users, href: "/dashboard/leads" },
         { name: "Contratos Online", icon: FileText, href: "/dashboard/contratos" },
@@ -105,14 +129,18 @@ export function AdminSidebar() {
       collapsible: true,
       items: [
         { name: "BI & Analytics", icon: LineChart, href: "/dashboard/bi" },
+        { name: "MAYUS Inteligência", icon: BrainCircuit, href: "/dashboard/mayus" },
+        { name: "Equipe Neural", icon: Bot, href: "/dashboard/equipe-ia" },
         { name: "Relatórios Executivos", icon: PieChart, href: "/dashboard/relatorios" },
       ]
     },
     {
       title: "SISTEMA",
-      collapsible: false,
+      collapsible: true,
       items: [
-        { name: "Configurações", icon: Settings, href: "/dashboard/configuracoes" },
+        { name: "Configurações Globais", icon: Settings, href: "/dashboard/configuracoes" },
+        { name: "Comercial & Metas", icon: Target, href: "/dashboard/configuracoes/comercial" },
+        { name: "Integrações & APIs", icon: Wand2, href: "/dashboard/configuracoes/integracoes" },
         { name: "Usuários e Permissões", icon: ShieldCheck, href: "/dashboard/equipe" },
       ]
     }
@@ -124,6 +152,7 @@ export function AdminSidebar() {
       ...section,
       items: section.items.filter(item => {
         if (isAdmin) return true;
+        if (item.href === "/dashboard/agenda-admin") return false; // Somente chefe
         if (item.href === "/dashboard") return true;
         if (item.href === "/dashboard/equipe") return false;
         return allowedHrefs.some(allowed => {
@@ -136,7 +165,7 @@ export function AdminSidebar() {
 
   return (
     <>
-      <button 
+      <button
         onClick={toggleSidebar}
         className="fixed top-4 left-4 z-50 p-2 rounded-lg bg-[#CCA761] text-black md:hidden shadow-lg"
       >
@@ -144,7 +173,7 @@ export function AdminSidebar() {
       </button>
 
       {isOpen && (
-        <div 
+        <div
           className="fixed inset-0 bg-black/60 z-40 md:hidden backdrop-blur-sm transition-opacity"
           onClick={toggleSidebar}
         />
@@ -157,7 +186,7 @@ export function AdminSidebar() {
         ${isOpen ? "translate-x-0" : "-translate-x-full md:translate-x-0"}
       `}>
         <div className="absolute top-0 right-0 w-[1px] h-full bg-gradient-to-b from-transparent via-[#CCA761]/40 to-transparent z-10" />
-        
+
         <div className="w-full aspect-square max-h-56 flex flex-col items-center justify-center bg-transparent shrink-0">
           <div className="relative w-full h-full p-4 hover:scale-105 transition-transform duration-500">
             <Image
@@ -170,15 +199,15 @@ export function AdminSidebar() {
         </div>
 
         <div className={`flex-1 overflow-y-auto no-scrollbar pt-2 px-5 ${montserrat.className}`}>
-          
+
           <div className="space-y-3 mb-8">
-            <button className="relative w-full flex items-center justify-center gap-2 bg-gradient-to-r from-[#CCA761] via-[#f1d58d] to-[#CCA761] hover:from-[#e3c27e] hover:via-[#ffe8ad] hover:to-[#e3c27e] text-[#111111] font-[800] py-3 px-4 rounded-lg transition-all duration-300 transform active:scale-95 text-sm shadow-none overflow-hidden hover:-translate-y-[1px] tracking-widest">
+            <Link href="/dashboard/vendas/nova" className="relative w-full flex items-center justify-center gap-2 bg-gradient-to-r from-[#CCA761] via-[#f1d58d] to-[#CCA761] hover:from-[#e3c27e] hover:via-[#ffe8ad] hover:to-[#e3c27e] text-[#111111] font-[800] py-3 px-4 rounded-lg transition-all duration-300 transform active:scale-95 text-sm shadow-none overflow-hidden hover:-translate-y-[1px] tracking-widest">
               <div className="absolute inset-0 -translate-x-full animate-[shimmer_2.5s_infinite] bg-gradient-to-r from-transparent via-white/40 to-transparent skew-x-12" />
-              <Plus size={18} strokeWidth={2.5} className="relative z-10" /> 
+              <Plus size={18} strokeWidth={2.5} className="relative z-10" />
               <span className="relative z-10">NOVA VENDA</span>
-            </button>
+            </Link>
             <button className="w-full flex items-center justify-center gap-2 bg-gradient-to-b from-[#1c1c1c] to-[#0a0a0a] border border-[#2a2a2a] hover:border-[#CCA761]/50 hover:shadow-[0_0_15px_rgba(204,167,97,0.1)] text-[#CCA761] font-bold py-3 px-4 rounded-lg transition-all duration-300 transform active:scale-95 text-sm shadow-md group">
-              <Wand2 size={18} className="text-[#CCA761] group-hover:-rotate-12 transition-transform duration-300" /> 
+              <Wand2 size={18} className="text-[#CCA761] group-hover:-rotate-12 transition-transform duration-300" />
               GERAR PEÇA COM IA
             </button>
           </div>
@@ -197,23 +226,22 @@ export function AdminSidebar() {
                       <ChevronDown size={18} className={`opacity-60 transition-transform duration-300 ${isSectionOpen ? 'rotate-180' : ''}`} />
                     )}
                   </button>
-                  
-                  <div className={`overflow-hidden transition-all duration-300 ease-in-out ${
-                    section.collapsible && !isSectionOpen ? 'max-h-0 opacity-0' : 'max-h-[500px] opacity-100'
-                  }`}>
+
+                  <div className={`overflow-hidden transition-all duration-300 ease-in-out ${section.collapsible && !isSectionOpen ? 'max-h-0 opacity-0' : 'max-h-[500px] opacity-100'
+                    }`}>
                     <ul className="space-y-2">
                       {section.items.map((item, itemIdx) => {
                         const isActive = pathname === item.href;
                         return (
                           <li key={itemIdx}>
-                            <Link 
+                            <Link
                               href={item.href}
                               onClick={() => setIsOpen(false)}
                               className={`
                                 flex items-center gap-3 px-3 py-3 rounded-lg text-[18px] transition-colors
                                 ${cormorant.className} italic font-bold
-                                ${isActive 
-                                  ? "bg-white/[0.05] text-[#CCA761] border-l-2 border-[#CCA761] shadow-[inset_0_0_20px_rgba(204,167,97,0.05)]" 
+                                ${isActive
+                                  ? "bg-white/[0.05] text-[#CCA761] border-l-2 border-[#CCA761] shadow-[inset_0_0_20px_rgba(204,167,97,0.05)]"
                                   : "text-gray-400 hover:bg-white/[0.02] hover:text-[#CCA761]"
                                 }
                               `}
