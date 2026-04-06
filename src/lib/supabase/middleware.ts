@@ -37,9 +37,9 @@ export async function updateSession(request: NextRequest) {
   } = await supabase.auth.getUser();
 
   // Rotas públicas (não precisam de autenticação)
-  const publicRoutes = ["/login", "/signup", "/auth/callback", "/auth/update-password", "/auth/aceitar-convite", "/api"];
+  const publicRoutes = ["/", "/login", "/signup", "/cadastro", "/onboarding", "/auth/callback", "/auth/update-password", "/auth/aceitar-convite", "/api"];
   const isPublicRoute = publicRoutes.some((route) =>
-    request.nextUrl.pathname.startsWith(route)
+    route === "/" ? request.nextUrl.pathname === "/" : request.nextUrl.pathname.startsWith(route)
   );
 
   // Se não está logado e tenta acessar rota protegida → redireciona para /login
@@ -150,6 +150,36 @@ export async function updateSession(request: NextRequest) {
         return NextResponse.redirect(url);
       }
     }
+  }
+
+  // ==== Proteção da rota /admin — apenas superadmin ====
+  if (user && request.nextUrl.pathname.startsWith("/admin")) {
+    console.log('[ADMIN] Iniciando verificação para:', user.id)
+    
+    const supabaseAdmin = createServerClient(
+      process.env.NEXT_PUBLIC_SUPABASE_URL!,
+      process.env.SUPABASE_SERVICE_ROLE_KEY!,
+      { cookies: { getAll: () => [], setAll: () => {} } }
+    )
+
+    const { data: profileData, error: profileError } = await supabaseAdmin
+      .from("profiles")
+      .select("is_superadmin")
+      .eq("id", user.id)
+      .single()
+
+    console.log('[ADMIN] profileData:', profileData)
+    console.log('[ADMIN] profileError:', profileError)
+    console.log('[ADMIN] is_superadmin:', profileData?.is_superadmin)
+
+    if (!profileData?.is_superadmin) {
+      console.log('[ADMIN] BLOQUEADO — redirecionando para /dashboard')
+      const url = request.nextUrl.clone()
+      url.pathname = "/dashboard"
+      return NextResponse.redirect(url)
+    }
+    
+    console.log('[ADMIN] PERMITIDO — deixando passar')
   }
 
   return supabaseResponse;

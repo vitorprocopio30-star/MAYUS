@@ -21,16 +21,28 @@ export type AppModuleId = typeof APP_MODULES[number]["id"] | "ALL";
 // Mapeamento de Rotas (pathname) para qual Módulo ela pertence
 export const ROUTE_TO_MODULE: Record<string, AppModuleId> = {
   "/dashboard": "dashboard",
+  "/dashboard/mural": "dashboard",
   "/dashboard/agenda": "agenda",
+  "/dashboard/agenda-global": "agenda",
   "/dashboard/clientes": "clientes",
+  "/dashboard/leads": "clientes",
+  "/dashboard/contratos": "clientes",
+  "/dashboard/crm": "clientes",
+  "/dashboard/vendas": "clientes",
   "/dashboard/processos": "processos",
   "/dashboard/prazos": "processos",
   "/dashboard/documentos": "documentos",
   "/dashboard/faturamento": "faturamento",
   "/dashboard/honorarios": "faturamento",
   "/dashboard/marketing": "marketing",
+  "/dashboard/conversas": "equipe",
+  "/dashboard/bi": "equipe",
+  "/dashboard/relatorios": "equipe",
+  "/dashboard/mayus": "config_agentes",
+  "/dashboard/equipe-ia": "config_agentes",
   "/dashboard/equipe": "equipe",
   "/dashboard/configuracoes": "config_agentes",
+  "/dashboard/configuracoes/usuarios": "config_agentes",
 };
 
 // -----------------------------------------------------------------------
@@ -64,7 +76,7 @@ export function hasAccess(customPermissions: string[], pathname: string, role?: 
 // Retorna a lista de prefixos permitidos p/ a Sidebar (filtragem visual)
 // -----------------------------------------------------------------------
 export function getAllowedHrefs(customPermissions: string[] | undefined, role?: string): string[] {
-  if (role === "Administrador") return ["ALL"];
+  if (role === "Administrador" || role === "admin") return ["ALL"];
   if (!customPermissions || customPermissions.length === 0) return [];
   if (customPermissions.includes("ALL")) return ["ALL"];
 

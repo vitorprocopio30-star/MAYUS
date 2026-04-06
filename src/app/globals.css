@@ -2,136 +2,146 @@
 @tailwind components;
 @tailwind utilities;
 
-/* Tailwind layers */
+@layer base {
+  :root {
+    --background: 240 10% 98%;
+    --foreground: 20 14.3% 4.1%;
+    --card: 0 0% 100%;
+    --card-foreground: 20 14.3% 4.1%;
+    --popover: 0 0% 100%;
+    --popover-foreground: 20 14.3% 4.1%;
+    --primary: 38 49% 58%;
+    --primary-foreground: 26 83.3% 14.1%;
+    --secondary: 40 10% 95%;
+    --secondary-foreground: 24 9.8% 10%;
+    --muted: 40 10% 95%;
+    --muted-foreground: 25 5.3% 44.7%;
+    --accent: 40 10% 95%;
+    --accent-foreground: 24 9.8% 10%;
+    --destructive: 0 84.2% 60.2%;
+    --destructive-foreground: 60 9.1% 97.8%;
+    --border: 38 49% 85%;
+    --input: 38 49% 85%;
+    --ring: 38 49% 58%;
+    --radius: 1rem;
+  }
+
+  .dark {
+    --background: 20 14.3% 4.1%;
+    --foreground: 60 9.1% 97.8%;
+    --card: 20 14.3% 4.1%;
+    --card-foreground: 60 9.1% 97.8%;
+    --popover: 20 14.3% 4.1%;
+    --popover-foreground: 60 9.1% 97.8%;
+    --primary: 38 49% 58%;
+    --primary-foreground: 26 83.3% 14.1%;
+    --secondary: 12 6.5% 15.1%;
+    --secondary-foreground: 60 9.1% 97.8%;
+    --muted: 12 6.5% 15.1%;
+    --muted-foreground: 24 5.4% 63.9%;
+    --accent: 12 6.5% 15.1%;
+    --accent-foreground: 60 9.1% 97.8%;
+    --destructive: 0 62.8% 30.6%;
+    --destructive-foreground: 60 9.1% 97.8%;
+    --border: 12 6.5% 15.1%;
+    --input: 12 6.5% 15.1%;
+    --ring: 38 49% 58%;
+  }
+}
+
+@layer base {
+  body {
+    @apply bg-background text-foreground antialiased;
+    font-feature-settings: "rlig" 1, "calt" 1;
+  }
+}
+
 @layer utilities {
   .no-scrollbar::-webkit-scrollbar {
     display: none;
   }
   .no-scrollbar {
-    -ms-overflow-style: none; /* IE and Edge */
-    scrollbar-width: none; /* Firefox */
+    -ms-overflow-style: none;
+    scrollbar-width: none;
   }
 }
 
+/* =============================================
+   ESTILOS DE LUXO MAYUS (DESIGN R$ 90 MIL)
+   ============================================= */
 
-@keyframes fadeInUp {
-  from {
-    opacity: 0;
-    transform: translateY(40px);
-  }
-  to {
-    opacity: 1;
-    transform: translateY(0);
-  }
+/* Landing Page Wrapper */
+.luxury-container {
+  background-color: #020202;
+  color: #e0e0e0;
 }
 
-.animate-fade-in-up {
-  animation: fadeInUp 0.8s cubic-bezier(0.16, 1, 0.3, 1) forwards;
+.text-luxury {
+  background: linear-gradient(135deg, #fff 0%, #CCA761 50%, #8B7340 100%);
+  -webkit-background-clip: text;
+  background-clip: text;
+  -webkit-text-fill-color: transparent;
+  filter: drop-shadow(0 2px 4px rgba(0, 0, 0, 0.3));
 }
 
-@keyframes shimmer {
-  100% {
-    transform: translateX(200%);
-  }
+.glass-card {
+  background: rgba(15, 15, 15, 0.4);
+  backdrop-filter: blur(40px);
+  -webkit-backdrop-filter: blur(40px);
+  border: 1px solid rgba(255, 255, 255, 0.08);
+}
+
+.beam-light {
+  position: absolute;
+  top: 0; left: 0; width: 250px; height: 100%;
+  background: linear-gradient(90deg, transparent, rgba(204, 167, 97, 0.2), transparent);
+  pointer-events: none;
+  animation: beamSlice 8s infinite ease-in-out;
+}
+
+@keyframes beamSlice {
+  0% { transform: translateX(-100%) skewX(-45deg); opacity: 0; }
+  20% { opacity: 0.5; }
+  80% { opacity: 0.5; }
+  100% { transform: translateX(200%) skewX(-45deg); opacity: 0; }
 }
 
 @keyframes float {
-  0%, 100% {
-    transform: translateY(0);
-  }
-  50% {
-    transform: translateY(-8px);
-  }
+  0%, 100% { transform: translateY(0); }
+  50% { transform: translateY(-20px); }
 }
 
 .animate-float {
-  animation: float 6s ease-in-out infinite;
+  animation: float 10s infinite ease-in-out;
 }
 
-@keyframes floatParticles {
-  0% {
-    transform: translateY(10vh) scale(0.5);
-    opacity: 0;
-  }
-  20% {
-    opacity: 0.8;
-    transform: translateY(-10vh) scale(1.2);
-  }
-  80% {
-    opacity: 0.6;
-    transform: translateY(-70vh) scale(0.8);
-  }
-  100% {
-    transform: translateY(-100vh) scale(0.5);
-    opacity: 0;
-  }
-}
-
-.animate-particles {
-  animation: floatParticles linear infinite forwards;
-}
-
-/* Golden Metallic Theme */
-.bg-gold-metallic {
-  background: radial-gradient(circle at top left, #f3e5ab 0%, #e6be8a 20%, #d4af37 40%, #c5a028 60%, #b8860b 80%, #996515 100%);
-  background-attachment: fixed;
+/* Featured Service Card Glow */
+.glow-border-fire {
   position: relative;
   overflow: hidden;
+  border-radius: 1rem;
 }
 
-.bg-gold-metallic::before {
+.glow-border-fire::before {
   content: "";
   position: absolute;
-  top: 0;
-  left: 0;
-  right: 0;
-  bottom: 0;
-  background: 
-    radial-gradient(ellipse at center, rgba(255,255,255,0.2) 0%, rgba(255,255,255,0) 70%),
-    linear-gradient(45deg, rgba(0,0,0,0) 45%, rgba(255,255,255,0.1) 50%, rgba(0,0,0,0) 55%);
-  background-size: 100% 100%, 200% 200%;
-  animation: shine 8s infinite linear;
-  pointer-events: none;
+  top: -50%; left: -50%; width: 200%; height: 200%;
+  background: conic-gradient(from 0deg, transparent 40%, #CCA761 50%, transparent 60%);
+  animation: glowRotate 4s linear infinite;
 }
 
-@keyframes shine {
-  0% { background-position: 0% 0%, 200% 200%; }
-  100% { background-position: 0% 0%, -200% -200%; }
+@keyframes glowRotate {
+  100% { transform: rotate(360deg); }
 }
 
-.glass-card-premium {
-  background: rgba(255, 255, 255, 0.7);
-  backdrop-filter: blur(25px) saturate(180%);
-  -webkit-backdrop-filter: blur(25px) saturate(180%);
-  border: 1px solid rgba(204, 167, 97, 0.3);
-  box-shadow: 
-    0 8px 32px 0 rgba(0, 0, 0, 0.05),
-    inset 0 0 10px rgba(255, 255, 255, 0.5);
-  transition: all 0.4s cubic-bezier(0.4, 0, 0.2, 1);
+/* Animation utilities */
+.reveal-up {
+  opacity: 0;
+  transform: translateY(30px);
+  transition: all 1.2s cubic-bezier(0.16, 1, 0.3, 1);
 }
 
-.glass-card-premium:hover {
-  background: rgba(255, 255, 255, 0.9);
-  box-shadow: 
-    0 15px 45px 0 rgba(0, 0, 0, 0.1),
-    inset 0 0 20px rgba(255, 255, 255, 0.8);
-  transform: translateY(-5px);
-  border: 1px solid rgba(204, 167, 97, 0.5);
+.reveal-up.active {
+  opacity: 1;
+  transform: translateY(0);
 }
-
-.dark .glass-card-premium {
-  background: rgba(204, 167, 97, 0.05);
-  border: 1px solid rgba(204, 167, 97, 0.3);
-  box-shadow: 
-    0 8px 32px 0 rgba(0, 0, 0, 0.4),
-    inset 0 0 10px rgba(204, 167, 97, 0.15);
-}
-
-.dark .glass-card-premium:hover {
-  background: rgba(204, 167, 97, 0.1);
-  box-shadow: 
-    0 15px 45px 0 rgba(0, 0, 0, 0.5),
-    inset 0 0 20px rgba(204, 167, 97, 0.3);
-  border: 1px solid rgba(204, 167, 97, 0.5);
-}
-

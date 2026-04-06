@@ -4,7 +4,7 @@ import { supabaseAdmin } from "@/lib/supabase/admin";
 
 export async function POST(req: Request) {
   try {
-    const { memberId, role, permissions } = await req.json();
+    const { memberId, role, permissions, departmentId } = await req.json();
     const supabase = createClient();
 
     // 1. Verificar se o solicitante é um Admin autenticado
@@ -40,7 +40,8 @@ export async function POST(req: Request) {
     const { error: updateAuthError } = await supabaseAdmin.auth.admin.updateUserById(memberId, {
       app_metadata: {
         custom_permissions: permissions,
-        role: role
+        role: role,
+        department_id: departmentId
       }
     });
 
@@ -52,7 +53,7 @@ export async function POST(req: Request) {
     // 4. Atualiza a tabela pública (profiles) para exibição nativa
     const { error: updateProfileError } = await supabaseAdmin
       .from("profiles")
-      .update({ role, custom_permissions: permissions })
+      .update({ role, custom_permissions: permissions, department_id: departmentId })
       .eq("id", memberId);
 
     if (updateProfileError) {

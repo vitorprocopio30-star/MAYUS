@@ -17,9 +17,9 @@ function validateUrl(url: string): void {
 export async function POST(req: NextRequest) {
   try {
     const body = await req.json();
-    const { tenant_id, contact_id, phone_number, text } = body;
+    const { tenant_id, contact_id, phone_number, text, audio_url } = body;
 
-    if (!tenant_id || !contact_id || !phone_number || !text) {
+    if (!tenant_id || !contact_id || !phone_number || (!text && !audio_url)) {
       return NextResponse.json({ error: "Faltam parâmetros" }, { status: 400 });
     }
 
@@ -53,46 +53,53 @@ export async function POST(req: NextRequest) {
        // MOTOR OFICIAL DA META CLOUD API
        const [phoneId] = provider.instance_name.split('|');
        const token = provider.api_key;
-       
-       // Formatar número (Remover @s.whatsapp.net e garantir apenas DDI+DDD+Numero)
        const cleanPhone = phone_number.replace(/\D/g, '');
 
        const url = `https://graph.facebook.com/v22.0/${phoneId}/messages`;
-       const fbController = new AbortController();
-       const fbTimeout = setTimeout(() => fbController.abort(), 10000);
+       const fbPayload: any = {
+          messaging_product: "whatsapp",
+          recipient_type: "individual",
+          to: cleanPhone
+       };
+
+       if (audio_url) {
+          fbPayload.type = "audio";
+          fbPayload.audio = { link: audio_url };
+       } else {
+          fbPayload.type = "text";
+          fbPayload.text = { body: text };
+       }
+
        const fbRes = await fetch(url, {
           method: 'POST',
           headers: { 'Authorization': `Bearer ${token}`, 'Content-Type': 'application/json' },
-          body: JSON.stringify({
-             messaging_product: "whatsapp",
-             recipient_type: "individual",
-             to: cleanPhone,
-             type: "text",
-             text: { body: text }
-          }),
-          signal: fbController.signal,
+          body: JSON.stringify(fbPayload)
        });
-       clearTimeout(fbTimeout);
        apiResponse = await fbRes.json();
        if (!fbRes.ok) throw new Error("Erro Meta Web API: " + JSON.stringify(apiResponse));
 
     } else if (provider.provider === "evolution") {
        // MOTOR EVOLUTION API (BAILEYS)
-       const parts = provider.instance_name.split('|');
-       const baseUrl = parts[0].replace(/\/$/, '');
-       const instanceName = parts[1];
+       const [baseUrlRaw, instanceName] = provider.instance_name.split('|');
+       const baseUrl = baseUrlRaw.replace(/\/$/, '');
        validateUrl(baseUrl);
-       const cleanPhone = phone_number.split('@')[0]; // Pode ser com o sufixo ou nao
+       const cleanPhone = phone_number.split('@')[0];
+
+       let evoUrl = `${baseUrl}/message/sendText/${instanceName}`;
+       let evoPayload: any = { number: cleanPhone };
+
+       if (audio_url) {
+          evoUrl = `${baseUrl}/message/sendWhatsAppAudio/${instanceName}`;
+          evoPayload.audio = audio_url;
+       } else {
+          evoPayload.text = text;
+       }
        
-       const evoController = new AbortController();
-       const evoTimeout = setTimeout(() => evoController.abort(), 10000);
-       const evoRes = await fetch(`${baseUrl}/message/sendText/${instanceName}`, {
+       const evoRes = await fetch(evoUrl, {
           method: 'POST',
           headers: { 'apikey': provider.api_key, 'Content-Type': 'application/json' },
-          body: JSON.stringify({ number: cleanPhone, text: text }),
-          signal: evoController.signal,
+          body: JSON.stringify(evoPayload)
        });
-       clearTimeout(evoTimeout);
        apiResponse = await evoRes.json();
        if (!evoRes.ok) throw new Error("Erro Evolution API: " + JSON.stringify(apiResponse));
     }
@@ -102,8 +109,9 @@ export async function POST(req: NextRequest) {
       tenant_id: tenant_id,
       contact_id: contact_id,
       direction: "outbound",
-      content: text,
-      status: "sent"
+      content: audio_url ? "[Áudio Enviado]" : text,
+      status: "sent",
+      metadata: audio_url ? { audio_url } : null
     }]);
 
     if (dbError) throw dbError;

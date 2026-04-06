@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useState } from "react";
+import { useEffect, useState, useCallback } from "react";
 import { createClient } from "@/lib/supabase/client";
 import { QRCodeSVG } from "qrcode.react";
 import { toast } from "sonner";
@@ -14,11 +14,7 @@ export default function SecuritySettingsPage() {
   const [isLoading, setIsLoading] = useState(false);
   const [isFullyEnrolled, setIsFullyEnrolled] = useState(false);
 
-  useEffect(() => {
-    loadFactors();
-  }, []);
-
-  const loadFactors = async () => {
+  const loadFactors = useCallback(async () => {
     try {
       const { data, error } = await supabase.auth.mfa.listFactors();
       if (error) throw error;
@@ -32,7 +28,11 @@ export default function SecuritySettingsPage() {
     } catch (error) {
       console.error("Erro ao carregar fatores MFA", error);
     }
-  };
+  }, [supabase.auth.mfa]);
+
+  useEffect(() => {
+    loadFactors();
+  }, [loadFactors]);
 
   const handleEnrollTOTP = async () => {
     try {

@@ -3,178 +3,119 @@
 import { useState, useEffect, useCallback } from "react";
 import { Cormorant_Garamond, Montserrat } from "next/font/google";
 import { 
-  Users, UserPlus, Shield, Search, MoreVertical,
-  Check, X, Mail, ChevronDown, AlertTriangle, Loader2
+  Users, DollarSign, Briefcase, Plus, Trash2, Loader2,
+  Save, ArrowLeft, Image as ImageIcon, Check, Shield, AlertTriangle
 } from "lucide-react";
 import { createClient } from "@/lib/supabase/client";
 import { useUserProfile } from "@/hooks/useUserProfile";
-import { APP_MODULES } from "@/lib/permissions";
 import { toast } from "sonner";
+import { useRouter } from "next/navigation";
 
 const cormorant = Cormorant_Garamond({ subsets: ["latin"], weight: ["400", "600", "700"], style: ["normal", "italic"] });
 const montserrat = Montserrat({ subsets: ["latin"], weight: ["300", "400", "500", "600", "700"] });
 
-interface TeamMember {
+interface Department {
   id: string;
-  full_name: string;
-  role: string;
-  is_active: boolean;
-  avatar_url: string | null;
-  created_at: string;
-  custom_permissions: string[] | null;
+  name: string;
 }
 
+type CareerPlan = {
+  id: string;
+  name: string;
+  type: "Closer" | "SDR";
+  salary: number | string;
+};
+
+type ProfessionalData = {
+  id: string;
+  name: string;
+  role: string;
+  customRole?: string;
+  baseSalary: number | string;
+  receivesCommissionByLevel: boolean;
+  careerPlanId: string;
+  avatarUrl?: string;
+  department_id?: string;
+};
+
 export default function EquipePage() {
+  const router = useRouter();
   const { role, tenantId, isLoading: profileLoading } = useUserProfile();
   const supabase = createClient();
 
-  const [members, setMembers] = useState<TeamMember[]>([]);
   const [isLoading, setIsLoading] = useState(true);
-  const [searchTerm, setSearchTerm] = useState("");
+  const [professionals, setProfessionals] = useState<ProfessionalData[]>([]);
+  const [plans, setPlans] = useState<CareerPlan[]>([]);
+  const [departments, setDepartments] = useState<Department[]>([]);
+  const [saveLoading, setSaveLoading] = useState(false);
 
-  // Modal de Convite
-  const [showInviteModal, setShowInviteModal] = useState(false);
-  const [inviteEmail, setInviteEmail] = useState("");
-  const [inviteRole, setInviteRole] = useState("");
-  const [invitePermissions, setInvitePermissions] = useState<string[]>([]);
-  const [inviteLoading, setInviteLoading] = useState(false);
-
-  // Modal Alterar Acesso
-  const [editMember, setEditMember] = useState<TeamMember | null>(null);
-  const [editRole, setEditRole] = useState("");
-  const [editPermissions, setEditPermissions] = useState<string[]>([]);
-  const [editLoading, setEditLoading] = useState(false);
-
-  // Menu de ações por membro
-  const [openMenuId, setOpenMenuId] = useState<string | null>(null);
-
-  // Carrega membros do tenant
-  const loadMembers = useCallback(async () => {
+  const loadData = useCallback(async () => {
     if (!tenantId) return;
     setIsLoading(true);
-    const { data, error } = await supabase
-      .from("profiles")
-      .select("id, full_name, role, is_active, avatar_url, created_at, custom_permissions")
-      .eq("tenant_id", tenantId)
-      .order("created_at", { ascending: true });
+    
+    // Carregar departamentos
+    const { data: depts } = await supabase
+      .from("departments")
+      .select("id, name")
+      .eq("tenant_id", tenantId);
+    if (depts) setDepartments(depts);
 
-    if (error) {
-      toast.error("Erro ao carregar equipe: " + error.message);
-    } else {
-      setMembers(data || []);
+    // Carregar dados de localStorage (Simulação de DB)
+    if (typeof window !== "undefined") {
+      const savedProf = localStorage.getItem("MTO_COMMERCIAL_PROF");
+      if (savedProf) {
+        try { setProfessionals(JSON.parse(savedProf)); } catch(e){}
+      }
+      const savedPlans = localStorage.getItem("MTO_COMMERCIAL_PLANS");
+      if (savedPlans) {
+        try { setPlans(JSON.parse(savedPlans)); } catch(e){}
+      }
     }
+    
     setIsLoading(false);
   }, [tenantId, supabase]);
 
   useEffect(() => {
-    if (tenantId) loadMembers();
-  }, [tenantId, loadMembers]);
+    if (tenantId) loadData();
+  }, [tenantId, loadData]);
 
-  const filteredMembers = members.filter(m =>
-    m.full_name.toLowerCase().includes(searchTerm.toLowerCase()) ||
-    m.role.toLowerCase().includes(searchTerm.toLowerCase())
-  );
-
-  // Enviar Convite
-  const handleInvite = async () => {
-    if (!inviteEmail || !inviteRole) {
-      toast.error("E-mail e Cargo são obrigatórios.");
-      return;
-    }
-
-    const existing = members.find(m => m.full_name === inviteEmail);
-    if (existing) {
-      toast.error("Este e-mail já está vinculado ao escritório.");
-      return;
-    }
-
-    setInviteLoading(true);
-    try {
-      const res = await fetch("/api/auth/invite", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ email: inviteEmail, role: inviteRole, permissions: invitePermissions }),
-      });
-      const data = await res.json();
-      if (!res.ok) {
-        toast.error(data.error || "Erro ao enviar convite.");
-      } else {
-        toast.success(`Convite enviado para ${inviteEmail}!`);
-        setShowInviteModal(false);
-        setInviteEmail("");
-        setInviteRole("");
-        setInvitePermissions([]);
-        loadMembers();
-      }
-    } catch (err) {
-      toast.error("Erro de rede ao enviar convite.");
-    } finally {
-      setInviteLoading(false);
-    }
+  // Funções de Gerenciamento
+  const handleAddProfessional = () => {
+    const newId = Math.random().toString(36).substr(2, 9);
+    setProfessionals([...professionals, {
+      id: newId, name: "", role: "", baseSalary: 0, receivesCommissionByLevel: false, careerPlanId: ""
+    }]);
   };
 
-  // Salvar Acessos (Edição)
-  const handleSaveAccess = async () => {
-    if (!editMember || !editRole) return;
-    setEditLoading(true);
-    try {
-      const res = await fetch("/api/auth/update-access", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ memberId: editMember.id, role: editRole, permissions: editPermissions }),
-      });
-      const data = await res.json();
-      if (!res.ok) {
-        toast.error(data.error || "Erro ao atualizar acessos.");
-      } else {
-         toast.success("Acessos atualizados com sucesso!");
-         setEditMember(null);
-         loadMembers();
-      }
-    } catch (err) {
-      toast.error("Erro de conexão com servidor.");
-    } finally {
-      setEditLoading(false);
-    }
+  const handleUpdateProfessional = (profId: string, field: keyof ProfessionalData, value: any) => {
+    setProfessionals(prev => prev.map(p => p.id === profId ? { ...p, [field]: value } : p));
   };
 
-  // Ativar / Desativar Membro
-  const toggleMemberStatus = async (memberId: string, currentStatus: boolean) => {
-    const newStatus = !currentStatus;
-    const { error } = await supabase.from("profiles").update({ is_active: newStatus }).eq("id", memberId);
-    if (error) {
-      toast.error("Erro ao alterar status: " + error.message);
-    } else {
-      // Propaga a mudança para os metadados JWT (invalida sessão ativa)
-      if (!newStatus) {
-        try {
-          // Busca o perfil atual para manter as permissões intactas
-          const member = members.find(m => m.id === memberId);
-          await fetch("/api/auth/update-access", {
-            method: "POST",
-            headers: { "Content-Type": "application/json" },
-            body: JSON.stringify({
-              memberId,
-              role: member?.role || "",
-              permissions: member?.custom_permissions || [],
-            }),
-          });
-        } catch {
-          // Silencioso — a desativação no DB já é suficiente para o middleware bloquear
-        }
-      }
-      toast.success(newStatus ? "Membro reativado." : "Membro desativado. Sessões serão encerradas em breve.");
-      loadMembers();
-    }
-    setOpenMenuId(null);
+  const handlePhotoUpload = (profId: string, file: File | null) => {
+    if (!file) return;
+    const reader = new FileReader();
+    reader.onload = (e) => {
+       if (e.target?.result) {
+         handleUpdateProfessional(profId, "avatarUrl", e.target.result as string);
+         toast.success("Foto carregada!");
+       }
+    };
+    reader.readAsDataURL(file);
   };
 
-  const togglePermission = (moduleId: string, currentList: string[], setList: (list: string[]) => void) => {
-    if (currentList.includes(moduleId)) {
-      setList(currentList.filter(m => m !== moduleId));
-    } else {
-      setList([...currentList, moduleId]);
+  const handleDeleteProfessional = (profId: string) => {
+    setProfessionals(professionals.filter(p => p.id !== profId));
+  };
+
+  const handleSaveProfessionals = async () => {
+    setSaveLoading(true);
+    if (typeof window !== "undefined") {
+      localStorage.setItem("MTO_COMMERCIAL_PROF", JSON.stringify(professionals));
     }
+    setTimeout(() => {
+      setSaveLoading(false);
+      toast.success("Dados salvos com sucesso!");
+    }, 800);
   };
 
   if (!profileLoading && role !== "Administrador" && role !== "mayus_admin") {
@@ -183,7 +124,7 @@ export default function EquipePage() {
         <div className="text-center">
           <AlertTriangle size={48} className="text-red-400 mx-auto mb-4" />
           <h2 className={`text-2xl text-white mb-2 ${cormorant.className} italic font-bold`}>Acesso Restrito</h2>
-          <p className="text-gray-500 text-sm">Apenas Administradores podem gerenciar a equipe.</p>
+          <p className="text-gray-500 text-sm">Apenas Administradores podem gerenciar profissionais.</p>
         </div>
       </div>
     );
@@ -195,133 +136,190 @@ export default function EquipePage() {
       {/* Header */}
       <div className="flex flex-col md:flex-row md:items-center md:justify-between gap-4">
         <div>
+           <button onClick={() => router.back()} className="mb-4 flex items-center gap-2 text-gray-500 hover:text-[#CCA761] transition-colors text-[10px] font-bold uppercase tracking-widest group">
+             <ArrowLeft size={14} className="group-hover:-translate-x-1 transition-transform" /> Voltar
+           </button>
           <h1 className={`text-3xl md:text-4xl text-white ${cormorant.className} italic font-bold`}>
-            <span className="text-[#CCA761]">Equipe</span> do Escritório
+            Gestão de <span className="text-[#CCA761]">Profissionais</span>
           </h1>
-          <p className="text-gray-500 text-sm mt-1">Gerencie os membros, convide novos e controle os módulos de acesso individualmente.</p>
+          <p className="text-gray-500 text-sm mt-1">Defina cargos, departamentos e remunerações da sua equipe.</p>
         </div>
-        <button
-          onClick={() => {
-            setInviteEmail(""); setInviteRole(""); setInvitePermissions([]); setShowInviteModal(true);
-          }}
-          className="relative flex items-center justify-center gap-2 bg-gradient-to-r from-[#CCA761] via-[#f1d58d] to-[#CCA761] hover:from-[#e3c27e] hover:via-[#ffe8ad] hover:to-[#e3c27e] text-[#111111] font-[800] py-3 px-6 rounded-lg transition-all duration-300 transform active:scale-95 text-sm shadow-none overflow-hidden hover:-translate-y-[1px] tracking-widest"
-        >
-          <div className="absolute inset-0 -translate-x-full animate-[shimmer_2.5s_infinite] bg-gradient-to-r from-transparent via-white/40 to-transparent skew-x-12" />
-          <UserPlus size={18} strokeWidth={2.5} className="relative z-10" />
-          <span className="relative z-10">CONVIDAR MEMBRO</span>
-        </button>
+        
+        <div className="flex items-center gap-3">
+           <button 
+             onClick={handleSaveProfessionals}
+             disabled={saveLoading}
+             className="flex items-center gap-2 bg-[#CCA761] hover:bg-[#e3c27e] text-[#0a0a0a] px-6 py-3 rounded-lg font-black text-[10px] uppercase tracking-widest transition-all h-fit disabled:opacity-50"
+           >
+             {saveLoading ? <Loader2 size={14} className="animate-spin" /> : <Save size={14} />}
+             SALVAR ALTERAÇÕES
+           </button>
+           <button 
+             onClick={handleAddProfessional}
+             className="flex items-center gap-2 px-6 py-3 bg-[#4ade80]/5 hover:bg-[#4ade80]/10 border border-[#4ade80]/20 hover:border-[#4ade80]/40 rounded-lg transition-all text-[#4ade80] font-bold text-[10px] uppercase tracking-widest"
+           >
+              <Plus size={14} /> NOVO PROFISSIONAL
+           </button>
+        </div>
       </div>
 
-      {/* Busca */}
-      <div className="flex items-center gap-3 bg-[#111111] px-4 py-3 rounded-xl border border-[#222] focus-within:border-[#CCA761]/50 transition-colors max-w-md">
-        <Search size={18} className="text-gray-500" />
-        <input type="text" placeholder="Buscar por nome ou cargo..." value={searchTerm} onChange={(e) => setSearchTerm(e.target.value)} className="bg-transparent border-none outline-none text-sm w-full text-gray-200 placeholder:text-gray-600" />
-      </div>
-
-      {/* Tabela */}
-      <div className="bg-white/[0.02] border border-white/5 rounded-2xl backdrop-blur-sm relative z-0">
-        <div className="hidden md:grid grid-cols-12 gap-4 px-6 py-4 border-b border-white/5 text-[11px] text-gray-500 uppercase tracking-[0.2em] font-bold">
-          <div className="col-span-4">Membro</div>
-          <div className="col-span-3">Cargo Nominal</div>
-          <div className="col-span-2">Acessos</div>
-          <div className="col-span-2">Status</div>
-          <div className="col-span-1 text-right">Ações</div>
-        </div>
-
-        {isLoading ? (
-          <div className="flex items-center justify-center py-20"><Loader2 size={32} className="text-[#CCA761] animate-spin" /></div>
-        ) : filteredMembers.length === 0 ? (
-          <div className="text-center py-20 text-gray-500"><Users size={40} className="mx-auto mb-3 opacity-40" /><p className="text-sm">Nenhum membro encontrado.</p></div>
-        ) : (
-          filteredMembers.map((member) => (
-            <div key={member.id} className="grid grid-cols-1 md:grid-cols-12 gap-2 md:gap-4 px-6 py-5 border-b border-white/5 hover:bg-white/[0.02] transition-colors items-center">
-              <div className="col-span-4 flex items-center gap-3">
-                <div className={`w-10 h-10 rounded-full flex items-center justify-center text-sm font-bold shrink-0 ${member.is_active ? "bg-gradient-to-tr from-[#CCA761] to-[#8B7340] text-black" : "bg-gray-800 text-gray-500"}`}>
-                  {member.full_name.split(" ").map(n => n[0]).join("").slice(0, 2).toUpperCase()}
-                </div>
-                <div><p className={`text-white font-medium text-sm ${!member.is_active ? "line-through opacity-50" : ""}`}>{member.full_name}</p></div>
-              </div>
-              <div className="col-span-3"><span className="text-gray-300 text-xs px-3 py-1 bg-white/5 rounded-full border border-white/10 uppercase tracking-widest">{member.role}</span></div>
-              <div className="col-span-2 text-gray-500 text-xs">{(member.custom_permissions || []).length} Módulos liberados</div>
-              <div className="col-span-2 flex items-center gap-2">
-                <div className={`w-2 h-2 rounded-full ${member.is_active ? "bg-green-500 shadow-[0_0_8px_rgba(34,197,94,0.6)]" : "bg-red-500"}`} />
-                <span className={`text-xs ${member.is_active ? "text-green-400" : "text-red-400"}`}>{member.is_active ? "Ativo" : "Inativo"}</span>
-              </div>
-              <div className="col-span-1 flex justify-end relative">
-                <button onClick={() => setOpenMenuId(openMenuId === member.id ? null : member.id)} className="p-2 rounded-lg hover:bg-white/5 transition-colors"><MoreVertical size={16} className="text-gray-500" /></button>
-                {openMenuId === member.id && (
-                  <div className="absolute right-0 top-10 w-48 bg-[#111] border border-[#222] rounded-xl shadow-2xl z-50 overflow-hidden animate-fade-in-up" style={{ animationDuration: "0.15s" }}>
-                    <button onClick={() => { setEditMember(member); setEditRole(member.role); setEditPermissions(member.custom_permissions || []); setOpenMenuId(null); }} className="w-full text-left px-4 py-3 text-sm text-gray-300 hover:bg-white/5 hover:text-[#CCA761] flex items-center gap-2"><Shield size={14} className="opacity-50" /> Editar Acessos</button>
-                    <div className="border-t border-[#222]">
-                      <button onClick={() => toggleMemberStatus(member.id, member.is_active)} className={`w-full text-left px-4 py-3 text-sm font-medium flex items-center gap-2 transition-colors ${member.is_active ? "text-red-400 hover:bg-red-900/10" : "text-green-400 hover:bg-green-900/10"}`}>
-                        {member.is_active ? <X size={14} /> : <Check size={14} />} {member.is_active ? "Desativar Membro" : "Reativar Membro"}
-                      </button>
-                    </div>
+      <div className="space-y-8 animate-fade-in pb-20">
+         <div className="grid grid-cols-1 md:grid-cols-2 xl:grid-cols-3 gap-6">
+           {isLoading ? (
+             <div className="col-span-full flex items-center justify-center py-20"><Loader2 size={32} className="text-[#CCA761] animate-spin" /></div>
+           ) : professionals.length === 0 ? (
+             <div className="col-span-full py-20 text-center bg-white/[0.02] border border-dashed border-white/10 rounded-2xl">
+               <Users size={40} className="mx-auto mb-4 text-gray-700" />
+               <p className="text-gray-500 text-sm">Nenhum profissional cadastrado.</p>
+               <button onClick={handleAddProfessional} className="mt-4 text-[#CCA761] text-[10px] font-black uppercase tracking-widest hover:underline">+ Adicionar Primeiro</button>
+             </div>
+           ) : (
+             professionals.map((prof) => (
+               <div key={prof.id} className="bg-[#0C0C0C] border border-white/5 hover:border-[#CCA761]/30 transition-all rounded-2xl p-6 relative group shadow-2xl">
+                  <div className="absolute top-4 right-4 z-20">
+                     <button onClick={() => handleDeleteProfessional(prof.id)} className="text-gray-600 hover:text-red-500 hover:bg-red-500/10 p-1.5 rounded-lg transition-all">
+                        <Trash2 size={14} />
+                     </button>
                   </div>
-                )}
-              </div>
-            </div>
-          ))
-        )}
-      </div>
 
-      {/* Modal Reutilizável de Formulário de Acesso */}
-      {(showInviteModal || editMember) && (
-        <div className="fixed inset-0 bg-black/70 backdrop-blur-sm z-50 flex items-center justify-center p-4">
-          <div className="relative w-full max-w-xl max-h-[90vh] overflow-y-auto no-scrollbar rounded-2xl bg-[#0C0C0C] border border-[#222] p-8 animate-fade-in-up shadow-2xl" style={{ animationDuration: "0.2s" }}>
-            <button onClick={() => { setShowInviteModal(false); setEditMember(null); }} className="absolute top-4 right-4 p-1 rounded-lg hover:bg-white/5 text-gray-500 hover:text-white transition-colors"><X size={20} /></button>
-            <div className="flex justify-center mb-6">
-              <div className="w-16 h-16 rounded-2xl bg-[#CCA761]/10 border border-[#CCA761]/20 flex items-center justify-center"><Shield size={28} className="text-[#CCA761]" /></div>
-            </div>
-            <h2 className={`text-2xl text-center text-white mb-1 ${cormorant.className} italic font-bold`}>{editMember ? "Editar Acessos" : <>Convidar <span className="text-[#CCA761]">Membro</span></>}</h2>
-            <p className="text-gray-500 text-xs text-center mb-8">{editMember ? `Ajustando chaves de acesso para ${editMember.full_name}` : "O convite será enviado por e-mail e expira em 48 horas."}</p>
-
-            <div className="space-y-6">
-              {!editMember && (
-                <div className="space-y-1.5">
-                  <label className="text-xs font-semibold text-gray-300 uppercase tracking-wider">E-mail Corporativo *</label>
-                  <input type="email" value={inviteEmail} onChange={(e) => setInviteEmail(e.target.value)} placeholder="advogado@escritorio.com" className="w-full bg-[#0a0a0a] border border-[#2a2a2a] text-white rounded-lg px-4 py-3 text-sm focus:outline-none focus:ring-1 focus:ring-[#CCA761] transition-all" />
-                </div>
-              )}
-              <div className="space-y-1.5">
-                <label className="text-xs font-semibold text-gray-300 uppercase tracking-wider">Cargo / Título Nominal *</label>
-                <input type="text" value={editMember ? editRole : inviteRole} onChange={(e) => editMember ? setEditRole(e.target.value) : setInviteRole(e.target.value)} placeholder="Ex: Sócio Sênior, Auxiliar..." className="w-full bg-[#0a0a0a] border border-[#2a2a2a] text-white rounded-lg px-4 py-3 text-sm focus:outline-none focus:ring-1 focus:ring-[#CCA761] transition-all" />
-                <p className="text-[10px] text-gray-500">Este é apenas o nome que aparecerá no crachá do sistema.</p>
-              </div>
-
-              <div className="space-y-3 pt-4 border-t border-[#222]">
-                <label className="text-xs font-semibold text-gray-300 uppercase tracking-wider">Módulos & Agentes Liberados</label>
-                <div className="space-y-2 max-h-[30vh] overflow-y-auto no-scrollbar pr-2">
-                   {APP_MODULES.map(mod => {
-                     const isChecked = editMember ? editPermissions.includes(mod.id) : invitePermissions.includes(mod.id);
-                     return (
-                      <label key={mod.id} className={`flex items-center gap-3 p-3 rounded-lg border cursor-pointer transition-all ${isChecked ? "bg-[#CCA761]/10 border-[#CCA761]/40" : "bg-[#111] border-[#222] hover:border-white/10"}`}>
-                        <input type="checkbox" className="hidden" checked={isChecked} onChange={() => togglePermission(mod.id, editMember ? editPermissions : invitePermissions, editMember ? setEditPermissions : setInvitePermissions)} />
-                        <div className={`w-5 h-5 flex items-center justify-center rounded border ${isChecked ? "bg-[#CCA761] border-[#CCA761]" : "border-[#444] bg-transparent"}`}>
-                          {isChecked && <Check size={14} className="text-black" />}
+                  <div className="flex items-center gap-4 mb-8">
+                     <label className="w-16 h-16 rounded-2xl bg-gradient-to-br from-[#111] to-[#1a1a1a] border border-white/5 flex items-center justify-center shrink-0 cursor-pointer overflow-hidden hover:border-[#CCA761]/50 transition-all relative group/photo">
+                        <input type="file" className="hidden" accept="image/*" onChange={(e) => handlePhotoUpload(prof.id, e.target.files?.[0] || null)} />
+                        {prof.avatarUrl ? (
+                          <img 
+                            src={prof.avatarUrl} 
+                            alt={prof.name} 
+                            className="w-full h-full object-cover transition-transform group-hover/photo:scale-110" 
+                            onError={(e) => {
+                              (e.target as HTMLImageElement).style.display = 'none';
+                              (e.target as HTMLImageElement).nextElementSibling?.classList.remove('hidden');
+                              (e.target as HTMLImageElement).nextElementSibling?.classList.add('flex');
+                            }}
+                          />
+                        ) : null}
+                        
+                        <div className={`flex-col items-center justify-center w-full h-full gap-1 ${prof.avatarUrl ? 'hidden' : 'flex'}`}>
+                           {prof.name ? (
+                             <div className="flex flex-col items-center justify-center leading-none text-center px-1">
+                               <span className={`text-[14px] font-black italic ${cormorant.className} text-[#CCA761] uppercase tracking-tighter`}>
+                                 {prof.name.split(" ").slice(0, 2).map(n => n[0]).join("")}
+                               </span>
+                               <span className="text-[7px] font-black text-gray-600 uppercase tracking-widest mt-0.5">PERFIL</span>
+                             </div>
+                           ) : (
+                             <>
+                               <ImageIcon size={18} className="text-gray-700 group-hover/photo:text-[#CCA761]" />
+                               <span className="text-[8px] font-black text-gray-600 uppercase tracking-tighter">FOTO</span>
+                             </>
+                           )}
                         </div>
-                        <span className={`text-sm ${isChecked ? "text-[#CCA761] font-semibold" : "text-gray-400"}`}>{mod.label}</span>
-                      </label>
-                     )
-                   })}
-                </div>
-              </div>
+                     </label>
+                     <div className="flex-1">
+                        <input 
+                          type="text" 
+                          value={prof.name}
+                          onChange={(e) => handleUpdateProfessional(prof.id, "name", e.target.value)}
+                          placeholder="NOME COMPLETO"
+                          className="w-full bg-transparent border-b border-white/5 hover:border-[#CCA761]/30 focus:border-[#CCA761] text-white py-1.5 text-sm font-black uppercase tracking-widest focus:outline-none transition-all placeholder:text-gray-800"
+                        />
+                        <p className="text-[9px] text-gray-500 font-bold uppercase tracking-widest mt-1">DADOS PROFISSIONAIS</p>
+                     </div>
+                  </div>
 
-              <button
-                onClick={editMember ? handleSaveAccess : handleInvite}
-                disabled={editLoading || inviteLoading}
-                className={`relative w-full mt-4 bg-gradient-to-r from-[#CCA761] via-[#f1d58d] to-[#CCA761] hover:from-[#e3c27e] hover:via-[#ffe8ad] hover:to-[#e3c27e] text-[#111111] font-[800] py-3.5 px-4 rounded-lg transition-all duration-300 transform active:scale-95 text-sm shadow-none overflow-hidden tracking-widest flex items-center justify-center gap-2 ${(editLoading || inviteLoading) ? "opacity-60 cursor-not-allowed" : "hover:-translate-y-[1px]"}`}
-              >
-                <div className="absolute inset-0 -translate-x-full animate-[shimmer_2.5s_infinite] bg-gradient-to-r from-transparent via-white/40 to-transparent skew-x-12" />
-                {(editLoading || inviteLoading) && <Loader2 size={18} className="animate-spin relative z-10" />}
-                <span className="relative z-10">{(editLoading || inviteLoading) ? "PROCESSANDO..." : editMember ? "SALVAR ACESSOS" : "ENVIAR CONVITE"}</span>
-              </button>
-            </div>
-          </div>
-        </div>
-      )}
+                  <div className="space-y-6">
+                     <div className="grid grid-cols-1 gap-5">
+                        <div className="space-y-2">
+                           <label className="text-[9px] text-gray-500 uppercase tracking-[0.2em] font-black flex items-center gap-2">
+                              <Briefcase size={10} className="text-[#CCA761]" /> Departamento
+                           </label>
+                           <select 
+                             value={prof.department_id || ""} 
+                             onChange={(e) => handleUpdateProfessional(prof.id, "department_id", e.target.value)}
+                             className="w-full bg-[#050505] border border-white/5 text-white px-4 py-3 rounded-xl text-[11px] font-bold uppercase tracking-widest focus:border-[#CCA761]/50 focus:outline-none transition-all appearance-none"
+                           >
+                              <option value="">Sem Setor</option>
+                              {departments.map(d => (
+                                <option key={d.id} value={d.id}>{d.name}</option>
+                              ))}
+                           </select>
+                        </div>
 
-      {openMenuId && <div className="fixed inset-0 z-30" onClick={() => setOpenMenuId(null)} />}
+                        <div className="space-y-2">
+                           <label className="text-[9px] text-gray-500 uppercase tracking-[0.2em] font-black flex items-center gap-2">
+                              <Shield size={10} className="text-[#CCA761]" /> Função / Cargo
+                           </label>
+                           <div className="space-y-3">
+                             <select 
+                               value={prof.role} 
+                               onChange={(e) => handleUpdateProfessional(prof.id, "role", e.target.value)}
+                               className="w-full bg-[#050505] border border-white/5 text-white px-4 py-3 rounded-xl text-[11px] font-bold uppercase tracking-widest focus:border-[#CCA761]/50 focus:outline-none transition-all appearance-none"
+                             >
+                                <option value="">Selecione...</option>
+                                <option value="Closer / Vendedor">Closer / Vendedor</option>
+                                <option value="SDR / Auxiliar Vendas">SDR / Auxiliar Vendas</option>
+                                <option value="Advogado">Advogado</option>
+                                <option value="Estagiário">Estagiário</option>
+                                <option value="Administrativo">Administrativo</option>
+                                <option value="Financeiro">Financeiro</option>
+                                <option value="Outro">Outro (Personalizado)</option>
+                             </select>
+
+                             {prof.role === 'Outro' && (
+                               <input 
+                                 type="text" 
+                                 value={prof.customRole || ""}
+                                 onChange={(e) => handleUpdateProfessional(prof.id, "customRole", e.target.value)}
+                                 placeholder="NOME DA FUNÇÃO..."
+                                 className="w-full bg-black/40 border border-[#CCA761]/30 text-white px-4 py-3 rounded-xl text-[11px] font-bold uppercase tracking-widest focus:border-[#CCA761] focus:outline-none animate-fade-in-up"
+                               />
+                             )}
+                           </div>
+                        </div>
+                        
+                        <div className="space-y-2">
+                           <label className="text-[9px] text-gray-500 uppercase tracking-[0.2em] font-black flex items-center gap-2">
+                              <DollarSign size={10} className="text-[#CCA761]" /> Salário Base (R$)
+                           </label>
+                           <input 
+                             type="number" 
+                             value={prof.baseSalary}
+                             onChange={(e) => handleUpdateProfessional(prof.id, "baseSalary", e.target.value === '' ? '' : Number(e.target.value))}
+                             className="w-full bg-[#050505] border border-white/5 text-[#CCA761] px-4 py-3 rounded-xl text-sm font-mono font-bold focus:border-[#CCA761]/50 focus:outline-none transition-all"
+                           />
+                        </div>
+                     </div>
+
+                     <div className="flex items-center justify-center gap-3 py-3 border-y border-white/5 bg-white/[0.01] rounded-xl hover:bg-white/[0.03] transition-colors group/comm cursor-pointer"
+                          onClick={() => handleUpdateProfessional(prof.id, "receivesCommissionByLevel", !prof.receivesCommissionByLevel)}>
+                        <div className={`w-5 h-5 rounded-lg border flex flex-shrink-0 items-center justify-center transition-all ${prof.receivesCommissionByLevel ? 'bg-[#CCA761] border-[#CCA761] shadow-[0_0_10px_rgba(204,167,97,0.4)]' : 'bg-[#0a0a0a] border-gray-700'}`}>
+                           {prof.receivesCommissionByLevel && <Check size={12} className="text-[#0a0a0a] stroke-[4]" />}
+                        </div>
+                        <span className="text-[10px] text-gray-400 font-black uppercase tracking-widest group-hover/comm:text-white transition-colors">
+                           Vincular Plano de Metas
+                        </span>
+                     </div>
+
+                     <div className={`space-y-2 transition-all duration-300 ${prof.receivesCommissionByLevel ? 'opacity-100 translate-y-0 h-auto visible' : 'opacity-0 -translate-y-2 h-0 invisible pointer-events-none'}`}>
+                        <label className="text-[9px] text-gray-500 uppercase tracking-[0.2em] font-black">
+                           Nível de Carreira
+                        </label>
+                        <select 
+                          value={prof.careerPlanId} 
+                          onChange={(e) => handleUpdateProfessional(prof.id, "careerPlanId", e.target.value)}
+                          className="w-full bg-[#050505] border border-[#CCA761]/30 text-white px-4 py-3 rounded-xl text-[11px] font-bold uppercase tracking-widest focus:border-[#CCA761] focus:outline-none transition-all appearance-none"
+                        >
+                           <option value="">Selecione um plano...</option>
+                           {plans.map(p => (
+                             <option key={p.id} value={p.id}>{p.name}</option>
+                           ))}
+                        </select>
+                     </div>
+                  </div>
+               </div>
+             ))
+           )}
+         </div>
+      </div>
     </div>
   );
 }

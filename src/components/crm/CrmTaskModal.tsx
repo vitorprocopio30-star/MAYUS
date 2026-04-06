@@ -1,6 +1,6 @@
 import { useState, useEffect } from "react";
 import dynamic from "next/dynamic";
-import { User as UserIcon, AlignLeft, X, Trash2, Calendar, CheckCircle2, ArrowRight, MessageCircle, Tag as TagIcon, Plus } from "lucide-react";
+import { User as UserIcon, AlignLeft, X, Trash2, Calendar, CheckCircle2, ArrowRight, MessageCircle, Tag as TagIcon, Plus, Building2 } from "lucide-react";
 import { toast } from "sonner";
 import { createClient } from "@/lib/supabase/client";
 import { Pipeline, Stage, Profile, Task } from "@/types/crm";
@@ -40,6 +40,19 @@ export default function CrmTaskModal({
   const [tagColor, setTagColor] = useState<string>("#CCA761");
   const [taskPhone, setTaskPhone] = useState("");
   const [taskSector, setTaskSector] = useState("");
+  const [taskDepartmentId, setTaskDepartmentId] = useState<string | null>(null);
+  const [departments, setDepartments] = useState<{id: string, name: string}[]>([]);
+
+  useEffect(() => {
+    if (isOpen && profile?.tenant_id) {
+       loadDepartments();
+    }
+  }, [isOpen, profile?.tenant_id]);
+
+  const loadDepartments = async () => {
+    const { data } = await supabase.from("departments").select("id, name").eq("tenant_id", profile!.tenant_id).order("name");
+    if (data) setDepartments(data);
+  };
 
   useEffect(() => {
     if (isOpen) {
@@ -51,6 +64,7 @@ export default function CrmTaskModal({
         setTaskTags(editingTask.tags || []);
         setTaskPhone(editingTask.phone || "");
         setTaskSector(editingTask.sector || "");
+        setTaskDepartmentId(editingTask.department_id || null);
       } else {
         setTaskTitle("");
         setTaskDesc("");
@@ -59,6 +73,7 @@ export default function CrmTaskModal({
         setTaskTags([]);
         setTaskPhone("");
         setTaskSector("");
+        setTaskDepartmentId(null);
       }
     }
   }, [isOpen, editingTask, defaultStageId, stages]);
@@ -77,7 +92,8 @@ export default function CrmTaskModal({
           assigned_to: taskAssignedTo,
           tags: taskTags,
           phone: taskPhone,
-          sector: taskSector
+          sector: taskSector,
+          department_id: taskDepartmentId
         }).eq("id", editingTask.id).select().single();
         if (error) throw error;
         
@@ -94,7 +110,8 @@ export default function CrmTaskModal({
           assigned_to: taskAssignedTo,
           tags: taskTags,
           phone: taskPhone,
-          sector: taskSector
+          sector: taskSector,
+          department_id: taskDepartmentId
         }).select().single();
         if (error) throw error;
         
@@ -246,6 +263,22 @@ export default function CrmTaskModal({
                     <option value="">Não atribuído</option>
                     {agents.map(agent => (
                       <option key={agent.id} value={agent.id}>{agent.full_name}</option>
+                    ))}
+                  </select>
+                </div>
+
+                <div className="space-y-1.5 pt-2 border-t border-white/5">
+                  <label className="text-xs font-bold text-[#CCA761] uppercase tracking-widest flex items-center gap-2">
+                    <Building2 size={14} /> Departamento
+                  </label>
+                  <select 
+                    value={taskDepartmentId || ""} 
+                    onChange={e => setTaskDepartmentId(e.target.value || null)}
+                    className="w-full bg-[#1a1a1a] border border-[#2a2a2a] text-white rounded-lg px-4 py-3 text-sm focus:outline-none focus:border-[#CCA761]/50 transition-colors appearance-none cursor-pointer"
+                  >
+                    <option value="">Não atribuído</option>
+                    {departments.map(dept => (
+                      <option key={dept.id} value={dept.id}>{dept.name}</option>
                     ))}
                   </select>
                 </div>

@@ -9,6 +9,16 @@ const montserrat = Montserrat({ subsets: ["latin"], weight: ["300", "400", "500"
 
 const AI_AGENTS_DEFAULT = [
   {
+    id: "mayus-core",
+    name: "MAYUS Córtex",
+    role: "Orquestrador Neural",
+    glowColor: "#CCA761", // Gold Elite
+    avatarUrl: "https://api.dicebear.com/9.x/bottts-neutral/svg?seed=MAYUS&radius=50&backgroundColor=transparent",
+    features: ["Gestão de Equipe IA", "Roteamento Inteligente", "Visão 360 do Escritório"],
+    fullDescription: "O Cérebro Central. O MAYUS Córtex é a conta mestra que orquestra todos os outros agentes. Ele analisa o sentimento do cliente, tria os leads recebidos e delega as tarefas para os especialistas (Harvey, Astra, etc). É a inteligência que garante que nenhum dado se perca entre os departamentos.",
+    isOrchestrator: true
+  },
+  {
     id: "g-jud",
     name: "Harvey",
     role: "Jurídico",
@@ -60,7 +70,7 @@ const AI_AGENTS_DEFAULT = [
     glowColor: "#ec4899", // Rosa
     avatarUrl: "https://api.dicebear.com/9.x/bottts-neutral/svg?seed=MiaS&radius=50&backgroundColor=transparent",
     features: ["Gestão de Redes", "Engajamento", "Distribuição Viral"],
-    fullDescription: "Mia respira tendências! Ela sabe exatamente quais hooks (ganchos) seguram a atenção das pessoas no Instagram e no TikTok nos primeiros 3 segundos. Especialista em calendários editoriais, hashtags raras e produção de micro-conteúdos virais desenhados de forma cirúrgica para quebrar algoritmos!"
+    fullDescription: "Mia respira tendências! Ela sabe exatamente quais hooks (ganchos) seguram a atenção das pessoas no Instagram e no TikTok nos primeiros 3 segundos. Especialista em calendários editorial, hashtags raras e produção de micro-conteúdos virais desenhados de forma cirúrgica para quebrar algoritmos!"
   },
   {
     id: "g-sup",
@@ -81,6 +91,7 @@ const AI_AGENTS_DEFAULT = [
     fullDescription: "Mike caça negócios como um tubarão! Ele analisa listas de LinkedIn e emails, monta perfil de cadências impecáveis para prospectar de forma hiper-personalizada e faz o mapeamento do Lead scoring pra verifique quem compõe o Perfil Ideal do Consumidor (ICP). Follow-ups diários são seu feijão com arroz."
   }
 ];
+
 
 export default function EquipeNeuralPage() {
   const [isMounted, setIsMounted] = useState(false);
@@ -196,7 +207,7 @@ export default function EquipeNeuralPage() {
           <div className="mt-6 relative bg-gradient-to-r from-[#CCA761]/15 via-transparent to-transparent pl-6 py-4 border-l-[4px] border-[#CCA761] max-w-3xl overflow-hidden group rounded-r-2xl">
              <div className="absolute inset-0 bg-white/20 translate-x-[-100%] group-hover:opacity-100 transition-opacity duration-1000 pointer-events-none" />
              <p className={`text-[#eadd87] text-xl lg:text-3xl font-semibold tracking-wide ${cormorant.className} italic drop-shadow-md leading-relaxed`}>
-                "Gerencie seus clones digitais. Um escritório que nunca dorme."
+                &ldquo;Gerencie seus clones digitais. Um escritório que nunca dorme.&rdquo;
              </p>
           </div>
         </div>

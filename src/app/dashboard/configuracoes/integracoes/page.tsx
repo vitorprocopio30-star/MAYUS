@@ -223,44 +223,63 @@ export default function IntegracoesPage() {
           
           <div className="space-y-6">
 
-            {/* WHATSAPP OFICIAL COEX (MAYUS EDITION) */}
-            <div className="relative flex flex-col justify-between bg-gradient-to-br from-[#111111] via-[#0a0a0a] to-[#050505] p-6 border border-[#CCA761]/30 rounded-2xl shadow-[0_20px_40px_rgba(204,167,97,0.05)] hover:border-[#CCA761]/60 hover:shadow-[0_20px_40px_rgba(204,167,97,0.1)] transition-all duration-500 overflow-hidden">
-               {/* Selo e Brilho Lateral */}
+            {/* WHATSAPP OFICIAL META CLOUD API */}
+            <div className={`relative flex flex-col justify-between bg-gradient-to-br from-[#111111] via-[#0a0a0a] to-[#050505] p-6 border rounded-2xl transition-all duration-500 overflow-hidden ${
+              getIntegration('meta_cloud')?.status === 'connected' ? 'border-[#CCA761]/60 shadow-[0_20px_40px_rgba(204,167,97,0.1)]' : 'border-[#CCA761]/30 shadow-xl'
+            }`}>
                <div className="absolute top-0 right-0 w-40 h-40 bg-[#CCA761]/10 rounded-bl-full blur-3xl pointer-events-none" />
                <div className="absolute top-4 right-4 bg-[#CCA761]/10 text-[#CCA761] text-[9px] font-black uppercase tracking-widest px-3 py-1 rounded border border-[#CCA761]/30 flex items-center gap-2 shadow-[0_0_10px_rgba(204,167,97,0.2)]">
-                 <div className="w-1.5 h-1.5 bg-[#CCA761] rounded-full animate-pulse" /> Recomendado
+                 <div className="w-1.5 h-1.5 bg-[#CCA761] rounded-full animate-pulse" /> 
+                 {getIntegration('meta_cloud')?.status === 'connected' ? 'Ativo' : 'Recomendado'}
                </div>
                
                <div className="relative z-10">
                   <div className="bg-[#CCA761]/10 w-12 h-12 rounded-xl flex items-center justify-center border border-[#CCA761]/30 mb-4 shadow-[inset_0_0_15px_rgba(204,167,97,0.3)]">
-                     <svg viewBox="0 0 24 24" width="22" height="22" className="text-[#CCA761] drop-shadow-md" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M12 2v20M17 5H9.5a3.5 3.5 0 0 0 0 7h5a3.5 3.5 0 0 1 0 7H6"/></svg>
+                     <svg viewBox="0 0 24 24" width="22" height="22" className="text-[#CCA761]" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M12 2v20M17 5H9.5a3.5 3.5 0 0 0 0 7h5a3.5 3.5 0 0 1 0 7H6"/></svg>
                   </div>
-                  <h3 className="text-xl font-black text-white tracking-tight mb-2 italic">MAYUS Cloud API (Meta)</h3>
+                  <div className="flex justify-between items-start mb-2 text-white">
+                    <h3 className="text-xl font-black tracking-tight italic">MAYUS Cloud API (Meta)</h3>
+                    {getIntegration('meta_cloud')?.status === 'connected' && editingProvider !== 'meta_cloud' && (
+                       <button onClick={() => { setEditingProvider('meta_cloud'); setTempApiKey(getIntegration('meta_cloud')?.api_key || ""); setTempModel(getIntegration('meta_cloud')?.instance_name || ""); }} className="p-2 border border-white/10 rounded-lg text-gray-400 hover:text-white transition-colors">
+                          <Settings size={18} />
+                       </button>
+                    )}
+                  </div>
                   <p className="text-gray-400 text-xs leading-relaxed mb-4">
-                    Conecte sua conta do Facebook Business para usar a API oficial em modo CoEx (Sem perder o aplicativo celular). Total estabilidade, luxo e controle.
+                    Conecte sua conta do Facebook Business para usar a API oficial. Total estabilidade, luxo e controle.
                   </p>
                   
-                  <div className="space-y-2 mb-6 text-xs font-medium bg-black/40 p-4 rounded-xl border border-white/5 backdrop-blur-sm">
-                    <p className="text-[#CCA761] font-bold mb-2">Supremacia Omnichannel:</p>
-                    <div className="flex items-center gap-3 text-gray-300">
-                      <div className="w-1.5 h-1.5 rounded-full bg-[#CCA761]" /> Escalabilidade sem limite de leads
+                  {editingProvider === 'meta_cloud' ? (
+                    <div className="space-y-4 bg-black/40 p-5 rounded-xl border border-white/5 animate-in slide-in-from-top-2">
+                       <div>
+                          <label className="text-[10px] font-black uppercase tracking-widest text-[#CCA761] mb-1.5 block">Permanent Access Token</label>
+                          <input value={tempApiKey} onChange={e => setTempApiKey(e.target.value)} type="password" placeholder="EAAB..." className="w-full bg-[#111] border border-white/10 rounded-lg px-4 py-2 text-sm text-white focus:outline-none focus:border-[#CCA761]/50 font-mono" />
+                       </div>
+                       <div>
+                          <label className="text-[10px] font-black uppercase tracking-widest text-[#CCA761] mb-1.5 block">Phone Number ID | WABA ID</label>
+                          <input value={tempModel} onChange={e => setTempModel(e.target.value)} type="text" placeholder="ID_DO_NUMERO|ID_DA_CONTA" className="w-full bg-[#111] border border-white/10 rounded-lg px-4 py-2 text-sm text-white focus:outline-none focus:border-[#CCA761]/50" />
+                       </div>
+                       <div className="flex gap-2 pt-2">
+                          <button onClick={() => setEditingProvider(null)} className="flex-1 py-2 text-[10px] font-black uppercase text-gray-500 hover:text-white">Cancelar</button>
+                          <button onClick={handleSaveIntegration} className="flex-1 py-2 bg-[#CCA761] text-black text-[10px] font-black uppercase rounded-lg hover:bg-white transition-all shadow-[0_0_15px_rgba(204,167,97,0.2)]">Salvar Config</button>
+                       </div>
                     </div>
-                    <div className="flex items-center gap-3 text-gray-300">
-                      <div className="w-1.5 h-1.5 rounded-full bg-[#CCA761]" /> Automação MAYUS ativada 24/7
+                  ) : getIntegration('meta_cloud')?.status === 'connected' ? (
+                    <div className="space-y-2 mb-6 text-xs font-medium bg-[#25D366]/5 p-4 rounded-xl border border-[#25D366]/20 backdrop-blur-sm">
+                      <div className="flex items-center gap-3 text-green-400">
+                        <CheckCircle2 size={14} /> Conectado e operando
+                      </div>
+                      <div className="text-gray-500 text-[10px] mt-1 truncate">ID do Número: {getIntegration('meta_cloud')?.instance_name?.split('|')[0]}</div>
                     </div>
-                    <div className="flex items-center gap-3 text-gray-300">
-                      <div className="w-1.5 h-1.5 rounded-full bg-[#CCA761]" /> Histórico absoluto blindado no CRM
-                    </div>
-                  </div>
+                  ) : (
+                    <button 
+                      onClick={() => { setEditingProvider('meta_cloud'); setTempApiKey(""); setTempModel(""); }}
+                      className="relative z-10 w-full bg-gradient-to-r from-[#CCA761] to-[#b89552] hover:opacity-90 text-black flex items-center justify-center gap-3 px-6 py-3.5 rounded-xl font-black uppercase text-[10px] tracking-widest transition-all shadow-[0_0_20px_rgba(204,167,97,0.3)] active:scale-95"
+                    >
+                      <Plus size={16} /> Configurar API Oficial
+                    </button>
+                  )}
                </div>
-
-               <button 
-                 onClick={() => toast.info("Autenticador fechado. Insira suas chaves do Facebook Developers primeiro no painel oculto.")}
-                 className="relative z-10 w-full bg-gradient-to-r from-[#CCA761] to-[#b89552] hover:opacity-90 text-black flex items-center justify-center gap-3 px-6 py-3.5 rounded-xl font-black uppercase text-[10px] tracking-widest transition-all shadow-[0_0_20px_rgba(204,167,97,0.3)] active:scale-95"
-               >
-                 <svg viewBox="0 0 24 24" width="16" height="16" className="fill-current"><path d="M24 12.073c0-6.627-5.373-12-12-12s-12 5.373-12 12c0 5.99 4.388 10.954 10.125 11.854v-8.385H7.078v-3.47h3.047V9.43c0-3.007 1.792-4.669 4.533-4.669 1.312 0 2.686.235 2.686.235v2.953H15.83c-1.491 0-1.956.925-1.956 1.874v2.25h3.328l-.532 3.47h-2.796v8.385C19.612 23.027 24 18.062 24 12.073z"/></svg> 
-                 Conectar Cloud Oficial
-               </button>
             </div>
             
             {/* WHATSAPP (EVOLUTION) CARD INCORPORADO */}

@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useState } from "react";
+import { useEffect, useState, useCallback } from "react";
 import { useRouter } from "next/navigation";
 import { createClient } from "@/lib/supabase/client";
 import { Montserrat, Cormorant_Garamond } from "next/font/google";
@@ -44,8 +44,8 @@ function AnimatedNumber({ value, suffix = "", prefix = "", floating = false }: {
 
 function GlassCard({ children, className = "", noHover = false }: { children: React.ReactNode; className?: string; noHover?: boolean }) {
   return (
-    <div className={`glass-card-premium rounded-2xl overflow-hidden p-6 relative group border border-[#CCA761]/10 bg-gradient-to-b from-[#111111]/90 to-[#050505]/90 backdrop-blur-md shadow-[0_8px_32px_rgba(0,0,0,0.4)] ring-1 ring-white/5 ${!noHover ? 'cursor-pointer hover:border-[#CCA761]/30 hover:shadow-[0_0_20px_rgba(204,167,97,0.15)] transition-all duration-500' : ''} ${className}`}>
-      <div className="absolute inset-0 bg-gradient-to-br from-white/[0.02] to-transparent pointer-events-none" />
+    <div className={`glass-card-premium rounded-2xl overflow-hidden p-6 relative group ${!noHover ? 'cursor-pointer' : ''} ${className}`}>
+      <div className="absolute inset-0 bg-gradient-to-br from-primary/5 to-transparent pointer-events-none" />
       <div className="relative z-10 w-full h-full flex flex-col justify-between">
         {children}
       </div>
@@ -66,7 +66,7 @@ const ElegantGoalGauge = ({ value, progress, label, color = "#CCA761", valuePref
     <div className="relative w-20 h-20 lg:w-24 lg:h-24 flex flex-shrink-0 items-center justify-center group/gauge">
       {/* SVG com animação de radar/scanning premium */}
       <svg className="w-full h-full transform -rotate-90 overflow-visible" viewBox="0 0 100 100">
-        <circle cx="50" cy="50" r="45" fill="none" stroke="rgba(255,255,255,0.03)" strokeWidth="6" />
+        <circle cx="50" cy="50" r="45" fill="none" stroke="currentColor" className="text-primary/5" strokeWidth="6" />
 
         {/* Efeito Vindo do Fundo pra Frente (Ping/Sonar 1) */}
         <circle
@@ -113,7 +113,7 @@ const ElegantGoalGauge = ({ value, progress, label, color = "#CCA761", valuePref
       {/* Texto Centralizado e Fixo */}
       <div className="absolute inset-0 flex flex-col items-center justify-center text-center">
         <div className="flex flex-col items-center group-hover/gauge:scale-110 transition-transform duration-500">
-          <span className="text-base lg:text-xl font-black text-white leading-none tracking-tighter drop-shadow-md">
+          <span className="text-base lg:text-xl font-black text-foreground leading-none tracking-tighter drop-shadow-md">
             {valuePrefix}<AnimatedNumber value={value} />{valueSuffix}
           </span>
           <span className="text-[7px] lg:text-[8px] text-[#CCA761] uppercase tracking-[0.2em] font-black mt-1.5 opacity-80">{label}</span>
@@ -178,9 +178,13 @@ const ElegantResumoChart = () => (
   </div>
 );
 
-const ResumoView = ({ metrics }: { metrics: any }) => {
-  const TARGET_REVENUE = 40000;
-  const TARGET_CONTRACTS = 25;
+const ResumoView = ({ metrics, officeGoals = [] }: { metrics: any, officeGoals?: any[] }) => {
+  // Buscar metas dinâmicas configuradas
+  const targetRevenueGoal = officeGoals.find(g => g.unit === 'R$');
+  const targetContractsGoal = officeGoals.find(g => g.unit === 'CTR');
+
+  const TARGET_REVENUE = targetRevenueGoal ? Number(targetRevenueGoal.value) : 40000;
+  const TARGET_CONTRACTS = targetContractsGoal ? Number(targetContractsGoal.value) : 25;
 
   const revenueProgress = Math.round((metrics.totalRevenue / TARGET_REVENUE) * 100);
   const missingRevenue = Math.max(0, TARGET_REVENUE - metrics.totalRevenue);
@@ -189,6 +193,9 @@ const ResumoView = ({ metrics }: { metrics: any }) => {
   const missingContracts = Math.max(0, TARGET_CONTRACTS - metrics.activeContracts);
   const missingContractsProgress = Math.round((missingContracts / TARGET_CONTRACTS) * 100);
 
+  // Outras metas customizadas (KPIs Estratégicos)
+  const otherGoals = officeGoals.filter(g => g.unit !== 'R$' && g.unit !== 'CTR');
+
   return (
     <div className="space-y-6 animate-fade-in-up">
 
@@ -196,21 +203,21 @@ const ResumoView = ({ metrics }: { metrics: any }) => {
       <div className="grid grid-cols-1 xl:grid-cols-2 gap-6 w-full">
 
         {/* Caixa 1: Metas Mensais & Faturamento */}
-        <GlassCard className="flex flex-col justify-between border-2 border-[#CCA761]/40 bg-gradient-to-br from-[#0d0d0d] via-[#111] to-[#CCA761]/15 px-8 py-7 shadow-[0_0_50px_rgba(204,167,97,0.1)] ring-1 ring-inset ring-[#CCA761]/20">
+        <GlassCard className="flex flex-col justify-between border-2 border-primary/40 bg-gradient-to-br from-card via-card to-primary/10 px-8 py-7 shadow-lg ring-1 ring-inset ring-primary/20">
           <div className="flex flex-col sm:flex-row justify-between sm:items-start gap-6">
             <div className="flex-1">
               <div className="flex items-center gap-2 mb-3">
-                <span className="w-2 h-2 rounded-full bg-[#CCA761] animate-pulse shadow-[0_0_8px_#CCA761]"></span>
-                <p className="text-[11px] text-[#CCA761] uppercase tracking-[0.25em] font-black">Meta Mensal • Comercial</p>
+                <span className="w-2 h-2 rounded-full bg-primary animate-pulse shadow-[0_0_8px_var(--primary)]"></span>
+                <p className="text-[11px] text-primary uppercase tracking-[0.25em] font-black">Meta Mensal • {targetRevenueGoal?.name || 'Comercial'}</p>
               </div>
               <div className="flex flex-col mb-4">
-                <h3 className="text-5xl 2xl:text-6xl font-black text-white tracking-tighter italic drop-shadow-[0_0_25px_rgba(204,167,97,0.5)]">
+                <h3 className="text-5xl 2xl:text-6xl font-black text-foreground tracking-tighter italic drop-shadow-[0_0_25px_rgba(204,167,97,0.3)]">
                   <span className="text-2xl 2xl:text-3xl text-[#CCA761] not-italic mr-2">R$</span><AnimatedNumber value={metrics.totalRevenue} />
                 </h3>
               </div>
               <div className="flex flex-wrap gap-4 items-center">
-                <div className="px-3 py-1 bg-black/40 rounded-full border border-[#CCA761]/30">
-                  <span className="text-[10px] text-gray-400 font-bold uppercase tracking-widest">Alvo: R$ {TARGET_REVENUE.toLocaleString('pt-BR')}</span>
+                <div className="px-3 py-1 bg-secondary rounded-full border border-primary/30">
+                  <span className="text-[10px] text-muted-foreground font-bold uppercase tracking-widest">Alvo: R$ {TARGET_REVENUE.toLocaleString('pt-BR')}</span>
                 </div>
                 <div className={`flex items-center gap-1.5 px-3 py-1 bg-[#4ade80]/10 rounded-full border border-[#4ade80]/20 ${missingRevenue === 0 ? 'bg-[#CCA761]/20 border-[#CCA761]/40' : ''}`}>
                   <TrendingUp size={12} className={missingRevenue === 0 ? 'text-[#CCA761]' : 'text-[#4ade80]'} />
@@ -220,12 +227,12 @@ const ResumoView = ({ metrics }: { metrics: any }) => {
                 </div>
               </div>
             </div>
-            <div className="bg-[#CCA761]/10 border border-[#CCA761]/30 rounded-2xl p-4 flex flex-col items-center justify-center min-w-[140px]">
-              <p className="text-[9px] text-gray-400 font-black uppercase tracking-[0.2em] mb-2">Contratos Ativos</p>
-              <div className="text-4xl font-black text-white italic tracking-tighter">
+            <div className="bg-primary/5 border border-primary/20 rounded-2xl p-4 flex flex-col items-center justify-center min-w-[140px]">
+              <p className="text-[9px] text-muted-foreground font-black uppercase tracking-[0.2em] mb-2">{targetContractsGoal?.name || 'Contratos Ativos'}</p>
+              <div className="text-4xl font-black text-foreground italic tracking-tighter">
                 <AnimatedNumber value={metrics.activeContracts} />
               </div>
-              <p className="text-[10px] text-[#CCA761] font-bold mt-1">Neste Mês</p>
+              <p className="text-[10px] text-primary font-bold mt-1">Alvo: {TARGET_CONTRACTS}</p>
             </div>
           </div>
           <div className="h-px w-full bg-gradient-to-r from-transparent via-white/10 to-transparent my-6" />
@@ -236,40 +243,77 @@ const ResumoView = ({ metrics }: { metrics: any }) => {
           </div>
         </GlassCard>
 
-        {/* Caixa 2: Processos Internos */}
-        <GlassCard className="flex flex-col justify-between border border-white/5 bg-gradient-to-br from-[#0c0c0c] to-[#121212] px-8 py-7 shadow-2xl">
-          <div className="flex flex-col sm:flex-row justify-between sm:items-start gap-4">
-            <div>
-              <p className="text-[10px] text-gray-500 uppercase tracking-[0.2em] font-bold mb-3">Processos & Operacional</p>
-              <h4 className="text-4xl 2xl:text-5xl font-black text-white tracking-tight italic">
-                <AnimatedNumber value={145} />
-              </h4>
-              <div className="flex flex-wrap gap-3 mt-4">
-                <span className="text-xs text-gray-400 font-bold uppercase tracking-widest">Alvo: 200 Distribuídos</span>
+        {/* Caixa 2 em diante: KPIs Dinâmicos Estratégicos (Mapeamento Total para Meta Master com Inteligência de Dados) */}
+        {otherGoals.map((goal, index) => {
+          const colors = ["#22d3ee", "#b4a0f8", "#CCA761", "#4ade80", "#f87171"];
+          const color = colors[index % colors.length];
+          
+          // INTELIGÊNCIA DE DADOS: Escolhendo a fonte real do valor
+          let realValue = 0;
+          
+          if (goal.source === 'manual') {
+            realValue = Number(goal.currentValue) || 0;
+          } else if (goal.source === 'vendas') {
+            realValue = metrics.activeContracts; // Contratos fechados reais
+          } else if (goal.source === 'leads') {
+            realValue = 0; // Futuro: Count from leads table
+          } else if (goal.source === 'agendamentos' || goal.unit === 'AGD') {
+            realValue = 0; // Futuro: Count from agenda
+          }
+
+          const targetValue = Number(goal.value) || 1;
+          const progress = Math.min(100, Math.round((realValue / targetValue) * 100));
+          const missing = Math.max(0, targetValue - realValue);
+          const missingProgress = Math.round((missing / targetValue) * 100);
+
+          return (
+            <GlassCard key={goal.id} className="flex flex-col justify-between border-2 border-primary/40 bg-gradient-to-br from-card via-card to-primary/10 px-8 py-7 shadow-lg ring-1 ring-inset ring-primary/20">
+              <div className="flex flex-col sm:flex-row justify-between sm:items-start gap-6">
+                <div className="flex-1">
+                  <div className="flex items-center gap-2 mb-3">
+                    <span className="w-2 h-2 rounded-full bg-primary animate-pulse shadow-[0_0_8px_var(--primary)]"></span>
+                    <p className="text-[11px] text-primary uppercase tracking-[0.25em] font-black">Meta do Escritório • {goal.name}</p>
+                  </div>
+                  <div className="flex flex-col mb-4">
+                    <h3 className="text-5xl 2xl:text-6xl font-black text-foreground tracking-tighter italic drop-shadow-[0_0_25px_rgba(204,167,97,0.3)]">
+                      <AnimatedNumber value={realValue} /> <span className="text-2xl 2xl:text-3xl text-muted-foreground not-italic ml-2">{goal.unit}</span>
+                    </h3>
+                  </div>
+                  <div className="flex flex-wrap gap-4 items-center">
+                    <div className="px-3 py-1 bg-secondary rounded-full border border-primary/30">
+                      <span className="text-[10px] text-muted-foreground font-bold uppercase tracking-widest">Alvo: {targetValue} {goal.unit}</span>
+                    </div>
+                    <div className={`flex items-center gap-1.5 px-3 py-1 bg-[#4ade80]/10 rounded-full border border-[#4ade80]/20 ${missing === 0 ? 'bg-primary/20 border-primary/40' : ''}`}>
+                      <TrendingUp size={12} className={missing === 0 ? 'text-primary' : 'text-[#4ade80]'} />
+                      <span className={`text-[10px] ${missing === 0 ? 'text-primary' : 'text-[#4ade80]'} font-bold uppercase tracking-wider`}>
+                        {missing === 0 ? 'Meta Batida!' : `Faltam ${missing} ${goal.unit}`}
+                      </span>
+                    </div>
+                  </div>
+                </div>
+                <div className="bg-primary/5 border border-primary/20 rounded-2xl p-4 flex flex-col items-center justify-center min-w-[140px]">
+                  <p className="text-[9px] text-muted-foreground font-black uppercase tracking-[0.2em] mb-2">EFICIÊNCIA</p>
+                  <div className="text-4xl font-black text-foreground italic tracking-tighter">
+                    {progress}%
+                  </div>
+                  <p className="text-[10px] text-primary font-bold mt-1">Global</p>
+                </div>
               </div>
-            </div>
-            <div className="flex flex-col gap-3 text-right">
-              <div className="bg-white/5 px-4 py-2 rounded-xl border border-white/10">
-                <p className="text-[9px] text-gray-500 font-bold uppercase tracking-widest mb-1">Ticket Causa</p>
-                <p className="text-lg font-bold text-[#CCA761]">R$ <AnimatedNumber value={15000} /></p>
+              <div className="h-px w-full bg-gradient-to-r from-transparent via-white/10 to-transparent my-6" />
+              <div className="flex justify-between items-center px-4">
+                <ElegantGoalGauge value={progress} progress={progress} label="Realizado" color={color} />
+                <ElegantGoalGauge value={targetValue} progress={100} label="Alvo" color="#ffffff" valueSuffix="" />
+                <ElegantGoalGauge value={missing} progress={missingProgress} label="Faltam" color="#f87171" valueSuffix="" />
               </div>
-              <div className="bg-[#4ade80]/5 px-4 py-2 rounded-xl border border-[#4ade80]/10">
-                <p className="text-[9px] text-gray-500 font-bold uppercase tracking-widest mb-1">Taxa de Êxito</p>
-                <p className="text-lg font-bold text-[#4ade80]">92%</p>
-              </div>
-            </div>
-          </div>
-          <div className="mt-8 flex flex-wrap gap-4 items-center justify-around py-4 px-4 bg-white/[0.02] rounded-2xl border border-white/5">
-            <ElegantGoalGauge value={55} progress={55} label="De Acordos" color="#22d3ee" />
-            <ElegantGoalGauge value={45} progress={30} label="Julgamento" color="#b4a0f8" valueSuffix="" />
-            <ElegantGoalGauge value={45} progress={15} label="Tramitando" color="#CCA761" valueSuffix="" />
-          </div>
-        </GlassCard>
+            </GlassCard>
+          );
+        })}
       </div>
+
 
       {/* Segunda Linha: KPI ROIs */}
       <div className="grid grid-cols-1 md:grid-cols-3 gap-6">
-        <GlassCard className="flex items-center justify-between p-5 border border-[#CCA761]/30 bg-[#0a0a0a]">
+        <GlassCard className="flex items-center justify-between p-5 border border-primary/30">
           <div className="flex items-center gap-4">
             <div className="w-12 h-12 rounded-xl bg-[#CCA761]/10 flex items-center justify-center border border-[#CCA761]/40">
               <Globe size={20} className="text-[#CCA761]" />
@@ -284,7 +328,7 @@ const ResumoView = ({ metrics }: { metrics: any }) => {
           </div>
         </GlassCard>
 
-        <GlassCard className="flex items-center justify-between p-5 border border-[#4ade80]/20 bg-[#0a0a0a]">
+        <GlassCard className="flex items-center justify-between p-5 border border-green-500/20">
           <div className="flex items-center gap-4">
             <div className="w-12 h-12 rounded-xl bg-[#4ade80]/10 flex items-center justify-center border border-[#4ade80]/30">
               <Target size={20} className="text-[#4ade80]" />
@@ -299,7 +343,7 @@ const ResumoView = ({ metrics }: { metrics: any }) => {
           </div>
         </GlassCard>
 
-        <GlassCard className="flex items-center justify-between p-5 border border-white/5 bg-[#0a0a0a]">
+        <GlassCard className="flex items-center justify-between p-5 border border-border">
           <div className="flex items-center gap-4">
             <div className="w-12 h-12 rounded-xl bg-white/5 flex items-center justify-center border border-white/10">
               <Activity size={20} className="text-gray-400" />
@@ -394,20 +438,25 @@ const ElegantAreaChart = () => (
   </GlassCard>
 );
 
-const ComercialView = ({ metrics }: { metrics: any }) => (
-  <div className="space-y-6 animate-fade-in-up">
-    {/* Alta Gestão de KPIs */}
-    <div className="grid grid-cols-1 md:grid-cols-4 gap-4">
-      <GlassCard>
-        <p className="text-[10px] text-gray-500 uppercase tracking-widest font-bold mb-1">Receita Fechada vs. Meta</p>
-        <h3 className="text-3xl font-bold text-[#4ade80] tracking-wide mt-2">
-          R$ <AnimatedNumber value={metrics.totalRevenue} />
-        </h3>
-        <div className="w-full bg-black h-1 mt-3 rounded-full overflow-hidden">
-          <div className="bg-[#4ade80] h-full" style={{ width: `${Math.min(100, (metrics.totalRevenue / 50000) * 100)}%` }} />
-        </div>
-        <p className="text-[10px] text-gray-400 mt-2">{Math.floor(((metrics.totalRevenue / 50000) * 100) || 0)}% de R$ 50.000,00</p>
-      </GlassCard>
+const ComercialView = ({ metrics, officeGoals = [] }: { metrics: any, officeGoals?: any[] }) => {
+  const targetRevenueGoal = officeGoals.find(g => g.unit === 'R$');
+  const targetVal = targetRevenueGoal ? Number(targetRevenueGoal.value) : 50000;
+
+  return (
+    <div className="space-y-6 animate-fade-in-up">
+      {/* Alta Gestão de KPIs */}
+      <div className="grid grid-cols-1 md:grid-cols-4 gap-4">
+        <GlassCard shadow-lg>
+          <p className="text-[10px] text-gray-500 uppercase tracking-widest font-bold mb-1">Receita Fechada vs. Meta</p>
+          <h3 className="text-3xl font-bold text-[#4ade80] tracking-wide mt-2">
+            R$ <AnimatedNumber value={metrics.totalRevenue} />
+          </h3>
+          <div className="w-full bg-black h-1 mt-3 rounded-full overflow-hidden">
+            <div className="bg-[#4ade80] h-full" style={{ width: `${Math.min(100, (metrics.totalRevenue / targetVal) * 100)}%` }} />
+          </div>
+          <p className="text-[10px] text-gray-400 mt-2">{Math.floor(((metrics.totalRevenue / targetVal) * 100) || 0)}% de R$ {targetVal.toLocaleString('pt-BR')}</p>
+        </GlassCard>
+
       <GlassCard>
         <p className="text-[10px] text-gray-500 uppercase tracking-widest font-bold mb-1">Ticket Médio (Fechamentos)</p>
         <h3 className="text-3xl font-bold text-[#b4a0f8] tracking-wide mt-2">
@@ -518,8 +567,9 @@ const ComercialView = ({ metrics }: { metrics: any }) => (
         </div>
       </GlassCard>
     </div>
-  </div>
-);
+    </div>
+  );
+};
 
 const FinanceiroView = ({ metrics }: { metrics: any }) => (
   <div className="space-y-6 animate-fade-in-up">
@@ -588,7 +638,7 @@ const FinanceiroView = ({ metrics }: { metrics: any }) => (
         </div>
       </GlassCard>
 
-      <div className="bg-[#0a0a0a] border border-[#CCA761]/20 rounded-2xl flex flex-col justify-center p-8 relative overflow-hidden group hover:border-[#CCA761]/40 transition-colors">
+      <div className="bg-card border border-primary/20 rounded-2xl flex flex-col justify-center p-8 relative overflow-hidden group hover:border-primary/40 transition-colors">
         <div className="absolute inset-x-0 h-px top-1/2 bg-gradient-to-r from-transparent via-[#CCA761]/20 to-transparent" />
         <h4 className="text-[10px] text-gray-400 font-bold uppercase tracking-widest mb-6 relative z-10 flex items-center gap-2">
           <Calendar size={14} className="text-[#CCA761]" /> Projeção de Caixa
@@ -760,7 +810,7 @@ const AgendaView = () => {
     { day: "Dom", date: "26", active: false },
   ];
 
-  const fetchTasks = async () => {
+  const fetchTasks = useCallback(async () => {
     const { data: { user } } = await supabase.auth.getUser();
     if (!user) return;
     const tenantId = user.user_metadata?.tenant_id || user.app_metadata?.tenant_id;
@@ -787,7 +837,7 @@ const AgendaView = () => {
       }
     }
     setIsLoading(false);
-  };
+  }, [supabase]);
 
   useEffect(() => {
     fetchTasks();
@@ -808,7 +858,7 @@ const AgendaView = () => {
     return () => {
       supabase.removeChannel(channel);
     };
-  }, []);
+  }, [fetchTasks, supabase]);
 
   const toggleStatus = async (task: any) => {
     if (!task.id || typeof task.id === 'number') return; // ignora os mocks limitados
@@ -991,6 +1041,8 @@ export default function DashboardHomePage() {
     revenueReceived: 15800,
   });
 
+  const [officeGoals, setOfficeGoals] = useState<any[]>([]);
+
   const TABS = [
     { id: "resumo", label: "Resumo Executivo" },
     { id: "comercial", label: "Comercial" },
@@ -1017,6 +1069,20 @@ export default function DashboardHomePage() {
       if (!tenantId) {
         setLoading(false);
         return;
+      }
+
+      // Buscar Configurações e Metas Estratégicas
+      const { data: settings, error: settingsError } = await supabase
+        .from('tenant_settings')
+        .select('strategic_goals')
+        .eq('tenant_id', tenantId)
+        .maybeSingle();
+      
+      if (settings?.strategic_goals) {
+        console.log("🎯 MAYUS BI: Metas estratégicas carregadas", settings.strategic_goals);
+        setOfficeGoals(settings.strategic_goals);
+      } else {
+        console.warn("⚠️ MAYUS BI: Nenhuma meta estratégica encontrada para este tenant");
       }
 
       // Buscar Vendas
@@ -1109,8 +1175,8 @@ export default function DashboardHomePage() {
       </div>
 
       {/* Renderização Condicional da View Selecionada */}
-      {activeView === "resumo" && <ResumoView metrics={metrics} />}
-      {activeView === "comercial" && <ComercialView metrics={metrics} />}
+      {activeView === "resumo" && <ResumoView metrics={metrics} officeGoals={officeGoals} />}
+      {activeView === "comercial" && <ComercialView metrics={metrics} officeGoals={officeGoals} />}
       {activeView === "marketing" && <MarketingView />}
       {activeView === "processos" && <ProcessosView metrics={metrics} />}
       {activeView === "financeiro" && <FinanceiroView metrics={metrics} />}

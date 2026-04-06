@@ -4,7 +4,7 @@ import { supabaseAdmin } from "@/lib/supabase/admin";
 
 export async function POST(req: Request) {
   try {
-    const { email, role, permissions = [] } = await req.json();
+    const { email, role, department_id, permissions = [] } = await req.json();
     const supabase = createClient();
 
     // 1. Verificar se o solicitante é um Admin autenticado
@@ -43,6 +43,7 @@ export async function POST(req: Request) {
         // e lidos pela trigger handle_new_user para criar o perfil
         tenant_id: tenantId,
         role: role,
+        department_id: department_id,
         custom_permissions: permissions,
       },
       redirectTo: `${process.env.NEXT_PUBLIC_SITE_URL || 'http://localhost:3000'}/auth/callback?next=/dashboard`,
@@ -63,6 +64,7 @@ export async function POST(req: Request) {
       email: email,
       invited_by: user.id,
       role: role,
+      department_id: department_id,
       custom_permissions: permissions,
       accepted: false,
     });
@@ -73,7 +75,7 @@ export async function POST(req: Request) {
       actor_id: user.id,
       action: "INVITE_SENT",
       entity: "auth",
-      new_data: { invitee_email: email, role_assigned: role, permissions },
+      new_data: { invitee_email: email, role_assigned: role, department_id, permissions },
     });
 
     return NextResponse.json({ success: true, data: inviteData });

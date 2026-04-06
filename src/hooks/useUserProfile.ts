@@ -14,6 +14,7 @@ interface UserProfile {
   custom_permissions: string[];
   email_corporativo: string | null;
   oab_registro: string | null;
+  is_superadmin: boolean | null;
 }
 
 interface UseUserProfileReturn {
@@ -54,7 +55,7 @@ export function useUserProfile(): UseUserProfileReturn {
         // 2. Busca o perfil do banco (tabela profiles)
         const { data: profileData, error: profileError } = await supabase
           .from("profiles")
-          .select("id, tenant_id, full_name, role, is_active, avatar_url, custom_permissions, email_corporativo, oab_registro")
+          .select("id, tenant_id, full_name, role, is_active, avatar_url, custom_permissions, email_corporativo, oab_registro, is_superadmin")
           .eq("id", authUser.id)
           .single();
 

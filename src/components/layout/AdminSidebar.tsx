@@ -25,23 +25,22 @@ import {
   X,
   Sun,
   Moon,
-  LayoutTemplate,
   Target,
   Globe,
   BrainCircuit,
   MessageSquare,
   MessageCircle,
-  Mail,
-  Send,
   Bot,
   MessagesSquare,
-  Share2
+  Share2,
+  Building2,
+  Brain,
+  Volume2,
 } from "lucide-react";
 import { useState, useEffect } from "react";
 import { useTheme } from "next-themes";
 import { useUserProfile } from "@/hooks/useUserProfile";
 import { getAllowedHrefs } from "@/lib/permissions";
-import { createClient } from "@/lib/supabase/client";
 
 const cormorant = Cormorant_Garamond({ subsets: ["latin"], weight: ["400", "500", "600", "700"], style: ["normal", "italic"] });
 const montserrat = Montserrat({ subsets: ["latin"], weight: ["300", "400", "500", "600", "700"] });
@@ -53,16 +52,18 @@ export function AdminSidebar() {
   const [mounted, setMounted] = useState(false);
   const [openSections, setOpenSections] = useState<Record<string, boolean>>({
     "VISÃO GERAL": true,
+    "CONVERSAS": true,
+    "COMERCIAL": true,
+    "OPERAÇÃO JURÍDICA": true,
+    "FINANCEIRO": true,
+    "ESTRATÉGIA": true,
     "SISTEMA": true,
-    "COMERCIAL": true
   });
 
   // Hook para dados reais do usuário
-  const { role, customPermissions, profile, isLoading: profileLoading } = useUserProfile();
+  const { user, role, customPermissions, profile, isLoading: profileLoading } = useUserProfile();
   const allowedHrefs = getAllowedHrefs(customPermissions, role);
-  const isAdmin = allowedHrefs.includes("ALL") || role === "Administrador";
-
-  const supabase = createClient();
+  const isAdmin = allowedHrefs.includes("ALL") || role === "Administrador" || role === "admin";
 
   useEffect(() => {
     setMounted(true);
@@ -122,6 +123,7 @@ export function AdminSidebar() {
       items: [
         { name: "Faturamento", icon: DollarSign, href: "/dashboard/faturamento" },
         { name: "Honorários", icon: Scale, href: "/dashboard/honorarios" },
+        { name: "Gestão de Equipe", icon: Users, href: "/dashboard/equipe" },
       ]
     },
     {
@@ -139,9 +141,14 @@ export function AdminSidebar() {
       collapsible: true,
       items: [
         { name: "Configurações Globais", icon: Settings, href: "/dashboard/configuracoes" },
+        { name: "Departamentos", icon: Building2, href: "/dashboard/configuracoes/departamentos" },
         { name: "Comercial & Metas", icon: Target, href: "/dashboard/configuracoes/comercial" },
-        { name: "Integrações & APIs", icon: Wand2, href: "/dashboard/configuracoes/integracoes" },
-        { name: "Usuários e Permissões", icon: ShieldCheck, href: "/dashboard/equipe" },
+        { name: "Integrações & APIs", icon: Wand2, href: "/dashboard/configuracoes?tab=integrations" },
+        { name: "Usuários e Permissões", icon: ShieldCheck, href: "/dashboard/configuracoes/usuarios" },
+        { name: "Agente / Skills", icon: Bot, href: "/dashboard/configuracoes/agente" },
+        { name: "Memória Institucional", icon: Brain, href: "/dashboard/configuracoes/memoria" },
+        { name: "Voz & Áudio", icon: Volume2, href: "/dashboard/configuracoes/voz" },
+        { name: "Painel Master", icon: ShieldCheck, href: "/admin" },
       ]
     }
   ];
@@ -151,7 +158,16 @@ export function AdminSidebar() {
     .map(section => ({
       ...section,
       items: section.items.filter(item => {
+        if (item.href === "/admin") {
+          if (profileLoading) return false;
+          if (profile?.is_superadmin === true) return true;
+          return user?.id === '1952586a-b97b-47e9-a18d-3f955c2a5cf0';
+        }
         if (isAdmin) return true;
+        // Agente / Skills e Memória Institucional — visíveis apenas para admin e socio
+        if (item.href === "/dashboard/configuracoes/agente") return role === "admin" || role === "socio";
+        if (item.href === "/dashboard/configuracoes/memoria") return role === "admin" || role === "socio";
+        if (item.href === "/dashboard/configuracoes/voz") return role === "admin" || role === "socio";
         if (item.href === "/dashboard/agenda-admin") return false; // Somente chefe
         if (item.href === "/dashboard") return true;
         if (item.href === "/dashboard/equipe") return false;
@@ -181,7 +197,7 @@ export function AdminSidebar() {
 
       <aside className={`
         fixed top-0 left-0 h-full z-40 transition-transform duration-300 ease-in-out
-        w-[280px] bg-white/[0.03] backdrop-blur-3xl border-r border-white/5
+        w-[280px] bg-card backdrop-blur-3xl border-r border-border
         flex flex-col
         ${isOpen ? "translate-x-0" : "-translate-x-full md:translate-x-0"}
       `}>
@@ -198,7 +214,7 @@ export function AdminSidebar() {
           </div>
         </div>
 
-        <div className={`flex-1 overflow-y-auto no-scrollbar pt-2 px-5 ${montserrat.className}`}>
+        <div className={`flex-1 overflow-y-auto no-scrollbar pt-2 px-5 pb-20 ${montserrat.className}`}>
 
           <div className="space-y-3 mb-8">
             <Link href="/dashboard/vendas/nova" className="relative w-full flex items-center justify-center gap-2 bg-gradient-to-r from-[#CCA761] via-[#f1d58d] to-[#CCA761] hover:from-[#e3c27e] hover:via-[#ffe8ad] hover:to-[#e3c27e] text-[#111111] font-[800] py-3 px-4 rounded-lg transition-all duration-300 transform active:scale-95 text-sm shadow-none overflow-hidden hover:-translate-y-[1px] tracking-widest">
@@ -206,10 +222,11 @@ export function AdminSidebar() {
               <Plus size={18} strokeWidth={2.5} className="relative z-10" />
               <span className="relative z-10">NOVA VENDA</span>
             </Link>
-            <button className="w-full flex items-center justify-center gap-2 bg-gradient-to-b from-[#1c1c1c] to-[#0a0a0a] border border-[#2a2a2a] hover:border-[#CCA761]/50 hover:shadow-[0_0_15px_rgba(204,167,97,0.1)] text-[#CCA761] font-bold py-3 px-4 rounded-lg transition-all duration-300 transform active:scale-95 text-sm shadow-md group">
-              <Wand2 size={18} className="text-[#CCA761] group-hover:-rotate-12 transition-transform duration-300" />
+            <button className="w-full flex items-center justify-center gap-2 bg-secondary border border-border hover:border-primary/50 hover:shadow-[0_0_15px_rgba(204,167,97,0.1)] text-primary font-bold py-3 px-4 rounded-lg transition-all duration-300 transform active:scale-95 text-sm shadow-md group">
+              <Wand2 size={18} className="text-primary group-hover:-rotate-12 transition-transform duration-300" />
               GERAR PEÇA COM IA
             </button>
+
           </div>
 
           <div className="space-y-6 pb-10">
@@ -241,8 +258,8 @@ export function AdminSidebar() {
                                 flex items-center gap-3 px-3 py-3 rounded-lg text-[18px] transition-colors
                                 ${cormorant.className} italic font-bold
                                 ${isActive
-                                  ? "bg-white/[0.05] text-[#CCA761] border-l-2 border-[#CCA761] shadow-[inset_0_0_20px_rgba(204,167,97,0.05)]"
-                                  : "text-gray-400 hover:bg-white/[0.02] hover:text-[#CCA761]"
+                                  ? "bg-primary/10 text-primary border-l-2 border-primary shadow-[inset_0_0_20px_rgba(204,167,97,0.05)]"
+                                  : "text-muted-foreground hover:bg-accent hover:text-primary"
                                 }
                               `}
                             >
@@ -260,7 +277,7 @@ export function AdminSidebar() {
           </div>
         </div>
 
-        <div className={`p-5 flex items-center justify-between bg-white/5 border-t border-white/10 ${montserrat.className}`}>
+        <div className={`p-5 flex items-center justify-between bg-gray-50 dark:bg-white/5 border-t border-gray-200 dark:border-white/10 ${montserrat.className}`}>
           <div className="flex items-center gap-2">
             <div className="w-2 h-2 rounded-full bg-green-500 animate-pulse shadow-[0_0_8px_rgba(34,197,94,0.6)]" />
             <span className={`text-[12px] text-gray-500 dark:text-gray-400 italic ${cormorant.className} tracking-wide font-bold`}>Sistema Online</span>

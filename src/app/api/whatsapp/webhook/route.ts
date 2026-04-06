@@ -182,7 +182,7 @@ export async function POST(req: NextRequest) {
         // 3. Verificar/Criar Contato
         let { data: existingContact } = await supabase
           .from("whatsapp_contacts")
-          .select("id, unread_count")
+          .select("id, unread_count, department_id")
           .eq("tenant_id", tenantId)
           .eq("phone_number", senderPhone)
           .single();
@@ -190,6 +190,27 @@ export async function POST(req: NextRequest) {
         let contactId = existingContact?.id;
 
         if (!contactId) {
+          // Buscar departamento padrão de triagem
+          const { data: settings } = await supabase
+            .from("tenant_settings")
+            .select("ai_features")
+            .eq("tenant_id", tenantId)
+            .single();
+          
+          let defaultDeptId = settings?.ai_features?.default_department_id;
+
+          // Fallback: Se não houver configuração, usa o primeiro departamento criado
+          if (!defaultDeptId) {
+            const { data: firstDept } = await supabase
+              .from("departments")
+              .select("id")
+              .eq("tenant_id", tenantId)
+              .order("created_at", { ascending: true })
+              .limit(1)
+              .single();
+            if (firstDept) defaultDeptId = firstDept.id;
+          }
+
           // Criar contato novo
           const { data: newContact, error: insertErr } = await supabase
             .from("whatsapp_contacts")
@@ -197,6 +218,7 @@ export async function POST(req: NextRequest) {
               tenant_id: tenantId,
               phone_number: senderPhone,
               name: pushName,
+              department_id: defaultDeptId
             }])
             .select("id")
             .single();

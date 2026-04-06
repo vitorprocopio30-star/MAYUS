@@ -8,7 +8,10 @@ export const metadata: Metadata = {
   description: "Acesso restrito à plataforma MAYUS",
 };
 
+import { Inter } from "next/font/google";
 import { ThemeProvider } from "@/components/ThemeProvider";
+
+const inter = Inter({ subsets: ["latin"] });
 
 export default function RootLayout({
   children,
@@ -17,7 +20,7 @@ export default function RootLayout({
 }>) {
   return (
     <html lang="pt-BR" suppressHydrationWarning>
-      <body className="bg-white dark:bg-[#0a0a0a] text-gray-900 dark:text-gray-100 transition-colors duration-300">
+      <body className={`${inter.className} min-h-screen bg-background text-foreground transition-colors duration-500 antialiased`} suppressHydrationWarning>
         <ThemeProvider>
           <NotificationsListener />
           {children}

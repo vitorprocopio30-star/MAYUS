@@ -229,7 +229,7 @@ export default function MuralFeedbacksPage() {
           <div className="mt-6 relative bg-gradient-to-r from-[#CCA761]/15 via-transparent to-transparent pl-6 py-4 border-l-[4px] border-[#CCA761] max-w-3xl overflow-hidden group rounded-r-2xl">
              <div className="absolute inset-0 bg-white/20 translate-x-[-100%] group-hover:opacity-100 transition-opacity duration-1000 pointer-events-none" />
              <p className={`text-[#eadd87] text-xl lg:text-3xl font-semibold tracking-wide ${cormorant.className} italic drop-shadow-md leading-relaxed`}>
-                "Tudo que é escrito aqui se autodestrói em 24 horas. Seja transparente. Seja ético."
+                &ldquo;Tudo que é escrito aqui se autodestrói em 24 horas. Seja transparente. Seja ético.&rdquo;
              </p>
           </div>
         </div>
@@ -247,8 +247,8 @@ export default function MuralFeedbacksPage() {
         </div>
       </div>
 
-      {/* Caixa de Criação - z-50 aqui resolve tudo e coloca o dropdown sempre acima */}
-      <div className="bg-[#111111]/80 backdrop-blur-xl rounded-2xl border border-[#CCA761]/30 hover:border-[#CCA761]/60 p-6 shadow-[0_0_30px_rgba(204,167,97,0.15)] transition-colors duration-500 relative z-50 group/box">
+      {/* Caixa de Criação */}
+      <div className="glass-card-premium rounded-2xl p-6 relative z-50 group/box">
         {/* Camada isolada para os efeitos de fundo sem cortar o Dropdown de Emojis */}
         <div className="absolute inset-0 rounded-2xl overflow-hidden pointer-events-none -z-10">
           <div className="absolute top-0 right-0 w-64 h-64 bg-[#CCA761]/5 rounded-full blur-3xl -translate-y-1/2 translate-x-1/2" />
@@ -259,7 +259,7 @@ export default function MuralFeedbacksPage() {
                value={input}
                onChange={(e) => setInput(e.target.value)}
                placeholder="Escreva seu elogio, crítica ou sugestão para o time. Lembre-se, o Agente MAYUS irá analisar seu texto..."
-               className="w-full bg-[#0a0a0a] border border-white/10 rounded-xl p-4 min-h-[120px] focus:outline-none focus:border-[#CCA761] focus:shadow-[0_0_20px_rgba(204,167,97,0.3)] text-sm text-gray-200 resize-none transition-all duration-300 placeholder:text-gray-600 relative z-10"
+               className="w-full bg-background border border-border rounded-xl p-4 min-h-[120px] focus:outline-none focus:border-primary focus:shadow-[0_0_20px_rgba(204,167,97,0.3)] text-sm text-foreground resize-none transition-all duration-300 placeholder:text-muted-foreground relative z-10"
                disabled={isLoading}
              />
              
@@ -275,7 +275,7 @@ export default function MuralFeedbacksPage() {
                 </button>
 
                 {showEmojiPicker && (
-                  <div className="absolute top-12 left-0 z-50 bg-[#111111]/95 backdrop-blur-xl border border-white/10 rounded-2xl p-4 shadow-[0_10px_40px_rgba(0,0,0,0.8)] w-[280px]">
+                  <div className="absolute top-12 left-0 z-50 bg-card/95 backdrop-blur-xl border border-border rounded-2xl p-4 shadow-2xl w-[280px]">
                     <div className="grid grid-cols-6 gap-3">
                       {["🔥","🚀","💡","👏","🎯","🤝","🤐","⚠️","🤖","⭐","🎉","🏆","💯","💎","🤯","👀","❤️","✅","🚨","💼","📌","📈","💪","😎"].map((emoji) => (
                         <button

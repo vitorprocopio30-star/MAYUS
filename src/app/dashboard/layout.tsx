@@ -10,12 +10,12 @@ export default function DashboardLayout({
   children: React.ReactNode;
 }) {
   return (
-    <div className="min-h-screen flex bg-[#030303] text-white/90 transition-all duration-300">
+    <div className="min-h-screen flex bg-white dark:bg-[#030303] text-gray-900 dark:text-white/90 transition-all duration-300">
       
       {/* Sidebar Fixa à Esquerda */}
       <AdminSidebar />
       
-      {/* Container Principal (margem para a barra lateral no desktop e sem margem no mobile) */}
+      {/* Container Principal */}
       <div className="flex-1 flex flex-col md:ml-[280px] min-h-screen">
         
         {/* Top Header */}
@@ -23,7 +23,7 @@ export default function DashboardLayout({
 
         {/* Home/Content de Cada Tela */}
         <main className="flex-1 p-4 md:p-8 overflow-x-hidden relative">
-        {/* Assistente Inteligente MAYUS Global (ElevenLabs Oficial) */}
+        {/* Orbe Flutuante (Maya) */}
         <MAYUSOrb />
 
         {children}

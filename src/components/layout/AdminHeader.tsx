@@ -33,21 +33,39 @@ export function AdminHeader() {
   const [notifications, setNotifications] = useState<any[]>([]);
   const [unreadCount, setUnreadCount] = useState(0);
 
+  // Carrega nome do escritório: primeiro do cache localStorage, depois confirma com o DB
   useEffect(() => {
     if (typeof window !== "undefined") {
       const g = localStorage.getItem("MTO_COMMERCIAL_GENERAL");
       if (g) {
-        try { 
-           const parsed = JSON.parse(g);
-           setGlobalName(parsed.companyName || "SEU ESCRITÓRIO AQUI"); 
-        } catch(e){
-           setGlobalName("SEU ESCRITÓRIO AQUI");
-        }
-      } else {
-        setGlobalName("SEU ESCRITÓRIO AQUI");
+        try {
+          const parsed = JSON.parse(g);
+          if (parsed.companyName) setGlobalName(parsed.companyName);
+        } catch(e){}
       }
     }
   }, []);
+
+  useEffect(() => {
+    if (!profile?.tenant_id) return;
+    async function fetchTenantName() {
+      const { data } = await supabase
+        .from("tenants")
+        .select("name")
+        .eq("id", profile!.tenant_id)
+        .single();
+      if (data?.name) {
+        setGlobalName(data.name);
+        // Atualiza o cache do localStorage com o valor real do DB
+        try {
+          const g = localStorage.getItem("MTO_COMMERCIAL_GENERAL");
+          const parsed = g ? JSON.parse(g) : {};
+          localStorage.setItem("MTO_COMMERCIAL_GENERAL", JSON.stringify({ ...parsed, companyName: data.name }));
+        } catch(e){}
+      }
+    }
+    fetchTenantName();
+  }, [profile?.tenant_id]);
 
   // Hook Ativo: Realtime WebSocket (apenas ativa se logado)
   useNotifications(profile?.id, profile?.tenant_id);
@@ -81,7 +99,7 @@ export function AdminHeader() {
 
     window.addEventListener('new-notification', handleNewNotif);
     return () => window.removeEventListener('new-notification', handleNewNotif);
-  }, [profile?.id, profile?.tenant_id, supabase]);
+  }, [profile?.id, profile?.tenant_id, profile, supabase]);
 
   const markAllAsRead = async () => {
     if (!profile?.tenant_id || unreadCount === 0) return;
@@ -111,7 +129,7 @@ export function AdminHeader() {
   const displayRole = roleLabels[role || ""] || role || "—";
 
   return (
-    <header className={`h-20 border-b border-white/10 bg-white/5 backdrop-blur-md sticky top-0 z-30 px-6 flex items-center justify-between ${montserrat.className}`}>
+    <header className={`h-20 border-b border-border bg-card/80 backdrop-blur-md sticky top-0 z-30 px-6 flex items-center justify-between ${montserrat.className}`}>
       
       {/* Search Layout / Dynamic Company Name */}
       <div className="hidden md:flex items-center gap-4 flex-1">
@@ -142,9 +160,9 @@ export function AdminHeader() {
         <div className="relative">
           <button 
             onClick={() => { setNotifOpen(!notifOpen); setProfileOpen(false); }}
-            className="relative p-2 rounded-full hover:bg-gray-100 dark:hover:bg-[#1a1a1a] transition-colors"
+            className="relative p-2 rounded-full hover:bg-secondary transition-colors"
           >
-            <Bell size={20} className="text-gray-600 dark:text-gray-300" />
+            <Bell size={20} className="text-foreground/70" />
             {unreadCount > 0 && (
               <span className="absolute top-1 right-1 w-4 h-4 bg-red-500 rounded-full border-2 border-white dark:border-[#0C0C0C] text-[8px] flex items-center justify-center text-white font-bold animate-pulse">
                 {unreadCount > 9 ? '9+' : unreadCount}
@@ -154,8 +172,8 @@ export function AdminHeader() {
 
           {/* Modal Dropdown Notifications */}
           {notifOpen && (
-            <div className="absolute right-0 mt-3 w-80 max-h-96 md:w-96 bg-white dark:bg-[#111111] rounded-xl shadow-xl border border-gray-100 dark:border-[#222] overflow-hidden flex flex-col z-50 animate-fade-in-up" style={{ animationDuration: '0.15s' }}>
-              <div className="p-4 border-b border-gray-100 dark:border-[#222] flex items-center justify-between bg-[#0a0a0a]">
+            <div className="absolute right-0 mt-3 w-80 max-h-96 md:w-96 bg-card rounded-xl shadow-xl border border-border overflow-hidden flex flex-col z-50 animate-fade-in-up" style={{ animationDuration: '0.15s' }}>
+              <div className="p-4 border-b border-border flex items-center justify-between bg-secondary">
                 <h3 className="font-bold text-sm text-gray-900 dark:text-white flex items-center gap-2">
                   Notificações do Sistema {unreadCount > 0 && <span className="bg-[#CCA761] text-black px-2 py-0.5 rounded-full text-xs">{unreadCount}</span>}
                 </h3>
@@ -163,7 +181,7 @@ export function AdminHeader() {
                   <button onClick={markAllAsRead} className="text-xs text-[#CCA761] hover:underline font-semibold">Marcar lidas</button>
                 )}
               </div>
-              <div className="overflow-y-auto flex-1 p-2 space-y-1 bg-[#0f0f0f] min-h-[100px] max-h-[300px]">
+              <div className="overflow-y-auto flex-1 p-2 space-y-1 bg-white dark:bg-[#0f0f0f] min-h-[100px] max-h-[300px]">
                 {notifications.length === 0 ? (
                   <div className="text-center py-8 text-gray-500 text-sm">Nenhuma aba invisível, você está em dia.</div>
                 ) : (
@@ -171,7 +189,7 @@ export function AdminHeader() {
                     <div key={n.id} className={`p-3 rounded-lg flex items-start gap-3 transition-colors ${!n.is_read ? 'bg-white/5 border border-white/5' : 'hover:bg-white/[0.02]'}`}>
                       <div className={`mt-1 w-2 h-2 rounded-full shrink-0 ${n.type === 'success' ? 'bg-green-500' : n.type === 'alert' ? 'bg-red-500' : 'bg-[#CCA761]'}`} />
                       <div className="flex-1 min-w-0">
-                        <p className={`text-sm font-semibold truncate ${!n.is_read ? 'text-white' : 'text-gray-400'}`}>{n.title}</p>
+                        <p className={`text-sm font-semibold truncate ${!n.is_read ? 'text-gray-900 dark:text-white' : 'text-gray-400'}`}>{n.title}</p>
                         <p className="text-xs text-gray-500 mt-1 line-clamp-2">{n.message}</p>
                         {n.link_url && (
                           <Link href={n.link_url} onClick={() => setNotifOpen(false)} className="text-xs text-[#CCA761] hover:underline mt-2 inline-block font-medium">Ver detalhes &rarr;</Link>
@@ -213,7 +231,7 @@ export function AdminHeader() {
 
           {/* Dropdown Menu */}
           {profileOpen && (
-            <div className="absolute right-0 mt-3 w-52 bg-white dark:bg-[#111111] rounded-xl shadow-xl border border-gray-100 dark:border-[#222] overflow-hidden py-1 z-50 animate-fade-in-up" style={{ animationDuration: '0.15s' }}>
+            <div className="absolute right-0 mt-3 w-52 bg-card rounded-xl shadow-xl border border-border overflow-hidden py-1 z-50 animate-fade-in-up" style={{ animationDuration: '0.15s' }}>
               <button 
                 onClick={() => { router.push("/dashboard/configuracoes"); setProfileOpen(false); }}
                 className="w-full text-left px-4 py-3 text-sm text-gray-700 dark:text-gray-300 hover:bg-gray-50 dark:hover:bg-[#1a1a1a] flex items-center gap-3 transition-colors"
