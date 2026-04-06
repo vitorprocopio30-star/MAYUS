@@ -103,7 +103,7 @@ export async function POST(req: NextRequest) {
     const { error } = await adminSupabase
       .from('monitored_processes')
       .upsert(payload, {
-        onConflict: 'tenant_id,numero_processo'
+        ignoreDuplicates: false
       })
 
     if (error) {

@@ -52,18 +52,16 @@ function MonitoramentoContent() {
   const [searchError, setSearchError] = useState('')
   const [resultados, setResultados] = useState<Processo[]>([])
   const [totalResultados, setTotalResultados] = useState<number | null>(null)
+  const [totalEscavador, setTotalEscavador] = useState<number | null>(null)
+  const [hasMore, setHasMore] = useState(false)
+  const [fromCache, setFromCache] = useState(false)
   const [advogado, setAdvogado] = useState<{ nome?: string; oab_numero?: string; oab_estado?: string } | null>(null)
-  const [paginaAtual, setPaginaAtual] = useState(1)
-  const POR_PAGINA = 20
   const [monitorados, setMonitorados] = useState<MonitoredProcess[]>([])
   const [loadingMonitorados, setLoadingMonitorados] = useState(true)
   const [monitorandoId, setMonitorandoId] = useState<string | null>(null)
   const [monitoradosSet, setMonitoradosSet] = useState<Set<string>>(new Set())
   const [feedbackMsg, setFeedbackMsg] = useState('')
   const [selectedProcess, setSelectedProcess] = useState<Processo | null>(null)
-
-  const totalPaginas = Math.max(1, Math.ceil(resultados.length / POR_PAGINA))
-  const resultadosPagina = resultados.slice((paginaAtual - 1) * POR_PAGINA, paginaAtual * POR_PAGINA)
 
   // Fechar Drawer ao apertar ESC
   useEffect(() => {
@@ -78,11 +76,10 @@ function MonitoramentoContent() {
     // ... (mesma lógica de busca)
     if (!q.trim()) return
     setSearching(true)
-    setSearchError('')
-    setResultados([])
-    setTotalResultados(null)
+    setFromCache(false)
+    setTotalEscavador(null)
+    setHasMore(false)
     setAdvogado(null)
-    setPaginaAtual(1)
     try {
       const res = await fetch('/api/processos/buscar', {
         method: 'POST',
@@ -92,7 +89,10 @@ function MonitoramentoContent() {
       const data = await res.json()
       if (!res.ok) throw new Error(data.error || 'Erro na busca.')
       setResultados(Array.isArray(data.processos) ? data.processos : [])
-      setTotalResultados(typeof data.total === 'number' ? data.total : null)
+      setTotalResultados(data.total ?? null)
+      setTotalEscavador(data.totalEscavador ?? null)
+      setHasMore(data.hasMore ?? false)
+      setFromCache(data.fromCache ?? false)
       setAdvogado(data.advogado ?? null)
     } catch (err: any) {
       setSearchError(err.message)
@@ -241,11 +241,20 @@ function MonitoramentoContent() {
             </div>
           )}
 
-          {resultados.length > 0 && (
             <div className="mt-6">
               <div className="flex items-center justify-between mb-3 px-1">
-                <p className="text-xs text-zinc-500 uppercase tracking-widest font-medium">
-                  {totalResultados ?? resultados.length} PROCESSO(S) ENCONTRADO(S)
+                <p className="text-xs text-zinc-500 uppercase tracking-widest font-medium flex items-center gap-2">
+                  <span className="text-white font-bold">{totalResultados ?? resultados.length} PROCESSO(S) CARREGADOS</span>
+                  {hasMore && (
+                    <span className="text-zinc-600">
+                      (de {totalEscavador} no total, limitado a 100 por tribunal)
+                    </span>
+                  )}
+                  {fromCache && (
+                    <span className="flex items-center gap-1 text-[10px] bg-emerald-500/10 border border-emerald-500/20 text-emerald-400 px-2 py-0.5 rounded-full lowercase tracking-normal">
+                      <Shield size={10} /> vindo do cache
+                    </span>
+                  )}
                   {advogado?.nome && (
                     <span className="ml-2 text-[#C9A84C] normal-case tracking-normal">
                       — {advogado.nome}
@@ -268,7 +277,7 @@ function MonitoramentoContent() {
                     </tr>
                   </thead>
                   <tbody>
-                    {resultadosPagina.map((p, i) => {
+                    {resultados.map((p, i) => {
                       const cnj = p.numero_cnj ?? p.numero
                       const isMonitorado = monitoradosSet.has(cnj ?? '')
                       return (
@@ -308,30 +317,7 @@ function MonitoramentoContent() {
                   </tbody>
                 </table>
               </div>
-              
-              {totalPaginas > 1 && (
-                <div className="mt-6 flex items-center justify-between px-1">
-                  <button
-                    onClick={() => setPaginaAtual(p => Math.max(1, p - 1))}
-                    disabled={paginaAtual === 1}
-                    className="px-4 py-2 rounded-xl border border-white/10 text-xs text-zinc-400 hover:text-white hover:border-white/20 transition disabled:opacity-30 disabled:cursor-not-allowed"
-                  >
-                    ← Anterior
-                  </button>
-                  <span className="text-xs text-zinc-500">
-                    Página <span className="text-white font-semibold">{paginaAtual}</span> de <span className="text-white font-semibold">{totalPaginas}</span>
-                  </span>
-                  <button
-                    onClick={() => setPaginaAtual(p => Math.min(totalPaginas, p + 1))}
-                    disabled={paginaAtual === totalPaginas}
-                    className="px-4 py-2 rounded-xl border border-white/10 text-xs text-zinc-400 hover:text-white hover:border-white/20 transition disabled:opacity-30 disabled:cursor-not-allowed"
-                  >
-                    Próximo →
-                  </button>
-                </div>
-              )}
             </div>
-          )}
         </div>
 
         <div className="rounded-3xl border border-white/10 bg-white/[0.03] backdrop-blur-sm overflow-hidden">

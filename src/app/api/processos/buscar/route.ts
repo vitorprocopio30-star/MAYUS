@@ -8,6 +8,20 @@ const adminSupabase = createClient(
   { auth: { autoRefreshToken: false, persistSession: false } }
 )
 
+// Cache: chave = "oab:RJ:211558", TTL = 1 hora
+const cache = new Map<string, { data: any; expiresAt: number }>()
+
+function getCached(key: string) {
+  const entry = cache.get(key)
+  if (!entry) return null
+  if (Date.now() > entry.expiresAt) { cache.delete(key); return null }
+  return entry.data
+}
+
+function setCached(key: string, data: any) {
+  cache.set(key, { data, expiresAt: Date.now() + 60 * 60 * 1000 })
+}
+
 export async function POST(req: NextRequest) {
   try {
     const token = req.headers.get('authorization')?.replace(/^Bearer\s+/i, '').trim()
@@ -28,6 +42,12 @@ export async function POST(req: NextRequest) {
 
     if (!query?.trim()) return NextResponse.json({ error: 'Query obrigatória.' }, { status: 400 })
     if (!['numero', 'oab', 'cpf'].includes(tipo)) return NextResponse.json({ error: 'Tipo inválido.' }, { status: 400 })
+
+    const cacheKey = `${tipo}:${query.trim().toUpperCase()}`
+    const cached = getCached(cacheKey)
+    if (cached) {
+      return NextResponse.json({ ...cached, fromCache: true })
+    }
 
     const { data: integration } = await adminSupabase
       .from('tenant_integrations')
@@ -55,28 +75,16 @@ export async function POST(req: NextRequest) {
         return NextResponse.json({ error: 'Formato OAB inválido. Use: RJ/211558' }, { status: 400 })
       }
 
-      let todosProcessos: any[] = []
-      let advogado = null
+      // 1 e 2. Busca Estadual e Federal simultâneas - APENAS 1 PÁGINA CADA (Economia de créditos)
+      const [resEstadual, resFederal] = await Promise.all([
+        EscavadorService.buscarPorOAB(apiKey, estado.trim(), numero.trim(), 1),
+        EscavadorService.buscarPorOABFederal(apiKey, estado.trim(), numero.trim(), 1)
+      ])
 
-      // 1. Busca Estadual - até 50 páginas
-      for (let p = 1; p <= 50; p++) {
-        const res = await EscavadorService.buscarPorOAB(apiKey, estado.trim(), numero.trim(), p)
-        if (!advogado) advogado = res?.advogado_encontrado
-        const itens = res?.items ?? res?.itens ?? []
-        if (itens.length === 0) break
-        todosProcessos = [...todosProcessos, ...itens]
-        if (itens.length < 100) break
-      }
-
-      // 2. Busca Federal - até 50 páginas
-      for (let p = 1; p <= 50; p++) {
-        const res = await EscavadorService.buscarPorOABFederal(apiKey, estado.trim(), numero.trim(), p)
-        if (!advogado && res?.advogado_encontrado) advogado = res.advogado_encontrado
-        const itens = res?.items ?? res?.itens ?? []
-        if (itens.length === 0) break
-        todosProcessos = [...todosProcessos, ...itens]
-        if (itens.length < 100) break
-      }
+      const advogado = resEstadual?.advogado_encontrado ?? resFederal?.advogado_encontrado ?? null
+      const itensEstadual = resEstadual?.items ?? resEstadual?.itens ?? []
+      const itensFederal = resFederal?.items ?? resFederal?.itens ?? []
+      const todosProcessos = [...itensEstadual, ...itensFederal]
 
       // 3. Deduplicação por numero_cnj
       const unicos = Array.from(
@@ -100,12 +108,19 @@ export async function POST(req: NextRequest) {
         }
       })
 
-      return NextResponse.json({
+      const totalEscavador = resEstadual?.meta?.total ?? resEstadual?.total ?? 0
+      const hasMore = (resEstadual?.meta?.last_page ?? 1) > 1 || (resFederal?.meta?.last_page ?? 1) > 1
+
+      const resultado = {
         processos: processosNormalizados,
-        total: totalReal,
-        buscados: processosNormalizados.length,
-        advogado
-      })
+        total: processosNormalizados.length,
+        totalEscavador,
+        advogado,
+        hasMore
+      }
+
+      setCached(cacheKey, resultado)
+      return NextResponse.json(resultado)
     }
 
     if (tipo === 'cpf') {
