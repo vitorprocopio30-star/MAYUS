@@ -45,6 +45,9 @@ export type AsaasCobrancaParams = {
   parcelas?: number       // Número de parcelas (ex: 14)
   valor_parcela?: number  // Valor de cada parcela
   valor_total?: number    // Valor total do contrato
+  // Recorrência (Assinatura)
+  recorrente?: boolean    // Se true, cria uma assinatura contínua
+  ciclo?: 'WEEKLY' | 'BIWEEKLY' | 'MONTHLY' | 'QUARTERLY' | 'SEMIANNUALLY' | 'YEARLY'
 }
 
 export type AsaasCobrancaResult = {
@@ -303,6 +306,41 @@ export async function executarCobranca(
       paymentLink: cobranca.paymentLink,
     }
   }
+
+    // ── Lógica de Recorrência (Assinatura) ───────────────────────────────────
+    if (params.recorrente) {
+      const ciclo = params.ciclo || 'MONTHLY'
+      const assinatura = await AsaasService.createSubscription({
+        customer: customerId,
+        billingType: billingType === 'UNDEFINED' ? 'BOLETO' : billingType,
+        value: params.valor,
+        nextDueDate: params.vencimento,
+        cycle: ciclo,
+        description: `${descricao} (Assinatura ${ciclo})`,
+        externalReference: params.tenantId,
+      }, apiKey)
+
+      await registrarAuditLog({
+        tenantId: params.tenantId,
+        status: 'success',
+        cobrancaId: assinatura.id,
+        customerId,
+        valor: params.valor,
+        vencimento: params.vencimento,
+        descricao: `${descricao} (Assinatura ${ciclo})`,
+        billingType: billingType === 'UNDEFINED' ? 'BOLETO' : billingType,
+      })
+
+      // Para assinaturas, tentamos obter o link do primeiro boleto
+      const checkoutUrl = await AsaasService.getCheckoutUrl(assinatura.id, apiKey)
+
+      return {
+        success: true,
+        cobrancaId: assinatura.id,
+        invoiceUrl: checkoutUrl || undefined,
+        paymentLink: checkoutUrl || undefined,
+      }
+    }
 
   // ── Cobrança Avulsa (Original) ──────────────────────────────────────────
   try {
