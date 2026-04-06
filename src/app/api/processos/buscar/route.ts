@@ -72,17 +72,20 @@ export async function POST(req: NextRequest) {
         cursor = res?.meta?.cursor ?? res?.cursor ?? undefined
       } while (cursor && todosProcessos.length < 1000)
 
-      if (todosProcessos.length > 0) {
-        console.log('[PROCESSO_SAMPLE]', JSON.stringify(todosProcessos[0], null, 2))
-      }
-
-      const processosNormalizados = todosProcessos.map((p: any) => ({
-        numero_cnj: p.numero_cnj ?? p.numero ?? '',
-        tribunal: p.tribunal_sigla ?? p.tribunal ?? '—',
-        assunto: p.assuntos?.[0]?.nome ?? p.assunto ?? '—',
-        ultima_movimentacao: p.ultimo_movimento?.descricao ?? '—',
-        status: p.status ?? 'ativo'
-      }))
+      const processosNormalizados = todosProcessos.map((p: any) => {
+        const fonteTribunal = p.fontes?.find((f: any) => f.tipo === 'TRIBUNAL')
+        return {
+          numero_cnj: p.numero_cnj ?? '',
+          tribunal: p.unidade_origem?.tribunal_sigla ?? fonteTribunal?.sigla ?? '—',
+          assunto: fonteTribunal?.capa?.assunto_principal_normalizado?.nome ?? fonteTribunal?.capa?.assunto ?? '—',
+          polo_ativo: p.titulo_polo_ativo ?? '—',
+          polo_passivo: p.titulo_polo_passivo ?? '—',
+          ultima_movimentacao: p.data_ultima_movimentacao ?? '—',
+          valor_causa: fonteTribunal?.capa?.valor_causa?.valor_formatado ?? '—',
+          status: fonteTribunal?.status_predito ?? 'ATIVO',
+          data_inicio: p.data_inicio ?? '—'
+        }
+      })
 
       return NextResponse.json({
         processos: processosNormalizados,

@@ -12,8 +12,12 @@ type Processo = {
   numero?: string
   tribunal?: string
   assunto?: string
+  polo_ativo?: string
+  polo_passivo?: string
   ultima_movimentacao?: string
+  valor_causa?: string
   status?: string
+  data_inicio?: string
   [key: string]: unknown
 }
 
@@ -126,10 +130,10 @@ function MonitoramentoContent() {
     setMonitorandoId(numero)
     setFeedbackMsg('')
     try {
-      const res = await fetch('/api/processos/buscar', {
+      const res = await fetch('/api/processos/monitorados', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${token}` },
-        body: JSON.stringify({ query: numero, tipo: 'numero', acao: 'monitorar' }),
+        body: JSON.stringify(processo),
       })
       const data = await res.json()
       if (!res.ok) throw new Error(data.error || 'Erro ao monitorar.')
@@ -234,24 +238,27 @@ function MonitoramentoContent() {
                 <table className="min-w-full border-collapse">
                   <thead>
                     <tr className="border-b border-white/10 bg-white/[0.02]">
-                      {['Número CNJ', 'Tribunal', 'Assunto', 'Última Movimentação', 'Status', ''].map((h) => (
-                        <th key={h} className="px-4 py-3 text-left text-xs font-semibold uppercase tracking-[0.12em] text-zinc-500">{h}</th>
+                      {['Número CNJ', 'Tribunal', 'Assunto', 'Polo Ativo', 'Polo Passivo', 'Última Mov.', 'Valor', 'Status', ''].map((h) => (
+                        <th key={h} className="px-4 py-3 text-left text-xs font-semibold uppercase tracking-[0.12em] text-zinc-500 whitespace-nowrap">{h}</th>
                       ))}
                     </tr>
                   </thead>
                   <tbody>
                     {resultadosPagina.map((p, i) => (
                       <tr key={i} className="border-b border-white/5 last:border-0 hover:bg-white/[0.02] transition">
-                        <td className="px-4 py-3 text-sm font-mono text-white">{p.numero_cnj ?? p.numero ?? '—'}</td>
-                        <td className="px-4 py-3 text-sm text-zinc-300">{String(p.tribunal ?? '—')}</td>
-                        <td className="px-4 py-3 text-sm text-zinc-300 max-w-[220px] truncate">{String(p.assunto ?? '—')}</td>
-                        <td className="px-4 py-3 text-sm text-zinc-400">{String(p.ultima_movimentacao ?? '—')}</td>
+                        <td className="px-4 py-3 text-xs font-mono text-white whitespace-nowrap">{p.numero_cnj ?? '—'}</td>
+                        <td className="px-4 py-3 text-xs text-zinc-300 whitespace-nowrap">{String(p.tribunal ?? '—')}</td>
+                        <td className="px-4 py-3 text-xs text-zinc-300 max-w-[160px] truncate">{String(p.assunto ?? '—')}</td>
+                        <td className="px-4 py-3 text-xs text-zinc-300 max-w-[140px] truncate">{String(p.polo_ativo ?? '—')}</td>
+                        <td className="px-4 py-3 text-xs text-zinc-300 max-w-[140px] truncate">{String(p.polo_passivo ?? '—')}</td>
+                        <td className="px-4 py-3 text-xs text-zinc-400 whitespace-nowrap">{String(p.ultima_movimentacao ?? '—')}</td>
+                        <td className="px-4 py-3 text-xs text-zinc-400 whitespace-nowrap">{String(p.valor_causa ?? '—')}</td>
                         <td className="px-4 py-3"><StatusBadge status={String(p.status ?? '')} /></td>
                         <td className="px-4 py-3">
                           <button
                             onClick={() => handleMonitorar(p)}
                             disabled={monitorandoId === (p.numero_cnj ?? p.numero)}
-                            className="inline-flex items-center gap-1.5 px-3 py-2 rounded-xl border border-[#C9A84C]/30 bg-[#C9A84C]/10 text-[#C9A84C] text-xs font-semibold hover:bg-[#C9A84C]/20 transition disabled:opacity-50"
+                            className="inline-flex items-center gap-1.5 px-3 py-2 rounded-xl border border-[#C9A84C]/30 bg-[#C9A84C]/10 text-[#C9A84C] text-xs font-semibold hover:bg-[#C9A84C]/20 transition disabled:opacity-50 whitespace-nowrap"
                           >
                             {monitorandoId === (p.numero_cnj ?? p.numero)
                               ? <Loader2 size={12} className="animate-spin" />
