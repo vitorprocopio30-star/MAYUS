@@ -56,7 +56,8 @@ export async function POST(req: NextRequest) {
       }
       resultado = await EscavadorService.buscarPorOAB(apiKey, estado.trim(), numero.trim())
       console.log('[ESCAVADOR_DEBUG]', JSON.stringify(resultado, null, 2).substring(0, 2000))
-      return NextResponse.json({ processos: resultado?.items ?? resultado ?? [] })
+      const items = resultado?.itens ?? resultado?.items ?? resultado?.processos ?? []
+      return NextResponse.json({ processos: items })
     }
 
     if (tipo === 'cpf') {
