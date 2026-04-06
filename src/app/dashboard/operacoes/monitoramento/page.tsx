@@ -1,6 +1,6 @@
 'use client'
 
-import { useEffect, useState, useCallback } from 'react'
+import { useEffect, useState, useCallback, Suspense } from 'react'
 import { useRouter, useSearchParams } from 'next/navigation'
 import { Search, Shield, AlertCircle, CheckCircle, PauseCircle, Loader2, Eye } from 'lucide-react'
 import { createClient } from '@/lib/supabase/client'
@@ -38,7 +38,7 @@ function StatusBadge({ status }: { status: string | null | undefined }) {
   return <span className="inline-flex items-center gap-1 px-2.5 py-1 rounded-full text-xs font-semibold border border-zinc-700 bg-zinc-800/60 text-zinc-400">—</span>
 }
 
-export default function MonitoramentoPage() {
+function MonitoramentoContent() {
   const router = useRouter()
   const searchParams = useSearchParams()
   const [token, setToken] = useState<string | null>(null)
@@ -167,7 +167,6 @@ export default function MonitoramentoPage() {
         {/* Busca */}
         <div className="mb-8 rounded-3xl border border-white/10 bg-white/[0.03] p-6 backdrop-blur-sm">
           <form onSubmit={handleSearch} className="space-y-4">
-            {/* Tipo selector */}
             <div className="flex gap-2">
               {(['numero', 'oab', 'cpf'] as SearchTipo[]).map((t) => (
                 <button
@@ -185,7 +184,6 @@ export default function MonitoramentoPage() {
               ))}
             </div>
 
-            {/* Input + botão */}
             <div className="flex gap-3">
               <div className="relative flex-1">
                 <Search size={16} className="absolute left-3.5 top-1/2 -translate-y-1/2 text-zinc-500" />
@@ -219,7 +217,6 @@ export default function MonitoramentoPage() {
             </div>
           )}
 
-          {/* Resultados da busca */}
           {resultados.length > 0 && (
             <div className="mt-6">
               <div className="flex items-center justify-between mb-3">
@@ -268,7 +265,6 @@ export default function MonitoramentoPage() {
                 </table>
               </div>
 
-              {/* Paginação */}
               {totalPaginas > 1 && (
                 <div className="mt-4 flex items-center justify-between px-1">
                   <button
@@ -337,5 +333,13 @@ export default function MonitoramentoPage() {
         </div>
       </div>
     </main>
+  )
+}
+
+export default function MonitoramentoPage() {
+  return (
+    <Suspense fallback={<div className="min-h-screen bg-[#0a0a0a] text-white p-8">Carregando...</div>}>
+      <MonitoramentoContent />
+    </Suspense>
   )
 }
