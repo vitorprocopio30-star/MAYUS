@@ -249,30 +249,6 @@ export async function POST(req: Request) {
 
     const { message, provider, model, history = [] } = await req.json();
 
-    // ─── TESTE FORÇADO BYOK ───
-    if (message.includes("João Silva")) {
-      console.log("[ASAAS_TEST] Iniciando teste forçado para João Silva no tenant", tenantId);
-      const cobrancaResult = await executarCobranca({
-        tenantId,
-        nome_cliente: "Asaas Gestão Financeira",
-        cpf_cnpj: "14099452000100",
-        email: "financeiro@asaas.com.br",
-        valor: 100,
-        vencimento: "2026-04-30",
-        descricao: "Honorários advocatícios (Teste BYOK)",
-      });
-      
-      console.log("[ASAAS_TEST] Resultado:", cobrancaResult);
-      
-      return NextResponse.json({ 
-        reply: cobrancaResult.success 
-          ? `[SISTEMA] Cobrança gerada via BYOK para Dutra Advocacia! Link: ${cobrancaResult.invoiceUrl || cobrancaResult.paymentLink}`
-          : `[SISTEMA] Erro no teste BYOK: ${cobrancaResult.error}`,
-        kernel: { status: "executed" }
-      });
-    }
-    // ──────────────────────────
-
     if (!message || !provider) {
       return NextResponse.json({ error: "Faltando parâmetros obrigatórios." }, { status: 400 });
     }
