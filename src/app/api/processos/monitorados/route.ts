@@ -23,7 +23,7 @@ export async function GET(req: NextRequest) {
 
     if (!profile?.tenant_id) return NextResponse.json({ error: 'Tenant não encontrado.' }, { status: 403 })
 
-    const { data: processos, error } = await adminSupabase
+    const { data, error } = await adminSupabase
       .from('monitored_processes')
       .select('*')
       .eq('tenant_id', profile.tenant_id)
@@ -31,9 +31,33 @@ export async function GET(req: NextRequest) {
 
     if (error) return NextResponse.json({ error: 'Erro ao buscar processos.' }, { status: 500 })
 
-    return NextResponse.json({ processos: processos ?? [] })
+    const processos = (data ?? []).map((p: any) => {
+      let partes = {}
+      try {
+        partes = typeof p.partes === 'string' ? JSON.parse(p.partes) : (p.partes ?? {})
+      } catch (e) {
+        partes = {}
+      }
+
+      return {
+        id: p.id,
+        numero_cnj: p.numero_processo,
+        tribunal: p.tribunal,
+        assunto: p.assunto,
+        status: p.status,
+        ultima_movimentacao: p.ultima_movimentacao,
+        data_ultima_movimentacao: p.data_ultima_movimentacao,
+        polo_ativo: (partes as any).polo_ativo ?? '',
+        polo_passivo: (partes as any).polo_passivo ?? '',
+        valor_causa: (partes as any).valor_causa ?? '',
+        data_inicio: (partes as any).data_inicio ?? '',
+        monitoramento_ativo: p.monitoramento_ativo
+      }
+    })
+
+    return NextResponse.json({ processos })
   } catch (err: any) {
-    console.error('[PROCESSOS_MONITORADOS]', err)
+    console.error('[PROCESSOS_MONITORADOS_GET]', err)
     return NextResponse.json({ error: err.message || 'Erro interno.' }, { status: 500 })
   }
 }
@@ -54,25 +78,38 @@ export async function POST(req: NextRequest) {
 
     if (!profile?.tenant_id) return NextResponse.json({ error: 'Tenant não encontrado.' }, { status: 403 })
 
-    const processo = await req.json()
-    if (!processo?.numero_cnj) return NextResponse.json({ error: 'numero_cnj obrigatório.' }, { status: 400 })
+    const body = await req.json()
+    const numero = body.numero_cnj ?? body.numero_processo ?? ''
+    if (!numero) return NextResponse.json({ error: 'numero_cnj obrigatório.' }, { status: 400 })
+
+    const payload = {
+      tenant_id: profile.tenant_id,
+      numero_processo: numero,
+      tribunal: body.tribunal ?? '',
+      assunto: body.assunto ?? '',
+      status: body.status ?? 'ATIVO',
+      ultima_movimentacao: body.ultima_movimentacao ?? '',
+      data_ultima_movimentacao: body.ultima_movimentacao_data ?? null,
+      escavador_id: body.escavador_id ?? null,
+      monitoramento_ativo: true,
+      partes: {
+        polo_ativo: body.polo_ativo ?? '',
+        polo_passivo: body.polo_passivo ?? '',
+        valor_causa: body.valor_causa ?? '',
+        data_inicio: body.data_inicio ?? ''
+      }
+    }
 
     const { error } = await adminSupabase
       .from('monitored_processes')
-      .upsert({
-        tenant_id: profile.tenant_id,
-        numero_cnj: processo.numero_cnj,
-        tribunal: processo.tribunal ?? null,
-        assunto: processo.assunto ?? null,
-        polo_ativo: processo.polo_ativo ?? null,
-        polo_passivo: processo.polo_passivo ?? null,
-        ultima_movimentacao: processo.ultima_movimentacao ?? null,
-        valor_causa: processo.valor_causa ?? null,
-        status: processo.status ?? null,
-        data_inicio: processo.data_inicio ?? null,
-      }, { onConflict: 'tenant_id,numero_cnj' })
+      .upsert(payload, {
+        onConflict: 'tenant_id,numero_processo'
+      })
 
-    if (error) return NextResponse.json({ error: 'Erro ao salvar processo.' }, { status: 500 })
+    if (error) {
+      console.error('[MONITORADOS_POST_ERROR]', error)
+      return NextResponse.json({ error: 'Erro ao salvar processo.', details: error }, { status: 500 })
+    }
 
     return NextResponse.json({ ok: true })
   } catch (err: any) {

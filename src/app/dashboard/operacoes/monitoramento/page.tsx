@@ -58,6 +58,7 @@ function MonitoramentoContent() {
   const [monitorados, setMonitorados] = useState<MonitoredProcess[]>([])
   const [loadingMonitorados, setLoadingMonitorados] = useState(true)
   const [monitorandoId, setMonitorandoId] = useState<string | null>(null)
+  const [monitoradosSet, setMonitoradosSet] = useState<Set<string>>(new Set())
   const [feedbackMsg, setFeedbackMsg] = useState('')
   const [selectedProcess, setSelectedProcess] = useState<Processo | null>(null)
 
@@ -113,16 +114,19 @@ function MonitoramentoContent() {
     })
   }, [searchParams, executarBusca])
 
-  async function fetchMonitorados(tok: string) {
+  async function fetchMonitorados(t: string) {
     setLoadingMonitorados(true)
     try {
       const res = await fetch('/api/processos/monitorados', {
-        headers: { Authorization: `Bearer ${tok}` },
+        headers: { Authorization: `Bearer ${t}` }
       })
       const data = await res.json()
-      setMonitorados(Array.isArray(data.processos) ? data.processos : [])
-    } catch {
-      setMonitorados([])
+      if (data.processos) {
+        setMonitorados(data.processos)
+        setMonitoradosSet(new Set(data.processos.map((p: any) => p.numero_cnj)))
+      }
+    } catch (err) {
+      console.error('Erro ao buscar monitorados:', err)
     } finally {
       setLoadingMonitorados(false)
     }
@@ -148,6 +152,13 @@ function MonitoramentoContent() {
       })
       const data = await res.json()
       if (!res.ok) throw new Error(data.error || 'Erro ao monitorar.')
+      
+      setMonitoradosSet(prev => {
+        const next = new Set(prev)
+        next.add(numero)
+        return next
+      })
+
       setFeedbackMsg(`Processo ${numero} adicionado ao monitoramento.`)
       if (token) fetchMonitorados(token)
     } catch (err: any) {
@@ -167,7 +178,6 @@ function MonitoramentoContent() {
     <main className="min-h-screen bg-[#0a0a0a] text-white font-[DM_Sans,sans-serif] relative overflow-hidden">
       <div className="mx-auto max-w-7xl px-6 py-10">
 
-        {/* ... (Header) */}
         <div className="mb-8">
           <div className="flex items-center gap-3 mb-3">
             <div className="w-9 h-9 rounded-xl bg-[#C9A84C]/10 border border-[#C9A84C]/30 flex items-center justify-center">
@@ -179,9 +189,7 @@ function MonitoramentoContent() {
           <p className="mt-1.5 text-sm text-zinc-500">Busque e monitore processos via Escavador</p>
         </div>
 
-        {/* Busca */}
         <div className="mb-8 rounded-3xl border border-white/10 bg-white/[0.03] p-6 backdrop-blur-sm">
-          {/* ... (Form) */}
           <form onSubmit={handleSearch} className="space-y-4">
             <div className="flex gap-2">
               {(['numero', 'oab', 'cpf'] as SearchTipo[]).map((t) => (
@@ -262,6 +270,7 @@ function MonitoramentoContent() {
                   <tbody>
                     {resultadosPagina.map((p, i) => {
                       const cnj = p.numero_cnj ?? p.numero
+                      const isMonitorado = monitoradosSet.has(cnj ?? '')
                       return (
                         <tr 
                           key={i} 
@@ -280,13 +289,17 @@ function MonitoramentoContent() {
                                 e.stopPropagation()
                                 handleMonitorar(p)
                               }}
-                              disabled={monitorandoId === (cnj)}
-                              className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-lg border border-[#C9A84C]/30 bg-[#C9A84C]/10 text-[#C9A84C] text-[11px] font-bold hover:bg-[#C9A84C]/20 transition disabled:opacity-50 whitespace-nowrap"
+                              disabled={monitorandoId === cnj || isMonitorado}
+                              className={`inline-flex items-center gap-1.5 px-3 py-1.5 rounded-lg border text-[11px] font-bold transition disabled:opacity-50 whitespace-nowrap ${
+                                isMonitorado 
+                                  ? 'border-emerald-500/30 bg-emerald-500/10 text-emerald-400'
+                                  : 'border-[#C9A84C]/30 bg-[#C9A84C]/10 text-[#C9A84C] hover:bg-[#C9A84C]/20'
+                              }`}
                             >
-                              {monitorandoId === (cnj)
+                              {monitorandoId === cnj
                                 ? <Loader2 size={12} className="animate-spin" />
-                                : <Shield size={12} />}
-                              Monitorar
+                                : isMonitorado ? <CheckCircle size={12} className="text-emerald-400" /> : <Shield size={12} />}
+                              {isMonitorado ? 'Monitorado' : 'Monitorar'}
                             </button>
                           </td>
                         </tr>
@@ -296,7 +309,6 @@ function MonitoramentoContent() {
                 </table>
               </div>
               
-              {/* Pagination (mesma coisa) */}
               {totalPaginas > 1 && (
                 <div className="mt-6 flex items-center justify-between px-1">
                   <button
@@ -322,7 +334,6 @@ function MonitoramentoContent() {
           )}
         </div>
 
-        {/* ... (Monitorados) */}
         <div className="rounded-3xl border border-white/10 bg-white/[0.03] backdrop-blur-sm overflow-hidden">
           <div className="px-6 py-5 border-b border-white/10 flex items-center justify-between bg-white/[0.02]">
             <h2 className="text-sm font-semibold text-white uppercase tracking-wider">Processos Monitorados</h2>
@@ -365,7 +376,6 @@ function MonitoramentoContent() {
         </div>
       </div>
 
-      {/* Process Summary Drawer */}
       {selectedProcess && (
         <>
           <div 
@@ -435,17 +445,19 @@ function MonitoramentoContent() {
 
             <div className="p-8 border-t border-white/10 bg-white/[0.02]">
               <button 
-                onClick={() => {
-                  handleMonitorar(selectedProcess)
-                  setSelectedProcess(null)
-                }}
-                disabled={monitorandoId === (selectedProcess.numero_cnj ?? selectedProcess.numero)}
-                className="w-full py-4 rounded-2xl bg-[#C9A84C] text-black font-bold hover:brightness-110 transition disabled:opacity-50 shadow-xl shadow-[#C9A84C]/20 flex items-center justify-center gap-3"
+                onClick={() => handleMonitorar(selectedProcess)}
+                disabled={monitorandoId === (selectedProcess.numero_cnj ?? selectedProcess.numero) || monitoradosSet.has(selectedProcess.numero_cnj ?? '')}
+                className={`w-full py-4 rounded-2xl font-bold transition-all duration-300 flex items-center justify-center gap-3 ${
+                  monitoradosSet.has(selectedProcess.numero_cnj ?? '')
+                    ? 'bg-emerald-600/20 text-emerald-400 border border-emerald-500/30 cursor-default'
+                    : 'bg-[#C9A84C] text-black hover:brightness-110 shadow-xl shadow-[#C9A84C]/20'
+                }`}
               >
                 {monitorandoId === (selectedProcess.numero_cnj ?? selectedProcess.numero)
-                  ? <Loader2 size={18} className="animate-spin" />
-                  : <Shield size={18} />}
-                MONITORAR ESTE PROCESSO
+                  ? <><Loader2 size={18} className="animate-spin" /> Processando...</>
+                  : monitoradosSet.has(selectedProcess.numero_cnj ?? '') 
+                    ? <><CheckCircle size={18} className="text-emerald-400" /> JÁ MONITORADO</>
+                    : <><Shield size={18} /> MONITORAR ESTE PROCESSO</>}
               </button>
             </div>
           </div>
