@@ -55,21 +55,37 @@ export async function POST(req: NextRequest) {
         return NextResponse.json({ error: 'Formato OAB inválido. Use: RJ/211558' }, { status: 400 })
       }
 
-      // Busca estadual e federal (TRF1) em paralelo (primeiras páginas)
-      const [resEstadual, resFederal] = await Promise.all([
-        EscavadorService.buscarPorOAB(apiKey, estado.trim(), numero.trim()),
-        EscavadorService.buscarPorOABFederal(apiKey, estado.trim(), numero.trim())
-      ])
+      let todosProcessos: any[] = []
+      let advogado = null
 
-      const advogado = resEstadual?.advogado_encontrado ?? resFederal?.advogado_encontrado ?? null
-      const totalReal = (resEstadual?.advogado_encontrado?.quantidade_processos ?? 0) + 
-                        (resFederal?.advogado_encontrado?.quantidade_processos ?? 0)
+      // 1. Busca Estadual - até 50 páginas
+      for (let p = 1; p <= 50; p++) {
+        const res = await EscavadorService.buscarPorOAB(apiKey, estado.trim(), numero.trim(), p)
+        if (!advogado) advogado = res?.advogado_encontrado
+        const itens = res?.items ?? res?.itens ?? []
+        if (itens.length === 0) break
+        todosProcessos = [...todosProcessos, ...itens]
+        if (itens.length < 100) break
+      }
 
-      const itensEstaduais = resEstadual?.items ?? resEstadual?.itens ?? []
-      const itensFederais = resFederal?.items ?? resFederal?.itens ?? []
-      const todosProcessos = [...itensEstaduais, ...itensFederais]
+      // 2. Busca Federal - até 50 páginas
+      for (let p = 1; p <= 50; p++) {
+        const res = await EscavadorService.buscarPorOABFederal(apiKey, estado.trim(), numero.trim(), p)
+        if (!advogado && res?.advogado_encontrado) advogado = res.advogado_encontrado
+        const itens = res?.items ?? res?.itens ?? []
+        if (itens.length === 0) break
+        todosProcessos = [...todosProcessos, ...itens]
+        if (itens.length < 100) break
+      }
 
-      const processosNormalizados = todosProcessos.map((p: any) => {
+      // 3. Deduplicação por numero_cnj
+      const unicos = Array.from(
+        new Map(todosProcessos.map(proc => [proc.numero_cnj, proc])).values()
+      )
+
+      const totalReal = advogado?.quantidade_processos ?? unicos.length
+
+      const processosNormalizados = unicos.map((p: any) => {
         const fonteTribunal = p.fontes?.find((f: any) => f.tipo === 'TRIBUNAL')
         return {
           numero_cnj: p.numero_cnj ?? '',

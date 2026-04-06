@@ -37,6 +37,8 @@ import {
   Building2,
   Brain,
   Volume2,
+  ChevronLeft,
+  ChevronRight,
 } from "lucide-react";
 import { useState, useEffect } from "react";
 import { useTheme } from "next-themes";
@@ -61,7 +63,8 @@ export function AdminSidebar() {
     "SISTEMA": true,
   });
 
-  const [isCollapsed, setIsCollapsed] = useState(false);
+  type SidebarMode = "expanded" | "mini" | "hidden";
+  const [sidebarMode, setSidebarMode] = useState<SidebarMode>("expanded");
 
   // Hook para dados reais do usuário
   const { user, role, customPermissions, profile, isLoading: profileLoading } = useUserProfile();
@@ -73,10 +76,15 @@ export function AdminSidebar() {
   }, []);
 
   const toggleSidebar = () => setIsOpen(!isOpen);
-  const toggleCollapse = () => setIsCollapsed(!isCollapsed);
+
+  const toggleSidebarMode = () => {
+    if (sidebarMode === "expanded") setSidebarMode("mini");
+    else if (sidebarMode === "mini") setSidebarMode("hidden");
+    else setSidebarMode("expanded");
+  };
 
   const toggleSection = (title: string) => {
-    if (isCollapsed) return; // Não expande seções no modo mini
+    if (sidebarMode === "mini") return; // Não expande seções no modo mini
     setOpenSections(prev => ({ ...prev, [title]: !prev[title] }));
   };
 
@@ -206,21 +214,22 @@ export function AdminSidebar() {
         bg-card backdrop-blur-3xl border-r border-border
         flex flex-col
         ${isOpen ? "translate-x-0" : "-translate-x-full md:translate-x-0"}
-        ${isCollapsed ? "w-[80px]" : "w-[280px]"}
+        ${sidebarMode === "mini" ? "w-[80px]" : sidebarMode === "hidden" ? "w-0 -translate-x-full opacity-0" : "w-[280px]"}
       `}>
         {/* Toggle Button for Desktop */}
         <button 
-          onClick={toggleCollapse}
+          onClick={toggleSidebarMode}
           className="hidden md:flex absolute top-6 -right-3 z-50 w-6 h-6 items-center justify-center bg-[#CCA761] text-black rounded-full shadow-lg border border-white/20 hover:scale-110 transition-transform"
+          title="Alternar Modo de Exibição"
         >
-          {isCollapsed ? <Plus size={14} className="rotate-45" /> : <Plus size={14} className="rotate-[225deg]" />}
+          {sidebarMode === "mini" ? <ChevronRight size={14} /> : sidebarMode === "expanded" ? <ChevronLeft size={14} /> : <Plus size={14} />}
         </button>
 
         <div className="absolute top-0 right-0 w-[1px] h-full bg-gradient-to-b from-transparent via-[#CCA761]/40 to-transparent z-10" />
 
         <div className="w-full aspect-square max-h-56 flex flex-col items-center justify-center bg-transparent shrink-0">
-          <div className={`relative w-full h-full p-4 transition-all duration-500 ${isCollapsed ? 'scale-75 opacity-0' : 'hover:scale-105 opacity-100'}`}>
-            {!isCollapsed && (
+          <div className={`relative w-full h-full p-4 transition-all duration-500 ${sidebarMode === "mini" ? 'scale-75 opacity-0' : 'hover:scale-105 opacity-100'}`}>
+            {sidebarMode === "expanded" && (
               <Image
                 src="/logo.png"
                 alt="MAYUS Logo"
@@ -231,9 +240,9 @@ export function AdminSidebar() {
           </div>
         </div>
 
-        <div className={`flex-1 overflow-y-auto no-scrollbar pt-2 ${isCollapsed ? 'px-2' : 'px-5'} pb-20 ${montserrat.className}`}>
+        <div className={`flex-1 overflow-y-auto no-scrollbar pt-2 ${sidebarMode === "mini" ? 'px-2' : 'px-5'} pb-20 ${montserrat.className}`}>
 
-          <div className={`space-y-3 mb-8 ${isCollapsed ? 'opacity-0 h-0 overflow-hidden' : 'opacity-100'}`}>
+          <div className={`space-y-3 mb-8 ${sidebarMode === "mini" ? 'opacity-0 h-0 overflow-hidden' : 'opacity-100'}`}>
             <Link href="/dashboard/vendas/nova" className="relative w-full flex items-center justify-center gap-2 bg-gradient-to-r from-[#CCA761] via-[#f1d58d] to-[#CCA761] hover:from-[#e3c27e] hover:via-[#ffe8ad] hover:to-[#e3c27e] text-[#111111] font-[800] py-3 px-4 rounded-lg transition-all duration-300 transform active:scale-95 text-sm shadow-none overflow-hidden hover:-translate-y-[1px] tracking-widest">
               <div className="absolute inset-0 -translate-x-full animate-[shimmer_2.5s_infinite] bg-gradient-to-r from-transparent via-white/40 to-transparent skew-x-12" />
               <Plus size={18} strokeWidth={2.5} className="relative z-10" />
@@ -248,9 +257,10 @@ export function AdminSidebar() {
           <div className="space-y-6 pb-10">
             {filteredSections.map((section, idx) => {
               const isSectionOpen = openSections[section.title] ?? false;
+              const isMini = sidebarMode === "mini";
               return (
                 <div key={idx}>
-                  {!isCollapsed && (
+                  {!isMini && (
                     <button
                       onClick={() => section.collapsible && toggleSection(section.title)}
                       className={`w-full text-[13px] md:text-[14px] text-gray-500 dark:text-white font-black uppercase tracking-[0.25em] mb-4 flex items-center justify-between ${montserrat.className} ${section.collapsible ? 'cursor-pointer hover:text-gray-800 dark:hover:text-[#CCA761]' : 'cursor-default'} transition-colors`}
@@ -262,9 +272,9 @@ export function AdminSidebar() {
                     </button>
                   )}
 
-                  <div className={`overflow-hidden transition-all duration-300 ease-in-out ${(section.collapsible && !isSectionOpen && !isCollapsed) ? 'max-h-0 opacity-0' : 'max-h-[1000px] opacity-100'
+                  <div className={`overflow-hidden transition-all duration-300 ease-in-out ${(section.collapsible && !isSectionOpen && !isMini) ? 'max-h-0 opacity-0' : 'max-h-[1000px] opacity-100'
                     }`}>
-                    <ul className={`space-y-2 ${isCollapsed ? 'flex flex-col items-center' : ''}`}>
+                    <ul className={`space-y-2 ${isMini ? 'flex flex-col items-center' : ''}`}>
                       {section.items.map((item, itemIdx) => {
                         const isActive = pathname === item.href;
                         return (
@@ -272,19 +282,19 @@ export function AdminSidebar() {
                             <Link
                               href={item.href}
                               onClick={() => setIsOpen(false)}
-                              title={isCollapsed ? item.name : ""}
+                              title={isMini ? item.name : ""}
                               className={`
                                 flex items-center gap-3 rounded-lg text-[18px] transition-all duration-300
                                 ${cormorant.className} italic font-bold
-                                ${isCollapsed ? "justify-center p-3" : "px-3 py-3"}
+                                ${isMini ? "justify-center p-3" : "px-3 py-3"}
                                 ${isActive
                                   ? "bg-primary/10 text-primary border-l-2 border-primary shadow-[inset_0_0_20px_rgba(204,167,97,0.05)]"
                                   : "text-muted-foreground hover:bg-accent hover:text-primary"
                                 }
                               `}
                             >
-                              <item.icon size={isCollapsed ? 24 : 20} className={isActive ? "text-[#CCA761]" : "opacity-80"} />
-                              {!isCollapsed && <span>{item.name}</span>}
+                              <item.icon size={isMini ? 24 : 20} className={isActive ? "text-[#CCA761]" : "opacity-80"} />
+                              {!isMini && <span>{item.name}</span>}
                             </Link>
                           </li>
                         )
@@ -297,8 +307,8 @@ export function AdminSidebar() {
           </div>
         </div>
 
-        <div className={`p-5 flex items-center justify-between bg-gray-50 dark:bg-white/5 border-t border-gray-200 dark:border-white/10 ${montserrat.className} ${isCollapsed ? 'flex-col gap-4' : ''}`}>
-          <div className={`flex items-center gap-2 ${isCollapsed ? 'hidden' : 'flex'}`}>
+        <div className={`p-5 flex items-center justify-between bg-gray-50 dark:bg-white/5 border-t border-gray-200 dark:border-white/10 ${montserrat.className} ${sidebarMode === "mini" ? 'flex-col gap-4' : ''}`}>
+          <div className={`items-center gap-2 ${sidebarMode === "mini" ? 'hidden' : 'flex'}`}>
             <div className="w-2 h-2 rounded-full bg-green-500 animate-pulse shadow-[0_0_8px_rgba(34,197,94,0.6)]" />
             <span className={`text-[12px] text-gray-500 dark:text-gray-400 italic ${cormorant.className} tracking-wide font-bold`}>Sistema Online</span>
           </div>
@@ -315,6 +325,17 @@ export function AdminSidebar() {
         </div>
 
       </aside>
+
+      {/* Floating Restore Button for Hidden State */}
+      {sidebarMode === "hidden" && (
+        <button
+          onClick={() => setSidebarMode("expanded")}
+          className="fixed left-0 top-1/2 -translate-y-1/2 z-50 w-8 h-12 bg-[#CCA761] text-black rounded-r-xl shadow-[5px_0_15px_rgba(0,0,0,0.3)] flex items-center justify-center hover:w-10 hover:pr-1 transition-all duration-300 group overflow-hidden"
+          title="Mostrar Menu Lateral"
+        >
+          <ChevronRight size={20} className="group-hover:scale-125 transition-transform" />
+        </button>
+      )}
     </>
   );
 }

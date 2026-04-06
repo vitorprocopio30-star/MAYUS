@@ -37,25 +37,25 @@ export const EscavadorService = {
   },
 
   // 3. Buscar por OAB
-  buscarPorOAB: async (apiKey: string, oabEstado: string, oabNumero: string, cursor?: string) => {
+  buscarPorOAB: async (apiKey: string, oabEstado: string, oabNumero: string, page = 1) => {
     const params = new URLSearchParams({
       oab_estado: oabEstado,
       oab_numero: oabNumero,
-      limit: '100'
+      limit: '100',
+      page: String(page)
     })
-    if (cursor) params.set('cursor', cursor)
     return await fetchEscavador(`/advogado/processos?${params.toString()}`, apiKey)
   },
 
-  // 3.1 Buscar por OAB Federal (TRF1)
-  buscarPorOABFederal: async (apiKey: string, oabEstado: string, oabNumero: string, cursor?: string) => {
+  // 3.1 Buscar por OAB Federal (Justiça Federal)
+  buscarPorOABFederal: async (apiKey: string, oabEstado: string, oabNumero: string, page = 1) => {
     const params = new URLSearchParams({
       oab_estado: oabEstado,
       oab_numero: oabNumero,
-      tribunal: 'TRF1',
-      limit: '100'
+      justica: 'FEDERAL',
+      limit: '100',
+      page: String(page)
     })
-    if (cursor) params.set('cursor', cursor)
     return await fetchEscavador(`/advogado/processos?${params.toString()}`, apiKey)
   },
 

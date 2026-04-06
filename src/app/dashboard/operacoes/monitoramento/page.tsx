@@ -32,12 +32,12 @@ type MonitoredProcess = {
 }
 
 function StatusBadge({ status }: { status: string | null | undefined }) {
-  const s = (status ?? '').toLowerCase()
-  if (s === 'ativo' || s === 'em andamento')
+  const s = (status ?? '').toUpperCase()
+  if (s === 'ATIVO' || s === 'EM ANDAMENTO')
     return <span className="inline-flex items-center gap-1 px-2.5 py-1 rounded-full text-xs font-semibold border border-emerald-500/30 bg-emerald-500/10 text-emerald-400"><CheckCircle size={11} /> Ativo</span>
-  if (s === 'encerrado' || s === 'arquivado')
-    return <span className="inline-flex items-center gap-1 px-2.5 py-1 rounded-full text-xs font-semibold border border-zinc-500/30 bg-zinc-500/10 text-zinc-400"><Eye size={11} /> Encerrado</span>
-  if (s === 'suspenso')
+  if (s === 'ARQUIVADO' || s === 'BAIXADO' || s === 'ENCERRADO')
+    return <span className="inline-flex items-center gap-1 px-2.5 py-1 rounded-full text-xs font-semibold border border-zinc-500/30 bg-zinc-500/10 text-zinc-400"><Eye size={11} /> {s === 'BAIXADO' ? 'Baixado' : 'Arquivado'}</span>
+  if (s === 'SUSPENSO')
     return <span className="inline-flex items-center gap-1 px-2.5 py-1 rounded-full text-xs font-semibold border border-yellow-500/30 bg-yellow-500/10 text-yellow-400"><PauseCircle size={11} /> Suspenso</span>
   return <span className="inline-flex items-center gap-1 px-2.5 py-1 rounded-full text-xs font-semibold border border-zinc-700 bg-zinc-800/60 text-zinc-400">—</span>
 }
@@ -252,11 +252,9 @@ function MonitoramentoContent() {
                     <tr className="border-b border-white/10 bg-white/[0.04]">
                       <th className="sticky left-0 bg-[#0a0a0a] z-20 px-4 py-4 text-left text-[11px] font-bold uppercase tracking-[0.16em] text-zinc-500 whitespace-nowrap min-w-[220px]">Número CNJ</th>
                       <th className="px-4 py-4 text-left text-[11px] font-bold uppercase tracking-[0.16em] text-zinc-500 whitespace-nowrap min-w-[90px]">Tribunal</th>
-                      <th className="px-4 py-4 text-left text-[11px] font-bold uppercase tracking-[0.16em] text-zinc-500 whitespace-nowrap min-w-[180px]">Assunto</th>
                       <th className="px-4 py-4 text-left text-[11px] font-bold uppercase tracking-[0.16em] text-zinc-500 whitespace-nowrap min-w-[160px]">Polo Ativo</th>
                       <th className="px-4 py-4 text-left text-[11px] font-bold uppercase tracking-[0.16em] text-zinc-500 whitespace-nowrap min-w-[160px]">Polo Passivo</th>
                       <th className="px-4 py-4 text-left text-[11px] font-bold uppercase tracking-[0.16em] text-zinc-500 whitespace-nowrap min-w-[110px]">Última Mov.</th>
-                      <th className="px-4 py-4 text-left text-[11px] font-bold uppercase tracking-[0.16em] text-zinc-500 whitespace-nowrap min-w-[110px]">Valor</th>
                       <th className="px-4 py-4 text-left text-[11px] font-bold uppercase tracking-[0.16em] text-zinc-500 whitespace-nowrap min-w-[90px]">Status</th>
                       <th className="sticky right-0 bg-[#0a0a0a] z-20 px-4 py-4 text-right text-[11px] font-bold uppercase tracking-[0.16em] text-zinc-500 min-w-[120px]">Ações</th>
                     </tr>
@@ -272,11 +270,9 @@ function MonitoramentoContent() {
                         >
                           <td className="sticky left-0 bg-[#0a0a0a] group-hover:bg-[#111] z-10 px-4 py-4 text-[13px] font-mono font-medium text-white whitespace-nowrap border-r border-white/5">{cnj ?? '—'}</td>
                           <td className="px-4 py-4 text-[13px] text-zinc-300 whitespace-nowrap">{String(p.tribunal ?? '—')}</td>
-                          <td className="px-4 py-4 text-[13px] text-zinc-300 max-w-[180px] truncate">{String(p.assunto ?? '—')}</td>
                           <td className="px-4 py-4 text-[13px] text-zinc-300 max-w-[160px] truncate">{String(p.polo_ativo ?? '—')}</td>
                           <td className="px-4 py-4 text-[13px] text-zinc-300 max-w-[160px] truncate">{String(p.polo_passivo ?? '—')}</td>
                           <td className="px-4 py-4 text-[13px] text-zinc-400 whitespace-nowrap">{String(p.ultima_movimentacao ?? '—')}</td>
-                          <td className="px-4 py-4 text-[13px] text-zinc-400 whitespace-nowrap">{String(p.valor_causa ?? '—')}</td>
                           <td className="px-4 py-4"><StatusBadge status={String(p.status ?? '')} /></td>
                           <td className="sticky right-0 bg-[#0a0a0a] group-hover:bg-[#111] z-10 px-4 py-4 text-right border-l border-white/5">
                             <button
@@ -444,7 +440,7 @@ function MonitoramentoContent() {
                   setSelectedProcess(null)
                 }}
                 disabled={monitorandoId === (selectedProcess.numero_cnj ?? selectedProcess.numero)}
-                className="w-full py-4 rounded-2xl bg-[#C9A84C] text-black font-bold hover:brightness-110 transition disabled:opacity-50 shadow-xl shadow-[#C9A84C]/10 flex items-center justify-center gap-3"
+                className="w-full py-4 rounded-2xl bg-[#C9A84C] text-black font-bold hover:brightness-110 transition disabled:opacity-50 shadow-xl shadow-[#C9A84C]/20 flex items-center justify-center gap-3"
               >
                 {monitorandoId === (selectedProcess.numero_cnj ?? selectedProcess.numero)
                   ? <Loader2 size={18} className="animate-spin" />
