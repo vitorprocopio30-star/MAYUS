@@ -32,25 +32,26 @@ export async function GET(req: NextRequest) {
     if (error) return NextResponse.json({ error: 'Erro ao buscar processos.' }, { status: 500 })
 
     const processos = (data ?? []).map((p: any) => {
-      let partes = {}
+      let partes: any = {}
       try {
-        partes = typeof p.partes === 'string' ? JSON.parse(p.partes) : (p.partes ?? {})
+        partes = typeof p.partes === 'string'
+          ? JSON.parse(p.partes)
+          : (p.partes ?? {})
       } catch (e) {
         partes = {}
       }
 
       return {
         id: p.id,
-        numero_cnj: p.numero_processo,
-        tribunal: p.tribunal,
-        assunto: p.assunto,
-        status: p.status,
-        ultima_movimentacao: p.ultima_movimentacao,
-        data_ultima_movimentacao: p.data_ultima_movimentacao,
-        polo_ativo: (partes as any).polo_ativo ?? '',
-        polo_passivo: (partes as any).polo_passivo ?? '',
-        valor_causa: (partes as any).valor_causa ?? '',
-        data_inicio: (partes as any).data_inicio ?? '',
+        numero_cnj: p.numero_processo ?? '',
+        tribunal: p.tribunal ?? '—',
+        assunto: p.assunto ?? '—',
+        status: p.status ?? 'ATIVO',
+        ultima_movimentacao: p.ultima_movimentacao ?? '—',
+        polo_ativo: partes.polo_ativo ?? '—',
+        polo_passivo: partes.polo_passivo ?? '—',
+        valor_causa: partes.valor_causa ?? '—',
+        data_inicio: partes.data_inicio ?? '—',
         monitoramento_ativo: p.monitoramento_ativo
       }
     })

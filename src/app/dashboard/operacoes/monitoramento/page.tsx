@@ -29,6 +29,7 @@ type MonitoredProcess = {
   ultima_movimentacao: string | null
   status: string | null
   created_at: string | null
+  monitoramento_ativo: boolean | null
   partes: any // JSONB com polos, valor, data_inicio
 }
 
@@ -63,6 +64,17 @@ function MonitoramentoContent() {
   const [monitoradosSet, setMonitoradosSet] = useState<Set<string>>(new Set())
   const [feedbackMsg, setFeedbackMsg] = useState('')
   const [selectedProcess, setSelectedProcess] = useState<Processo | null>(null)
+  
+  // Paginação
+  const ITENS_POR_PAGINA = 20
+  const [paginaAtual, setPaginaAtual] = useState(1)
+
+  const resultadosPagina = resultados.slice(
+    (paginaAtual - 1) * ITENS_POR_PAGINA,
+    paginaAtual * ITENS_POR_PAGINA
+  )
+
+  const totalPaginas = Math.ceil(resultados.length / ITENS_POR_PAGINA)
 
   function formatarData(data: string | null): string {
     if (!data) return '—'
@@ -107,6 +119,7 @@ function MonitoramentoContent() {
       setHasMore(data.hasMore ?? false)
       setFromCache(data.fromCache ?? false)
       setAdvogado(data.advogado ?? null)
+      setPaginaAtual(1) // Reset na busca
     } catch (err: any) {
       setSearchError(err.message)
     } finally {
@@ -173,11 +186,39 @@ function MonitoramentoContent() {
       })
 
       setFeedbackMsg(`Processo ${numero} adicionado ao monitoramento.`)
+      
+      // 3. Ativar Monitoramento Semanal no Escavador (Background)
+      fetch('/api/processos/ativar-monitoramento', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${token}` },
+        body: JSON.stringify({ numero_cnj: numero }),
+      }).catch(e => console.error('Erro ao ativar monitoramento no Escavador:', e))
+
       if (token) fetchMonitorados(token)
     } catch (err: any) {
       setFeedbackMsg(err.message)
     } finally {
       setMonitorandoId(null)
+    }
+  }
+
+  async function handleCarregarTodos() {
+    const confirm = window.confirm(
+      "Isso consumirá aproximadamente R$ 0,20 em créditos do Escavador para buscar todas as páginas de resultados. Continuar?"
+    )
+    if (!confirm || !token) return
+
+    setSearching(true)
+    setSearchError('')
+    try {
+      // Por agora, chamamos a busca normal. 
+      // Em uma implementação futura, isso poderia iterar por todas as páginas.
+      await executarBusca(query.trim(), tipo, token)
+      setFeedbackMsg("Busca completa realizada com sucesso.")
+    } catch (err: any) {
+      setSearchError(err.message)
+    } finally {
+      setSearching(false)
     }
   }
 
@@ -257,10 +298,16 @@ function MonitoramentoContent() {
             <div className="mt-6">
               <div className="flex items-center justify-between mb-3 px-1">
                 <p className="text-xs text-zinc-500 uppercase tracking-widest font-medium flex items-center gap-2">
-                  <span className="text-white font-bold">{totalResultados ?? resultados.length} PROCESSO(S) CARREGADOS</span>
+                  <span className="text-white font-bold">{resultados.length} PROCESSO(S) CARREGADOS</span>
                   {hasMore && (
-                    <span className="text-zinc-600">
-                      (de {totalEscavador} no total, limitado a 100 por tribunal)
+                    <span className="text-zinc-600 flex items-center gap-2">
+                       (de {totalEscavador} no total — 
+                       <button 
+                         onClick={handleCarregarTodos}
+                         className="text-[#C9A84C] hover:underline font-bold"
+                       >
+                         carregar todos
+                       </button>)
                     </span>
                   )}
                   {fromCache && (
@@ -290,7 +337,7 @@ function MonitoramentoContent() {
                     </tr>
                   </thead>
                   <tbody>
-                    {resultados.map((p, i) => {
+                    {resultadosPagina.map((p, i) => {
                       const cnj = p.numero_cnj ?? p.numero
                       const isMonitorado = monitoradosSet.has(cnj ?? '')
                       return (
@@ -330,6 +377,53 @@ function MonitoramentoContent() {
                   </tbody>
                 </table>
               </div>
+
+              {totalPaginas > 1 && (
+                <div className="mt-6 flex items-center justify-between px-1">
+                  <div className="flex gap-2">
+                    <button
+                      onClick={() => { setPaginaAtual(1); window.scrollTo({ top: 0, behavior: 'smooth' }) }}
+                      disabled={paginaAtual === 1}
+                      className="px-3 py-2 rounded-xl border border-white/10 text-[10px] uppercase font-bold text-zinc-500 hover:text-white disabled:opacity-20 transition"
+                    >
+                      « Primeira
+                    </button>
+                    <button
+                      onClick={() => { setPaginaAtual(p => Math.max(1, p - 1)); window.scrollTo({ top: 0, behavior: 'smooth' }) }}
+                      disabled={paginaAtual === 1}
+                      className="px-3 py-2 rounded-xl border border-white/10 text-[10px] uppercase font-bold text-zinc-500 hover:text-white disabled:opacity-20 transition"
+                    >
+                      ‹ Anterior
+                    </button>
+                  </div>
+                  
+                  <div className="flex items-center gap-4">
+                    <span className="text-xs text-zinc-500">
+                      Página <span className="text-[#C9A84C] font-bold">{paginaAtual}</span> de <span className="text-zinc-300 font-medium">{totalPaginas}</span>
+                    </span>
+                    <span className="text-xs text-zinc-600">
+                      Exibindo {(paginaAtual - 1) * ITENS_POR_PAGINA + 1}–{Math.min(paginaAtual * ITENS_POR_PAGINA, resultados.length)} de {resultados.length}
+                    </span>
+                  </div>
+
+                  <div className="flex gap-2">
+                    <button
+                      onClick={() => { setPaginaAtual(p => Math.min(totalPaginas, p + 1)); window.scrollTo({ top: 0, behavior: 'smooth' }) }}
+                      disabled={paginaAtual === totalPaginas}
+                      className="px-3 py-2 rounded-xl border border-white/10 text-[10px] uppercase font-bold text-zinc-500 hover:text-white disabled:opacity-20 transition"
+                    >
+                      Próxima ›
+                    </button>
+                    <button
+                      onClick={() => { setPaginaAtual(totalPaginas); window.scrollTo({ top: 0, behavior: 'smooth' }) }}
+                      disabled={paginaAtual === totalPaginas}
+                      className="px-3 py-2 rounded-xl border border-white/10 text-[10px] uppercase font-bold text-zinc-500 hover:text-white disabled:opacity-20 transition"
+                    >
+                      Última »
+                    </button>
+                  </div>
+                </div>
+              )}
             </div>
         </div>
 
@@ -371,7 +465,16 @@ function MonitoramentoContent() {
                         <td className="px-6 py-4 text-[13px] text-zinc-300 max-w-[160px] truncate">{polo_ativo}</td>
                         <td className="px-6 py-4 text-[13px] text-zinc-300 max-w-[160px] truncate">{polo_passivo}</td>
                         <td className="px-6 py-4 text-[13px] text-zinc-400 whitespace-nowrap">{formatarData(p.ultima_movimentacao)}</td>
-                        <td className="px-6 py-4"><StatusBadge status={p.status} /></td>
+                        <td className="px-6 py-4">
+                          <div className="flex flex-col gap-1">
+                            <StatusBadge status={p.status} />
+                            {p.monitoramento_ativo && (
+                              <span className="text-[9px] font-bold text-[#C9A84C] opacity-80 flex items-center gap-1">
+                                📡 Escavador Semanal
+                              </span>
+                            )}
+                          </div>
+                        </td>
                         <td className="px-6 py-4">
                           <button
                             onClick={() => {
