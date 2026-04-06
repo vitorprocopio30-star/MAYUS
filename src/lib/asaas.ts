@@ -12,6 +12,17 @@ export interface AsaasPaymentParams {
   externalReference?: string;
 }
 
+export interface AsaasInstallmentParams {
+  customer: string;
+  billingType: 'BOLETO' | 'CREDIT_CARD';
+  value: number;            // Valor total
+  installmentCount: number; // Número de parcelas
+  installmentValue: number; // Valor de cada parcela
+  dueDate: string;          // Vencimento da PRIMEIRA parcela
+  description?: string;
+  externalReference?: string;
+}
+
 export interface AsaasListPaymentsParams {
   customer: string;
   status?: 'PENDING' | 'RECEIVED' | 'CONFIRMED' | 'OVERDUE' | 'REFUNDED' | 'RECEIVED_IN_CASH' | 'REFUND_REQUESTED' | 'REFUND_IN_PROGRESS' | 'CHARGEBACK_REQUESTED' | 'CHARGEBACK_DISPUTE' | 'AWAITING_CHARGEBACK_REVERSAL' | 'DUNNING_REQUESTED' | 'DUNNING_RECEIVED' | 'AWAITING_RISK_ANALYSIS';
@@ -140,6 +151,31 @@ export class AsaasService {
 
     const data = await response.json();
 
+    if (!response.ok) {
+      throw new Error(this.extractErrorMessage(data));
+    }
+
+    return data as AsaasPaymentResponse;
+  }
+
+  /**
+   * Cria uma cobrança parcelada (Boleto ou Cartão).
+   */
+  static async createInstallmentPayment(params: AsaasInstallmentParams, apiKey?: string): Promise<AsaasPaymentResponse> {
+    const key = apiKey || this.API_KEY;
+    const response = await fetch(`${this.BASE_URL}/payments`, {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+        'access_token': key,
+      },
+      body: JSON.stringify({
+        ...params,
+        billingType: params.billingType || 'BOLETO',
+      }),
+    });
+
+    const data = await response.json();
     if (!response.ok) {
       throw new Error(this.extractErrorMessage(data));
     }

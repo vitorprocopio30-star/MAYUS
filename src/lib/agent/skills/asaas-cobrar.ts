@@ -41,6 +41,10 @@ export type AsaasCobrancaParams = {
   vencimento: string      // YYYY-MM-DD
   descricao?: string
   billing_type?: BillingType
+  // Parcelamento
+  parcelas?: number       // Número de parcelas (ex: 14)
+  valor_parcela?: number  // Valor de cada parcela
+  valor_total?: number    // Valor total do contrato
 }
 
 export type AsaasCobrancaResult = {
@@ -264,6 +268,43 @@ export async function executarCobranca(
 
   const customerId = resolved.customerId
 
+  // ── Lógica de Parcelamento ───────────────────────────────────────────────
+  if (params.parcelas && params.parcelas > 1) {
+    const valorTotal = params.valor_total || params.valor
+    const valorParcela = params.valor_parcela || (valorTotal / params.parcelas)
+
+    const cobranca = await AsaasService.createInstallmentPayment({
+      customer: customerId,
+      billingType: billingType === 'UNDEFINED' ? 'BOLETO' : (billingType as 'BOLETO' | 'CREDIT_CARD'),
+      value: valorTotal,
+      installmentCount: params.parcelas,
+      installmentValue: valorParcela,
+      dueDate: params.vencimento,
+      description: descricao,
+      externalReference: params.tenantId,
+    }, apiKey)
+
+    await registrarAuditLog({
+      tenantId: params.tenantId,
+      status: 'success',
+      cobrancaId: cobranca.id,
+      customerId,
+      valor: valorTotal,
+      vencimento: params.vencimento,
+      descricao: `${descricao} (Parcelado ${params.parcelas}x)`,
+      billingType: billingType === 'UNDEFINED' ? 'BOLETO' : billingType,
+    })
+
+    return {
+      success: true,
+      cobrancaId: cobranca.id,
+      invoiceUrl: cobranca.invoiceUrl,
+      bankSlipUrl: cobranca.bankSlipUrl,
+      paymentLink: cobranca.paymentLink,
+    }
+  }
+
+  // ── Cobrança Avulsa (Original) ──────────────────────────────────────────
   try {
     const cobranca = await AsaasService.createPayment({
       customer: customerId,
