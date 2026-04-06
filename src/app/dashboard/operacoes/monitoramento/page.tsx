@@ -1,6 +1,7 @@
 'use client'
 
-import { useEffect, useState } from 'react'
+import { useEffect, useState, useCallback } from 'react'
+import { useRouter, useSearchParams } from 'next/navigation'
 import { Search, Shield, AlertCircle, CheckCircle, PauseCircle, Loader2, Eye } from 'lucide-react'
 import { createClient } from '@/lib/supabase/client'
 
@@ -38,9 +39,11 @@ function StatusBadge({ status }: { status: string | null | undefined }) {
 }
 
 export default function MonitoramentoPage() {
+  const router = useRouter()
+  const searchParams = useSearchParams()
   const [token, setToken] = useState<string | null>(null)
-  const [query, setQuery] = useState('')
-  const [tipo, setTipo] = useState<SearchTipo>('numero')
+  const [query, setQuery] = useState(searchParams.get('q') ?? '')
+  const [tipo, setTipo] = useState<SearchTipo>((searchParams.get('tipo') as SearchTipo) ?? 'numero')
   const [searching, setSearching] = useState(false)
   const [searchError, setSearchError] = useState('')
   const [resultados, setResultados] = useState<Processo[]>([])
@@ -56,15 +59,44 @@ export default function MonitoramentoPage() {
   const totalPaginas = Math.max(1, Math.ceil(resultados.length / POR_PAGINA))
   const resultadosPagina = resultados.slice((paginaAtual - 1) * POR_PAGINA, paginaAtual * POR_PAGINA)
 
+  const executarBusca = useCallback(async (q: string, t: SearchTipo, tok: string) => {
+    if (!q.trim()) return
+    setSearching(true)
+    setSearchError('')
+    setResultados([])
+    setTotalResultados(null)
+    setAdvogado(null)
+    setPaginaAtual(1)
+    try {
+      const res = await fetch('/api/processos/buscar', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${tok}` },
+        body: JSON.stringify({ query: q.trim(), tipo: t }),
+      })
+      const data = await res.json()
+      if (!res.ok) throw new Error(data.error || 'Erro na busca.')
+      setResultados(Array.isArray(data.processos) ? data.processos : [])
+      setTotalResultados(typeof data.total === 'number' ? data.total : null)
+      setAdvogado(data.advogado ?? null)
+    } catch (err: any) {
+      setSearchError(err.message)
+    } finally {
+      setSearching(false)
+    }
+  }, [])
+
   useEffect(() => {
     const supabase = createClient()
     supabase.auth.getSession().then(({ data: { session } }) => {
       if (session?.access_token) {
         setToken(session.access_token)
         fetchMonitorados(session.access_token)
+        const q = searchParams.get('q') ?? ''
+        const t = (searchParams.get('tipo') as SearchTipo) ?? 'numero'
+        if (q) executarBusca(q, t, session.access_token)
       }
     })
-  }, [])
+  }, [searchParams, executarBusca])
 
   async function fetchMonitorados(tok: string) {
     setLoadingMonitorados(true)
@@ -84,28 +116,8 @@ export default function MonitoramentoPage() {
   async function handleSearch(e: React.FormEvent) {
     e.preventDefault()
     if (!query.trim() || !token) return
-    setSearching(true)
-    setSearchError('')
-    setResultados([])
-    setTotalResultados(null)
-    setAdvogado(null)
-    setPaginaAtual(1)
-    try {
-      const res = await fetch('/api/processos/buscar', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${token}` },
-        body: JSON.stringify({ query: query.trim(), tipo }),
-      })
-      const data = await res.json()
-      if (!res.ok) throw new Error(data.error || 'Erro na busca.')
-      setResultados(Array.isArray(data.processos) ? data.processos : [])
-      setTotalResultados(typeof data.total === 'number' ? data.total : null)
-      setAdvogado(data.advogado ?? null)
-    } catch (err: any) {
-      setSearchError(err.message)
-    } finally {
-      setSearching(false)
-    }
+    router.push(`?tipo=${tipo}&q=${encodeURIComponent(query.trim())}`)
+    await executarBusca(query.trim(), tipo, token)
   }
 
   async function handleMonitorar(processo: Processo) {
