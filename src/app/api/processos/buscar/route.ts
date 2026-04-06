@@ -72,6 +72,10 @@ export async function POST(req: NextRequest) {
         cursor = res?.meta?.cursor ?? res?.cursor ?? undefined
       } while (cursor && todosProcessos.length < 1000)
 
+      if (todosProcessos.length > 0) {
+        console.log('[PROCESSO_SAMPLE]', JSON.stringify(todosProcessos[0], null, 2))
+      }
+
       const processosNormalizados = todosProcessos.map((p: any) => ({
         numero_cnj: p.numero_cnj ?? p.numero ?? '',
         tribunal: p.tribunal_sigla ?? p.tribunal ?? '—',
