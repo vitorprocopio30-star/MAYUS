@@ -37,11 +37,14 @@ export const EscavadorService = {
   },
 
   // 3. Buscar por OAB
-  buscarPorOAB: async (apiKey: string, oabEstado: string, oabNumero: string, page = 1, limit = 100) => {
-    return await fetchEscavador(
-      `/advogado/processos?oab_estado=${oabEstado}&oab_numero=${oabNumero}&limit=${limit}&page=${page}`,
-      apiKey
-    )
+  buscarPorOAB: async (apiKey: string, oabEstado: string, oabNumero: string, cursor?: string) => {
+    const params = new URLSearchParams({
+      oab_estado: oabEstado,
+      oab_numero: oabNumero,
+      limit: '100'
+    })
+    if (cursor) params.set('cursor', cursor)
+    return await fetchEscavador(`/advogado/processos?${params.toString()}`, apiKey)
   },
 
   // 4. Buscar por CPF/CNPJ

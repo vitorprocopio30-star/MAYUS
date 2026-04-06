@@ -55,18 +55,22 @@ export async function POST(req: NextRequest) {
         return NextResponse.json({ error: 'Formato OAB inválido. Use: RJ/211558' }, { status: 400 })
       }
       let todosProcessos: any[] = []
-      let page = 1
-      let totalPaginas = 1
+      let cursor: string | undefined = undefined
       let advogado = null
+      let totalReal = 0
+
       do {
-        const res = await EscavadorService.buscarPorOAB(apiKey, estado.trim(), numero.trim(), page, 100)
-        console.log('[ESCAVADOR_FULL]', JSON.stringify(res, null, 2).substring(0, 5000))
-        if (!advogado) advogado = res?.advogado_encontrado ?? null
-        const itens = res?.itens ?? res?.items ?? []
+        const res = await EscavadorService.buscarPorOAB(
+          apiKey, estado.trim(), numero.trim(), cursor
+        )
+        if (!advogado) {
+          advogado = res?.advogado_encontrado ?? null
+          totalReal = advogado?.quantidade_processos ?? 0
+        }
+        const itens = res?.items ?? res?.itens ?? []
         todosProcessos = todosProcessos.concat(itens)
-        totalPaginas = res?.meta?.last_page ?? res?.last_page ?? 1
-        page++
-      } while (page <= totalPaginas && page <= 10)
+        cursor = res?.meta?.cursor ?? res?.cursor ?? undefined
+      } while (cursor && todosProcessos.length < 1000)
 
       const processosNormalizados = todosProcessos.map((p: any) => ({
         numero_cnj: p.numero_cnj ?? p.numero ?? '',
@@ -78,7 +82,8 @@ export async function POST(req: NextRequest) {
 
       return NextResponse.json({
         processos: processosNormalizados,
-        total: processosNormalizados.length,
+        total: totalReal,
+        buscados: processosNormalizados.length,
         advogado
       })
     }
