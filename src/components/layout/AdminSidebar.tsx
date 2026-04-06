@@ -19,6 +19,7 @@ import {
   PieChart,
   Settings,
   ShieldCheck,
+  ShieldAlert,
   Plus,
   Wand2,
   Menu,
@@ -113,6 +114,7 @@ export function AdminSidebar() {
       collapsible: true,
       items: [
         { name: "Processos Ativos", icon: Scale, href: "/dashboard/processos" },
+        { name: "Monitoramento", icon: ShieldAlert, href: "/dashboard/operacoes/monitoramento" },
         { name: "Prazos e Audiências", icon: Clock, href: "/dashboard/prazos" },
         { name: "Repositório de Documentos", icon: FolderOpen, href: "/dashboard/documentos" },
       ]
