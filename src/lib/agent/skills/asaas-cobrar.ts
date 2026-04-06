@@ -105,9 +105,8 @@ async function resolverCustomerId(
     return { customerId: params.customer_id.trim() }
   }
 
-  // ── Cenários 2 e 3: precisa de pelo menos nome ou CPF/CNPJ ────────────────
-  if (!params.nome_cliente?.trim() && !params.cpf_cnpj?.trim()) {
-    return { error: 'Informe customer_id, nome_cliente ou cpf_cnpj para identificar o destinatário.' }
+  if (!params.nome_cliente && !params.cpf_cnpj && !params.customer_id) {
+    return { error: 'Informe pelo menos o nome do cliente para gerar a cobrança.' }
   }
 
   // Monta query de lookup
