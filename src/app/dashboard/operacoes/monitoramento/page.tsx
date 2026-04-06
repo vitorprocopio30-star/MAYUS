@@ -59,11 +59,22 @@ function MonitoramentoContent() {
   const [loadingMonitorados, setLoadingMonitorados] = useState(true)
   const [monitorandoId, setMonitorandoId] = useState<string | null>(null)
   const [feedbackMsg, setFeedbackMsg] = useState('')
+  const [selectedProcess, setSelectedProcess] = useState<Processo | null>(null)
 
   const totalPaginas = Math.max(1, Math.ceil(resultados.length / POR_PAGINA))
   const resultadosPagina = resultados.slice((paginaAtual - 1) * POR_PAGINA, paginaAtual * POR_PAGINA)
 
+  // Fechar Drawer ao apertar ESC
+  useEffect(() => {
+    const handleEsc = (e: KeyboardEvent) => {
+      if (e.key === 'Escape') setSelectedProcess(null)
+    }
+    window.addEventListener('keydown', handleEsc)
+    return () => window.removeEventListener('keydown', handleEsc)
+  }, [])
+
   const executarBusca = useCallback(async (q: string, t: SearchTipo, tok: string) => {
+    // ... (mesma lógica de busca)
     if (!q.trim()) return
     setSearching(true)
     setSearchError('')
@@ -153,10 +164,10 @@ function MonitoramentoContent() {
   }
 
   return (
-    <main className="min-h-screen bg-[#0a0a0a] text-white font-[DM_Sans,sans-serif]">
+    <main className="min-h-screen bg-[#0a0a0a] text-white font-[DM_Sans,sans-serif] relative overflow-hidden">
       <div className="mx-auto max-w-7xl px-6 py-10">
 
-        {/* Header */}
+        {/* ... (Header) */}
         <div className="mb-8">
           <div className="flex items-center gap-3 mb-3">
             <div className="w-9 h-9 rounded-xl bg-[#C9A84C]/10 border border-[#C9A84C]/30 flex items-center justify-center">
@@ -170,6 +181,7 @@ function MonitoramentoContent() {
 
         {/* Busca */}
         <div className="mb-8 rounded-3xl border border-white/10 bg-white/[0.03] p-6 backdrop-blur-sm">
+          {/* ... (Form) */}
           <form onSubmit={handleSearch} className="space-y-4">
             <div className="flex gap-2">
               {(['numero', 'oab', 'cpf'] as SearchTipo[]).map((t) => (
@@ -223,57 +235,74 @@ function MonitoramentoContent() {
 
           {resultados.length > 0 && (
             <div className="mt-6">
-              <div className="flex items-center justify-between mb-3">
-                <p className="text-xs text-zinc-500 uppercase tracking-widest">
+              <div className="flex items-center justify-between mb-3 px-1">
+                <p className="text-xs text-zinc-500 uppercase tracking-widest font-medium">
                   {totalResultados ?? resultados.length} PROCESSO(S) ENCONTRADO(S)
                   {advogado?.nome && (
-                    <span className="ml-2 text-[#C9A84C] not-uppercase normal-case tracking-normal">
+                    <span className="ml-2 text-[#C9A84C] normal-case tracking-normal">
                       — {advogado.nome}
                       {advogado.oab_numero && advogado.oab_estado && ` (OAB/${advogado.oab_estado} ${advogado.oab_numero})`}
                     </span>
                   )}
                 </p>
               </div>
-              <div className="overflow-x-auto rounded-2xl border border-white/10">
+              <div className="overflow-x-auto rounded-2xl border border-white/10 shadow-2xl">
                 <table className="min-w-full border-collapse">
                   <thead>
-                    <tr className="border-b border-white/10 bg-white/[0.02]">
-                      {['Número CNJ', 'Tribunal', 'Assunto', 'Polo Ativo', 'Polo Passivo', 'Última Mov.', 'Valor', 'Status', ''].map((h) => (
-                        <th key={h} className="px-4 py-3 text-left text-xs font-semibold uppercase tracking-[0.12em] text-zinc-500 whitespace-nowrap">{h}</th>
-                      ))}
+                    <tr className="border-b border-white/10 bg-white/[0.04]">
+                      <th className="sticky left-0 bg-[#0a0a0a] z-20 px-4 py-4 text-left text-[11px] font-bold uppercase tracking-[0.16em] text-zinc-500 whitespace-nowrap min-w-[220px]">Número CNJ</th>
+                      <th className="px-4 py-4 text-left text-[11px] font-bold uppercase tracking-[0.16em] text-zinc-500 whitespace-nowrap min-w-[90px]">Tribunal</th>
+                      <th className="px-4 py-4 text-left text-[11px] font-bold uppercase tracking-[0.16em] text-zinc-500 whitespace-nowrap min-w-[180px]">Assunto</th>
+                      <th className="px-4 py-4 text-left text-[11px] font-bold uppercase tracking-[0.16em] text-zinc-500 whitespace-nowrap min-w-[160px]">Polo Ativo</th>
+                      <th className="px-4 py-4 text-left text-[11px] font-bold uppercase tracking-[0.16em] text-zinc-500 whitespace-nowrap min-w-[160px]">Polo Passivo</th>
+                      <th className="px-4 py-4 text-left text-[11px] font-bold uppercase tracking-[0.16em] text-zinc-500 whitespace-nowrap min-w-[110px]">Última Mov.</th>
+                      <th className="px-4 py-4 text-left text-[11px] font-bold uppercase tracking-[0.16em] text-zinc-500 whitespace-nowrap min-w-[110px]">Valor</th>
+                      <th className="px-4 py-4 text-left text-[11px] font-bold uppercase tracking-[0.16em] text-zinc-500 whitespace-nowrap min-w-[90px]">Status</th>
+                      <th className="sticky right-0 bg-[#0a0a0a] z-20 px-4 py-4 text-right text-[11px] font-bold uppercase tracking-[0.16em] text-zinc-500 min-w-[120px]">Ações</th>
                     </tr>
                   </thead>
                   <tbody>
-                    {resultadosPagina.map((p, i) => (
-                      <tr key={i} className="border-b border-white/5 last:border-0 hover:bg-white/[0.02] transition">
-                        <td className="px-4 py-3 text-xs font-mono text-white whitespace-nowrap">{p.numero_cnj ?? '—'}</td>
-                        <td className="px-4 py-3 text-xs text-zinc-300 whitespace-nowrap">{String(p.tribunal ?? '—')}</td>
-                        <td className="px-4 py-3 text-xs text-zinc-300 max-w-[160px] truncate">{String(p.assunto ?? '—')}</td>
-                        <td className="px-4 py-3 text-xs text-zinc-300 max-w-[140px] truncate">{String(p.polo_ativo ?? '—')}</td>
-                        <td className="px-4 py-3 text-xs text-zinc-300 max-w-[140px] truncate">{String(p.polo_passivo ?? '—')}</td>
-                        <td className="px-4 py-3 text-xs text-zinc-400 whitespace-nowrap">{String(p.ultima_movimentacao ?? '—')}</td>
-                        <td className="px-4 py-3 text-xs text-zinc-400 whitespace-nowrap">{String(p.valor_causa ?? '—')}</td>
-                        <td className="px-4 py-3"><StatusBadge status={String(p.status ?? '')} /></td>
-                        <td className="px-4 py-3">
-                          <button
-                            onClick={() => handleMonitorar(p)}
-                            disabled={monitorandoId === (p.numero_cnj ?? p.numero)}
-                            className="inline-flex items-center gap-1.5 px-3 py-2 rounded-xl border border-[#C9A84C]/30 bg-[#C9A84C]/10 text-[#C9A84C] text-xs font-semibold hover:bg-[#C9A84C]/20 transition disabled:opacity-50 whitespace-nowrap"
-                          >
-                            {monitorandoId === (p.numero_cnj ?? p.numero)
-                              ? <Loader2 size={12} className="animate-spin" />
-                              : <Shield size={12} />}
-                            Monitorar
-                          </button>
-                        </td>
-                      </tr>
-                    ))}
+                    {resultadosPagina.map((p, i) => {
+                      const cnj = p.numero_cnj ?? p.numero
+                      return (
+                        <tr 
+                          key={i} 
+                          onClick={() => setSelectedProcess(p)}
+                          className="border-b border-white/5 last:border-0 hover:bg-white/[0.04] transition cursor-pointer group"
+                        >
+                          <td className="sticky left-0 bg-[#0a0a0a] group-hover:bg-[#111] z-10 px-4 py-4 text-[13px] font-mono font-medium text-white whitespace-nowrap border-r border-white/5">{cnj ?? '—'}</td>
+                          <td className="px-4 py-4 text-[13px] text-zinc-300 whitespace-nowrap">{String(p.tribunal ?? '—')}</td>
+                          <td className="px-4 py-4 text-[13px] text-zinc-300 max-w-[180px] truncate">{String(p.assunto ?? '—')}</td>
+                          <td className="px-4 py-4 text-[13px] text-zinc-300 max-w-[160px] truncate">{String(p.polo_ativo ?? '—')}</td>
+                          <td className="px-4 py-4 text-[13px] text-zinc-300 max-w-[160px] truncate">{String(p.polo_passivo ?? '—')}</td>
+                          <td className="px-4 py-4 text-[13px] text-zinc-400 whitespace-nowrap">{String(p.ultima_movimentacao ?? '—')}</td>
+                          <td className="px-4 py-4 text-[13px] text-zinc-400 whitespace-nowrap">{String(p.valor_causa ?? '—')}</td>
+                          <td className="px-4 py-4"><StatusBadge status={String(p.status ?? '')} /></td>
+                          <td className="sticky right-0 bg-[#0a0a0a] group-hover:bg-[#111] z-10 px-4 py-4 text-right border-l border-white/5">
+                            <button
+                              onClick={(e) => {
+                                e.stopPropagation()
+                                handleMonitorar(p)
+                              }}
+                              disabled={monitorandoId === (cnj)}
+                              className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-lg border border-[#C9A84C]/30 bg-[#C9A84C]/10 text-[#C9A84C] text-[11px] font-bold hover:bg-[#C9A84C]/20 transition disabled:opacity-50 whitespace-nowrap"
+                            >
+                              {monitorandoId === (cnj)
+                                ? <Loader2 size={12} className="animate-spin" />
+                                : <Shield size={12} />}
+                              Monitorar
+                            </button>
+                          </td>
+                        </tr>
+                      )
+                    })}
                   </tbody>
                 </table>
               </div>
-
+              
+              {/* Pagination (mesma coisa) */}
               {totalPaginas > 1 && (
-                <div className="mt-4 flex items-center justify-between px-1">
+                <div className="mt-6 flex items-center justify-between px-1">
                   <button
                     onClick={() => setPaginaAtual(p => Math.max(1, p - 1))}
                     disabled={paginaAtual === 1}
@@ -297,40 +326,40 @@ function MonitoramentoContent() {
           )}
         </div>
 
-        {/* Processos Monitorados */}
+        {/* ... (Monitorados) */}
         <div className="rounded-3xl border border-white/10 bg-white/[0.03] backdrop-blur-sm overflow-hidden">
-          <div className="px-6 py-4 border-b border-white/10 flex items-center justify-between">
-            <h2 className="text-sm font-semibold text-white">Processos Monitorados</h2>
-            <span className="text-xs text-zinc-500">{loadingMonitorados ? '...' : `${monitorados.length} processo(s)`}</span>
+          <div className="px-6 py-5 border-b border-white/10 flex items-center justify-between bg-white/[0.02]">
+            <h2 className="text-sm font-semibold text-white uppercase tracking-wider">Processos Monitorados</h2>
+            <span className="text-xs text-zinc-500 font-medium px-3 py-1 rounded-full bg-white/5 border border-white/10">{loadingMonitorados ? '...' : `${monitorados.length} processo(s)`}</span>
           </div>
 
           {loadingMonitorados ? (
-            <div className="flex items-center justify-center py-16">
-              <Loader2 size={20} className="animate-spin text-zinc-600" />
+            <div className="flex items-center justify-center py-20">
+              <Loader2 size={24} className="animate-spin text-zinc-700" />
             </div>
           ) : monitorados.length === 0 ? (
-            <div className="flex flex-col items-center justify-center py-16 gap-3">
-              <Shield size={32} className="text-zinc-700" />
-              <p className="text-sm text-zinc-600">Nenhum processo monitorado ainda.</p>
+            <div className="flex flex-col items-center justify-center py-20 gap-4 opacity-50">
+              <Shield size={40} className="text-zinc-700" />
+              <p className="text-sm text-zinc-500 tracking-wide">Nenhum processo monitorado no momento.</p>
             </div>
           ) : (
             <div className="overflow-x-auto">
               <table className="min-w-full border-collapse">
                 <thead>
-                  <tr className="border-b border-white/10 bg-white/[0.02]">
+                  <tr className="border-b border-white/10 bg-white/[0.01]">
                     {['Número CNJ', 'Tribunal', 'Assunto', 'Última Movimentação', 'Status'].map((h) => (
-                      <th key={h} className="px-5 py-3 text-left text-xs font-semibold uppercase tracking-[0.12em] text-zinc-500">{h}</th>
+                      <th key={h} className="px-6 py-4 text-left text-[11px] font-bold uppercase tracking-[0.16em] text-zinc-500">{h}</th>
                     ))}
                   </tr>
                 </thead>
                 <tbody>
                   {monitorados.map((p) => (
                     <tr key={p.id} className="border-b border-white/5 last:border-0 hover:bg-white/[0.02] transition">
-                      <td className="px-5 py-3 text-sm font-mono text-white">{p.numero_cnj}</td>
-                      <td className="px-5 py-3 text-sm text-zinc-300">{p.tribunal ?? '—'}</td>
-                      <td className="px-5 py-3 text-sm text-zinc-300 max-w-[220px] truncate">{p.assunto ?? '—'}</td>
-                      <td className="px-5 py-3 text-sm text-zinc-400">{p.ultima_movimentacao ?? '—'}</td>
-                      <td className="px-5 py-3"><StatusBadge status={p.status} /></td>
+                      <td className="px-6 py-4 text-[13px] font-mono font-medium text-white">{p.numero_cnj}</td>
+                      <td className="px-6 py-4 text-[13px] text-zinc-300">{p.tribunal ?? '—'}</td>
+                      <td className="px-6 py-4 text-[13px] text-zinc-300 max-w-[240px] truncate">{p.assunto ?? '—'}</td>
+                      <td className="px-6 py-4 text-[13px] text-zinc-400">{p.ultima_movimentacao ?? '—'}</td>
+                      <td className="px-6 py-4"><StatusBadge status={p.status} /></td>
                     </tr>
                   ))}
                 </tbody>
@@ -339,6 +368,93 @@ function MonitoramentoContent() {
           )}
         </div>
       </div>
+
+      {/* Process Summary Drawer */}
+      {selectedProcess && (
+        <>
+          <div 
+            className="fixed inset-0 bg-black/80 backdrop-blur-sm z-[100] transition-opacity"
+            onClick={() => setSelectedProcess(null)}
+          />
+          <div className="fixed top-0 right-0 h-full w-full max-w-lg bg-[#0d0d0d] border-l border-white/10 z-[101] shadow-2xl flex flex-col transform transition-transform animate-in slide-in-from-right duration-500">
+            <div className="p-8 border-b border-white/10 flex items-center justify-between bg-white/[0.02]">
+              <div>
+                <h3 className="text-[11px] font-bold uppercase tracking-[0.2em] text-[#C9A84C] mb-1.5">Resumo do Processo</h3>
+                <p className="text-xl font-mono font-bold text-white tracking-tight">{selectedProcess.numero_cnj ?? selectedProcess.numero}</p>
+              </div>
+              <button 
+                onClick={() => setSelectedProcess(null)}
+                className="p-2.5 rounded-xl hover:bg-white/5 text-zinc-500 hover:text-white transition"
+              >
+                <Eye size={20} className="rotate-45" />
+              </button>
+            </div>
+
+            <div className="flex-1 overflow-y-auto p-8 space-y-8 no-scrollbar">
+              <div className="grid grid-cols-2 gap-8">
+                <div className="space-y-1.5">
+                  <span className="text-[10px] font-bold uppercase tracking-widest text-zinc-500">Status</span>
+                  <div><StatusBadge status={String(selectedProcess.status ?? '')} /></div>
+                </div>
+                <div className="space-y-1.5">
+                  <span className="text-[10px] font-bold uppercase tracking-widest text-zinc-500">Tribunal</span>
+                  <p className="text-sm font-semibold text-zinc-200">{String(selectedProcess.tribunal ?? '—')}</p>
+                </div>
+              </div>
+
+              <div className="space-y-2">
+                <span className="text-[10px] font-bold uppercase tracking-widest text-zinc-500">Assunto Principal</span>
+                <p className="text-sm leading-relaxed text-zinc-200 bg-white/5 p-4 rounded-2xl border border-white/5">{String(selectedProcess.assunto ?? '—')}</p>
+              </div>
+
+              <div className="grid grid-cols-1 gap-6">
+                <div className="space-y-2">
+                  <span className="text-[10px] font-bold uppercase tracking-widest text-zinc-500">Polo Ativo</span>
+                  <div className="text-sm font-medium text-zinc-300 bg-emerald-500/5 p-4 rounded-2xl border border-emerald-500/10 whitespace-pre-wrap">{String(selectedProcess.polo_ativo ?? '—')}</div>
+                </div>
+                <div className="space-y-2">
+                  <span className="text-[10px] font-bold uppercase tracking-widest text-zinc-500">Polo Passivo</span>
+                  <div className="text-sm font-medium text-zinc-300 bg-red-500/5 p-4 rounded-2xl border border-red-500/10 whitespace-pre-wrap">{String(selectedProcess.polo_passivo ?? '—')}</div>
+                </div>
+              </div>
+
+              <div className="grid grid-cols-2 gap-8 pt-4 border-t border-white/5">
+                <div className="space-y-1.5">
+                  <span className="text-[10px] font-bold uppercase tracking-widest text-zinc-500">Valor da Causa</span>
+                  <p className="text-base font-bold text-[#C9A84C]">{String(selectedProcess.valor_causa ?? '—')}</p>
+                </div>
+                <div className="space-y-1.5">
+                  <span className="text-[10px] font-bold uppercase tracking-widest text-zinc-500">Data de Início</span>
+                  <p className="text-sm font-semibold text-zinc-200">{String(selectedProcess.data_inicio ?? '—')}</p>
+                </div>
+              </div>
+
+              <div className="space-y-3 pt-4 border-t border-white/5">
+                <span className="text-[10px] font-bold uppercase tracking-widest text-zinc-500">Última Movimentação</span>
+                <div className="text-[13px] leading-relaxed text-zinc-400 bg-white/[0.02] p-5 rounded-2xl border border-white/10 italic">
+                  "{String(selectedProcess.ultima_movimentacao ?? 'Nenhuma movimentação recente encontrada.')}"
+                </div>
+              </div>
+            </div>
+
+            <div className="p-8 border-t border-white/10 bg-white/[0.02]">
+              <button 
+                onClick={() => {
+                  handleMonitorar(selectedProcess)
+                  setSelectedProcess(null)
+                }}
+                disabled={monitorandoId === (selectedProcess.numero_cnj ?? selectedProcess.numero)}
+                className="w-full py-4 rounded-2xl bg-[#C9A84C] text-black font-bold hover:brightness-110 transition disabled:opacity-50 shadow-xl shadow-[#C9A84C]/10 flex items-center justify-center gap-3"
+              >
+                {monitorandoId === (selectedProcess.numero_cnj ?? selectedProcess.numero)
+                  ? <Loader2 size={18} className="animate-spin" />
+                  : <Shield size={18} />}
+                MONITORAR ESTE PROCESSO
+              </button>
+            </div>
+          </div>
+        </>
+      )}
     </main>
   )
 }

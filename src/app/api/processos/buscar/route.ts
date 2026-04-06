@@ -54,23 +54,20 @@ export async function POST(req: NextRequest) {
       if (!estado || !numero) {
         return NextResponse.json({ error: 'Formato OAB inválido. Use: RJ/211558' }, { status: 400 })
       }
-      let todosProcessos: any[] = []
-      let cursor: string | undefined = undefined
-      let advogado = null
-      let totalReal = 0
 
-      do {
-        const res = await EscavadorService.buscarPorOAB(
-          apiKey, estado.trim(), numero.trim(), cursor
-        )
-        if (!advogado) {
-          advogado = res?.advogado_encontrado ?? null
-          totalReal = advogado?.quantidade_processos ?? 0
-        }
-        const itens = res?.items ?? res?.itens ?? []
-        todosProcessos = todosProcessos.concat(itens)
-        cursor = res?.meta?.cursor ?? res?.cursor ?? undefined
-      } while (cursor && todosProcessos.length < 1000)
+      // Busca estadual e federal (TRF1) em paralelo (primeiras páginas)
+      const [resEstadual, resFederal] = await Promise.all([
+        EscavadorService.buscarPorOAB(apiKey, estado.trim(), numero.trim()),
+        EscavadorService.buscarPorOABFederal(apiKey, estado.trim(), numero.trim())
+      ])
+
+      const advogado = resEstadual?.advogado_encontrado ?? resFederal?.advogado_encontrado ?? null
+      const totalReal = (resEstadual?.advogado_encontrado?.quantidade_processos ?? 0) + 
+                        (resFederal?.advogado_encontrado?.quantidade_processos ?? 0)
+
+      const itensEstaduais = resEstadual?.items ?? resEstadual?.itens ?? []
+      const itensFederais = resFederal?.items ?? resFederal?.itens ?? []
+      const todosProcessos = [...itensEstaduais, ...itensFederais]
 
       const processosNormalizados = todosProcessos.map((p: any) => {
         const fonteTribunal = p.fontes?.find((f: any) => f.tipo === 'TRIBUNAL')

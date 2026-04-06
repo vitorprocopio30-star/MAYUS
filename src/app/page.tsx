@@ -132,27 +132,36 @@ export default function LandingPage() {
         </motion.div>
 
         {/* Central 3D Spline (Z-10: Behind text) */}
-        <div className="absolute inset-0 z-10 w-full h-full flex justify-center items-center">
-          <Reveal delay={0.3} width="100%" className="w-full h-full relative">
-             <>
-                <Spline scene="https://prod.spline.design/antVG5gJ69HRFMFs/scene.splinecode" className="w-full h-full" />
+        <div className="absolute inset-0 z-10 w-full h-full flex justify-center items-center pointer-events-none select-none overflow-hidden">
+          <Reveal delay={0.3} width="100%" className="w-full h-full relative flex items-center justify-center">
+             <div className="relative w-full h-full scale-[0.6] md:scale-[0.8] transition-all duration-1000 ease-out">
+                {/* Scene Content (Enlarged to hide background text and align correctly) */}
+                <div className="absolute inset-0 flex items-center justify-center -translate-y-[10%]">
+                   <Spline scene="https://prod.spline.design/antVG5gJ69HRFMFs/scene.splinecode" className="w-[120%] h-[120%] object-cover" />
+                </div>
+                
+                {/* Clean 3D Mask (Hides unwanted background "MAYUS" from Spline) */}
+                <div className="absolute inset-0 bg-[radial-gradient(circle_at_center,transparent_20%,#050505_80%)] z-[11] opacity-70 pointer-events-none" />
+                
                 {/* Spline Watermark Luxury Mask */}
                 <div className="absolute bottom-0 right-0 w-44 h-16 bg-[#050505] z-[15] pointer-events-none" />
-             </>
+             </div>
           </Reveal>
         </div>
 
         {/* Huge Background Typography (Z-20: In front of Spline) */}
-        <div className="absolute bottom-[10%] md:bottom-[15%] left-1/2 -translate-x-1/2 w-full text-center z-20 pointer-events-none flex flex-col items-center opacity-100">
+        <div className="absolute bottom-[8%] md:bottom-[12%] left-1/2 -translate-x-1/2 w-full text-center z-20 pointer-events-none flex flex-col items-center opacity-100">
           <Reveal delay={0.1} width="100%">
-             <h1 className="text-[8vw] md:text-[6.5vw] font-[900] text-transparent bg-clip-text bg-gradient-to-b from-[#FFF5D1] via-[#EAAA23] to-[#A66E14] uppercase tracking-[-0.04em] leading-[1] drop-shadow-[0_10px_40px_rgba(234,170,35,0.25)] whitespace-nowrap pb-2">
-               PRIMEIRO MODELO<br/>AGÊNTICO DO DIREITO
-             </h1>
+             <div className="flex flex-col items-center">
+                <h1 className="text-[8vw] md:text-[6.5vw] font-[900] text-transparent bg-clip-text bg-gradient-to-b from-[#FFF5D1] via-[#EAAA23] to-[#A66E14] uppercase tracking-[-0.04em] leading-[1] drop-shadow-[0_10px_40px_rgba(234,170,35,0.25)] whitespace-nowrap pb-2">
+                  PRIMEIRO MODELO<br/>AGÊNTICO DO DIREITO
+                </h1>
+             </div>
           </Reveal>
         </div>
 
         {/* Bottom Fade Gradient for smooth transition */}
-        <div className="absolute inset-x-0 bottom-0 h-48 bg-gradient-to-t from-[#050505] to-transparent z-20 pointer-events-none"></div>
+        <div className="absolute inset-x-0 bottom-0 h-64 bg-gradient-to-t from-[#050505] via-[#050505]/40 to-transparent z-20 pointer-events-none"></div>
 
         {/* Left Small Text Block */}
         <div className="hidden md:block absolute left-12 top-[35%] z-30 text-left max-w-[280px] pointer-events-none">

@@ -61,6 +61,8 @@ export function AdminSidebar() {
     "SISTEMA": true,
   });
 
+  const [isCollapsed, setIsCollapsed] = useState(false);
+
   // Hook para dados reais do usuário
   const { user, role, customPermissions, profile, isLoading: profileLoading } = useUserProfile();
   const allowedHrefs = getAllowedHrefs(customPermissions, role);
@@ -71,12 +73,15 @@ export function AdminSidebar() {
   }, []);
 
   const toggleSidebar = () => setIsOpen(!isOpen);
+  const toggleCollapse = () => setIsCollapsed(!isCollapsed);
 
   const toggleSection = (title: string) => {
+    if (isCollapsed) return; // Não expande seções no modo mini
     setOpenSections(prev => ({ ...prev, [title]: !prev[title] }));
   };
 
   const menuSections = [
+    // ... (mesmo conteúdo de menuSections)
     {
       title: "VISÃO GERAL",
       collapsible: true,
@@ -166,11 +171,10 @@ export function AdminSidebar() {
           return user?.id === '1952586a-b97b-47e9-a18d-3f955c2a5cf0';
         }
         if (isAdmin) return true;
-        // Agente / Skills e Memória Institucional — visíveis apenas para admin e socio
         if (item.href === "/dashboard/configuracoes/agente") return role === "admin" || role === "socio";
         if (item.href === "/dashboard/configuracoes/memoria") return role === "admin" || role === "socio";
         if (item.href === "/dashboard/configuracoes/voz") return role === "admin" || role === "socio";
-        if (item.href === "/dashboard/agenda-admin") return false; // Somente chefe
+        if (item.href === "/dashboard/agenda-admin") return false;
         if (item.href === "/dashboard") return true;
         if (item.href === "/dashboard/equipe") return false;
         return allowedHrefs.some(allowed => {
@@ -198,27 +202,38 @@ export function AdminSidebar() {
       )}
 
       <aside className={`
-        fixed top-0 left-0 h-full z-40 transition-transform duration-300 ease-in-out
-        w-[280px] bg-card backdrop-blur-3xl border-r border-border
+        fixed top-0 left-0 h-full z-40 transition-all duration-300 ease-in-out
+        bg-card backdrop-blur-3xl border-r border-border
         flex flex-col
         ${isOpen ? "translate-x-0" : "-translate-x-full md:translate-x-0"}
+        ${isCollapsed ? "w-[80px]" : "w-[280px]"}
       `}>
+        {/* Toggle Button for Desktop */}
+        <button 
+          onClick={toggleCollapse}
+          className="hidden md:flex absolute top-6 -right-3 z-50 w-6 h-6 items-center justify-center bg-[#CCA761] text-black rounded-full shadow-lg border border-white/20 hover:scale-110 transition-transform"
+        >
+          {isCollapsed ? <Plus size={14} className="rotate-45" /> : <Plus size={14} className="rotate-[225deg]" />}
+        </button>
+
         <div className="absolute top-0 right-0 w-[1px] h-full bg-gradient-to-b from-transparent via-[#CCA761]/40 to-transparent z-10" />
 
         <div className="w-full aspect-square max-h-56 flex flex-col items-center justify-center bg-transparent shrink-0">
-          <div className="relative w-full h-full p-4 hover:scale-105 transition-transform duration-500">
-            <Image
-              src="/logo.png"
-              alt="MAYUS Logo"
-              fill
-              className="object-contain drop-shadow-[0_0_15px_rgba(204,167,97,0.15)]"
-            />
+          <div className={`relative w-full h-full p-4 transition-all duration-500 ${isCollapsed ? 'scale-75 opacity-0' : 'hover:scale-105 opacity-100'}`}>
+            {!isCollapsed && (
+              <Image
+                src="/logo.png"
+                alt="MAYUS Logo"
+                fill
+                className="object-contain drop-shadow-[0_0_15px_rgba(204,167,97,0.15)]"
+              />
+            )}
           </div>
         </div>
 
-        <div className={`flex-1 overflow-y-auto no-scrollbar pt-2 px-5 pb-20 ${montserrat.className}`}>
+        <div className={`flex-1 overflow-y-auto no-scrollbar pt-2 ${isCollapsed ? 'px-2' : 'px-5'} pb-20 ${montserrat.className}`}>
 
-          <div className="space-y-3 mb-8">
+          <div className={`space-y-3 mb-8 ${isCollapsed ? 'opacity-0 h-0 overflow-hidden' : 'opacity-100'}`}>
             <Link href="/dashboard/vendas/nova" className="relative w-full flex items-center justify-center gap-2 bg-gradient-to-r from-[#CCA761] via-[#f1d58d] to-[#CCA761] hover:from-[#e3c27e] hover:via-[#ffe8ad] hover:to-[#e3c27e] text-[#111111] font-[800] py-3 px-4 rounded-lg transition-all duration-300 transform active:scale-95 text-sm shadow-none overflow-hidden hover:-translate-y-[1px] tracking-widest">
               <div className="absolute inset-0 -translate-x-full animate-[shimmer_2.5s_infinite] bg-gradient-to-r from-transparent via-white/40 to-transparent skew-x-12" />
               <Plus size={18} strokeWidth={2.5} className="relative z-10" />
@@ -228,7 +243,6 @@ export function AdminSidebar() {
               <Wand2 size={18} className="text-primary group-hover:-rotate-12 transition-transform duration-300" />
               GERAR PEÇA COM IA
             </button>
-
           </div>
 
           <div className="space-y-6 pb-10">
@@ -236,37 +250,41 @@ export function AdminSidebar() {
               const isSectionOpen = openSections[section.title] ?? false;
               return (
                 <div key={idx}>
-                  <button
-                    onClick={() => section.collapsible && toggleSection(section.title)}
-                    className={`w-full text-[13px] md:text-[14px] text-gray-500 dark:text-white font-black uppercase tracking-[0.25em] mb-4 flex items-center justify-between ${montserrat.className} ${section.collapsible ? 'cursor-pointer hover:text-gray-800 dark:hover:text-[#CCA761]' : 'cursor-default'} transition-colors`}
-                  >
-                    {section.title}
-                    {section.collapsible && (
-                      <ChevronDown size={18} className={`opacity-60 transition-transform duration-300 ${isSectionOpen ? 'rotate-180' : ''}`} />
-                    )}
-                  </button>
+                  {!isCollapsed && (
+                    <button
+                      onClick={() => section.collapsible && toggleSection(section.title)}
+                      className={`w-full text-[13px] md:text-[14px] text-gray-500 dark:text-white font-black uppercase tracking-[0.25em] mb-4 flex items-center justify-between ${montserrat.className} ${section.collapsible ? 'cursor-pointer hover:text-gray-800 dark:hover:text-[#CCA761]' : 'cursor-default'} transition-colors`}
+                    >
+                      {section.title}
+                      {section.collapsible && (
+                        <ChevronDown size={18} className={`opacity-60 transition-transform duration-300 ${isSectionOpen ? 'rotate-180' : ''}`} />
+                      )}
+                    </button>
+                  )}
 
-                  <div className={`overflow-hidden transition-all duration-300 ease-in-out ${section.collapsible && !isSectionOpen ? 'max-h-0 opacity-0' : 'max-h-[500px] opacity-100'
+                  <div className={`overflow-hidden transition-all duration-300 ease-in-out ${(section.collapsible && !isSectionOpen && !isCollapsed) ? 'max-h-0 opacity-0' : 'max-h-[1000px] opacity-100'
                     }`}>
-                    <ul className="space-y-2">
+                    <ul className={`space-y-2 ${isCollapsed ? 'flex flex-col items-center' : ''}`}>
                       {section.items.map((item, itemIdx) => {
                         const isActive = pathname === item.href;
                         return (
-                          <li key={itemIdx}>
+                          <li key={itemIdx} className="w-full">
                             <Link
                               href={item.href}
                               onClick={() => setIsOpen(false)}
+                              title={isCollapsed ? item.name : ""}
                               className={`
-                                flex items-center gap-3 px-3 py-3 rounded-lg text-[18px] transition-colors
+                                flex items-center gap-3 rounded-lg text-[18px] transition-all duration-300
                                 ${cormorant.className} italic font-bold
+                                ${isCollapsed ? "justify-center p-3" : "px-3 py-3"}
                                 ${isActive
                                   ? "bg-primary/10 text-primary border-l-2 border-primary shadow-[inset_0_0_20px_rgba(204,167,97,0.05)]"
                                   : "text-muted-foreground hover:bg-accent hover:text-primary"
                                 }
                               `}
                             >
-                              <item.icon size={20} className={isActive ? "text-[#CCA761]" : "opacity-80"} />
-                              {item.name}
+                              <item.icon size={isCollapsed ? 24 : 20} className={isActive ? "text-[#CCA761]" : "opacity-80"} />
+                              {!isCollapsed && <span>{item.name}</span>}
                             </Link>
                           </li>
                         )
@@ -279,8 +297,8 @@ export function AdminSidebar() {
           </div>
         </div>
 
-        <div className={`p-5 flex items-center justify-between bg-gray-50 dark:bg-white/5 border-t border-gray-200 dark:border-white/10 ${montserrat.className}`}>
-          <div className="flex items-center gap-2">
+        <div className={`p-5 flex items-center justify-between bg-gray-50 dark:bg-white/5 border-t border-gray-200 dark:border-white/10 ${montserrat.className} ${isCollapsed ? 'flex-col gap-4' : ''}`}>
+          <div className={`flex items-center gap-2 ${isCollapsed ? 'hidden' : 'flex'}`}>
             <div className="w-2 h-2 rounded-full bg-green-500 animate-pulse shadow-[0_0_8px_rgba(34,197,94,0.6)]" />
             <span className={`text-[12px] text-gray-500 dark:text-gray-400 italic ${cormorant.className} tracking-wide font-bold`}>Sistema Online</span>
           </div>
@@ -289,7 +307,7 @@ export function AdminSidebar() {
             <button
               onClick={() => setTheme(resolvedTheme === 'dark' ? 'light' : 'dark')}
               className="p-2 rounded-md hover:bg-gray-200 dark:hover:bg-[#222] text-gray-500 dark:text-gray-400 transition-colors"
-              title="Alternar Tema da Área de Trabalho"
+              title="Alternar Tema"
             >
               {resolvedTheme === 'dark' ? <Sun size={20} /> : <Moon size={20} />}
             </button>

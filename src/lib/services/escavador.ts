@@ -47,6 +47,18 @@ export const EscavadorService = {
     return await fetchEscavador(`/advogado/processos?${params.toString()}`, apiKey)
   },
 
+  // 3.1 Buscar por OAB Federal (TRF1)
+  buscarPorOABFederal: async (apiKey: string, oabEstado: string, oabNumero: string, cursor?: string) => {
+    const params = new URLSearchParams({
+      oab_estado: oabEstado,
+      oab_numero: oabNumero,
+      tribunal: 'TRF1',
+      limit: '100'
+    })
+    if (cursor) params.set('cursor', cursor)
+    return await fetchEscavador(`/advogado/processos?${params.toString()}`, apiKey)
+  },
+
   // 4. Buscar por CPF/CNPJ
   buscarPorCPFCNPJ: async (apiKey: string, cpfCnpj: string) => {
     return await fetchEscavador(`/envolvido/processos?cpf_cnpj=${cpfCnpj}`, apiKey);
