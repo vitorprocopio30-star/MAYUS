@@ -417,7 +417,7 @@ export async function POST(req: Request) {
 
               const paymentUrl = cobrancaResult.invoiceUrl ?? cobrancaResult.bankSlipUrl ?? cobrancaResult.paymentLink;
               const reply = paymentUrl
-                ? `Cobrança gerada com sucesso! Link de pagamento: ${paymentUrl}`
+                ? `Cobrança gerada com sucesso! [Clique aqui para pagar](${paymentUrl})`
                 : `Cobrança gerada com sucesso! ID: ${cobrancaResult.cobrancaId}`;
 
               return NextResponse.json({ reply, kernel: { status: "executed", auditLogId: execResult.auditLogId } });
