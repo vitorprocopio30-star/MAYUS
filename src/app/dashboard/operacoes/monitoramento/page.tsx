@@ -46,10 +46,15 @@ export default function MonitoramentoPage() {
   const [resultados, setResultados] = useState<Processo[]>([])
   const [totalResultados, setTotalResultados] = useState<number | null>(null)
   const [advogado, setAdvogado] = useState<{ nome?: string; oab_numero?: string; oab_estado?: string } | null>(null)
+  const [paginaAtual, setPaginaAtual] = useState(1)
+  const POR_PAGINA = 20
   const [monitorados, setMonitorados] = useState<MonitoredProcess[]>([])
   const [loadingMonitorados, setLoadingMonitorados] = useState(true)
   const [monitorandoId, setMonitorandoId] = useState<string | null>(null)
   const [feedbackMsg, setFeedbackMsg] = useState('')
+
+  const totalPaginas = Math.max(1, Math.ceil(resultados.length / POR_PAGINA))
+  const resultadosPagina = resultados.slice((paginaAtual - 1) * POR_PAGINA, paginaAtual * POR_PAGINA)
 
   useEffect(() => {
     const supabase = createClient()
@@ -84,6 +89,7 @@ export default function MonitoramentoPage() {
     setResultados([])
     setTotalResultados(null)
     setAdvogado(null)
+    setPaginaAtual(1)
     try {
       const res = await fetch('/api/processos/buscar', {
         method: 'POST',
@@ -225,7 +231,7 @@ export default function MonitoramentoPage() {
                     </tr>
                   </thead>
                   <tbody>
-                    {resultados.map((p, i) => (
+                    {resultadosPagina.map((p, i) => (
                       <tr key={i} className="border-b border-white/5 last:border-0 hover:bg-white/[0.02] transition">
                         <td className="px-4 py-3 text-sm font-mono text-white">{p.numero_cnj ?? p.numero ?? '—'}</td>
                         <td className="px-4 py-3 text-sm text-zinc-300">{String(p.tribunal ?? '—')}</td>
@@ -249,6 +255,29 @@ export default function MonitoramentoPage() {
                   </tbody>
                 </table>
               </div>
+
+              {/* Paginação */}
+              {totalPaginas > 1 && (
+                <div className="mt-4 flex items-center justify-between px-1">
+                  <button
+                    onClick={() => setPaginaAtual(p => Math.max(1, p - 1))}
+                    disabled={paginaAtual === 1}
+                    className="px-4 py-2 rounded-xl border border-white/10 text-xs text-zinc-400 hover:text-white hover:border-white/20 transition disabled:opacity-30 disabled:cursor-not-allowed"
+                  >
+                    ← Anterior
+                  </button>
+                  <span className="text-xs text-zinc-500">
+                    Página <span className="text-white font-semibold">{paginaAtual}</span> de <span className="text-white font-semibold">{totalPaginas}</span>
+                  </span>
+                  <button
+                    onClick={() => setPaginaAtual(p => Math.min(totalPaginas, p + 1))}
+                    disabled={paginaAtual === totalPaginas}
+                    className="px-4 py-2 rounded-xl border border-white/10 text-xs text-zinc-400 hover:text-white hover:border-white/20 transition disabled:opacity-30 disabled:cursor-not-allowed"
+                  >
+                    Próximo →
+                  </button>
+                </div>
+              )}
             </div>
           )}
         </div>
