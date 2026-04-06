@@ -55,6 +55,7 @@ export async function POST(req: NextRequest) {
         return NextResponse.json({ error: 'Formato OAB inválido. Use: SP/123456' }, { status: 400 })
       }
       resultado = await EscavadorService.buscarPorOAB(apiKey, estado.trim(), numero.trim())
+      console.log('[ESCAVADOR_DEBUG]', JSON.stringify(resultado, null, 2).substring(0, 2000))
       return NextResponse.json({ processos: resultado?.items ?? resultado ?? [] })
     }
 
