@@ -60,6 +60,7 @@ export async function POST(req: NextRequest) {
       let advogado = null
       do {
         const res = await EscavadorService.buscarPorOAB(apiKey, estado.trim(), numero.trim(), page, 100)
+        console.log('[ESCAVADOR_FULL]', JSON.stringify(res, null, 2).substring(0, 5000))
         if (!advogado) advogado = res?.advogado_encontrado ?? null
         const itens = res?.itens ?? res?.items ?? []
         todosProcessos = todosProcessos.concat(itens)
