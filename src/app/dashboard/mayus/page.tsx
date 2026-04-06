@@ -1,6 +1,7 @@
 "use client";
 
 import { useState, useEffect, useRef } from "react";
+import ReactMarkdown from 'react-markdown'
 import { Cormorant_Garamond, Montserrat } from "next/font/google";
 import {
   Send, Bot, User, BrainCircuit, Sparkles, Loader2, KeyRound,
@@ -896,7 +897,18 @@ export default function MAYUSPlayground() {
                     ? 'bg-[#111] text-gray-300 rounded-tl-sm border border-white/5'
                     : 'bg-red-500/10 text-red-400 border border-red-500/30'
                 }`}>
-                  {msg.content}
+                  <ReactMarkdown
+                    components={{
+                      a: ({ href, children }) => (
+                        <a href={href} target="_blank" rel="noopener noreferrer"
+                           className="text-yellow-400 underline hover:text-yellow-300">
+                          {children}
+                        </a>
+                      )
+                    }}
+                  >
+                    {msg.content}
+                  </ReactMarkdown>
                   
                   {msg.role === 'model' && (
                     <button
