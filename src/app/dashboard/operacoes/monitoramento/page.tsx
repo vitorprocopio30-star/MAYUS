@@ -2,7 +2,7 @@
 
 import { useEffect, useState, useCallback, Suspense } from 'react'
 import { useRouter, useSearchParams } from 'next/navigation'
-import { Search, Shield, AlertCircle, CheckCircle, PauseCircle, Loader2, Eye } from 'lucide-react'
+import { Search, Shield, AlertCircle, CheckCircle, PauseCircle, Loader2, Eye, FileText } from 'lucide-react'
 import { createClient } from '@/lib/supabase/client'
 
 type SearchTipo = 'numero' | 'oab' | 'cpf'
@@ -29,6 +29,7 @@ type MonitoredProcess = {
   ultima_movimentacao: string | null
   status: string | null
   created_at: string | null
+  partes: any // JSONB com polos, valor, data_inicio
 }
 
 function StatusBadge({ status }: { status: string | null | undefined }) {
@@ -62,6 +63,18 @@ function MonitoramentoContent() {
   const [monitoradosSet, setMonitoradosSet] = useState<Set<string>>(new Set())
   const [feedbackMsg, setFeedbackMsg] = useState('')
   const [selectedProcess, setSelectedProcess] = useState<Processo | null>(null)
+
+  function formatarData(data: string | null): string {
+    if (!data) return '—'
+    // Aceita tanto "2026-03-25" quanto "25/03/2026"
+    const d = new Date(data.includes('/') 
+      ? data.split('/').reverse().join('-') 
+      : data)
+    if (isNaN(d.getTime())) return data
+    return d.toLocaleDateString('pt-BR', {
+      day: '2-digit', month: '2-digit', year: 'numeric'
+    })
+  }
 
   // Fechar Drawer ao apertar ESC
   useEffect(() => {
@@ -290,7 +303,7 @@ function MonitoramentoContent() {
                           <td className="px-4 py-4 text-[13px] text-zinc-300 whitespace-nowrap">{String(p.tribunal ?? '—')}</td>
                           <td className="px-4 py-4 text-[13px] text-zinc-300 max-w-[160px] truncate">{String(p.polo_ativo ?? '—')}</td>
                           <td className="px-4 py-4 text-[13px] text-zinc-300 max-w-[160px] truncate">{String(p.polo_passivo ?? '—')}</td>
-                          <td className="px-4 py-4 text-[13px] text-zinc-400 whitespace-nowrap">{String(p.ultima_movimentacao ?? '—')}</td>
+                          <td className="px-4 py-4 text-[13px] text-zinc-400 whitespace-nowrap">{formatarData(p.ultima_movimentacao)}</td>
                           <td className="px-4 py-4"><StatusBadge status={String(p.status ?? '')} /></td>
                           <td className="sticky right-0 bg-[#0a0a0a] group-hover:bg-[#111] z-10 px-4 py-4 text-right border-l border-white/5">
                             <button
@@ -340,21 +353,44 @@ function MonitoramentoContent() {
               <table className="min-w-full border-collapse">
                 <thead>
                   <tr className="border-b border-white/10 bg-white/[0.01]">
-                    {['Número CNJ', 'Tribunal', 'Assunto', 'Última Movimentação', 'Status'].map((h) => (
-                      <th key={h} className="px-6 py-4 text-left text-[11px] font-bold uppercase tracking-[0.16em] text-zinc-500">{h}</th>
+                    {['Número CNJ', 'Tribunal', 'Polo Ativo', 'Polo Passivo', 'Última Mov.', 'Status', 'Ações'].map((h) => (
+                      <th key={h} className="px-6 py-4 text-left text-[11px] font-bold uppercase tracking-[0.16em] text-zinc-500 whitespace-nowrap">{h}</th>
                     ))}
                   </tr>
                 </thead>
                 <tbody>
-                  {monitorados.map((p) => (
-                    <tr key={p.id} className="border-b border-white/5 last:border-0 hover:bg-white/[0.02] transition">
-                      <td className="px-6 py-4 text-[13px] font-mono font-medium text-white">{p.numero_cnj}</td>
-                      <td className="px-6 py-4 text-[13px] text-zinc-300">{p.tribunal ?? '—'}</td>
-                      <td className="px-6 py-4 text-[13px] text-zinc-300 max-w-[240px] truncate">{p.assunto ?? '—'}</td>
-                      <td className="px-6 py-4 text-[13px] text-zinc-400">{p.ultima_movimentacao ?? '—'}</td>
-                      <td className="px-6 py-4"><StatusBadge status={p.status} /></td>
-                    </tr>
-                  ))}
+                  {monitorados.map((p) => {
+                    const partes = typeof p.partes === 'string' ? JSON.parse(p.partes) : (p.partes ?? {})
+                    const polo_ativo = partes.polo_ativo ?? '—'
+                    const polo_passivo = partes.polo_passivo ?? '—'
+                    
+                    return (
+                      <tr key={p.id} className="border-b border-white/5 last:border-0 hover:bg-white/[0.02] transition">
+                        <td className="px-6 py-4 text-[13px] font-mono font-medium text-white">{p.numero_cnj}</td>
+                        <td className="px-6 py-4 text-[13px] text-zinc-300 whitespace-nowrap">{p.tribunal ?? '—'}</td>
+                        <td className="px-6 py-4 text-[13px] text-zinc-300 max-w-[160px] truncate">{polo_ativo}</td>
+                        <td className="px-6 py-4 text-[13px] text-zinc-300 max-w-[160px] truncate">{polo_passivo}</td>
+                        <td className="px-6 py-4 text-[13px] text-zinc-400 whitespace-nowrap">{formatarData(p.ultima_movimentacao)}</td>
+                        <td className="px-6 py-4"><StatusBadge status={p.status} /></td>
+                        <td className="px-6 py-4">
+                          <button
+                            onClick={() => {
+                              // Converte Monitored para Processo para o Drawer
+                              setSelectedProcess({
+                                ...p,
+                                ...partes,
+                                polo_ativo,
+                                polo_passivo
+                              })
+                            }}
+                            className="p-2 rounded-lg bg-white/5 border border-white/10 text-zinc-400 hover:text-white hover:border-white/20 transition flex items-center gap-2 text-[10px] uppercase font-bold"
+                          >
+                            <FileText size={12} /> Resumo
+                          </button>
+                        </td>
+                      </tr>
+                    )
+                  })}
                 </tbody>
               </table>
             </div>
@@ -417,14 +453,14 @@ function MonitoramentoContent() {
                 </div>
                 <div className="space-y-1.5">
                   <span className="text-[10px] font-bold uppercase tracking-widest text-zinc-500">Data de Início</span>
-                  <p className="text-sm font-semibold text-zinc-200">{String(selectedProcess.data_inicio ?? '—')}</p>
+                  <p className="text-sm font-semibold text-zinc-200">{formatarData(selectedProcess.data_inicio ?? '—')}</p>
                 </div>
               </div>
 
               <div className="space-y-3 pt-4 border-t border-white/5">
                 <span className="text-[10px] font-bold uppercase tracking-widest text-zinc-500">Última Movimentação</span>
                 <div className="text-[13px] leading-relaxed text-zinc-400 bg-white/[0.02] p-5 rounded-2xl border border-white/10 italic">
-                  "{String(selectedProcess.ultima_movimentacao ?? 'Nenhuma movimentação recente encontrada.')}"
+                  "{formatarData(selectedProcess.ultima_movimentacao ?? 'Nenhuma movimentação recente encontrada.')}"
                 </div>
               </div>
             </div>
