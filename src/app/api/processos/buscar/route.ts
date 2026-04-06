@@ -52,12 +52,27 @@ export async function POST(req: NextRequest) {
     if (tipo === 'oab') {
       const [estado, numero] = query.trim().split('/')
       if (!estado || !numero) {
-        return NextResponse.json({ error: 'Formato OAB inválido. Use: SP/123456' }, { status: 400 })
+        return NextResponse.json({ error: 'Formato OAB inválido. Use: RJ/211558' }, { status: 400 })
       }
       resultado = await EscavadorService.buscarPorOAB(apiKey, estado.trim(), numero.trim())
-      console.log('[ESCAVADOR_DEBUG]', JSON.stringify(resultado, null, 2).substring(0, 2000))
-      const items = resultado?.itens ?? resultado?.items ?? resultado?.processos ?? []
-      return NextResponse.json({ processos: items })
+
+      // Escavador retorna { advogado_encontrado: {...}, itens: [...] }
+      // ou { items: [...] } dependendo da versão
+      const processos = resultado?.itens
+        ?? resultado?.items
+        ?? resultado?.processos
+        ?? (resultado?.advogado_encontrado ? [] : [])
+
+      // Mapeia campos do Escavador para o formato da página
+      const processosNormalizados = processos.map((p: any) => ({
+        numero_cnj: p.numero_cnj ?? p.numero ?? p.id ?? '',
+        tribunal: p.tribunal_sigla ?? p.tribunal ?? p.orgao_julgador ?? '—',
+        assunto: p.assuntos?.[0]?.nome ?? p.assunto ?? '—',
+        ultima_movimentacao: p.ultimo_movimento?.descricao ?? p.ultima_movimentacao ?? '—',
+        status: p.status ?? 'ativo'
+      }))
+
+      return NextResponse.json({ processos: processosNormalizados })
     }
 
     if (tipo === 'cpf') {
