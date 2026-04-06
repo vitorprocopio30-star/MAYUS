@@ -76,7 +76,15 @@ export async function POST(req: NextRequest) {
 
     return NextResponse.json({ ok: true })
   } catch (err: any) {
-    console.error('[PROCESSOS_MONITORADOS_POST]', err)
-    return NextResponse.json({ error: err.message || 'Erro interno.' }, { status: 500 })
+    console.error('[MONITORADOS_POST_ERROR]', {
+      message: err.message,
+      code: err.code,
+      details: err.details,
+      hint: err.hint
+    })
+    return NextResponse.json(
+      { error: err.message || 'Erro interno.' },
+      { status: 500 }
+    )
   }
 }
