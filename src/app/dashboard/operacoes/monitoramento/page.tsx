@@ -44,6 +44,8 @@ export default function MonitoramentoPage() {
   const [searching, setSearching] = useState(false)
   const [searchError, setSearchError] = useState('')
   const [resultados, setResultados] = useState<Processo[]>([])
+  const [totalResultados, setTotalResultados] = useState<number | null>(null)
+  const [advogado, setAdvogado] = useState<{ nome?: string; oab_numero?: string; oab_estado?: string } | null>(null)
   const [monitorados, setMonitorados] = useState<MonitoredProcess[]>([])
   const [loadingMonitorados, setLoadingMonitorados] = useState(true)
   const [monitorandoId, setMonitorandoId] = useState<string | null>(null)
@@ -80,6 +82,8 @@ export default function MonitoramentoPage() {
     setSearching(true)
     setSearchError('')
     setResultados([])
+    setTotalResultados(null)
+    setAdvogado(null)
     try {
       const res = await fetch('/api/processos/buscar', {
         method: 'POST',
@@ -89,6 +93,8 @@ export default function MonitoramentoPage() {
       const data = await res.json()
       if (!res.ok) throw new Error(data.error || 'Erro na busca.')
       setResultados(Array.isArray(data.processos) ? data.processos : [])
+      setTotalResultados(typeof data.total === 'number' ? data.total : null)
+      setAdvogado(data.advogado ?? null)
     } catch (err: any) {
       setSearchError(err.message)
     } finally {
@@ -198,7 +204,17 @@ export default function MonitoramentoPage() {
           {/* Resultados da busca */}
           {resultados.length > 0 && (
             <div className="mt-6">
-              <p className="text-xs text-zinc-500 uppercase tracking-widest mb-3">{resultados.length} resultado(s)</p>
+              <div className="flex items-center justify-between mb-3">
+                <p className="text-xs text-zinc-500 uppercase tracking-widest">
+                  {totalResultados ?? resultados.length} PROCESSO(S) ENCONTRADO(S)
+                  {advogado?.nome && (
+                    <span className="ml-2 text-[#C9A84C] not-uppercase normal-case tracking-normal">
+                      — {advogado.nome}
+                      {advogado.oab_numero && advogado.oab_estado && ` (OAB/${advogado.oab_estado} ${advogado.oab_numero})`}
+                    </span>
+                  )}
+                </p>
+              </div>
               <div className="overflow-x-auto rounded-2xl border border-white/10">
                 <table className="min-w-full border-collapse">
                   <thead>

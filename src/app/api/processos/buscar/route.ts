@@ -54,25 +54,32 @@ export async function POST(req: NextRequest) {
       if (!estado || !numero) {
         return NextResponse.json({ error: 'Formato OAB inválido. Use: RJ/211558' }, { status: 400 })
       }
-      resultado = await EscavadorService.buscarPorOAB(apiKey, estado.trim(), numero.trim())
+      let todosProcessos: any[] = []
+      let page = 1
+      let totalPaginas = 1
+      let advogado = null
+      do {
+        const res = await EscavadorService.buscarPorOAB(apiKey, estado.trim(), numero.trim(), page, 100)
+        if (!advogado) advogado = res?.advogado_encontrado ?? null
+        const itens = res?.itens ?? res?.items ?? []
+        todosProcessos = todosProcessos.concat(itens)
+        totalPaginas = res?.meta?.last_page ?? res?.last_page ?? 1
+        page++
+      } while (page <= totalPaginas && page <= 10)
 
-      // Escavador retorna { advogado_encontrado: {...}, itens: [...] }
-      // ou { items: [...] } dependendo da versão
-      const processos = resultado?.itens
-        ?? resultado?.items
-        ?? resultado?.processos
-        ?? (resultado?.advogado_encontrado ? [] : [])
-
-      // Mapeia campos do Escavador para o formato da página
-      const processosNormalizados = processos.map((p: any) => ({
-        numero_cnj: p.numero_cnj ?? p.numero ?? p.id ?? '',
-        tribunal: p.tribunal_sigla ?? p.tribunal ?? p.orgao_julgador ?? '—',
+      const processosNormalizados = todosProcessos.map((p: any) => ({
+        numero_cnj: p.numero_cnj ?? p.numero ?? '',
+        tribunal: p.tribunal_sigla ?? p.tribunal ?? '—',
         assunto: p.assuntos?.[0]?.nome ?? p.assunto ?? '—',
-        ultima_movimentacao: p.ultimo_movimento?.descricao ?? p.ultima_movimentacao ?? '—',
+        ultima_movimentacao: p.ultimo_movimento?.descricao ?? '—',
         status: p.status ?? 'ativo'
       }))
 
-      return NextResponse.json({ processos: processosNormalizados })
+      return NextResponse.json({
+        processos: processosNormalizados,
+        total: processosNormalizados.length,
+        advogado
+      })
     }
 
     if (tipo === 'cpf') {
