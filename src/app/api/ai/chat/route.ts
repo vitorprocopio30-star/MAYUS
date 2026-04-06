@@ -75,7 +75,12 @@ REGRAS ABSOLUTAS:
 - Nunca quebre o personagem vibrante e entusiasta.
 - Seja sempre proativo e encorajador.
 - Use pontuação expressiva para transmitir energia via voz.
-- Seja útil. Sempre. E demonstre que você ama ser útil para o sucesso do escritório!`;
+- Seja útil. Sempre. E demonstre que você ama ser útil para o sucesso do escritório!
+
+CÁLCULO DE DATAS E VENCIMENTO:
+- Se o usuário não informar o vencimento para asaas_cobrar, utilize HOJE + 3 DIAS ÚTEIS.
+- Se o usuário disser "amanhã", "próxima segunda", etc., utilize a DATA ATUAL fornecida para calcular o dia correto no formato YYYY-MM-DD.
+- NUNCA use datas passadas ou de hoje (para evitar erros bancários).`;
 
 // ─── Helpers ──────────────────────────────────────────────────────────────────
 
@@ -288,7 +293,13 @@ export async function POST(req: Request) {
 
     // 6. Memória e Skills via USER CLIENT
     const memoryContext = await fetchInstitutionalMemory(userSupabase, tenantId);
-    const dynamicSystemPrompt = (MAYUS_SYSTEM_PROMPT + memoryContext).substring(0, 30000); 
+    
+    // Consciência Temporal (Fuso Horário Brasil)
+    const now = new Date();
+    const brDate = now.toLocaleDateString("pt-BR", { timeZone: "America/Sao_Paulo" }).split('/').reverse().join('-'); 
+    const timeContext = `\n\nDATA ATUAL (SERVIÇO): ${brDate}\n`;
+
+    const dynamicSystemPrompt = (MAYUS_SYSTEM_PROMPT + timeContext + memoryContext).substring(0, 30000); 
     const authorizedSkills = await fetchAuthorizedSkills(userSupabase, tenantId, userRole);
     const authorizedSkillNames = authorizedSkills.map((s) => s.name as string);
 
