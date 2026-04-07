@@ -16,6 +16,7 @@ import { cookies } from "next/headers";
 import { ZapSignService } from "@/lib/services/zapsign";
 import { EscavadorService } from "@/lib/services/escavador";
 import { executarCobranca } from "@/lib/agent/skills/asaas-cobrar";
+import { executarCalculo } from "@/lib/agent/skills/calculadora";
 import {
   route,
   sanitizeText,
@@ -488,7 +489,23 @@ export async function POST(req: Request) {
                console.error("Kanban Update Error", err);
                return NextResponse.json({ reply: err.message, kernel: { status: "failed" } });
              }
-          }
+          } else if (matchedSkill?.handler_type === 'calculator') {
+             try {
+               const resData = JSON.parse(toolCall.function.arguments);
+               const result = executarCalculo(resData);
+               
+               if (!result.success) {
+                 return NextResponse.json({ reply: `Erro no cálculo: ${result.error}`, kernel: { status: "failed" } });
+               }
+
+               return NextResponse.json({
+                 reply: `Cálculo realizado com precisão: ${result.formatado}`,
+                 kernel: { status: "executed" }
+               });
+             } catch (err: any) {
+               return NextResponse.json({ reply: err.message, kernel: { status: "failed" } });
+             }
+           }
         }
       }
 
