@@ -17,7 +17,7 @@ export interface AsaasInstallmentParams {
   billingType: 'BOLETO' | 'CREDIT_CARD';
   value: number;            // Valor total
   installmentCount: number; // Número de parcelas
-  installmentValue: number; // Valor de cada parcela
+  installmentValue?: number; // Valor de cada parcela (opcional agora)
   dueDate: string;          // Vencimento da PRIMEIRA parcela
   description?: string;
   externalReference?: string;

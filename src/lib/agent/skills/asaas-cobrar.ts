@@ -253,8 +253,6 @@ export async function executarCobranca(
   const apiKey = await AsaasService.getApiKey(params.tenantId, supabase)
   if (!apiKey) {
     const errorMsg = 'Integração Asaas não configurada para este tenant. Configure a chave de API em Configurações > Integrações.'
-    // Note: registrarAuditLog aqui precisaria do customerId que ainda não temos, 
-    // mas como o resolved já logaria erro se falhasse dentro, vamos apenas retornar.
     return { success: false, error: errorMsg }
   }
 
@@ -271,49 +269,52 @@ export async function executarCobranca(
 
   const customerId = resolved.customerId
 
-  // ── Lógica de Parcelamento ───────────────────────────────────────────────
-  if (params.parcelas && params.parcelas > 1) {
-    const valorTotal = params.valor_total || params.valor
-    const valorParcela = params.valor_parcela || (valorTotal / params.parcelas)
+  try {
+    // ── Lógica de Parcelamento ───────────────────────────────────────────────
+    if (params.parcelas && params.parcelas > 1) {
+      const valorTotal = Number(params.valor_total || params.valor)
 
-    const cobranca = await AsaasService.createInstallmentPayment({
-      customer: customerId,
-      billingType: billingType === 'UNDEFINED' ? 'BOLETO' : (billingType as 'BOLETO' | 'CREDIT_CARD'),
-      value: valorTotal,
-      installmentCount: params.parcelas,
-      installmentValue: valorParcela,
-      dueDate: params.vencimento,
-      description: descricao,
-      externalReference: params.tenantId,
-    }, apiKey)
+      // Nota: Enviamos apenas value e installmentCount. 
+      // O Asaas calcula o valor de cada parcela automaticamente, o que evita 
+      // erros de arredondamento e rejeições por limite em cobranças complexas.
+      const cobranca = await AsaasService.createInstallmentPayment({
+        customer: customerId,
+        billingType: billingType === 'UNDEFINED' ? 'BOLETO' : (billingType as 'BOLETO' | 'CREDIT_CARD'),
+        value: valorTotal,
+        installmentCount: params.parcelas,
+        dueDate: params.vencimento,
+        description: descricao,
+        externalReference: params.tenantId,
+      }, apiKey)
 
-    await registrarAuditLog({
-      tenantId: params.tenantId,
-      status: 'success',
-      cobrancaId: cobranca.id,
-      customerId,
-      valor: valorTotal,
-      vencimento: params.vencimento,
-      descricao: `${descricao} (Parcelado ${params.parcelas}x)`,
-      billingType: billingType === 'UNDEFINED' ? 'BOLETO' : billingType,
-    })
+      await registrarAuditLog({
+        tenantId: params.tenantId,
+        status: 'success',
+        cobrancaId: cobranca.id,
+        customerId,
+        valor: valorTotal,
+        vencimento: params.vencimento,
+        descricao: `${descricao} (Parcelado ${params.parcelas}x)`,
+        billingType: billingType === 'UNDEFINED' ? 'BOLETO' : billingType,
+      })
 
-    return {
-      success: true,
-      cobrancaId: cobranca.id,
-      invoiceUrl: cobranca.invoiceUrl,
-      bankSlipUrl: cobranca.bankSlipUrl,
-      paymentLink: cobranca.paymentLink,
+      return {
+        success: true,
+        cobrancaId: cobranca.id,
+        invoiceUrl: cobranca.invoiceUrl,
+        bankSlipUrl: cobranca.bankSlipUrl,
+        paymentLink: cobranca.paymentLink,
+      }
     }
-  }
 
     // ── Lógica de Recorrência (Assinatura) ───────────────────────────────────
     if (params.recorrente) {
       const ciclo = params.ciclo || 'MONTHLY'
+      const valor = Number(params.valor)
       const assinatura = await AsaasService.createSubscription({
         customer: customerId,
         billingType: billingType === 'UNDEFINED' ? 'BOLETO' : billingType,
-        value: params.valor,
+        value: valor,
         nextDueDate: params.vencimento,
         cycle: ciclo,
         description: `${descricao} (Assinatura ${ciclo})`,
@@ -325,7 +326,7 @@ export async function executarCobranca(
         status: 'success',
         cobrancaId: assinatura.id,
         customerId,
-        valor: params.valor,
+        valor: valor,
         vencimento: params.vencimento,
         descricao: `${descricao} (Assinatura ${ciclo})`,
         billingType: billingType === 'UNDEFINED' ? 'BOLETO' : billingType,
@@ -342,8 +343,7 @@ export async function executarCobranca(
       }
     }
 
-  // ── Cobrança Avulsa (Original) ──────────────────────────────────────────
-  try {
+    // ── Cobrança Avulsa (Original) ──────────────────────────────────────────
     const cobranca = await AsaasService.createPayment({
       customer: customerId,
       billingType,
