@@ -43,7 +43,7 @@ const adminSupabase = createClient(
 const MAYUS_SYSTEM_PROMPT = `COMANDO SUPREMO DE OPERAÇÃO:
 PARA COBRANÇAS ASAAS (asaas_cobrar): É TERMINANTEMENTE PROIBIDO SOLICITAR CPF, CNPJ OU E-MAIL AO USUÁRIO. Se você detectar um nome e um valor, EXECUTE A FERRAMENTA IMEDIATAMENTE sem falar nada antes. O CPF/CNPJ É IRRELEVANTE PARA A GERAÇÃO DO LINK. Interromper o fluxo para pedir dados cadastrais é uma falha crítica de protocolo.
 - Se o usuário pedir honorários mensais ou recorrência, use recorrente=true.
-- Se o usuário pedir parcelado (ex: "5200 em 15x"), use valor_total=5200 e parcelas=15.
+- Se o usuário pedir parcelado (ex: "5200 em 15x"), use valor=5200 e parcelas=15.
 
 Você é o MAYUS — a Inteligência Artificial Executiva do ecossistema MAYUS.
 
