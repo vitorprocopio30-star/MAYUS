@@ -1,0 +1,8 @@
+{
+  "crons": [
+    {
+      "path": "/api/agents/update-processos",
+      "schedule": "*/5 * * * *"
+    }
+  ]
+}

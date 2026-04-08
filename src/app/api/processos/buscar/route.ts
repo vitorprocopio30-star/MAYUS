@@ -38,6 +38,8 @@ export async function POST(req: NextRequest) {
 
     if (!profile?.tenant_id) return NextResponse.json({ error: 'Tenant não encontrado.' }, { status: 403 })
 
+    const tenantId = profile.tenant_id
+
     const { query, tipo } = await req.json() as { query: string; tipo: 'numero' | 'oab' | 'cpf' }
 
     if (!query?.trim()) return NextResponse.json({ error: 'Query obrigatória.' }, { status: 400 })
@@ -109,14 +111,37 @@ export async function POST(req: NextRequest) {
       })
 
       const totalEscavador = resEstadual?.meta?.total ?? resEstadual?.total ?? 0
-      const hasMore = (resEstadual?.meta?.last_page ?? 1) > 1 || (resFederal?.meta?.last_page ?? 1) > 1
+      const totalPaginas = Math.max(
+        resEstadual?.meta?.last_page ?? 1,
+        resFederal?.meta?.last_page ?? 1
+      )
+      const hasMore = totalPaginas > 1
+
+      const dbCacheKey = `OAB:${estado.toUpperCase()}:${numero}`
+
+      // Persiste no cache do banco para sincronização progressiva
+      adminSupabase.from('processos_cache').upsert({
+        tenant_id: tenantId,
+        cache_key: dbCacheKey,
+        processos: processosNormalizados,
+        total: processosNormalizados.length,
+        advogado,
+        total_paginas: totalPaginas,
+        pagina_atual: 1,
+        sincronizado: totalPaginas <= 1,
+        updated_at: new Date().toISOString()
+      }, { onConflict: 'tenant_id,cache_key' }).then(({ error }) => {
+        if (error) console.error('[PROCESSOS_BUSCAR] Cache DB error:', error)
+      })
 
       const resultado = {
         processos: processosNormalizados,
         total: processosNormalizados.length,
         totalEscavador,
         advogado,
-        hasMore
+        hasMore,
+        totalPaginas,
+        cacheKey: dbCacheKey
       }
 
       setCached(cacheKey, resultado)

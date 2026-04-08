@@ -1,71 +1,150 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { createClient } from '@supabase/supabase-js'
+import { escavadorFetch } from '@/lib/services/escavador-client'
 
 const adminSupabase = createClient(
   process.env.NEXT_PUBLIC_SUPABASE_URL!,
-  process.env.SUPABASE_SERVICE_ROLE_KEY!,
-  { auth: { autoRefreshToken: false, persistSession: false } }
+  process.env.SUPABASE_SERVICE_ROLE_KEY!
 )
 
-const BASE_URL = "https://api.escavador.com/api/v2"
-
-async function fetchEscavador(endpoint: string, apiKey: string, options: RequestInit = {}) {
-  const url = `${BASE_URL}${endpoint}`
-  const headers = {
-    ...options.headers,
-    "Authorization": `Bearer ${apiKey}`,
-    "X-Requested-With": "XMLHttpRequest",
-    "Content-Type": "application/json",
-  }
-
-  const res = await fetch(url, { ...options, headers })
-  if (!res.ok) {
-    const errorData = await res.json().catch(() => ({}))
-    throw new Error(errorData.message || `Erro Escavador: ${res.status}`)
-  }
-  return await res.json()
-}
-
 export async function POST(req: NextRequest) {
-  try {
-    const token = req.headers.get('authorization')?.replace(/^Bearer\s+/i, '').trim()
-    if (!token) return NextResponse.json({ error: 'Não autenticado.' }, { status: 401 })
+  const authHeader = req.headers.get('Authorization')
+  const token = authHeader?.replace('Bearer ', '')
+  if (!token) return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
 
-    const { data: { user }, error: authError } = await adminSupabase.auth.getUser(token)
-    if (authError || !user) return NextResponse.json({ error: 'Não autenticado.' }, { status: 401 })
+  const anonClient = createClient(
+    process.env.NEXT_PUBLIC_SUPABASE_URL!,
+    process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY!,
+    { global: { headers: { Authorization: `Bearer ${token}` } } }
+  )
 
-    const { data: profile } = await adminSupabase
-      .from('profiles')
-      .select('tenant_id')
-      .eq('id', user.id)
-      .single()
+  const {
+    data: { user }
+  } = await anonClient.auth.getUser()
+  if (!user) return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
 
-    if (!profile?.tenant_id) return NextResponse.json({ error: 'Tenant não encontrado.' }, { status: 403 })
+  const { data: profile } = await adminSupabase
+    .from('profiles')
+    .select('tenant_id')
+    .eq('id', user.id)
+    .single()
 
-    const { data: integration } = await adminSupabase
-      .from('tenant_integrations')
-      .select('api_key')
-      .eq('tenant_id', profile.tenant_id)
-      .eq('provider', 'escavador')
-      .single()
+  const tenantId = profile?.tenant_id
+  if (!tenantId)
+    return NextResponse.json({ error: 'Tenant not found' }, { status: 400 })
 
-    if (!integration?.api_key) return NextResponse.json({ error: 'Integração Escavador não configurada.' }, { status: 400 })
+  const { data: integration } = await adminSupabase
+    .from('tenant_integrations')
+    .select('api_key')
+    .eq('tenant_id', tenantId)
+    .eq('provider', 'escavador')
+    .single()
 
-    const { numero_cnj } = await req.json()
-    if (!numero_cnj) return NextResponse.json({ error: 'numero_cnj obrigatório.' }, { status: 400 })
-
-    const resultado = await fetchEscavador(
-      `/processos/numero_cnj/${encodeURIComponent(numero_cnj)}/monitoramento`,
-      integration.api_key,
-      { 
-        method: 'POST', 
-        body: JSON.stringify({ frequencia: 'SEMANAL' }) 
-      }
+  if (!integration?.api_key)
+    return NextResponse.json(
+      { error: 'Escavador não configurado' },
+      { status: 400 }
     )
 
-    return NextResponse.json({ ok: true, monitoramento: resultado })
-  } catch (err: any) {
-    console.error('[ATIVAR_MONITORAMENTO_ERROR]', err)
-    return NextResponse.json({ error: err.message || 'Erro interno.' }, { status: 500 })
+  const { numero_cnj } = await req.json()
+  if (!numero_cnj)
+    return NextResponse.json(
+      { error: 'numero_cnj obrigatório' },
+      { status: 400 }
+    )
+
+  const cnj_encoded = encodeURIComponent(numero_cnj)
+
+  // 1. Busca dados completos do processo via API V2
+  let dadosCompletos: any = null
+  try {
+    dadosCompletos = await escavadorFetch(
+      `/processos/numero_cnj/${cnj_encoded}`,
+      integration.api_key,
+      tenantId
+    )
+  } catch (e) {
+    console.error('[ATIVAR_MONITORAMENTO] Erro ao buscar dados completos:', e)
   }
+
+  // 2. Extrai partes e campos do processo
+  const partes = dadosCompletos?.partes ?? []
+  const poloAtivo =
+    partes
+      .filter((p: any) => p.polo === 'ATIVO' && p.tipo !== 'ADVOGADO')
+      .map((p: any) => p.nome)
+      .join(', ') || '—'
+  const poloPassivo =
+    partes
+      .filter((p: any) => p.polo === 'PASSIVO' && p.tipo !== 'ADVOGADO')
+      .map((p: any) => p.nome)
+      .join(', ') || '—'
+
+  const fontes = dadosCompletos?.fontes ?? []
+  const fonteTrib =
+    fontes.find((f: any) => f.tribunal?.sigla || f.sistema) ?? fontes[0] ?? {}
+  const capa = fonteTrib?.capa ?? {}
+
+  const dadosEnriquecidos = {
+    numero_cnj,
+    tribunal:
+      dadosCompletos?.unidade_origem?.tribunal_sigla ??
+      fonteTrib?.tribunal?.sigla ??
+      '—',
+    assunto:
+      capa?.assunto_principal_normalizado?.nome ?? capa?.assunto ?? '—',
+    polo_ativo: poloAtivo,
+    polo_passivo: poloPassivo,
+    valor_causa: capa?.valor_causa?.valor_formatado ?? '—',
+    data_inicio: dadosCompletos?.data_inicio ?? '—',
+    ultima_movimentacao: dadosCompletos?.data_ultima_movimentacao ?? '—',
+    status: capa?.status_predito ?? 'ATIVO'
+  }
+
+  // 3. Ativa monitoramento semanal via API V1
+  let monitoramentoId: string | null = null
+  try {
+    const resMonitor = await fetch(
+      'https://api.escavador.com/api/v1/monitoramentos',
+      {
+        method: 'POST',
+        headers: {
+          Authorization: `Bearer ${integration.api_key}`,
+          'Content-Type': 'application/json',
+          'X-Requested-With': 'XMLHttpRequest'
+        },
+        body: JSON.stringify({
+          tipo: 'PROCESSO',
+          valor: numero_cnj,
+          frequencia: 'SEMANAL',
+          enviar_callback: 1
+        })
+      }
+    )
+    if (resMonitor.ok) {
+      const mon = await resMonitor.json()
+      monitoramentoId = String(mon.id ?? '')
+    }
+  } catch (e) {
+    console.error('[ATIVAR_MONITORAMENTO] Erro ao criar monitoramento V1:', e)
+  }
+
+  // 4. Salva ID do monitoramento e dados enriquecidos no banco
+  if (monitoramentoId) {
+    await adminSupabase
+      .from('monitored_processes')
+      .update({
+        escavador_monitoramento_id: monitoramentoId,
+        monitoramento_ativo: true
+      })
+      .eq('numero_processo', numero_cnj)
+      .eq('tenant_id', tenantId)
+  }
+
+  return NextResponse.json({
+    ok: true,
+    monitoramento_id: monitoramentoId,
+    monitoramento_ativo: !!monitoramentoId,
+    dados_completos: dadosEnriquecidos
+  })
 }

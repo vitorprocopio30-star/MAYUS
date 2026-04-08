@@ -1,108 +1,108 @@
-import { NextRequest, NextResponse } from "next/server";
-import { createClient } from "@supabase/supabase-js";
+import { NextRequest, NextResponse } from 'next/server'
+import { createClient } from '@supabase/supabase-js'
 
-// Usando admin client porque o webhook não tem sessão ativa de usuário
 const adminSupabase = createClient(
   process.env.NEXT_PUBLIC_SUPABASE_URL!,
   process.env.SUPABASE_SERVICE_ROLE_KEY!
-);
+)
 
 export async function POST(req: NextRequest) {
-  try {
-    // 1. Validação do Token de Segurança
-    const authHeader = req.headers.get("Authorization");
-    const expectedToken = process.env.ESCAVADOR_WEBHOOK_TOKEN;
+  // 1. Valida token de segurança
+  const auth = req.headers.get('Authorization')?.replace('Bearer ', '')
+  if (auth !== process.env.ESCAVADOR_WEBHOOK_SECRET) {
+    return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
+  }
 
-    if (!expectedToken || authHeader !== `Bearer ${expectedToken}`) {
-      console.warn("[Escavador Webhook] Token inválido ou ausente.");
-      return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
-    }
+  const body = await req.json()
+  console.log('[ESCAVADOR_WEBHOOK]', JSON.stringify(body, null, 2))
 
-    // 2. Lê o payload do Escavador
-    const payload = await req.json();
-    const { event, event_data } = payload;
+  const evento = body.event ?? body.evento ?? ''
 
-    if (!event_data?.numero_cnj) {
-      console.warn("[Escavador Webhook] Payload sem numero_cnj.");
-      return NextResponse.json({ received: true }); // Retornar 200 para evitar retries
-    }
+  // 2. Evento: nova movimentação no Diário Oficial
+  if (evento === 'diario_movimentacao_nova') {
+    const monitoramentos = body.monitoramento ?? []
+    const movimentacao = body.movimentacao ?? {}
 
-    // Processamos apenas eventos de movimentação ou conclusão
-    if (event === "nova_movimentacao" || event === "atualizacao_processo_concluida") {
-      
-      // 3. Busca o processo pelo número CNJ
-      const { data: cnjCase, error: caseError } = await adminSupabase
-        .from("cases")
-        .select("id, tenant_id, advogado_responsavel_id, client_name")
-        .eq("numero_cnj", event_data.numero_cnj)
-        .single();
+    for (const mon of monitoramentos) {
+      const numero_cnj = mon.termo ?? mon.processo?.numero_novo ?? mon.valor
+      if (!numero_cnj) continue
 
-      if (caseError || !cnjCase) {
-        console.warn(`[Escavador Webhook] Processo não encontrado para o CNJ: ${event_data.numero_cnj}`);
-        return NextResponse.json({ received: true }); 
+      // Enfileira para o agente processar
+      await adminSupabase.from('process_update_queue').insert({
+        numero_cnj,
+        evento,
+        payload: body,
+        status: 'PENDENTE'
+      })
+
+      // Busca todos os tenants que monitoram esse CNJ
+      const { data: processos } = await adminSupabase
+        .from('monitored_processes')
+        .select('id, tenant_id, movimentacoes, advogado_responsavel_id')
+        .eq('numero_processo', numero_cnj)
+
+      const novaMovimentacao = {
+        id: movimentacao.id,
+        data: movimentacao.data_formatada ?? movimentacao.data,
+        conteudo: movimentacao.snippet ?? movimentacao.conteudo,
+        diario: movimentacao.diario_oficial,
+        link_pdf: movimentacao.link_pdf,
+        criado_em: new Date().toISOString()
       }
 
-      // 4. Atualiza informações do processo
-      const { error: updateError } = await adminSupabase
-        .from("cases")
-        .update({
-          ultima_movimentacao: event_data.conteudo,
-          ultima_movimentacao_at: event_data.data,
-          ultima_atualizacao_escavador: new Date().toISOString(),
-          status_escavador: 'ATIVO',
-        })
-        .eq("id", cnjCase.id);
+      for (const processo of processos ?? []) {
+        // Mantém histórico dos últimos 50 movimentos
+        const movimentacoes = [
+          novaMovimentacao,
+          ...((processo.movimentacoes as any[]) ?? [])
+        ].slice(0, 50)
 
-      if (updateError) {
-        console.error("[Escavador Webhook] Erro ao atualizar case:", updateError);
-        return NextResponse.json({ received: true });
-      }
-
-      // Atualizar também o card no Kanban automaticamente
-      const { data: card } = await adminSupabase
-        .from('process_tasks')
-        .select('id')
-        .eq('processo_1grau', event_data.numero_cnj)
-        .maybeSingle();
-
-      if (card) {
+        // Atualiza processo monitorado
         await adminSupabase
-          .from('process_tasks')
+          .from('monitored_processes')
           .update({
-            andamento_1grau: event_data.conteudo,
+            movimentacoes,
+            ultima_movimentacao_texto: novaMovimentacao.conteudo,
             updated_at: new Date().toISOString()
           })
-          .eq('id', card.id);
-      }
+          .eq('id', processo.id)
 
-      // 5. Cria notificação para o advogado responsável
-      if (cnjCase.advogado_responsavel_id) {
-        const { error: notificationError } = await adminSupabase
-          .from("notifications")
-          .insert({
-            tenant_id: cnjCase.tenant_id,
-            user_id: cnjCase.advogado_responsavel_id,
-            title: `Nova movimentação: ${cnjCase.client_name}`,
-            message: event_data.conteudo,
-            type: "processo_movimentacao",
-            metadata: { 
-              numero_cnj: event_data.numero_cnj, 
-              case_id: cnjCase.id 
-            }
-          });
+        // Persiste movimentação na tabela de histórico
+        await adminSupabase.from('process_movimentacoes').insert({
+          tenant_id: processo.tenant_id,
+          numero_cnj,
+          data: novaMovimentacao.data,
+          conteudo: novaMovimentacao.conteudo,
+          fonte: 'diario_oficial'
+        })
 
-        if (notificationError) {
-          console.error("[Escavador Webhook] Erro ao criar notificação:", notificationError);
-        }
+        // Dispara analisador jurídico (cria tarefas automáticas)
+        const { analisarMovimentacao } = await import('@/lib/juridico/analisador')
+        await analisarMovimentacao({
+          processo_id: processo.id,
+          numero_cnj,
+          tenant_id: processo.tenant_id,
+          movimentacao: novaMovimentacao,
+          advogado_id: processo.advogado_responsavel_id
+        }).catch(console.error)
       }
     }
-
-    // 6. Retorno de SUCESSO Absoluto (Parar envio contínuo do Escavador)
-    return NextResponse.json({ received: true });
-
-  } catch (err) {
-    console.error("[Escavador Webhook] Critical Error:", err);
-    // Em qualquer erro interno, retornar 200 para evitar retry loop
-    return NextResponse.json({ received: true });
   }
+
+  // 3. Evento: atualização do tribunal (síncrono ou assíncrono)
+  if (evento === 'update_time' || evento === 'resultado_processo_async') {
+    const numero_cnj =
+      body.processo?.numero_unico ?? body.app?.monitor?.valor
+    if (numero_cnj) {
+      await adminSupabase.from('process_update_queue').insert({
+        numero_cnj,
+        evento,
+        payload: body,
+        status: 'PENDENTE'
+      })
+    }
+  }
+
+  // Responde imediatamente (Escavador retenta em caso de timeout)
+  return NextResponse.json({ ok: true })
 }
