@@ -83,6 +83,7 @@ function mapearProcesso(p: Record<string, unknown>) {
   }
 }
 
+// v3.1 - Force deploy for Premium Pro
 export async function POST(req: NextRequest) {
   const cookieStore = await cookies()
   const supabase = createServerClient(
