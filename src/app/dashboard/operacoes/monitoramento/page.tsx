@@ -52,6 +52,7 @@ interface BuscaResult {
   advogado_nome: string
   paginas_buscadas: number
   billing: BillingInfo
+  next_cursor?: string | null
 }
 
 interface ConfirmacaoLote {
