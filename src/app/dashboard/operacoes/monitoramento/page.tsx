@@ -30,6 +30,8 @@ interface Processo {
   movimentacoes: Record<string, unknown>[]
   resumo_curto?: string | null
   id?: string
+  urgencia_nivel?: 'verde' | 'amarelo' | 'vermelho'
+  proxima_acao_sugerida?: string | null
 }
 
 interface BillingInfo {
@@ -172,42 +174,38 @@ function BillingBar({ billing }: { billing: BillingInfo }) {
 function Pagination({ atual, total, totalProcessos, onChange }: { atual: number; total: number; totalProcessos: number; onChange: (p: number) => void }) {
   if (total <= 1) return null
 
-  const start = Math.max(1, atual - 2)
-  const pages = Array.from({ length: Math.min(5, total) }, (_, i) => start + i).filter(p => p <= total)
-
   return (
     <div className="flex items-center justify-between mt-6 px-2">
       <span className="text-white/40 text-sm">
         {totalProcessos} processos · página {atual} de {total}
       </span>
       <div className="flex gap-2">
-        <button
-          onClick={() => onChange(Math.max(1, atual - 1))}
+        <button onClick={() => onChange(Math.max(1, atual - 1))}
           disabled={atual === 1}
-          className="px-4 py-2 rounded-lg border border-white/10 text-white/70 text-sm disabled:opacity-30 hover:bg-white/5 transition-colors"
-        >
+          className="px-4 py-2 rounded-lg border border-white/10
+                     text-white/70 text-sm disabled:opacity-30
+                     hover:bg-white/5 transition-colors">
           ← Anterior
         </button>
-
-        {pages.map(page => (
-          <button
-            key={page}
-            onClick={() => onChange(page)}
-            className={`w-9 h-9 rounded-lg text-sm font-medium transition-colors
-              ${page === atual
-                ? 'bg-[#CCA761] text-black'
-                : 'border border-white/10 text-white/70 hover:bg-white/5'
-              }`}
-          >
-            {page}
-          </button>
-        ))}
-
-        <button
-          onClick={() => onChange(Math.min(total, atual + 1))}
+        {Array.from({ length: Math.min(5, total) }, (_, i) => {
+          const start = Math.max(1, atual - 2)
+          const n = start + i
+          if (n > total) return null
+          return (
+            <button key={n} onClick={() => onChange(n)}
+              className={`w-9 h-9 rounded-lg text-sm font-medium transition-colors
+                ${n === atual
+                  ? 'bg-[#CCA761] text-black'
+                  : 'border border-white/10 text-white/70 hover:bg-white/5'}`}>
+              {n}
+            </button>
+          )
+        })}
+        <button onClick={() => onChange(Math.min(total, atual + 1))}
           disabled={atual === total}
-          className="px-4 py-2 rounded-lg border border-white/10 text-white/70 text-sm disabled:opacity-30 hover:bg-white/5 transition-colors"
-        >
+          className="px-4 py-2 rounded-lg border border-white/10
+                     text-white/70 text-sm disabled:opacity-30
+                     hover:bg-white/5 transition-colors">
           Próxima →
         </button>
       </div>
@@ -215,12 +213,14 @@ function Pagination({ atual, total, totalProcessos, onChange }: { atual: number;
   )
 }
 
-function ProcessoCard({ p, onAction, onRemover, selecionado, onSelect, resumoOficial, onResumirOficial, loadingId, resumoIAState, onSolicitarResumoIA }: {
+function ProcessoCard({ p, onAction, onRemover, selecionado, onSelect, resumoOficial, onResumirOficial, loadingId, resumoIAState, onSolicitarResumoIA, organizandoState, onOrganizar }: {
   p: Processo; onAction: () => void; onRemover: () => void; selecionado: boolean; onSelect: () => void;
   resumoOficial?: { texto?: string, status?: string, loading: boolean }; onResumirOficial: () => void;
   loadingId: string | null
   resumoIAState: { state: ResumoState; texto?: string }
   onSolicitarResumoIA: () => void
+  organizandoState: 'idle' | 'loading' | 'done'
+  onOrganizar: () => void
 }) {
   const [expanded, setExpanded] = useState(false)
   const isLoading = loadingId === p.numero_processo
@@ -252,6 +252,17 @@ function ProcessoCard({ p, onAction, onRemover, selecionado, onSelect, resumoOfi
               <div className="flex items-center gap-1 px-2.5 py-0.5 bg-green-500/10 border border-green-500/20 rounded-lg text-[10px] uppercase font-black text-green-400">
                  <CloudCheck size={12} /> Sincronizado
               </div>
+            )}
+            
+            {p.urgencia_nivel === 'vermelho' && (
+              <span className="text-xs px-2 py-0.5 rounded-full border border-red-500/40 bg-red-500/10 text-red-400 font-medium">
+                🔴 URGENTE
+              </span>
+            )}
+            {p.urgencia_nivel === 'amarelo' && (
+              <span className="text-xs px-2 py-0.5 rounded-full border border-yellow-500/40 bg-yellow-500/10 text-yellow-400 font-medium">
+                🟡 ATENÇÃO
+              </span>
             )}
           </div>
 
@@ -300,27 +311,57 @@ function ProcessoCard({ p, onAction, onRemover, selecionado, onSelect, resumoOfi
                  <p className="text-[10px] text-zinc-600 italic tracking-tight font-medium uppercase">Vigilância ativa. Clique para gerar análise oficial.</p>
                )}
 
-               {/* CORREÇÃO 3: Resumo de IA via Escavador */}
-               <div className="pt-3 border-t border-zinc-800/60">
-                 {resumoIAState.state === 'done' && resumoIAState.texto ? (
-                   <div className="p-3 rounded-lg bg-[#CCA761]/10 border border-[#CCA761]/20">
-                     <p className="text-xs text-[#CCA761] font-medium mb-1 flex items-center gap-1">
-                       <Sparkles size={12} /> RESUMO INTELIGENTE
-                     </p>
-                     <p className="text-white/80 text-sm leading-relaxed">{resumoIAState.texto}</p>
-                   </div>
-                 ) : resumoIAState.state === 'loading' ? (
+               {/* Resumo de IA via Escavador */}
+               <div className="pt-3 border-t border-zinc-800/60 flex items-center gap-3">
+                 {resumoIAState.state === 'loading' ? (
                    <button disabled className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg bg-[#CCA761]/5 text-[#CCA761]/60 text-[10px] font-black uppercase opacity-60 cursor-not-allowed border border-[#CCA761]/10">
                      <Loader2 size={12} className="animate-spin" /> Analisando...
                    </button>
                  ) : resumoIAState.state === 'error' ? (
-                   <p className="text-[10px] text-red-400 font-bold uppercase">Erro ao solicitar resumo. Tente novamente.</p>
-                 ) : (
+                   <p className="text-[10px] text-red-400 font-bold uppercase">Erro ao solicitar resumo.</p>
+                 ) : resumoIAState.state !== 'done' && (
                    <button onClick={onSolicitarResumoIA} className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg bg-[#CCA761]/5 hover:bg-[#CCA761]/10 text-[#CCA761] text-[10px] font-black uppercase transition-all border border-[#CCA761]/10">
-                     <Sparkles size={12} /> Resumo IA (R$ 0,05)
+                     <Sparkles size={12} /> Solicitar Inteligência (R$ 0,05)
                    </button>
                  )}
+
+                 {resumoIAState.state === 'done' && p.id && (
+                   organizandoState === 'idle' ? (
+                     <button onClick={onOrganizar} className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg bg-[#CCA761]/10 border border-[#CCA761]/30 text-[#CCA761] text-xs font-medium hover:bg-[#CCA761]/20 transition-all">
+                       <Sparkles size={13} /> Organizar IA
+                     </button>
+                   ) : organizandoState === 'loading' ? (
+                     <button disabled className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg bg-[#CCA761]/10 border border-[#CCA761]/30 text-[#CCA761] text-xs font-medium opacity-60 cursor-not-allowed">
+                       <Loader2 size={13} className="animate-spin" /> Analisando...
+                     </button>
+                   ) : (
+                     <button disabled className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg bg-green-500/10 border border-green-500/30 text-green-400 text-xs font-medium">
+                       <CheckCircle2 size={13} /> Organizado
+                     </button>
+                   )
+                 )}
                </div>
+
+               {p.resumo_curto && (
+                 <div className="mt-3 p-3 rounded-lg bg-[#CCA761]/8 border border-[#CCA761]/20 space-y-2">
+                   <p className="text-white/80 text-sm leading-relaxed">
+                     {p.resumo_curto}
+                   </p>
+                   {p.proxima_acao_sugerida && (
+                     <div className="flex items-start gap-2 p-2 rounded-lg bg-black/30">
+                       <Zap size={14} className="text-[#CCA761] mt-0.5 shrink-0" />
+                       <div>
+                         <p className="text-[#CCA761] text-xs font-semibold uppercase tracking-wide">
+                           Próxima Ação
+                         </p>
+                         <p className="text-white/70 text-sm mt-0.5">
+                           {p.proxima_acao_sugerida}
+                         </p>
+                       </div>
+                     </div>
+                   )}
+                 </div>
+               )}
             </div>
           )}
 
@@ -409,8 +450,10 @@ function MonitoramentoContent() {
   const [selecionados, setSelecionados] = useState<Set<string>>(new Set())
   const [resumosOficiais, setResumosOficiais] = useState<Record<string, { texto?: string, status?: string, loading: boolean }>>({})
   const [loadingId, setLoadingId] = useState<string | null>(null)
-  // CORREÇÃO 3: Estado do resumo IA por processo
   const [resumosIA, setResumosIA] = useState<Record<string, { state: ResumoState; texto?: string }>>({})
+
+  // Estado para os botões "Organizar IA"
+  const [organizando, setOrganizando] = useState<Record<string, 'idle' | 'loading' | 'done'>>({})
 
   const PAGE_SIZE = 20
 
@@ -535,6 +578,30 @@ function MonitoramentoContent() {
       setResumosIA(prev => ({ ...prev, [key]: { state: 'done', texto: data.resumo } }))
     } catch (e) {
       setResumosIA(prev => ({ ...prev, [key]: { state: 'error' } }))
+    }
+  }, [])
+
+  // Organizar processo com IA (1d)
+  const handleOrganizar = useCallback(async (processoId: string) => {
+    setOrganizando(prev => ({ ...prev, [processoId]: 'loading' }))
+    try {
+      const res = await fetch('/api/agent/processos/organizar', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ processo_id: processoId })
+      })
+      const data = await res.json()
+      if (data.success) {
+        setOrganizando(prev => ({ ...prev, [processoId]: 'done' }))
+        setResult(prev => prev ? {
+          ...prev,
+          processos: prev.processos.map(p => p.id === processoId ? { ...p, ...data.processo_atualizado } : p)
+        } : prev)
+      } else {
+        setOrganizando(prev => ({ ...prev, [processoId]: 'idle' }))
+      }
+    } catch {
+      setOrganizando(prev => ({ ...prev, [processoId]: 'idle' }))
     }
   }, [])
 
@@ -717,6 +784,8 @@ function MonitoramentoContent() {
                    loadingId={loadingId}
                    resumoIAState={resumosIA[p.numero_processo] || { state: 'idle' }}
                    onSolicitarResumoIA={() => solicitarResumoIA(p)}
+                   organizandoState={p.id ? (organizando[p.id] || 'idle') : 'idle'}
+                   onOrganizar={() => p.id && handleOrganizar(p.id)}
                  />
                ))}
 
