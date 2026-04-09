@@ -1,5 +1,7 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { createClient } from '@supabase/supabase-js'
+import { createServerClient } from '@supabase/ssr'
+import { cookies } from 'next/headers'
 
 interface MonitoramentoCapacity {
   total_monitorados: number
@@ -40,8 +42,12 @@ function mapearProcesso(p: Record<string, unknown>) {
     classe_processual: (capa.classe ?? p.classe ?? null) as string | null,
     tipo_acao: (capa.tipo ?? null) as string | null,
 
-    // Status e fase
-    status: (fonte.status_predito ?? 'ATIVO') as string,
+    // Status e fase (Normalização Inteligente)
+    status: (() => {
+      const predito = (String(p.encerrado === true ? 'ARQUIVADO' : (fonte.status_predito ?? p.status ?? 'ATIVO'))).toUpperCase()
+      if (['BAIXADO', 'ENCERRADO', 'EXTINTO', 'ARQUIVADO', 'SUSPENSO'].some(s => predito.includes(s))) return 'ARQUIVADO'
+      return 'ATIVO'
+    })() as string,
     fase_atual: (p.fase ?? capa.fase ?? 'CONHECIMENTO') as string,
 
     // Partes (polo simples para colunas)
@@ -49,12 +55,19 @@ function mapearProcesso(p: Record<string, unknown>) {
     polo_passivo: (p.titulo_polo_passivo ?? capa.polo_passivo ?? '—') as string,
 
     // Financeiro
-    valor_causa: (capa.valor_causa ?? null) as string | null,
-    data_distribuicao: (capa.data_inicio ?? capa.data_distribuicao ?? null) as string | null,
+    valor_causa: typeof capa.valor_causa === 'object' && capa.valor_causa !== null
+      ? (capa.valor_causa as any).valor_formatado || (capa.valor_causa as any).valor
+      : (capa.valor_causa ?? null) as string | null,
+    data_distribuicao: (capa.data_inicio ?? capa.data_distribuicao ?? p.data_distribuicao ?? null) as string | null,
 
-    // Movimentações
-    data_ultima_movimentacao: (capa.data_ultima_movimentacao ?? null) as string | null,
-    ultima_movimentacao_texto: (capa.ultimo_movimento ?? movimentacoes[0]?.titulo ?? null) as string | null,
+    // Movimentações (Fallback Agressivo)
+    data_ultima_movimentacao: (capa.data_ultima_movimentacao ?? (movimentacoes[0]?.data as string) ?? (p.data_ultima_movimentacao as string) ?? null) as string | null,
+    ultima_movimentacao_texto: (() => {
+      const m = movimentacoes[0] ?? {}
+      const texto = capa.ultimo_movimento || m.titulo || m.descricao || m.texto || m.conteudo || m.resumo || null
+      return (texto as string | null)
+    })(),
+    ultima_movimentacao_resumo: (movimentacoes[0]?.resumo ?? null) as string | null,
 
     // Arrays completos para salvar
     envolvidos,
@@ -66,15 +79,24 @@ function mapearProcesso(p: Record<string, unknown>) {
 }
 
 export async function POST(req: NextRequest) {
-  const authHeader = req.headers.get('Authorization') ?? ''
-  const token = authHeader.replace('Bearer ', '').trim()
-  if (!token) return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
-
-  const supabase = createClient(
+  const cookieStore = await cookies()
+  const supabase = createServerClient(
     process.env.NEXT_PUBLIC_SUPABASE_URL!,
     process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY!,
-    { global: { headers: { Authorization: `Bearer ${token}` } }, auth: { autoRefreshToken: false, persistSession: false } }
+    {
+      cookies: {
+        getAll() { return cookieStore.getAll() },
+        setAll(cookiesToSet) {
+          try {
+            cookiesToSet.forEach(({ name, value, options }) =>
+              cookieStore.set(name, value, options)
+            )
+          } catch { }
+        },
+      },
+    }
   )
+
   const { data: { user } } = await supabase.auth.getUser()
   if (!user) return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
 
@@ -92,7 +114,10 @@ export async function POST(req: NextRequest) {
   const { data: integration } = await adminSupabase
     .from('tenant_integrations')
     .select('api_key')
-    .eq('tenant_id', tenantId).eq('provider', 'escavador').eq('status', 'active').single()
+    .eq('tenant_id', tenantId)
+    .eq('provider', 'escavador')
+    .in('status', ['active', 'connected'])
+    .single()
   if (!integration?.api_key) return NextResponse.json({ error: 'Escavador não configurado' }, { status: 400 })
 
   // Busca paginada completa

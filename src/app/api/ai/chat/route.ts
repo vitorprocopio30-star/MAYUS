@@ -17,6 +17,7 @@ import { ZapSignService } from "@/lib/services/zapsign";
 import { EscavadorService } from "@/lib/services/escavador";
 import { executarCobranca } from "@/lib/agent/skills/asaas-cobrar";
 import { executarCalculo } from "@/lib/agent/skills/calculadora";
+import { getContextoProcesso } from "@/lib/skills/consulta-processo-whatsapp";
 import {
   route,
   sanitizeText,
@@ -505,7 +506,15 @@ export async function POST(req: Request) {
              } catch (err: any) {
                return NextResponse.json({ reply: err.message, kernel: { status: "failed" } });
              }
-           }
+           } else if (matchedSkill?.handler_type === 'whatsapp_process_query') {
+              try {
+                const resData = JSON.parse(toolCall.function.arguments);
+                const contexto = await getContextoProcesso(adminSupabase, tenantId, resData.q);
+                return NextResponse.json({ reply: contexto, kernel: { status: "executed" } });
+              } catch (err: any) {
+                return NextResponse.json({ reply: err.message, kernel: { status: "failed" } });
+              }
+            }
         }
       }
 

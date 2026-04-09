@@ -1,5 +1,7 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { createClient } from '@supabase/supabase-js'
+import { createServerClient } from '@supabase/ssr'
+import { cookies } from 'next/headers'
 
 interface MonitoramentoCapacity {
   total_monitorados: number
@@ -15,15 +17,24 @@ const adminSupabase = createClient(
 )
 
 export async function POST(req: NextRequest) {
-  const authHeader = req.headers.get('Authorization') ?? ''
-  const token = authHeader.replace('Bearer ', '').trim()
-  if (!token) return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
-
-  const supabase = createClient(
+  const cookieStore = await cookies()
+  const supabase = createServerClient(
     process.env.NEXT_PUBLIC_SUPABASE_URL!,
     process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY!,
-    { global: { headers: { Authorization: `Bearer ${token}` } }, auth: { autoRefreshToken: false, persistSession: false } }
+    {
+      cookies: {
+        getAll() { return cookieStore.getAll() },
+        setAll(cookiesToSet) {
+          try {
+            cookiesToSet.forEach(({ name, value, options }) =>
+              cookieStore.set(name, value, options)
+            )
+          } catch { }
+        },
+      },
+    }
   )
+
   const { data: { user } } = await supabase.auth.getUser()
   if (!user) return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
 
@@ -68,35 +79,67 @@ export async function POST(req: NextRequest) {
     })
   }
 
-  // Montar rows com TODOS os campos ricos
-  const rows = novos.map((p: Record<string, unknown>) => ({
-    tenant_id: tenantId,
-    numero_processo: p.numero_processo,
-    tribunal: p.tribunal,
-    comarca: p.comarca ?? null,
-    vara: p.vara ?? null,
-    assunto: p.assunto,
-    classe_processual: p.classe_processual ?? null,
-    tipo_acao: p.tipo_acao ?? null,
-    status: p.status ?? 'ATIVO',
-    fase_atual: p.fase_atual,
-    valor_causa: p.valor_causa ?? null,
-    data_distribuicao: p.data_distribuicao ?? null,
-    partes: {
-      polo_ativo: p.polo_ativo,
-      polo_passivo: p.polo_passivo,
-      data_inicio: p.data_distribuicao,
-      valor_causa: p.valor_causa,
-    },
-    envolvidos: p.envolvidos ?? [],
-    movimentacoes: p.movimentacoes ?? [],
-    ultima_movimentacao_texto: p.ultima_movimentacao_texto ?? null,
-    data_ultima_movimentacao: p.data_ultima_movimentacao ?? null,
-    escavador_id: p.escavador_id ?? null,
-    raw_escavador: p.raw_escavador ?? null,
-    ultima_atualizacao_escavador: new Date().toISOString(),
-    monitoramento_ativo: true,
-    ativo: true,
+  // Buscar API Key do Escavador para sincronização
+  const { data: integration } = await adminSupabase
+    .from('tenant_integrations')
+    .select('api_key')
+    .eq('tenant_id', tenantId)
+    .eq('provider', 'escavador')
+    .in('status', ['active', 'connected'])
+    .single()
+
+  // Montar rows com TODOS os campos ricos e sincronizar com Escavador
+  const rows = await Promise.all(novos.map(async (p: Record<string, unknown>) => {
+    // Sincronizar com Escavador v2
+    if (integration?.api_key) {
+      try {
+        await fetch('https://api.escavador.com/api/v2/monitoramentos/processos', {
+          method: 'POST',
+          headers: {
+            'Authorization': `Bearer ${integration.api_key}`,
+            'Content-Type': 'application/json',
+            'X-Requested-With': 'XMLHttpRequest'
+          },
+          body: JSON.stringify({
+            tipo: 'processo',
+            valor: p.numero_processo,
+            frequencia: 'diaria' // Configuração padrão sugerida
+          })
+        })
+      } catch (err) {
+        console.error(`[sinc-escavador] Erro no processo ${p.numero_processo}:`, err)
+      }
+    }
+
+    return {
+      tenant_id: tenantId,
+      numero_processo: p.numero_processo,
+      tribunal: p.tribunal,
+      comarca: p.comarca ?? null,
+      vara: p.vara ?? null,
+      assunto: p.assunto,
+      classe_processual: p.classe_processual ?? null,
+      tipo_acao: p.tipo_acao ?? null,
+      status: p.status ?? 'ATIVO',
+      fase_atual: p.fase_atual,
+      valor_causa: p.valor_causa ?? null,
+      data_distribuicao: p.data_distribuicao ?? null,
+      partes: {
+        polo_ativo: p.polo_ativo,
+        polo_passivo: p.polo_passivo,
+        data_inicio: p.data_distribuicao,
+        valor_causa: p.valor_causa,
+      },
+      envolvidos: p.envolvidos ?? [],
+      movimentacoes: p.movimentacoes ?? [],
+      ultima_movimentacao_texto: p.ultima_movimentacao_texto ?? null,
+      data_ultima_movimentacao: p.data_ultima_movimentacao ?? null,
+      escavador_id: p.escavador_id ?? null,
+      raw_escavador: p.raw_escavador ?? null,
+      ultima_atualizacao_escavador: new Date().toISOString(),
+      monitoramento_ativo: true,
+      ativo: true,
+    }
   }))
 
   const { error, count } = await adminSupabase

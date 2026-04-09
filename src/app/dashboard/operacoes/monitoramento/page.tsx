@@ -1,11 +1,13 @@
 'use client'
 
-import { useState, useCallback, Suspense } from 'react'
+import { useState, useCallback, Suspense, useMemo, useEffect } from 'react'
 import {
   Search, Shield, AlertCircle, CheckCircle,
   ChevronDown, ChevronUp, Zap, Eye, Filter, RefreshCw,
-  AlertTriangle, X, DollarSign
+  AlertTriangle, X, DollarSign, ArrowUpDown, LayoutList, CheckSquare, Square, Trash2, FileText, CloudCheck
 } from 'lucide-react'
+
+// ─── Interfaces ───────────────────────────────────────────────────────────────
 
 interface Processo {
   numero_processo: string
@@ -21,6 +23,7 @@ interface Processo {
   classe_processual: string | null
   data_ultima_movimentacao: string | null
   ultima_movimentacao_texto: string | null
+  ultima_movimentacao_resumo: string | null
   fase_atual: string
   escavador_id: string
   monitorado: boolean
@@ -57,51 +60,68 @@ interface ConfirmacaoLote {
   processosParaImportar: Processo[]
 }
 
+type FilterStatus = 'TODOS' | 'ATIVO' | 'ARQUIVADO' | 'monitorado' | 'nao_monitorado'
+type SortOrder = 'distribuicao' | 'urgencia' | 'tribunal'
+
+// ─── Helpers ──────────────────────────────────────────────────────────────────
+
 const STATUS_COLOR: Record<string, string> = {
   ATIVO: 'text-green-400 bg-green-400/10',
   ARQUIVADO: 'text-zinc-400 bg-zinc-400/10',
   BAIXADO: 'text-red-400 bg-red-400/10',
 }
 
+function parseDataBR(d: string | null) {
+  if (!d) return 0
+  if (d.includes('/')) {
+    const [dia, mes, ano] = d.split('/')
+    return new Date(`${ano}-${mes}-${dia}`).getTime()
+  }
+  return new Date(d || 0).getTime()
+}
+
 function diasDesde(data: string | null) {
   if (!data) return null
-  return Math.floor((Date.now() - new Date(data).getTime()) / 86400000)
+  const timestamp = parseDataBR(data)
+  if (timestamp === 0) return null
+  const diff = Date.now() - timestamp
+  if (diff < 0) return 0
+  return Math.floor(diff / 86400000)
 }
 
 function UrgenciaBadge({ dias }: { dias: number | null }) {
   if (dias === null) return <span className="text-xs text-zinc-600">Sem registro</span>
-  if (dias > 30) return <span className="text-xs text-yellow-400 bg-yellow-400/10 px-2 py-0.5 rounded-full">+{dias}d sem mov.</span>
-  return <span className="text-xs text-green-400 bg-green-400/10 px-2 py-0.5 rounded-full">{dias}d atrás</span>
+  if (dias > 30) return <span className="text-xs text-yellow-500 bg-yellow-500/10 px-2 py-0.5 rounded-full border border-yellow-500/20 font-bold">+{dias}d sem mov.</span>
+  if (dias === 0) return <span className="text-xs text-green-400 bg-green-500/10 px-2 py-0.5 rounded-full border border-green-500/20 font-bold">Atualizado hoje</span>
+  return <span className="text-xs text-green-400 bg-green-500/10 px-2 py-0.5 rounded-full border border-green-500/20 font-bold">{dias}d atrás</span>
 }
+
+// ─── Componentes de UI ────────────────────────────────────────────────────────
 
 function ModalConfirmacaoCusto({ dados, onConfirmar, onCancelar, loading }: {
   dados: ConfirmacaoLote; onConfirmar: () => void; onCancelar: () => void; loading: boolean
 }) {
   return (
     <div className="fixed inset-0 bg-black/70 backdrop-blur-sm z-50 flex items-center justify-center p-4">
-      <div className="bg-zinc-900 border border-yellow-500/30 rounded-2xl max-w-md w-full p-6 space-y-5 shadow-2xl">
+      <div className="bg-zinc-900 border border-yellow-500/40 rounded-3xl max-w-md w-full p-6 space-y-5 shadow-2xl">
         <div className="flex items-center justify-between">
           <div className="flex items-center gap-2 text-yellow-500">
             <AlertTriangle size={20} />
-            <span className="font-semibold text-base">Confirmar cobrança</span>
+            <span className="font-bold text-base uppercase tracking-tight">Custo do Monitoramento</span>
           </div>
           <button onClick={onCancelar} className="text-zinc-500 hover:text-zinc-300"><X size={18} /></button>
         </div>
-        <div className="bg-zinc-800/60 rounded-xl p-4 space-y-3 text-sm">
-          <div className="flex justify-between"><span className="text-zinc-400">Processos a monitorar</span><span className="text-white font-semibold">{dados.novos}</span></div>
-          <div className="flex justify-between"><span className="text-zinc-400">Incluídos no plano</span><span className="text-green-400 font-semibold">{dados.gratuitos_disponiveis} grátis</span></div>
+        <div className="bg-zinc-800/60 rounded-2xl p-5 space-y-4 text-sm border border-zinc-800">
+          <div className="flex justify-between"><span className="text-zinc-400 font-medium">Novos Alvos</span><span className="text-white font-bold">{dados.novos}</span></div>
+          <div className="flex justify-between"><span className="text-zinc-400 font-medium">No Plano</span><span className="text-green-400 font-bold">{dados.gratuitos_disponiveis} grátis</span></div>
           <div className="h-px bg-zinc-700" />
-          <div className="flex justify-between"><span className="text-zinc-400">Excedentes</span><span className="text-yellow-400 font-semibold">{dados.excedente}</span></div>
-          <div className="flex justify-between"><span className="text-zinc-400">Preço por processo</span><span className="text-zinc-300">R$ {dados.preco_por_extra.toFixed(2)}/mês</span></div>
-          <div className="h-px bg-zinc-700" />
-          <div className="flex justify-between text-base"><span className="text-white font-semibold">Custo adicional/mês</span><span className="text-yellow-500 font-bold">R$ {dados.custo_mensal.toFixed(2)}</span></div>
+          <div className="flex justify-between font-bold text-lg"><span className="text-white">Custo Extra</span><span className="text-yellow-500">R$ {dados.custo_mensal.toFixed(2)}<span className="text-[10px] ml-1">/mês</span></span></div>
         </div>
-        <p className="text-xs text-zinc-500 leading-relaxed">Este valor será adicionado à sua próxima fatura MAYUS. Você pode desativar processos individuais a qualquer momento.</p>
         <div className="flex gap-3">
-          <button onClick={onCancelar} disabled={loading} className="flex-1 py-2.5 rounded-xl border border-zinc-700 text-zinc-400 text-sm hover:text-zinc-200 transition-colors disabled:opacity-50">Cancelar</button>
-          <button onClick={onConfirmar} disabled={loading} className="flex-1 py-2.5 rounded-xl bg-yellow-500 hover:bg-yellow-400 text-black text-sm font-bold transition-all disabled:opacity-50 flex items-center justify-center gap-2">
+          <button onClick={onCancelar} disabled={loading} className="flex-1 py-3 rounded-2xl border border-zinc-700 text-zinc-500 hover:text-zinc-300 text-xs font-bold uppercase transition-all">Cancelar</button>
+          <button onClick={onConfirmar} disabled={loading} className="flex-1 py-3 rounded-2xl bg-yellow-500 hover:bg-yellow-400 text-black text-xs font-black uppercase transition-all shadow-lg shadow-yellow-500/20 flex items-center justify-center gap-2">
             {loading ? <RefreshCw size={14} className="animate-spin" /> : <DollarSign size={14} />}
-            {loading ? 'Processando...' : 'Confirmar'}
+            Confirmar
           </button>
         </div>
       </div>
@@ -109,130 +129,204 @@ function ModalConfirmacaoCusto({ dados, onConfirmar, onCancelar, loading }: {
   )
 }
 
-function ProcessoCard({ p, onMonitorar, loadingId }: {
-  p: Processo; onMonitorar: (p: Processo) => void; loadingId: string | null
+function BillingBar({ billing }: { billing: BillingInfo }) {
+  const pct = Math.min(100, (billing.total_ja_monitorados / Math.max(billing.gratuitos, 1)) * 100)
+  const quaseCheno = pct >= 80
+  return (
+    <div className="rounded-2xl border border-zinc-800 bg-zinc-900/60 p-5 flex items-center gap-6">
+      <div className="flex-1 space-y-2">
+        <div className="flex items-center justify-between text-[10px] font-black uppercase tracking-widest">
+          <span className="text-zinc-500">Ocupação do Plano</span>
+          <span className={quaseCheno ? 'text-yellow-500' : 'text-zinc-400'}>{billing.total_ja_monitorados} de {billing.gratuitos} usados</span>
+        </div>
+        <div className="h-2 bg-zinc-950 rounded-full overflow-hidden border border-zinc-800">
+          <div className={`h-full rounded-full transition-all duration-700 ${quaseCheno ? 'bg-yellow-500' : 'bg-green-500'}`} style={{ width: `${pct}%` }} />
+        </div>
+        <p className="text-[10px] text-zinc-600 font-bold uppercase">
+          {billing.disponivel_sem_custo > 0
+            ? `${billing.disponivel_sem_custo} espaços disponíveis sem cobrança extra`
+            : `Limite atingido — excedentes monitorados por R$${billing.preco_por_extra.toFixed(2)}/processo`}
+        </p>
+      </div>
+    </div>
+  )
+}
+
+function Pagination({ atual, total, onChange }: { atual: number, total: number, onChange: (p: number) => void }) {
+  if (total <= 1) return null
+  return (
+    <div className="flex items-center gap-1.5">
+      <button
+        onClick={() => onChange(Math.max(1, atual - 1))}
+        disabled={atual === 1}
+        className="px-4 py-2 text-[10px] font-black uppercase text-zinc-500 hover:text-white disabled:opacity-30 transition-all bg-zinc-900 border border-zinc-800 rounded-xl"
+      >
+        Anterior
+      </button>
+      <div className="px-4 py-2 bg-yellow-500/10 border border-yellow-500/20 rounded-xl min-w-[70px] text-center">
+        <span className="text-xs font-black text-yellow-500">{atual}</span>
+        <span className="text-[10px] text-zinc-700 mx-1.5">/</span>
+        <span className="text-xs text-zinc-500 font-bold">{total}</span>
+      </div>
+      <button
+        onClick={() => onChange(Math.min(total, atual + 1))}
+        disabled={atual === total}
+        className="px-4 py-2 text-[10px] font-black uppercase text-zinc-500 hover:text-white disabled:opacity-30 transition-all bg-zinc-900 border border-zinc-800 rounded-xl"
+      >
+        Próxima
+      </button>
+    </div>
+  )
+}
+
+function ProcessoCard({ p, onAction, onRemover, selecionado, onSelect, resumoOficial, onResumirOficial, loadingId }: {
+  p: Processo; onAction: () => void; onRemover: () => void; selecionado: boolean; onSelect: () => void; 
+  resumoOficial?: { texto?: string, status?: string, loading: boolean }; onResumirOficial: () => void;
+  loadingId: string | null
 }) {
   const [expanded, setExpanded] = useState(false)
   const isLoading = loadingId === p.numero_processo
   const dias = diasDesde(p.data_ultima_movimentacao)
 
   return (
-    <div className={`rounded-xl border transition-all ${p.monitorado ? 'border-yellow-500/30 bg-yellow-500/5' : 'border-zinc-800 bg-zinc-900/60'}`}>
-      <div className="p-4 flex items-start gap-4">
-        <div className="mt-1 shrink-0">
-          {p.monitorado ? <CheckCircle size={16} className="text-yellow-500" /> : <div className="w-4 h-4 rounded-full border border-zinc-700" />}
+    <div className={`rounded-2xl border transition-all ${p.monitorado ? 'border-yellow-500/30 bg-yellow-500/[0.03]' : selecionado ? 'border-yellow-500/50 bg-yellow-500/[0.05]' : 'border-zinc-800 bg-zinc-900/40'} hover:border-zinc-700`}>
+      <div className="p-5 flex items-start gap-4">
+        {/* Checkbox */}
+        <div className="mt-1 shrink-0 cursor-pointer" onClick={onSelect}>
+          {p.monitorado ? (
+            <div className="w-5 h-5 rounded-md bg-yellow-500 flex items-center justify-center shadow-lg shadow-yellow-500/20">
+              <CheckCircle size={14} className="text-black" />
+            </div>
+          ) : selecionado ? (
+            <CheckSquare size={20} className="text-yellow-500" />
+          ) : (
+            <Square size={20} className="text-zinc-800 hover:text-zinc-600 transition-colors" />
+          )}
         </div>
-        <div className="flex-1 min-w-0 space-y-2">
-          {/* Linha 1: número + badges */}
-          <div className="flex items-center gap-2 flex-wrap">
-            <span className="font-mono text-sm text-white font-medium">{p.numero_processo}</span>
-            <span className="text-xs bg-zinc-800 text-zinc-400 px-2 py-0.5 rounded">{p.tribunal}</span>
-            {p.comarca && <span className="text-xs bg-zinc-800/50 text-zinc-500 px-2 py-0.5 rounded">{p.comarca}</span>}
-            <span className={`text-xs px-2 py-0.5 rounded-full font-medium ${STATUS_COLOR[p.status] ?? 'text-zinc-400 bg-zinc-400/10'}`}>{p.status}</span>
-            {p.monitorado && <span className="text-xs text-yellow-500 bg-yellow-500/10 px-2 py-0.5 rounded-full">● Monitorado</span>}
-          </div>
 
-          {/* Linha 2: partes */}
-          <div className="grid grid-cols-1 md:grid-cols-2 gap-1 text-sm">
-            <div><span className="text-zinc-500">Ativo: </span><span className="text-zinc-200">{p.polo_ativo}</span></div>
-            <div><span className="text-zinc-500">Passivo: </span><span className="text-zinc-200">{p.polo_passivo}</span></div>
-          </div>
-
-          {/* Linha 3: metadados */}
-          <div className="flex items-center gap-2 flex-wrap text-xs">
-            <span className="text-zinc-400">{p.assunto}</span>
-            {p.classe_processual && <><span className="text-zinc-700">·</span><span className="text-zinc-500">{p.classe_processual}</span></>}
-            <span className="text-zinc-700">·</span>
-            <span className="text-zinc-500">Fase: {p.fase_atual}</span>
-            {p.vara && <><span className="text-zinc-700">·</span><span className="text-zinc-500">{p.vara}</span></>}
-          </div>
-
-          {/* Linha 4: financeiro + urgência */}
-          <div className="flex items-center gap-3 flex-wrap text-xs">
-            {p.valor_causa && p.valor_causa !== 'N/I' && (
-              <span className="text-yellow-400/80 bg-yellow-400/5 px-2 py-0.5 rounded border border-yellow-400/20">
-                💰 {p.valor_causa}
-              </span>
+        <div className="flex-1 min-w-0 space-y-3">
+          {/* Header Card */}
+          <div className="flex items-center gap-2.5 flex-wrap">
+            <span className="font-mono text-sm text-zinc-100 font-bold tracking-tight">{p.numero_processo}</span>
+            <span className="text-[10px] uppercase font-bold bg-zinc-800 text-zinc-500 px-2.5 py-0.5 rounded-lg">{p.tribunal}</span>
+            <span className={`text-[10px] uppercase font-bold px-2.5 py-0.5 rounded-lg ${STATUS_COLOR[p.status] ?? 'text-zinc-600 bg-zinc-900'}`}>{p.status}</span>
+            {p.monitorado && (
+              <div className="flex items-center gap-1 px-2.5 py-0.5 bg-green-500/10 border border-green-500/20 rounded-lg text-[10px] uppercase font-black text-green-400">
+                 <CloudCheck size={12} /> Sincronizado
+              </div>
             )}
-            {p.data_distribuicao && (
-              <span className="text-zinc-500">Distribuído: {new Date(p.data_distribuicao).toLocaleDateString('pt-BR')}</span>
-            )}
-            <UrgenciaBadge dias={dias} />
           </div>
 
-          {/* Expandido: última movimentação */}
+          {/* Partes */}
+          <div className="grid grid-cols-1 md:grid-cols-2 gap-x-6 gap-y-1.5 text-sm">
+            <div className="truncate"><span className="text-zinc-500 text-[10px] font-black mr-2 uppercase tracking-tighter">ATIVO</span><span className="text-zinc-200 font-bold">{p.polo_ativo}</span></div>
+            <div className="truncate"><span className="text-zinc-500 text-[10px] font-black mr-2 uppercase tracking-tighter">PASSIVO</span><span className="text-zinc-200 font-bold">{p.polo_passivo}</span></div>
+          </div>
+
+          {/* Movimentação Texto */}
+          <div className="flex items-start gap-3">
+             <div className="w-1 rounded-full bg-yellow-500/20 shrink-0 self-stretch" />
+             <div className="space-y-1.5 flex-1">
+                <p className="text-[11px] text-zinc-400 leading-relaxed font-medium line-clamp-2">
+                  {p.ultima_movimentacao_texto || "Sem detalhes da última movimentação."}
+                </p>
+                <div className="flex items-center gap-4">
+                   {p.data_ultima_movimentacao && <span className="text-[10px] text-zinc-600 font-black uppercase">{p.data_ultima_movimentacao}</span>}
+                   <UrgenciaBadge dias={dias} />
+                </div>
+             </div>
+          </div>
+
+          {/* Resumo Oficial do Tribunal */}
+          {p.monitorado && (
+            <div className="p-4 bg-zinc-950/50 border border-zinc-800 rounded-2xl space-y-3">
+               <div className="flex items-center justify-between">
+                  <div className="flex items-center gap-2 text-zinc-500 text-[10px] font-black uppercase tracking-widest">
+                     <FileText size={14} className="text-yellow-500/50" /> Resumo Oficial (Tribunal)
+                  </div>
+                  {!resumoOficial?.texto && !resumoOficial?.loading && (
+                    <button onClick={onResumirOficial} className="px-3 py-1 bg-yellow-500/10 hover:bg-yellow-500/20 text-yellow-500 text-[10px] font-black uppercase rounded-lg border border-yellow-500/20 transition-all">Solicitar Inteligência</button>
+                  )}
+               </div>
+               {resumoOficial?.loading ? (
+                 <div className="flex items-center gap-2 text-zinc-600 italic text-xs py-1">
+                   <div className="w-3 h-3 rounded-full border-2 border-yellow-500/20 border-t-yellow-500 animate-spin" /> Conectando ao robô do tribunal...
+                 </div>
+               ) : resumoOficial?.status === 'PENDENTE' ? (
+                 <div className="flex items-center gap-2 text-yellow-500/60 italic text-xs px-2 py-1 bg-yellow-500/5 rounded-lg border border-yellow-500/10">
+                   <AlertCircle size={14} /> Solicitação em processamento pelo tribunal.
+                 </div>
+               ) : resumoOficial?.texto ? (
+                 <p className="text-xs text-zinc-300 leading-relaxed italic border-l-2 border-yellow-500/30 pl-3">"{resumoOficial.texto}"</p>
+               ) : (
+                 <p className="text-[10px] text-zinc-600 italic tracking-tight font-medium uppercase">Vigilância ativa. Clique para gerar análise oficial.</p>
+               )}
+            </div>
+          )}
+
+          {/* Expandido (Histórico) */}
           {expanded && (
-            <div className="mt-2 space-y-2">
-              {p.ultima_movimentacao_texto && (
-                <div className="p-3 bg-zinc-800/50 rounded-lg text-sm text-zinc-300 border-l-2 border-yellow-500/40">
-                  <p className="text-xs text-zinc-500 mb-1 uppercase tracking-wider">Última movimentação</p>
-                  {p.ultima_movimentacao_texto}
-                </div>
-              )}
-              {p.movimentacoes?.length > 0 && (
-                <div className="space-y-1">
-                  <p className="text-xs text-zinc-500 uppercase tracking-wider">Histórico recente</p>
-                  {p.movimentacoes.slice(0, 5).map((m, i) => (
-                    <div key={i} className="flex items-start gap-2 text-xs text-zinc-400 py-1 border-b border-zinc-800/50">
-                      <span className="text-zinc-600 shrink-0">{(m.data as string) ? new Date(m.data as string).toLocaleDateString('pt-BR') : '—'}</span>
-                      <span>{((m.titulo ?? m.descricao ?? m.tipo) as string) ?? '—'}</span>
-                    </div>
-                  ))}
-                </div>
-              )}
+            <div className="pt-4 mt-4 border-t border-zinc-800/50 space-y-4 animate-in fade-in duration-300">
+               <div>
+                  <p className="text-[9px] font-black text-zinc-600 uppercase tracking-[0.3em] mb-4 text-center">Linha do Tempo de Andamentos</p>
+                  <div className="space-y-4">
+                    {p.movimentacoes?.slice(0, 15).map((m, i) => (
+                      <div key={i} className="flex gap-4 group">
+                        <div className="flex flex-col items-center shrink-0">
+                           <div className="w-2 h-2 rounded-full border-2 border-zinc-800 group-hover:border-yellow-500 transition-colors" />
+                           <div className="w-px flex-1 bg-zinc-800" />
+                        </div>
+                        <div className="pb-3 flex-1">
+                          <span className="text-[10px] font-black font-mono text-zinc-600 uppercase tracking-tighter">{(m.data as string) || 'S/D'}</span>
+                          <p className="text-[11px] text-zinc-400 font-bold mt-1 group-hover:text-zinc-200 transition-colors">{((m.titulo ?? m.descricao ?? m.texto) as string) || "Visualização bloqueada pelo tribunal."}</p>
+                          {m.resumo && <p className="text-[10px] text-zinc-500 italic mt-2 px-3 py-1.5 bg-zinc-950 rounded-xl border border-zinc-900 border-l-yellow-500/40 border-l-2">Fato: {m.resumo as string}</p>}
+                        </div>
+                      </div>
+                    ))}
+                  </div>
+               </div>
             </div>
           )}
         </div>
 
-        <div className="flex items-center gap-2 shrink-0">
-          {(p.ultima_movimentacao_texto || p.movimentacoes?.length > 0) && (
-            <button onClick={() => setExpanded(v => !v)} className="text-zinc-500 hover:text-zinc-300 p-1 transition-colors">
-              {expanded ? <ChevronUp size={16} /> : <ChevronDown size={16} />}
-            </button>
-          )}
-          {!p.monitorado && (
-            <button onClick={() => onMonitorar(p)} disabled={isLoading}
-              className="text-xs px-3 py-1.5 rounded-lg border border-yellow-500/40 text-yellow-500 hover:bg-yellow-500/10 transition-all disabled:opacity-50 flex items-center gap-1.5 whitespace-nowrap">
-              {isLoading && <RefreshCw size={11} className="animate-spin" />}
-              {isLoading ? '...' : 'Monitorar'}
-            </button>
-          )}
+        {/* Actions Sidebar */}
+        <div className="flex flex-col items-end gap-3 shrink-0 h-full justify-between">
+           <button 
+             onClick={() => setExpanded(!expanded)} 
+             className={`p-3 rounded-2xl transition-all border ${expanded ? 'bg-yellow-500 text-black border-yellow-500' : 'bg-zinc-900 text-zinc-600 border-zinc-800 hover:text-white hover:border-zinc-700 shadow-xl'}`}
+             title={expanded ? "Recolher Histórico" : "Ver Detalhes"}
+           >
+             {expanded ? <ChevronUp size={20} strokeWidth={3} /> : <Eye size={20} />}
+           </button>
+           
+           <div className="mt-auto">
+             {!p.monitorado ? (
+               <button 
+                 onClick={onAction} 
+                 disabled={isLoading}
+                 className="w-32 py-3 rounded-2xl bg-yellow-500 hover:bg-yellow-400 text-black text-[10px] font-black uppercase transition-all disabled:opacity-50 flex items-center justify-center gap-2 shadow-xl shadow-yellow-500/20 active:scale-95 border-b-4 border-yellow-600"
+               >
+                 {isLoading ? <RefreshCw size={14} className="animate-spin" /> : <Zap size={14} fill="currentColor" />}
+                 Monitorar
+               </button>
+             ) : (
+               <button 
+                 onClick={onRemover} 
+                 disabled={isLoading}
+                 className="w-32 py-3 rounded-2xl bg-zinc-950 border border-red-500/40 text-red-500 hover:bg-red-500/5 text-[10px] font-black uppercase transition-all disabled:opacity-50 flex items-center justify-center gap-2 active:scale-95"
+               >
+                 <X size={14} strokeWidth={3} />
+                 Remover
+               </button>
+             )}
+           </div>
         </div>
       </div>
     </div>
   )
 }
 
-type FilterStatus = 'TODOS' | 'ATIVO' | 'ARQUIVADO' | 'nao_monitorado'
-
-function BillingBar({ billing }: { billing: BillingInfo }) {
-  const pct = Math.min(100, (billing.total_ja_monitorados / Math.max(billing.gratuitos, 1)) * 100)
-  const quaseCheno = pct >= 80
-  return (
-    <div className="rounded-xl border border-zinc-800 bg-zinc-900/60 p-4 flex items-center gap-4">
-      <div className="flex-1 space-y-1.5">
-        <div className="flex items-center justify-between text-xs">
-          <span className="text-zinc-400">Processos no plano</span>
-          <span className={quaseCheno ? 'text-yellow-400 font-semibold' : 'text-zinc-400'}>{billing.total_ja_monitorados} / {billing.gratuitos} usados</span>
-        </div>
-        <div className="h-2 bg-zinc-800 rounded-full overflow-hidden">
-          <div className={`h-full rounded-full transition-all ${quaseCheno ? 'bg-yellow-500' : 'bg-green-500'}`} style={{ width: `${pct}%` }} />
-        </div>
-        <p className="text-xs text-zinc-500">
-          {billing.disponivel_sem_custo > 0
-            ? `${billing.disponivel_sem_custo} disponíveis sem custo adicional`
-            : `Plano esgotado — extras a R$${billing.preco_por_extra.toFixed(2)}/processo/mês`}
-        </p>
-      </div>
-      {billing.excedente_se_prosseguir > 0 && (
-        <div className="text-right shrink-0">
-          <p className="text-xs text-yellow-400 font-semibold">+R$ {billing.custo_estimado_mes.toFixed(2)}/mês</p>
-          <p className="text-xs text-zinc-500">se monitorar todos ativos</p>
-        </div>
-      )}
-    </div>
-  )
-}
+// ─── Componente Principal ─────────────────────────────────────────────────────
 
 function MonitoramentoContent() {
   const [tab, setTab] = useState<'oab' | 'numero' | 'cpf'>('oab')
@@ -243,273 +337,335 @@ function MonitoramentoContent() {
   const [result, setResult] = useState<BuscaResult | null>(null)
   const [error, setError] = useState<string | null>(null)
   const [filtroStatus, setFiltroStatus] = useState<FilterStatus>('TODOS')
+  const [filtroTribunal, setFiltroTribunal] = useState<string | null>(null)
   const [search, setSearch] = useState('')
-  const [loadingId, setLoadingId] = useState<string | null>(null)
   const [feedback, setFeedback] = useState<string | null>(null)
   const [confirmacao, setConfirmacao] = useState<ConfirmacaoLote | null>(null)
   const [confirmandoLote, setConfirmandoLote] = useState(false)
+  const [pagina, setPagina] = useState(1)
+  const [ordenacao, setOrdenacao] = useState<SortOrder>('urgencia')
+  const [selecionados, setSelecionados] = useState<Set<string>>(new Set())
+  const [resumosOficiais, setResumosOficiais] = useState<Record<string, { texto?: string, status?: string, loading: boolean }>>({})
+  const [loadingId, setLoadingId] = useState<string | null>(null)
+  
+  const ITENS_POR_PAGINA = 20
+
+  useEffect(() => {
+    const s = localStorage.getItem('mayus_oab_numero')
+    const e = localStorage.getItem('mayus_oab_estado')
+    if (s) setOabNumero(s)
+    if (e) setOabEstado(e)
+  }, [])
 
   const buscar = useCallback(async () => {
     if (!oabNumero.trim()) return
-    setLoading(true); setError(null); setResult(null); setFeedback(null)
+    // NÃO reseta o result imediatamente para evitar que o campo OAB pule/suma
+    setLoading(true); setError(null); setFeedback(null); setSelecionados(new Set()); setPagina(1)
     try {
+      localStorage.setItem('mayus_oab_numero', oabNumero.trim())
+      localStorage.setItem('mayus_oab_estado', oabEstado)
+
       const res = await fetch('/api/escavador/buscar-completo', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ oab_estado: oabEstado, oab_numero: oabNumero.trim() })
       })
       const data = await res.json()
-      if (!res.ok) throw new Error(data.error ?? 'Erro na busca')
+      if (!res.ok) throw new Error(data.error ?? 'Falha na varredura')
       setResult(data)
     } catch (e) {
-      setError(e instanceof Error ? e.message : 'Erro desconhecido')
+      setError(e instanceof Error ? e.message : 'Erro na conexão')
     } finally {
       setLoading(false)
     }
   }, [oabEstado, oabNumero])
 
-  const executarImportacao = useCallback(async (processos: Processo[], confirmar_custo: boolean) => {
-    const res = await fetch('/api/monitoramento/importar-lote', {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ processos, confirmar_custo })
-    })
-    return res.json()
-  }, [])
-
-  const monitorarUm = useCallback(async (p: Processo) => {
-    setLoadingId(p.numero_processo)
-    try {
-      const data = await executarImportacao([p], true)
-      if (data.error) throw new Error(data.error)
-      setResult(prev => prev
-        ? { ...prev, processos: prev.processos.map(proc => proc.numero_processo === p.numero_processo ? { ...proc, monitorado: true } : proc) }
-        : prev)
-      setFeedback(data.mensagem)
-    } catch (e) {
-      setError(e instanceof Error ? e.message : 'Erro ao monitorar')
-    } finally {
-      setLoadingId(null)
-    }
-  }, [executarImportacao])
-
-  const monitorarTodosAtivos = useCallback(async () => {
-    if (!result) return
-    const ativos = result.processos.filter(p => p.status === 'ATIVO' && !p.monitorado)
-    if (!ativos.length) return
+  const monitorarLote = useCallback(async (processos: Processo[]) => {
     setImportandoLote(true)
     try {
-      const data = await executarImportacao(ativos, false)
+      const res = await fetch('/api/monitoramento/importar-lote', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ processos, confirmar_custo: false })
+      })
+      const data = await res.json()
       if (data.requer_confirmacao) {
-        setConfirmacao({ ...data, processosParaImportar: ativos })
+        setConfirmacao({ ...data, processosParaImportar: processos })
         return
       }
-      setResult(prev => prev
-        ? { ...prev, processos: prev.processos.map(p => p.status === 'ATIVO' ? { ...p, monitorado: true } : p) }
-        : prev)
-      setFeedback(`✅ ${data.mensagem}`)
+      setResult(prev => prev ? {
+        ...prev,
+        processos: prev.processos.map(p => processos.some(a => a.numero_processo === p.numero_processo) ? { ...p, monitorado: true } : p),
+        billing: { ...prev.billing, total_ja_monitorados: prev.billing.total_ja_monitorados + processos.length }
+      } : prev)
+      setSelecionados(new Set())
+      setFeedback(`✅ ${processos.length} processos agora sob vigilância estratégica`)
     } catch (e) {
-      setError(e instanceof Error ? e.message : 'Erro ao importar')
+      setError('Erro ao monitorar processos')
     } finally {
       setImportandoLote(false)
     }
-  }, [result, executarImportacao])
+  }, [])
 
-  const confirmarLote = useCallback(async () => {
-    if (!confirmacao) return
-    setConfirmandoLote(true)
+  const desmonitorar = useCallback(async (p: Processo) => {
+    setLoadingId(p.numero_processo)
     try {
-      const data = await executarImportacao(confirmacao.processosParaImportar, true)
-      if (data.error) throw new Error(data.error)
-      setResult(prev => prev
-        ? { ...prev, processos: prev.processos.map(p => p.status === 'ATIVO' ? { ...p, monitorado: true } : p) }
-        : prev)
-      setFeedback(`✅ ${data.mensagem}`)
-      setConfirmacao(null)
+      await fetch('/api/monitoramento/remover', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ numero_processo: p.numero_processo })
+      })
+      setResult(prev => prev ? {
+        ...prev,
+        processos: prev.processos.map(item => item.numero_processo === p.numero_processo ? { ...item, monitorado: false } : item),
+        billing: { ...prev.billing, total_ja_monitorados: Math.max(0, prev.billing.total_ja_monitorados - 1) }
+      } : prev)
+      setFeedback('✅ Vigilância desativada')
     } catch (e) {
-      setError(e instanceof Error ? e.message : 'Erro ao confirmar')
+      setError('Erro ao remover monitoramento')
     } finally {
-      setConfirmandoLote(false)
+      setLoadingId(null)
     }
-  }, [confirmacao, executarImportacao])
+  }, [])
 
-  const processosFiltrados = result?.processos.filter(p => {
-    const matchStatus = filtroStatus === 'TODOS'
-      ? true
-      : filtroStatus === 'nao_monitorado'
-        ? !p.monitorado
-        : p.status === filtroStatus
-    const matchSearch = !search || [p.numero_processo, p.polo_ativo, p.polo_passivo, p.assunto]
-      .some(s => s?.toLowerCase().includes(search.toLowerCase()))
-    return matchStatus && matchSearch
-  }) ?? []
+  const solicitarResumoTribunal = useCallback(async (p: Processo) => {
+    setResumosOficiais(prev => ({ ...prev, [p.numero_processo]: { loading: true } }))
+    try {
+      const res = await fetch('/api/escavador/resumo-ia', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ numero_processo: p.numero_processo })
+      })
+      const data = await res.json()
+      setResumosOficiais(prev => ({ ...prev, [p.numero_processo]: { status: data.status || 'PENDENTE', loading: false } }))
+    } catch (e) {
+      setResumosOficiais(prev => ({ ...prev, [p.numero_processo]: { loading: false } }))
+    }
+  }, [])
 
-  const totalAtivosNaoMonitorados = result?.processos.filter(p => p.status === 'ATIVO' && !p.monitorado).length ?? 0
-  const totalMonitorados = result?.processos.filter(p => p.monitorado).length ?? 0
+  // ─── Lógica de Filtros ───
+
+  const tribunaisUnicos = useMemo(() => {
+    if (!result) return []
+    return Array.from(new Set(result.processos.map(p => p.tribunal))).sort()
+  }, [result])
+
+  const processosFiltrados = useMemo(() => {
+    if (!result) return []
+    return result.processos
+      .filter(p => {
+        let matchStatus = true
+        if (filtroStatus === 'monitorado') matchStatus = p.monitorado
+        else if (filtroStatus === 'nao_monitorado') matchStatus = !p.monitorado
+        else if (filtroStatus !== 'TODOS') matchStatus = p.status === filtroStatus
+
+        const matchTribunal = !filtroTribunal || p.tribunal === filtroTribunal
+        const matchSearch = !search || [p.numero_processo, p.polo_ativo, p.polo_passivo, p.assunto].some(s => s?.toLowerCase().includes(search.toLowerCase()))
+        return matchStatus && matchSearch && matchTribunal
+      })
+      .sort((a, b) => {
+        if (ordenacao === 'distribuicao') return parseDataBR(b.data_distribuicao) - parseDataBR(a.data_distribuicao)
+        if (ordenacao === 'urgencia') return parseDataBR(b.data_ultima_movimentacao) - parseDataBR(a.data_ultima_movimentacao)
+        if (ordenacao === 'tribunal') return a.tribunal.localeCompare(b.tribunal)
+        return 0
+      })
+  }, [result, filtroStatus, filtroTribunal, search, ordenacao])
+
+  const paginasTotais = Math.ceil(processosFiltrados.length / ITENS_POR_PAGINA)
+  const processosPagina = useMemo(() => {
+    return processosFiltrados.slice((pagina - 1) * ITENS_POR_PAGINA, pagina * ITENS_POR_PAGINA)
+  }, [processosFiltrados, pagina])
+
+  const totalAtivos = result?.processos.filter(p => p.status === 'ATIVO' && !p.monitorado).length ?? 0
 
   return (
     <>
-      {confirmacao && (
-        <ModalConfirmacaoCusto
-          dados={confirmacao}
-          onConfirmar={confirmarLote}
-          onCancelar={() => setConfirmacao(null)}
-          loading={confirmandoLote}
-        />
-      )}
+      {confirmacao && <ModalConfirmacaoCusto dados={confirmacao} onConfirmar={buscar} onCancelar={() => setConfirmacao(null)} loading={confirmandoLote} />}
 
-      <div className="p-6 max-w-6xl space-y-6">
-        {/* Header */}
-        <div className="flex items-center gap-3">
-          <div className="w-9 h-9 rounded-full bg-yellow-500/10 flex items-center justify-center">
-            <Shield size={18} className="text-yellow-500" />
-          </div>
-          <div>
-            <h1 className="text-2xl font-semibold text-white" style={{ fontFamily: 'Cormorant Garamond, serif' }}>
-              Monitoramento de Processos
-            </h1>
-            <p className="text-sm text-zinc-400">Busca completa · Monitoramento em lote · Alertas automáticos</p>
-          </div>
+      <div className="p-6 max-w-6xl mx-auto space-y-6">
+        {/* Header Premium (Cormorant) */}
+        <div className="flex items-center justify-between gap-4">
+           <div className="flex items-center gap-4">
+              <div className="w-11 h-11 rounded-2xl bg-yellow-500/10 flex items-center justify-center border border-yellow-500/20 shadow-lg shadow-yellow-500/5">
+                <Shield size={22} className="text-yellow-500" />
+              </div>
+              <div>
+                <h1 className="text-2xl font-bold text-white tracking-tight" style={{ fontFamily: 'Cormorant Garamond, serif' }}>Monitoramento Estratégico</h1>
+                <p className="text-[10px] text-zinc-500 uppercase tracking-widest font-black opacity-60">Varredura Judicial em Tempo Real</p>
+              </div>
+           </div>
+           {result?.advogado_nome && (
+             <div className="bg-zinc-900 px-5 py-2.5 rounded-2xl border border-zinc-800 flex items-center gap-4 shadow-inner">
+                <div className="flex flex-col items-end border-r border-zinc-800 pr-4">
+                   <span className="text-[9px] text-zinc-500 uppercase font-black tracking-widest leading-none mb-1">Responsável</span>
+                   <span className="text-yellow-500 font-bold uppercase tracking-wide drop-shadow-[0_0_8px_rgba(234,179,8,0.4)]">{result.advogado_nome}</span>
+                </div>
+                <div className="flex flex-col">
+                   <span className="text-white font-black text-lg leading-none">{result.total}</span>
+                   <span className="text-[9px] text-zinc-600 uppercase font-black">Processos</span>
+                </div>
+             </div>
+           )}
         </div>
 
-        {/* Tabs */}
-        <div className="flex gap-1 bg-zinc-900 border border-zinc-800 rounded-xl p-1 w-fit">
-          {([['oab', 'OAB'], ['numero', 'Nº Processo'], ['cpf', 'CPF / CNPJ']] as const).map(([key, label]) => (
-            <button
-              key={key}
-              onClick={() => setTab(key)}
-              className={`px-4 py-1.5 rounded-lg text-sm font-medium transition-all ${tab === key ? 'bg-yellow-500 text-black' : 'text-zinc-400 hover:text-zinc-300'}`}
-            >
-              {label}
-            </button>
-          ))}
+        {/* Barra de Busca - Design V7 (Persistente) */}
+        <div className="bg-zinc-900 border border-zinc-800 rounded-2xl p-2 flex flex-col md:flex-row gap-2 shadow-2xl">
+           <div className="flex bg-zinc-950 rounded-xl p-1 border border-zinc-800 shrink-0">
+             {([['oab', 'OAB'], ['numero', 'Nº CNJ'], ['cpf', 'DOCS']] as const).map(([k, l]) => (
+               <button key={k} onClick={() => setTab(k)} className={`px-5 py-2 rounded-lg text-xs font-black transition-all ${tab === k ? 'bg-yellow-500 text-black shadow-lg shadow-yellow-500/20' : 'text-zinc-600 hover:text-zinc-300'}`}>{l}</button>
+             ))}
+           </div>
+           {tab === 'oab' && (
+             <select value={oabEstado} onChange={e => setOabEstado(e.target.value)} className="bg-zinc-950 border border-zinc-800 rounded-xl px-4 text-xs font-bold text-zinc-400 focus:border-yellow-500/50 outline-none hover:bg-zinc-900 transition-colors">
+               {['AC','AL','AP','AM','BA','CE','DF','ES','GO','MA','MT','MS','MG','PA','PB','PR','PE','PI','RJ','RN','RS','RO','RR','SC','SP','SE','TO'].map(e => <option key={e} value={e}>{e}</option>)}
+             </select>
+           )}
+           <div className="flex-1 relative">
+             <Search size={14} className="absolute left-4 top-1/2 -translate-y-1/2 text-zinc-700" />
+             <input value={oabNumero} onChange={e => setOabNumero(e.target.value)} onKeyDown={e => e.key === 'Enter' && buscar()} placeholder="Digite os dados para busca..." className="w-full h-full bg-zinc-950 border border-zinc-900 rounded-xl pl-11 pr-4 text-xs text-white placeholder-zinc-800 outline-none focus:border-yellow-500/50 font-medium" />
+           </div>
+           <button onClick={buscar} disabled={loading} className="px-8 h-12 bg-yellow-500 hover:bg-yellow-400 text-black text-xs font-black rounded-xl transition-all disabled:opacity-50 flex items-center justify-center gap-2.5 shadow-xl shadow-yellow-500/20 active:scale-95 border-b-4 border-yellow-600 shrink-0 uppercase tracking-widest">
+             {loading ? <RefreshCw size={14} className="animate-spin" /> : <Zap size={14} fill="currentColor" />}
+             {loading ? 'BUSCANDO...' : 'INICIAR VARREDURA'}
+           </button>
         </div>
 
-        {/* Search */}
-        <div className="flex gap-3">
-          {tab === 'oab' && (
-            <select
-              value={oabEstado}
-              onChange={e => setOabEstado(e.target.value)}
-              className="bg-zinc-900 border border-zinc-700 rounded-xl px-3 py-2.5 text-sm text-zinc-300 focus:outline-none focus:border-yellow-500/50"
-            >
-              {['AC','AL','AP','AM','BA','CE','DF','ES','GO','MA','MT','MS','MG','PA','PB','PR','PE','PI','RJ','RN','RS','RO','RR','SC','SP','SE','TO'].map(e => (
-                <option key={e} value={e}>{e}</option>
-              ))}
-            </select>
-          )}
-          <div className="flex-1 relative">
-            <Search size={16} className="absolute left-3 top-1/2 -translate-y-1/2 text-zinc-500" />
-            <input
-              value={oabNumero}
-              onChange={e => setOabNumero(e.target.value)}
-              onKeyDown={e => e.key === 'Enter' && buscar()}
-              placeholder={tab === 'oab' ? 'Número OAB...' : tab === 'numero' ? 'Nº CNJ...' : 'CPF ou CNPJ...'}
-              className="w-full bg-zinc-900 border border-zinc-700 rounded-xl pl-9 pr-4 py-2.5 text-sm text-zinc-200 placeholder-zinc-500 focus:outline-none focus:border-yellow-500/50"
-            />
-          </div>
-          <button
-            onClick={buscar}
-            disabled={loading}
-            className="px-5 py-2.5 bg-yellow-500 hover:bg-yellow-400 text-black text-sm font-bold rounded-xl transition-all disabled:opacity-50 flex items-center gap-2"
-          >
-            {loading ? <RefreshCw size={15} className="animate-spin" /> : <Search size={15} />}
-            {loading ? 'Buscando...' : 'Buscar'}
-          </button>
-        </div>
-
-        {error && (
-          <div className="flex items-center gap-2 p-3 bg-red-500/10 border border-red-500/20 rounded-xl text-sm text-red-400">
-            <AlertCircle size={15} />{error}
-          </div>
-        )}
-        {feedback && (
-          <div className="flex items-center gap-2 p-3 bg-green-500/10 border border-green-500/20 rounded-xl text-sm text-green-400">
-            <CheckCircle size={15} />{feedback}
-          </div>
-        )}
+        {error && <div className="p-4 bg-red-500/5 border border-red-500/20 rounded-2xl flex items-center gap-3 text-red-500 text-xs font-bold animate-shake uppercase tracking-widest"><AlertCircle size={18} /> {error}</div>}
+        {feedback && <div className="p-4 bg-green-500/5 border border-green-500/20 rounded-2xl flex items-center gap-3 text-green-400 text-xs font-bold animate-in slide-in-from-top-4 uppercase tracking-widest"><CheckCircle size={18} strokeWidth={3} /> {feedback}</div>}
 
         {result && (
-          <div className="space-y-4">
-            <BillingBar billing={result.billing} />
-
-            <div className="flex items-center justify-between flex-wrap gap-3">
-              <div className="flex items-center gap-3 text-sm flex-wrap">
-                <span className="text-zinc-300">
-                  <span className="text-yellow-500 font-bold">{result.total_retornado}</span>
-                  <span className="text-zinc-500"> de </span>
-                  <span className="font-medium">{result.total}</span>
-                  <span className="text-zinc-500"> processos</span>
-                  {result.total_retornado < result.total && (
-                    <span className="text-xs text-zinc-600 ml-1">(paginando {result.paginas_buscadas} pág.)</span>
+          <div className="space-y-6 animate-in fade-in duration-500">
+            
+            {/* Toolbar Inteligente */}
+            <div className="flex flex-col lg:flex-row lg:items-center justify-between gap-4 p-4 bg-zinc-900/60 border border-zinc-800 rounded-2xl shadow-xl">
+               <div className="flex items-center gap-3 flex-wrap">
+                  <div className="flex items-center gap-1 bg-zinc-950 p-1 rounded-xl border border-zinc-800">
+                     {(['distribuicao', 'urgencia', 'tribunal'] as SortOrder[]).map(o => (
+                       <button key={o} onClick={() => setOrdenacao(o)} className={`px-4 py-1.5 rounded-lg text-[10px] font-black uppercase transition-all ${ordenacao === o ? 'bg-zinc-800 text-yellow-500 border border-zinc-700 shadow-inner' : 'text-zinc-600 hover:text-zinc-400'}`}>
+                          {o === 'distribuicao' ? 'Por Data' : o === 'urgencia' ? 'Por Urgência' : 'Por Tribunal'}
+                       </button>
+                     ))}
+                  </div>
+                  <div className="h-4 w-px bg-zinc-800" />
+                  {!selecionados.size && totalAtivos > 0 && (
+                     <button onClick={() => monitorarLote(result.processos.filter(p => p.status === 'ATIVO' && !p.monitorado))} className="px-5 py-2.5 bg-yellow-500 hover:bg-yellow-400 text-black text-[10px] font-black uppercase rounded-xl transition-all flex items-center gap-2 shadow-lg shadow-yellow-500/10 border-b-2 border-yellow-700">
+                        Monitorar {totalAtivos} Ativos
+                     </button>
                   )}
-                </span>
-                {result.advogado_nome && <span className="text-zinc-500 text-xs">— {result.advogado_nome}</span>}
-                <span className="text-xs text-green-400 bg-green-400/10 px-2 py-0.5 rounded-full flex items-center gap-1">
-                  <CheckCircle size={11} />{totalMonitorados} monitorados
-                </span>
-              </div>
-              {totalAtivosNaoMonitorados > 0 && (
-                <button
-                  onClick={monitorarTodosAtivos}
-                  disabled={importandoLote}
-                  className="flex items-center gap-2 px-4 py-2 bg-yellow-500 hover:bg-yellow-400 text-black text-sm font-bold rounded-xl transition-all disabled:opacity-50"
-                >
-                  {importandoLote
-                    ? <><RefreshCw size={14} className="animate-spin" />Verificando...</>
-                    : <><Zap size={14} />Monitorar {totalAtivosNaoMonitorados} ativos</>}
-                </button>
-              )}
+                  {selecionados.size > 0 && (
+                     <button onClick={() => monitorarLote(result.processos.filter(p => selecionados.has(p.numero_processo)))} className="px-5 py-2.5 bg-yellow-500 hover:bg-yellow-400 text-black text-[10px] font-black uppercase rounded-xl transition-all flex items-center gap-2 border-b-2 border-yellow-700">
+                        Vigiar {selecionados.size} Selecionados
+                     </button>
+                  )}
+               </div>
+               <Pagination atual={pagina} total={paginasTotais} onChange={p => { setPagina(p); window.scrollTo({ top: 300, behavior: 'smooth' }) }} />
             </div>
 
-            {/* Filtros */}
-            <div className="flex items-center gap-2 flex-wrap">
-              <Filter size={13} className="text-zinc-500" />
-              {(['TODOS', 'ATIVO', 'ARQUIVADO', 'nao_monitorado'] as FilterStatus[]).map(f => (
-                <button
-                  key={f}
-                  onClick={() => setFiltroStatus(f)}
-                  className={`text-xs px-3 py-1 rounded-full transition-all ${filtroStatus === f ? 'bg-yellow-500 text-black font-semibold' : 'bg-zinc-800 text-zinc-400 hover:text-zinc-300'}`}
-                >
-                  {f === 'nao_monitorado' ? 'Não monitorados' : f}
+            {/* Listagem Estilo V7 */}
+            <div className="flex items-center gap-2 overflow-x-auto pb-2 scrollbar-hide">
+                <Filter size={14} className="text-zinc-700 mx-2" />
+                <button onClick={() => setFiltroTribunal(null)} className={`px-4 py-1.5 rounded-full text-[9px] font-black uppercase transition-all whitespace-nowrap border ${!filtroTribunal ? 'bg-white text-black border-white' : 'bg-transparent text-zinc-600 border-zinc-800 hover:text-zinc-400'}`}>
+                   TODAS AS JURISDIÇÕES
                 </button>
-              ))}
-              <input
-                value={search}
-                onChange={e => setSearch(e.target.value)}
-                placeholder="Filtrar por nome, processo..."
-                className="ml-auto bg-zinc-900 border border-zinc-700 rounded-lg px-3 py-1 text-xs text-zinc-300 placeholder-zinc-600 focus:outline-none focus:border-yellow-500/50 w-52"
-              />
+                {tribunaisUnicos.map(t => (
+                  <button key={t} onClick={() => setFiltroTribunal(t)} className={`px-4 py-1.5 rounded-full text-[9px] font-black uppercase transition-all whitespace-nowrap border ${filtroTribunal === t ? 'bg-yellow-500/10 text-yellow-500 border-yellow-500/20 shadow-lg shadow-yellow-500/5' : 'bg-zinc-900/50 text-zinc-600 border-zinc-800 hover:text-zinc-500'}`}>
+                    {t}
+                  </button>
+                ))}
             </div>
 
-            {/* Lista */}
-            <div className="space-y-3">
-              {processosFiltrados.map(p => (
-                <ProcessoCard key={p.numero_processo} p={p} onMonitorar={monitorarUm} loadingId={loadingId} />
-              ))}
-              {processosFiltrados.length === 0 && (
-                <div className="text-center py-12 text-zinc-500 text-sm">
-                  <Eye size={32} className="mx-auto mb-3 text-zinc-700" />
-                  Nenhum processo com esses filtros.
-                </div>
-              )}
+            {/* Filtros de Status */}
+            <div className="flex flex-col md:flex-row md:items-center justify-between gap-4">
+               <div className="flex gap-2 overflow-x-auto pb-1 scrollbar-hide">
+                 {(['TODOS', 'ATIVO', 'ARQUIVADO', 'monitorado', 'nao_monitorado'] as FilterStatus[]).map(f => (
+                   <button key={f} onClick={() => { setFiltroStatus(f); setPagina(1) }} className={`px-4 py-2 rounded-xl text-[10px] font-black uppercase transition-all whitespace-nowrap border ${filtroStatus === f ? 'bg-zinc-100 text-black border-zinc-100' : 'text-zinc-600 bg-zinc-900 border-zinc-800 hover:border-zinc-700'}`}>
+                     {f === 'nao_monitorado' ? 'PENDENTES' : f === 'monitorado' ? 'VIGIADOS' : f}
+                   </button>
+                 ))}
+               </div>
+               <div className="relative w-full md:w-72">
+                  <Search size={14} className="absolute left-4 top-1/2 -translate-y-1/2 text-zinc-700" />
+                  <input value={search} onChange={e => { setSearch(e.target.value); setPagina(1) }} placeholder="Identificar na lista..." className="w-full bg-zinc-950 border border-zinc-800 rounded-xl pl-11 pr-4 py-2 text-[11px] font-black uppercase text-zinc-500 outline-none focus:border-zinc-700 placeholder:opacity-30" />
+               </div>
             </div>
+
+            {/* Galeria */}
+            <div className="grid grid-cols-1 gap-4">
+               {processosPagina.map(p => (
+                 <ProcessoCard
+                   key={p.numero_processo}
+                   p={p}
+                   selecionado={selecionados.has(p.numero_processo)}
+                   onSelect={() => {
+                      setSelecionados(prev => {
+                        const next = new Set(prev)
+                        if (next.has(p.numero_processo)) next.delete(p.numero_processo)
+                        else next.add(p.numero_processo)
+                        return next
+                      })
+                   }}
+                   onAction={() => monitorarLote([p])}
+                   onRemover={() => desmonitorar(p)}
+                   resumoOficial={resumosOficiais[p.numero_processo]}
+                   onResumirOficial={() => solicitarResumoTribunal(p)}
+                   loadingId={loadingId}
+                 />
+               ))}
+               
+               {processosFiltrados.length === 0 && (
+                 <div className="py-32 text-center space-y-4 bg-zinc-900/10 border border-dashed border-zinc-800 rounded-3xl">
+                    <div className="w-16 h-16 rounded-3xl bg-zinc-900 flex items-center justify-center mx-auto text-zinc-800"><LayoutList size={28} /></div>
+                    <div className="space-y-1">
+                       <p className="text-zinc-500 text-xs font-black uppercase tracking-[0.3em]">Nenhum Alvo Identificado</p>
+                       <p className="text-zinc-700 text-[10px] font-black uppercase">Os filtros aplicados não retornaram resultados nesta base.</p>
+                    </div>
+                 </div>
+               )}
+            </div>
+
+            {/* Pagination Footer */}
+            <div className="flex justify-center pt-8 border-t border-zinc-900">
+               <Pagination atual={pagina} total={paginasTotais} onChange={p => { setPagina(p); window.scrollTo({ top: 300, behavior: 'smooth' }) }} />
+            </div>
+
+            <BillingBar billing={result.billing} />
           </div>
         )}
 
+        {/* Empty State V7 Style */}
         {!result && !loading && (
-          <div className="text-center py-16">
-            <Shield size={40} className="mx-auto mb-4 text-zinc-700" />
-            <p className="text-zinc-400 text-sm">Busque por OAB para carregar todos os processos</p>
-            <p className="text-zinc-600 text-xs mt-1">Paginação automática · Sem limite de resultados · Proteção contra duplicatas</p>
+          <div className="text-center py-32 space-y-8 animate-in fade-in zoom-in-95 duration-700">
+             <div className="relative inline-block">
+                <div className="absolute inset-0 bg-yellow-500/5 blur-3xl rounded-full" />
+                <div className="relative w-24 h-24 bg-zinc-950 border border-yellow-500/10 rounded-3xl flex items-center justify-center mx-auto shadow-2xl">
+                   <Shield size={40} className="text-yellow-500/30" />
+                </div>
+             </div>
+             <div className="space-y-3">
+                <h3 className="text-white font-black text-2xl" style={{ fontFamily: 'Cormorant Garamond, serif' }}>Inicie a Varredura Jurídica</h3>
+                <p className="text-zinc-600 text-xs max-w-sm mx-auto font-black uppercase tracking-tighter leading-snug">Insira os credenciais acima para conectar-se aos tribunais via API de Inteligência e iniciar o monitoramento estratégico.</p>
+             </div>
           </div>
         )}
 
+        {/* Loading V7 Style */}
         {loading && (
-          <div className="text-center py-16 space-y-3">
-            <RefreshCw size={32} className="mx-auto text-yellow-500 animate-spin" />
-            <p className="text-zinc-400 text-sm">Buscando todos os processos...</p>
-            <p className="text-zinc-600 text-xs">Paginando automaticamente — aguarde</p>
+          <div className="text-center py-40 space-y-8">
+            <div className="relative w-20 h-20 mx-auto">
+               <div className="absolute inset-0 border-2 border-yellow-500/5 rounded-3xl" />
+               <div className="absolute inset-0 border-2 border-yellow-500 border-t-transparent border-l-transparent rounded-3xl animate-spin" />
+               <div className="absolute inset-6 border border-zinc-800 rounded-2xl flex items-center justify-center">
+                  <RefreshCw size={24} className="text-yellow-500/40 animate-spin" />
+               </div>
+            </div>
+            <div className="space-y-2">
+               <p className="text-white font-black text-xs uppercase tracking-[0.4em] animate-pulse">Sincronizando Canais Oficiais</p>
+               <div className="flex items-center justify-center gap-2">
+                  <div className="w-1.5 h-1.5 rounded-full bg-yellow-500 animate-bounce delay-75" />
+                  <div className="w-1.5 h-1.5 rounded-full bg-yellow-500 animate-bounce delay-150" />
+                  <div className="w-1.5 h-1.5 rounded-full bg-yellow-500 animate-bounce delay-300" />
+               </div>
+            </div>
           </div>
         )}
       </div>
@@ -519,11 +675,7 @@ function MonitoramentoContent() {
 
 export default function MonitoramentoPage() {
   return (
-    <Suspense fallback={
-      <div className="flex items-center justify-center h-64">
-        <div className="w-8 h-8 border-2 border-yellow-500 border-t-transparent rounded-full animate-spin" />
-      </div>
-    }>
+    <Suspense fallback={<div className="flex h-screen items-center justify-center bg-black font-black text-yellow-500 tracking-[1em] text-[10px]">MAYUS INITIALIZING...</div>}>
       <MonitoramentoContent />
     </Suspense>
   )
