@@ -127,8 +127,8 @@ export async function POST(req: NextRequest) {
 
   // Montar URL com query params (GET)
   const url = new URL('https://api.escavador.com/api/v2/advogado/processos')
-  url.searchParams.set('cpf_cnpj_oab', oab_numero)
-  url.searchParams.set('uf_oab', oab_estado)
+  url.searchParams.set('numero', oab_numero)
+  url.searchParams.set('estado', oab_estado)
   if (cursor) url.searchParams.set('cursor', cursor)
 
   const resp = await fetch(url.toString(), {
