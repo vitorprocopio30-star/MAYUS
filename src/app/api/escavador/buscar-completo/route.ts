@@ -125,24 +125,19 @@ export async function POST(req: NextRequest) {
     .single()
   if (!integration?.api_key) return NextResponse.json({ error: 'Escavador não configurado' }, { status: 400 })
 
-  const bodyReq: Record<string, any> = {
-    oab_numero: oab_numero,
-    oab_estado: oab_estado,
-  }
-  if (cursor) bodyReq.cursor = cursor
+  // Montar URL com query params (GET)
+  const url = new URL('https://api.escavador.com/api/v2/advogado/processos')
+  url.searchParams.set('oab_numero', oab_numero)
+  url.searchParams.set('oab_estado', oab_estado)
+  if (cursor) url.searchParams.set('cursor', cursor)
 
-  const resp = await fetch(
-    'https://api.escavador.com/api/v2/advogado/processos',
-    {
-      method: 'POST',
-      headers: {
-        'Authorization': `Bearer ${integration.api_key}`,
-        'Content-Type': 'application/json',
-        'X-Requested-With': 'XMLHttpRequest'
-      },
-      body: JSON.stringify(bodyReq)
+  const resp = await fetch(url.toString(), {
+    method: 'GET',
+    headers: {
+      'Authorization': `Bearer ${integration.api_key}`,
+      'Content-Type': 'application/json',
     }
-  )
+  })
 
   if (!resp.ok) {
     const errText = await resp.text()
