@@ -30,7 +30,7 @@ function mapearProcesso(p: Record<string, unknown>) {
 
   return {
     numero_processo: (p.numero_cnj ?? p.numero) as string,
-    escavador_id: String(p.id ?? ''),
+    escavador_id: String((fonte as any).processo_fonte_id || p.id || ''),
 
     // Tribunal / localização
     tribunal: (unidade.sigla_tribunal ?? unidade.tribunal_sigla ?? unidade.nome ?? '—') as string,
