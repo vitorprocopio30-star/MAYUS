@@ -101,9 +101,7 @@ export async function POST(req: NextRequest) {
             'X-Requested-With': 'XMLHttpRequest'
           },
           body: JSON.stringify({
-            tipo: 'processo',
-            valor: p.numero_processo,
-            frequencia: 'diaria' // Configuração padrão sugerida
+            numero_cnj: p.numero_processo,
           })
         })
       } catch (err) {

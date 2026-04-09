@@ -1,7 +1,6 @@
 'use client'
 
 import { useState, useCallback, Suspense, useMemo, useEffect } from 'react'
-import { useRouter, useSearchParams } from 'next/navigation'
 import {
   Search, Shield, AlertCircle, CheckCircle,
   ChevronDown, ChevronUp, Zap, Eye, Filter, RefreshCw,
@@ -391,11 +390,7 @@ function ProcessoCard({ p, onAction, onRemover, selecionado, onSelect, resumoOfi
 // ─── Componente Principal ─────────────────────────────────────────────────────
 
 function MonitoramentoContent() {
-  const router = useRouter()
-  const searchParams = useSearchParams()
-
-  // CORREÇÃO 1: Ler página da URL
-  const currentPage = parseInt(searchParams.get('page') || '1', 10)
+  const [pagina, setPagina] = useState(1)
 
   const [tab, setTab] = useState<'oab' | 'numero' | 'cpf'>('oab')
   const [oabEstado, setOabEstado] = useState('RJ')
@@ -419,11 +414,9 @@ function MonitoramentoContent() {
 
   const PAGE_SIZE = 20
 
-  // Persistir página na URL
+  // Ir para uma página específica
   const setPage = (p: number) => {
-    const params = new URLSearchParams(searchParams.toString())
-    params.set('page', p.toString())
-    router.push(`?${params.toString()}`)
+    setPagina(p)
     window.scrollTo({ top: 300, behavior: 'smooth' })
   }
 
@@ -436,7 +429,7 @@ function MonitoramentoContent() {
 
   const buscar = useCallback(async () => {
     if (!oabNumero.trim()) return
-    setLoading(true); setError(null); setFeedback(null); setSelecionados(new Set()); setPage(1)
+    setLoading(true); setError(null); setFeedback(null); setSelecionados(new Set()); setPagina(1)
     try {
       localStorage.setItem('mayus_oab_numero', oabNumero.trim())
       localStorage.setItem('mayus_oab_estado', oabEstado)
@@ -520,7 +513,7 @@ function MonitoramentoContent() {
     }
   }, [])
 
-  // CORREÇÃO 3: Solicitar resumo de IA via Escavador
+  // CORREÇÃO 3: Solicitar resumo de IA via Escavador — usa numero_processo
   const solicitarResumoIA = useCallback(async (p: Processo) => {
     const key = p.numero_processo
 
@@ -530,17 +523,12 @@ function MonitoramentoContent() {
       return
     }
 
-    if (!p.id) {
-      setResumosIA(prev => ({ ...prev, [key]: { state: 'error' } }))
-      return
-    }
-
     setResumosIA(prev => ({ ...prev, [key]: { state: 'loading' } }))
     try {
       const res = await fetch('/api/agent/processos/resumo-ia', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ processo_id: p.id })
+        body: JSON.stringify({ numero_processo: p.numero_processo })
       })
       const data = await res.json()
       if (!res.ok) throw new Error(data.error)
@@ -578,23 +566,23 @@ function MonitoramentoContent() {
       })
   }, [result, filtroStatus, filtroTribunal, search, ordenacao])
 
-  // CORREÇÃO 1: Calcular páginas com base nos filtros
+  // CORREÇÃO 1: Calcular páginas com base nos filtros (estado local)
   const totalPages = Math.ceil(processosFiltrados.length / PAGE_SIZE)
   const processosPagina = useMemo(() => {
-    const offset = (currentPage - 1) * PAGE_SIZE
+    const offset = (pagina - 1) * PAGE_SIZE
     return processosFiltrados.slice(offset, offset + PAGE_SIZE)
-  }, [processosFiltrados, currentPage])
+  }, [processosFiltrados, pagina])
 
   const totalAtivos = result?.processos.filter(p => p.status === 'ATIVO' && !p.monitorado).length ?? 0
 
   // Resetar página quando filtros mudarem
   const handleFiltroStatusChange = (f: FilterStatus) => {
     setFiltroStatus(f)
-    setPage(1)
+    setPagina(1)
   }
   const handleSearchChange = (v: string) => {
     setSearch(v)
-    setPage(1)
+    setPagina(1)
   }
 
   return (
@@ -743,9 +731,8 @@ function MonitoramentoContent() {
                )}
             </div>
 
-            {/* CORREÇÃO 1: Paginação Premium no Rodapé */}
             <Pagination
-              atual={currentPage}
+              atual={pagina}
               total={totalPages}
               totalProcessos={processosFiltrados.length}
               onChange={setPage}

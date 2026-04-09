@@ -6,20 +6,31 @@ export async function POST(req: NextRequest) {
   const { data: { user } } = await supabase.auth.getUser()
   if (!user) return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
 
-  const { processo_id } = await req.json() // ID do monitored_processes (UUID)
+  // Aceita processo_id (UUID) OU numero_processo (CNJ)
+  const { processo_id, numero_processo } = await req.json()
 
-  // Buscar o processo e verificar se já tem resumo salvo
-  const { data: proc } = await supabase
-    .from('monitored_processes')
-    .select('escavador_id, tenant_id, resumo_curto')
-    .eq('id', processo_id)
-    .single()
-
-  if (!proc?.escavador_id) {
-    return NextResponse.json({ error: 'Processo sem ID Escavador' }, { status: 400 })
+  if (!processo_id && !numero_processo) {
+    return NextResponse.json({ error: 'Informe processo_id ou numero_processo' }, { status: 400 })
   }
 
-  // Se já tem resumo salvo, retornar sem cobrar novamente
+  // Buscar o processo por UUID ou por número CNJ
+  let query = supabase
+    .from('monitored_processes')
+    .select('id, escavador_id, tenant_id, resumo_curto')
+
+  if (processo_id) {
+    query = query.eq('id', processo_id)
+  } else {
+    query = query.eq('numero_processo', numero_processo)
+  }
+
+  const { data: proc } = await query.single()
+
+  if (!proc?.escavador_id) {
+    return NextResponse.json({ error: 'Processo não encontrado ou sem ID Escavador' }, { status: 400 })
+  }
+
+  // Se já tem resumo salvo, retornar sem cobrar novamente (anti-dupla-cobrança)
   if (proc.resumo_curto) {
     return NextResponse.json({ resumo: proc.resumo_curto, cached: true })
   }
@@ -56,14 +67,13 @@ export async function POST(req: NextRequest) {
   }
 
   const data = await resp.json()
-  // O Escavador retorna { resumo: "texto..." } ou { data: { resumo: "..." } }
   const resumo = data?.resumo || data?.data?.resumo || data?.summary || null
 
   if (resumo) {
     await supabase
       .from('monitored_processes')
       .update({ resumo_curto: resumo, updated_at: new Date().toISOString() })
-      .eq('id', processo_id)
+      .eq('id', proc.id)
   }
 
   return NextResponse.json({ resumo })
