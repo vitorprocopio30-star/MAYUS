@@ -4,7 +4,7 @@ import { useState, useCallback, Suspense, useMemo, useEffect } from 'react'
 import {
   Search, Shield, AlertCircle, CheckCircle,
   ChevronDown, ChevronUp, Zap, Eye, Filter, RefreshCw,
-  AlertTriangle, X, DollarSign, ArrowUpDown, LayoutList, CheckSquare, Square, Trash2, FileText, CloudCheck, Sparkles, Loader2
+  AlertTriangle, X, DollarSign, ArrowUpDown, LayoutList, CheckSquare, Square, Trash2, FileText, CloudCheck, Sparkles, Loader2, CheckCircle2
 } from 'lucide-react'
 
 // ─── Interfaces ───────────────────────────────────────────────────────────────
