@@ -178,6 +178,8 @@ Retorne exatamente este JSON:
   }
 
   // 8. Mover Kanban se processo já estiver vinculado
+  let novoCard: { id: string } | null = null
+
   if (proc.linked_task_id && resultado.kanban_stage_id) {
     await supabase
       .from('process_tasks')
@@ -185,10 +187,51 @@ Retorne exatamente este JSON:
       .eq('id', proc.linked_task_id)
   }
 
+  // 8b. Criar card no Kanban se ainda não existe
+  if (!proc.linked_task_id && resultado.kanban_stage_id) {
+    const partes = proc.partes as any
+
+    const { data: cardCriado } = await supabase
+      .from('process_tasks')
+      .insert({
+        pipeline_id:    '7b4d39bb-785c-402a-826d-0088867d934c',
+        stage_id:       resultado.kanban_stage_id,
+        title:          proc.cliente_nome || partes?.ativo || proc.numero_processo,
+        description:    resultado.resumo_curto,
+        client_name:    proc.cliente_nome || partes?.ativo || '',
+        reu:            partes?.passivo || '',
+        processo_1grau: proc.numero_processo,
+        demanda:        proc.assunto || proc.classe_processual || '',
+        orgao_julgador: proc.vara || proc.comarca || '',
+        valor_causa:    proc.valor_causa ? parseFloat(String(proc.valor_causa).replace(/[^\d,]/g, '').replace(',', '.')) || 0 : 0,
+        andamento_1grau: resultado.proxima_acao_sugerida || '',
+        prazo_fatal:    resultado.prazos?.[0]?.data_vencimento_iso || null,
+        sector:         'juridico',
+        tags:           [proc.tribunal || 'TJRJ'],
+        position_index: 0,
+      })
+      .select('id')
+      .single()
+
+    novoCard = cardCriado
+
+    if (novoCard?.id) {
+      await supabase
+        .from('monitored_processes')
+        .update({ linked_task_id: novoCard.id, updated_at: agora })
+        .eq('id', processo_id)
+
+      if (procAtualizado) {
+        (procAtualizado as any).linked_task_id = novoCard.id
+      }
+    }
+  }
+
   return NextResponse.json({
     success: true,
     processo_atualizado: procAtualizado,
     prazos_criados:      resultado.prazos?.length || 0,
-    peca_sugerida:       resultado.peca_sugerida
+    peca_sugerida:       resultado.peca_sugerida,
+    kanban_card_criado:  !!novoCard?.id
   })
 }
