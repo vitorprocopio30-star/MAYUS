@@ -343,7 +343,7 @@ function ProcessoCard({ p, onAction, onRemover, selecionado, onSelect, resumoOfi
                </button>
              )}
 
-             {p.id && p.monitorado && (() => {
+             {(() => {
                if (organizandoState === 'loading') return (
                  <button disabled
                    className="flex items-center justify-center gap-1.5 w-full py-3 px-6 rounded-2xl
@@ -622,6 +622,8 @@ function MonitoramentoContent() {
     setSearch(v)
     setPagina(1)
   }
+
+  console.log('total:', processosFiltrados.length, 'pages:', totalPages)
 
   return (
     <>
