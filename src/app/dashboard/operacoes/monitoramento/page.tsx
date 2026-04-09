@@ -403,6 +403,8 @@ function ProcessoCard({ p, onAction, onRemover, selecionado, onSelect, resumoOfi
 
 function MonitoramentoContent() {
   const [pagina, setPagina] = useState(1)
+  const [nextCursor, setNextCursor] = useState<string|null>(null)
+  const [carregandoMais, setCarregandoMais] = useState(false)
 
   const [tab, setTab] = useState<'oab' | 'numero' | 'cpf'>('oab')
   const [oabEstado, setOabEstado] = useState('RJ')
@@ -468,6 +470,7 @@ function MonitoramentoContent() {
       const data = await res.json()
       if (!res.ok) throw new Error(data.error ?? 'Falha na varredura')
       setResult(data)
+      setNextCursor(data.next_cursor ?? null)
       // Persistir no sessionStorage para não perder ao navegar
       try { sessionStorage.setItem('mon_result', JSON.stringify(data)) } catch {}
     } catch (e) {
@@ -477,6 +480,45 @@ function MonitoramentoContent() {
     }
   // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [oabEstado, oabNumero])
+
+  const carregarMais = useCallback(async () => {
+    if (!nextCursor || carregandoMais) return
+    setCarregandoMais(true)
+    try {
+      const res = await fetch('/api/escavador/buscar-completo', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          oab_estado: oabEstado,
+          oab_numero: oabNumero,
+          cursor: nextCursor
+        })
+      })
+      const data = await res.json()
+      setNextCursor(data.next_cursor ?? null)
+      setResult(prev => prev ? {
+        ...prev,
+        processos: [...prev.processos, ...data.processos],
+        total_retornado: (prev.total_retornado ?? 0) + data.processos.length
+      } : data)
+      // Atualizar sessionStorage
+      try {
+         const currentSavedStr = sessionStorage.getItem('mon_result')
+         if (currentSavedStr) {
+            const currentSaved = JSON.parse(currentSavedStr)
+            sessionStorage.setItem('mon_result', JSON.stringify({
+              ...currentSaved,
+              processos: [...(currentSaved.processos ?? []), ...data.processos],
+              total_retornado: (currentSaved.total_retornado ?? 0) + data.processos.length,
+              next_cursor: data.next_cursor ?? null
+            }))
+         }
+      } catch {}
+    } finally {
+      setCarregandoMais(false)
+    }
+  }, [nextCursor, oabEstado, oabNumero, carregandoMais])
+
 
   const monitorarLote = useCallback(async (processos: Processo[]) => {
     setImportandoLote(true)
@@ -889,6 +931,21 @@ function MonitoramentoContent() {
                   </button>
                 </div>
               </div>
+            )}
+
+            {nextCursor && (
+              <button
+                onClick={carregarMais}
+                disabled={carregandoMais}
+                className="w-full py-4 rounded-2xl border border-zinc-800
+                           text-zinc-500 text-xs font-black uppercase tracking-widest
+                           hover:border-zinc-700 hover:text-zinc-300 transition-all
+                           disabled:opacity-50 flex items-center justify-center gap-2">
+                {carregandoMais
+                  ? <><RefreshCw size={14} className="animate-spin" /> Carregando...</>
+                  : <>Carregar mais processos ({result ? result.total - (result.processos?.length ?? 0) : 0} restantes) →</>
+                }
+              </button>
             )}
 
             <BillingBar billing={result.billing} />

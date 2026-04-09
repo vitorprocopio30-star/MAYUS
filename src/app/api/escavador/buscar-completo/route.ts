@@ -105,7 +105,7 @@ export async function POST(req: NextRequest) {
   const { data: { user } } = await supabase.auth.getUser()
   if (!user) return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
 
-  const { oab_estado, oab_numero } = await req.json()
+  const { oab_estado, oab_numero, cursor } = await req.json()
   if (!oab_estado || !oab_numero) return NextResponse.json({ error: 'OAB inválida' }, { status: 400 })
 
   const { data: profile } = await adminSupabase
@@ -125,64 +125,40 @@ export async function POST(req: NextRequest) {
     .single()
   if (!integration?.api_key) return NextResponse.json({ error: 'Escavador não configurado' }, { status: 400 })
 
-  // Busca paginada completa via cursor
-  let todosProcessos: Record<string, unknown>[] = []
-  let cursor: string | null = null
-  let totalAdvogado = 0
-  let advogadoNome = ''
-  let tentativas = 0
-  const MAX_PAGINAS = 25
+  const bodyReq: Record<string, any> = {
+    cpf_cnpj_oab: oab_numero,
+    uf_oab: oab_estado,
+  }
+  if (cursor) bodyReq.cursor = cursor
 
-  do {
-    const bodyReq: Record<string, any> = {
-      cpf_cnpj_oab: oab_numero,
-      uf_oab: oab_estado,
+  const resp = await fetch(
+    'https://api.escavador.com/api/v2/advogado/processos',
+    {
+      method: 'POST',
+      headers: {
+        'Authorization': `Bearer ${integration.api_key}`,
+        'Content-Type': 'application/json',
+      },
+      body: JSON.stringify(bodyReq)
     }
-    if (cursor) bodyReq.cursor = cursor
+  )
 
-    const resp = await fetch(
-      'https://api.escavador.com/api/v2/advogado/processos',
-      {
-        method: 'POST',
-        headers: {
-          'Authorization': `Bearer ${integration.api_key}`,
-          'Content-Type': 'application/json',
-        },
-        body: JSON.stringify(bodyReq)
-      }
-    )
+  if (!resp.ok) {
+    const errText = await resp.text()
+    console.error('[buscar-completo] erro:', resp.status, errText)
+    return NextResponse.json({ error: errText }, { status: resp.status })
+  }
 
-    if (!resp.ok) {
-      const errText = await resp.text()
-      console.error('[buscar-completo] Escavador erro:', resp.status, errText)
-      break
-    }
+  const data = await resp.json()
+  console.log('[buscar-completo] items:', data?.items?.length ?? data?.itens?.length, 
+              'cursor_next:', data?.meta?.cursor?.next)
 
-    const data = await resp.json()
-    
-    // Log para debug
-    console.log('[buscar-completo] página', tentativas + 1, 
-      'items:', data?.items?.length ?? data?.itens?.length ?? 0,
-      'cursor_next:', data?.meta?.cursor?.next ?? null)
+  const items = data?.items ?? data?.itens ?? data?.processos ?? []
+  const nextCursor = data?.meta?.cursor?.next ?? null
+  const totalAdvogado = data?.advogado_encontrado?.quantidade_processos ?? items.length
+  const advogadoNome = data?.advogado_encontrado?.nome ?? ''
 
-    const items = data?.items ?? data?.itens ?? data?.processos ?? []
-    if (items.length === 0) break
-    
-    todosProcessos = todosProcessos.concat(items)
-    
-    if (tentativas === 0) {
-      totalAdvogado = data?.advogado_encontrado?.quantidade_processos ?? todosProcessos.length
-      advogadoNome = data?.advogado_encontrado?.nome ?? ''
-    }
-
-    cursor = data?.meta?.cursor?.next ?? null
-    tentativas++
-
-  } while (cursor && tentativas < MAX_PAGINAS)
-
-  console.log('[buscar-completo] total coletado:', todosProcessos.length)
-
-  const processos = todosProcessos.map(mapearProcesso)
+  const processos = items.map(mapearProcesso)
 
   // Verificar monitorados — buscar id + escavador_id do banco para injetar no resultado
   const numeros = processos.map(p => p.numero_processo).filter(Boolean)
@@ -224,7 +200,8 @@ export async function POST(req: NextRequest) {
     total: totalAdvogado,
     total_retornado: processos.length,
     advogado_nome: advogadoNome,
-    paginas_buscadas: tentativas,
+    next_cursor: nextCursor,
+    paginas_buscadas: 1,
     billing: {
       total_ja_monitorados: capacity?.total_monitorados ?? 0,
       gratuitos: capacity?.gratuitos ?? 100,
