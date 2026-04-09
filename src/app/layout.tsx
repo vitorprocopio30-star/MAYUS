@@ -5,8 +5,8 @@ import { NotificationsListener } from "@/components/layout/NotificationsListener
 import "./globals.css";
 
 export const metadata: Metadata = {
-  title: "MAYUS - Painel Admin",
-  description: "Acesso restrito à plataforma MAYUS",
+  title: "MAYUS | Sistema Jurídico Premium",
+  description: "O Sistema Operacional do Advogado Moderno",
 };
 
 import { Inter } from "next/font/google";
