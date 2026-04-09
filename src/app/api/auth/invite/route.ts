@@ -46,7 +46,7 @@ export async function POST(req: Request) {
         department_id: department_id,
         custom_permissions: permissions,
       },
-      redirectTo: `${process.env.NEXT_PUBLIC_SITE_URL || 'http://localhost:3000'}/auth/callback?next=/dashboard`,
+      redirectTo: `${process.env.NEXT_PUBLIC_SITE_URL || 'https://mayus-premium-pro.vercel.app'}/auth/callback?next=/dashboard`,
     });
 
     if (inviteError) {
