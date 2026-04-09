@@ -66,10 +66,26 @@ export const EscavadorService = {
 
   // 5. Criar Monitoramento (Requer confirmação humana)
   criarMonitoramento: async (apiKey: string, numeroCNJ: string, frequencia = 'SEMANAL') => {
-    return await fetchEscavador("/monitoramentos/processos", apiKey, {
-      method: "POST",
-      body: JSON.stringify({ numero_cnj: numeroCNJ }),
+    console.log('[Escavador] criarMonitoramento chamado:', numeroCNJ);
+    
+    const resp = await fetch('https://api.escavador.com/api/v2/monitoramentos/processos', {
+      method: 'POST',
+      headers: {
+        'Authorization': `Bearer ${apiKey}`,
+        'Content-Type': 'application/json'
+      },
+      body: JSON.stringify({ numero_cnj: numeroCNJ })
     });
+    
+    const responseText = await resp.text();
+    console.log('[Escavador] criarMonitoramento status:', resp.status);
+    console.log('[Escavador] criarMonitoramento response:', responseText);
+    
+    if (!resp.ok) {
+      throw new Error(`Escavador ${resp.status}: ${responseText}`);
+    }
+    
+    return JSON.parse(responseText);
   },
 
   // 6. Solicitar Atualização Síncrona

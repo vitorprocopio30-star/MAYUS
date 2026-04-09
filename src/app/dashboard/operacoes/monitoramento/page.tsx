@@ -375,7 +375,7 @@ function ProcessoCard({ p, onAction, onRemover, selecionado, onSelect, resumoOfi
       </div>
       
       {/* 4) PAINEL DE RESULTADO ABAIXO DO CORPO DO CARD */}
-      {p.resumo_curto && (
+      {p.resumo_curto && expanded && (
         <div className="p-5 border-t border-zinc-800/50 bg-[#CCA761]/5 rounded-b-2xl">
           <div className="space-y-3">
             <p className="text-white/80 text-sm leading-relaxed">{p.resumo_curto}</p>

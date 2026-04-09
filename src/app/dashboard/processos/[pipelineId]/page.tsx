@@ -426,6 +426,11 @@ const [pendingMove, setPendingMove] = useState<{
                                       <div className="absolute top-3 bottom-3 left-0 w-[2px] shadow-[0_0_12px_currentColor] opacity-90 transition-opacity rounded-r-full group-hover:w-[3px]" style={{ backgroundColor: stage.color, color: stage.color }} />
                                       {task.client_name && <div className="text-[#CCA761] text-[10px] font-black uppercase tracking-widest mb-1 line-clamp-1 flex items-center gap-1"><UserIcon size={10} /> {task.client_name}</div>}
                                       <h4 className="text-white text-[15px] font-bold tracking-wide mb-2 line-clamp-2 drop-shadow-sm group-hover:text-[#CCA761] transition-colors">{task.title}</h4>
+                                      {(task as any).processo_1grau && (
+                                        <p className="text-[10px] font-mono text-zinc-500 mt-1 mb-2 truncate">
+                                          {(task as any).processo_1grau}
+                                        </p>
+                                      )}
                                       
                                       {task.description && (
                                         <div className="text-gray-400 text-xs mb-3 line-clamp-3 leading-relaxed">

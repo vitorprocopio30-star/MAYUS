@@ -126,34 +126,51 @@ export async function POST(req: NextRequest) {
   if (!integration?.api_key) return NextResponse.json({ error: 'Escavador não configurado' }, { status: 400 })
 
   // Busca paginada completa
-  const allRaw: Record<string, unknown>[] = []
+  let todosProcessos: Record<string, unknown>[] = []
   let cursor: string | null = null
   let totalAdvogado = 0
   let advogadoNome = ''
-  let page = 0
+  let tentativas = 0
+  const MAX_PAGINAS = 50 // segurança contra loop infinito
 
   do {
     const url = new URL('https://api.escavador.com/api/v2/advogado/processos')
-    url.searchParams.set('oab_estado', oab_estado)
-    url.searchParams.set('oab_numero', oab_numero)
-    url.searchParams.set('quantidade', '100')
     if (cursor) url.searchParams.set('cursor', cursor)
 
-    const res = await fetch(url.toString(), {
-      headers: { Authorization: `Bearer ${integration.api_key}`, 'X-Requested-With': 'XMLHttpRequest' }
+    const resp = await fetch(url.toString(), {
+      method: 'POST',
+      headers: {
+        'Authorization': `Bearer ${integration.api_key}`,
+        'Content-Type': 'application/json',
+        'X-Requested-With': 'XMLHttpRequest'
+      },
+      body: JSON.stringify({
+        cpf_cnpj_oab: oab_numero,
+        uf_oab: oab_estado,
+      })
     })
-    if (!res.ok) break
-    const data = await res.json()
-    allRaw.push(...(data.items ?? []))
-    if (page === 0) {
-      totalAdvogado = data.advogado_encontrado?.quantidade_processos ?? allRaw.length
-      advogadoNome = data.advogado_encontrado?.nome ?? ''
-    }
-    cursor = data.links?.next ? new URL(data.links.next).searchParams.get('cursor') : null
-    page++
-  } while (cursor && page < 20)
 
-  const processos = allRaw.map(mapearProcesso)
+    if (!resp.ok) break
+
+    const data = await resp.json()
+    const items = data?.items || data?.itens || data?.processos || []
+    todosProcessos = todosProcessos.concat(items)
+
+    if (tentativas === 0) {
+      totalAdvogado = data?.advogado_encontrado?.quantidade_processos ?? todosProcessos.length
+      advogadoNome = data?.advogado_encontrado?.nome ?? ''
+    }
+
+    // Cursor da próxima página
+    cursor = data?.meta?.cursor?.next 
+          || data?.cursor?.next 
+          || data?.links?.next_cursor 
+          || null
+
+    tentativas++
+  } while (cursor && tentativas < MAX_PAGINAS)
+
+  const processos = todosProcessos.map(mapearProcesso)
 
   // Verificar monitorados — buscar id + escavador_id do banco para injetar no resultado
   const numeros = processos.map(p => p.numero_processo).filter(Boolean)
