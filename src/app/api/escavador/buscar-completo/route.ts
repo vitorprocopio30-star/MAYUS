@@ -42,10 +42,15 @@ function mapearProcesso(p: Record<string, unknown>) {
     classe_processual: (capa.classe ?? p.classe ?? null) as string | null,
     tipo_acao: (capa.tipo ?? null) as string | null,
 
-    // Status e fase (Normalização Inteligente)
+    // Status e fase (Normalização Inteligente - Aggressiva)
     status: (() => {
-      const predito = (String(p.encerrado === true ? 'ARQUIVADO' : (fonte.status_predito ?? p.status ?? 'ATIVO'))).toUpperCase()
-      if (['BAIXADO', 'ENCERRADO', 'EXTINTO', 'ARQUIVADO', 'SUSPENSO'].some(s => predito.includes(s))) return 'ARQUIVADO'
+      const encerrado = p.encerrado === true || p.encerrado === 1 || p.encerrado === 'true'
+      const statusPredito = String(fonte.status_predito ?? p.status ?? capa.status ?? capa.situacao ?? '')
+      const tituloStatus = String(p.titulo ?? p.nome_status ?? p.situacao ?? '').toUpperCase()
+      const combinado = (statusPredito + ' ' + tituloStatus).toUpperCase()
+
+      if (encerrado) return 'ARQUIVADO'
+      if (['BAIXADO', 'ENCERRADO', 'EXTINTO', 'ARQUIVADO', 'SUSPENSO', 'JULGADO', 'CANCELADO'].some(s => combinado.includes(s))) return 'ARQUIVADO'
       return 'ATIVO'
     })() as string,
     fase_atual: (p.fase ?? capa.fase ?? 'CONHECIMENTO') as string,
