@@ -1,600 +1,529 @@
 'use client'
 
-import { useEffect, useState, useCallback, Suspense } from 'react'
-import { useRouter, useSearchParams } from 'next/navigation'
-import { Search, Shield, AlertCircle, CheckCircle, PauseCircle, Loader2, Eye, FileText } from 'lucide-react'
-import { createClient } from '@/lib/supabase/client'
+import { useState, useCallback, Suspense } from 'react'
+import {
+  Search, Shield, AlertCircle, CheckCircle,
+  ChevronDown, ChevronUp, Zap, Eye, Filter, RefreshCw,
+  AlertTriangle, X, DollarSign
+} from 'lucide-react'
 
-type SearchTipo = 'numero' | 'oab' | 'cpf'
-
-type Processo = {
-  numero_cnj?: string
-  numero?: string
-  tribunal?: string
-  assunto?: string
-  polo_ativo?: string
-  polo_passivo?: string
-  ultima_movimentacao?: string
-  valor_causa?: string
-  status?: string
-  data_inicio?: string
-  [key: string]: unknown
+interface Processo {
+  numero_processo: string
+  tribunal: string
+  assunto: string
+  status: string
+  polo_ativo: string
+  polo_passivo: string
+  valor_causa: string | null
+  data_distribuicao: string | null
+  comarca: string | null
+  vara: string | null
+  classe_processual: string | null
+  data_ultima_movimentacao: string | null
+  ultima_movimentacao_texto: string | null
+  fase_atual: string
+  escavador_id: string
+  monitorado: boolean
+  movimentacoes: Record<string, unknown>[]
 }
 
-type MonitoredProcess = {
-  id: string
-  numero_cnj: string
-  tribunal: string | null
-  assunto: string | null
-  ultima_movimentacao: string | null
-  status: string | null
-  created_at: string | null
-  monitoramento_ativo: boolean | null
-  partes: any // JSONB com polos, valor, data_inicio
+interface BillingInfo {
+  total_ja_monitorados: number
+  gratuitos: number
+  disponivel_sem_custo: number
+  ativos_nao_monitorados: number
+  ja_monitorados_desta_oab: number
+  excedente_se_prosseguir: number
+  custo_estimado_mes: number
+  preco_por_extra: number
 }
 
-function StatusBadge({ status }: { status: string | null | undefined }) {
-  const s = (status ?? '').toUpperCase()
-  if (s === 'ATIVO' || s === 'EM ANDAMENTO')
-    return <span className="inline-flex items-center gap-1 px-2.5 py-1 rounded-full text-xs font-semibold border border-emerald-500/30 bg-emerald-500/10 text-emerald-400"><CheckCircle size={11} /> Ativo</span>
-  if (s === 'ARQUIVADO' || s === 'BAIXADO' || s === 'ENCERRADO')
-    return <span className="inline-flex items-center gap-1 px-2.5 py-1 rounded-full text-xs font-semibold border border-zinc-500/30 bg-zinc-500/10 text-zinc-400"><Eye size={11} /> {s === 'BAIXADO' ? 'Baixado' : 'Arquivado'}</span>
-  if (s === 'SUSPENSO')
-    return <span className="inline-flex items-center gap-1 px-2.5 py-1 rounded-full text-xs font-semibold border border-yellow-500/30 bg-yellow-500/10 text-yellow-400"><PauseCircle size={11} /> Suspenso</span>
-  return <span className="inline-flex items-center gap-1 px-2.5 py-1 rounded-full text-xs font-semibold border border-zinc-700 bg-zinc-800/60 text-zinc-400">—</span>
+interface BuscaResult {
+  processos: Processo[]
+  total: number
+  total_retornado: number
+  advogado_nome: string
+  paginas_buscadas: number
+  billing: BillingInfo
 }
 
-function MonitoramentoContent() {
-  const router = useRouter()
-  const searchParams = useSearchParams()
-  const [token, setToken] = useState<string | null>(null)
-  const [query, setQuery] = useState(searchParams.get('q') ?? '')
-  const [tipo, setTipo] = useState<SearchTipo>((searchParams.get('tipo') as SearchTipo) ?? 'numero')
-  const [searching, setSearching] = useState(false)
-  const [searchError, setSearchError] = useState('')
-  const [resultados, setResultados] = useState<Processo[]>([])
-  const [totalResultados, setTotalResultados] = useState<number | null>(null)
-  const [totalEscavador, setTotalEscavador] = useState<number | null>(null)
-  const [hasMore, setHasMore] = useState(false)
-  const [fromCache, setFromCache] = useState(false)
-  const [advogado, setAdvogado] = useState<{ nome?: string; oab_numero?: string; oab_estado?: string } | null>(null)
-  const [monitorados, setMonitorados] = useState<MonitoredProcess[]>([])
-  const [loadingMonitorados, setLoadingMonitorados] = useState(true)
-  const [monitorandoId, setMonitorandoId] = useState<string | null>(null)
-  const [monitoradosSet, setMonitoradosSet] = useState<Set<string>>(new Set())
-  const [feedbackMsg, setFeedbackMsg] = useState('')
-  const [selectedProcess, setSelectedProcess] = useState<Processo | null>(null)
-  
-  // Paginação
-  const ITENS_POR_PAGINA = 20
-  const [paginaAtual, setPaginaAtual] = useState(1)
+interface ConfirmacaoLote {
+  novos: number
+  gratuitos_disponiveis: number
+  excedente: number
+  custo_mensal: number
+  preco_por_extra: number
+  mensagem: string
+  processosParaImportar: Processo[]
+}
 
-  const resultadosPagina = resultados.slice(
-    (paginaAtual - 1) * ITENS_POR_PAGINA,
-    paginaAtual * ITENS_POR_PAGINA
+const STATUS_COLOR: Record<string, string> = {
+  ATIVO: 'text-green-400 bg-green-400/10',
+  ARQUIVADO: 'text-zinc-400 bg-zinc-400/10',
+  BAIXADO: 'text-red-400 bg-red-400/10',
+}
+
+function diasDesde(data: string | null) {
+  if (!data) return null
+  return Math.floor((Date.now() - new Date(data).getTime()) / 86400000)
+}
+
+function UrgenciaBadge({ dias }: { dias: number | null }) {
+  if (dias === null) return <span className="text-xs text-zinc-600">Sem registro</span>
+  if (dias > 30) return <span className="text-xs text-yellow-400 bg-yellow-400/10 px-2 py-0.5 rounded-full">+{dias}d sem mov.</span>
+  return <span className="text-xs text-green-400 bg-green-400/10 px-2 py-0.5 rounded-full">{dias}d atrás</span>
+}
+
+function ModalConfirmacaoCusto({ dados, onConfirmar, onCancelar, loading }: {
+  dados: ConfirmacaoLote; onConfirmar: () => void; onCancelar: () => void; loading: boolean
+}) {
+  return (
+    <div className="fixed inset-0 bg-black/70 backdrop-blur-sm z-50 flex items-center justify-center p-4">
+      <div className="bg-zinc-900 border border-yellow-500/30 rounded-2xl max-w-md w-full p-6 space-y-5 shadow-2xl">
+        <div className="flex items-center justify-between">
+          <div className="flex items-center gap-2 text-yellow-500">
+            <AlertTriangle size={20} />
+            <span className="font-semibold text-base">Confirmar cobrança</span>
+          </div>
+          <button onClick={onCancelar} className="text-zinc-500 hover:text-zinc-300"><X size={18} /></button>
+        </div>
+        <div className="bg-zinc-800/60 rounded-xl p-4 space-y-3 text-sm">
+          <div className="flex justify-between"><span className="text-zinc-400">Processos a monitorar</span><span className="text-white font-semibold">{dados.novos}</span></div>
+          <div className="flex justify-between"><span className="text-zinc-400">Incluídos no plano</span><span className="text-green-400 font-semibold">{dados.gratuitos_disponiveis} grátis</span></div>
+          <div className="h-px bg-zinc-700" />
+          <div className="flex justify-between"><span className="text-zinc-400">Excedentes</span><span className="text-yellow-400 font-semibold">{dados.excedente}</span></div>
+          <div className="flex justify-between"><span className="text-zinc-400">Preço por processo</span><span className="text-zinc-300">R$ {dados.preco_por_extra.toFixed(2)}/mês</span></div>
+          <div className="h-px bg-zinc-700" />
+          <div className="flex justify-between text-base"><span className="text-white font-semibold">Custo adicional/mês</span><span className="text-yellow-500 font-bold">R$ {dados.custo_mensal.toFixed(2)}</span></div>
+        </div>
+        <p className="text-xs text-zinc-500 leading-relaxed">Este valor será adicionado à sua próxima fatura MAYUS. Você pode desativar processos individuais a qualquer momento.</p>
+        <div className="flex gap-3">
+          <button onClick={onCancelar} disabled={loading} className="flex-1 py-2.5 rounded-xl border border-zinc-700 text-zinc-400 text-sm hover:text-zinc-200 transition-colors disabled:opacity-50">Cancelar</button>
+          <button onClick={onConfirmar} disabled={loading} className="flex-1 py-2.5 rounded-xl bg-yellow-500 hover:bg-yellow-400 text-black text-sm font-bold transition-all disabled:opacity-50 flex items-center justify-center gap-2">
+            {loading ? <RefreshCw size={14} className="animate-spin" /> : <DollarSign size={14} />}
+            {loading ? 'Processando...' : 'Confirmar'}
+          </button>
+        </div>
+      </div>
+    </div>
   )
+}
 
-  const totalPaginas = Math.ceil(resultados.length / ITENS_POR_PAGINA)
-
-  function formatarData(data: string | null): string {
-    if (!data) return '—'
-    // Aceita tanto "2026-03-25" quanto "25/03/2026"
-    const d = new Date(data.includes('/') 
-      ? data.split('/').reverse().join('-') 
-      : data)
-    if (isNaN(d.getTime())) return data
-    return d.toLocaleDateString('pt-BR', {
-      day: '2-digit', month: '2-digit', year: 'numeric'
-    })
-  }
-
-  // Fechar Drawer ao apertar ESC
-  useEffect(() => {
-    const handleEsc = (e: KeyboardEvent) => {
-      if (e.key === 'Escape') setSelectedProcess(null)
-    }
-    window.addEventListener('keydown', handleEsc)
-    return () => window.removeEventListener('keydown', handleEsc)
-  }, [])
-
-  const executarBusca = useCallback(async (q: string, t: SearchTipo, tok: string) => {
-    // ... (mesma lógica de busca)
-    if (!q.trim()) return
-    setSearching(true)
-    setFromCache(false)
-    setTotalEscavador(null)
-    setHasMore(false)
-    setAdvogado(null)
-    try {
-      const res = await fetch('/api/processos/buscar', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${tok}` },
-        body: JSON.stringify({ query: q.trim(), tipo: t }),
-      })
-      const data = await res.json()
-      if (!res.ok) throw new Error(data.error || 'Erro na busca.')
-      setResultados(Array.isArray(data.processos) ? data.processos : [])
-      setTotalResultados(data.total ?? null)
-      setTotalEscavador(data.totalEscavador ?? null)
-      setHasMore(data.hasMore ?? false)
-      setFromCache(data.fromCache ?? false)
-      setAdvogado(data.advogado ?? null)
-      setPaginaAtual(1) // Reset na busca
-    } catch (err: any) {
-      setSearchError(err.message)
-    } finally {
-      setSearching(false)
-    }
-  }, [])
-
-  useEffect(() => {
-    const supabase = createClient()
-    supabase.auth.getSession().then(({ data: { session } }) => {
-      if (session?.access_token) {
-        setToken(session.access_token)
-        fetchMonitorados(session.access_token)
-        const q = searchParams.get('q') ?? ''
-        const t = (searchParams.get('tipo') as SearchTipo) ?? 'numero'
-        if (q) executarBusca(q, t, session.access_token)
-      }
-    })
-  }, [searchParams, executarBusca])
-
-  async function fetchMonitorados(t: string) {
-    setLoadingMonitorados(true)
-    try {
-      const res = await fetch('/api/processos/monitorados', {
-        headers: { Authorization: `Bearer ${t}` }
-      })
-      const data = await res.json()
-      if (data.processos) {
-        setMonitorados(data.processos)
-        setMonitoradosSet(new Set(data.processos.map((p: any) => p.numero_cnj)))
-      }
-    } catch (err) {
-      console.error('Erro ao buscar monitorados:', err)
-    } finally {
-      setLoadingMonitorados(false)
-    }
-  }
-
-  async function handleSearch(e: React.FormEvent) {
-    e.preventDefault()
-    if (!query.trim() || !token) return
-    router.push(`?tipo=${tipo}&q=${encodeURIComponent(query.trim())}`)
-    await executarBusca(query.trim(), tipo, token)
-  }
-
-  async function handleMonitorar(processo: Processo) {
-    const numero = processo.numero_cnj ?? processo.numero ?? ''
-    if (!numero || !token) return
-    setMonitorandoId(numero)
-    setFeedbackMsg('')
-    try {
-      const res = await fetch('/api/processos/monitorados', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${token}` },
-        body: JSON.stringify(processo),
-      })
-      const data = await res.json()
-      if (!res.ok) throw new Error(data.error || 'Erro ao monitorar.')
-      
-      setMonitoradosSet(prev => {
-        const next = new Set(prev)
-        next.add(numero)
-        return next
-      })
-
-      setFeedbackMsg(`Processo ${numero} adicionado ao monitoramento.`)
-      
-      // 3. Ativar Monitoramento Semanal no Escavador (Background)
-      fetch('/api/processos/ativar-monitoramento', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${token}` },
-        body: JSON.stringify({ numero_cnj: numero }),
-      }).catch(e => console.error('Erro ao ativar monitoramento no Escavador:', e))
-
-      if (token) fetchMonitorados(token)
-    } catch (err: any) {
-      setFeedbackMsg(err.message)
-    } finally {
-      setMonitorandoId(null)
-    }
-  }
-
-  async function handleCarregarTodos() {
-    const confirm = window.confirm(
-      "Isso consumirá aproximadamente R$ 0,20 em créditos do Escavador para buscar todas as páginas de resultados. Continuar?"
-    )
-    if (!confirm || !token) return
-
-    setSearching(true)
-    setSearchError('')
-    try {
-      // Por agora, chamamos a busca normal. 
-      // Em uma implementação futura, isso poderia iterar por todas as páginas.
-      await executarBusca(query.trim(), tipo, token)
-      setFeedbackMsg("Busca completa realizada com sucesso.")
-    } catch (err: any) {
-      setSearchError(err.message)
-    } finally {
-      setSearching(false)
-    }
-  }
-
-  const tipoLabels: Record<SearchTipo, string> = {
-    numero: 'Número CNJ',
-    oab: 'OAB (ex: SP/123456)',
-    cpf: 'CPF / CNPJ',
-  }
+function ProcessoCard({ p, onMonitorar, loadingId }: {
+  p: Processo; onMonitorar: (p: Processo) => void; loadingId: string | null
+}) {
+  const [expanded, setExpanded] = useState(false)
+  const isLoading = loadingId === p.numero_processo
+  const dias = diasDesde(p.data_ultima_movimentacao)
 
   return (
-    <main className="min-h-screen bg-[#0a0a0a] text-white font-[DM_Sans,sans-serif] relative overflow-hidden">
-      <div className="mx-auto max-w-7xl px-6 py-10">
-
-        <div className="mb-8">
-          <div className="flex items-center gap-3 mb-3">
-            <div className="w-9 h-9 rounded-xl bg-[#C9A84C]/10 border border-[#C9A84C]/30 flex items-center justify-center">
-              <Shield size={18} className="text-[#C9A84C]" />
-            </div>
-            <span className="text-xs font-semibold uppercase tracking-[0.2em] text-[#C9A84C]">Operação Jurídica</span>
-          </div>
-          <h1 className="text-3xl font-semibold tracking-tight text-white">Monitoramento de Processos</h1>
-          <p className="mt-1.5 text-sm text-zinc-500">Busque e monitore processos via Escavador</p>
+    <div className={`rounded-xl border transition-all ${p.monitorado ? 'border-yellow-500/30 bg-yellow-500/5' : 'border-zinc-800 bg-zinc-900/60'}`}>
+      <div className="p-4 flex items-start gap-4">
+        <div className="mt-1 shrink-0">
+          {p.monitorado ? <CheckCircle size={16} className="text-yellow-500" /> : <div className="w-4 h-4 rounded-full border border-zinc-700" />}
         </div>
+        <div className="flex-1 min-w-0 space-y-2">
+          {/* Linha 1: número + badges */}
+          <div className="flex items-center gap-2 flex-wrap">
+            <span className="font-mono text-sm text-white font-medium">{p.numero_processo}</span>
+            <span className="text-xs bg-zinc-800 text-zinc-400 px-2 py-0.5 rounded">{p.tribunal}</span>
+            {p.comarca && <span className="text-xs bg-zinc-800/50 text-zinc-500 px-2 py-0.5 rounded">{p.comarca}</span>}
+            <span className={`text-xs px-2 py-0.5 rounded-full font-medium ${STATUS_COLOR[p.status] ?? 'text-zinc-400 bg-zinc-400/10'}`}>{p.status}</span>
+            {p.monitorado && <span className="text-xs text-yellow-500 bg-yellow-500/10 px-2 py-0.5 rounded-full">● Monitorado</span>}
+          </div>
 
-        <div className="mb-8 rounded-3xl border border-white/10 bg-white/[0.03] p-6 backdrop-blur-sm">
-          <form onSubmit={handleSearch} className="space-y-4">
-            <div className="flex gap-2">
-              {(['numero', 'oab', 'cpf'] as SearchTipo[]).map((t) => (
-                <button
-                  key={t}
-                  type="button"
-                  onClick={() => setTipo(t)}
-                  className={`px-4 py-2 rounded-xl text-xs font-semibold uppercase tracking-wider transition-all border ${
-                    tipo === t
-                      ? 'bg-[#C9A84C]/15 border-[#C9A84C]/40 text-[#C9A84C]'
-                      : 'border-white/10 text-zinc-500 hover:text-zinc-300 hover:border-white/20'
-                  }`}
-                >
-                  {t === 'numero' ? 'Nº Processo' : t === 'oab' ? 'OAB' : 'CPF / CNPJ'}
-                </button>
-              ))}
-            </div>
+          {/* Linha 2: partes */}
+          <div className="grid grid-cols-1 md:grid-cols-2 gap-1 text-sm">
+            <div><span className="text-zinc-500">Ativo: </span><span className="text-zinc-200">{p.polo_ativo}</span></div>
+            <div><span className="text-zinc-500">Passivo: </span><span className="text-zinc-200">{p.polo_passivo}</span></div>
+          </div>
 
-            <div className="flex gap-3">
-              <div className="relative flex-1">
-                <Search size={16} className="absolute left-3.5 top-1/2 -translate-y-1/2 text-zinc-500" />
-                <input
-                  type="text"
-                  value={query}
-                  onChange={(e) => setQuery(e.target.value)}
-                  placeholder={tipoLabels[tipo]}
-                  className="w-full pl-10 pr-4 py-3 rounded-2xl bg-white/[0.05] border border-white/10 text-sm text-white placeholder-zinc-600 outline-none focus:border-[#C9A84C]/50 transition"
-                />
-              </div>
-              <button
-                type="submit"
-                disabled={searching || !query.trim()}
-                className="px-6 py-3 rounded-2xl bg-[#C9A84C] text-black text-sm font-semibold hover:brightness-110 transition disabled:opacity-50 disabled:cursor-not-allowed flex items-center gap-2"
-              >
-                {searching ? <Loader2 size={15} className="animate-spin" /> : <Search size={15} />}
-                Buscar
-              </button>
-            </div>
-          </form>
+          {/* Linha 3: metadados */}
+          <div className="flex items-center gap-2 flex-wrap text-xs">
+            <span className="text-zinc-400">{p.assunto}</span>
+            {p.classe_processual && <><span className="text-zinc-700">·</span><span className="text-zinc-500">{p.classe_processual}</span></>}
+            <span className="text-zinc-700">·</span>
+            <span className="text-zinc-500">Fase: {p.fase_atual}</span>
+            {p.vara && <><span className="text-zinc-700">·</span><span className="text-zinc-500">{p.vara}</span></>}
+          </div>
 
-          {searchError && (
-            <div className="mt-4 flex items-center gap-2 text-sm text-red-400 border border-red-500/20 bg-red-500/10 rounded-2xl px-4 py-3">
-              <AlertCircle size={15} /> {searchError}
-            </div>
-          )}
-          {feedbackMsg && (
-            <div className="mt-4 flex items-center gap-2 text-sm text-emerald-400 border border-emerald-500/20 bg-emerald-500/10 rounded-2xl px-4 py-3">
-              <CheckCircle size={15} /> {feedbackMsg}
-            </div>
-          )}
+          {/* Linha 4: financeiro + urgência */}
+          <div className="flex items-center gap-3 flex-wrap text-xs">
+            {p.valor_causa && p.valor_causa !== 'N/I' && (
+              <span className="text-yellow-400/80 bg-yellow-400/5 px-2 py-0.5 rounded border border-yellow-400/20">
+                💰 {p.valor_causa}
+              </span>
+            )}
+            {p.data_distribuicao && (
+              <span className="text-zinc-500">Distribuído: {new Date(p.data_distribuicao).toLocaleDateString('pt-BR')}</span>
+            )}
+            <UrgenciaBadge dias={dias} />
+          </div>
 
-            <div className="mt-6">
-              <div className="flex items-center justify-between mb-3 px-1">
-                <p className="text-xs text-zinc-500 uppercase tracking-widest font-medium flex items-center gap-2">
-                  <span className="text-white font-bold">{resultados.length} PROCESSO(S) CARREGADOS</span>
-                  {hasMore && (
-                    <span className="text-zinc-600 flex items-center gap-2">
-                       (de {totalEscavador} no total — 
-                       <button 
-                         onClick={handleCarregarTodos}
-                         className="text-[#C9A84C] hover:underline font-bold"
-                       >
-                         carregar todos
-                       </button>)
-                    </span>
-                  )}
-                  {fromCache && (
-                    <span className="flex items-center gap-1 text-[10px] bg-emerald-500/10 border border-emerald-500/20 text-emerald-400 px-2 py-0.5 rounded-full lowercase tracking-normal">
-                      <Shield size={10} /> vindo do cache
-                    </span>
-                  )}
-                  {advogado?.nome && (
-                    <span className="ml-2 text-[#C9A84C] normal-case tracking-normal">
-                      — {advogado.nome}
-                      {advogado.oab_numero && advogado.oab_estado && ` (OAB/${advogado.oab_estado} ${advogado.oab_numero})`}
-                    </span>
-                  )}
-                </p>
-              </div>
-              <div className="overflow-x-auto rounded-2xl border border-white/10 shadow-2xl">
-                <table className="min-w-full border-collapse">
-                  <thead>
-                    <tr className="border-b border-white/10 bg-white/[0.04]">
-                      <th className="sticky left-0 bg-[#0a0a0a] z-20 px-4 py-4 text-left text-[11px] font-bold uppercase tracking-[0.16em] text-zinc-500 whitespace-nowrap min-w-[220px]">Número CNJ</th>
-                      <th className="px-4 py-4 text-left text-[11px] font-bold uppercase tracking-[0.16em] text-zinc-500 whitespace-nowrap min-w-[90px]">Tribunal</th>
-                      <th className="px-4 py-4 text-left text-[11px] font-bold uppercase tracking-[0.16em] text-zinc-500 whitespace-nowrap min-w-[160px]">Polo Ativo</th>
-                      <th className="px-4 py-4 text-left text-[11px] font-bold uppercase tracking-[0.16em] text-zinc-500 whitespace-nowrap min-w-[160px]">Polo Passivo</th>
-                      <th className="px-4 py-4 text-left text-[11px] font-bold uppercase tracking-[0.16em] text-zinc-500 whitespace-nowrap min-w-[110px]">Última Mov.</th>
-                      <th className="px-4 py-4 text-left text-[11px] font-bold uppercase tracking-[0.16em] text-zinc-500 whitespace-nowrap min-w-[90px]">Status</th>
-                      <th className="sticky right-0 bg-[#0a0a0a] z-20 px-4 py-4 text-right text-[11px] font-bold uppercase tracking-[0.16em] text-zinc-500 min-w-[120px]">Ações</th>
-                    </tr>
-                  </thead>
-                  <tbody>
-                    {resultadosPagina.map((p, i) => {
-                      const cnj = p.numero_cnj ?? p.numero
-                      const isMonitorado = monitoradosSet.has(cnj ?? '')
-                      return (
-                        <tr 
-                          key={i} 
-                          onClick={() => setSelectedProcess(p)}
-                          className="border-b border-white/5 last:border-0 hover:bg-white/[0.04] transition cursor-pointer group"
-                        >
-                          <td className="sticky left-0 bg-[#0a0a0a] group-hover:bg-[#111] z-10 px-4 py-4 text-[13px] font-mono font-medium text-white whitespace-nowrap border-r border-white/5">{cnj ?? '—'}</td>
-                          <td className="px-4 py-4 text-[13px] text-zinc-300 whitespace-nowrap">{String(p.tribunal ?? '—')}</td>
-                          <td className="px-4 py-4 text-[13px] text-zinc-300 max-w-[160px] truncate">{String(p.polo_ativo ?? '—')}</td>
-                          <td className="px-4 py-4 text-[13px] text-zinc-300 max-w-[160px] truncate">{String(p.polo_passivo ?? '—')}</td>
-                          <td className="px-4 py-4 text-[13px] text-zinc-400 whitespace-nowrap">{formatarData(p.ultima_movimentacao)}</td>
-                          <td className="px-4 py-4"><StatusBadge status={String(p.status ?? '')} /></td>
-                          <td className="sticky right-0 bg-[#0a0a0a] group-hover:bg-[#111] z-10 px-4 py-4 text-right border-l border-white/5">
-                            <button
-                              onClick={(e) => {
-                                e.stopPropagation()
-                                handleMonitorar(p)
-                              }}
-                              disabled={monitorandoId === cnj || isMonitorado}
-                              className={`inline-flex items-center gap-1.5 px-3 py-1.5 rounded-lg border text-[11px] font-bold transition disabled:opacity-50 whitespace-nowrap ${
-                                isMonitorado 
-                                  ? 'border-emerald-500/30 bg-emerald-500/10 text-emerald-400'
-                                  : 'border-[#C9A84C]/30 bg-[#C9A84C]/10 text-[#C9A84C] hover:bg-[#C9A84C]/20'
-                              }`}
-                            >
-                              {monitorandoId === cnj
-                                ? <Loader2 size={12} className="animate-spin" />
-                                : isMonitorado ? <CheckCircle size={12} className="text-emerald-400" /> : <Shield size={12} />}
-                              {isMonitorado ? 'Monitorado' : 'Monitorar'}
-                            </button>
-                          </td>
-                        </tr>
-                      )
-                    })}
-                  </tbody>
-                </table>
-              </div>
-
-              {totalPaginas > 1 && (
-                <div className="mt-6 flex items-center justify-between px-1">
-                  <div className="flex gap-2">
-                    <button
-                      onClick={() => { setPaginaAtual(1); window.scrollTo({ top: 0, behavior: 'smooth' }) }}
-                      disabled={paginaAtual === 1}
-                      className="px-3 py-2 rounded-xl border border-white/10 text-[10px] uppercase font-bold text-zinc-500 hover:text-white disabled:opacity-20 transition"
-                    >
-                      « Primeira
-                    </button>
-                    <button
-                      onClick={() => { setPaginaAtual(p => Math.max(1, p - 1)); window.scrollTo({ top: 0, behavior: 'smooth' }) }}
-                      disabled={paginaAtual === 1}
-                      className="px-3 py-2 rounded-xl border border-white/10 text-[10px] uppercase font-bold text-zinc-500 hover:text-white disabled:opacity-20 transition"
-                    >
-                      ‹ Anterior
-                    </button>
-                  </div>
-                  
-                  <div className="flex items-center gap-4">
-                    <span className="text-xs text-zinc-500">
-                      Página <span className="text-[#C9A84C] font-bold">{paginaAtual}</span> de <span className="text-zinc-300 font-medium">{totalPaginas}</span>
-                    </span>
-                    <span className="text-xs text-zinc-600">
-                      Exibindo {(paginaAtual - 1) * ITENS_POR_PAGINA + 1}–{Math.min(paginaAtual * ITENS_POR_PAGINA, resultados.length)} de {resultados.length}
-                    </span>
-                  </div>
-
-                  <div className="flex gap-2">
-                    <button
-                      onClick={() => { setPaginaAtual(p => Math.min(totalPaginas, p + 1)); window.scrollTo({ top: 0, behavior: 'smooth' }) }}
-                      disabled={paginaAtual === totalPaginas}
-                      className="px-3 py-2 rounded-xl border border-white/10 text-[10px] uppercase font-bold text-zinc-500 hover:text-white disabled:opacity-20 transition"
-                    >
-                      Próxima ›
-                    </button>
-                    <button
-                      onClick={() => { setPaginaAtual(totalPaginas); window.scrollTo({ top: 0, behavior: 'smooth' }) }}
-                      disabled={paginaAtual === totalPaginas}
-                      className="px-3 py-2 rounded-xl border border-white/10 text-[10px] uppercase font-bold text-zinc-500 hover:text-white disabled:opacity-20 transition"
-                    >
-                      Última »
-                    </button>
-                  </div>
+          {/* Expandido: última movimentação */}
+          {expanded && (
+            <div className="mt-2 space-y-2">
+              {p.ultima_movimentacao_texto && (
+                <div className="p-3 bg-zinc-800/50 rounded-lg text-sm text-zinc-300 border-l-2 border-yellow-500/40">
+                  <p className="text-xs text-zinc-500 mb-1 uppercase tracking-wider">Última movimentação</p>
+                  {p.ultima_movimentacao_texto}
+                </div>
+              )}
+              {p.movimentacoes?.length > 0 && (
+                <div className="space-y-1">
+                  <p className="text-xs text-zinc-500 uppercase tracking-wider">Histórico recente</p>
+                  {p.movimentacoes.slice(0, 5).map((m, i) => (
+                    <div key={i} className="flex items-start gap-2 text-xs text-zinc-400 py-1 border-b border-zinc-800/50">
+                      <span className="text-zinc-600 shrink-0">{(m.data as string) ? new Date(m.data as string).toLocaleDateString('pt-BR') : '—'}</span>
+                      <span>{((m.titulo ?? m.descricao ?? m.tipo) as string) ?? '—'}</span>
+                    </div>
+                  ))}
                 </div>
               )}
             </div>
+          )}
         </div>
 
-        <div className="rounded-3xl border border-white/10 bg-white/[0.03] backdrop-blur-sm overflow-hidden">
-          <div className="px-6 py-5 border-b border-white/10 flex items-center justify-between bg-white/[0.02]">
-            <h2 className="text-sm font-semibold text-white uppercase tracking-wider">Processos Monitorados</h2>
-            <span className="text-xs text-zinc-500 font-medium px-3 py-1 rounded-full bg-white/5 border border-white/10">{loadingMonitorados ? '...' : `${monitorados.length} processo(s)`}</span>
-          </div>
-
-          {loadingMonitorados ? (
-            <div className="flex items-center justify-center py-20">
-              <Loader2 size={24} className="animate-spin text-zinc-700" />
-            </div>
-          ) : monitorados.length === 0 ? (
-            <div className="flex flex-col items-center justify-center py-20 gap-4 opacity-50">
-              <Shield size={40} className="text-zinc-700" />
-              <p className="text-sm text-zinc-500 tracking-wide">Nenhum processo monitorado no momento.</p>
-            </div>
-          ) : (
-            <div className="overflow-x-auto">
-              <table className="min-w-full border-collapse">
-                <thead>
-                  <tr className="border-b border-white/10 bg-white/[0.01]">
-                    {['Número CNJ', 'Tribunal', 'Polo Ativo', 'Polo Passivo', 'Última Mov.', 'Status', 'Ações'].map((h) => (
-                      <th key={h} className="px-6 py-4 text-left text-[11px] font-bold uppercase tracking-[0.16em] text-zinc-500 whitespace-nowrap">{h}</th>
-                    ))}
-                  </tr>
-                </thead>
-                <tbody>
-                  {monitorados.map((p) => {
-                    const partes = typeof p.partes === 'string' ? JSON.parse(p.partes) : (p.partes ?? {})
-                    const polo_ativo = partes.polo_ativo ?? '—'
-                    const polo_passivo = partes.polo_passivo ?? '—'
-                    
-                    return (
-                      <tr key={p.id} className="border-b border-white/5 last:border-0 hover:bg-white/[0.02] transition">
-                        <td className="px-6 py-4 text-[13px] font-mono font-medium text-white">{p.numero_cnj}</td>
-                        <td className="px-6 py-4 text-[13px] text-zinc-300 whitespace-nowrap">{p.tribunal ?? '—'}</td>
-                        <td className="px-6 py-4 text-[13px] text-zinc-300 max-w-[160px] truncate">{polo_ativo}</td>
-                        <td className="px-6 py-4 text-[13px] text-zinc-300 max-w-[160px] truncate">{polo_passivo}</td>
-                        <td className="px-6 py-4 text-[13px] text-zinc-400 whitespace-nowrap">{formatarData(p.ultima_movimentacao)}</td>
-                        <td className="px-6 py-4">
-                          <div className="flex flex-col gap-1">
-                            <StatusBadge status={p.status} />
-                            {p.monitoramento_ativo && (
-                              <span className="text-[9px] font-bold text-[#C9A84C] opacity-80 flex items-center gap-1">
-                                📡 Escavador Semanal
-                              </span>
-                            )}
-                          </div>
-                        </td>
-                        <td className="px-6 py-4">
-                          <button
-                            onClick={() => {
-                              // Converte Monitored para Processo para o Drawer
-                              setSelectedProcess({
-                                ...p,
-                                ...partes,
-                                polo_ativo,
-                                polo_passivo
-                              })
-                            }}
-                            className="p-2 rounded-lg bg-white/5 border border-white/10 text-zinc-400 hover:text-white hover:border-white/20 transition flex items-center gap-2 text-[10px] uppercase font-bold"
-                          >
-                            <FileText size={12} /> Resumo
-                          </button>
-                        </td>
-                      </tr>
-                    )
-                  })}
-                </tbody>
-              </table>
-            </div>
+        <div className="flex items-center gap-2 shrink-0">
+          {(p.ultima_movimentacao_texto || p.movimentacoes?.length > 0) && (
+            <button onClick={() => setExpanded(v => !v)} className="text-zinc-500 hover:text-zinc-300 p-1 transition-colors">
+              {expanded ? <ChevronUp size={16} /> : <ChevronDown size={16} />}
+            </button>
+          )}
+          {!p.monitorado && (
+            <button onClick={() => onMonitorar(p)} disabled={isLoading}
+              className="text-xs px-3 py-1.5 rounded-lg border border-yellow-500/40 text-yellow-500 hover:bg-yellow-500/10 transition-all disabled:opacity-50 flex items-center gap-1.5 whitespace-nowrap">
+              {isLoading && <RefreshCw size={11} className="animate-spin" />}
+              {isLoading ? '...' : 'Monitorar'}
+            </button>
           )}
         </div>
       </div>
+    </div>
+  )
+}
 
-      {selectedProcess && (
-        <>
-          <div 
-            className="fixed inset-0 bg-black/80 backdrop-blur-sm z-[100] transition-opacity"
-            onClick={() => setSelectedProcess(null)}
-          />
-          <div className="fixed top-0 right-0 h-full w-full max-w-lg bg-[#0d0d0d] border-l border-white/10 z-[101] shadow-2xl flex flex-col transform transition-transform animate-in slide-in-from-right duration-500">
-            <div className="p-8 border-b border-white/10 flex items-center justify-between bg-white/[0.02]">
-              <div>
-                <h3 className="text-[11px] font-bold uppercase tracking-[0.2em] text-[#C9A84C] mb-1.5">Resumo do Processo</h3>
-                <p className="text-xl font-mono font-bold text-white tracking-tight">{selectedProcess.numero_cnj ?? selectedProcess.numero}</p>
+type FilterStatus = 'TODOS' | 'ATIVO' | 'ARQUIVADO' | 'nao_monitorado'
+
+function BillingBar({ billing }: { billing: BillingInfo }) {
+  const pct = Math.min(100, (billing.total_ja_monitorados / Math.max(billing.gratuitos, 1)) * 100)
+  const quaseCheno = pct >= 80
+  return (
+    <div className="rounded-xl border border-zinc-800 bg-zinc-900/60 p-4 flex items-center gap-4">
+      <div className="flex-1 space-y-1.5">
+        <div className="flex items-center justify-between text-xs">
+          <span className="text-zinc-400">Processos no plano</span>
+          <span className={quaseCheno ? 'text-yellow-400 font-semibold' : 'text-zinc-400'}>{billing.total_ja_monitorados} / {billing.gratuitos} usados</span>
+        </div>
+        <div className="h-2 bg-zinc-800 rounded-full overflow-hidden">
+          <div className={`h-full rounded-full transition-all ${quaseCheno ? 'bg-yellow-500' : 'bg-green-500'}`} style={{ width: `${pct}%` }} />
+        </div>
+        <p className="text-xs text-zinc-500">
+          {billing.disponivel_sem_custo > 0
+            ? `${billing.disponivel_sem_custo} disponíveis sem custo adicional`
+            : `Plano esgotado — extras a R$${billing.preco_por_extra.toFixed(2)}/processo/mês`}
+        </p>
+      </div>
+      {billing.excedente_se_prosseguir > 0 && (
+        <div className="text-right shrink-0">
+          <p className="text-xs text-yellow-400 font-semibold">+R$ {billing.custo_estimado_mes.toFixed(2)}/mês</p>
+          <p className="text-xs text-zinc-500">se monitorar todos ativos</p>
+        </div>
+      )}
+    </div>
+  )
+}
+
+function MonitoramentoContent() {
+  const [tab, setTab] = useState<'oab' | 'numero' | 'cpf'>('oab')
+  const [oabEstado, setOabEstado] = useState('RJ')
+  const [oabNumero, setOabNumero] = useState('')
+  const [loading, setLoading] = useState(false)
+  const [importandoLote, setImportandoLote] = useState(false)
+  const [result, setResult] = useState<BuscaResult | null>(null)
+  const [error, setError] = useState<string | null>(null)
+  const [filtroStatus, setFiltroStatus] = useState<FilterStatus>('TODOS')
+  const [search, setSearch] = useState('')
+  const [loadingId, setLoadingId] = useState<string | null>(null)
+  const [feedback, setFeedback] = useState<string | null>(null)
+  const [confirmacao, setConfirmacao] = useState<ConfirmacaoLote | null>(null)
+  const [confirmandoLote, setConfirmandoLote] = useState(false)
+
+  const buscar = useCallback(async () => {
+    if (!oabNumero.trim()) return
+    setLoading(true); setError(null); setResult(null); setFeedback(null)
+    try {
+      const res = await fetch('/api/escavador/buscar-completo', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ oab_estado: oabEstado, oab_numero: oabNumero.trim() })
+      })
+      const data = await res.json()
+      if (!res.ok) throw new Error(data.error ?? 'Erro na busca')
+      setResult(data)
+    } catch (e) {
+      setError(e instanceof Error ? e.message : 'Erro desconhecido')
+    } finally {
+      setLoading(false)
+    }
+  }, [oabEstado, oabNumero])
+
+  const executarImportacao = useCallback(async (processos: Processo[], confirmar_custo: boolean) => {
+    const res = await fetch('/api/monitoramento/importar-lote', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ processos, confirmar_custo })
+    })
+    return res.json()
+  }, [])
+
+  const monitorarUm = useCallback(async (p: Processo) => {
+    setLoadingId(p.numero_processo)
+    try {
+      const data = await executarImportacao([p], true)
+      if (data.error) throw new Error(data.error)
+      setResult(prev => prev
+        ? { ...prev, processos: prev.processos.map(proc => proc.numero_processo === p.numero_processo ? { ...proc, monitorado: true } : proc) }
+        : prev)
+      setFeedback(data.mensagem)
+    } catch (e) {
+      setError(e instanceof Error ? e.message : 'Erro ao monitorar')
+    } finally {
+      setLoadingId(null)
+    }
+  }, [executarImportacao])
+
+  const monitorarTodosAtivos = useCallback(async () => {
+    if (!result) return
+    const ativos = result.processos.filter(p => p.status === 'ATIVO' && !p.monitorado)
+    if (!ativos.length) return
+    setImportandoLote(true)
+    try {
+      const data = await executarImportacao(ativos, false)
+      if (data.requer_confirmacao) {
+        setConfirmacao({ ...data, processosParaImportar: ativos })
+        return
+      }
+      setResult(prev => prev
+        ? { ...prev, processos: prev.processos.map(p => p.status === 'ATIVO' ? { ...p, monitorado: true } : p) }
+        : prev)
+      setFeedback(`✅ ${data.mensagem}`)
+    } catch (e) {
+      setError(e instanceof Error ? e.message : 'Erro ao importar')
+    } finally {
+      setImportandoLote(false)
+    }
+  }, [result, executarImportacao])
+
+  const confirmarLote = useCallback(async () => {
+    if (!confirmacao) return
+    setConfirmandoLote(true)
+    try {
+      const data = await executarImportacao(confirmacao.processosParaImportar, true)
+      if (data.error) throw new Error(data.error)
+      setResult(prev => prev
+        ? { ...prev, processos: prev.processos.map(p => p.status === 'ATIVO' ? { ...p, monitorado: true } : p) }
+        : prev)
+      setFeedback(`✅ ${data.mensagem}`)
+      setConfirmacao(null)
+    } catch (e) {
+      setError(e instanceof Error ? e.message : 'Erro ao confirmar')
+    } finally {
+      setConfirmandoLote(false)
+    }
+  }, [confirmacao, executarImportacao])
+
+  const processosFiltrados = result?.processos.filter(p => {
+    const matchStatus = filtroStatus === 'TODOS'
+      ? true
+      : filtroStatus === 'nao_monitorado'
+        ? !p.monitorado
+        : p.status === filtroStatus
+    const matchSearch = !search || [p.numero_processo, p.polo_ativo, p.polo_passivo, p.assunto]
+      .some(s => s?.toLowerCase().includes(search.toLowerCase()))
+    return matchStatus && matchSearch
+  }) ?? []
+
+  const totalAtivosNaoMonitorados = result?.processos.filter(p => p.status === 'ATIVO' && !p.monitorado).length ?? 0
+  const totalMonitorados = result?.processos.filter(p => p.monitorado).length ?? 0
+
+  return (
+    <>
+      {confirmacao && (
+        <ModalConfirmacaoCusto
+          dados={confirmacao}
+          onConfirmar={confirmarLote}
+          onCancelar={() => setConfirmacao(null)}
+          loading={confirmandoLote}
+        />
+      )}
+
+      <div className="p-6 max-w-6xl space-y-6">
+        {/* Header */}
+        <div className="flex items-center gap-3">
+          <div className="w-9 h-9 rounded-full bg-yellow-500/10 flex items-center justify-center">
+            <Shield size={18} className="text-yellow-500" />
+          </div>
+          <div>
+            <h1 className="text-2xl font-semibold text-white" style={{ fontFamily: 'Cormorant Garamond, serif' }}>
+              Monitoramento de Processos
+            </h1>
+            <p className="text-sm text-zinc-400">Busca completa · Monitoramento em lote · Alertas automáticos</p>
+          </div>
+        </div>
+
+        {/* Tabs */}
+        <div className="flex gap-1 bg-zinc-900 border border-zinc-800 rounded-xl p-1 w-fit">
+          {([['oab', 'OAB'], ['numero', 'Nº Processo'], ['cpf', 'CPF / CNPJ']] as const).map(([key, label]) => (
+            <button
+              key={key}
+              onClick={() => setTab(key)}
+              className={`px-4 py-1.5 rounded-lg text-sm font-medium transition-all ${tab === key ? 'bg-yellow-500 text-black' : 'text-zinc-400 hover:text-zinc-300'}`}
+            >
+              {label}
+            </button>
+          ))}
+        </div>
+
+        {/* Search */}
+        <div className="flex gap-3">
+          {tab === 'oab' && (
+            <select
+              value={oabEstado}
+              onChange={e => setOabEstado(e.target.value)}
+              className="bg-zinc-900 border border-zinc-700 rounded-xl px-3 py-2.5 text-sm text-zinc-300 focus:outline-none focus:border-yellow-500/50"
+            >
+              {['AC','AL','AP','AM','BA','CE','DF','ES','GO','MA','MT','MS','MG','PA','PB','PR','PE','PI','RJ','RN','RS','RO','RR','SC','SP','SE','TO'].map(e => (
+                <option key={e} value={e}>{e}</option>
+              ))}
+            </select>
+          )}
+          <div className="flex-1 relative">
+            <Search size={16} className="absolute left-3 top-1/2 -translate-y-1/2 text-zinc-500" />
+            <input
+              value={oabNumero}
+              onChange={e => setOabNumero(e.target.value)}
+              onKeyDown={e => e.key === 'Enter' && buscar()}
+              placeholder={tab === 'oab' ? 'Número OAB...' : tab === 'numero' ? 'Nº CNJ...' : 'CPF ou CNPJ...'}
+              className="w-full bg-zinc-900 border border-zinc-700 rounded-xl pl-9 pr-4 py-2.5 text-sm text-zinc-200 placeholder-zinc-500 focus:outline-none focus:border-yellow-500/50"
+            />
+          </div>
+          <button
+            onClick={buscar}
+            disabled={loading}
+            className="px-5 py-2.5 bg-yellow-500 hover:bg-yellow-400 text-black text-sm font-bold rounded-xl transition-all disabled:opacity-50 flex items-center gap-2"
+          >
+            {loading ? <RefreshCw size={15} className="animate-spin" /> : <Search size={15} />}
+            {loading ? 'Buscando...' : 'Buscar'}
+          </button>
+        </div>
+
+        {error && (
+          <div className="flex items-center gap-2 p-3 bg-red-500/10 border border-red-500/20 rounded-xl text-sm text-red-400">
+            <AlertCircle size={15} />{error}
+          </div>
+        )}
+        {feedback && (
+          <div className="flex items-center gap-2 p-3 bg-green-500/10 border border-green-500/20 rounded-xl text-sm text-green-400">
+            <CheckCircle size={15} />{feedback}
+          </div>
+        )}
+
+        {result && (
+          <div className="space-y-4">
+            <BillingBar billing={result.billing} />
+
+            <div className="flex items-center justify-between flex-wrap gap-3">
+              <div className="flex items-center gap-3 text-sm flex-wrap">
+                <span className="text-zinc-300">
+                  <span className="text-yellow-500 font-bold">{result.total_retornado}</span>
+                  <span className="text-zinc-500"> de </span>
+                  <span className="font-medium">{result.total}</span>
+                  <span className="text-zinc-500"> processos</span>
+                  {result.total_retornado < result.total && (
+                    <span className="text-xs text-zinc-600 ml-1">(paginando {result.paginas_buscadas} pág.)</span>
+                  )}
+                </span>
+                {result.advogado_nome && <span className="text-zinc-500 text-xs">— {result.advogado_nome}</span>}
+                <span className="text-xs text-green-400 bg-green-400/10 px-2 py-0.5 rounded-full flex items-center gap-1">
+                  <CheckCircle size={11} />{totalMonitorados} monitorados
+                </span>
               </div>
-              <button 
-                onClick={() => setSelectedProcess(null)}
-                className="p-2.5 rounded-xl hover:bg-white/5 text-zinc-500 hover:text-white transition"
-              >
-                <Eye size={20} className="rotate-45" />
-              </button>
+              {totalAtivosNaoMonitorados > 0 && (
+                <button
+                  onClick={monitorarTodosAtivos}
+                  disabled={importandoLote}
+                  className="flex items-center gap-2 px-4 py-2 bg-yellow-500 hover:bg-yellow-400 text-black text-sm font-bold rounded-xl transition-all disabled:opacity-50"
+                >
+                  {importandoLote
+                    ? <><RefreshCw size={14} className="animate-spin" />Verificando...</>
+                    : <><Zap size={14} />Monitorar {totalAtivosNaoMonitorados} ativos</>}
+                </button>
+              )}
             </div>
 
-            <div className="flex-1 overflow-y-auto p-8 space-y-8 no-scrollbar">
-              <div className="grid grid-cols-2 gap-8">
-                <div className="space-y-1.5">
-                  <span className="text-[10px] font-bold uppercase tracking-widest text-zinc-500">Status</span>
-                  <div><StatusBadge status={String(selectedProcess.status ?? '')} /></div>
-                </div>
-                <div className="space-y-1.5">
-                  <span className="text-[10px] font-bold uppercase tracking-widest text-zinc-500">Tribunal</span>
-                  <p className="text-sm font-semibold text-zinc-200">{String(selectedProcess.tribunal ?? '—')}</p>
-                </div>
-              </div>
-
-              <div className="space-y-2">
-                <span className="text-[10px] font-bold uppercase tracking-widest text-zinc-500">Assunto Principal</span>
-                <p className="text-sm leading-relaxed text-zinc-200 bg-white/5 p-4 rounded-2xl border border-white/5">{String(selectedProcess.assunto ?? '—')}</p>
-              </div>
-
-              <div className="grid grid-cols-1 gap-6">
-                <div className="space-y-2">
-                  <span className="text-[10px] font-bold uppercase tracking-widest text-zinc-500">Polo Ativo</span>
-                  <div className="text-sm font-medium text-zinc-300 bg-emerald-500/5 p-4 rounded-2xl border border-emerald-500/10 whitespace-pre-wrap">{String(selectedProcess.polo_ativo ?? '—')}</div>
-                </div>
-                <div className="space-y-2">
-                  <span className="text-[10px] font-bold uppercase tracking-widest text-zinc-500">Polo Passivo</span>
-                  <div className="text-sm font-medium text-zinc-300 bg-red-500/5 p-4 rounded-2xl border border-red-500/10 whitespace-pre-wrap">{String(selectedProcess.polo_passivo ?? '—')}</div>
-                </div>
-              </div>
-
-              <div className="grid grid-cols-2 gap-8 pt-4 border-t border-white/5">
-                <div className="space-y-1.5">
-                  <span className="text-[10px] font-bold uppercase tracking-widest text-zinc-500">Valor da Causa</span>
-                  <p className="text-base font-bold text-[#C9A84C]">{String(selectedProcess.valor_causa ?? '—')}</p>
-                </div>
-                <div className="space-y-1.5">
-                  <span className="text-[10px] font-bold uppercase tracking-widest text-zinc-500">Data de Início</span>
-                  <p className="text-sm font-semibold text-zinc-200">{formatarData(selectedProcess.data_inicio ?? '—')}</p>
-                </div>
-              </div>
-
-              <div className="space-y-3 pt-4 border-t border-white/5">
-                <span className="text-[10px] font-bold uppercase tracking-widest text-zinc-500">Última Movimentação</span>
-                <div className="text-[13px] leading-relaxed text-zinc-400 bg-white/[0.02] p-5 rounded-2xl border border-white/10 italic">
-                  "{formatarData(selectedProcess.ultima_movimentacao ?? 'Nenhuma movimentação recente encontrada.')}"
-                </div>
-              </div>
+            {/* Filtros */}
+            <div className="flex items-center gap-2 flex-wrap">
+              <Filter size={13} className="text-zinc-500" />
+              {(['TODOS', 'ATIVO', 'ARQUIVADO', 'nao_monitorado'] as FilterStatus[]).map(f => (
+                <button
+                  key={f}
+                  onClick={() => setFiltroStatus(f)}
+                  className={`text-xs px-3 py-1 rounded-full transition-all ${filtroStatus === f ? 'bg-yellow-500 text-black font-semibold' : 'bg-zinc-800 text-zinc-400 hover:text-zinc-300'}`}
+                >
+                  {f === 'nao_monitorado' ? 'Não monitorados' : f}
+                </button>
+              ))}
+              <input
+                value={search}
+                onChange={e => setSearch(e.target.value)}
+                placeholder="Filtrar por nome, processo..."
+                className="ml-auto bg-zinc-900 border border-zinc-700 rounded-lg px-3 py-1 text-xs text-zinc-300 placeholder-zinc-600 focus:outline-none focus:border-yellow-500/50 w-52"
+              />
             </div>
 
-            <div className="p-8 border-t border-white/10 bg-white/[0.02]">
-              <button 
-                onClick={() => handleMonitorar(selectedProcess)}
-                disabled={monitorandoId === (selectedProcess.numero_cnj ?? selectedProcess.numero) || monitoradosSet.has(selectedProcess.numero_cnj ?? '')}
-                className={`w-full py-4 rounded-2xl font-bold transition-all duration-300 flex items-center justify-center gap-3 ${
-                  monitoradosSet.has(selectedProcess.numero_cnj ?? '')
-                    ? 'bg-emerald-600/20 text-emerald-400 border border-emerald-500/30 cursor-default'
-                    : 'bg-[#C9A84C] text-black hover:brightness-110 shadow-xl shadow-[#C9A84C]/20'
-                }`}
-              >
-                {monitorandoId === (selectedProcess.numero_cnj ?? selectedProcess.numero)
-                  ? <><Loader2 size={18} className="animate-spin" /> Processando...</>
-                  : monitoradosSet.has(selectedProcess.numero_cnj ?? '') 
-                    ? <><CheckCircle size={18} className="text-emerald-400" /> JÁ MONITORADO</>
-                    : <><Shield size={18} /> MONITORAR ESTE PROCESSO</>}
-              </button>
+            {/* Lista */}
+            <div className="space-y-3">
+              {processosFiltrados.map(p => (
+                <ProcessoCard key={p.numero_processo} p={p} onMonitorar={monitorarUm} loadingId={loadingId} />
+              ))}
+              {processosFiltrados.length === 0 && (
+                <div className="text-center py-12 text-zinc-500 text-sm">
+                  <Eye size={32} className="mx-auto mb-3 text-zinc-700" />
+                  Nenhum processo com esses filtros.
+                </div>
+              )}
             </div>
           </div>
-        </>
-      )}
-    </main>
+        )}
+
+        {!result && !loading && (
+          <div className="text-center py-16">
+            <Shield size={40} className="mx-auto mb-4 text-zinc-700" />
+            <p className="text-zinc-400 text-sm">Busque por OAB para carregar todos os processos</p>
+            <p className="text-zinc-600 text-xs mt-1">Paginação automática · Sem limite de resultados · Proteção contra duplicatas</p>
+          </div>
+        )}
+
+        {loading && (
+          <div className="text-center py-16 space-y-3">
+            <RefreshCw size={32} className="mx-auto text-yellow-500 animate-spin" />
+            <p className="text-zinc-400 text-sm">Buscando todos os processos...</p>
+            <p className="text-zinc-600 text-xs">Paginando automaticamente — aguarde</p>
+          </div>
+        )}
+      </div>
+    </>
   )
 }
 
 export default function MonitoramentoPage() {
   return (
-    <Suspense fallback={<div className="min-h-screen bg-[#0a0a0a] text-white p-8">Carregando...</div>}>
+    <Suspense fallback={
+      <div className="flex items-center justify-center h-64">
+        <div className="w-8 h-8 border-2 border-yellow-500 border-t-transparent rounded-full animate-spin" />
+      </div>
+    }>
       <MonitoramentoContent />
     </Suspense>
   )
