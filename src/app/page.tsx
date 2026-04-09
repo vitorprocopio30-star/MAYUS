@@ -167,7 +167,7 @@ export default function LandingPage() {
         <div className="hidden md:block absolute left-12 top-[35%] z-30 text-left max-w-[280px] pointer-events-none">
           <Reveal delay={0.4}>
             <div className="text-[10px] font-black uppercase text-gray-300 tracking-[0.15em] leading-loose">
-              <span className="text-[#CCA761] mr-2">//</span> O SISTEMA MAYUS — A INTELIGÊNCIA ARTIFICIAL CONSTRUINDO ESTRUTURAS ROBUSTAS, TRANSFORMANDO BANCAS JURÍDICAS EM POTÊNCIAS DE ESCALA.
+              <span className="text-[#CCA761] mr-2">{"//"}</span> O SISTEMA MAYUS — A INTELIGÊNCIA ARTIFICIAL CONSTRUINDO ESTRUTURAS ROBUSTAS, TRANSFORMANDO BANCAS JURÍDICAS EM POTÊNCIAS DE ESCALA.
             </div>
           </Reveal>
         </div>
@@ -176,7 +176,7 @@ export default function LandingPage() {
         <div className="hidden md:block absolute right-12 top-[35%] z-30 text-right max-w-[220px] pointer-events-none">
           <Reveal delay={0.5}>
             <div className="text-[10px] font-black uppercase text-gray-300 tracking-[0.15em] leading-loose">
-              <span className="text-[#CCA761] mr-2">//</span> ARQUITETURA DE DADOS QUE FALA PELA SUA MARCA
+              <span className="text-[#CCA761] mr-2">{"//"}</span> ARQUITETURA DE DADOS QUE FALA PELA SUA MARCA
             </div>
           </Reveal>
         </div>
@@ -215,7 +215,7 @@ export default function LandingPage() {
               href="/login" 
               className="group flex items-center gap-4 text-[11px] font-black tracking-[0.4em] text-white uppercase hover:text-[#CCA761] transition-colors pointer-events-auto"
             >
-              <span className="hidden md:inline">// TORNAR-SE FUNDADOR</span>
+              <span className="hidden md:inline">{"//"} TORNAR-SE FUNDADOR</span>
               <span className="md:hidden">FUNDADOR</span>
               <div className="w-10 h-10 rounded-full border border-white/20 group-hover:border-[#CCA761] flex items-center justify-center transition-colors">
                 <ArrowUpRight size={16} className="text-white group-hover:text-[#CCA761]" />
