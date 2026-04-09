@@ -68,7 +68,7 @@ export const EscavadorService = {
   criarMonitoramento: async (apiKey: string, numeroCNJ: string, frequencia = 'SEMANAL') => {
     return await fetchEscavador("/monitoramentos/processos", apiKey, {
       method: "POST",
-      body: JSON.stringify({ numero: numeroCNJ, frequencia }),
+      body: JSON.stringify({ numero_cnj: numeroCNJ }),
     });
   },
 
