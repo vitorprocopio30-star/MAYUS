@@ -426,6 +426,10 @@ function MonitoramentoContent() {
   // Estado para os botões "Organizar IA"
   const [organizando, setOrganizando] = useState<Record<string, 'idle' | 'loading' | 'done'>>({})
 
+  // Estado para "Organizar Todos"
+  const [organizandoTodos, setOrganizandoTodos] = useState(false)
+  const [progressoOrg, setProgressoOrg] = useState(0)
+
   const PAGE_SIZE = 20
 
   // Ir para uma página específica
@@ -439,6 +443,14 @@ function MonitoramentoContent() {
     const e = localStorage.getItem('mayus_oab_estado')
     if (s) setOabNumero(s)
     if (e) setOabEstado(e)
+
+    // Restaurar processos do sessionStorage
+    const saved = sessionStorage.getItem('mon_result')
+    if (saved) {
+      try {
+        setResult(JSON.parse(saved))
+      } catch {}
+    }
   }, [])
 
   const buscar = useCallback(async () => {
@@ -456,6 +468,8 @@ function MonitoramentoContent() {
       const data = await res.json()
       if (!res.ok) throw new Error(data.error ?? 'Falha na varredura')
       setResult(data)
+      // Persistir no sessionStorage para não perder ao navegar
+      try { sessionStorage.setItem('mon_result', JSON.stringify(data)) } catch {}
     } catch (e) {
       setError(e instanceof Error ? e.message : 'Erro na conexão')
     } finally {
@@ -575,6 +589,48 @@ function MonitoramentoContent() {
       setOrganizando(prev => ({ ...prev, [processoId]: 'idle' }))
     }
   }, [])
+
+  // Organizar TODOS os processos monitorados em bulk
+  const handleOrganizarTodos = useCallback(async () => {
+    if (!result) return
+    const monitorados = result.processos.filter(p => p.id)
+    if (monitorados.length === 0) return
+
+    setOrganizandoTodos(true)
+    setProgressoOrg(0)
+
+    for (let i = 0; i < monitorados.length; i++) {
+      const pid = monitorados[i].id!
+      setOrganizando(prev => ({ ...prev, [pid]: 'loading' }))
+      try {
+        const res = await fetch('/api/agent/processos/organizar', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ processo_id: pid })
+        })
+        const data = await res.json()
+        if (data.success) {
+          setOrganizando(prev => ({ ...prev, [pid]: 'done' }))
+          setResult(prev => prev ? {
+            ...prev,
+            processos: prev.processos.map(p =>
+              p.id === pid ? { ...p, ...data.processo_atualizado } : p
+            )
+          } : prev)
+        } else {
+          setOrganizando(prev => ({ ...prev, [pid]: 'idle' }))
+        }
+      } catch {
+        setOrganizando(prev => ({ ...prev, [pid]: 'idle' }))
+      }
+      setProgressoOrg(i + 1)
+      // Throttle de 1s entre chamadas
+      if (i < monitorados.length - 1) {
+        await new Promise(r => setTimeout(r, 1000))
+      }
+    }
+    setOrganizandoTodos(false)
+  }, [result])
 
   // ─── Lógica de Filtros ───
 
@@ -703,6 +759,27 @@ function MonitoramentoContent() {
                      <button onClick={() => monitorarLote(result.processos.filter(p => selecionados.has(p.numero_processo)))} className="px-5 py-2.5 bg-yellow-500 hover:bg-yellow-400 text-black text-[10px] font-black uppercase rounded-xl transition-all flex items-center gap-2 border-b-2 border-yellow-700">
                         Vigiar {selecionados.size} Selecionados
                      </button>
+                  )}
+                  {result.processos.filter(p => p.id).length > 0 && (
+                    <button
+                      onClick={handleOrganizarTodos}
+                      disabled={organizandoTodos}
+                      className="flex items-center gap-2 px-4 py-2 rounded-xl
+                                 bg-[#CCA761]/10 border border-[#CCA761]/30
+                                 text-[#CCA761] text-xs font-bold uppercase
+                                 hover:bg-[#CCA761]/20 transition-all disabled:opacity-60">
+                      {organizandoTodos ? (
+                        <>
+                          <Loader2 size={14} className="animate-spin" />
+                          Organizando {progressoOrg}/{result.processos.filter(p => p.id).length}...
+                        </>
+                      ) : (
+                        <>
+                          <Sparkles size={14} />
+                          Organizar Todos com IA
+                        </>
+                      )}
+                    </button>
                   )}
                </div>
             </div>

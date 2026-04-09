@@ -23,23 +23,57 @@ export async function POST(req: NextRequest) {
     .eq('tenant_id', proc.tenant_id)
     .in('role', ['Administrador', 'advogado', 'socio'])
 
-  // 3. Buscar AI key — OpenRouter primeiro, OpenAI fallback
+  // 3. Buscar TODAS as integrations do tenant (IA + Escavador)
   const { data: integrations } = await supabase
     .from('tenant_integrations')
     .select('provider, api_key')
     .eq('tenant_id', proc.tenant_id)
-    .in('provider', ['openrouter', 'openai'])
+    .in('provider', ['openrouter', 'openai', 'escavador'])
 
-  const openrouterKey = integrations?.find(i => i.provider === 'openrouter')?.api_key
-  const openaiKey    = integrations?.find(i => i.provider === 'openai')?.api_key
-  const aiKey        = openrouterKey || openaiKey
+  const openrouterKey  = integrations?.find(i => i.provider === 'openrouter')?.api_key
+  const openaiKey      = integrations?.find(i => i.provider === 'openai')?.api_key
+  const escavadorKey   = integrations?.find(i => i.provider === 'escavador')?.api_key || process.env.ESCAVADOR_API_KEY
+  const aiKey          = openrouterKey || openaiKey
   if (!aiKey) return NextResponse.json({ error: 'Chave de IA não configurada' }, { status: 400 })
 
   const isOpenRouter = !!openrouterKey
 
+  // 3b. Buscar movimentações reais do Escavador se tiver escavador_id
+  let movimentacoesEscavador: any[] = Array.isArray(proc.movimentacoes)
+    ? proc.movimentacoes : []
+
+  if (proc.escavador_id && escavadorKey) {
+    try {
+      const detResp = await fetch(
+        `https://api.escavador.com/api/v2/processos/${proc.escavador_id}`,
+        {
+          headers: {
+            Authorization: `Bearer ${escavadorKey}`,
+            'Content-Type': 'application/json'
+          }
+        }
+      )
+      if (detResp.ok) {
+        const detData = await detResp.json()
+        const movs = detData?.fontes?.[0]?.movimentacoes
+                 || detData?.movimentacoes
+                 || []
+        if (Array.isArray(movs) && movs.length > 0) {
+          movimentacoesEscavador = movs.slice(0, 15)
+          // Atualizar no banco para futuras chamadas
+          await supabase
+            .from('monitored_processes')
+            .update({ movimentacoes: movimentacoesEscavador, updated_at: new Date().toISOString() })
+            .eq('id', processo_id)
+        }
+      }
+    } catch (e) {
+      console.error('Escavador detalhe falhou:', e)
+    }
+  }
+
   // 4. Montar contexto
-  const movimentacoes = Array.isArray(proc.movimentacoes)
-    ? proc.movimentacoes.slice(0, 10) : []
+  const movimentacoes = movimentacoesEscavador.slice(0, 15)
 
   const contexto = `
 PROCESSO: ${proc.numero_processo}
@@ -48,8 +82,8 @@ ASSUNTO: ${proc.assunto || 'Não identificado'}
 CLASSE PROCESSUAL: ${proc.classe_processual || ''}
 FASE ATUAL: ${proc.fase_atual || ''}
 COMARCA: ${proc.comarca || ''} / VARA: ${proc.vara || ''}
-POLO ATIVO: ${(proc.partes as any)?.ativo || ''}
-POLO PASSIVO: ${(proc.partes as any)?.passivo || ''}
+POLO ATIVO: ${(proc.partes as any)?.polo_ativo || (proc.partes as any)?.ativo || ''}
+POLO PASSIVO: ${(proc.partes as any)?.polo_passivo || (proc.partes as any)?.passivo || ''}
 VALOR DA CAUSA: ${proc.valor_causa || 'Não informado'}
 DATA DE DISTRIBUIÇÃO: ${proc.data_distribuicao || 'Não informada'}
 ÚLTIMA MOVIMENTAÇÃO: ${proc.ultima_movimentacao_texto || 'Sem dados'}
@@ -191,15 +225,23 @@ Retorne exatamente este JSON:
   if (!proc.linked_task_id && resultado.kanban_stage_id) {
     const partes = proc.partes as any
 
+    // Buscar admin do tenant para assigned_to
+    const { data: advResp } = await supabase
+      .from('profiles')
+      .select('id')
+      .eq('tenant_id', proc.tenant_id)
+      .eq('role', 'Administrador')
+      .single()
+
     const { data: cardCriado } = await supabase
       .from('process_tasks')
       .insert({
         pipeline_id:    '7b4d39bb-785c-402a-826d-0088867d934c',
         stage_id:       resultado.kanban_stage_id,
-        title:          proc.cliente_nome || partes?.ativo || proc.numero_processo,
+        title:          proc.cliente_nome || partes?.polo_ativo || partes?.ativo || proc.numero_processo,
         description:    resultado.resumo_curto,
-        client_name:    proc.cliente_nome || partes?.ativo || '',
-        reu:            partes?.passivo || '',
+        client_name:    proc.cliente_nome || partes?.polo_ativo || partes?.ativo || '',
+        reu:            partes?.polo_passivo || partes?.passivo || '',
         processo_1grau: proc.numero_processo,
         demanda:        proc.assunto || proc.classe_processual || '',
         orgao_julgador: proc.vara || proc.comarca || '',
@@ -209,6 +251,7 @@ Retorne exatamente este JSON:
         sector:         'juridico',
         tags:           [proc.tribunal || 'TJRJ'],
         position_index: 0,
+        assigned_to:    advResp?.id || null,
       })
       .select('id')
       .single()
