@@ -170,49 +170,7 @@ function BillingBar({ billing }: { billing: BillingInfo }) {
   )
 }
 
-// CORREÇÃO 1: Componente de Paginação Premium
-function Pagination({ atual, total, totalProcessos, onChange }: { atual: number; total: number; totalProcessos: number; onChange: (p: number) => void }) {
-  if (total <= 1) return null
-
-  return (
-    <div className="flex items-center justify-between mt-6 px-2">
-      <span className="text-white/40 text-sm">
-        {totalProcessos} processos · página {atual} de {total}
-      </span>
-      <div className="flex gap-2">
-        <button onClick={() => onChange(Math.max(1, atual - 1))}
-          disabled={atual === 1}
-          className="px-4 py-2 rounded-lg border border-white/10
-                     text-white/70 text-sm disabled:opacity-30
-                     hover:bg-white/5 transition-colors">
-          ← Anterior
-        </button>
-        {Array.from({ length: Math.min(5, total) }, (_, i) => {
-          const start = Math.max(1, atual - 2)
-          const n = start + i
-          if (n > total) return null
-          return (
-            <button key={n} onClick={() => onChange(n)}
-              className={`w-9 h-9 rounded-lg text-sm font-medium transition-colors
-                ${n === atual
-                  ? 'bg-[#CCA761] text-black'
-                  : 'border border-white/10 text-white/70 hover:bg-white/5'}`}>
-              {n}
-            </button>
-          )
-        })}
-        <button onClick={() => onChange(Math.min(total, atual + 1))}
-          disabled={atual === total}
-          className="px-4 py-2 rounded-lg border border-white/10
-                     text-white/70 text-sm disabled:opacity-30
-                     hover:bg-white/5 transition-colors">
-          Próxima →
-        </button>
-      </div>
-    </div>
-  )
-}
-
+// ... Pagination UI inlined na renderização principal
 function ProcessoCard({ p, onAction, onRemover, selecionado, onSelect, resumoOficial, onResumirOficial, loadingId, resumoIAState, onSolicitarResumoIA, organizandoState, onOrganizar }: {
   p: Processo; onAction: () => void; onRemover: () => void; selecionado: boolean; onSelect: () => void;
   resumoOficial?: { texto?: string, status?: string, loading: boolean }; onResumirOficial: () => void;
@@ -321,47 +279,10 @@ function ProcessoCard({ p, onAction, onRemover, selecionado, onSelect, resumoOfi
                    <p className="text-[10px] text-red-400 font-bold uppercase">Erro ao solicitar resumo.</p>
                  ) : resumoIAState.state !== 'done' && (
                    <button onClick={onSolicitarResumoIA} className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg bg-[#CCA761]/5 hover:bg-[#CCA761]/10 text-[#CCA761] text-[10px] font-black uppercase transition-all border border-[#CCA761]/10">
-                     <Sparkles size={12} /> Solicitar Inteligência (R$ 0,05)
+                     <Sparkles size={12} /> Solicitar Inteligência
                    </button>
                  )}
-
-                 {resumoIAState.state === 'done' && p.id && (
-                   organizandoState === 'idle' ? (
-                     <button onClick={onOrganizar} className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg bg-[#CCA761]/10 border border-[#CCA761]/30 text-[#CCA761] text-xs font-medium hover:bg-[#CCA761]/20 transition-all">
-                       <Sparkles size={13} /> Organizar IA
-                     </button>
-                   ) : organizandoState === 'loading' ? (
-                     <button disabled className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg bg-[#CCA761]/10 border border-[#CCA761]/30 text-[#CCA761] text-xs font-medium opacity-60 cursor-not-allowed">
-                       <Loader2 size={13} className="animate-spin" /> Analisando...
-                     </button>
-                   ) : (
-                     <button disabled className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg bg-green-500/10 border border-green-500/30 text-green-400 text-xs font-medium">
-                       <CheckCircle2 size={13} /> Organizado
-                     </button>
-                   )
-                 )}
                </div>
-
-               {p.resumo_curto && (
-                 <div className="mt-3 p-3 rounded-lg bg-[#CCA761]/8 border border-[#CCA761]/20 space-y-2">
-                   <p className="text-white/80 text-sm leading-relaxed">
-                     {p.resumo_curto}
-                   </p>
-                   {p.proxima_acao_sugerida && (
-                     <div className="flex items-start gap-2 p-2 rounded-lg bg-black/30">
-                       <Zap size={14} className="text-[#CCA761] mt-0.5 shrink-0" />
-                       <div>
-                         <p className="text-[#CCA761] text-xs font-semibold uppercase tracking-wide">
-                           Próxima Ação
-                         </p>
-                         <p className="text-white/70 text-sm mt-0.5">
-                           {p.proxima_acao_sugerida}
-                         </p>
-                       </div>
-                     </div>
-                   )}
-                 </div>
-               )}
             </div>
           )}
 
@@ -401,12 +322,12 @@ function ProcessoCard({ p, onAction, onRemover, selecionado, onSelect, resumoOfi
              {expanded ? <ChevronUp size={20} strokeWidth={3} /> : <Eye size={20} />}
            </button>
 
-           <div className="mt-auto">
+           <div className="mt-auto flex flex-col gap-2">
              {!p.monitorado ? (
                <button
                  onClick={onAction}
                  disabled={isLoading}
-                 className="w-32 py-3 rounded-2xl bg-yellow-500 hover:bg-yellow-400 text-black text-[10px] font-black uppercase transition-all disabled:opacity-50 flex items-center justify-center gap-2 shadow-xl shadow-yellow-500/20 active:scale-95 border-b-4 border-yellow-600"
+                 className="w-full py-3 px-6 rounded-2xl bg-yellow-500 hover:bg-yellow-400 text-black text-[10px] font-black uppercase transition-all disabled:opacity-50 flex items-center justify-center gap-2 shadow-xl shadow-yellow-500/20 active:scale-95 border-b-4 border-yellow-600"
                >
                  {isLoading ? <RefreshCw size={14} className="animate-spin" /> : <Zap size={14} fill="currentColor" />}
                  Monitorar
@@ -415,15 +336,65 @@ function ProcessoCard({ p, onAction, onRemover, selecionado, onSelect, resumoOfi
                <button
                  onClick={onRemover}
                  disabled={isLoading}
-                 className="w-32 py-3 rounded-2xl bg-zinc-950 border border-red-500/40 text-red-500 hover:bg-red-500/5 text-[10px] font-black uppercase transition-all disabled:opacity-50 flex items-center justify-center gap-2 active:scale-95"
+                 className="w-full py-3 px-6 rounded-2xl bg-zinc-950 border border-red-500/40 text-red-500 hover:bg-red-500/5 text-[10px] font-black uppercase transition-all disabled:opacity-50 flex items-center justify-center gap-2 active:scale-95"
                >
                  <X size={14} strokeWidth={3} />
                  Remover
                </button>
              )}
+
+             {p.id && p.monitorado && (() => {
+               if (organizandoState === 'loading') return (
+                 <button disabled
+                   className="flex items-center justify-center gap-1.5 w-full py-3 px-6 rounded-2xl
+                              bg-[#CCA761]/10 border border-[#CCA761]/30
+                              text-[#CCA761] text-[10px] uppercase font-black opacity-60 cursor-not-allowed">
+                   <Loader2 size={13} className="animate-spin" /> Analisando
+                 </button>
+               )
+               if (organizandoState === 'done') return (
+                 <button disabled
+                   className="flex items-center justify-center gap-1.5 w-full py-3 px-6 rounded-2xl
+                              bg-green-500/10 border border-green-500/30
+                              text-green-400 text-[10px] uppercase font-black">
+                   <CheckCircle2 size={13} /> Organizado
+                 </button>
+               )
+               return (
+                 <button onClick={onOrganizar}
+                   className="flex items-center justify-center gap-1.5 w-full py-3 px-6 rounded-2xl
+                              bg-[#CCA761]/10 border border-[#CCA761]/30
+                              text-[#CCA761] text-[10px] uppercase font-black
+                              hover:bg-[#CCA761]/20 transition-all active:scale-95">
+                   <Sparkles size={13} /> Organizar IA
+                 </button>
+               )
+             })()}
            </div>
         </div>
       </div>
+      
+      {/* 4) PAINEL DE RESULTADO ABAIXO DO CORPO DO CARD */}
+      {p.resumo_curto && (
+        <div className="p-5 border-t border-zinc-800/50 bg-[#CCA761]/5 rounded-b-2xl">
+          <div className="space-y-3">
+            <p className="text-white/80 text-sm leading-relaxed">{p.resumo_curto}</p>
+            {p.proxima_acao_sugerida && (
+              <div className="flex items-start gap-3 p-3 rounded-xl bg-black/40 border border-black/50">
+                <Zap size={16} className="text-[#CCA761] mt-0.5 shrink-0" />
+                <div>
+                  <p className="text-[#CCA761] text-xs font-black uppercase tracking-widest mb-1">
+                    Próxima Ação Sugerida
+                  </p>
+                  <p className="text-white/70 text-sm font-medium">
+                    {p.proxima_acao_sugerida}
+                  </p>
+                </div>
+              </div>
+            )}
+          </div>
+        </div>
+      )}
     </div>
   )
 }
@@ -800,12 +771,46 @@ function MonitoramentoContent() {
                )}
             </div>
 
-            <Pagination
-              atual={pagina}
-              total={totalPages}
-              totalProcessos={processosFiltrados.length}
-              onChange={setPage}
-            />
+            {totalPages > 1 && (
+              <div className="flex items-center justify-between py-6 px-2">
+                <span className="text-white/40 text-sm font-medium">
+                  {processosFiltrados.length} processos · página {pagina} de {totalPages}
+                </span>
+                <div className="flex gap-2">
+                  <button
+                    onClick={() => setPage(Math.max(1, pagina - 1))}
+                    disabled={pagina === 1}
+                    className="px-4 py-2 rounded-lg border border-white/10
+                               text-white/70 text-sm disabled:opacity-30
+                               hover:bg-white/5 transition-colors font-medium">
+                    ← Anterior
+                  </button>
+                  {Array.from({ length: Math.min(5, totalPages) }, (_, i) => {
+                    const start = Math.max(1, pagina - 2)
+                    const n = start + i
+                    if (n > totalPages) return null
+                    return (
+                      <button key={n} onClick={() => setPage(n)}
+                        className={`w-9 h-9 rounded-lg text-sm font-black transition-colors
+                          ${n === pagina
+                            ? 'bg-yellow-500 text-black shadow-lg shadow-yellow-500/10'
+                            : 'border border-zinc-800 bg-zinc-900 text-zinc-500 hover:bg-zinc-800 hover:text-white'
+                          }`}>
+                        {n}
+                      </button>
+                    )
+                  })}
+                  <button
+                    onClick={() => setPage(Math.min(totalPages, pagina + 1))}
+                    disabled={pagina === totalPages}
+                    className="px-4 py-2 rounded-lg border border-white/10
+                               text-white/70 text-sm disabled:opacity-30
+                               hover:bg-white/5 transition-colors font-medium">
+                    Próxima →
+                  </button>
+                </div>
+              </div>
+            )}
 
             <BillingBar billing={result.billing} />
           </div>
