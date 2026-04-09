@@ -1,10 +1,11 @@
 'use client'
 
 import { useState, useCallback, Suspense, useMemo, useEffect } from 'react'
+import { useRouter, useSearchParams } from 'next/navigation'
 import {
   Search, Shield, AlertCircle, CheckCircle,
   ChevronDown, ChevronUp, Zap, Eye, Filter, RefreshCw,
-  AlertTriangle, X, DollarSign, ArrowUpDown, LayoutList, CheckSquare, Square, Trash2, FileText, CloudCheck
+  AlertTriangle, X, DollarSign, ArrowUpDown, LayoutList, CheckSquare, Square, Trash2, FileText, CloudCheck, Sparkles, Loader2
 } from 'lucide-react'
 
 // ─── Interfaces ───────────────────────────────────────────────────────────────
@@ -28,6 +29,8 @@ interface Processo {
   escavador_id: string
   monitorado: boolean
   movimentacoes: Record<string, unknown>[]
+  resumo_curto?: string | null
+  id?: string
 }
 
 interface BillingInfo {
@@ -62,6 +65,7 @@ interface ConfirmacaoLote {
 
 type FilterStatus = 'TODOS' | 'ATIVO' | 'ARQUIVADO' | 'monitorado' | 'nao_monitorado'
 type SortOrder = 'distribuicao' | 'urgencia' | 'tribunal'
+type ResumoState = 'idle' | 'loading' | 'done' | 'error'
 
 // ─── Helpers ──────────────────────────────────────────────────────────────────
 
@@ -69,6 +73,19 @@ const STATUS_COLOR: Record<string, string> = {
   ATIVO: 'text-green-400 bg-green-400/10',
   ARQUIVADO: 'text-zinc-400 bg-zinc-400/10',
   BAIXADO: 'text-red-400 bg-red-400/10',
+}
+
+// CORREÇÃO 2: Função de formatação de data em DD/MM/YYYY
+function formatarData(value: string | Date | null | undefined): string {
+  if (!value) return '—'
+  const d = new Date(value)
+  if (isNaN(d.getTime())) return String(value)
+  return d.toLocaleDateString('pt-BR', {
+    day: '2-digit',
+    month: '2-digit',
+    year: 'numeric',
+    timeZone: 'America/Sao_Paulo'
+  })
 }
 
 function parseDataBR(d: string | null) {
@@ -152,37 +169,59 @@ function BillingBar({ billing }: { billing: BillingInfo }) {
   )
 }
 
-function Pagination({ atual, total, onChange }: { atual: number, total: number, onChange: (p: number) => void }) {
+// CORREÇÃO 1: Componente de Paginação Premium
+function Pagination({ atual, total, totalProcessos, onChange }: { atual: number; total: number; totalProcessos: number; onChange: (p: number) => void }) {
   if (total <= 1) return null
+
+  const start = Math.max(1, atual - 2)
+  const pages = Array.from({ length: Math.min(5, total) }, (_, i) => start + i).filter(p => p <= total)
+
   return (
-    <div className="flex items-center gap-1.5">
-      <button
-        onClick={() => onChange(Math.max(1, atual - 1))}
-        disabled={atual === 1}
-        className="px-4 py-2 text-[10px] font-black uppercase text-zinc-500 hover:text-white disabled:opacity-30 transition-all bg-zinc-900 border border-zinc-800 rounded-xl"
-      >
-        Anterior
-      </button>
-      <div className="px-4 py-2 bg-yellow-500/10 border border-yellow-500/20 rounded-xl min-w-[70px] text-center">
-        <span className="text-xs font-black text-yellow-500">{atual}</span>
-        <span className="text-[10px] text-zinc-700 mx-1.5">/</span>
-        <span className="text-xs text-zinc-500 font-bold">{total}</span>
+    <div className="flex items-center justify-between mt-6 px-2">
+      <span className="text-white/40 text-sm">
+        {totalProcessos} processos · página {atual} de {total}
+      </span>
+      <div className="flex gap-2">
+        <button
+          onClick={() => onChange(Math.max(1, atual - 1))}
+          disabled={atual === 1}
+          className="px-4 py-2 rounded-lg border border-white/10 text-white/70 text-sm disabled:opacity-30 hover:bg-white/5 transition-colors"
+        >
+          ← Anterior
+        </button>
+
+        {pages.map(page => (
+          <button
+            key={page}
+            onClick={() => onChange(page)}
+            className={`w-9 h-9 rounded-lg text-sm font-medium transition-colors
+              ${page === atual
+                ? 'bg-[#CCA761] text-black'
+                : 'border border-white/10 text-white/70 hover:bg-white/5'
+              }`}
+          >
+            {page}
+          </button>
+        ))}
+
+        <button
+          onClick={() => onChange(Math.min(total, atual + 1))}
+          disabled={atual === total}
+          className="px-4 py-2 rounded-lg border border-white/10 text-white/70 text-sm disabled:opacity-30 hover:bg-white/5 transition-colors"
+        >
+          Próxima →
+        </button>
       </div>
-      <button
-        onClick={() => onChange(Math.min(total, atual + 1))}
-        disabled={atual === total}
-        className="px-4 py-2 text-[10px] font-black uppercase text-zinc-500 hover:text-white disabled:opacity-30 transition-all bg-zinc-900 border border-zinc-800 rounded-xl"
-      >
-        Próxima
-      </button>
     </div>
   )
 }
 
-function ProcessoCard({ p, onAction, onRemover, selecionado, onSelect, resumoOficial, onResumirOficial, loadingId }: {
-  p: Processo; onAction: () => void; onRemover: () => void; selecionado: boolean; onSelect: () => void; 
+function ProcessoCard({ p, onAction, onRemover, selecionado, onSelect, resumoOficial, onResumirOficial, loadingId, resumoIAState, onSolicitarResumoIA }: {
+  p: Processo; onAction: () => void; onRemover: () => void; selecionado: boolean; onSelect: () => void;
   resumoOficial?: { texto?: string, status?: string, loading: boolean }; onResumirOficial: () => void;
   loadingId: string | null
+  resumoIAState: { state: ResumoState; texto?: string }
+  onSolicitarResumoIA: () => void
 }) {
   const [expanded, setExpanded] = useState(false)
   const isLoading = loadingId === p.numero_processo
@@ -223,7 +262,7 @@ function ProcessoCard({ p, onAction, onRemover, selecionado, onSelect, resumoOfi
             <div className="truncate"><span className="text-zinc-500 text-[10px] font-black mr-2 uppercase tracking-tighter">PASSIVO</span><span className="text-zinc-200 font-bold">{p.polo_passivo}</span></div>
           </div>
 
-          {/* Movimentação Texto */}
+          {/* CORREÇÃO 2: Datas formatadas em DD/MM/YYYY */}
           <div className="flex items-start gap-3">
              <div className="w-1 rounded-full bg-yellow-500/20 shrink-0 self-stretch" />
              <div className="space-y-1.5 flex-1">
@@ -231,7 +270,7 @@ function ProcessoCard({ p, onAction, onRemover, selecionado, onSelect, resumoOfi
                   {p.ultima_movimentacao_texto || "Sem detalhes da última movimentação."}
                 </p>
                 <div className="flex items-center gap-4">
-                   {p.data_ultima_movimentacao && <span className="text-[10px] text-zinc-600 font-black uppercase">{p.data_ultima_movimentacao}</span>}
+                   {p.data_ultima_movimentacao && <span className="text-[10px] text-zinc-600 font-black uppercase">{formatarData(p.data_ultima_movimentacao)}</span>}
                    <UrgenciaBadge dias={dias} />
                 </div>
              </div>
@@ -261,6 +300,28 @@ function ProcessoCard({ p, onAction, onRemover, selecionado, onSelect, resumoOfi
                ) : (
                  <p className="text-[10px] text-zinc-600 italic tracking-tight font-medium uppercase">Vigilância ativa. Clique para gerar análise oficial.</p>
                )}
+
+               {/* CORREÇÃO 3: Resumo de IA via Escavador */}
+               <div className="pt-3 border-t border-zinc-800/60">
+                 {resumoIAState.state === 'done' && resumoIAState.texto ? (
+                   <div className="p-3 rounded-lg bg-[#CCA761]/10 border border-[#CCA761]/20">
+                     <p className="text-xs text-[#CCA761] font-medium mb-1 flex items-center gap-1">
+                       <Sparkles size={12} /> RESUMO INTELIGENTE
+                     </p>
+                     <p className="text-white/80 text-sm leading-relaxed">{resumoIAState.texto}</p>
+                   </div>
+                 ) : resumoIAState.state === 'loading' ? (
+                   <button disabled className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg bg-[#CCA761]/5 text-[#CCA761]/60 text-[10px] font-black uppercase opacity-60 cursor-not-allowed border border-[#CCA761]/10">
+                     <Loader2 size={12} className="animate-spin" /> Analisando...
+                   </button>
+                 ) : resumoIAState.state === 'error' ? (
+                   <p className="text-[10px] text-red-400 font-bold uppercase">Erro ao solicitar resumo. Tente novamente.</p>
+                 ) : (
+                   <button onClick={onSolicitarResumoIA} className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg bg-[#CCA761]/5 hover:bg-[#CCA761]/10 text-[#CCA761] text-[10px] font-black uppercase transition-all border border-[#CCA761]/10">
+                     <Sparkles size={12} /> Resumo IA (R$ 0,05)
+                   </button>
+                 )}
+               </div>
             </div>
           )}
 
@@ -277,7 +338,8 @@ function ProcessoCard({ p, onAction, onRemover, selecionado, onSelect, resumoOfi
                            <div className="w-px flex-1 bg-zinc-800" />
                         </div>
                         <div className="pb-3 flex-1">
-                          <span className="text-[10px] font-black font-mono text-zinc-600 uppercase tracking-tighter">{(m.data as string) || 'S/D'}</span>
+                          {/* CORREÇÃO 2: datas do histórico também formatadas */}
+                          <span className="text-[10px] font-black font-mono text-zinc-600 uppercase tracking-tighter">{formatarData((m.data as string) || null)}</span>
                           <p className="text-[11px] text-zinc-400 font-bold mt-1 group-hover:text-zinc-200 transition-colors">{((m.titulo ?? m.descricao ?? m.texto) as string) || "Visualização bloqueada pelo tribunal."}</p>
                           {m.resumo && <p className="text-[10px] text-zinc-500 italic mt-2 px-3 py-1.5 bg-zinc-950 rounded-xl border border-zinc-900 border-l-yellow-500/40 border-l-2">Fato: {m.resumo as string}</p>}
                         </div>
@@ -291,18 +353,18 @@ function ProcessoCard({ p, onAction, onRemover, selecionado, onSelect, resumoOfi
 
         {/* Actions Sidebar */}
         <div className="flex flex-col items-end gap-3 shrink-0 h-full justify-between">
-           <button 
-             onClick={() => setExpanded(!expanded)} 
+           <button
+             onClick={() => setExpanded(!expanded)}
              className={`p-3 rounded-2xl transition-all border ${expanded ? 'bg-yellow-500 text-black border-yellow-500' : 'bg-zinc-900 text-zinc-600 border-zinc-800 hover:text-white hover:border-zinc-700 shadow-xl'}`}
              title={expanded ? "Recolher Histórico" : "Ver Detalhes"}
            >
              {expanded ? <ChevronUp size={20} strokeWidth={3} /> : <Eye size={20} />}
            </button>
-           
+
            <div className="mt-auto">
              {!p.monitorado ? (
-               <button 
-                 onClick={onAction} 
+               <button
+                 onClick={onAction}
                  disabled={isLoading}
                  className="w-32 py-3 rounded-2xl bg-yellow-500 hover:bg-yellow-400 text-black text-[10px] font-black uppercase transition-all disabled:opacity-50 flex items-center justify-center gap-2 shadow-xl shadow-yellow-500/20 active:scale-95 border-b-4 border-yellow-600"
                >
@@ -310,8 +372,8 @@ function ProcessoCard({ p, onAction, onRemover, selecionado, onSelect, resumoOfi
                  Monitorar
                </button>
              ) : (
-               <button 
-                 onClick={onRemover} 
+               <button
+                 onClick={onRemover}
                  disabled={isLoading}
                  className="w-32 py-3 rounded-2xl bg-zinc-950 border border-red-500/40 text-red-500 hover:bg-red-500/5 text-[10px] font-black uppercase transition-all disabled:opacity-50 flex items-center justify-center gap-2 active:scale-95"
                >
@@ -329,6 +391,12 @@ function ProcessoCard({ p, onAction, onRemover, selecionado, onSelect, resumoOfi
 // ─── Componente Principal ─────────────────────────────────────────────────────
 
 function MonitoramentoContent() {
+  const router = useRouter()
+  const searchParams = useSearchParams()
+
+  // CORREÇÃO 1: Ler página da URL
+  const currentPage = parseInt(searchParams.get('page') || '1', 10)
+
   const [tab, setTab] = useState<'oab' | 'numero' | 'cpf'>('oab')
   const [oabEstado, setOabEstado] = useState('RJ')
   const [oabNumero, setOabNumero] = useState('')
@@ -342,13 +410,22 @@ function MonitoramentoContent() {
   const [feedback, setFeedback] = useState<string | null>(null)
   const [confirmacao, setConfirmacao] = useState<ConfirmacaoLote | null>(null)
   const [confirmandoLote, setConfirmandoLote] = useState(false)
-  const [pagina, setPagina] = useState(1)
   const [ordenacao, setOrdenacao] = useState<SortOrder>('urgencia')
   const [selecionados, setSelecionados] = useState<Set<string>>(new Set())
   const [resumosOficiais, setResumosOficiais] = useState<Record<string, { texto?: string, status?: string, loading: boolean }>>({})
   const [loadingId, setLoadingId] = useState<string | null>(null)
-  
-  const ITENS_POR_PAGINA = 20
+  // CORREÇÃO 3: Estado do resumo IA por processo
+  const [resumosIA, setResumosIA] = useState<Record<string, { state: ResumoState; texto?: string }>>({})
+
+  const PAGE_SIZE = 20
+
+  // Persistir página na URL
+  const setPage = (p: number) => {
+    const params = new URLSearchParams(searchParams.toString())
+    params.set('page', p.toString())
+    router.push(`?${params.toString()}`)
+    window.scrollTo({ top: 300, behavior: 'smooth' })
+  }
 
   useEffect(() => {
     const s = localStorage.getItem('mayus_oab_numero')
@@ -359,8 +436,7 @@ function MonitoramentoContent() {
 
   const buscar = useCallback(async () => {
     if (!oabNumero.trim()) return
-    // NÃO reseta o result imediatamente para evitar que o campo OAB pule/suma
-    setLoading(true); setError(null); setFeedback(null); setSelecionados(new Set()); setPagina(1)
+    setLoading(true); setError(null); setFeedback(null); setSelecionados(new Set()); setPage(1)
     try {
       localStorage.setItem('mayus_oab_numero', oabNumero.trim())
       localStorage.setItem('mayus_oab_estado', oabEstado)
@@ -378,6 +454,7 @@ function MonitoramentoContent() {
     } finally {
       setLoading(false)
     }
+  // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [oabEstado, oabNumero])
 
   const monitorarLote = useCallback(async (processos: Processo[]) => {
@@ -443,6 +520,36 @@ function MonitoramentoContent() {
     }
   }, [])
 
+  // CORREÇÃO 3: Solicitar resumo de IA via Escavador
+  const solicitarResumoIA = useCallback(async (p: Processo) => {
+    const key = p.numero_processo
+
+    // Se já tem resumo local, exibir direto sem gastar
+    if (p.resumo_curto) {
+      setResumosIA(prev => ({ ...prev, [key]: { state: 'done', texto: p.resumo_curto! } }))
+      return
+    }
+
+    if (!p.id) {
+      setResumosIA(prev => ({ ...prev, [key]: { state: 'error' } }))
+      return
+    }
+
+    setResumosIA(prev => ({ ...prev, [key]: { state: 'loading' } }))
+    try {
+      const res = await fetch('/api/agent/processos/resumo-ia', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ processo_id: p.id })
+      })
+      const data = await res.json()
+      if (!res.ok) throw new Error(data.error)
+      setResumosIA(prev => ({ ...prev, [key]: { state: 'done', texto: data.resumo } }))
+    } catch (e) {
+      setResumosIA(prev => ({ ...prev, [key]: { state: 'error' } }))
+    }
+  }, [])
+
   // ─── Lógica de Filtros ───
 
   const tribunaisUnicos = useMemo(() => {
@@ -471,12 +578,24 @@ function MonitoramentoContent() {
       })
   }, [result, filtroStatus, filtroTribunal, search, ordenacao])
 
-  const paginasTotais = Math.ceil(processosFiltrados.length / ITENS_POR_PAGINA)
+  // CORREÇÃO 1: Calcular páginas com base nos filtros
+  const totalPages = Math.ceil(processosFiltrados.length / PAGE_SIZE)
   const processosPagina = useMemo(() => {
-    return processosFiltrados.slice((pagina - 1) * ITENS_POR_PAGINA, pagina * ITENS_POR_PAGINA)
-  }, [processosFiltrados, pagina])
+    const offset = (currentPage - 1) * PAGE_SIZE
+    return processosFiltrados.slice(offset, offset + PAGE_SIZE)
+  }, [processosFiltrados, currentPage])
 
   const totalAtivos = result?.processos.filter(p => p.status === 'ATIVO' && !p.monitorado).length ?? 0
+
+  // Resetar página quando filtros mudarem
+  const handleFiltroStatusChange = (f: FilterStatus) => {
+    setFiltroStatus(f)
+    setPage(1)
+  }
+  const handleSearchChange = (v: string) => {
+    setSearch(v)
+    setPage(1)
+  }
 
   return (
     <>
@@ -508,7 +627,7 @@ function MonitoramentoContent() {
            )}
         </div>
 
-        {/* Barra de Busca - Design V7 (Persistente) */}
+        {/* Barra de Busca */}
         <div className="bg-zinc-900 border border-zinc-800 rounded-2xl p-2 flex flex-col md:flex-row gap-2 shadow-2xl">
            <div className="flex bg-zinc-950 rounded-xl p-1 border border-zinc-800 shrink-0">
              {([['oab', 'OAB'], ['numero', 'Nº CNJ'], ['cpf', 'DOCS']] as const).map(([k, l]) => (
@@ -535,7 +654,7 @@ function MonitoramentoContent() {
 
         {result && (
           <div className="space-y-6 animate-in fade-in duration-500">
-            
+
             {/* Toolbar Inteligente */}
             <div className="flex flex-col lg:flex-row lg:items-center justify-between gap-4 p-4 bg-zinc-900/60 border border-zinc-800 rounded-2xl shadow-xl">
                <div className="flex items-center gap-3 flex-wrap">
@@ -558,10 +677,9 @@ function MonitoramentoContent() {
                      </button>
                   )}
                </div>
-               <Pagination atual={pagina} total={paginasTotais} onChange={p => { setPagina(p); window.scrollTo({ top: 300, behavior: 'smooth' }) }} />
             </div>
 
-            {/* Listagem Estilo V7 */}
+            {/* Filtros de Tribunal */}
             <div className="flex items-center gap-2 overflow-x-auto pb-2 scrollbar-hide">
                 <Filter size={14} className="text-zinc-700 mx-2" />
                 <button onClick={() => setFiltroTribunal(null)} className={`px-4 py-1.5 rounded-full text-[9px] font-black uppercase transition-all whitespace-nowrap border ${!filtroTribunal ? 'bg-white text-black border-white' : 'bg-transparent text-zinc-600 border-zinc-800 hover:text-zinc-400'}`}>
@@ -578,18 +696,18 @@ function MonitoramentoContent() {
             <div className="flex flex-col md:flex-row md:items-center justify-between gap-4">
                <div className="flex gap-2 overflow-x-auto pb-1 scrollbar-hide">
                  {(['TODOS', 'ATIVO', 'ARQUIVADO', 'monitorado', 'nao_monitorado'] as FilterStatus[]).map(f => (
-                   <button key={f} onClick={() => { setFiltroStatus(f); setPagina(1) }} className={`px-4 py-2 rounded-xl text-[10px] font-black uppercase transition-all whitespace-nowrap border ${filtroStatus === f ? 'bg-zinc-100 text-black border-zinc-100' : 'text-zinc-600 bg-zinc-900 border-zinc-800 hover:border-zinc-700'}`}>
+                   <button key={f} onClick={() => handleFiltroStatusChange(f)} className={`px-4 py-2 rounded-xl text-[10px] font-black uppercase transition-all whitespace-nowrap border ${filtroStatus === f ? 'bg-zinc-100 text-black border-zinc-100' : 'text-zinc-600 bg-zinc-900 border-zinc-800 hover:border-zinc-700'}`}>
                      {f === 'nao_monitorado' ? 'PENDENTES' : f === 'monitorado' ? 'VIGIADOS' : f}
                    </button>
                  ))}
                </div>
                <div className="relative w-full md:w-72">
                   <Search size={14} className="absolute left-4 top-1/2 -translate-y-1/2 text-zinc-700" />
-                  <input value={search} onChange={e => { setSearch(e.target.value); setPagina(1) }} placeholder="Identificar na lista..." className="w-full bg-zinc-950 border border-zinc-800 rounded-xl pl-11 pr-4 py-2 text-[11px] font-black uppercase text-zinc-500 outline-none focus:border-zinc-700 placeholder:opacity-30" />
+                  <input value={search} onChange={e => handleSearchChange(e.target.value)} placeholder="Identificar na lista..." className="w-full bg-zinc-950 border border-zinc-800 rounded-xl pl-11 pr-4 py-2 text-[11px] font-black uppercase text-zinc-500 outline-none focus:border-zinc-700 placeholder:opacity-30" />
                </div>
             </div>
 
-            {/* Galeria */}
+            {/* Galeria de Processos */}
             <div className="grid grid-cols-1 gap-4">
                {processosPagina.map(p => (
                  <ProcessoCard
@@ -609,9 +727,11 @@ function MonitoramentoContent() {
                    resumoOficial={resumosOficiais[p.numero_processo]}
                    onResumirOficial={() => solicitarResumoTribunal(p)}
                    loadingId={loadingId}
+                   resumoIAState={resumosIA[p.numero_processo] || { state: 'idle' }}
+                   onSolicitarResumoIA={() => solicitarResumoIA(p)}
                  />
                ))}
-               
+
                {processosFiltrados.length === 0 && (
                  <div className="py-32 text-center space-y-4 bg-zinc-900/10 border border-dashed border-zinc-800 rounded-3xl">
                     <div className="w-16 h-16 rounded-3xl bg-zinc-900 flex items-center justify-center mx-auto text-zinc-800"><LayoutList size={28} /></div>
@@ -623,16 +743,19 @@ function MonitoramentoContent() {
                )}
             </div>
 
-            {/* Pagination Footer */}
-            <div className="flex justify-center pt-8 border-t border-zinc-900">
-               <Pagination atual={pagina} total={paginasTotais} onChange={p => { setPagina(p); window.scrollTo({ top: 300, behavior: 'smooth' }) }} />
-            </div>
+            {/* CORREÇÃO 1: Paginação Premium no Rodapé */}
+            <Pagination
+              atual={currentPage}
+              total={totalPages}
+              totalProcessos={processosFiltrados.length}
+              onChange={setPage}
+            />
 
             <BillingBar billing={result.billing} />
           </div>
         )}
 
-        {/* Empty State V7 Style */}
+        {/* Empty State */}
         {!result && !loading && (
           <div className="text-center py-32 space-y-8 animate-in fade-in zoom-in-95 duration-700">
              <div className="relative inline-block">
@@ -648,7 +771,7 @@ function MonitoramentoContent() {
           </div>
         )}
 
-        {/* Loading V7 Style */}
+        {/* Loading */}
         {loading && (
           <div className="text-center py-40 space-y-8">
             <div className="relative w-20 h-20 mx-auto">
