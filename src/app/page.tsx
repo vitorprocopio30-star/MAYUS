@@ -134,17 +134,8 @@ export default function LandingPage() {
         {/* Central 3D Spline (Z-10: Behind text) */}
         <div className="absolute inset-0 z-10 w-full h-full flex justify-center items-center pointer-events-none select-none overflow-hidden">
           <Reveal delay={0.3} width="100%" className="w-full h-full relative flex items-center justify-center">
-             <div className="relative w-full h-full scale-[0.4] md:scale-[0.55] transition-all duration-1000 ease-out">
-                {/* Scene Content (Enlarged to hide background text and align correctly) */}
-                <div className="absolute inset-0 flex items-center justify-center -translate-y-[28%]">
-                   <Spline scene="https://prod.spline.design/antVG5gJ69HRFMFs/scene.splinecode" className="w-[100%] h-[100%] object-cover" />
-                </div>
-                
-                {/* Clean 3D Mask (Hides unwanted background "MAYUS" from Spline) */}
-                <div className="absolute inset-0 bg-[radial-gradient(circle_at_center,transparent_20%,#050505_80%)] z-[11] opacity-70 pointer-events-none" />
-                
-                {/* Spline Watermark Luxury Mask */}
-                <div className="absolute bottom-0 right-0 w-44 h-16 bg-[#050505] z-[15] pointer-events-none" />
+             <div className="relative w-[150vw] h-[120vh] transition-all duration-1000 ease-out flex items-center justify-center -translate-y-[15%]">
+                <Spline scene="https://prod.spline.design/antVG5gJ69HRFMFs/scene.splinecode" className="w-full h-full object-cover scale-[0.5] md:scale-[0.6] lg:scale-[0.7]" />
              </div>
           </Reveal>
         </div>
