@@ -509,7 +509,7 @@ export async function POST(req: Request) {
            } else if (matchedSkill?.handler_type === 'whatsapp_process_query') {
               try {
                 const resData = JSON.parse(toolCall.function.arguments);
-                const contexto = await getContextoProcesso(adminSupabase, tenantId, resData.q);
+                const contexto = await getContextoProcesso(tenantId, resData.q);
                 return NextResponse.json({ reply: contexto, kernel: { status: "executed" } });
               } catch (err: any) {
                 return NextResponse.json({ reply: err.message, kernel: { status: "failed" } });

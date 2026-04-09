@@ -257,7 +257,7 @@ function ProcessoCard({ p, onAction, onRemover, selecionado, onSelect, resumoOfi
                    <AlertCircle size={14} /> Solicitação em processamento pelo tribunal.
                  </div>
                ) : resumoOficial?.texto ? (
-                 <p className="text-xs text-zinc-300 leading-relaxed italic border-l-2 border-yellow-500/30 pl-3">"{resumoOficial.texto}"</p>
+                 <p className="text-xs text-zinc-300 leading-relaxed italic border-l-2 border-yellow-500/30 pl-3">&quot;{resumoOficial.texto}&quot;</p>
                ) : (
                  <p className="text-[10px] text-zinc-600 italic tracking-tight font-medium uppercase">Vigilância ativa. Clique para gerar análise oficial.</p>
                )}
