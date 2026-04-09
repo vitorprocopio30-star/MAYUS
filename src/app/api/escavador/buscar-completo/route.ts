@@ -212,7 +212,7 @@ export async function POST(req: NextRequest) {
     total: totalAdvogado,
     total_retornado: processos.length,
     advogado_nome: advogadoNome,
-    paginas_buscadas: page,
+    paginas_buscadas: tentativas,
     billing: {
       total_ja_monitorados: capacity?.total_monitorados ?? 0,
       gratuitos: capacity?.gratuitos ?? 100,
