@@ -125,50 +125,62 @@ export async function POST(req: NextRequest) {
     .single()
   if (!integration?.api_key) return NextResponse.json({ error: 'Escavador não configurado' }, { status: 400 })
 
-  // Busca paginada completa
+  // Busca paginada completa via cursor
   let todosProcessos: Record<string, unknown>[] = []
   let cursor: string | null = null
   let totalAdvogado = 0
   let advogadoNome = ''
   let tentativas = 0
-  const MAX_PAGINAS = 50 // segurança contra loop infinito
+  const MAX_PAGINAS = 25
 
   do {
-    const url = new URL('https://api.escavador.com/api/v2/advogado/processos')
-    if (cursor) url.searchParams.set('cursor', cursor)
+    const bodyReq: Record<string, any> = {
+      cpf_cnpj_oab: oab_numero,
+      uf_oab: oab_estado,
+    }
+    if (cursor) bodyReq.cursor = cursor
 
-    const resp = await fetch(url.toString(), {
-      method: 'POST',
-      headers: {
-        'Authorization': `Bearer ${integration.api_key}`,
-        'Content-Type': 'application/json',
-        'X-Requested-With': 'XMLHttpRequest'
-      },
-      body: JSON.stringify({
-        cpf_cnpj_oab: oab_numero,
-        uf_oab: oab_estado,
-      })
-    })
+    const resp = await fetch(
+      'https://api.escavador.com/api/v2/advogado/processos',
+      {
+        method: 'POST',
+        headers: {
+          'Authorization': `Bearer ${integration.api_key}`,
+          'Content-Type': 'application/json',
+        },
+        body: JSON.stringify(bodyReq)
+      }
+    )
 
-    if (!resp.ok) break
+    if (!resp.ok) {
+      const errText = await resp.text()
+      console.error('[buscar-completo] Escavador erro:', resp.status, errText)
+      break
+    }
 
     const data = await resp.json()
-    const items = data?.items || data?.itens || data?.processos || []
-    todosProcessos = todosProcessos.concat(items)
+    
+    // Log para debug
+    console.log('[buscar-completo] página', tentativas + 1, 
+      'items:', data?.items?.length ?? data?.itens?.length ?? 0,
+      'cursor_next:', data?.meta?.cursor?.next ?? null)
 
+    const items = data?.items ?? data?.itens ?? data?.processos ?? []
+    if (items.length === 0) break
+    
+    todosProcessos = todosProcessos.concat(items)
+    
     if (tentativas === 0) {
       totalAdvogado = data?.advogado_encontrado?.quantidade_processos ?? todosProcessos.length
       advogadoNome = data?.advogado_encontrado?.nome ?? ''
     }
 
-    // Cursor da próxima página
-    cursor = data?.meta?.cursor?.next 
-          || data?.cursor?.next 
-          || data?.links?.next_cursor 
-          || null
-
+    cursor = data?.meta?.cursor?.next ?? null
     tentativas++
+
   } while (cursor && tentativas < MAX_PAGINAS)
+
+  console.log('[buscar-completo] total coletado:', todosProcessos.length)
 
   const processos = todosProcessos.map(mapearProcesso)
 
