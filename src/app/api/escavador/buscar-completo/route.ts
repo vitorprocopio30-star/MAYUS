@@ -155,12 +155,14 @@ export async function POST(req: NextRequest) {
 
   const processos = allRaw.map(mapearProcesso)
 
-  // Verificar monitorados
+  // Verificar monitorados — buscar id + escavador_id do banco para injetar no resultado
   const numeros = processos.map(p => p.numero_processo).filter(Boolean)
   const { data: jaMonitorados } = await adminSupabase
-    .from('monitored_processes').select('numero_processo')
+    .from('monitored_processes').select('id, numero_processo, escavador_id, resumo_curto, urgencia_nivel, proxima_acao_sugerida')
     .eq('tenant_id', tenantId).in('numero_processo', numeros)
-  const monitoradosSet = new Set((jaMonitorados ?? []).map(m => m.numero_processo))
+  const monitoradosMap = new Map(
+    (jaMonitorados ?? []).map(m => [m.numero_processo, m])
+  )
 
   // Upsert OAB
   await adminSupabase.from('oabs_salvas').upsert({
@@ -169,10 +171,19 @@ export async function POST(req: NextRequest) {
     ultima_busca: new Date().toISOString(),
   }, { onConflict: 'tenant_id,oab_estado,oab_numero' })
 
-  const processosComStatus = processos.map(p => ({
-    ...p,
-    monitorado: monitoradosSet.has(p.numero_processo)
-  }))
+  const processosComStatus = processos.map(p => {
+    const db = monitoradosMap.get(p.numero_processo)
+    return {
+      ...p,
+      monitorado: !!db,
+      // Injetar dados do banco quando monitorado
+      id: db?.id ?? undefined,
+      escavador_id: db?.escavador_id || p.escavador_id,
+      resumo_curto: db?.resumo_curto ?? undefined,
+      urgencia_nivel: db?.urgencia_nivel ?? undefined,
+      proxima_acao_sugerida: db?.proxima_acao_sugerida ?? undefined,
+    }
+  })
 
   const ativosNaoMonitorados = processosComStatus.filter(p => p.status === 'ATIVO' && !p.monitorado).length
   const disponivelSemCusto = capacity?.disponivel_sem_custo ?? 0
@@ -190,7 +201,7 @@ export async function POST(req: NextRequest) {
       gratuitos: capacity?.gratuitos ?? 100,
       disponivel_sem_custo: disponivelSemCusto,
       ativos_nao_monitorados: ativosNaoMonitorados,
-      ja_monitorados_desta_oab: monitoradosSet.size,
+      ja_monitorados_desta_oab: monitoradosMap.size,
       excedente_se_prosseguir: excedenteSeProsseguir,
       custo_estimado_mes: excedenteSeProsseguir * precoExtra,
       preco_por_extra: precoExtra,
