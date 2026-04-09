@@ -134,10 +134,10 @@ export default function LandingPage() {
         {/* Central 3D Spline (Z-10: Behind text) */}
         <div className="absolute inset-0 z-10 w-full h-full flex justify-center items-center pointer-events-none select-none overflow-hidden">
           <Reveal delay={0.3} width="100%" className="w-full h-full relative flex items-center justify-center">
-             <div className="relative w-full h-full scale-[0.6] md:scale-[0.85] transition-all duration-1000 ease-out">
+             <div className="relative w-full h-full scale-[0.4] md:scale-[0.55] transition-all duration-1000 ease-out">
                 {/* Scene Content (Enlarged to hide background text and align correctly) */}
-                <div className="absolute inset-0 flex items-center justify-center -translate-y-[3%]">
-                   <Spline scene="https://prod.spline.design/antVG5gJ69HRFMFs/scene.splinecode" className="w-[110%] h-[110%] object-cover" />
+                <div className="absolute inset-0 flex items-center justify-center -translate-y-[28%]">
+                   <Spline scene="https://prod.spline.design/antVG5gJ69HRFMFs/scene.splinecode" className="w-[100%] h-[100%] object-cover" />
                 </div>
                 
                 {/* Clean 3D Mask (Hides unwanted background "MAYUS" from Spline) */}
