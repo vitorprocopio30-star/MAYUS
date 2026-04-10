@@ -8,9 +8,9 @@ const adminSupabase = createClient(
 )
 
 // POST /api/admin/backfill-resumos
-// Body: { secret: "...", tenant_id: "..." }
+// Body: { secret: "...", tenant_id: "...", action: "solicitar" | "coletar" }
 export async function POST(req: NextRequest) {
-  const { secret, tenant_id } = await req.json()
+  const { secret, tenant_id, action } = await req.json()
   if (secret !== process.env.CRON_SECRET) {
     return NextResponse.json({ error: 'Forbidden' }, { status: 403 })
   }
@@ -29,6 +29,34 @@ export async function POST(req: NextRequest) {
 
   if (!processos?.length) return NextResponse.json({ message: 'Nenhum processo sem resumo', total: 0 })
 
+  // Se action = 'coletar', apenas busca resumos já prontos e salva
+  if (action === 'coletar') {
+    let salvos = 0
+    for (const p of processos) {
+      try {
+        const resumoData = await escavadorFetch(
+          `/processos/numero_cnj/${p.numero_processo}/ia/resumo`,
+          integration.api_key,
+          tenant_id
+        )
+        if (resumoData?.resumo) {
+          await adminSupabase
+            .from('monitored_processes')
+            .update({
+              resumo_curto: resumoData.resumo,
+              updated_at: new Date().toISOString()
+            })
+            .eq('id', p.id)
+          salvos++
+        }
+      } catch { /* resumo ainda não pronto, pula */ }
+      // Rate limit safety
+      await new Promise(r => setTimeout(r, 500))
+    }
+    return NextResponse.json({ action: 'coletar', total: processos.length, salvos })
+  }
+
+  // Comportamento padrão: Solicitar geração
   let solicitados = 0
   let erros = 0
 
