@@ -39,11 +39,33 @@ export async function POST(req: NextRequest) {
         status: 'PENDENTE'
       })
 
-      // Busca todos os tenants que monitoram esse CNJ
-      const { data: processos } = await adminSupabase
+      // DUAL LOOKUP: tenta por escavador_monitoramento_id primeiro, fallback por numero_processo
+      const monitoramentoIdEscavador = mon.id
+      let { data: processos } = await adminSupabase
         .from('monitored_processes')
-        .select('id, tenant_id, movimentacoes, advogado_responsavel_id')
-        .eq('numero_processo', numero_cnj)
+        .select('id, tenant_id, movimentacoes, advogado_responsavel_id, escavador_monitoramento_id')
+        .eq('escavador_monitoramento_id', monitoramentoIdEscavador)
+
+      // Fallback por numero_processo (CNJ)
+      if (!processos || processos.length === 0) {
+        const { data: fallback } = await adminSupabase
+          .from('monitored_processes')
+          .select('id, tenant_id, movimentacoes, advogado_responsavel_id, escavador_monitoramento_id')
+          .eq('numero_processo', numero_cnj)
+        processos = fallback
+
+        // Backfill automático: popula escavador_monitoramento_id se estava nulo
+        if (processos?.length && monitoramentoIdEscavador) {
+          for (const p of processos) {
+            if (!p.escavador_monitoramento_id) {
+              await adminSupabase
+                .from('monitored_processes')
+                .update({ escavador_monitoramento_id: monitoramentoIdEscavador })
+                .eq('id', p.id)
+            }
+          }
+        }
+      }
 
       const novaMovimentacao = {
         id: movimentacao.id,
@@ -123,11 +145,32 @@ export async function POST(req: NextRequest) {
         })
         .eq('numero_processo', numero_cnj)
 
-      // Aproveita que o processo foi verificado para buscar resumo atualizado
-      const { data: processos } = await adminSupabase
+      // DUAL LOOKUP: tenta por ID primeiro, fallback por numero_processo
+      const monitoramentoIdEscavador = body.monitoramento?.id
+      let { data: processos } = await adminSupabase
         .from('monitored_processes')
-        .select('tenant_id')
-        .eq('numero_processo', numero_cnj)
+        .select('id, tenant_id, escavador_monitoramento_id')
+        .eq('escavador_monitoramento_id', monitoramentoIdEscavador)
+
+      if (!processos || processos.length === 0) {
+        const { data: fallback } = await adminSupabase
+          .from('monitored_processes')
+          .select('id, tenant_id, escavador_monitoramento_id')
+          .eq('numero_processo', numero_cnj)
+        processos = fallback
+
+        // Backfill on-the-fly
+        if (processos?.length && monitoramentoIdEscavador) {
+          for (const p of processos) {
+            if (!p.escavador_monitoramento_id) {
+              await adminSupabase
+                .from('monitored_processes')
+                .update({ escavador_monitoramento_id: monitoramentoIdEscavador })
+                .eq('id', p.id)
+            }
+          }
+        }
+      }
 
       for (const p of processos ?? []) {
         buscarESalvarResumo(numero_cnj, p.tenant_id).catch(console.error)
