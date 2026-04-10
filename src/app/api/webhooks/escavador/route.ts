@@ -1,5 +1,5 @@
-import { NextRequest, NextResponse } from 'next/server'
 import { createClient } from '@supabase/supabase-js'
+import { solicitarResumoIA, buscarESalvarResumo } from '@/lib/services/escavador-ia'
 
 const adminSupabase = createClient(
   process.env.NEXT_PUBLIC_SUPABASE_URL!,
@@ -7,52 +7,7 @@ const adminSupabase = createClient(
 )
 
 
-async function solicitarResumoIA(numero_cnj: string, tenantId: string) {
-  const { data: integration } = await adminSupabase
-    .from('tenant_integrations').select('api_key')
-    .eq('tenant_id', tenantId).eq('provider', 'escavador').single()
-  if (!integration?.api_key) return
 
-  const { escavadorFetch } = await import('@/lib/services/escavador-client')
-
-  // 1. Solicita geração
-  await escavadorFetch(
-    `/processos/numero_cnj/${numero_cnj}/ia/resumo/solicitar-atualizacao`,
-    integration.api_key,
-    tenantId,
-    { method: 'POST' }
-  ).catch(() => null) // ignora se já estava solicitado
-
-  // 2. Polling por até 60s (6 tentativas × 10s)
-  for (let i = 0; i < 6; i++) {
-    await new Promise(r => setTimeout(r, 10000))
-    try {
-      const status = await escavadorFetch(
-        `/processos/numero_cnj/${numero_cnj}/ia/resumo/status`,
-        integration.api_key,
-        tenantId
-      )
-      if (status?.status !== 'FINALIZADO') continue
-
-      // 3. Busca e salva
-      const resumoData = await escavadorFetch(
-        `/processos/numero_cnj/${numero_cnj}/ia/resumo`,
-        integration.api_key,
-        tenantId
-      )
-      if (resumoData?.conteudo) {
-        await adminSupabase
-          .from('monitored_processes')
-          .update({ resumo_curto: resumoData.conteudo, updated_at: new Date().toISOString() })
-          .eq('numero_processo', numero_cnj)
-          .eq('tenant_id', tenantId)
-        console.log(`[RESUMO_IA] Salvo para ${numero_cnj}`)
-      }
-      return
-    } catch { continue }
-  }
-  console.log(`[RESUMO_IA] Timeout para ${numero_cnj}`)
-}
 
 export async function POST(req: NextRequest) {
   // 1. Valida token de segurança
@@ -166,6 +121,16 @@ export async function POST(req: NextRequest) {
           status_escavador: status_escavador ?? 'VERIFICADO'
         })
         .eq('numero_processo', numero_cnj)
+
+      // Aproveita que o processo foi verificado para buscar resumo atualizado
+      const { data: processos } = await adminSupabase
+        .from('monitored_processes')
+        .select('tenant_id')
+        .eq('numero_processo', numero_cnj)
+
+      for (const p of processos ?? []) {
+        buscarESalvarResumo(numero_cnj, p.tenant_id).catch(console.error)
+      }
     }
   }
 

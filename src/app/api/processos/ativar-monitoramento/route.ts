@@ -1,6 +1,6 @@
-import { NextRequest, NextResponse } from 'next/server'
 import { createClient } from '@supabase/supabase-js'
 import { escavadorFetch } from '@/lib/services/escavador-client'
+import { solicitarResumoIA } from '@/lib/services/escavador-ia'
 
 const adminSupabase = createClient(
   process.env.NEXT_PUBLIC_SUPABASE_URL!,
@@ -139,6 +139,9 @@ export async function POST(req: NextRequest) {
       })
       .eq('numero_processo', numero_cnj)
       .eq('tenant_id', tenantId)
+
+    // Dispara geração do resumo IA em background
+    solicitarResumoIA(numero_cnj, tenantId).catch(console.error)
   }
 
   return NextResponse.json({

@@ -1,6 +1,5 @@
-import { NextRequest, NextResponse } from 'next/server'
 import { createClient } from '@supabase/supabase-js'
-import { escavadorFetch } from '@/lib/services/escavador-client'
+import { solicitarResumoIA, buscarESalvarResumo } from '@/lib/services/escavador-ia'
 
 const adminSupabase = createClient(
   process.env.NEXT_PUBLIC_SUPABASE_URL!,
@@ -35,37 +34,11 @@ export async function POST(req: NextRequest) {
     let salvos = 0
     let pulados = 0
     for (const p of processos) {
-      try {
-        console.log(`[COLETAR] Processando ${p.numero_processo}...`)
-        const resumoData = await escavadorFetch(
-          `/processos/numero_cnj/${p.numero_processo}/ia/resumo`,
-          integration.api_key,
-          tenant_id
-        )
-        
-        if (resumoData?.conteudo) {
-          const { error: updateError } = await adminSupabase
-            .from('monitored_processes')
-            .update({
-              resumo_curto: resumoData.conteudo,
-              updated_at: new Date().toISOString()
-            })
-            .eq('id', p.id)
-          
-          if (updateError) {
-            console.error(`[COLETAR] Erro Supabase para ${p.numero_processo}:`, updateError)
-          } else {
-            salvos++
-            console.log(`[COLETAR] Sucesso para ${p.numero_processo}`)
-          }
-        } else {
-          console.log(`[COLETAR] Resumo ainda não disponível para ${p.numero_processo}`)
-          pulados++
-        }
-      } catch (err: any) {
-        console.error(`[COLETAR] Falha na API para ${p.numero_processo}:`, err.message)
-        pulados++
-      }
+      console.log(`[BACKFILL] Coletando ${p.numero_processo}...`)
+      const ok = await buscarESalvarResumo(p.numero_processo, tenant_id)
+      if (ok) salvos++
+      else pulados++
+      
       // Rate limit safety
       await new Promise(r => setTimeout(r, 500))
     }
@@ -74,22 +47,13 @@ export async function POST(req: NextRequest) {
 
   // Comportamento padrão: Solicitar geração
   let solicitados = 0
-  let erros = 0
 
   for (const p of processos) {
-    try {
-      await escavadorFetch(
-        `/processos/numero_cnj/${p.numero_processo}/ia/resumo/solicitar-atualizacao`,
-        integration.api_key,
-        tenant_id,
-        { method: 'POST' }
-      )
-      solicitados++
-      // Espera 2s entre cada para não estourar rate limit (500 req/min)
-      await new Promise(r => setTimeout(r, 2000))
-    } catch {
-      erros++
-    }
+    console.log(`[BACKFILL] Solicitando ${p.numero_processo}...`)
+    await solicitarResumoIA(p.numero_processo, tenant_id)
+    solicitados++
+    // Espera 2s entre cada para não estourar rate limit
+    await new Promise(r => setTimeout(r, 2000))
   }
 
   return NextResponse.json({
