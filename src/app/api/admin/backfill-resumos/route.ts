@@ -48,11 +48,17 @@ export async function POST(req: NextRequest) {
 
   // Comportamento padrão: Solicitar geração
   let solicitados = 0
+  let erros = 0
 
   for (const p of processos) {
-    console.log(`[BACKFILL] Solicitando ${p.numero_processo}...`)
-    await solicitarResumoIA(p.numero_processo, tenant_id)
-    solicitados++
+    try {
+      console.log(`[BACKFILL] Solicitando ${p.numero_processo}...`)
+      await solicitarResumoIA(p.numero_processo, tenant_id)
+      solicitados++
+    } catch (err) {
+      console.error(`[BACKFILL] Erro ao solicitar ${p.numero_processo}:`, err)
+      erros++
+    }
     // Espera 2s entre cada para não estourar rate limit
     await new Promise(r => setTimeout(r, 2000))
   }
