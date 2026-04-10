@@ -33,6 +33,8 @@ interface Processo {
   urgencia_nivel?: 'verde' | 'amarelo' | 'vermelho'
   proxima_acao_sugerida?: string | null
   resumo_solicitado_em?: string | null
+  organizacao_ia_json?: any
+  partes?: any
 }
 
 interface BillingInfo {
@@ -172,23 +174,24 @@ function BillingBar({ billing }: { billing: BillingInfo }) {
   )
 }
 
-// ... Pagination UI inlined na renderização principal
-function ProcessoCard({ p, onAction, onRemover, selecionado, onSelect, loadingId, organizandoState, onOrganizar }: {
+function ProcessoCard({ p, onAction, onRemover, selecionado, onSelect, loadingId, organizandoState, onOrganizar, onAbrirDetalhes }: {
   p: Processo; onAction: () => void; onRemover: () => void; selecionado: boolean; onSelect: () => void;
   loadingId: string | null
   organizandoState: 'idle' | 'loading' | 'done'
   onOrganizar: () => void
+  onAbrirDetalhes: () => void
 }) {
-  const [expanded, setExpanded] = useState(false)
-  const [resumoExpandido, setResumoExpandido] = useState(false)
   const isLoading = loadingId === p.numero_processo
   const dias = diasDesde(p.data_ultima_movimentacao)
 
   return (
-    <div className={`rounded-2xl border transition-all ${p.monitorado ? 'border-yellow-500/30 bg-yellow-500/[0.03]' : selecionado ? 'border-yellow-500/50 bg-yellow-500/[0.05]' : 'border-zinc-800 bg-zinc-900/40'} hover:border-zinc-700`}>
+    <div 
+      onClick={onAbrirDetalhes}
+      className={`rounded-2xl border transition-all cursor-pointer ${p.monitorado ? 'border-yellow-500/30 bg-yellow-500/[0.03]' : selecionado ? 'border-yellow-500/50 bg-yellow-500/[0.05]' : 'border-zinc-800 bg-zinc-900/40'} hover:border-zinc-700`}
+    >
       <div className="p-5 flex items-start gap-4">
         {/* Checkbox */}
-        <div className="mt-1 shrink-0 cursor-pointer" onClick={onSelect}>
+        <div className="mt-1 shrink-0 cursor-pointer" onClick={(e) => { e.stopPropagation(); onSelect(); }}>
           {p.monitorado ? (
             <div className="w-5 h-5 rounded-md bg-yellow-500 flex items-center justify-center shadow-lg shadow-yellow-500/20">
               <CheckCircle size={14} className="text-black" />
@@ -230,11 +233,11 @@ function ProcessoCard({ p, onAction, onRemover, selecionado, onSelect, loadingId
             <div className="truncate"><span className="text-zinc-500 text-[10px] font-black mr-2 uppercase tracking-tighter">PASSIVO</span><span className="text-zinc-200 font-bold">{p.polo_passivo}</span></div>
           </div>
 
-          {/* CORREÇÃO 2: Datas formatadas em DD/MM/YYYY */}
+          {/* Última Movimentação Teaser */}
           <div className="flex items-start gap-3">
              <div className="w-1 rounded-full bg-yellow-500/20 shrink-0 self-stretch" />
              <div className="space-y-1.5 flex-1">
-                <p className="text-[11px] text-zinc-400 leading-relaxed font-medium line-clamp-2">
+                <p className="text-[11px] text-zinc-400 leading-relaxed font-medium line-clamp-1">
                   {p.ultima_movimentacao_texto || "Sem detalhes da última movimentação."}
                 </p>
                 <div className="flex items-center gap-4">
@@ -244,81 +247,26 @@ function ProcessoCard({ p, onAction, onRemover, selecionado, onSelect, loadingId
              </div>
           </div>
 
-          {/* Seção de Análise IA (Somente Monitorados) */}
-          {p.monitorado && (
-            <div className="space-y-4 pt-2">
+          {/* Indicações de Análise IA resumidas no card */}
+          {p.monitorado && (p.resumo_curto || p.proxima_acao_sugerida) && (
+            <div className="flex items-center gap-3">
               {p.resumo_curto && (
-                <div onClick={() => setResumoExpandido(!resumoExpandido)} className="cursor-pointer group/resumo">
-                  <p className={`text-white/70 text-[11px] leading-relaxed bg-white/5 p-3 rounded-lg border border-white/10 font-medium italic transition-all ${
-                    resumoExpandido ? '' : 'line-clamp-2'
-                  }`}>
-                    {p.resumo_curto}
-                  </p>
-                  <span className="text-white/30 text-[9px] uppercase tracking-widest mt-1 block font-black group-hover/resumo:text-[#CCA761] transition-colors">
-                    {resumoExpandido ? '▲ fechar' : '▼ ler mais'}
-                  </span>
+                <div className="flex items-center gap-1.5 text-white/40 text-[9px] uppercase font-black tracking-widest">
+                  <FileText size={12} /> Resumo Disponível
                 </div>
               )}
-              
-              <div className="flex flex-col gap-2">
-                {p.urgencia_nivel && (
-                  <div className="flex">
-                    {p.urgencia_nivel === 'vermelho' && <span className="text-[9px] px-2 py-0.5 rounded-full border border-red-500/40 bg-red-500/10 text-red-400 font-black uppercase tracking-widest">🔴 Urgência Crítica</span>}
-                    {p.urgencia_nivel === 'amarelo' && <span className="text-[9px] px-2 py-0.5 rounded-full border border-yellow-500/40 bg-yellow-500/10 text-yellow-400 font-black uppercase tracking-widest">🟡 Atenção Requerida</span>}
-                    {p.urgencia_nivel === 'verde' && <span className="text-[9px] px-2 py-0.5 rounded-full border border-green-500/40 bg-green-500/10 text-green-400 font-black uppercase tracking-widest">🟢 Monitoramento Normal</span>}
-                  </div>
-                )}
-
-                {p.proxima_acao_sugerida && (
-                   <div className="flex items-start gap-3 p-3 rounded-xl bg-[#CCA761]/5 border border-[#CCA761]/10">
-                     <Zap size={14} className="text-[#CCA761] mt-0.5 shrink-0" />
-                     <div>
-                       <p className="text-[#CCA761] text-[9px] font-bold uppercase tracking-widest mb-0.5">Ação Sugerida</p>
-                       <p className="text-white/60 text-[11px] font-medium leading-relaxed">{p.proxima_acao_sugerida}</p>
-                     </div>
-                   </div>
-                )}
-              </div>
-            </div>
-          )}
-
-          {/* Expandido (Histórico) */}
-          {expanded && (
-            <div className="pt-4 mt-4 border-t border-zinc-800/50 space-y-4 animate-in fade-in duration-300">
-               <div>
-                  <p className="text-[9px] font-black text-zinc-600 uppercase tracking-[0.3em] mb-4 text-center">Linha do Tempo de Andamentos</p>
-                  <div className="space-y-4">
-                    {p.movimentacoes?.slice(0, 15).map((m, i) => (
-                      <div key={i} className="flex gap-4 group">
-                        <div className="flex flex-col items-center shrink-0">
-                           <div className="w-2 h-2 rounded-full border-2 border-zinc-800 group-hover:border-yellow-500 transition-colors" />
-                           <div className="w-px flex-1 bg-zinc-800" />
-                        </div>
-                        <div className="pb-3 flex-1">
-                          {/* CORREÇÃO 2: datas do histórico também formatadas */}
-                          <span className="text-[10px] font-black font-mono text-zinc-600 uppercase tracking-tighter">{formatarData((m.data as string) || null)}</span>
-                          <p className="text-[11px] text-zinc-400 font-bold mt-1 group-hover:text-zinc-200 transition-colors">{((m.titulo ?? m.descricao ?? m.texto) as string) || "Visualização bloqueada pelo tribunal."}</p>
-                          {m.resumo && <p className="text-[10px] text-zinc-500 italic mt-2 px-3 py-1.5 bg-zinc-950 rounded-xl border border-zinc-900 border-l-yellow-500/40 border-l-2">Fato: {m.resumo as string}</p>}
-                        </div>
-                      </div>
-                    ))}
-                  </div>
-               </div>
+              {p.proxima_acao_sugerida && (
+                <div className="flex items-center gap-1.5 text-yellow-500/60 text-[9px] uppercase font-black tracking-widest">
+                  <Sparkles size={12} /> Ação Sugerida
+                </div>
+              )}
             </div>
           )}
         </div>
 
         {/* Actions Sidebar */}
-        <div className="flex flex-col items-end gap-3 shrink-0 h-full justify-between">
-           <button
-             onClick={() => setExpanded(!expanded)}
-             className={`p-3 rounded-2xl transition-all border ${expanded ? 'bg-yellow-500 text-black border-yellow-500' : 'bg-zinc-900 text-zinc-600 border-zinc-800 hover:text-white hover:border-zinc-700 shadow-xl'}`}
-             title={expanded ? "Recolher Histórico" : "Ver Detalhes"}
-           >
-             {expanded ? <ChevronUp size={20} strokeWidth={3} /> : <Eye size={20} />}
-           </button>
-
-           <div className="mt-auto flex flex-col gap-2">
+        <div className="flex flex-col items-end gap-3 shrink-0 h-full justify-between" onClick={(e) => e.stopPropagation()}>
+           <div className="flex flex-col gap-2">
              {!p.monitorado ? (
                <button
                  onClick={onAction}
@@ -342,23 +290,15 @@ function ProcessoCard({ p, onAction, onRemover, selecionado, onSelect, loadingId
              {(() => {
                if (organizandoState === 'loading') return (
                  <button disabled
-                   className="flex items-center justify-center gap-1.5 w-full py-3 px-6 rounded-2xl
+                   className="flex items-center justify-center gap-1.5 w-full py-3 px-4 rounded-2xl
                               bg-[#CCA761]/10 border border-[#CCA761]/30
                               text-[#CCA761] text-[10px] uppercase font-black opacity-60 cursor-not-allowed">
                    <Loader2 size={13} className="animate-spin" /> Analisando
                  </button>
                )
-               if (organizandoState === 'done') return (
-                 <button disabled
-                   className="flex items-center justify-center gap-1.5 w-full py-3 px-6 rounded-2xl
-                              bg-green-500/10 border border-green-500/30
-                              text-green-400 text-[10px] uppercase font-black">
-                   <CheckCircle2 size={13} /> Organizado
-                 </button>
-               )
                return (
                  <button onClick={onOrganizar}
-                   className="flex items-center justify-center gap-1.5 w-full py-3 px-6 rounded-2xl
+                   className="flex items-center justify-center gap-1.5 w-full py-3 px-4 rounded-2xl
                               bg-[#CCA761]/10 border border-[#CCA761]/30
                               text-[#CCA761] text-[10px] uppercase font-black
                               hover:bg-[#CCA761]/20 transition-all active:scale-95">
@@ -369,7 +309,6 @@ function ProcessoCard({ p, onAction, onRemover, selecionado, onSelect, loadingId
            </div>
         </div>
       </div>
-      
     </div>
   )
 }
@@ -404,6 +343,9 @@ function MonitoramentoContent() {
 
   // Estado para os botões "Organizar IA"
   const [organizando, setOrganizando] = useState<Record<string, 'idle' | 'loading' | 'done'>>({})
+
+  // Estado para Drawer Lateral (Painel de Detalhes)
+  const [processoSelecionado, setProcessoSelecionado] = useState<Processo | null>(null)
 
   // Estado para "Organizar Todos"
   const [organizandoTodos, setOrganizandoTodos] = useState(false)
@@ -665,7 +607,6 @@ function MonitoramentoContent() {
       })
   }, [result, filtroStatus, filtroTribunal, search, ordenacao])
 
-  // CORREÇÃO 1: Calcular páginas com base nos filtros (estado local)
   const totalPages = Math.ceil(processosFiltrados.length / PAGE_SIZE)
   const processosPagina = useMemo(() => {
     const offset = (pagina - 1) * PAGE_SIZE
@@ -875,26 +816,26 @@ function MonitoramentoContent() {
               )}
 
               <div className="grid grid-cols-1 gap-4">
-               {processosPagina.map(p => (
-                 <ProcessoCard
-                   key={p.numero_processo}
-                   p={p}
-                   selecionado={selecionados.has(p.numero_processo)}
-                   onSelect={() => {
-                      setSelecionados(prev => {
-                        const next = new Set(prev)
-                        if (next.has(p.numero_processo)) next.delete(p.numero_processo)
-                        else next.add(p.numero_processo)
-                        return next
-                      })
-                   }}
-                   onAction={() => monitorarLote([p])}
-                   onRemover={() => desmonitorar(p)}
-                   loadingId={loadingId}
-                   organizandoState={p.id ? (organizando[p.id] || 'idle') : 'idle'}
-                   onOrganizar={() => p.id && handleOrganizar(p.id)}
-                 />
-               ))}
+                {processosPagina.map(p => (
+                  <ProcessoCard
+                    key={p.numero_processo}
+                    p={p}
+                    onSelect={() => {
+                      const next = new Set(selecionados)
+                      if (next.has(p.numero_processo)) next.delete(p.numero_processo)
+                      else next.add(p.numero_processo)
+                      setSelecionados(next)
+                    }}
+                    selecionado={selecionados.has(p.numero_processo)}
+                    onAction={() => monitorarLote([p])}
+                    onRemover={() => desmonitorar(p)}
+                    loadingId={loadingId}
+                    organizandoState={organizando[p.id || ''] || 'idle'}
+                    onOrganizar={() => handleOrganizar(p.id || '')}
+                    onAbrirDetalhes={() => setProcessoSelecionado(p)}
+                  />
+                ))}
+              </div>
 
                {processosFiltrados.length === 0 && (
                  <div className="py-32 text-center space-y-4 bg-zinc-900/10 border border-dashed border-zinc-800 rounded-3xl">
@@ -1036,8 +977,154 @@ function MonitoramentoContent() {
             </div>
           </div>
         )}
-      </div>
-    </>
+      {/* Drawer Lateral — Detalhes do Processo */}
+      {processoSelecionado && (
+        <div className="fixed inset-0 z-50 flex justify-end">
+          {/* Overlay escuro */}
+          <div 
+            className="absolute inset-0 bg-black/60 backdrop-blur-sm animate-in fade-in duration-300"
+            onClick={() => setProcessoSelecionado(null)}
+          />
+          {/* Painel */}
+          <div className="relative w-full max-w-2xl h-full bg-[#0a0a0a] border-l border-white/10 overflow-y-auto p-8 animate-in slide-in-from-right duration-500 shadow-2xl z-10 font-sans">
+            {/* Fechar */}
+            <button 
+              onClick={() => setProcessoSelecionado(null)}
+              className="absolute top-6 right-6 text-white/40 hover:text-white transition-colors"
+            >
+              <X size={24} />
+            </button>
+
+            {/* Número e badges */}
+            <div className="mb-8">
+              <span className="text-[10px] text-zinc-500 uppercase font-black tracking-[0.2em] mb-2 block">
+                Detalhes do Processo
+              </span>
+              <h2 className="text-white font-bold text-2xl tracking-tight mb-2">
+                {processoSelecionado.numero_processo}
+              </h2>
+              <div className="flex items-center gap-2">
+                <span className="text-[10px] uppercase font-bold bg-zinc-800 text-zinc-400 px-3 py-1 rounded-lg">
+                  {processoSelecionado.tribunal}
+                </span>
+                <span className={`text-[10px] uppercase font-bold px-3 py-1 rounded-lg ${STATUS_COLOR[processoSelecionado.status] ?? 'text-zinc-600 bg-zinc-900'}`}>
+                  {processoSelecionado.status}
+                </span>
+              </div>
+            </div>
+            
+            {/* Partes */}
+            <div className="grid grid-cols-1 md:grid-cols-2 gap-6 bg-white/[0.02] border border-white/5 p-6 rounded-2xl mb-8">
+              <div>
+                <p className="text-zinc-500 text-[10px] font-black uppercase tracking-widest mb-1">Polo Ativo</p>
+                <p className="text-white font-bold text-sm">{(processoSelecionado.partes as any)?.polo_ativo || processoSelecionado.polo_ativo}</p>
+              </div>
+              <div>
+                <p className="text-zinc-500 text-[10px] font-black uppercase tracking-widest mb-1">Polo Passivo</p>
+                <p className="text-white font-bold text-sm">{(processoSelecionado.partes as any)?.polo_passivo || processoSelecionado.polo_passivo}</p>
+              </div>
+            </div>
+
+            {/* Resumo completo IA */}
+            {processoSelecionado.resumo_curto && (
+              <div className="mb-8">
+                <p className="text-white/30 text-[10px] uppercase font-black tracking-widest mb-4">Análise Resumida</p>
+                <div className="bg-white/5 rounded-2xl p-6 border border-white/10 relative overflow-hidden group">
+                  <div className="absolute top-0 left-0 w-1 h-full bg-[#CCA761]/40" />
+                  <p className="text-white/70 text-sm leading-relaxed italic font-medium">
+                    "{processoSelecionado.resumo_curto}"
+                  </p>
+                </div>
+              </div>
+            )}
+
+            {/* Próxima Ação Sugerida */}
+            {processoSelecionado.proxima_acao_sugerida && (
+              <div className="mb-8">
+                <div className="bg-[#CCA761]/10 border border-[#CCA761]/20 rounded-2xl p-6">
+                  <div className="flex items-center gap-2 mb-3">
+                    <Zap size={16} className="text-[#CCA761]" fill="currentColor" />
+                    <p className="text-[#CCA761] text-[10px] font-black uppercase tracking-widest">Ação Sugerida pela IA</p>
+                  </div>
+                  <p className="text-white/80 text-sm font-medium leading-relaxed">
+                    {processoSelecionado.proxima_acao_sugerida}
+                  </p>
+                </div>
+              </div>
+            )}
+
+            {/* Tarefas e prazos do organizacao_ia_json */}
+            {(processoSelecionado.organizacao_ia_json as any)?.tarefas?.length > 0 && (
+              <div className="mb-8">
+                <p className="text-white/30 text-[10px] uppercase font-black tracking-widest mb-4">Plano de Ação</p>
+                <div className="space-y-3">
+                  {(processoSelecionado.organizacao_ia_json as any).tarefas.map((t: any, i: number) => (
+                    <div key={i} className="bg-white/5 rounded-xl p-4 border border-white/5 flex gap-4 items-start">
+                      <div className="w-6 h-6 rounded-lg bg-zinc-800 flex items-center justify-center text-[10px] font-bold text-zinc-500 shrink-0 border border-zinc-700">
+                        {i + 1}
+                      </div>
+                      <div>
+                        <p className="text-white/80 text-sm font-bold">{t.titulo}</p>
+                        <p className="text-white/40 text-xs mt-1 leading-relaxed">{t.descricao}</p>
+                      </div>
+                    </div>
+                  ))}
+                </div>
+              </div>
+            )}
+
+            {/* Linha do Tempo (Moved to Drawer) */}
+            <div className="mb-12">
+              <p className="text-white/30 text-[10px] uppercase font-black tracking-widest mb-6">Histórico Completo</p>
+              <div className="space-y-6 relative ml-1">
+                <div className="absolute left-[7px] top-2 bottom-2 w-px bg-zinc-800" />
+                {processoSelecionado.movimentacoes?.slice(0, 30).map((m, i) => (
+                  <div key={i} className="flex gap-6 group relative">
+                    <div className="w-4 h-4 rounded-full border-2 border-zinc-800 bg-[#0a0a0a] group-hover:border-[#CCA761] transition-colors shrink-0 z-10" />
+                    <div className="pb-1 transition-all group-hover:translate-x-1">
+                      <span className="text-[10px] font-black font-mono text-zinc-600 uppercase">
+                        {formatarData((m.data as string) || null)}
+                      </span>
+                      <p className="text-sm text-zinc-300 font-bold mt-1 leading-snug">
+                        {((m.titulo ?? m.descricao ?? m.texto) as string) || "Visualização bloqueada."}
+                      </p>
+                      {m.resumo && (
+                        <div className="mt-2 p-3 bg-zinc-950 rounded-xl border border-zinc-900 border-l-[#CCA761]/40 border-l-2 shadow-inner">
+                           <p className="text-[11px] text-zinc-500 italic leading-relaxed">
+                             <span className="text-[#CCA761]/60 font-bold not-italic mr-1">Análise:</span>
+                             {m.resumo as string}
+                           </p>
+                        </div>
+                      )}
+                    </div>
+                  </div>
+                ))}
+              </div>
+            </div>
+
+            {/* Rodapé do Drawer com Ações */}
+            <div className="sticky bottom-0 left-0 right-0 pt-6 pb-2 bg-gradient-to-t from-[#0a0a0a] via-[#0a0a0a] to-transparent">
+               <button
+                 onClick={() => {
+                   if (processoSelecionado.id) {
+                     handleOrganizar(processoSelecionado.id)
+                   }
+                 }}
+                 disabled={organizando[processoSelecionado.id || ''] === 'loading'}
+                 className="w-full h-14 bg-[#CCA761]/10 border border-[#CCA761]/30 text-[#CCA761] text-xs font-black uppercase tracking-widest rounded-2xl hover:bg-[#CCA761]/20 transition-all shadow-xl shadow-[#CCA761]/5 flex items-center justify-center gap-3 disabled:opacity-50"
+               >
+                 {organizando[processoSelecionado.id || ''] === 'loading' ? (
+                   <Loader2 size={18} className="animate-spin" />
+                 ) : (
+                   <Sparkles size={18} />
+                 )}
+                 {organizando[processoSelecionado.id || ''] === 'loading' ? 'Analisando Contexto...' : 'Reorganizar com IA'}
+               </button>
+            </div>
+          </div>
+        </div>
+      )}
+    </div>
   )
 }
 
