@@ -96,11 +96,12 @@ export async function GET(req: NextRequest) {
     )
 
     // Salva no banco se tiver conteúdo
-    if (data?.resumo) {
+    const resumoFinal = data.conteudo || data.resumo
+    if (resumoFinal) {
       await adminSupabase
         .from('monitored_processes')
         .update({
-          resumo_curto: data.resumo,
+          resumo_curto: resumoFinal,
           updated_at: new Date().toISOString()
         })
         .eq('numero_processo', numero_processo)

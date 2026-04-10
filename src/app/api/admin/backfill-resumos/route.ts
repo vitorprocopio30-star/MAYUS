@@ -32,28 +32,43 @@ export async function POST(req: NextRequest) {
   // Se action = 'coletar', apenas busca resumos já prontos e salva
   if (action === 'coletar') {
     let salvos = 0
+    let pulados = 0
     for (const p of processos) {
       try {
+        console.log(`[COLETAR] Processando ${p.numero_processo}...`)
         const resumoData = await escavadorFetch(
           `/processos/numero_cnj/${p.numero_processo}/ia/resumo`,
           integration.api_key,
           tenant_id
         )
-        if (resumoData?.resumo) {
-          await adminSupabase
+        
+        if (resumoData?.conteudo) {
+          const { error: updateError } = await adminSupabase
             .from('monitored_processes')
             .update({
-              resumo_curto: resumoData.resumo,
+              resumo_curto: resumoData.conteudo,
               updated_at: new Date().toISOString()
             })
             .eq('id', p.id)
-          salvos++
+          
+          if (updateError) {
+            console.error(`[COLETAR] Erro Supabase para ${p.numero_processo}:`, updateError)
+          } else {
+            salvos++
+            console.log(`[COLETAR] Sucesso para ${p.numero_processo}`)
+          }
+        } else {
+          console.log(`[COLETAR] Resumo ainda não disponível para ${p.numero_processo}`)
+          pulados++
         }
-      } catch { /* resumo ainda não pronto, pula */ }
+      } catch (err: any) {
+        console.error(`[COLETAR] Falha na API para ${p.numero_processo}:`, err.message)
+        pulados++
+      }
       // Rate limit safety
       await new Promise(r => setTimeout(r, 500))
     }
-    return NextResponse.json({ action: 'coletar', total: processos.length, salvos })
+    return NextResponse.json({ action: 'coletar', total: processos.length, salvos, pulados })
   }
 
   // Comportamento padrão: Solicitar geração

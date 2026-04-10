@@ -40,10 +40,10 @@ async function solicitarResumoIA(numero_cnj: string, tenantId: string) {
         integration.api_key,
         tenantId
       )
-      if (resumoData?.resumo) {
+      if (resumoData?.conteudo) {
         await adminSupabase
           .from('monitored_processes')
-          .update({ resumo_curto: resumoData.resumo, updated_at: new Date().toISOString() })
+          .update({ resumo_curto: resumoData.conteudo, updated_at: new Date().toISOString() })
           .eq('numero_processo', numero_cnj)
           .eq('tenant_id', tenantId)
         console.log(`[RESUMO_IA] Salvo para ${numero_cnj}`)
