@@ -16,7 +16,7 @@ export async function POST(req: NextRequest) {
   // Buscar o processo por UUID ou por número CNJ
   let query = supabase
     .from('monitored_processes')
-    .select('id, escavador_id, tenant_id, resumo_curto')
+    .select('id, escavador_id, tenant_id, resumo_curto, resumo_solicitado_em')
 
   if (processo_id) {
     query = query.eq('id', processo_id)
@@ -35,6 +35,11 @@ export async function POST(req: NextRequest) {
     return NextResponse.json({ resumo: proc.resumo_curto, cached: true })
   }
 
+  // Anti-duplicata: Se já foi solicitado recentemente, não disparar de novo
+  if (proc.resumo_solicitado_em) {
+    return NextResponse.json({ status: 'ja_solicitado' })
+  }
+
   // Buscar credenciais da integração Escavador do tenant
   const { data: integration } = await supabase
     .from('tenant_integrations')
@@ -50,10 +55,11 @@ export async function POST(req: NextRequest) {
     return NextResponse.json({ error: 'Integração Escavador não configurada' }, { status: 400 })
   }
 
-  // Chamar Escavador: GET /v2/processos/{id}/resumo
+  // Chamar Escavador: POST /v2/processos/{id}/ia/resumo/solicitar-atualizacao
   const resp = await fetch(
-    `https://api.escavador.com/api/v2/processos/${proc.escavador_id}/resumo`,
+    `https://api.escavador.com/api/v2/processos/${proc.escavador_id}/ia/resumo/solicitar-atualizacao`,
     {
+      method: 'POST',
       headers: {
         Authorization: `Bearer ${apiKey}`,
         'Content-Type': 'application/json'
@@ -66,15 +72,13 @@ export async function POST(req: NextRequest) {
     return NextResponse.json({ error: `Escavador: ${err}` }, { status: resp.status })
   }
 
-  const data = await resp.json()
-  const resumo = data?.resumo || data?.data?.resumo || data?.summary || null
+  // 3. Marcar no banco que o resumo foi solicitado
+  await supabase
+    .from('monitored_processes')
+    .update({ 
+      resumo_solicitado_em: new Date().toISOString() 
+    })
+    .eq('id', proc.id)
 
-  if (resumo) {
-    await supabase
-      .from('monitored_processes')
-      .update({ resumo_curto: resumo, updated_at: new Date().toISOString() })
-      .eq('id', proc.id)
-  }
-
-  return NextResponse.json({ resumo })
+  return NextResponse.json({ status: 'solicitado' })
 }

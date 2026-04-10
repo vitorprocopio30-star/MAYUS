@@ -32,6 +32,7 @@ interface Processo {
   id?: string
   urgencia_nivel?: 'verde' | 'amarelo' | 'vermelho'
   proxima_acao_sugerida?: string | null
+  resumo_solicitado_em?: string | null
 }
 
 interface BillingInfo {
@@ -274,15 +275,19 @@ function ProcessoCard({ p, onAction, onRemover, selecionado, onSelect, resumoOfi
                <div className="pt-3 border-t border-zinc-800/60 flex items-center gap-3">
                  {resumoIAState.state === 'loading' ? (
                    <button disabled className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg bg-[#CCA761]/5 text-[#CCA761]/60 text-[10px] font-black uppercase opacity-60 cursor-not-allowed border border-[#CCA761]/10">
-                     <Loader2 size={12} className="animate-spin" /> Analisando...
+                     <Loader2 size={12} className="animate-spin" /> Solicitando...
                    </button>
                  ) : resumoIAState.state === 'error' ? (
                    <p className="text-[10px] text-red-400 font-bold uppercase">Erro ao solicitar resumo.</p>
-                 ) : resumoIAState.state !== 'done' && (
-                   <button onClick={onSolicitarResumoIA} className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg bg-[#CCA761]/5 hover:bg-[#CCA761]/10 text-[#CCA761] text-[10px] font-black uppercase transition-all border border-[#CCA761]/10">
-                     <Sparkles size={12} /> Solicitar Inteligência
-                   </button>
-                 )}
+                 ) : (p.resumo_solicitado_em && !p.resumo_curto) ? (
+                    <div className="flex items-center gap-2 text-[#CCA761]/80 text-[10px] font-black uppercase tracking-widest bg-[#CCA761]/5 p-2 rounded-lg border border-[#CCA761]/10">
+                      <Loader2 size={12} className="animate-spin" /> Resumo solicitado — disponível em breve
+                    </div>
+                  ) : (resumoIAState.state !== 'done' && !p.resumo_curto) && (
+                    <button onClick={onSolicitarResumoIA} className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg bg-[#CCA761]/5 hover:bg-[#CCA761]/10 text-[#CCA761] text-[10px] font-black uppercase transition-all border border-[#CCA761]/10">
+                      <Sparkles size={12} /> Solicitar Inteligência
+                    </button>
+                  )}
                </div>
             </div>
           )}
@@ -606,7 +611,21 @@ function MonitoramentoContent() {
       })
       const data = await res.json()
       if (!res.ok) throw new Error(data.error)
-      setResumosIA(prev => ({ ...prev, [key]: { state: 'done', texto: data.resumo } }))
+      
+      if (data.status === 'solicitado' || data.status === 'ja_solicitado') {
+        setResumosIA(prev => ({ ...prev, [key]: { state: 'idle' } }))
+        // Atualizar o objeto do processo localmente para mostrar o status "Solicitado"
+        setResult(prev => prev ? {
+          ...prev,
+          processos: prev.processos.map(item => 
+            item.numero_processo === p.numero_processo 
+              ? { ...item, resumo_solicitado_em: new Date().toISOString() } 
+              : item
+          )
+        } : prev)
+      } else if (data.resumo) {
+        setResumosIA(prev => ({ ...prev, [key]: { state: 'done', texto: data.resumo } }))
+      }
     } catch (e) {
       setResumosIA(prev => ({ ...prev, [key]: { state: 'error' } }))
     }
@@ -1077,3 +1096,4 @@ export default function MonitoramentoPage() {
     </Suspense>
   )
 }
+

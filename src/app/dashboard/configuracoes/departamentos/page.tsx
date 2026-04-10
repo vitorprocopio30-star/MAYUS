@@ -121,7 +121,7 @@ export default function DepartamentosPage() {
     }, 1000);
   };
 
-  if (profile && profile.role !== "Administrador" && profile.role !== "mayus_admin") {
+  if (profile && profile.role !== "Administrador" && profile.role !== "admin" && profile.role !== "mayus_admin") {
     return (
       <div className="flex items-center justify-center min-h-screen bg-black">
         <div className="text-center">

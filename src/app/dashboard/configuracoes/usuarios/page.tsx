@@ -167,7 +167,7 @@ export default function UsuariosPermissoesPage() {
     }
   };
 
-  if (!profileLoading && role !== "Administrador" && role !== "mayus_admin") {
+  if (!profileLoading && role !== "Administrador" && role !== "admin" && role !== "mayus_admin") {
     return (
       <div className={`min-h-[60vh] flex items-center justify-center ${montserrat.className}`}>
         <div className="text-center">
