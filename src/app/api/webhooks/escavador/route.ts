@@ -1,3 +1,4 @@
+import { NextRequest, NextResponse } from 'next/server'
 import { createClient } from '@supabase/supabase-js'
 import { solicitarResumoIA, buscarESalvarResumo } from '@/lib/services/escavador-ia'
 
