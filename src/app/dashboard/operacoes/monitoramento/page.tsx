@@ -180,6 +180,7 @@ function ProcessoCard({ p, onAction, onRemover, selecionado, onSelect, loadingId
   onOrganizar: () => void
 }) {
   const [expanded, setExpanded] = useState(false)
+  const [resumoExpandido, setResumoExpandido] = useState(false)
   const isLoading = loadingId === p.numero_processo
   const dias = diasDesde(p.data_ultima_movimentacao)
 
@@ -246,13 +247,16 @@ function ProcessoCard({ p, onAction, onRemover, selecionado, onSelect, loadingId
           {/* Seção de Análise IA (Somente Monitorados) */}
           {p.monitorado && (
             <div className="space-y-4 pt-2">
-              {p.resumo_curto ? (
-                <div className="text-white/70 text-[11px] leading-relaxed bg-white/5 p-3 rounded-lg border border-white/10 font-medium italic">
-                  {p.resumo_curto}
-                </div>
-              ) : (
-                <div className="text-white/20 text-[10px] uppercase tracking-widest font-black p-1">
-                  Sem análise disponível
+              {p.resumo_curto && (
+                <div onClick={() => setResumoExpandido(!resumoExpandido)} className="cursor-pointer group/resumo">
+                  <p className={`text-white/70 text-[11px] leading-relaxed bg-white/5 p-3 rounded-lg border border-white/10 font-medium italic transition-all ${
+                    resumoExpandido ? '' : 'line-clamp-2'
+                  }`}>
+                    {p.resumo_curto}
+                  </p>
+                  <span className="text-white/30 text-[9px] uppercase tracking-widest mt-1 block font-black group-hover/resumo:text-[#CCA761] transition-colors">
+                    {resumoExpandido ? '▲ fechar' : '▼ ler mais'}
+                  </span>
                 </div>
               )}
               
@@ -375,6 +379,11 @@ function MonitoramentoContent() {
   const [pagina, setPagina] = useState(1)
   const [nextCursor, setNextCursor] = useState<string|null>(null)
   const [carregandoMais, setCarregandoMais] = useState(false)
+  
+  // Estados para Automação de Carga
+  const [carregandoTodos, setCarregandoTodos] = useState(false)
+  const [automationBatchesCount, setAutomationBatchesCount] = useState(0)
+  const [progressoCarregamento, setProgressoCarregamento] = useState("")
 
   const [tab, setTab] = useState<'oab' | 'numero' | 'cpf'>('oab')
   const [oabEstado, setOabEstado] = useState('RJ')
@@ -442,6 +451,8 @@ function MonitoramentoContent() {
       if (!res.ok) throw new Error(data.error ?? 'Falha na varredura')
       setResult(data)
       setNextCursor(data.next_url ?? null)
+      setCarregandoTodos(!!data.next_url)
+      setAutomationBatchesCount(0)
       // Persistir no sessionStorage para não perder ao navegar
       try { sessionStorage.setItem('mon_result', JSON.stringify(data)) } catch {}
     } catch (e) {
@@ -451,6 +462,25 @@ function MonitoramentoContent() {
     }
   // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [oabEstado, oabNumero])
+
+  // Efeito de Automação de Carga (Task 2)
+  useEffect(() => {
+    if (nextCursor && carregandoTodos && !carregandoMais && automationBatchesCount < 10) {
+      const timer = setTimeout(() => {
+        carregarMais()
+        setAutomationBatchesCount(prev => prev + 1)
+      }, 1000)
+      return () => clearTimeout(timer)
+    } else if (automationBatchesCount >= 10 || !nextCursor) {
+      setCarregandoTodos(false)
+    }
+  }, [nextCursor, carregandoTodos, carregandoMais, automationBatchesCount])
+
+  useEffect(() => {
+    if (result) {
+      setProgressoCarregamento(`${result.total_retornado}/${result.total}`)
+    }
+  }, [result])
 
   const carregarMais = useCallback(async () => {
     if (!nextCursor || carregandoMais) return
@@ -936,18 +966,34 @@ function MonitoramentoContent() {
             )}
 
             {nextCursor && (
-              <button
-                onClick={carregarMais}
-                disabled={carregandoMais}
-                className="w-full py-4 rounded-2xl border border-zinc-800
-                           text-zinc-500 text-xs font-black uppercase tracking-widest
-                           hover:border-zinc-700 hover:text-zinc-300 transition-all
-                           disabled:opacity-50 flex items-center justify-center gap-2">
-                {carregandoMais
-                  ? <><RefreshCw size={14} className="animate-spin" /> Carregando...</>
-                  : <>Carregar mais processos ({result ? result.total - (result.processos?.length ?? 0) : 0} restantes) →</>
-                }
-              </button>
+              <div className="space-y-4">
+                {carregandoTodos ? (
+                  <div className="w-full py-6 flex flex-col items-center justify-center gap-3 bg-zinc-900/40 rounded-2xl border border-zinc-800 animate-pulse transition-all">
+                    <Loader2 size={24} className="text-[#CCA761] animate-spin" />
+                    <p className="text-[#CCA761] text-[10px] font-black uppercase tracking-[0.3em]">
+                      Carregando processos... {progressoCarregamento}
+                    </p>
+                  </div>
+                ) : (
+                  <button
+                    onClick={() => {
+                      setCarregandoTodos(true)
+                      setAutomationBatchesCount(0)
+                    }}
+                    disabled={carregandoMais}
+                    className="w-full py-4 rounded-2xl border border-[#CCA761]/30 bg-[#CCA761]/5 
+                               text-[#CCA761] text-[10px] font-black uppercase tracking-widest
+                               hover:bg-[#CCA761]/10 transition-all
+                               disabled:opacity-50 flex items-center justify-center gap-2 shadow-lg shadow-[#CCA761]/5"
+                  >
+                    {automationBatchesCount >= 10 ? (
+                      <>Continuar carregando ({result ? result.total - (result.total_retornado || 0) : 0} restantes) →</>
+                    ) : (
+                      <>Manual: Carregar mais processos ({result ? result.total - (result.total_retornado || 0) : 0} restantes) →</>
+                    )}
+                  </button>
+                )}
+              </div>
             )}
 
             <BillingBar billing={result.billing} />

@@ -80,15 +80,18 @@ PROCESSO: ${proc.numero_processo}
 TRIBUNAL: ${proc.tribunal || 'Não identificado'}
 ASSUNTO: ${proc.assunto || 'Não identificado'}
 CLASSE PROCESSUAL: ${proc.classe_processual || ''}
-FASE ATUAL: ${proc.fase_atual || ''}
+FASE ATUAL: ${proc.fase_processual || proc.fase_atual || ''}
+STATUS PREDITO: ${proc.status_predito || ''}
 COMARCA: ${proc.comarca || ''} / VARA: ${proc.vara || ''}
 POLO ATIVO: ${(proc.partes as any)?.polo_ativo || (proc.partes as any)?.ativo || ''}
 POLO PASSIVO: ${(proc.partes as any)?.polo_passivo || (proc.partes as any)?.passivo || ''}
 VALOR DA CAUSA: ${proc.valor_causa || 'Não informado'}
 DATA DE DISTRIBUIÇÃO: ${proc.data_distribuicao || 'Não informada'}
-ÚLTIMA MOVIMENTAÇÃO: ${proc.ultima_movimentacao_texto || 'Sem dados'}
-ÚLTIMAS MOVIMENTAÇÕES:
-${movimentacoes.map((m: any) => `- ${m.data || ''}: ${m.texto || m.descricao || JSON.stringify(m)}`).join('\n')}
+
+HISTÓRICO DE MOVIMENTAÇÕES (mais recente primeiro):
+${movimentacoes.map((m: any, i: number) =>
+  `[${i + 1}] ${m.data || ''}: ${m.texto || m.descricao || m.tipo || JSON.stringify(m)}`
+).join('\n')}
 
 ADVOGADOS DO ESCRITÓRIO:
 ${advogados?.map(a => `- ${a.full_name} (${a.role})`).join('\n') || 'Não informado'}
@@ -101,9 +104,12 @@ KANBAN (colunas disponíveis):
 `
 
   const prompt = `Você é o MAYUS, assistente jurídico especializado em advocacia brasileira.
-Analise o processo abaixo e retorne SOMENTE um JSON válido, sem markdown, sem explicações.
+
+ATENÇÃO: Analise o histórico de movimentações para identificar a fase ATUAL real do processo. Nunca sugira atos processuais já realizados. Se o processo já tem audiência marcada, tutela concedida, ou citação realizada, a próxima ação deve ser estritamente o que vem DEPOIS disso.
 
 ${contexto}
+
+Retorne SOMENTE um JSON válido, sem markdown, sem explicações.
 
 Retorne exatamente este JSON:
 {
