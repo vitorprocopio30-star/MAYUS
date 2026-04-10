@@ -101,7 +101,8 @@ export async function POST(req: NextRequest) {
             'X-Requested-With': 'XMLHttpRequest'
           },
           body: JSON.stringify({
-            numero_cnj: p.numero_processo,
+            numero: p.numero_processo,
+            frequencia: 'semanal',
           })
         })
       } catch (err) {
@@ -140,16 +141,16 @@ export async function POST(req: NextRequest) {
     }
   }))
 
-  const { error, count } = await adminSupabase
+  const { error } = await adminSupabase
     .from('monitored_processes')
-    .insert(rows, { count: 'exact' })
+    .insert(rows)
 
   if (error && !error.message.includes('duplicate')) {
     console.error('[importar-lote]', error)
     return NextResponse.json({ error: error.message }, { status: 500 })
   }
 
-  const importados = count ?? novos.length
+  const importados = novos.length
   await adminSupabase.rpc('increment_processos_monitorados', { p_tenant_id: tenantId, p_quantidade: importados })
 
   return NextResponse.json({

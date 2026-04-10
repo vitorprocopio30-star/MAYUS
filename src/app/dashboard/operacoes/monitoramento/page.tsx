@@ -399,7 +399,6 @@ function ProcessoCard({ p, onAction, onRemover, selecionado, onSelect, resumoOfi
     </div>
   )
 }
-
 // ─── Componente Principal ─────────────────────────────────────────────────────
 
 function MonitoramentoContent() {
@@ -451,7 +450,9 @@ function MonitoramentoContent() {
     const saved = sessionStorage.getItem('mon_result')
     if (saved) {
       try {
-        setResult(JSON.parse(saved))
+        const parsed = JSON.parse(saved)
+        setResult(parsed)
+        setNextCursor(parsed.next_url ?? null)
       } catch {}
     }
   }, [])
@@ -469,9 +470,10 @@ function MonitoramentoContent() {
         body: JSON.stringify({ oab_estado: oabEstado, oab_numero: oabNumero.trim() })
       })
       const data = await res.json()
+      console.log('[FRONTEND_DEBUG]', JSON.stringify({ next_url: data.next_url, keys: Object.keys(data) }))
       if (!res.ok) throw new Error(data.error ?? 'Falha na varredura')
       setResult(data)
-      setNextCursor(data.next_cursor ?? null)
+      setNextCursor(data.next_url ?? null)
       // Persistir no sessionStorage para não perder ao navegar
       try { sessionStorage.setItem('mon_result', JSON.stringify(data)) } catch {}
     } catch (e) {
@@ -492,11 +494,11 @@ function MonitoramentoContent() {
         body: JSON.stringify({
           oab_estado: oabEstado,
           oab_numero: oabNumero,
-          cursor: nextCursor
+          next_url: nextCursor
         })
       })
       const data = await res.json()
-      setNextCursor(data.next_cursor ?? null)
+      setNextCursor(data.next_url ?? null)
       setResult(prev => prev ? {
         ...prev,
         processos: [...prev.processos, ...data.processos],
@@ -511,7 +513,7 @@ function MonitoramentoContent() {
               ...currentSaved,
               processos: [...(currentSaved.processos ?? []), ...data.processos],
               total_retornado: (currentSaved.total_retornado ?? 0) + data.processos.length,
-              next_cursor: data.next_cursor ?? null
+              next_url: data.next_url ?? null
             }))
          }
       } catch {}
@@ -552,16 +554,17 @@ function MonitoramentoContent() {
     setLoadingId(p.numero_processo)
     try {
       await fetch('/api/monitoramento/remover', {
-        method: 'POST',
+        method: 'DELETE',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ numero_processo: p.numero_processo })
+        body: JSON.stringify({ processo_id: p.id || p.numero_processo })
       })
       setResult(prev => prev ? {
         ...prev,
-        processos: prev.processos.map(item => item.numero_processo === p.numero_processo ? { ...item, monitorado: false } : item),
+        processos: prev.processos.filter(item => item.numero_processo !== p.numero_processo),
+        total_retornado: Math.max(0, (prev.total_retornado || 1) - 1),
         billing: { ...prev.billing, total_ja_monitorados: Math.max(0, prev.billing.total_ja_monitorados - 1) }
       } : prev)
-      setFeedback('✅ Vigilância desativada')
+      setFeedback('✅ Vigilância desativada e processo ocultado')
     } catch (e) {
       setError('Erro ao remover monitoramento')
     } finally {
@@ -722,8 +725,6 @@ function MonitoramentoContent() {
     setPagina(1)
   }
 
-  console.log('total:', processosFiltrados.length, 'pages:', totalPages)
-
   return (
     <>
       {confirmacao && <ModalConfirmacaoCusto dados={confirmacao} onConfirmar={buscar} onCancelar={() => setConfirmacao(null)} loading={confirmandoLote} />}
@@ -856,7 +857,65 @@ function MonitoramentoContent() {
             </div>
 
             {/* Galeria de Processos */}
-            <div className="grid grid-cols-1 gap-4">
+            <div className="space-y-4">
+              {totalPages > 1 && (
+                <div className="flex items-center justify-between py-4 px-2 bg-zinc-900/20 rounded-2xl border border-zinc-800/50">
+                  <span className="text-zinc-500 text-[10px] font-black uppercase tracking-widest px-2">
+                    {processosFiltrados.length} processos · pág {pagina}/{totalPages}
+                  </span>
+                  <div className="flex gap-1.5">
+                    <button
+                      onClick={() => setPage(1)}
+                      disabled={pagina === 1}
+                      className="px-3 py-1.5 rounded-xl border border-zinc-800 bg-zinc-950
+                                text-zinc-500 text-[9px] font-black uppercase disabled:opacity-20
+                                hover:border-zinc-700 hover:text-zinc-300 transition-all">
+                      « Primeira
+                    </button>
+                    <button
+                      onClick={() => setPage(Math.max(1, pagina - 1))}
+                      disabled={pagina === 1}
+                      className="px-3 py-1.5 rounded-xl border border-zinc-800 bg-zinc-950
+                                 text-zinc-500 text-[9px] font-black uppercase disabled:opacity-20
+                                 hover:border-zinc-700 hover:text-zinc-300 transition-all">
+                      Anterior
+                    </button>
+                    {Array.from({ length: Math.min(5, totalPages) }, (_, i) => {
+                      const start = Math.max(1, Math.min(pagina - 2, totalPages - 4))
+                      const n = start + i
+                      if (n < 1 || n > totalPages) return null
+                      return (
+                        <button key={n} onClick={() => setPage(n)}
+                          className={`w-7 h-7 rounded-lg text-[9px] font-black transition-all
+                            ${n === pagina
+                              ? 'bg-yellow-500 text-black shadow-lg shadow-yellow-500/10'
+                              : 'border border-zinc-800 bg-zinc-950 text-zinc-600 hover:bg-zinc-900 hover:text-white'
+                            }`}>
+                          {n}
+                        </button>
+                      )
+                    })}
+                    <button
+                      onClick={() => setPage(Math.min(totalPages, pagina + 1))}
+                      disabled={pagina === totalPages}
+                      className="px-3 py-1.5 rounded-xl border border-zinc-800 bg-zinc-950
+                                 text-zinc-500 text-[9px] font-black uppercase disabled:opacity-20
+                                 hover:border-zinc-700 hover:text-zinc-300 transition-all">
+                      Próxima
+                    </button>
+                    <button
+                      onClick={() => setPage(totalPages)}
+                      disabled={pagina === totalPages}
+                      className="px-3 py-1.5 rounded-xl border border-zinc-800 bg-zinc-950
+                                 text-zinc-500 text-[9px] font-black uppercase disabled:opacity-20
+                                 hover:border-zinc-700 hover:text-zinc-300 transition-all">
+                      Última »
+                    </button>
+                  </div>
+                </div>
+              )}
+
+              <div className="grid grid-cols-1 gap-4">
                {processosPagina.map(p => (
                  <ProcessoCard
                    key={p.numero_processo}
@@ -892,6 +951,7 @@ function MonitoramentoContent() {
                  </div>
                )}
             </div>
+           </div>
 
             {totalPages > 1 && (
               <div className="flex items-center justify-between py-6 px-2">
@@ -899,6 +959,14 @@ function MonitoramentoContent() {
                   {processosFiltrados.length} processos · página {pagina} de {totalPages}
                 </span>
                 <div className="flex gap-2">
+                  <button
+                    onClick={() => setPage(1)}
+                    disabled={pagina === 1}
+                    className="px-4 py-2 rounded-lg border border-white/10
+                               text-white/70 text-sm disabled:opacity-30
+                               hover:bg-white/5 transition-colors font-medium">
+                    « Primeira
+                  </button>
                   <button
                     onClick={() => setPage(Math.max(1, pagina - 1))}
                     disabled={pagina === 1}
@@ -908,9 +976,9 @@ function MonitoramentoContent() {
                     ← Anterior
                   </button>
                   {Array.from({ length: Math.min(5, totalPages) }, (_, i) => {
-                    const start = Math.max(1, pagina - 2)
+                    const start = Math.max(1, Math.min(pagina - 2, totalPages - 4))
                     const n = start + i
-                    if (n > totalPages) return null
+                    if (n < 1 || n > totalPages) return null
                     return (
                       <button key={n} onClick={() => setPage(n)}
                         className={`w-9 h-9 rounded-lg text-sm font-black transition-colors
@@ -929,6 +997,14 @@ function MonitoramentoContent() {
                                text-white/70 text-sm disabled:opacity-30
                                hover:bg-white/5 transition-colors font-medium">
                     Próxima →
+                  </button>
+                  <button
+                    onClick={() => setPage(totalPages)}
+                    disabled={pagina === totalPages}
+                    className="px-4 py-2 rounded-lg border border-white/10
+                               text-white/70 text-sm disabled:opacity-30
+                               hover:bg-white/5 transition-colors font-medium">
+                    Última »
                   </button>
                 </div>
               </div>

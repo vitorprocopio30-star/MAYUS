@@ -18,7 +18,8 @@ const adminSupabase = createClient(
 
 // Extrai tudo que a Escavador manda — sem perder nada
 function mapearProcesso(p: Record<string, unknown>) {
-  const fonte = (p.fontes as Record<string, unknown>[])?.[0] ?? {}
+  const fontes = (p.fontes as Record<string, unknown>[]) ?? []
+  const fonte = fontes[0] ?? {}
   const capa = (fonte.capa as Record<string, unknown>) ?? {}
   const unidade = (p.unidade_origem as Record<string, unknown>) ?? {}
 
@@ -33,14 +34,14 @@ function mapearProcesso(p: Record<string, unknown>) {
     escavador_id: String((fonte as any).processo_fonte_id || p.id || ''),
 
     // Tribunal / localização
-    tribunal: (unidade.sigla_tribunal ?? unidade.tribunal_sigla ?? unidade.nome ?? '—') as string,
-    comarca: (unidade.comarca ?? unidade.municipio ?? null) as string | null,
-    vara: (capa.orgao_julgador ?? null) as string | null,
+    tribunal: (unidade.sigla_tribunal ?? unidade.tribunal_sigla ?? unidade.nome ?? (fonte as any).sigla_tribunal ?? '—') as string,
+    comarca: (unidade.comarca ?? unidade.municipio ?? (fonte as any).comarca ?? null) as string | null,
+    vara: (capa.orgao_julgador ?? (fonte as any).orgao_julgador ?? null) as string | null,
 
     // Classificação
-    assunto: (capa.assunto ?? '—') as string,
-    classe_processual: (capa.classe ?? p.classe ?? null) as string | null,
-    tipo_acao: (capa.tipo ?? null) as string | null,
+    assunto: (capa.assunto ?? (fonte as any).assunto ?? '—') as string,
+    classe_processual: (capa.classe ?? p.classe ?? (fonte as any).classe ?? null) as string | null,
+    tipo_acao: (capa.tipo ?? (fonte as any).tipo ?? null) as string | null,
 
     // Status e fase (Normalização Inteligente - Aggressiva)
     status: (() => {
@@ -53,23 +54,28 @@ function mapearProcesso(p: Record<string, unknown>) {
       if (['BAIXADO', 'ENCERRADO', 'EXTINTO', 'ARQUIVADO', 'SUSPENSO', 'JULGADO', 'CANCELADO'].some(s => combinado.includes(s))) return 'ARQUIVADO'
       return 'ATIVO'
     })() as string,
-    fase_atual: (p.fase ?? capa.fase ?? 'CONHECIMENTO') as string,
+    fase_atual: (fonte.status_predito ?? p.fase ?? capa.fase ?? 'CONHECIMENTO') as string,
 
     // Partes (polo simples para colunas)
     polo_ativo: (p.titulo_polo_ativo ?? capa.polo_ativo ?? '—') as string,
     polo_passivo: (p.titulo_polo_passivo ?? capa.polo_passivo ?? '—') as string,
 
     // Financeiro
-    valor_causa: typeof capa.valor_causa === 'object' && capa.valor_causa !== null
+    valor_causa: (capa.valor_causa_formatado ?? (typeof capa.valor_causa === 'object' && capa.valor_causa !== null
       ? (capa.valor_causa as any).valor_formatado || (capa.valor_causa as any).valor
-      : (capa.valor_causa ?? null) as string | null,
+      : (capa.valor_causa ?? null))) as string | null,
     data_distribuicao: (capa.data_inicio ?? capa.data_distribuicao ?? p.data_distribuicao ?? null) as string | null,
 
     // Movimentações (Fallback Agressivo)
     data_ultima_movimentacao: (capa.data_ultima_movimentacao ?? (movimentacoes[0]?.data as string) ?? (p.data_ultima_movimentacao as string) ?? null) as string | null,
     ultima_movimentacao_texto: (() => {
-      const m = movimentacoes[0] ?? {}
-      const texto = capa.ultimo_movimento || m.titulo || m.descricao || m.texto || m.conteudo || m.resumo || null
+      const m = (movimentacoes[0] as Record<string, unknown>) ?? {}
+      const texto = (capa.ultimo_movimento as any)?.conteudo || capa.ultimo_movimento || m.conteudo || m.titulo || m.descricao || m.texto || m.resumo || null
+      
+      // Garante que o resultado seja string ou null (objetos causam crash no React)
+      if (texto && typeof texto === 'object' && !Array.isArray(texto)) {
+        return (texto as any).conteudo || (texto as any).texto || JSON.stringify(texto)
+      }
       return (texto as string | null)
     })(),
     ultima_movimentacao_resumo: (movimentacoes[0]?.resumo ?? null) as string | null,
@@ -106,7 +112,7 @@ export async function POST(req: NextRequest) {
   const { data: { user } } = await supabase.auth.getUser()
   if (!user) return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
 
-  const { oab_estado, oab_numero, cursor } = await req.json()
+  const { oab_estado, oab_numero, cursor, next_url } = await req.json()
   if (!oab_estado || !oab_numero) return NextResponse.json({ error: 'OAB inválida' }, { status: 400 })
 
   const { data: profile } = await adminSupabase
@@ -126,15 +132,14 @@ export async function POST(req: NextRequest) {
     .single()
   if (!integration?.api_key) return NextResponse.json({ error: 'Escavador não configurado' }, { status: 400 })
 
-  console.log(`[buscar-completo] Iniciando busca GET: OAB ${oab_numero}/${oab_estado} cursor=${cursor ?? 'none'}`)
+  console.log(`[buscar-completo] Iniciando busca GET: OAB ${oab_numero}/${oab_estado} ${next_url ? 'COM NEXT_URL' : ''}`)
 
   // Montar URL com query params (GET)
-  const url = new URL('https://api.escavador.com/api/v2/advogado/processos')
-  url.searchParams.set('oab_numero', String(oab_numero))
-  url.searchParams.set('oab_estado', String(oab_estado))
-  if (cursor) url.searchParams.set('cursor', String(cursor))
+  const url = next_url 
+    ? next_url
+    : `https://api.escavador.com/api/v2/advogado/processos?oab_numero=${oab_numero}&oab_estado=${oab_estado}`
 
-  const resp = await fetch(url.toString(), {
+  const resp = await fetch(url, {
     method: 'GET',
     headers: {
       'Authorization': `Bearer ${integration.api_key}`,
@@ -155,7 +160,17 @@ export async function POST(req: NextRequest) {
     data?.items?.length ?? data?.itens?.length ?? 'N/A')
 
   const items = data?.items ?? data?.itens ?? data?.processos ?? []
-  const nextCursor = data?.meta?.cursor?.next ?? null
+  if (items.length > 0) {
+    console.log('[PROCESSO_SAMPLE]', JSON.stringify(items[0], null, 2))
+  }
+  
+  const nextCursor: string | null = data?.links?.next ?? null
+
+  console.log('[CURSOR_DEBUG]', JSON.stringify({ 
+    linksNext: data?.links?.next, 
+    nextCursor,
+    totalItems: items.length 
+  }))
   const totalAdvogado = data?.advogado_encontrado?.quantidade_processos ?? items.length
   const advogadoNome = data?.advogado_encontrado?.nome ?? ''
 
@@ -201,7 +216,7 @@ export async function POST(req: NextRequest) {
     total: totalAdvogado,
     total_retornado: processos.length,
     advogado_nome: advogadoNome,
-    next_cursor: nextCursor,
+    next_url: nextCursor,
     paginas_buscadas: 1,
     billing: {
       total_ja_monitorados: capacity?.total_monitorados ?? 0,

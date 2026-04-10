@@ -9,7 +9,7 @@ const adminSupabase = createClient(
   { auth: { autoRefreshToken: false, persistSession: false } }
 )
 
-export async function POST(req: NextRequest) {
+export async function DELETE(req: NextRequest) {
   const cookieStore = await cookies()
   const supabase = createServerClient(
     process.env.NEXT_PUBLIC_SUPABASE_URL!,
@@ -31,27 +31,32 @@ export async function POST(req: NextRequest) {
   const { data: { user } } = await supabase.auth.getUser()
   if (!user) return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
 
-  const { numero_processo } = await req.json()
-  if (!numero_processo) return NextResponse.json({ error: 'Número do processo é obrigatório' }, { status: 400 })
+  const { processo_id } = await req.json()
+  if (!processo_id) return NextResponse.json({ error: 'processo_id é obrigatório' }, { status: 400 })
 
   const { data: profile } = await adminSupabase
     .from('profiles').select('tenant_id').eq('id', user.id).single()
   if (!profile?.tenant_id) return NextResponse.json({ error: 'No tenant' }, { status: 400 })
   const tenantId = profile.tenant_id
 
-  const { error } = await adminSupabase
+  let query = adminSupabase
     .from('monitored_processes')
-    .delete()
+    .update({ ativo: false })
     .eq('tenant_id', tenantId)
-    .eq('numero_processo', numero_processo)
+
+  // Verifica se é UUID
+  if (processo_id.includes('-') && processo_id.length === 36) {
+    query = query.eq('id', processo_id)
+  } else {
+    query = query.eq('numero_processo', processo_id)
+  }
+
+  const { error } = await query
 
   if (error) {
     console.error('[remover-monitoramento]', error)
     return NextResponse.json({ error: error.message }, { status: 500 })
   }
 
-  // Decrementar contagem (opcional, dependendo de como você quer cobrar)
-  // Por enquanto apenas removemos.
-
-  return NextResponse.json({ success: true, mensagem: 'Processo removido do monitoramento.' })
+  return NextResponse.json({ success: true, mensagem: 'Processo removido (inativado) com sucesso.' })
 }

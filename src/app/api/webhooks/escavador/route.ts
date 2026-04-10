@@ -103,6 +103,21 @@ export async function POST(req: NextRequest) {
     }
   }
 
+  // 4. Evento: processo verificado (sucesso da monitoração básica)
+  if (evento === 'processo_verificado') {
+    const numero_cnj = body.monitoramento?.termo || body.valor
+    const status_escavador = body.monitoramento?.status
+    if (numero_cnj) {
+      await adminSupabase
+        .from('monitored_processes')
+        .update({
+          ultima_verificacao: new Date().toISOString(),
+          status_escavador: status_escavador ?? 'VERIFICADO'
+        })
+        .eq('numero_processo', numero_cnj)
+    }
+  }
+
   // Responde imediatamente (Escavador retenta em caso de timeout)
   return NextResponse.json({ ok: true })
 }
