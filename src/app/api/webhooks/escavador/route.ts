@@ -23,7 +23,7 @@ export async function POST(req: NextRequest) {
   const evento = body.event ?? body.evento ?? ''
 
   // 2. Evento: nova movimentação no Diário Oficial
-  if (evento === 'diario_movimentacao_nova') {
+  if (evento === 'nova_movimentacao' || evento === 'diario_movimentacao_nova') {
     const monitoramentos = body.monitoramento ?? []
     const movimentacao = body.movimentacao ?? {}
 
