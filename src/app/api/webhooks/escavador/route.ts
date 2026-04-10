@@ -6,6 +6,54 @@ const adminSupabase = createClient(
   process.env.SUPABASE_SERVICE_ROLE_KEY!
 )
 
+
+async function solicitarResumoIA(numero_cnj: string, tenantId: string) {
+  const { data: integration } = await adminSupabase
+    .from('tenant_integrations').select('api_key')
+    .eq('tenant_id', tenantId).eq('provider', 'escavador').single()
+  if (!integration?.api_key) return
+
+  const { escavadorFetch } = await import('@/lib/services/escavador-client')
+
+  // 1. Solicita geração
+  await escavadorFetch(
+    `/processos/numero_cnj/${numero_cnj}/ia/resumo/solicitar-atualizacao`,
+    integration.api_key,
+    tenantId,
+    { method: 'POST' }
+  ).catch(() => null) // ignora se já estava solicitado
+
+  // 2. Polling por até 60s (6 tentativas × 10s)
+  for (let i = 0; i < 6; i++) {
+    await new Promise(r => setTimeout(r, 10000))
+    try {
+      const status = await escavadorFetch(
+        `/processos/numero_cnj/${numero_cnj}/ia/resumo/status`,
+        integration.api_key,
+        tenantId
+      )
+      if (status?.status !== 'FINALIZADO') continue
+
+      // 3. Busca e salva
+      const resumoData = await escavadorFetch(
+        `/processos/numero_cnj/${numero_cnj}/ia/resumo`,
+        integration.api_key,
+        tenantId
+      )
+      if (resumoData?.resumo) {
+        await adminSupabase
+          .from('monitored_processes')
+          .update({ resumo_curto: resumoData.resumo, updated_at: new Date().toISOString() })
+          .eq('numero_processo', numero_cnj)
+          .eq('tenant_id', tenantId)
+        console.log(`[RESUMO_IA] Salvo para ${numero_cnj}`)
+      }
+      return
+    } catch { continue }
+  }
+  console.log(`[RESUMO_IA] Timeout para ${numero_cnj}`)
+}
+
 export async function POST(req: NextRequest) {
   // 1. Valida token de segurança
   const auth = req.headers.get('Authorization')?.replace('Bearer ', '')
@@ -85,6 +133,9 @@ export async function POST(req: NextRequest) {
           movimentacao: novaMovimentacao,
           advogado_id: processo.advogado_responsavel_id
         }).catch(console.error)
+
+        // Dispara resumo IA em background (R$0,08 por processo, regra 24h)
+        solicitarResumoIA(numero_cnj, processo.tenant_id).catch(console.error)
       }
     }
   }

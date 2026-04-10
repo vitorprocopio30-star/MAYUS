@@ -2,6 +2,7 @@ import { NextRequest, NextResponse } from 'next/server'
 import { createClient } from '@supabase/supabase-js'
 import { createServerClient } from '@supabase/ssr'
 import { cookies } from 'next/headers'
+import { escavadorFetch, checkBudget } from '@/lib/services/escavador-client'
 
 const adminSupabase = createClient(
   process.env.NEXT_PUBLIC_SUPABASE_URL!,
@@ -9,7 +10,7 @@ const adminSupabase = createClient(
   { auth: { autoRefreshToken: false, persistSession: false } }
 )
 
-export async function POST(req: NextRequest) {
+async function getAuthContext(req: NextRequest) {
   const cookieStore = await cookies()
   const supabase = createServerClient(
     process.env.NEXT_PUBLIC_SUPABASE_URL!,
@@ -18,95 +19,96 @@ export async function POST(req: NextRequest) {
       cookies: {
         getAll() { return cookieStore.getAll() },
         setAll(cookiesToSet) {
-          try {
-            cookiesToSet.forEach(({ name, value, options }) =>
-              cookieStore.set(name, value, options)
-            )
-          } catch { }
+          try { cookiesToSet.forEach(({ name, value, options }) => cookieStore.set(name, value, options)) } catch { }
         },
       },
     }
   )
-
   const { data: { user } } = await supabase.auth.getUser()
-  if (!user) return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
-
-  const { numero_processo } = await req.json()
-  if (!numero_processo) return NextResponse.json({ error: 'Número inválido' }, { status: 400 })
+  if (!user) return null
 
   const { data: profile } = await adminSupabase
     .from('profiles').select('tenant_id').eq('id', user.id).single()
-  if (!profile?.tenant_id) return NextResponse.json({ error: 'No tenant' }, { status: 400 })
+  if (!profile?.tenant_id) return null
 
   const { data: integration } = await adminSupabase
     .from('tenant_integrations').select('api_key')
     .eq('tenant_id', profile.tenant_id).eq('provider', 'escavador').single()
+  if (!integration?.api_key) return null
 
-  if (!integration?.api_key) return NextResponse.json({ error: 'Escavador não configurado' }, { status: 400 })
+  return { tenantId: profile.tenant_id, apiKey: integration.api_key }
+}
+
+// POST — solicita geração do resumo IA
+export async function POST(req: NextRequest) {
+  const ctx = await getAuthContext(req)
+  if (!ctx) return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
+
+  const { numero_processo } = await req.json()
+  if (!numero_processo) return NextResponse.json({ error: 'Número inválido' }, { status: 400 })
+
+  const dentro = await checkBudget(ctx.tenantId)
+  if (!dentro) return NextResponse.json({ error: 'Limite de créditos atingido' }, { status: 402 })
 
   try {
-    const res = await fetch(`https://api.escavador.com/api/v2/processes/numero_cnj/${numero_processo}/ia/resumo/solicitar-atualizacao`, {
-      method: 'POST',
-      headers: {
-        'Authorization': `Bearer ${integration.api_key}`,
-        'X-Requested-With': 'XMLHttpRequest',
-        'Content-Type': 'application/json'
-      }
-    })
-    
-    const data = await res.json()
+    // FIX: era /processes/ — corrigido para /processos/
+    const data = await escavadorFetch(
+      `/processos/numero_cnj/${numero_processo}/ia/resumo/solicitar-atualizacao`,
+      ctx.apiKey,
+      ctx.tenantId,
+      { method: 'POST' }
+    )
     return NextResponse.json(data)
-  } catch (err) {
-    return NextResponse.json({ error: 'Falha ao solicitar resumo Escavador' }, { status: 500 })
+  } catch (err: any) {
+    return NextResponse.json({ error: err.message }, { status: 500 })
   }
 }
 
+// GET ?numero_processo=X&action=status  → verifica status
+// GET ?numero_processo=X               → busca resumo pronto e salva no banco
 export async function GET(req: NextRequest) {
-  const cookieStore = await cookies()
-  const supabase = createServerClient(
-    process.env.NEXT_PUBLIC_SUPABASE_URL!,
-    process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY!,
-    {
-      cookies: {
-        getAll() { return cookieStore.getAll() },
-        setAll(cookiesToSet) {
-          try {
-            cookiesToSet.forEach(({ name, value, options }) =>
-              cookieStore.set(name, value, options)
-            )
-          } catch { }
-        },
-      },
-    }
-  )
-
-  const { data: { user } } = await supabase.auth.getUser()
-  if (!user) return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
+  const ctx = await getAuthContext(req)
+  if (!ctx) return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
 
   const url = new URL(req.url)
   const numero_processo = url.searchParams.get('numero_processo')
+  const action = url.searchParams.get('action') // 'status' ou vazio
+
   if (!numero_processo) return NextResponse.json({ error: 'Número inválido' }, { status: 400 })
 
-  const { data: profile } = await adminSupabase
-    .from('profiles').select('tenant_id').eq('id', user.id).single()
-  
-  const { data: integration } = await adminSupabase
-    .from('tenant_integrations').select('api_key')
-    .eq('tenant_id', profile?.tenant_id).eq('provider', 'escavador').single()
-
-  if (!integration?.api_key) return NextResponse.json({ error: 'Escavador não configurado' }, { status: 400 })
-
   try {
-    const res = await fetch(`https://api.escavador.com/api/v2/processes/numero_cnj/${numero_processo}/ia/resumo`, {
-      headers: {
-        'Authorization': `Bearer ${integration.api_key}`,
-        'X-Requested-With': 'XMLHttpRequest'
-      }
-    })
-    
-    const data = await res.json()
+    if (action === 'status') {
+      // FIX: era /processes/ — corrigido para /processos/
+      const data = await escavadorFetch(
+        `/processos/numero_cnj/${numero_processo}/ia/resumo/status`,
+        ctx.apiKey,
+        ctx.tenantId
+      )
+      return NextResponse.json(data)
+    }
+
+    // Busca resumo pronto
+    // FIX: era /processes/ — corrigido para /processos/
+    const data = await escavadorFetch(
+      `/processos/numero_cnj/${numero_processo}/ia/resumo`,
+      ctx.apiKey,
+      ctx.tenantId
+    )
+
+    // Salva no banco se tiver conteúdo
+    if (data?.resumo) {
+      await adminSupabase
+        .from('monitored_processes')
+        .update({
+          resumo_curto: data.resumo,
+          updated_at: new Date().toISOString()
+        })
+        .eq('numero_processo', numero_processo)
+        .eq('tenant_id', ctx.tenantId)
+    }
+
     return NextResponse.json(data)
-  } catch (err) {
-    return NextResponse.json({ error: 'Falha ao consultar resumo Escavador' }, { status: 500 })
+  } catch (err: any) {
+    return NextResponse.json({ error: err.message }, { status: 500 })
   }
 }
