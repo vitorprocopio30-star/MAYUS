@@ -10,6 +10,7 @@ const adminSupabase = createClient(
 // POST /api/admin/backfill-resumos
 // Body: { secret: "...", tenant_id: "...", action: "solicitar" | "coletar" }
 export async function POST(req: NextRequest) {
+  console.log('[BACKFILL] Iniciando execução - v1.5')
   const { secret, tenant_id, action } = await req.json()
   if (secret !== process.env.CRON_SECRET) {
     return NextResponse.json({ error: 'Forbidden' }, { status: 403 })
@@ -97,5 +98,7 @@ export async function POST(req: NextRequest) {
     solicitados,
     erros,
     custo_estimado: `R$ ${(solicitados * 0.08).toFixed(2)}`
+  }, {
+    headers: { 'Cache-Control': 'no-store, max-age=0' }
   })
 }
