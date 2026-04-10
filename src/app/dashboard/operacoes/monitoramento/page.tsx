@@ -41,6 +41,7 @@ interface Processo {
   proxima_acao_sugerida?: string
   organizacao_ia_json?: any
   escavador_monitoramento_id?: number
+  partes?: any
 }
 
 interface Billing {
@@ -787,8 +788,8 @@ function MonitoramentoContent() {
               </div>
             </div>
             <div className="grid grid-cols-1 md:grid-cols-2 gap-6 bg-white/[0.02] border border-white/5 p-6 rounded-2xl mb-8">
-              <div><p className="text-zinc-500 text-[10px] font-black uppercase tracking-widest mb-1">Polo Ativo</p><p className="text-white font-bold text-sm">{(processoSelecionado.partes as any)?.polo_ativo || processoSelecionado.polo_ativo}</p></div>
-              <div><p className="text-zinc-500 text-[10px] font-black uppercase tracking-widest mb-1">Polo Passivo</p><p className="text-white font-bold text-sm">{(processoSelecionado.partes as any)?.polo_passivo || processoSelecionado.polo_passivo}</p></div>
+              <div><p className="text-zinc-500 text-[10px] font-black uppercase tracking-widest mb-1">Polo Ativo</p><p className="text-white font-bold text-sm">{processoSelecionado.polo_ativo}</p></div>
+              <div><p className="text-zinc-500 text-[10px] font-black uppercase tracking-widest mb-1">Polo Passivo</p><p className="text-white font-bold text-sm">{processoSelecionado.polo_passivo}</p></div>
             </div>
             {processoSelecionado.resumo_curto && (
               <div className="mb-8">
