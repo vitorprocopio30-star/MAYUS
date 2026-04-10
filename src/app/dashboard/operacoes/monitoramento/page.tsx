@@ -173,12 +173,9 @@ function BillingBar({ billing }: { billing: BillingInfo }) {
 }
 
 // ... Pagination UI inlined na renderização principal
-function ProcessoCard({ p, onAction, onRemover, selecionado, onSelect, resumoOficial, onResumirOficial, loadingId, resumoIAState, onSolicitarResumoIA, organizandoState, onOrganizar }: {
+function ProcessoCard({ p, onAction, onRemover, selecionado, onSelect, loadingId, organizandoState, onOrganizar }: {
   p: Processo; onAction: () => void; onRemover: () => void; selecionado: boolean; onSelect: () => void;
-  resumoOficial?: { texto?: string, status?: string, loading: boolean }; onResumirOficial: () => void;
   loadingId: string | null
-  resumoIAState: { state: ResumoState; texto?: string }
-  onSolicitarResumoIA: () => void
   organizandoState: 'idle' | 'loading' | 'done'
   onOrganizar: () => void
 }) {
@@ -246,49 +243,38 @@ function ProcessoCard({ p, onAction, onRemover, selecionado, onSelect, resumoOfi
              </div>
           </div>
 
-          {/* Resumo Oficial do Tribunal */}
+          {/* Seção de Análise IA (Somente Monitorados) */}
           {p.monitorado && (
-            <div className="p-4 bg-zinc-950/50 border border-zinc-800 rounded-2xl space-y-3">
-               <div className="flex items-center justify-between">
-                  <div className="flex items-center gap-2 text-zinc-500 text-[10px] font-black uppercase tracking-widest">
-                     <FileText size={14} className="text-yellow-500/50" /> Resumo Oficial (Tribunal)
+            <div className="space-y-4 pt-2">
+              {p.resumo_curto ? (
+                <div className="text-white/70 text-[11px] leading-relaxed bg-white/5 p-3 rounded-lg border border-white/10 font-medium italic">
+                  {p.resumo_curto}
+                </div>
+              ) : (
+                <div className="text-white/20 text-[10px] uppercase tracking-widest font-black p-1">
+                  Sem análise disponível
+                </div>
+              )}
+              
+              <div className="flex flex-col gap-2">
+                {p.urgencia_nivel && (
+                  <div className="flex">
+                    {p.urgencia_nivel === 'vermelho' && <span className="text-[9px] px-2 py-0.5 rounded-full border border-red-500/40 bg-red-500/10 text-red-400 font-black uppercase tracking-widest">🔴 Urgência Crítica</span>}
+                    {p.urgencia_nivel === 'amarelo' && <span className="text-[9px] px-2 py-0.5 rounded-full border border-yellow-500/40 bg-yellow-500/10 text-yellow-400 font-black uppercase tracking-widest">🟡 Atenção Requerida</span>}
+                    {p.urgencia_nivel === 'verde' && <span className="text-[9px] px-2 py-0.5 rounded-full border border-green-500/40 bg-green-500/10 text-green-400 font-black uppercase tracking-widest">🟢 Monitoramento Normal</span>}
                   </div>
-                  {!resumoOficial?.texto && !resumoOficial?.loading && (
-                    <button onClick={onResumirOficial} className="px-3 py-1 bg-yellow-500/10 hover:bg-yellow-500/20 text-yellow-500 text-[10px] font-black uppercase rounded-lg border border-yellow-500/20 transition-all">Solicitar Inteligência</button>
-                  )}
-               </div>
-               {resumoOficial?.loading ? (
-                 <div className="flex items-center gap-2 text-zinc-600 italic text-xs py-1">
-                   <div className="w-3 h-3 rounded-full border-2 border-yellow-500/20 border-t-yellow-500 animate-spin" /> Conectando ao robô do tribunal...
-                 </div>
-               ) : resumoOficial?.status === 'PENDENTE' ? (
-                 <div className="flex items-center gap-2 text-yellow-500/60 italic text-xs px-2 py-1 bg-yellow-500/5 rounded-lg border border-yellow-500/10">
-                   <AlertCircle size={14} /> Solicitação em processamento pelo tribunal.
-                 </div>
-               ) : resumoOficial?.texto ? (
-                 <p className="text-xs text-zinc-300 leading-relaxed italic border-l-2 border-yellow-500/30 pl-3">&quot;{resumoOficial.texto}&quot;</p>
-               ) : (
-                 <p className="text-[10px] text-zinc-600 italic tracking-tight font-medium uppercase">Vigilância ativa. Clique para gerar análise oficial.</p>
-               )}
+                )}
 
-               {/* Resumo de IA via Escavador */}
-               <div className="pt-3 border-t border-zinc-800/60 flex items-center gap-3">
-                 {resumoIAState.state === 'loading' ? (
-                   <button disabled className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg bg-[#CCA761]/5 text-[#CCA761]/60 text-[10px] font-black uppercase opacity-60 cursor-not-allowed border border-[#CCA761]/10">
-                     <Loader2 size={12} className="animate-spin" /> Solicitando...
-                   </button>
-                 ) : resumoIAState.state === 'error' ? (
-                   <p className="text-[10px] text-red-400 font-bold uppercase">Erro ao solicitar resumo.</p>
-                 ) : (p.resumo_solicitado_em && !p.resumo_curto) ? (
-                    <div className="flex items-center gap-2 text-[#CCA761]/80 text-[10px] font-black uppercase tracking-widest bg-[#CCA761]/5 p-2 rounded-lg border border-[#CCA761]/10">
-                      <Loader2 size={12} className="animate-spin" /> Resumo solicitado — disponível em breve
-                    </div>
-                  ) : (resumoIAState.state !== 'done' && !p.resumo_curto) && (
-                    <button onClick={onSolicitarResumoIA} className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg bg-[#CCA761]/5 hover:bg-[#CCA761]/10 text-[#CCA761] text-[10px] font-black uppercase transition-all border border-[#CCA761]/10">
-                      <Sparkles size={12} /> Solicitar Inteligência
-                    </button>
-                  )}
-               </div>
+                {p.proxima_acao_sugerida && (
+                   <div className="flex items-start gap-3 p-3 rounded-xl bg-[#CCA761]/5 border border-[#CCA761]/10">
+                     <Zap size={14} className="text-[#CCA761] mt-0.5 shrink-0" />
+                     <div>
+                       <p className="text-[#CCA761] text-[9px] font-bold uppercase tracking-widest mb-0.5">Ação Sugerida</p>
+                       <p className="text-white/60 text-[11px] font-medium leading-relaxed">{p.proxima_acao_sugerida}</p>
+                     </div>
+                   </div>
+                )}
+              </div>
             </div>
           )}
 
@@ -380,27 +366,6 @@ function ProcessoCard({ p, onAction, onRemover, selecionado, onSelect, resumoOfi
         </div>
       </div>
       
-      {/* 4) PAINEL DE RESULTADO ABAIXO DO CORPO DO CARD */}
-      {p.resumo_curto && expanded && (
-        <div className="p-5 border-t border-zinc-800/50 bg-[#CCA761]/5 rounded-b-2xl">
-          <div className="space-y-3">
-            <p className="text-white/80 text-sm leading-relaxed">{p.resumo_curto}</p>
-            {p.proxima_acao_sugerida && (
-              <div className="flex items-start gap-3 p-3 rounded-xl bg-black/40 border border-black/50">
-                <Zap size={16} className="text-[#CCA761] mt-0.5 shrink-0" />
-                <div>
-                  <p className="text-[#CCA761] text-xs font-black uppercase tracking-widest mb-1">
-                    Próxima Ação Sugerida
-                  </p>
-                  <p className="text-white/70 text-sm font-medium">
-                    {p.proxima_acao_sugerida}
-                  </p>
-                </div>
-              </div>
-            )}
-          </div>
-        </div>
-      )}
     </div>
   )
 }
@@ -426,9 +391,7 @@ function MonitoramentoContent() {
   const [confirmandoLote, setConfirmandoLote] = useState(false)
   const [ordenacao, setOrdenacao] = useState<SortOrder>('urgencia')
   const [selecionados, setSelecionados] = useState<Set<string>>(new Set())
-  const [resumosOficiais, setResumosOficiais] = useState<Record<string, { texto?: string, status?: string, loading: boolean }>>({})
   const [loadingId, setLoadingId] = useState<string | null>(null)
-  const [resumosIA, setResumosIA] = useState<Record<string, { state: ResumoState; texto?: string }>>({})
 
   // Estado para os botões "Organizar IA"
   const [organizando, setOrganizando] = useState<Record<string, 'idle' | 'loading' | 'done'>>({})
@@ -577,59 +540,6 @@ function MonitoramentoContent() {
     }
   }, [])
 
-  const solicitarResumoTribunal = useCallback(async (p: Processo) => {
-    setResumosOficiais(prev => ({ ...prev, [p.numero_processo]: { loading: true } }))
-    try {
-      const res = await fetch('/api/escavador/resumo-ia', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ numero_processo: p.numero_processo })
-      })
-      const data = await res.json()
-      setResumosOficiais(prev => ({ ...prev, [p.numero_processo]: { status: data.status || 'PENDENTE', loading: false } }))
-    } catch (e) {
-      setResumosOficiais(prev => ({ ...prev, [p.numero_processo]: { loading: false } }))
-    }
-  }, [])
-
-  // CORREÇÃO 3: Solicitar resumo de IA via Escavador — usa numero_processo
-  const solicitarResumoIA = useCallback(async (p: Processo) => {
-    const key = p.numero_processo
-
-    // Se já tem resumo local, exibir direto sem gastar
-    if (p.resumo_curto) {
-      setResumosIA(prev => ({ ...prev, [key]: { state: 'done', texto: p.resumo_curto! } }))
-      return
-    }
-
-    setResumosIA(prev => ({ ...prev, [key]: { state: 'loading' } }))
-    try {
-      const res = await fetch('/api/agent/processos/resumo-ia', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ numero_processo: p.numero_processo })
-      })
-      const data = await res.json()
-      if (!res.ok) throw new Error(data.error)
-      
-      if (data.status === 'solicitado' || data.status === 'ja_solicitado') {
-        setResumosIA(prev => ({ ...prev, [key]: { state: 'idle' } }))
-        // Atualizar o objeto do processo localmente para mostrar o status "Solicitado"
-        setResult(prev => prev ? {
-          ...prev,
-          processos: prev.processos.map(item => 
-            item.numero_processo === p.numero_processo 
-              ? { ...item, resumo_solicitado_em: new Date().toISOString() } 
-              : item
-          )
-        } : prev)
-      } else if (data.resumo) {
-        setResumosIA(prev => ({ ...prev, [key]: { state: 'done', texto: data.resumo } }))
-      }
-    } catch (e) {
-      setResumosIA(prev => ({ ...prev, [key]: { state: 'error' } }))
-    }
-  }, [])
 
   // Organizar processo com IA (1d)
   const handleOrganizar = useCallback(async (processoId: string) => {
@@ -950,11 +860,7 @@ function MonitoramentoContent() {
                    }}
                    onAction={() => monitorarLote([p])}
                    onRemover={() => desmonitorar(p)}
-                   resumoOficial={resumosOficiais[p.numero_processo]}
-                   onResumirOficial={() => solicitarResumoTribunal(p)}
                    loadingId={loadingId}
-                   resumoIAState={resumosIA[p.numero_processo] || { state: 'idle' }}
-                   onSolicitarResumoIA={() => solicitarResumoIA(p)}
                    organizandoState={p.id ? (organizando[p.id] || 'idle') : 'idle'}
                    onOrganizar={() => p.id && handleOrganizar(p.id)}
                  />

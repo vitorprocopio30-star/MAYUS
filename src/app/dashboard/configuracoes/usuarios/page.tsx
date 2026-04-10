@@ -279,7 +279,12 @@ export default function UsuariosPermissoesPage() {
       {(showInviteModal || editMember) && (
         <div className="fixed inset-0 bg-black/70 backdrop-blur-sm z-50 flex items-center justify-center p-4">
           <div className="relative w-full max-w-xl max-h-[90vh] overflow-y-auto no-scrollbar rounded-2xl bg-[#0C0C0C] border border-[#222] p-8 animate-fade-in-up shadow-2xl" style={{ animationDuration: "0.2s" }}>
-            <button onClick={() => { setShowInviteModal(false); setEditMember(null); }} className="absolute top-4 right-4 p-1 rounded-lg hover:bg-white/5 text-gray-500 hover:text-white transition-colors"><X size={20} /></button>
+            <button
+              onClick={() => { setShowInviteModal(false); setEditMember(null); }}
+              className="absolute top-4 right-4 text-white/40 hover:text-white transition-colors"
+            >
+              <X size={20} />
+            </button>
             <div className="flex justify-center mb-6">
               <div className="w-16 h-16 rounded-2xl bg-[#CCA761]/10 border border-[#CCA761]/20 flex items-center justify-center"><Shield size={28} className="text-[#CCA761]" /></div>
             </div>
