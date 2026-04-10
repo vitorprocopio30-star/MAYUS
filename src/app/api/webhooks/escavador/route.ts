@@ -18,20 +18,27 @@ export async function POST(req: NextRequest) {
   }
 
   const body = await req.json()
-  console.log('[ESCAVADOR_WEBHOOK]', JSON.stringify(body, null, 2))
+  console.log('[ESCAVADOR_WEBHOOK] Payload recebido:', JSON.stringify(body, null, 2))
 
   const evento = body.event ?? body.evento ?? ''
 
   // 2. Evento: nova movimentação no Diário Oficial
   if (evento === 'nova_movimentacao' || evento === 'diario_movimentacao_nova') {
-    const monitoramentos = body.monitoramento ?? []
+    // Normalização: suporta array em monitoramentos ou objeto em monitoramento
+    const rawMon = body.monitoramentos ?? body.monitoramento ?? []
+    const monitoramentos = Array.isArray(rawMon) ? rawMon : [rawMon]
+    
     const movimentacao = body.movimentacao ?? {}
 
     for (const mon of monitoramentos) {
-      const numero_cnj = mon.termo ?? mon.processo?.numero_novo ?? mon.valor
-      if (!numero_cnj) continue
+      // Extração robusta do número do processo (inclui mon.numero aprovado pelo user)
+      const numero_cnj = mon.numero ?? mon.termo ?? mon.valor ?? mon.processo?.numero_novo ?? mon.processo?.numero
+      if (!numero_cnj) {
+        console.warn('[ESCAVADOR_WEBHOOK] Monitoramento sem número identificável:', mon)
+        continue
+      }
 
-      // Enfileira para o agente processar
+      // Enfileira para o agente processar (log de auditoria)
       await adminSupabase.from('process_update_queue').insert({
         numero_cnj,
         evento,
@@ -39,8 +46,8 @@ export async function POST(req: NextRequest) {
         status: 'PENDENTE'
       })
 
-      // DUAL LOOKUP: tenta por escavador_monitoramento_id primeiro, fallback por numero_processo
-      const monitoramentoIdEscavador = mon.id
+      // DUAL LOOKUP: tenta por escavador_monitoramento_id primeiro
+      const monitoramentoIdEscavador = String(mon.id ?? '')
       let { data: processos } = await adminSupabase
         .from('monitored_processes')
         .select('id, tenant_id, movimentacoes, advogado_responsavel_id, escavador_monitoramento_id')
@@ -48,6 +55,7 @@ export async function POST(req: NextRequest) {
 
       // Fallback por numero_processo (CNJ)
       if (!processos || processos.length === 0) {
+        console.log(`[ESCAVADOR_WEBHOOK] ID ${monitoramentoIdEscavador} não encontrado. Tentando CNJ: ${numero_cnj}`)
         const { data: fallback } = await adminSupabase
           .from('monitored_processes')
           .select('id, tenant_id, movimentacoes, advogado_responsavel_id, escavador_monitoramento_id')
@@ -104,7 +112,7 @@ export async function POST(req: NextRequest) {
 
         // Dispara analisador jurídico (cria tarefas automáticas)
         const { analisarMovimentacao } = await import('@/lib/juridico/analisador')
-        await analisarMovimentacao({
+        analisarMovimentacao({
           processo_id: processo.id,
           numero_cnj,
           tenant_id: processo.tenant_id,
@@ -112,7 +120,7 @@ export async function POST(req: NextRequest) {
           advogado_id: processo.advogado_responsavel_id
         }).catch(console.error)
 
-        // Dispara resumo IA em background (R$0,08 por processo, regra 24h)
+        // Dispara resumo IA em background
         solicitarResumoIA(numero_cnj, processo.tenant_id).catch(console.error)
       }
     }
@@ -120,8 +128,7 @@ export async function POST(req: NextRequest) {
 
   // 3. Evento: atualização do tribunal (síncrono ou assíncrono)
   if (evento === 'update_time' || evento === 'resultado_processo_async') {
-    const numero_cnj =
-      body.processo?.numero_unico ?? body.app?.monitor?.valor
+    const numero_cnj = body.processo?.numero_unico ?? body.app?.monitor?.valor
     if (numero_cnj) {
       await adminSupabase.from('process_update_queue').insert({
         numero_cnj,
@@ -134,8 +141,12 @@ export async function POST(req: NextRequest) {
 
   // 4. Evento: processo verificado (sucesso da monitoração básica)
   if (evento === 'processo_verificado') {
-    const numero_cnj = body.monitoramento?.termo || body.valor
-    const status_escavador = body.monitoramento?.status
+    // Normalização similar para o evento verificado
+    const monData = body.monitoramento ?? {}
+    const numero_cnj = monData.numero ?? monData.termo ?? monData.valor ?? body.valor
+    const status_escavador = monData.status
+    const monitoramentoIdEscavador = String(monData.id ?? '')
+
     if (numero_cnj) {
       await adminSupabase
         .from('monitored_processes')
@@ -145,8 +156,7 @@ export async function POST(req: NextRequest) {
         })
         .eq('numero_processo', numero_cnj)
 
-      // DUAL LOOKUP: tenta por ID primeiro, fallback por numero_processo
-      const monitoramentoIdEscavador = body.monitoramento?.id
+      // Dual lookup para resumo
       let { data: processos } = await adminSupabase
         .from('monitored_processes')
         .select('id, tenant_id, escavador_monitoramento_id')
@@ -178,6 +188,6 @@ export async function POST(req: NextRequest) {
     }
   }
 
-  // Responde imediatamente (Escavador retenta em caso de timeout)
   return NextResponse.json({ ok: true })
 }
+
