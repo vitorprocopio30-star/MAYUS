@@ -1,3 +1,4 @@
+// Force Trigger Deploy: 2026-04-10T15:40
 import { NextRequest, NextResponse } from 'next/server'
 import { createClient } from '@supabase/supabase-js'
 import { solicitarResumoIA, buscarESalvarResumo } from '@/lib/services/escavador-ia'
