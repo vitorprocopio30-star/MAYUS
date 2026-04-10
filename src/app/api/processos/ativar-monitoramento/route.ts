@@ -1,3 +1,4 @@
+import { NextRequest, NextResponse } from 'next/server'
 import { createClient } from '@supabase/supabase-js'
 import { escavadorFetch } from '@/lib/services/escavador-client'
 import { solicitarResumoIA } from '@/lib/services/escavador-ia'
