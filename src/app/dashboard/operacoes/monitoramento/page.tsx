@@ -1,149 +1,172 @@
 'use client'
 
-import { useState, useCallback, Suspense, useMemo, useEffect } from 'react'
-import {
-  Search, Shield, AlertCircle, CheckCircle,
-  ChevronDown, ChevronUp, Zap, Eye, Filter, RefreshCw,
-  AlertTriangle, X, DollarSign, ArrowUpDown, LayoutList, CheckSquare, Square, Trash2, FileText, CloudCheck, Sparkles, Loader2, CheckCircle2
+import { useState, useEffect, useCallback, useMemo, Suspense } from 'react'
+import { 
+  Search, 
+  RefreshCw, 
+  Shield, 
+  Zap, 
+  LayoutList, 
+  CheckCircle, 
+  AlertCircle,
+  Filter,
+  X,
+  Sparkles,
+  Loader2,
+  ChevronDown,
+  ChevronUp,
+  ExternalLink,
+  History,
+  FileText,
+  Clock
 } from 'lucide-react'
 
-// ─── Interfaces ───────────────────────────────────────────────────────────────
+// ─── Interfaces e Tipos ───
 
 interface Processo {
   numero_processo: string
   tribunal: string
-  assunto: string
   status: string
+  data_distribuicao: string | null
+  data_ultima_movimentacao: string | null
   polo_ativo: string
   polo_passivo: string
-  valor_causa: string | null
-  data_distribuicao: string | null
-  comarca: string | null
-  vara: string | null
-  classe_processual: string | null
-  data_ultima_movimentacao: string | null
-  ultima_movimentacao_texto: string | null
-  ultima_movimentacao_resumo: string | null
-  fase_atual: string
-  escavador_id: string
-  monitorado: boolean
-  movimentacoes: Record<string, unknown>[]
-  resumo_curto?: string | null
+  assunto: string
+  instancia: number
+  movimentacoes?: any[]
   id?: string
-  urgencia_nivel?: 'verde' | 'amarelo' | 'vermelho'
-  proxima_acao_sugerida?: string | null
-  resumo_solicitado_em?: string | null
+  monitorado?: boolean
+  link_estudo?: string
+  resumo_curto?: string
+  proxima_acao_sugerida?: string
   organizacao_ia_json?: any
-  partes?: any
+  escavador_monitoramento_id?: number
 }
 
-interface BillingInfo {
+interface Billing {
+  total_disponivel: number
+  total_pago: number
+  custo_por_processo: number
   total_ja_monitorados: number
-  gratuitos: number
-  disponivel_sem_custo: number
-  ativos_nao_monitorados: number
-  ja_monitorados_desta_oab: number
-  excedente_se_prosseguir: number
-  custo_estimado_mes: number
-  preco_por_extra: number
 }
 
 interface BuscaResult {
-  processos: Processo[]
-  total: number
-  total_retornado: number
   advogado_nome: string
-  paginas_buscadas: number
-  billing: BillingInfo
-  next_cursor?: string | null
+  total: number
+  total_retornado?: number
+  processos: Processo[]
+  billing: Billing
+  next_url?: string
 }
 
 interface ConfirmacaoLote {
+  total: number
+  custo_estimado: number
+  ja_monitorados: number
   novos: number
-  gratuitos_disponiveis: number
-  excedente: number
-  custo_mensal: number
-  preco_por_extra: number
-  mensagem: string
   processosParaImportar: Processo[]
 }
 
 type FilterStatus = 'TODOS' | 'ATIVO' | 'ARQUIVADO' | 'monitorado' | 'nao_monitorado'
 type SortOrder = 'distribuicao' | 'urgencia' | 'tribunal'
-type ResumoState = 'idle' | 'loading' | 'done' | 'error'
-
-// ─── Helpers ──────────────────────────────────────────────────────────────────
 
 const STATUS_COLOR: Record<string, string> = {
-  ATIVO: 'text-green-400 bg-green-400/10',
-  ARQUIVADO: 'text-zinc-400 bg-zinc-400/10',
-  BAIXADO: 'text-red-400 bg-red-400/10',
+  'ATIVO': 'text-green-400 bg-green-500/10 border-green-500/20',
+  'ARQUIVADO': 'text-zinc-500 bg-zinc-500/10 border-zinc-500/20',
+  'SUSPENSO': 'text-yellow-500 bg-yellow-500/10 border-yellow-500/20'
 }
 
-// CORREÇÃO 2: Função de formatação de data em DD/MM/YYYY
-function formatarData(value: string | Date | null | undefined): string {
-  if (!value) return '—'
-  const d = new Date(value)
-  if (isNaN(d.getTime())) return String(value)
-  return d.toLocaleDateString('pt-BR', {
-    day: '2-digit',
-    month: '2-digit',
-    year: 'numeric',
-    timeZone: 'America/Sao_Paulo'
-  })
+// ─── Funções Auxiliares ───
+
+function parseDataBR(dataStr: string | null): number {
+  if (!dataStr) return 0
+  try {
+    const [d, m, a] = dataStr.split('/').map(Number)
+    return new Date(a, m - 1, d).getTime()
+  } catch { return 0 }
 }
 
-function parseDataBR(d: string | null) {
-  if (!d) return 0
-  if (d.includes('/')) {
-    const [dia, mes, ano] = d.split('/')
-    return new Date(`${ano}-${mes}-${dia}`).getTime()
-  }
-  return new Date(d || 0).getTime()
+function formatarData(dataIso: string | null) {
+  if (!dataIso) return '--/--/----'
+  try {
+    const d = new Date(dataIso)
+    return d.toLocaleDateString('pt-BR')
+  } catch { return '--/--/----' }
 }
 
 function diasDesde(data: string | null) {
   if (!data) return null
   const timestamp = parseDataBR(data)
   if (timestamp === 0) return null
-  const diff = Date.now() - timestamp
-  if (diff < 0) return 0
-  return Math.floor(diff / 86400000)
+  
+  const h = new Date()
+  const m = new Date(timestamp)
+  
+  // Zera horas para comparação de dias de calendário (fuso local)
+  h.setHours(0, 0, 0, 0)
+  m.setHours(0, 0, 0, 0)
+  
+  const diff = h.getTime() - m.getTime()
+  const dias = Math.round(diff / 86400000)
+  
+  return dias < 0 ? 0 : dias
 }
 
-function UrgenciaBadge({ dias }: { dias: number | null }) {
-  if (dias === null) return <span className="text-xs text-zinc-600">Sem registro</span>
-  if (dias > 30) return <span className="text-xs text-yellow-500 bg-yellow-500/10 px-2 py-0.5 rounded-full border border-yellow-500/20 font-bold">+{dias}d sem mov.</span>
-  if (dias === 0) return <span className="text-xs text-green-400 bg-green-500/10 px-2 py-0.5 rounded-full border border-green-500/20 font-bold">Atualizado hoje</span>
-  return <span className="text-xs text-green-400 bg-green-500/10 px-2 py-0.5 rounded-full border border-green-500/20 font-bold">{dias}d atrás</span>
-}
+// ─── Sub-componentes ───
 
-// ─── Componentes de UI ────────────────────────────────────────────────────────
-
-function ModalConfirmacaoCusto({ dados, onConfirmar, onCancelar, loading }: {
-  dados: ConfirmacaoLote; onConfirmar: () => void; onCancelar: () => void; loading: boolean
-}) {
+function StatusBadge({ status }: { status: string }) {
+  const color = STATUS_COLOR[status] || 'text-zinc-400 bg-zinc-900 border-zinc-800'
   return (
-    <div className="fixed inset-0 bg-black/70 backdrop-blur-sm z-50 flex items-center justify-center p-4">
-      <div className="bg-zinc-900 border border-yellow-500/40 rounded-3xl max-w-md w-full p-6 space-y-5 shadow-2xl">
-        <div className="flex items-center justify-between">
-          <div className="flex items-center gap-2 text-yellow-500">
-            <AlertTriangle size={20} />
-            <span className="font-bold text-base uppercase tracking-tight">Custo do Monitoramento</span>
-          </div>
-          <button onClick={onCancelar} className="text-zinc-500 hover:text-zinc-300"><X size={18} /></button>
+    <span className={`px-2.5 py-1 rounded-md text-[9px] font-black uppercase tracking-widest border ${color}`}>
+      {status}
+    </span>
+  )
+}
+
+function BillingBar({ billing }: { billing: Billing }) {
+  const percent = Math.min(100, (billing.total_ja_monitorados / billing.total_disponivel) * 100)
+  return (
+    <div className="bg-zinc-900/50 border border-zinc-800 rounded-2xl p-6 flex flex-col md:flex-row items-center justify-between gap-6">
+      <div className="space-y-1 text-center md:text-left">
+        <p className="text-[10px] text-zinc-500 uppercase font-black tracking-widest leading-none">Capacidade do Plano</p>
+        <p className="text-white font-black text-lg">{billing.total_ja_monitorados} <span className="text-zinc-600">/</span> {billing.total_disponivel} <span className="text-zinc-600 text-[10px] uppercase ml-2 tracking-tighter">Processos</span></p>
+      </div>
+      <div className="flex-1 w-full max-w-md h-3 bg-zinc-950 rounded-full border border-zinc-800 p-0.5 overflow-hidden">
+        <div className="h-full bg-gradient-to-r from-yellow-600 to-yellow-400 rounded-full shadow-[0_0_12px_rgba(234,179,8,0.3)] transition-all duration-1000" style={{ width: `${percent}%` }} />
+      </div>
+      <div className="text-center md:text-right">
+        <p className="text-[10px] text-zinc-500 uppercase font-black tracking-widest leading-none">Status de Créditos</p>
+        <p className="text-green-500 font-bold text-xs uppercase tracking-widest mt-1">Suficiente para Varredura</p>
+      </div>
+    </div>
+  )
+}
+
+function ModalConfirmacaoCusto({ dados, onConfirmar, onCancelar, loading }: { dados: ConfirmacaoLote, onConfirmar: () => void, onCancelar: () => void, loading: boolean }) {
+  return (
+    <div className="fixed inset-0 z-[100] flex items-center justify-center p-4 bg-black/80 backdrop-blur-md animate-in fade-in duration-300">
+      <div className="w-full max-w-md bg-zinc-900 border border-zinc-800 rounded-3xl p-8 shadow-2xl space-y-6">
+        <div className="w-16 h-16 bg-yellow-500/10 rounded-2xl flex items-center justify-center mx-auto text-yellow-500 mb-2">
+          <Zap size={32} fill="currentColor" />
         </div>
-        <div className="bg-zinc-800/60 rounded-2xl p-5 space-y-4 text-sm border border-zinc-800">
-          <div className="flex justify-between"><span className="text-zinc-400 font-medium">Novos Alvos</span><span className="text-white font-bold">{dados.novos}</span></div>
-          <div className="flex justify-between"><span className="text-zinc-400 font-medium">No Plano</span><span className="text-green-400 font-bold">{dados.gratuitos_disponiveis} grátis</span></div>
-          <div className="h-px bg-zinc-700" />
-          <div className="flex justify-between font-bold text-lg"><span className="text-white">Custo Extra</span><span className="text-yellow-500">R$ {dados.custo_mensal.toFixed(2)}<span className="text-[10px] ml-1">/mês</span></span></div>
+        <div className="text-center space-y-2">
+           <h3 className="text-white font-black text-xl uppercase tracking-tighter">Investimento Requerido</h3>
+           <p className="text-zinc-500 text-xs leading-relaxed font-medium">A monitoração desses {dados.novos} novos processos requer o uso de créditos da API Escavador.</p>
+        </div>
+        <div className="bg-zinc-950 rounded-2xl p-6 border border-zinc-800 grid grid-cols-2 gap-4 divide-x divide-zinc-900">
+          <div className="text-center">
+             <p className="text-[9px] text-zinc-600 font-black uppercase mb-1">Processos</p>
+             <p className="text-white font-black text-lg">+{dados.novos}</p>
+          </div>
+          <div className="text-center pl-4">
+             <p className="text-[9px] text-zinc-600 font-black uppercase mb-1">Custo Estimado</p>
+             <p className="text-yellow-500 font-black text-lg">R$ {dados.custo_estimado.toFixed(2)}</p>
+          </div>
         </div>
         <div className="flex gap-3">
-          <button onClick={onCancelar} disabled={loading} className="flex-1 py-3 rounded-2xl border border-zinc-700 text-zinc-500 hover:text-zinc-300 text-xs font-bold uppercase transition-all">Cancelar</button>
-          <button onClick={onConfirmar} disabled={loading} className="flex-1 py-3 rounded-2xl bg-yellow-500 hover:bg-yellow-400 text-black text-xs font-black uppercase transition-all shadow-lg shadow-yellow-500/20 flex items-center justify-center gap-2">
-            {loading ? <RefreshCw size={14} className="animate-spin" /> : <DollarSign size={14} />}
-            Confirmar
+          <button onClick={onCancelar} className="flex-1 py-4 rounded-xl text-[10px] font-black uppercase text-zinc-500 hover:text-white transition-all">Cancelar</button>
+          <button onClick={onConfirmar} disabled={loading} className="flex-[2] py-4 bg-yellow-500 hover:bg-yellow-400 text-black text-[10px] font-black uppercase rounded-xl transition-all shadow-xl shadow-yellow-500/20 active:scale-95 border-b-4 border-yellow-700">
+            {loading ? 'Confirmando...' : 'Autorizar Investimento'}
           </button>
         </div>
       </div>
@@ -151,168 +174,122 @@ function ModalConfirmacaoCusto({ dados, onConfirmar, onCancelar, loading }: {
   )
 }
 
-function BillingBar({ billing }: { billing: BillingInfo }) {
-  const pct = Math.min(100, (billing.total_ja_monitorados / Math.max(billing.gratuitos, 1)) * 100)
-  const quaseCheno = pct >= 80
-  return (
-    <div className="rounded-2xl border border-zinc-800 bg-zinc-900/60 p-5 flex items-center gap-6">
-      <div className="flex-1 space-y-2">
-        <div className="flex items-center justify-between text-[10px] font-black uppercase tracking-widest">
-          <span className="text-zinc-500">Ocupação do Plano</span>
-          <span className={quaseCheno ? 'text-yellow-500' : 'text-zinc-400'}>{billing.total_ja_monitorados} de {billing.gratuitos} usados</span>
-        </div>
-        <div className="h-2 bg-zinc-950 rounded-full overflow-hidden border border-zinc-800">
-          <div className={`h-full rounded-full transition-all duration-700 ${quaseCheno ? 'bg-yellow-500' : 'bg-green-500'}`} style={{ width: `${pct}%` }} />
-        </div>
-        <p className="text-[10px] text-zinc-600 font-bold uppercase">
-          {billing.disponivel_sem_custo > 0
-            ? `${billing.disponivel_sem_custo} espaços disponíveis sem cobrança extra`
-            : `Limite atingido — excedentes monitorados por R$${billing.preco_por_extra.toFixed(2)}/processo`}
-        </p>
-      </div>
-    </div>
-  )
-}
-
-function ProcessoCard({ p, onAction, onRemover, selecionado, onSelect, loadingId, organizandoState, onOrganizar, onAbrirDetalhes }: {
-  p: Processo; onAction: () => void; onRemover: () => void; selecionado: boolean; onSelect: () => void;
-  loadingId: string | null
-  organizandoState: 'idle' | 'loading' | 'done'
-  onOrganizar: () => void
-  onAbrirDetalhes: () => void
-}) {
-  const isLoading = loadingId === p.numero_processo
-  const dias = diasDesde(p.data_ultima_movimentacao)
+function ProcessoCard({ p, onSelect, selecionado, onAction, onRemover, loadingId, organizandoState, onOrganizar, onAbrirDetalhes }: { p: Processo, onSelect: () => void, selecionado: boolean, onAction: () => void, onRemover: () => void, loadingId: string | null, organizandoState: 'idle' | 'loading' | 'done', onOrganizar: () => void, onAbrirDetalhes: () => void }) {
+  const d = diasDesde(p.data_ultima_movimentacao)
+  const isUpdating = loadingId === p.numero_processo
+  const [resumoExpandido, setResumoExpandido] = useState(false)
 
   return (
-    <div 
-      onClick={onAbrirDetalhes}
-      className={`rounded-2xl border transition-all cursor-pointer ${p.monitorado ? 'border-yellow-500/30 bg-yellow-500/[0.03]' : selecionado ? 'border-yellow-500/50 bg-yellow-500/[0.05]' : 'border-zinc-800 bg-zinc-900/40'} hover:border-zinc-700`}
-    >
-      <div className="p-5 flex items-start gap-4">
-        {/* Checkbox */}
-        <div className="mt-1 shrink-0 cursor-pointer" onClick={(e) => { e.stopPropagation(); onSelect(); }}>
-          {p.monitorado ? (
-            <div className="w-5 h-5 rounded-md bg-yellow-500 flex items-center justify-center shadow-lg shadow-yellow-500/20">
-              <CheckCircle size={14} className="text-black" />
+    <div className={`group relative bg-zinc-900/40 border transition-all duration-500 rounded-3xl p-6 hover:bg-zinc-900/60 ${selecionado ? 'border-yellow-500 ring-1 ring-yellow-500/20 bg-zinc-900/80 shadow-2xl shadow-yellow-500/5' : 'border-zinc-800/50 hover:border-zinc-700'}`}>
+      <div className="flex flex-col lg:flex-row gap-8">
+        {/* Controle Lateral */}
+        <div className="flex flex-row lg:flex-col items-center gap-4 border-b lg:border-b-0 lg:border-r border-zinc-800 pb-4 lg:pb-0 lg:pr-6 shrink-0">
+           <button onClick={onSelect} className={`w-6 h-6 rounded-lg border transition-all flex items-center justify-center ${selecionado ? 'bg-yellow-500 border-yellow-500' : 'bg-zinc-950 border-zinc-800 group-hover:border-zinc-700'}`}>
+             {selecionado && <CheckCircle size={14} className="text-black" strokeWidth={3} />}
+           </button>
+           <div className="h-px lg:h-8 w-8 lg:w-px bg-zinc-800" />
+           <div className="flex lg:flex-col gap-2">
+              <StatusBadge status={p.status} />
+              {p.monitorado && (
+                <span className="px-2 py-1 rounded-md bg-yellow-500/5 border border-yellow-500/10 text-yellow-500/70 text-[8px] font-black uppercase tracking-widest flex items-center gap-1">
+                   <Shield size={10} fill="currentColor" /> Vigiado
+                </span>
+              )}
+           </div>
+        </div>
+
+        {/* Conteúdo Principal */}
+        <div className="flex-1 space-y-6">
+          <div className="flex flex-col md:flex-row md:items-start justify-between gap-4">
+            <div className="space-y-1">
+               <div className="flex items-center gap-2">
+                 <h3 className="text-lg font-black text-white tracking-tight cursor-pointer hover:text-yellow-500 transition-colors" onClick={onAbrirDetalhes}>
+                   {p.numero_processo}
+                 </h3>
+                 <button onClick={onAbrirDetalhes} className="text-zinc-700 hover:text-white transition-colors">
+                   <ExternalLink size={14} />
+                 </button>
+               </div>
+               <p className="text-[10px] text-zinc-500 font-black uppercase tracking-[0.2em]">{p.tribunal} · {p.assunto || 'ASSUNTO NÃO IDENTIFICADO'}</p>
             </div>
-          ) : selecionado ? (
-            <CheckSquare size={20} className="text-yellow-500" />
-          ) : (
-            <Square size={20} className="text-zinc-800 hover:text-zinc-600 transition-colors" />
-          )}
-        </div>
-
-        <div className="flex-1 min-w-0 space-y-3">
-          {/* Header Card */}
-          <div className="flex items-center gap-2.5 flex-wrap">
-            <span className="font-mono text-sm text-zinc-100 font-bold tracking-tight">{p.numero_processo}</span>
-            <span className="text-[10px] uppercase font-bold bg-zinc-800 text-zinc-500 px-2.5 py-0.5 rounded-lg">{p.tribunal}</span>
-            <span className={`text-[10px] uppercase font-bold px-2.5 py-0.5 rounded-lg ${STATUS_COLOR[p.status] ?? 'text-zinc-600 bg-zinc-900'}`}>{p.status}</span>
-            {p.monitorado && (
-              <div className="flex items-center gap-1 px-2.5 py-0.5 bg-green-500/10 border border-green-500/20 rounded-lg text-[10px] uppercase font-black text-green-400">
-                 <CloudCheck size={12} /> Sincronizado
-              </div>
-            )}
-            
-            {p.urgencia_nivel === 'vermelho' && (
-              <span className="text-xs px-2 py-0.5 rounded-full border border-red-500/40 bg-red-500/10 text-red-400 font-medium">
-                🔴 URGENTE
-              </span>
-            )}
-            {p.urgencia_nivel === 'amarelo' && (
-              <span className="text-xs px-2 py-0.5 rounded-full border border-yellow-500/40 bg-yellow-500/10 text-yellow-400 font-medium">
-                🟡 ATENÇÃO
-              </span>
-            )}
+            <div className="flex flex-col items-end shrink-0">
+               {d !== null && (
+                 <div className={`px-4 py-1.5 rounded-full flex items-center gap-2 border ${d === 0 ? 'bg-yellow-500/10 border-yellow-500/20 text-yellow-500 drop-shadow-[0_0_8px_rgba(234,179,8,0.2)]' : 'bg-zinc-950 border-zinc-800 text-zinc-500'}`}>
+                    <div className={`w-1.5 h-1.5 rounded-full animate-pulse ${d === 0 ? 'bg-yellow-500 shadow-[0_0_8px_rgba(234,179,8,1)]' : 'bg-zinc-800'}`} />
+                    <span className="text-[10px] font-black uppercase tracking-widest">{d === 0 ? 'Atualizado hoje' : `Atualizado há ${d} dia${d > 1 ? 's' : ''}`}</span>
+                 </div>
+               )}
+               <p className="text-[9px] text-zinc-700 font-black uppercase tracking-widest mt-2">{p.instancia}ª Instância</p>
+            </div>
           </div>
 
-          {/* Partes */}
-          <div className="grid grid-cols-1 md:grid-cols-2 gap-x-6 gap-y-1.5 text-sm">
-            <div className="truncate"><span className="text-zinc-500 text-[10px] font-black mr-2 uppercase tracking-tighter">ATIVO</span><span className="text-zinc-200 font-bold">{p.polo_ativo}</span></div>
-            <div className="truncate"><span className="text-zinc-500 text-[10px] font-black mr-2 uppercase tracking-tighter">PASSIVO</span><span className="text-zinc-200 font-bold">{p.polo_passivo}</span></div>
-          </div>
-
-          {/* Última Movimentação Teaser */}
-          <div className="flex items-start gap-3">
-             <div className="w-1 rounded-full bg-yellow-500/20 shrink-0 self-stretch" />
-             <div className="space-y-1.5 flex-1">
-                <p className="text-[11px] text-zinc-400 leading-relaxed font-medium line-clamp-1">
-                  {p.ultima_movimentacao_texto || "Sem detalhes da última movimentação."}
+          <div className="grid grid-cols-1 md:grid-cols-2 gap-8 bg-zinc-950/30 p-5 rounded-2xl border border-zinc-800/30">
+             <div className="space-y-2">
+                <p className="text-[9px] text-zinc-600 font-black uppercase tracking-widest flex items-center gap-2">
+                  <div className="w-1.5 h-1.5 rounded-full bg-zinc-800" /> Polo Ativo
                 </p>
-                <div className="flex items-center gap-4">
-                   {p.data_ultima_movimentacao && <span className="text-[10px] text-zinc-600 font-black uppercase">{formatarData(p.data_ultima_movimentacao)}</span>}
-                   <UrgenciaBadge dias={dias} />
-                </div>
+                <p className="text-zinc-300 text-xs font-bold leading-relaxed">{p.polo_ativo}</p>
+             </div>
+             <div className="space-y-2">
+                <p className="text-[9px] text-zinc-600 font-black uppercase tracking-widest flex items-center gap-2">
+                  <div className="w-1.5 h-1.5 rounded-full bg-zinc-800" /> Polo Passivo
+                </p>
+                <p className="text-zinc-300 text-xs font-bold leading-relaxed">{p.polo_passivo}</p>
              </div>
           </div>
 
-          {/* Indicações de Análise IA resumidas no card */}
-          {p.monitorado && (p.resumo_curto || p.proxima_acao_sugerida) && (
-            <div className="flex items-center gap-3">
-              {p.resumo_curto && (
-                <div className="flex items-center gap-1.5 text-white/40 text-[9px] uppercase font-black tracking-widest">
-                  <FileText size={12} /> Resumo Disponível
+          {p.resumo_curto && (
+            <div className="space-y-2">
+              <div 
+                onClick={() => setResumoExpandido(!resumoExpandido)} 
+                className="cursor-pointer group/resumo"
+              >
+                <div className={`text-white/70 text-[11px] leading-relaxed bg-white/[0.03] p-4 rounded-xl border border-white/5 transition-all group-hover/resumo:border-white/10 ${resumoExpandido ? '' : 'line-clamp-2'}`}>
+                  <span className="text-[#CCA761] font-black uppercase text-[9px] tracking-widest mb-1 block">Análise MAYUS IA:</span>
+                  {p.resumo_curto}
                 </div>
-              )}
-              {p.proxima_acao_sugerida && (
-                <div className="flex items-center gap-1.5 text-yellow-500/60 text-[9px] uppercase font-black tracking-widest">
-                  <Sparkles size={12} /> Ação Sugerida
-                </div>
-              )}
+                <span className="text-white/20 text-[9px] uppercase tracking-widest mt-2 flex items-center gap-1 group-hover/resumo:text-white/40">
+                  {resumoExpandido ? <ChevronUp size={10} /> : <ChevronDown size={10} />}
+                  {resumoExpandido ? 'recolher insight' : 'expandir insight completo'}
+                </span>
+              </div>
             </div>
           )}
         </div>
 
-        {/* Actions Sidebar */}
-        <div className="flex flex-col items-end gap-3 shrink-0 h-full justify-between" onClick={(e) => e.stopPropagation()}>
-           <div className="flex flex-col gap-2">
-             {!p.monitorado ? (
-               <button
-                 onClick={onAction}
-                 disabled={isLoading}
-                 className="w-full py-3 px-6 rounded-2xl bg-yellow-500 hover:bg-yellow-400 text-black text-[10px] font-black uppercase transition-all disabled:opacity-50 flex items-center justify-center gap-2 shadow-xl shadow-yellow-500/20 active:scale-95 border-b-4 border-yellow-600"
+        {/* Ações */}
+        <div className="flex flex-col gap-2 shrink-0 justify-center">
+           {!p.monitorado ? (
+             <button onClick={onAction} disabled={isUpdating} className="w-full lg:w-44 h-12 bg-zinc-950 hover:bg-zinc-900 border border-zinc-800 text-zinc-500 hover:text-white text-[10px] font-black uppercase rounded-xl transition-all flex items-center justify-center gap-2.5">
+               {isUpdating ? <RefreshCw size={14} className="animate-spin" /> : <Zap size={14} />}
+               Ativar Vigilância
+             </button>
+           ) : (
+             <div className="space-y-2">
+               <button 
+                onClick={onOrganizar}
+                disabled={organizandoState === 'loading'}
+                className={`w-full lg:w-44 h-12 border text-[10px] font-black uppercase rounded-xl transition-all flex items-center justify-center gap-2.5 
+                  ${organizandoState === 'loading' ? 'bg-zinc-950 border-zinc-800 text-zinc-600' : 
+                    organizandoState === 'done' ? 'bg-green-500/10 border-green-500/20 text-green-500' :
+                    'bg-[#CCA761]/10 border-[#CCA761]/30 text-[#CCA761] hover:bg-[#CCA761]/20'}`}
                >
-                 {isLoading ? <RefreshCw size={14} className="animate-spin" /> : <Zap size={14} fill="currentColor" />}
-                 Monitorar
+                 {organizandoState === 'loading' ? <Loader2 size={14} className="animate-spin" /> : <Sparkles size={14} />}
+                 {organizandoState === 'loading' ? 'Organizando...' : 'Arrumar com IA'}
                </button>
-             ) : (
-               <button
-                 onClick={onRemover}
-                 disabled={isLoading}
-                 className="w-full py-3 px-6 rounded-2xl bg-zinc-950 border border-red-500/40 text-red-500 hover:bg-red-500/5 text-[10px] font-black uppercase transition-all disabled:opacity-50 flex items-center justify-center gap-2 active:scale-95"
-               >
-                 <X size={14} strokeWidth={3} />
-                 Remover
-               </button>
-             )}
 
-             {(() => {
-               if (organizandoState === 'loading') return (
-                 <button disabled
-                   className="flex items-center justify-center gap-1.5 w-full py-3 px-4 rounded-2xl
-                              bg-[#CCA761]/10 border border-[#CCA761]/30
-                              text-[#CCA761] text-[10px] uppercase font-black opacity-60 cursor-not-allowed">
-                   <Loader2 size={13} className="animate-spin" /> Analisando
-                 </button>
-               )
-               return (
-                 <button onClick={onOrganizar}
-                   className="flex items-center justify-center gap-1.5 w-full py-3 px-4 rounded-2xl
-                              bg-[#CCA761]/10 border border-[#CCA761]/30
-                              text-[#CCA761] text-[10px] uppercase font-black
-                              hover:bg-[#CCA761]/20 transition-all active:scale-95">
-                   <Sparkles size={13} /> Organizar IA
-                 </button>
-               )
-             })()}
-           </div>
+               <button onClick={onRemover} disabled={isUpdating} className="w-full lg:w-44 h-11 bg-transparent border border-zinc-900 hover:border-red-500/20 text-zinc-800 hover:text-red-500/50 text-[9px] font-black uppercase rounded-xl transition-all flex items-center justify-center gap-2">
+                 Parar Monitoramento
+               </button>
+             </div>
+           )}
         </div>
       </div>
     </div>
   )
 }
-// ─── Componente Principal ─────────────────────────────────────────────────────
+
+// ─── Componente Principal ───
 
 function MonitoramentoContent() {
   const [pagina, setPagina] = useState(1)
@@ -353,7 +330,6 @@ function MonitoramentoContent() {
 
   const PAGE_SIZE = 20
 
-  // Ir para uma página específica
   const setPage = (p: number) => {
     setPagina(p)
     window.scrollTo({ top: 300, behavior: 'smooth' })
@@ -365,7 +341,6 @@ function MonitoramentoContent() {
     if (s) setOabNumero(s)
     if (e) setOabEstado(e)
 
-    // Restaurar processos do sessionStorage
     const saved = sessionStorage.getItem('mon_result')
     if (saved) {
       try {
@@ -389,40 +364,18 @@ function MonitoramentoContent() {
         body: JSON.stringify({ oab_estado: oabEstado, oab_numero: oabNumero.trim() })
       })
       const data = await res.json()
-      console.log('[FRONTEND_DEBUG]', JSON.stringify({ next_url: data.next_url, keys: Object.keys(data) }))
       if (!res.ok) throw new Error(data.error ?? 'Falha na varredura')
       setResult(data)
       setNextCursor(data.next_url ?? null)
       setCarregandoTodos(!!data.next_url)
       setAutomationBatchesCount(0)
-      // Persistir no sessionStorage para não perder ao navegar
       try { sessionStorage.setItem('mon_result', JSON.stringify(data)) } catch {}
     } catch (e) {
       setError(e instanceof Error ? e.message : 'Erro na conexão')
     } finally {
       setLoading(false)
     }
-  // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [oabEstado, oabNumero])
-
-  // Efeito de Automação de Carga (Task 2)
-  useEffect(() => {
-    if (nextCursor && carregandoTodos && !carregandoMais && automationBatchesCount < 10) {
-      const timer = setTimeout(() => {
-        carregarMais()
-        setAutomationBatchesCount(prev => prev + 1)
-      }, 1000)
-      return () => clearTimeout(timer)
-    } else if (automationBatchesCount >= 10 || !nextCursor) {
-      setCarregandoTodos(false)
-    }
-  }, [nextCursor, carregandoTodos, carregandoMais, automationBatchesCount])
-
-  useEffect(() => {
-    if (result) {
-      setProgressoCarregamento(`${result.total_retornado}/${result.total}`)
-    }
-  }, [result])
 
   const carregarMais = useCallback(async () => {
     if (!nextCursor || carregandoMais) return
@@ -444,7 +397,6 @@ function MonitoramentoContent() {
         processos: [...prev.processos, ...data.processos],
         total_retornado: (prev.total_retornado ?? 0) + data.processos.length
       } : data)
-      // Atualizar sessionStorage
       try {
          const currentSavedStr = sessionStorage.getItem('mon_result')
          if (currentSavedStr) {
@@ -462,8 +414,26 @@ function MonitoramentoContent() {
     }
   }, [nextCursor, oabEstado, oabNumero, carregandoMais])
 
+  useEffect(() => {
+    if (nextCursor && carregandoTodos && !carregandoMais && automationBatchesCount < 10) {
+      const timer = setTimeout(() => {
+        carregarMais()
+        setAutomationBatchesCount(prev => prev + 1)
+      }, 1000)
+      return () => clearTimeout(timer)
+    } else if (automationBatchesCount >= 10 || !nextCursor) {
+      setCarregandoTodos(false)
+    }
+  }, [nextCursor, carregandoTodos, carregandoMais, automationBatchesCount, carregarMais])
+
+  useEffect(() => {
+    if (result) {
+      setProgressoCarregamento(`${result.total_retornado}/${result.total}`)
+    }
+  }, [result])
 
   const monitorarLote = useCallback(async (processos: Processo[]) => {
+    if (processos.length === 0) return
     setImportandoLote(true)
     try {
       const res = await fetch('/api/monitoramento/importar-lote', {
@@ -512,8 +482,6 @@ function MonitoramentoContent() {
     }
   }, [])
 
-
-  // Organizar processo com IA (1d)
   const handleOrganizar = useCallback(async (processoId: string) => {
     setOrganizando(prev => ({ ...prev, [processoId]: 'loading' }))
     try {
@@ -537,7 +505,6 @@ function MonitoramentoContent() {
     }
   }, [])
 
-  // Organizar TODOS os processos monitorados em bulk
   const handleOrganizarTodos = useCallback(async () => {
     if (!result) return
     const monitorados = result.processos.filter(p => p.id)
@@ -560,9 +527,7 @@ function MonitoramentoContent() {
           setOrganizando(prev => ({ ...prev, [pid]: 'done' }))
           setResult(prev => prev ? {
             ...prev,
-            processos: prev.processos.map(p =>
-              p.id === pid ? { ...p, ...data.processo_atualizado } : p
-            )
+            processos: prev.processos.map(p => p.id === pid ? { ...p, ...data.processo_atualizado } : p)
           } : prev)
         } else {
           setOrganizando(prev => ({ ...prev, [pid]: 'idle' }))
@@ -571,15 +536,10 @@ function MonitoramentoContent() {
         setOrganizando(prev => ({ ...prev, [pid]: 'idle' }))
       }
       setProgressoOrg(i + 1)
-      // Throttle de 1s entre chamadas
-      if (i < monitorados.length - 1) {
-        await new Promise(r => setTimeout(r, 1000))
-      }
+      if (i < monitorados.length - 1) await new Promise(r => setTimeout(r, 1000))
     }
     setOrganizandoTodos(false)
   }, [result])
-
-  // ─── Lógica de Filtros ───
 
   const tribunaisUnicos = useMemo(() => {
     if (!result) return []
@@ -594,7 +554,6 @@ function MonitoramentoContent() {
         if (filtroStatus === 'monitorado') matchStatus = p.monitorado
         else if (filtroStatus === 'nao_monitorado') matchStatus = !p.monitorado
         else if (filtroStatus !== 'TODOS') matchStatus = p.status === filtroStatus
-
         const matchTribunal = !filtroTribunal || p.tribunal === filtroTribunal
         const matchSearch = !search || [p.numero_processo, p.polo_ativo, p.polo_passivo, p.assunto].some(s => s?.toLowerCase().includes(search.toLowerCase()))
         return matchStatus && matchSearch && matchTribunal
@@ -615,22 +574,14 @@ function MonitoramentoContent() {
 
   const totalAtivos = result?.processos.filter(p => p.status === 'ATIVO' && !p.monitorado).length ?? 0
 
-  // Resetar página quando filtros mudarem
-  const handleFiltroStatusChange = (f: FilterStatus) => {
-    setFiltroStatus(f)
-    setPagina(1)
-  }
-  const handleSearchChange = (v: string) => {
-    setSearch(v)
-    setPagina(1)
-  }
+  const handleFiltroStatusChange = (f: FilterStatus) => { setFiltroStatus(f); setPagina(1); }
+  const handleSearchChange = (v: string) => { setSearch(v); setPagina(1); }
 
   return (
     <>
       {confirmacao && <ModalConfirmacaoCusto dados={confirmacao} onConfirmar={buscar} onCancelar={() => setConfirmacao(null)} loading={confirmandoLote} />}
 
       <div className="p-6 max-w-6xl mx-auto space-y-6">
-        {/* Header Premium (Cormorant) */}
         <div className="flex items-center justify-between gap-4">
            <div className="flex items-center gap-4">
               <div className="w-11 h-11 rounded-2xl bg-yellow-500/10 flex items-center justify-center border border-yellow-500/20 shadow-lg shadow-yellow-500/5">
@@ -655,7 +606,6 @@ function MonitoramentoContent() {
            )}
         </div>
 
-        {/* Barra de Busca */}
         <div className="bg-zinc-900 border border-zinc-800 rounded-2xl p-2 flex flex-col md:flex-row gap-2 shadow-2xl">
            <div className="flex bg-zinc-950 rounded-xl p-1 border border-zinc-800 shrink-0">
              {([['oab', 'OAB'], ['numero', 'Nº CNJ'], ['cpf', 'DOCS']] as const).map(([k, l]) => (
@@ -682,8 +632,6 @@ function MonitoramentoContent() {
 
         {result && (
           <div className="space-y-6 animate-in fade-in duration-500">
-
-            {/* Toolbar Inteligente */}
             <div className="flex flex-col lg:flex-row lg:items-center justify-between gap-4 p-4 bg-zinc-900/60 border border-zinc-800 rounded-2xl shadow-xl">
                <div className="flex items-center gap-3 flex-wrap">
                   <div className="flex items-center gap-1 bg-zinc-950 p-1 rounded-xl border border-zinc-800">
@@ -719,8 +667,7 @@ function MonitoramentoContent() {
                         </>
                       ) : (
                         <>
-                          <Sparkles size={14} />
-                          Organizar Todos com IA
+                          <Sparkles size={14} /> Organizar Todos com IA
                         </>
                       )}
                     </button>
@@ -728,7 +675,6 @@ function MonitoramentoContent() {
                </div>
             </div>
 
-            {/* Filtros de Tribunal */}
             <div className="flex items-center gap-2 overflow-x-auto pb-2 scrollbar-hide">
                 <Filter size={14} className="text-zinc-700 mx-2" />
                 <button onClick={() => setFiltroTribunal(null)} className={`px-4 py-1.5 rounded-full text-[9px] font-black uppercase transition-all whitespace-nowrap border ${!filtroTribunal ? 'bg-white text-black border-white' : 'bg-transparent text-zinc-600 border-zinc-800 hover:text-zinc-400'}`}>
@@ -741,7 +687,6 @@ function MonitoramentoContent() {
                 ))}
             </div>
 
-            {/* Filtros de Status */}
             <div className="flex flex-col md:flex-row md:items-center justify-between gap-4">
                <div className="flex gap-2 overflow-x-auto pb-1 scrollbar-hide">
                  {(['TODOS', 'ATIVO', 'ARQUIVADO', 'monitorado', 'nao_monitorado'] as FilterStatus[]).map(f => (
@@ -756,324 +701,114 @@ function MonitoramentoContent() {
                </div>
             </div>
 
-            {/* Galeria de Processos */}
             <div className="space-y-4">
               {totalPages > 1 && (
                 <div className="flex items-center justify-between py-4 px-2 bg-zinc-900/20 rounded-2xl border border-zinc-800/50">
-                  <span className="text-zinc-500 text-[10px] font-black uppercase tracking-widest px-2">
-                    {processosFiltrados.length} processos · pág {pagina}/{totalPages}
-                  </span>
+                  <span className="text-zinc-500 text-[10px] font-black uppercase tracking-widest px-2">{processosFiltrados.length} processos · pág {pagina}/{totalPages}</span>
                   <div className="flex gap-1.5">
-                    <button
-                      onClick={() => setPage(1)}
-                      disabled={pagina === 1}
-                      className="px-3 py-1.5 rounded-xl border border-zinc-800 bg-zinc-950
-                                text-zinc-500 text-[9px] font-black uppercase disabled:opacity-20
-                                hover:border-zinc-700 hover:text-zinc-300 transition-all">
-                      « Primeira
-                    </button>
-                    <button
-                      onClick={() => setPage(Math.max(1, pagina - 1))}
-                      disabled={pagina === 1}
-                      className="px-3 py-1.5 rounded-xl border border-zinc-800 bg-zinc-950
-                                 text-zinc-500 text-[9px] font-black uppercase disabled:opacity-20
-                                 hover:border-zinc-700 hover:text-zinc-300 transition-all">
-                      Anterior
-                    </button>
+                    <button onClick={() => setPage(1)} disabled={pagina === 1} className="px-3 py-1.5 rounded-xl border border-zinc-800 bg-zinc-950 text-zinc-500 text-[9px] font-black uppercase disabled:opacity-20 hover:border-zinc-700 hover:text-zinc-300">« Primeira</button>
+                    <button onClick={() => setPage(Math.max(1, pagina - 1))} disabled={pagina === 1} className="px-3 py-1.5 rounded-xl border border-zinc-800 bg-zinc-950 text-zinc-500 text-[9px] font-black uppercase disabled:opacity-20 hover:border-zinc-700 hover:text-zinc-300">Anterior</button>
                     {Array.from({ length: Math.min(5, totalPages) }, (_, i) => {
                       const start = Math.max(1, Math.min(pagina - 2, totalPages - 4))
                       const n = start + i
                       if (n < 1 || n > totalPages) return null
                       return (
-                        <button key={n} onClick={() => setPage(n)}
-                          className={`w-7 h-7 rounded-lg text-[9px] font-black transition-all
-                            ${n === pagina
-                              ? 'bg-yellow-500 text-black shadow-lg shadow-yellow-500/10'
-                              : 'border border-zinc-800 bg-zinc-950 text-zinc-600 hover:bg-zinc-900 hover:text-white'
-                            }`}>
-                          {n}
-                        </button>
+                        <button key={n} onClick={() => setPage(n)} className={`w-7 h-7 rounded-lg text-[9px] font-black ${n === pagina ? 'bg-yellow-500 text-black' : 'border border-zinc-800 bg-zinc-950 text-zinc-600 uppercase'}`}>{n}</button>
                       )
                     })}
-                    <button
-                      onClick={() => setPage(Math.min(totalPages, pagina + 1))}
-                      disabled={pagina === totalPages}
-                      className="px-3 py-1.5 rounded-xl border border-zinc-800 bg-zinc-950
-                                 text-zinc-500 text-[9px] font-black uppercase disabled:opacity-20
-                                 hover:border-zinc-700 hover:text-zinc-300 transition-all">
-                      Próxima
-                    </button>
-                    <button
-                      onClick={() => setPage(totalPages)}
-                      disabled={pagina === totalPages}
-                      className="px-3 py-1.5 rounded-xl border border-zinc-800 bg-zinc-950
-                                 text-zinc-500 text-[9px] font-black uppercase disabled:opacity-20
-                                 hover:border-zinc-700 hover:text-zinc-300 transition-all">
-                      Última »
-                    </button>
+                    <button onClick={() => setPage(Math.min(totalPages, pagina + 1))} disabled={pagina === totalPages} className="px-3 py-1.5 rounded-xl border border-zinc-800 bg-zinc-950 text-zinc-500 text-[9px] font-black uppercase disabled:opacity-20 hover:border-zinc-700 hover:text-zinc-300">Próxima</button>
+                    <button onClick={() => setPage(totalPages)} disabled={pagina === totalPages} className="px-3 py-1.5 rounded-xl border border-zinc-800 bg-zinc-950 text-zinc-500 text-[9px] font-black uppercase disabled:opacity-20 hover:border-zinc-700 hover:text-zinc-300">Última »</button>
                   </div>
                 </div>
               )}
-
               <div className="grid grid-cols-1 gap-4">
                 {processosPagina.map(p => (
-                  <ProcessoCard
-                    key={p.numero_processo}
-                    p={p}
-                    onSelect={() => {
-                      const next = new Set(selecionados)
-                      if (next.has(p.numero_processo)) next.delete(p.numero_processo)
-                      else next.add(p.numero_processo)
-                      setSelecionados(next)
-                    }}
-                    selecionado={selecionados.has(p.numero_processo)}
-                    onAction={() => monitorarLote([p])}
-                    onRemover={() => desmonitorar(p)}
-                    loadingId={loadingId}
-                    organizandoState={organizando[p.id || ''] || 'idle'}
-                    onOrganizar={() => handleOrganizar(p.id || '')}
-                    onAbrirDetalhes={() => setProcessoSelecionado(p)}
-                  />
+                  <ProcessoCard key={p.numero_processo} p={p} onSelect={() => { const next = new Set(selecionados); if (next.has(p.numero_processo)) next.delete(p.numero_processo); else next.add(p.numero_processo); setSelecionados(next); }} selecionado={selecionados.has(p.numero_processo)} onAction={() => monitorarLote([p])} onRemover={() => desmonitorar(p)} loadingId={loadingId} organizandoState={organizando[p.id || ''] || 'idle'} onOrganizar={() => handleOrganizar(p.id || '')} onAbrirDetalhes={() => setProcessoSelecionado(p)} />
                 ))}
               </div>
-
-               {processosFiltrados.length === 0 && (
-                 <div className="py-32 text-center space-y-4 bg-zinc-900/10 border border-dashed border-zinc-800 rounded-3xl">
-                    <div className="w-16 h-16 rounded-3xl bg-zinc-900 flex items-center justify-center mx-auto text-zinc-800"><LayoutList size={28} /></div>
-                    <div className="space-y-1">
-                       <p className="text-zinc-500 text-xs font-black uppercase tracking-[0.3em]">Nenhum Alvo Identificado</p>
-                       <p className="text-zinc-700 text-[10px] font-black uppercase">Os filtros aplicados não retornaram resultados nesta base.</p>
-                    </div>
-                 </div>
-               )}
-            </div>
-           </div>
-
-            {totalPages > 1 && (
-              <div className="flex items-center justify-between py-6 px-2">
-                <span className="text-white/40 text-sm font-medium">
-                  {processosFiltrados.length} processos · página {pagina} de {totalPages}
-                </span>
-                <div className="flex gap-2">
-                  <button
-                    onClick={() => setPage(1)}
-                    disabled={pagina === 1}
-                    className="px-4 py-2 rounded-lg border border-white/10
-                               text-white/70 text-sm disabled:opacity-30
-                               hover:bg-white/5 transition-colors font-medium">
-                    « Primeira
-                  </button>
-                  <button
-                    onClick={() => setPage(Math.max(1, pagina - 1))}
-                    disabled={pagina === 1}
-                    className="px-4 py-2 rounded-lg border border-white/10
-                               text-white/70 text-sm disabled:opacity-30
-                               hover:bg-white/5 transition-colors font-medium">
-                    ← Anterior
-                  </button>
-                  {Array.from({ length: Math.min(5, totalPages) }, (_, i) => {
-                    const start = Math.max(1, Math.min(pagina - 2, totalPages - 4))
-                    const n = start + i
-                    if (n < 1 || n > totalPages) return null
-                    return (
-                      <button key={n} onClick={() => setPage(n)}
-                        className={`w-9 h-9 rounded-lg text-sm font-black transition-colors
-                          ${n === pagina
-                            ? 'bg-yellow-500 text-black shadow-lg shadow-yellow-500/10'
-                            : 'border border-zinc-800 bg-zinc-900 text-zinc-500 hover:bg-zinc-800 hover:text-white'
-                          }`}>
-                        {n}
-                      </button>
-                    )
-                  })}
-                  <button
-                    onClick={() => setPage(Math.min(totalPages, pagina + 1))}
-                    disabled={pagina === totalPages}
-                    className="px-4 py-2 rounded-lg border border-white/10
-                               text-white/70 text-sm disabled:opacity-30
-                               hover:bg-white/5 transition-colors font-medium">
-                    Próxima →
-                  </button>
-                  <button
-                    onClick={() => setPage(totalPages)}
-                    disabled={pagina === totalPages}
-                    className="px-4 py-2 rounded-lg border border-white/10
-                               text-white/70 text-sm disabled:opacity-30
-                               hover:bg-white/5 transition-colors font-medium">
-                    Última »
-                  </button>
+              {processosFiltrados.length === 0 && (
+                <div className="py-32 text-center space-y-4 bg-zinc-900/10 border border-dashed border-zinc-800 rounded-3xl">
+                   <div className="w-16 h-16 rounded-3xl bg-zinc-900 flex items-center justify-center mx-auto text-zinc-800"><LayoutList size={28} /></div>
+                   <p className="text-zinc-500 text-xs font-black uppercase tracking-[0.3em]">Nenhum Alvo Identificado</p>
                 </div>
-              </div>
-            )}
+              )}
+            </div>
 
             {nextCursor && (
-              <div className="space-y-4">
+              <div className="mt-8">
                 {carregandoTodos ? (
-                  <div className="w-full py-6 flex flex-col items-center justify-center gap-3 bg-zinc-900/40 rounded-2xl border border-zinc-800 animate-pulse transition-all">
+                  <div className="w-full py-6 flex flex-col items-center justify-center gap-3 bg-zinc-900/40 rounded-2xl border border-zinc-800 animate-pulse">
                     <Loader2 size={24} className="text-[#CCA761] animate-spin" />
-                    <p className="text-[#CCA761] text-[10px] font-black uppercase tracking-[0.3em]">
-                      Carregando processos... {progressoCarregamento}
-                    </p>
+                    <p className="text-[#CCA761] text-[10px] font-black uppercase tracking-[0.3em]">Carregando processos... {progressoCarregamento}</p>
                   </div>
                 ) : (
-                  <button
-                    onClick={() => {
-                      setCarregandoTodos(true)
-                      setAutomationBatchesCount(0)
-                    }}
-                    disabled={carregandoMais}
-                    className="w-full py-4 rounded-2xl border border-[#CCA761]/30 bg-[#CCA761]/5 
-                               text-[#CCA761] text-[10px] font-black uppercase tracking-widest
-                               hover:bg-[#CCA761]/10 transition-all
-                               disabled:opacity-50 flex items-center justify-center gap-2 shadow-lg shadow-[#CCA761]/5"
-                  >
-                    {automationBatchesCount >= 10 ? (
-                      <>Continuar carregando ({result ? result.total - (result.total_retornado || 0) : 0} restantes) →</>
-                    ) : (
-                      <>Manual: Carregar mais processos ({result ? result.total - (result.total_retornado || 0) : 0} restantes) →</>
-                    )}
+                  <button onClick={() => { setCarregandoTodos(true); setAutomationBatchesCount(0); }} disabled={carregandoMais} className="w-full py-4 rounded-2xl border border-[#CCA761]/30 bg-[#CCA761]/5 text-[#CCA761] text-[10px] font-black uppercase tracking-widest hover:bg-[#CCA761]/10 transition-all flex items-center justify-center gap-2">
+                    {automationBatchesCount >= 10 ? `Continuar carregando (${result.total - (result.total_retornado || 0)} restantes)` : `Carregar mais processos (${result.total - (result.total_retornado || 0)} restantes)`}
                   </button>
                 )}
               </div>
             )}
-
             <BillingBar billing={result.billing} />
           </div>
         )}
 
-        {/* Empty State */}
         {!result && !loading && (
           <div className="text-center py-32 space-y-8 animate-in fade-in zoom-in-95 duration-700">
-             <div className="relative inline-block">
-                <div className="absolute inset-0 bg-yellow-500/5 blur-3xl rounded-full" />
-                <div className="relative w-24 h-24 bg-zinc-950 border border-yellow-500/10 rounded-3xl flex items-center justify-center mx-auto shadow-2xl">
-                   <Shield size={40} className="text-yellow-500/30" />
-                </div>
-             </div>
+             <div className="relative w-24 h-24 bg-zinc-950 border border-yellow-500/10 rounded-3xl flex items-center justify-center mx-auto shadow-2xl"><Shield size={40} className="text-yellow-500/30" /></div>
              <div className="space-y-3">
                 <h3 className="text-white font-black text-2xl" style={{ fontFamily: 'Cormorant Garamond, serif' }}>Inicie a Varredura Jurídica</h3>
-                <p className="text-zinc-600 text-xs max-w-sm mx-auto font-black uppercase tracking-tighter leading-snug">Insira os credenciais acima para conectar-se aos tribunais via API de Inteligência e iniciar o monitoramento estratégico.</p>
+                <p className="text-zinc-600 text-xs max-w-sm mx-auto font-black uppercase tracking-tighter">Insira os credenciais acima para conectar-se aos tribunais.</p>
              </div>
           </div>
         )}
 
-        {/* Loading */}
         {loading && (
           <div className="text-center py-40 space-y-8">
             <div className="relative w-20 h-20 mx-auto">
-               <div className="absolute inset-0 border-2 border-yellow-500/5 rounded-3xl" />
                <div className="absolute inset-0 border-2 border-yellow-500 border-t-transparent border-l-transparent rounded-3xl animate-spin" />
-               <div className="absolute inset-6 border border-zinc-800 rounded-2xl flex items-center justify-center">
-                  <RefreshCw size={24} className="text-yellow-500/40 animate-spin" />
-               </div>
+               <div className="absolute inset-6 border border-zinc-800 rounded-2xl flex items-center justify-center"><RefreshCw size={24} className="text-yellow-500/40 animate-spin" /></div>
             </div>
-            <div className="space-y-2">
-               <p className="text-white font-black text-xs uppercase tracking-[0.4em] animate-pulse">Sincronizando Canais Oficiais</p>
-               <div className="flex items-center justify-center gap-2">
-                  <div className="w-1.5 h-1.5 rounded-full bg-yellow-500 animate-bounce delay-75" />
-                  <div className="w-1.5 h-1.5 rounded-full bg-yellow-500 animate-bounce delay-150" />
-                  <div className="w-1.5 h-1.5 rounded-full bg-yellow-500 animate-bounce delay-300" />
-               </div>
-            </div>
+            <p className="text-white font-black text-xs uppercase tracking-[0.4em] animate-pulse">Sincronizando Canais Oficiais</p>
           </div>
         )}
-      {/* Drawer Lateral — Detalhes do Processo */}
+      </div>
+
       {processoSelecionado && (
         <div className="fixed inset-0 z-50 flex justify-end">
-          {/* Overlay escuro */}
-          <div 
-            className="absolute inset-0 bg-black/60 backdrop-blur-sm animate-in fade-in duration-300"
-            onClick={() => setProcessoSelecionado(null)}
-          />
-          {/* Painel */}
+          <div className="absolute inset-0 bg-black/60 backdrop-blur-sm animate-in fade-in duration-300" onClick={() => setProcessoSelecionado(null)} />
           <div className="relative w-full max-w-2xl h-full bg-[#0a0a0a] border-l border-white/10 overflow-y-auto p-8 animate-in slide-in-from-right duration-500 shadow-2xl z-10 font-sans">
-            {/* Fechar */}
-            <button 
-              onClick={() => setProcessoSelecionado(null)}
-              className="absolute top-6 right-6 text-white/40 hover:text-white transition-colors"
-            >
-              <X size={24} />
-            </button>
-
-            {/* Número e badges */}
+            <button onClick={() => setProcessoSelecionado(null)} className="absolute top-6 right-6 text-white/40 hover:text-white"><X size={24} /></button>
             <div className="mb-8">
-              <span className="text-[10px] text-zinc-500 uppercase font-black tracking-[0.2em] mb-2 block">
-                Detalhes do Processo
-              </span>
-              <h2 className="text-white font-bold text-2xl tracking-tight mb-2">
-                {processoSelecionado.numero_processo}
-              </h2>
+              <span className="text-[10px] text-zinc-500 uppercase font-black tracking-[0.2em] mb-2 block">Detalhes do Processo</span>
+              <h2 className="text-white font-bold text-2xl tracking-tight mb-2">{processoSelecionado.numero_processo}</h2>
               <div className="flex items-center gap-2">
-                <span className="text-[10px] uppercase font-bold bg-zinc-800 text-zinc-400 px-3 py-1 rounded-lg">
-                  {processoSelecionado.tribunal}
-                </span>
-                <span className={`text-[10px] uppercase font-bold px-3 py-1 rounded-lg ${STATUS_COLOR[processoSelecionado.status] ?? 'text-zinc-600 bg-zinc-900'}`}>
-                  {processoSelecionado.status}
-                </span>
+                <span className="text-[10px] uppercase font-bold bg-zinc-800 text-zinc-400 px-3 py-1 rounded-lg">{processoSelecionado.tribunal}</span>
+                <span className={`text-[10px] uppercase font-bold px-3 py-1 rounded-lg ${STATUS_COLOR[processoSelecionado.status] ?? 'text-zinc-600 bg-zinc-900'}`}>{processoSelecionado.status}</span>
               </div>
             </div>
-            
-            {/* Partes */}
             <div className="grid grid-cols-1 md:grid-cols-2 gap-6 bg-white/[0.02] border border-white/5 p-6 rounded-2xl mb-8">
-              <div>
-                <p className="text-zinc-500 text-[10px] font-black uppercase tracking-widest mb-1">Polo Ativo</p>
-                <p className="text-white font-bold text-sm">{(processoSelecionado.partes as any)?.polo_ativo || processoSelecionado.polo_ativo}</p>
-              </div>
-              <div>
-                <p className="text-zinc-500 text-[10px] font-black uppercase tracking-widest mb-1">Polo Passivo</p>
-                <p className="text-white font-bold text-sm">{(processoSelecionado.partes as any)?.polo_passivo || processoSelecionado.polo_passivo}</p>
-              </div>
+              <div><p className="text-zinc-500 text-[10px] font-black uppercase tracking-widest mb-1">Polo Ativo</p><p className="text-white font-bold text-sm">{(processoSelecionado.partes as any)?.polo_ativo || processoSelecionado.polo_ativo}</p></div>
+              <div><p className="text-zinc-500 text-[10px] font-black uppercase tracking-widest mb-1">Polo Passivo</p><p className="text-white font-bold text-sm">{(processoSelecionado.partes as any)?.polo_passivo || processoSelecionado.polo_passivo}</p></div>
             </div>
-
-            {/* Resumo completo IA */}
             {processoSelecionado.resumo_curto && (
               <div className="mb-8">
                 <p className="text-white/30 text-[10px] uppercase font-black tracking-widest mb-4">Análise Resumida</p>
-                <div className="bg-white/5 rounded-2xl p-6 border border-white/10 relative overflow-hidden group">
-                  <div className="absolute top-0 left-0 w-1 h-full bg-[#CCA761]/40" />
-                  <p className="text-white/70 text-sm leading-relaxed italic font-medium">
-                    "{processoSelecionado.resumo_curto}"
-                  </p>
-                </div>
+                <div className="bg-white/5 rounded-2xl p-6 border border-white/10 relative overflow-hidden"><div className="absolute top-0 left-0 w-1 h-full bg-[#CCA761]/40" /><p className="text-white/70 text-sm leading-relaxed italic font-medium">&quot;{processoSelecionado.resumo_curto}&quot;</p></div>
               </div>
             )}
-
-            {/* Próxima Ação Sugerida */}
             {processoSelecionado.proxima_acao_sugerida && (
-              <div className="mb-8">
-                <div className="bg-[#CCA761]/10 border border-[#CCA761]/20 rounded-2xl p-6">
-                  <div className="flex items-center gap-2 mb-3">
-                    <Zap size={16} className="text-[#CCA761]" fill="currentColor" />
-                    <p className="text-[#CCA761] text-[10px] font-black uppercase tracking-widest">Ação Sugerida pela IA</p>
-                  </div>
-                  <p className="text-white/80 text-sm font-medium leading-relaxed">
-                    {processoSelecionado.proxima_acao_sugerida}
-                  </p>
-                </div>
-              </div>
+              <div className="mb-8"><div className="bg-[#CCA761]/10 border border-[#CCA761]/20 rounded-2xl p-6"><div className="flex items-center gap-2 mb-3"><Zap size={16} className="text-[#CCA761]" fill="currentColor" /><p className="text-[#CCA761] text-[10px] font-black uppercase tracking-widest">Ação Sugerida pela IA</p></div><p className="text-white/80 text-sm font-medium leading-relaxed">{processoSelecionado.proxima_acao_sugerida}</p></div></div>
             )}
-
-            {/* Tarefas e prazos do organizacao_ia_json */}
             {(processoSelecionado.organizacao_ia_json as any)?.tarefas?.length > 0 && (
               <div className="mb-8">
                 <p className="text-white/30 text-[10px] uppercase font-black tracking-widest mb-4">Plano de Ação</p>
                 <div className="space-y-3">
                   {(processoSelecionado.organizacao_ia_json as any).tarefas.map((t: any, i: number) => (
-                    <div key={i} className="bg-white/5 rounded-xl p-4 border border-white/5 flex gap-4 items-start">
-                      <div className="w-6 h-6 rounded-lg bg-zinc-800 flex items-center justify-center text-[10px] font-bold text-zinc-500 shrink-0 border border-zinc-700">
-                        {i + 1}
-                      </div>
-                      <div>
-                        <p className="text-white/80 text-sm font-bold">{t.titulo}</p>
-                        <p className="text-white/40 text-xs mt-1 leading-relaxed">{t.descricao}</p>
-                      </div>
-                    </div>
+                    <div key={i} className="bg-white/5 rounded-xl p-4 border border-white/5 flex gap-4 items-start"><div className="w-6 h-6 rounded-lg bg-zinc-800 flex items-center justify-center text-[10px] font-bold text-zinc-500 shrink-0 border border-zinc-700">{i + 1}</div><div><p className="text-white/80 text-sm font-bold">{t.titulo}</p><p className="text-white/40 text-xs mt-1 leading-relaxed">{t.descricao}</p></div></div>
                   ))}
                 </div>
               </div>
             )}
-
-            {/* Linha do Tempo (Moved to Drawer) */}
             <div className="mb-12">
               <p className="text-white/30 text-[10px] uppercase font-black tracking-widest mb-6">Histórico Completo</p>
               <div className="space-y-6 relative ml-1">
@@ -1081,50 +816,23 @@ function MonitoramentoContent() {
                 {processoSelecionado.movimentacoes?.slice(0, 30).map((m, i) => (
                   <div key={i} className="flex gap-6 group relative">
                     <div className="w-4 h-4 rounded-full border-2 border-zinc-800 bg-[#0a0a0a] group-hover:border-[#CCA761] transition-colors shrink-0 z-10" />
-                    <div className="pb-1 transition-all group-hover:translate-x-1">
-                      <span className="text-[10px] font-black font-mono text-zinc-600 uppercase">
-                        {formatarData((m.data as string) || null)}
-                      </span>
-                      <p className="text-sm text-zinc-300 font-bold mt-1 leading-snug">
-                        {((m.titulo ?? m.descricao ?? m.texto) as string) || "Visualização bloqueada."}
-                      </p>
-                      {m.resumo && (
-                        <div className="mt-2 p-3 bg-zinc-950 rounded-xl border border-zinc-900 border-l-[#CCA761]/40 border-l-2 shadow-inner">
-                           <p className="text-[11px] text-zinc-500 italic leading-relaxed">
-                             <span className="text-[#CCA761]/60 font-bold not-italic mr-1">Análise:</span>
-                             {m.resumo as string}
-                           </p>
-                        </div>
-                      )}
+                    <div className="pb-1 transition-all group-hover:translate-x-1"><span className="text-[10px] font-black font-mono text-zinc-600 uppercase">{formatarData((m.data as string) || null)}</span><p className="text-sm text-zinc-300 font-bold mt-1 leading-snug">{((m.titulo ?? m.descricao ?? m.texto) as string) || "Visualização bloqueada."}</p>
+                      {m.resumo && <div className="mt-2 p-3 bg-zinc-950 rounded-xl border border-zinc-900 border-l-[#CCA761]/40 border-l-2 shadow-inner"><p className="text-[11px] text-zinc-500 italic leading-relaxed"><span className="text-[#CCA761]/60 font-bold not-italic mr-1">Análise:</span>{m.resumo as string}</p></div>}
                     </div>
                   </div>
                 ))}
               </div>
             </div>
-
-            {/* Rodapé do Drawer com Ações */}
             <div className="sticky bottom-0 left-0 right-0 pt-6 pb-2 bg-gradient-to-t from-[#0a0a0a] via-[#0a0a0a] to-transparent">
-               <button
-                 onClick={() => {
-                   if (processoSelecionado.id) {
-                     handleOrganizar(processoSelecionado.id)
-                   }
-                 }}
-                 disabled={organizando[processoSelecionado.id || ''] === 'loading'}
-                 className="w-full h-14 bg-[#CCA761]/10 border border-[#CCA761]/30 text-[#CCA761] text-xs font-black uppercase tracking-widest rounded-2xl hover:bg-[#CCA761]/20 transition-all shadow-xl shadow-[#CCA761]/5 flex items-center justify-center gap-3 disabled:opacity-50"
-               >
-                 {organizando[processoSelecionado.id || ''] === 'loading' ? (
-                   <Loader2 size={18} className="animate-spin" />
-                 ) : (
-                   <Sparkles size={18} />
-                 )}
+               <button onClick={() => { if (processoSelecionado.id) handleOrganizar(processoSelecionado.id); }} disabled={organizando[processoSelecionado.id || ''] === 'loading'} className="w-full h-14 bg-[#CCA761]/10 border border-[#CCA761]/30 text-[#CCA761] text-xs font-black uppercase tracking-widest rounded-2xl hover:bg-[#CCA761]/20 transition-all shadow-xl shadow-[#CCA761]/5 flex items-center justify-center gap-3 disabled:opacity-50">
+                 {organizando[processoSelecionado.id || ''] === 'loading' ? <Loader2 size={18} className="animate-spin" /> : <Sparkles size={18} />}
                  {organizando[processoSelecionado.id || ''] === 'loading' ? 'Analisando Contexto...' : 'Reorganizar com IA'}
                </button>
             </div>
           </div>
         </div>
       )}
-    </div>
+    </>
   )
 }
 
@@ -1135,4 +843,3 @@ export default function MonitoramentoPage() {
     </Suspense>
   )
 }
-
