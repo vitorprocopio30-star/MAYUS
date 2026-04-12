@@ -15,7 +15,8 @@ import {
   CheckCircle,
   MoreVertical,
   User,
-  ExternalLink
+  ExternalLink,
+  Copy
 } from 'lucide-react'
 import { Montserrat, Cormorant_Garamond } from "next/font/google"
 
@@ -317,9 +318,16 @@ export default function PrazosPage() {
                   <span>Vencimento: {formatarData(item.data_vencimento)}</span>
                 </div>
                 {item.monitored_processes?.numero_processo && (
-                  <div className="flex items-center gap-2 text-white/40 text-[12px]">
+                  <div className="flex items-center gap-2 text-white/40 text-[13px] group/cnj">
                     <Gavel size={14} className="text-[#CCA761]" />
-                    <span className="truncate">Proc: {item.monitored_processes.numero_processo}</span>
+                    <span className="truncate font-medium">Proc: {item.monitored_processes.numero_processo}</span>
+                    <button 
+                      onClick={() => navigator.clipboard.writeText(item.monitored_processes.numero_processo)}
+                      className="opacity-0 group-hover/cnj:opacity-100 p-1 hover:bg-white/10 rounded transition-all text-[#CCA761]"
+                      title="Copiar CNJ"
+                    >
+                      <Copy size={12} />
+                    </button>
                   </div>
                 )}
                 {item.monitored_processes?.cliente_nome && (
