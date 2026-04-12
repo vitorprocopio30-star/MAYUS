@@ -384,7 +384,7 @@ function MonitoramentoContent() {
       if (!res.ok) throw new Error(data.error ?? 'Falha na varredura')
       setResult(data)
       setNextCursor(data.next_url ?? null)
-      setCarregandoTodos(!!data.next_url)
+      setCarregandoTodos(false) // nunca auto-carrega
       setAutomationBatchesCount(0)
       try { sessionStorage.setItem('mon_result', JSON.stringify(data)) } catch {}
     } catch (e) {
@@ -442,17 +442,6 @@ function MonitoramentoContent() {
     }
   }, [nextCursor, oabEstado, oabNumero, carregandoMais])
 
-  useEffect(() => {
-    if (nextCursor && carregandoTodos && !carregandoMais && automationBatchesCount < 10) {
-      const timer = setTimeout(() => {
-        carregarMais()
-        setAutomationBatchesCount(prev => prev + 1)
-      }, 1000)
-      return () => clearTimeout(timer)
-    } else if (automationBatchesCount >= 10 || !nextCursor) {
-      setCarregandoTodos(false)
-    }
-  }, [nextCursor, carregandoTodos, carregandoMais, automationBatchesCount, carregarMais])
 
   useEffect(() => {
     if (result) {
@@ -770,8 +759,9 @@ function MonitoramentoContent() {
                     <p className="text-[#CCA761] text-[10px] font-black uppercase tracking-[0.3em]">Carregando processos... {progressoCarregamento}</p>
                   </div>
                 ) : (
-                  <button onClick={() => { setCarregandoTodos(true); setAutomationBatchesCount(0); }} disabled={carregandoMais} className="w-full py-4 rounded-2xl border border-[#CCA761]/30 bg-[#CCA761]/5 text-[#CCA761] text-[10px] font-black uppercase tracking-widest hover:bg-[#CCA761]/10 transition-all flex items-center justify-center gap-2">
-                    {automationBatchesCount >= 10 ? `Continuar carregando (${result.total - (result.total_retornado || 0)} restantes)` : `Carregar mais processos (${result.total - (result.total_retornado || 0)} restantes)`}
+                  <button onClick={() => carregarMais()} disabled={carregandoMais} className="w-full py-4 rounded-2xl border border-[#CCA761]/30 bg-[#CCA761]/5 text-[#CCA761] text-[10px] font-black uppercase tracking-widest hover:bg-[#CCA761]/10 transition-all flex items-center justify-center gap-2">
+                    {carregandoMais ? <Loader2 size={14} className="animate-spin" /> : <ChevronDown size={14} />}
+                    {carregandoMais ? 'BUSCANDO LOTE...' : `Carregar mais processos (${result.total - (result.total_retornado || 0)} restantes)`}
                   </button>
                 )}
               </div>

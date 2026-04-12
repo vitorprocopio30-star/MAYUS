@@ -136,28 +136,37 @@ export async function POST(req: NextRequest) {
 
   console.log(`[buscar-completo] Iniciando busca GET: OAB ${oab_numero}/${oab_estado} ${next_url ? 'COM NEXT_URL' : ''}`)
 
-  // Verifica CACHE — bloqueia sangramento de saldo
-  if (!next_url) {
-    const { data: cache } = await adminSupabase
-      .from('oabs_salvas')
-      .select('ultima_busca, total_processos, advogado')
-      .eq('tenant_id', tenantId)
-      .eq('oab_estado', oab_estado)
-      .eq('oab_numero', oab_numero)
-      .single()
+  // 1. Definição da chave de cache única (OAB + Cursor/Page)
+  const cursorParam = next_url ? new URL(next_url).searchParams.get('cursor') || Buffer.from(next_url).toString('base64').slice(-20) : 'ROOT'
+  const dbCacheKey = `OAB_V2:${oab_estado.toUpperCase()}:${oab_numero}:${cursorParam}`
 
-    if (cache?.ultima_busca) {
-      const horasDesdeBusca = (new Date().getTime() - new Date(cache.ultima_busca).getTime()) / (1000 * 60 * 60)
-      if (horasDesdeBusca < 24) {
-        console.log(`[buscar-completo] CACHE HIT: OAB ${oab_numero} buscada há ${horasDesdeBusca.toFixed(1)}h. Bloqueando chamada ao Escavador.`)
-        return NextResponse.json({
-          cached: true,
-          message: `Dados sincronizados há ${Math.floor(horasDesdeBusca)}h. Próxima atualização disponível em ${Math.ceil(24 - horasDesdeBusca)}h.`,
-          advogado: cache.advogado,
-          total_processos: cache.total_processos,
-          ultima_busca: cache.ultima_busca
-        }, { status: 200 }) // 200 e não 429 — não é erro, é cache válido
-      }
+  // 2. Verifica CACHE — bloqueia sangramento de saldo (Trava de 24h)
+  const { data: cache } = await adminSupabase
+    .from('processos_cache')
+    .select('processos, total, advogado, created_at, updated_at')
+    .eq('tenant_id', tenantId)
+    .eq('cache_key', dbCacheKey)
+    .single()
+
+  if (cache?.updated_at) {
+    const horasDesdeBusca = (new Date().getTime() - new Date(cache.updated_at).getTime()) / (1000 * 60 * 60)
+    if (horasDesdeBusca < 24) {
+      console.log(`[buscar-completo] CACHE HIT (${dbCacheKey}): ${horasDesdeBusca.toFixed(1)}h. Bloqueando chamada ao Escavador.`)
+      
+      // Se for a primeira página, também enviamos metadados do billing (simulado ou do cache)
+      return NextResponse.json({
+        cached: true,
+        processos: cache.processos,
+        total: cache.total,
+        total_retornado: (cache.processos as any[]).length,
+        advogado_nome: (cache.advogado as any)?.nome || '',
+        next_url: null, // No cache de página única não sabemos a próxima sem a API, ou podemos salvar se quisermos
+        billing: {
+          total_ja_monitorados: capacity?.total_monitorados ?? 0,
+          gratuitos: capacity?.gratuitos ?? 100,
+          disponivel_sem_custo: capacity?.disponivel_sem_custo ?? 0,
+        }
+      }, { status: 200 })
     }
   }
 
@@ -211,19 +220,31 @@ export async function POST(req: NextRequest) {
 
     const processos = items.map(mapearProcesso)
 
-    // Verificar monitorados
+    // 3. Persistência em CACHE (Trava de 24h para paginação)
+    await adminSupabase.from('processos_cache').upsert({
+      tenant_id: tenantId,
+      cache_key: dbCacheKey,
+      processos: processos,
+      total: totalAdvogado,
+      advogado: data.advogado_encontrado,
+      updated_at: new Date().toISOString()
+    }, { onConflict: 'tenant_id,cache_key' })
+
+    // 4. Upsert OAB (Metadados de resumo - apenas no ROOT ou sempre para atualizar total)
+    if (!next_url) {
+      await adminSupabase.from('oabs_salvas').upsert({
+        tenant_id: tenantId, oab_estado, oab_numero,
+        advogado: advogadoNome, total_processos: totalAdvogado,
+        ultima_busca: new Date().toISOString(),
+      }, { onConflict: 'tenant_id,oab_estado,oab_numero' })
+    }
+
+    // 5. Verificar monitorados (para marcar no UI o que já está no banco)
     const numeros = processos.map(p => p.numero_processo).filter(Boolean)
     const { data: jaMonitorados } = await adminSupabase
       .from('monitored_processes').select('id, numero_processo, escavador_id, resumo_curto, urgencia_nivel, proxima_acao_sugerida')
       .eq('tenant_id', tenantId).in('numero_processo', numeros)
     const monitoradosMap = new Map((jaMonitorados ?? []).map(m => [m.numero_processo, m]))
-
-    // Upsert OAB
-    await adminSupabase.from('oabs_salvas').upsert({
-      tenant_id: tenantId, oab_estado, oab_numero,
-      advogado: advogadoNome, total_processos: totalAdvogado,
-      ultima_busca: new Date().toISOString(),
-    }, { onConflict: 'tenant_id,oab_estado,oab_numero' })
 
     const processosComStatus = processos.map(p => {
       const db = monitoradosMap.get(p.numero_processo)
