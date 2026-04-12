@@ -563,25 +563,25 @@ export default function PrazosPage() {
         </div>
       )}
 
-      {/* Drawer de Detalhes */}
+      {/* Drawer de Detalhes (Modal Centralizado) */}
       {isDrawerOpen && selectedItemId && (
-        <>
+        <div className="fixed inset-0 z-[60] flex items-center justify-center p-4">
           {/* Overlay */}
           <div 
             className="fixed inset-0 bg-black/60 backdrop-blur-sm z-[60] animate-in fade-in duration-300"
             onClick={() => setIsDrawerOpen(false)}
           />
           
-          {/* Drawer Content */}
-          <div className="fixed right-4 top-4 bottom-4 w-full max-w-xl bg-[#0f0f0f] border border-white/10 z-[70] shadow-2xl flex flex-col animate-in slide-in-from-right duration-500 rounded-2xl overflow-hidden">
+          {/* Modal Content */}
+          <div className="relative bg-[#0f0f0f] border border-[#CCA761]/20 z-[61] shadow-2xl flex flex-col animate-in zoom-in-95 duration-300 rounded-2xl overflow-hidden max-w-2xl w-full max-h-[90vh]">
             {(() => {
               const item = items.find(i => i.id === selectedItemId)
               if (!item) return null
 
               return (
                 <>
-                  {/* Drawer Header */}
-                  <div className="p-6 border-b border-white/5 flex items-center justify-between bg-[#141414]/50">
+                  {/* Modal Header */}
+                  <div className="p-6 border-b border-white/5 flex items-center justify-between bg-[#141414]/50 shrink-0">
                     <div>
                       <h3 className="text-[#CCA761] text-[20px] font-bold tracking-tight">
                         Detalhamento do Processo

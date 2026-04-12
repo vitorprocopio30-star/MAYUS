@@ -45,7 +45,9 @@ async function classificarComLLM(tenantId: string, conteudo: string, resumo: str
         messages: [
           {
             role: 'system',
-            content: `Você é um classificador jurídico preciso. Classifique a movimentação em UM dos tipos: ${tipos}. Responda APENAS com o tipo em maiúsculas, sem explicação. Se não se encaixar, responda NULL.`
+            content: `Você é um classificador jurídico preciso. Classifique a movimentação em UM dos tipos: ${tipos}. 
+            Ata de audiência, protocolo de ata ou juntada de ata são eventos PASSADOS — classifique como DESPACHO, nunca como AUDIENCIA.
+            Responda APENAS com o tipo em maiúsculas, sem explicação. Se não se encaixar, responda NULL.`
           },
           {
             role: 'user',
@@ -89,8 +91,20 @@ export async function analisarMovimentacao(params: {
 
   // 2. Fallback keywords
   if (!tipoEvento) {
-    for (const [kw, tipo] of Object.entries(KEYWORDS)) {
-      if (texto.includes(kw)) { tipoEvento = tipo; break }
+    const textoLower = texto.toLowerCase()
+
+    // Exclusões — eventos passados que contêm "audiência" mas não são audiência futura
+    if (
+      textoLower.includes('ata de audiencia') ||
+      textoLower.includes('ata de audiência') ||
+      textoLower.includes('protocolo de ata') ||
+      textoLower.includes('juntada de ata')
+    ) {
+      tipoEvento = 'DESPACHO'
+    } else {
+      for (const [kw, tipo] of Object.entries(KEYWORDS)) {
+        if (texto.includes(kw)) { tipoEvento = tipo; break }
+      }
     }
   }
 
