@@ -118,7 +118,7 @@ export default function EquipePage() {
     }, 800);
   };
 
-  if (!profileLoading && role !== "Administrador" && role !== "mayus_admin") {
+  if (!profileLoading && role !== "Administrador" && role !== "mayus_admin" && role !== "admin") {
     return (
       <div className={`min-h-[60vh] flex items-center justify-center ${montserrat.className}`}>
         <div className="text-center">
