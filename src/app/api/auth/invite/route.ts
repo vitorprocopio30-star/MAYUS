@@ -16,12 +16,16 @@ export async function POST(req: Request) {
     const requesterRole = user.app_metadata?.role;
     const tenantId = user.app_metadata?.tenant_id;
 
+    console.log("[Invite API] Solicitante:", user.email, "Role:", requesterRole, "TenantID:", tenantId);
+
     if (requesterRole !== "Administrador" && requesterRole !== "mayus_admin" && requesterRole !== "admin") {
+      console.warn("[Invite API] Acesso Negado: Role insuficiente:", requesterRole);
       return NextResponse.json({ error: "Apenas Administradores podem convidar membros." }, { status: 403 });
     }
 
     if (!tenantId) {
-      return NextResponse.json({ error: "Escritório (tenant) não identificado." }, { status: 400 });
+      console.error("[Invite API] Erro: tenant_id não encontrado no JWT do usuário.");
+      return NextResponse.json({ error: "Escritório (tenant) não identificado no seu perfil. Tente fazer logout e login novamente." }, { status: 400 });
     }
 
     if (!email || !role) {

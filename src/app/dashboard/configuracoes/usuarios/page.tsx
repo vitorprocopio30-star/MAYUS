@@ -103,7 +103,7 @@ export default function UsuariosPermissoesPage() {
       const res = await fetch("/api/auth/invite", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ email: inviteEmail, role: inviteRole, permissions: invitePermissions, departmentId: inviteDepartmentId }),
+        body: JSON.stringify({ email: inviteEmail, role: inviteRole, permissions: invitePermissions, department_id: inviteDepartmentId }),
       });
       const data = await res.json();
       if (!res.ok) {
