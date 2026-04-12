@@ -64,12 +64,16 @@ export default function PrazosPage() {
   const [filterTribunal, setFilterTribunal] = useState<string>('todos')
   const [currentUser, setCurrentUser] = useState<any>(null)
   const [copiedId, setCopiedId] = useState<string | null>(null)
+  const [tenantId, setTenantId] = useState<string | null>(null)
   
   // Estados para o Drawer de Detalhes
   const [selectedItemId, setSelectedItemId] = useState<string | null>(null)
   const [isDrawerOpen, setIsDrawerOpen] = useState(false)
   const [taskDetails, setTaskDetails] = useState<any | null>(null)
   const [loadingTask, setLoadingTask] = useState(false)
+  const [annotationText, setAnnotationText] = useState('')
+  const [isSavingAnnotation, setIsSavingAnnotation] = useState(false)
+  const [saveSuccess, setSaveSuccess] = useState(false)
 
   useEffect(() => {
     async function init() {
@@ -83,6 +87,8 @@ export default function PrazosPage() {
         .eq('id', user.id)
         .single()
       if (!profile) return
+
+      setTenantId(profile.tenant_id)
 
       // Carregar perfis do time para o dropdown de atribuição
       const { data: team } = await supabase
@@ -207,22 +213,70 @@ export default function PrazosPage() {
     setIsDrawerOpen(true)
     setLoadingTask(true)
     setTaskDetails(null)
+    setAnnotationText('')
 
     if (item.monitored_processes?.id) {
       console.log("[Prazos] Buscando resumo do caso para:", item.monitored_processes.id)
       const { data, error } = await supabase
         .from('process_tasks')
-        .select('description, stage_id, position_index')
+        .select('*')
         .eq('monitored_process_id', item.monitored_processes.id)
-        .maybeSingle() // Usando maybeSingle para evitar erro se não existir
+        .maybeSingle()
 
       if (error) {
         console.error("[Prazos] Erro ao buscar process_tasks:", error)
       } else {
         setTaskDetails(data)
+        setAnnotationText(data?.description || '')
       }
     }
     setLoadingTask(false)
+  }
+
+  async function handleSaveAnnotation() {
+    if (!selectedItemId || !tenantId) return
+    const item = items.find(i => i.id === selectedItemId)
+    if (!item?.monitored_processes?.id) return
+
+    setIsSavingAnnotation(true)
+    
+    try {
+      if (taskDetails?.id) {
+        // Update
+        const { error } = await supabase
+          .from('process_tasks')
+          .update({ 
+            description: annotationText,
+            updated_at: new Date().toISOString()
+          })
+          .eq('id', taskDetails.id)
+        
+        if (error) throw error
+      } else {
+        // Insert
+        const { data, error } = await supabase
+          .from('process_tasks')
+          .insert({
+            tenant_id: tenantId,
+            monitored_process_id: item.monitored_processes.id,
+            description: annotationText,
+            title: `Anotações: ${item.monitored_processes.numero_processo}`,
+            position_index: 0
+          })
+          .select()
+          .single()
+        
+        if (error) throw error
+        setTaskDetails(data)
+      }
+
+      setSaveSuccess(true)
+      setTimeout(() => setSaveSuccess(false), 2000)
+    } catch (err) {
+      console.error("[Prazos] Erro ao salvar anotação:", err)
+    } finally {
+      setIsSavingAnnotation(false)
+    }
   }
 
   return (
@@ -519,7 +573,7 @@ export default function PrazosPage() {
           />
           
           {/* Drawer Content */}
-          <div className="fixed right-0 top-0 h-full w-full max-w-xl bg-[#0f0f0f] border-l border-white/10 z-[70] shadow-[-20px_0_50px_rgba(0,0,0,0.5)] flex flex-col animate-in slide-in-from-right duration-500">
+          <div className="fixed right-4 top-4 bottom-4 w-full max-w-xl bg-[#0f0f0f] border border-white/10 z-[70] shadow-2xl flex flex-col animate-in slide-in-from-right duration-500 rounded-2xl overflow-hidden">
             {(() => {
               const item = items.find(i => i.id === selectedItemId)
               if (!item) return null
@@ -611,21 +665,32 @@ export default function PrazosPage() {
                          {loadingTask && <div className="w-4 h-4 border-2 border-[#CCA761]/30 border-t-[#CCA761] rounded-full animate-spin" />}
                       </div>
                       
-                      <div className="min-h-[150px] p-6 rounded-2xl bg-[#111] border border-white/5">
-                        {taskDetails?.description ? (
-                          <div 
-                            className="prose prose-invert prose-sm max-w-none text-white/70"
-                            style={{ 
-                              color: 'rgba(255,255,255,0.7)',
-                              lineHeight: '1.6'
-                            }}
-                            dangerouslySetInnerHTML={{ __html: taskDetails.description }}
-                          />
-                        ) : (
-                          <p className="text-white/20 text-sm italic">
-                            {loadingTask ? 'Carregando anotações...' : 'Nenhuma anotação registrada.'}
-                          </p>
-                        )}
+                      <div className="space-y-4">
+                        <textarea
+                          value={annotationText}
+                          onChange={(e) => setAnnotationText(e.target.value)}
+                          placeholder="Escreva aqui os detalhes importantes deste caso..."
+                          className="w-full h-48 p-4 bg-[#111] border border-white/10 rounded-xl text-sm text-white/80 focus:outline-none focus:ring-1 focus:ring-[#CCA761]/50 placeholder:text-white/10 resize-none transition-all"
+                        />
+                        
+                        <div className="flex justify-end">
+                          <button
+                            onClick={handleSaveAnnotation}
+                            disabled={isSavingAnnotation}
+                            className={`px-6 py-2 rounded-lg text-xs font-bold transition-all flex items-center gap-2 ${
+                              saveSuccess 
+                                ? 'bg-green-500/20 text-green-400 border border-green-500/50' 
+                                : 'bg-[#CCA761] hover:bg-[#b39255] text-black disabled:opacity-50'
+                            }`}
+                          >
+                            {isSavingAnnotation ? (
+                              <div className="w-3 h-3 border-2 border-black/30 border-t-black rounded-full animate-spin" />
+                            ) : saveSuccess ? (
+                              <CheckCircle size={14} />
+                            ) : null}
+                            {saveSuccess ? 'Salvo ✓' : isSavingAnnotation ? 'Salvando...' : 'Salvar Anotação'}
+                          </button>
+                        </div>
                       </div>
                     </div>
                   </div>
