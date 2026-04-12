@@ -313,7 +313,7 @@ export default function PrazosPage() {
                         )}
                       </div>
                       <div className="text-[12px] text-white/60 truncate max-w-[100px]">
-                        {item.profiles.full_name.split(' ')[0]}
+                        {item.profiles?.full_name?.split(' ')[0] || 'Sem responsável'}
                       </div>
                     </div>
                   ) : (
