@@ -16,7 +16,8 @@ import {
   MoreVertical,
   User,
   ExternalLink,
-  Copy
+  Copy,
+  Check
 } from 'lucide-react'
 import { Montserrat, Cormorant_Garamond } from "next/font/google"
 
@@ -61,6 +62,7 @@ export default function PrazosPage() {
   const [filterResponsavel, setFilterResponsavel] = useState<string>('todos')
   const [filterTribunal, setFilterTribunal] = useState<string>('todos')
   const [currentUser, setCurrentUser] = useState<any>(null)
+  const [copiedId, setCopiedId] = useState<string | null>(null)
 
   useEffect(() => {
     async function init() {
@@ -318,16 +320,27 @@ export default function PrazosPage() {
                   <span>Vencimento: {formatarData(item.data_vencimento)}</span>
                 </div>
                 {item.monitored_processes?.numero_processo && (
-                  <div className="flex items-center gap-2 text-white/40 text-[13px] group/cnj">
-                    <Gavel size={14} className="text-[#CCA761]" />
-                    <span className="truncate font-medium">Proc: {item.monitored_processes.numero_processo}</span>
-                    <button 
-                      onClick={() => navigator.clipboard.writeText(item.monitored_processes.numero_processo)}
-                      className="opacity-0 group-hover/cnj:opacity-100 p-1 hover:bg-white/10 rounded transition-all text-[#CCA761]"
-                      title="Copiar CNJ"
-                    >
-                      <Copy size={12} />
-                    </button>
+                  <div className="space-y-1">
+                    <div className="flex items-center gap-2 text-[13px] group/cnj">
+                      <Gavel size={14} className="text-[#CCA761]" />
+                      <span className="truncate font-medium text-[#CCA761]">Proc: {item.monitored_processes.numero_processo}</span>
+                      <button 
+                        onClick={() => {
+                          navigator.clipboard.writeText(item.monitored_processes.numero_processo);
+                          setCopiedId(item.id);
+                          setTimeout(() => setCopiedId(null), 2000);
+                        }}
+                        className="opacity-0 group-hover/cnj:opacity-100 p-1 hover:bg-white/10 rounded transition-all text-[#CCA761]"
+                        title="Copiar CNJ"
+                      >
+                        {copiedId === item.id ? <Check size={12} /> : <Copy size={12} />}
+                      </button>
+                    </div>
+                    {item.monitored_processes.partes?.polo_ativo && (
+                      <div className="text-[11px] text-white/30 pl-6 leading-tight">
+                        {item.monitored_processes.partes.polo_ativo}
+                      </div>
+                    )}
                   </div>
                 )}
                 {item.monitored_processes?.cliente_nome && (
