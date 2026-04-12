@@ -87,7 +87,7 @@ export default function PrazosPage() {
 
     async function fetchData(tenantId: string) {
       setLoading(true)
-      const { data } = await supabase
+      const { data, error } = await supabase
         .from('process_prazos')
         .select(`
           *,
