@@ -96,7 +96,9 @@ export async function analisarMovimentacao(params: {
     // Exclusões — eventos passados que contêm "audiência" mas não são audiência futura
     if (
       textoLower.includes('ata de audiencia') ||
-      textoLower.includes('ata de audiência') ||
+      textoLower.includes('ata de conciliacao') ||
+      textoLower.includes('ata de conciliação') ||
+      textoLower.includes('minuta de ata') ||
       textoLower.includes('protocolo de ata') ||
       textoLower.includes('juntada de ata')
     ) {

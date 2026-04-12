@@ -264,10 +264,9 @@ export default function PrazosPage() {
             position_index: 0
           })
           .select()
-          .single()
         
         if (error) throw error
-        setTaskDetails(data)
+        setTaskDetails(data?.[0] ?? null)
       }
 
       setSaveSuccess(true)
