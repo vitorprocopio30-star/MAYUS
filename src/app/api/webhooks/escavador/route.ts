@@ -111,9 +111,9 @@ export async function POST(req: NextRequest) {
           fonte: 'diario_oficial'
         })
 
-        // Dispara analisador jurídico (cria tarefas automáticas)
+        // Dispara analisador jurídico (cria tarefas automáticas) - Aguardado para não morrer na Vercel
         const { analisarMovimentacao } = await import('@/lib/juridico/analisador')
-        analisarMovimentacao({
+        await analisarMovimentacao({
           processo_id: processo.id,
           numero_cnj,
           tenant_id: processo.tenant_id,
