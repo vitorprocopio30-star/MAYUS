@@ -14,6 +14,7 @@ const montserrat = Montserrat({ subsets: ["latin"], weight: ["400", "500", "600"
 // Mapa de labels amigáveis para cada perfil
 const roleLabels: Record<string, string> = {
   Administrador: "Administrador",
+  admin: "Administrador",
   Advogado: "Advogado",
   SDR: "SDR",
   Financeiro: "Financeiro",

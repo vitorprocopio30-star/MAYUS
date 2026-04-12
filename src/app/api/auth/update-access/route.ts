@@ -16,7 +16,7 @@ export async function POST(req: Request) {
     const requesterRole = user.app_metadata?.role;
     const tenantId = user.app_metadata?.tenant_id;
 
-    if (requesterRole !== "Administrador" && requesterRole !== "mayus_admin") {
+    if (requesterRole !== "Administrador" && requesterRole !== "mayus_admin" && requesterRole !== "admin") {
       return NextResponse.json({ error: "Apenas Administradores podem alterar acessos." }, { status: 403 });
     }
 

@@ -50,7 +50,7 @@ export const ROUTE_TO_MODULE: Record<string, AppModuleId> = {
 // -----------------------------------------------------------------------
 export function hasAccess(customPermissions: string[], pathname: string, role?: string): boolean {
   // Administrador dono tem acesso total independente de chaves
-  if (role === "Administrador" || customPermissions.includes("ALL")) return true;
+  if (role === "Administrador" || role === "admin" || customPermissions.includes("ALL")) return true;
 
   // A raiz do dashboard pode ser acessada se tiver permissão "dashboard"
   if (pathname === "/dashboard") {
