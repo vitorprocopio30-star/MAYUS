@@ -7,6 +7,18 @@ export async function updateSession(request: NextRequest) {
     request,
   });
 
+  // Proteção contra interceptação de arquivos internos do Next.js e estáticos
+  // Isso evita que o middleware tente processar sessões para arquivos de sistema,
+  // prevenindo erros de MIME type mismatch (HTML sendo retornado como JS/CSS).
+  if (
+    request.nextUrl.pathname.startsWith("/_next") ||
+    request.nextUrl.pathname.startsWith("/api") ||
+    request.nextUrl.pathname.startsWith("/favicon.ico") ||
+    request.nextUrl.pathname.match(/\.(?:svg|png|jpg|jpeg|gif|webp)$/)
+  ) {
+    return supabaseResponse;
+  }
+
   const supabase = createServerClient(
     process.env.NEXT_PUBLIC_SUPABASE_URL!,
     process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY!,
@@ -37,7 +49,7 @@ export async function updateSession(request: NextRequest) {
   } = await supabase.auth.getUser();
 
   // Rotas públicas (não precisam de autenticação)
-  const publicRoutes = ["/", "/login", "/signup", "/cadastro", "/onboarding", "/auth/callback", "/auth/update-password", "/auth/aceitar-convite", "/api"];
+  const publicRoutes = ["/", "/login", "/signup", "/cadastro", "/onboarding", "/auth/callback", "/auth/update-password", "/auth/aceitar-convite", "/api", "/_next"];
   const isPublicRoute = publicRoutes.some((route) =>
     route === "/" ? request.nextUrl.pathname === "/" : request.nextUrl.pathname.startsWith(route)
   );

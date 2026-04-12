@@ -53,6 +53,8 @@
   body {
     @apply bg-background text-foreground antialiased;
     font-feature-settings: "rlig" 1, "calt" 1;
+    background-color: #030303;
+    color: #f5f5f0;
   }
 }
 

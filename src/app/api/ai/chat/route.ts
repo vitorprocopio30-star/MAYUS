@@ -13,6 +13,7 @@ import { NextResponse } from "next/server";
 import { createClient, SupabaseClient } from "@supabase/supabase-js";
 import { createServerClient } from "@supabase/ssr";
 import { cookies } from "next/headers";
+import { getLLMClient, buildHeaders } from "@/lib/llm-router";
 import { ZapSignService } from "@/lib/services/zapsign";
 import { EscavadorService } from "@/lib/services/escavador";
 import { executarCobranca } from "@/lib/agent/skills/asaas-cobrar";
@@ -282,18 +283,15 @@ export async function POST(req: Request) {
       }, { status: 400 });
     }
 
-    // 5. Fetch API key via ADMIN CLIENT
-    const { data: integration } = await adminSupabase
-      .from("tenant_integrations")
-      .select("api_key")
-      .eq("tenant_id", tenantId)
-      .eq("provider", provider)
-      .single();
-
-    if (!integration?.api_key) {
-      return NextResponse.json({ error: "Integração não configurada." }, { status: 400 });
+    // 5. Resolver cliente LLM via router BYOK
+    let llm: Awaited<ReturnType<typeof getLLMClient>> | null = null;
+    if (provider !== "n8n") {
+      try {
+        llm = await getLLMClient(adminSupabase, tenantId, "chat_geral");
+      } catch {
+        return NextResponse.json({ error: "Integração não configurada." }, { status: 400 });
+      }
     }
-    const apiKey = integration.api_key;
 
     // 6. Memória e Skills via USER CLIENT
     const memoryContext = await fetchInstitutionalMemory(userSupabase, tenantId);
@@ -337,11 +335,11 @@ export async function POST(req: Request) {
       const openaiController = new AbortController();
       const openaiTimeout = setTimeout(() => openaiController.abort(), 30000);
 
-      const response = await fetch("https://api.openai.com/v1/chat/completions", {
+      const response = await fetch(llm!.endpoint, {
         method: "POST",
-        headers: { "Content-Type": "application/json", Authorization: `Bearer ${apiKey}` },
+        headers: buildHeaders(llm!),
         body: JSON.stringify({
-          model: model || "gpt-4o-mini",
+          model: model || llm!.model,
           messages,
           tools: dynamicTools.length > 0 ? dynamicTools : undefined,
           tool_choice: dynamicTools.length > 0 ? "auto" : undefined,

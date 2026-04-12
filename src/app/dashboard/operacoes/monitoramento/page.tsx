@@ -19,7 +19,8 @@ import {
   ExternalLink,
   History,
   FileText,
-  Clock
+  Clock,
+  Quote
 } from 'lucide-react'
 
 // ─── Interfaces e Tipos ───
@@ -83,16 +84,33 @@ const STATUS_COLOR: Record<string, string> = {
 function parseDataBR(dataStr: string | null): number {
   if (!dataStr) return 0
   try {
+    // Detecta ISO (YYYY-MM-DD) ou Completo
+    if (dataStr.includes('-')) {
+      const semTime = dataStr.split('T')[0]
+      const [a, m, d] = semTime.split('-').map(Number)
+      return new Date(a, m - 1, d).getTime() || 0
+    }
+    // Formato BR (DD/MM/YYYY)
     const [d, m, a] = dataStr.split('/').map(Number)
-    return new Date(a, m - 1, d).getTime()
+    const date = new Date(a, m - 1, d)
+    return date.getTime() || 0
   } catch { return 0 }
 }
 
-function formatarData(dataIso: string | null) {
-  if (!dataIso) return '--/--/----'
+function formatarData(data: string | null) {
+  if (!data) return '--/--/----'
   try {
-    const d = new Date(dataIso)
-    return d.toLocaleDateString('pt-BR')
+    // Se já estiver no formato BR, retorna
+    if (data.includes('/') && data.split('/').length === 3) return data
+    
+    // Se for ISO (YYYY-MM-DD...)
+    if (data.includes('-')) {
+      const semTime = data.split('T')[0]
+      const [a, m, d] = semTime.split('-').map(Number)
+      return `${String(d).padStart(2, '0')}/${String(m).padStart(2, '0')}/${a}`
+    }
+    
+    return data
   } catch { return '--/--/----' }
 }
 
@@ -176,114 +194,110 @@ function ModalConfirmacaoCusto({ dados, onConfirmar, onCancelar, loading }: { da
   )
 }
 
-function ProcessoCard({ p, onSelect, selecionado, onAction, onRemover, loadingId, organizandoState, onOrganizar, onAbrirDetalhes }: { p: Processo, onSelect: () => void, selecionado: boolean, onAction: () => void, onRemover: () => void, loadingId: string | null, organizandoState: 'idle' | 'loading' | 'done', onOrganizar: () => void, onAbrirDetalhes: () => void }) {
+function ProcessoCard({ p, onSelect, selecionado, onAction, onRemover, loadingId, organizandoState, onOrganizar, onAbrirResumo }: { p: Processo, onSelect: () => void, selecionado: boolean, onAction: () => void, onRemover: () => void, loadingId: string | null, organizandoState: 'idle' | 'loading' | 'done', onOrganizar: () => void, onAbrirResumo: (r: string) => void }) {
   const d = diasDesde(p.data_ultima_movimentacao)
   const isUpdating = loadingId === p.numero_processo
-  const [resumoExpandido, setResumoExpandido] = useState(false)
 
   return (
-    <div className={`group relative bg-zinc-900/40 border transition-all duration-500 rounded-3xl p-6 hover:bg-zinc-900/60 ${selecionado ? 'border-yellow-500 ring-1 ring-yellow-500/20 bg-zinc-900/80 shadow-2xl shadow-yellow-500/5' : 'border-zinc-800/50 hover:border-zinc-700'}`}>
+    <div className={`group relative bg-[#070707] border transition-all duration-700 rounded-3xl p-6 border-[#CCA761]/60 shadow-[0_0_25px_rgba(204,167,97,0.04)] bg-gradient-to-br from-[#CCA761]/5 via-transparent to-transparent ${selecionado ? 'ring-2 ring-[#CCA761] ring-offset-4 ring-offset-black' : ''}`}>
       <div className="flex flex-col lg:flex-row gap-8">
-        {/* Controle Lateral */}
-        <div className="flex flex-row lg:flex-col items-center gap-4 border-b lg:border-b-0 lg:border-r border-zinc-800 pb-4 lg:pb-0 lg:pr-6 shrink-0">
-           <button onClick={onSelect} className={`w-6 h-6 rounded-lg border transition-all flex items-center justify-center ${selecionado ? 'bg-yellow-500 border-yellow-500' : 'bg-zinc-950 border-zinc-800 group-hover:border-zinc-700'}`}>
+        
+        {/* Checkbox Lateral */}
+        <div className="hidden lg:flex flex-col items-center pt-1 shrink-0">
+           <button onClick={onSelect} className={`w-6 h-6 rounded-lg border transition-all flex items-center justify-center ${selecionado ? 'bg-[#CCA761] border-[#CCA761]' : 'bg-transparent border-zinc-800 hover:border-zinc-700'}`}>
              {selecionado && <CheckCircle size={14} className="text-black" strokeWidth={3} />}
            </button>
-           <div className="h-px lg:h-8 w-8 lg:w-px bg-zinc-800" />
-           <div className="flex lg:flex-col gap-2">
-              <StatusBadge status={p.status} />
-              {p.monitorado && (
-                <span className="px-2 py-1 rounded-md bg-yellow-500/5 border border-yellow-500/10 text-yellow-500/70 text-[8px] font-black uppercase tracking-widest flex items-center gap-1">
-                   <Shield size={10} fill="currentColor" /> Vigiado
-                </span>
-              )}
-           </div>
         </div>
 
         {/* Conteúdo Principal */}
         <div className="flex-1 space-y-6">
-          <div className="flex flex-col md:flex-row md:items-start justify-between gap-4">
-            <div className="space-y-1">
+          {/* Header do Card */}
+          <div className="flex items-center justify-between gap-4">
+            <div className="flex items-center gap-3 flex-wrap">
+               <h3 className="text-lg font-black text-[#CCA761] tracking-tight leading-none">{p.numero_processo}</h3>
                <div className="flex items-center gap-2">
-                 <h3 className="text-lg font-black text-white tracking-tight cursor-pointer hover:text-yellow-500 transition-colors" onClick={onAbrirDetalhes}>
-                   {p.numero_processo}
-                 </h3>
-                 <button onClick={onAbrirDetalhes} className="text-zinc-700 hover:text-white transition-colors">
-                   <ExternalLink size={14} />
-                 </button>
+                 <span className="px-2.5 py-1 rounded-full bg-[#CCA761]/10 border-[#CCA761]/20 text-[#CCA761]/90 text-[8px] font-black uppercase tracking-widest shadow-[0_0_5px_rgba(204,167,97,0.05)]">{p.tribunal}</span>
+                 <StatusBadge status={p.status} />
+                 <span className="px-2.5 py-1 rounded-full bg-green-500/5 border border-green-500/20 text-green-500/60 text-[8px] font-black uppercase tracking-widest flex items-center gap-1.5">
+                   <RefreshCw size={10} /> SINCRONIZADO
+                 </span>
+                 {d === 0 && (
+                   <span className="px-2.5 py-1 rounded-full bg-yellow-500/10 border border-yellow-500/20 text-yellow-500 text-[8px] font-black uppercase tracking-widest flex items-center gap-1.5">
+                     <div className="w-1.5 h-1.5 rounded-full bg-yellow-500 animate-pulse shadow-[0_0_8px_rgba(234,179,8,1)]" /> ATENÇÃO
+                   </span>
+                 )}
                </div>
-               <p className="text-[10px] text-zinc-500 font-black uppercase tracking-[0.2em]">{p.tribunal} · {p.assunto || 'ASSUNTO NÃO IDENTIFICADO'}</p>
-            </div>
-            <div className="flex flex-col items-end shrink-0">
-               {d !== null && (
-                 <div className={`px-4 py-1.5 rounded-full flex items-center gap-2 border ${d === 0 ? 'bg-yellow-500/10 border-yellow-500/20 text-yellow-500 drop-shadow-[0_0_8px_rgba(234,179,8,0.2)]' : 'bg-zinc-950 border-zinc-800 text-zinc-500'}`}>
-                    <div className={`w-1.5 h-1.5 rounded-full animate-pulse ${d === 0 ? 'bg-yellow-500 shadow-[0_0_8px_rgba(234,179,8,1)]' : 'bg-zinc-800'}`} />
-                    <span className="text-[10px] font-black uppercase tracking-widest">{d === 0 ? 'Atualizado hoje' : `Atualizado há ${d} dia${d > 1 ? 's' : ''}`}</span>
-                 </div>
-               )}
-               <p className="text-[9px] text-zinc-700 font-black uppercase tracking-widest mt-2">{p.instancia}ª Instância</p>
             </div>
           </div>
 
-          <div className="grid grid-cols-1 md:grid-cols-2 gap-8 bg-zinc-950/30 p-5 rounded-2xl border border-zinc-800/30">
-             <div className="space-y-2">
-                <p className="text-[9px] text-zinc-600 font-black uppercase tracking-widest flex items-center gap-2">
-                  <div className="w-1.5 h-1.5 rounded-full bg-zinc-800" /> Polo Ativo
-                </p>
-                <p className="text-zinc-300 text-xs font-bold leading-relaxed">{p.polo_ativo}</p>
+          {/* Partes */}
+          <div className="flex flex-col md:flex-row gap-8 items-start">
+             <div className="flex-1 space-y-1.5">
+                <span className="text-[9px] text-zinc-600 font-black uppercase tracking-widest">Ativo</span>
+                <p className="text-white text-[13px] font-bold leading-none">{p.polo_ativo}</p>
              </div>
-             <div className="space-y-2">
-                <p className="text-[9px] text-zinc-600 font-black uppercase tracking-widest flex items-center gap-2">
-                  <div className="w-1.5 h-1.5 rounded-full bg-zinc-800" /> Polo Passivo
-                </p>
-                <p className="text-zinc-300 text-xs font-bold leading-relaxed">{p.polo_passivo}</p>
+             <div className="flex-1 space-y-1.5">
+                <span className="text-[9px] text-zinc-600 font-black uppercase tracking-widest">Passivo</span>
+                <p className="text-white text-[13px] font-bold leading-none">{p.polo_passivo}</p>
              </div>
           </div>
 
+          {/* Área de Resumo Preview */}
           {p.resumo_curto && (
-            <div className="space-y-2">
-              <div 
-                onClick={() => setResumoExpandido(!resumoExpandido)} 
-                className="cursor-pointer group/resumo"
-              >
-                <div className={`text-white/70 text-[11px] leading-relaxed bg-white/[0.03] p-4 rounded-xl border border-white/5 transition-all group-hover/resumo:border-white/10 ${resumoExpandido ? '' : 'line-clamp-2'}`}>
-                  <span className="text-[#CCA761] font-black uppercase text-[9px] tracking-widest mb-1 block">Análise MAYUS IA:</span>
-                  {p.resumo_curto}
-                </div>
-                <span className="text-white/20 text-[9px] uppercase tracking-widest mt-2 flex items-center gap-1 group-hover/resumo:text-white/40">
-                  {resumoExpandido ? <ChevronUp size={10} /> : <ChevronDown size={10} />}
-                  {resumoExpandido ? 'recolher insight' : 'expandir insight completo'}
-                </span>
+            <div className="relative group/resumo cursor-pointer" onClick={() => onAbrirResumo(p.resumo_curto!)}>
+              <div className="bg-white/5 border border-white/10 rounded-2xl p-4 transition-all group-hover/resumo:bg-white/10">
+                 <p className="text-zinc-400 text-[11px] leading-relaxed italic line-clamp-3">
+                   {p.resumo_curto}
+                 </p>
+                 <div className="mt-2 flex items-center gap-1.5 text-[#CCA761] text-[9px] font-black uppercase tracking-widest">
+                    <ChevronDown size={12} /> LER MAIS
+                 </div>
               </div>
             </div>
           )}
+
+          {/* Rodapé Interno */}
+          <div className="flex items-center gap-4">
+             <div className="flex items-center gap-2 bg-green-500/5 border border-green-500/10 px-3 py-1.5 rounded-full">
+                <div className="w-2 h-2 rounded-full bg-green-500/60 shadow-[0_0_8px_rgba(34,197,94,0.4)]" />
+                <span className="text-green-500/80 text-[9px] font-black uppercase tracking-[0.2em]">Monitoramento Normal</span>
+             </div>
+             {d !== null && (
+                <div className={`px-3 py-1.5 rounded-full border text-[9px] font-black uppercase tracking-widest flex items-center gap-3 transition-all duration-700
+                  ${d === 0 
+                    ? 'bg-green-500/10 border-green-500/30 text-green-400/90 shadow-[0_0_12px_rgba(34,197,94,0.15)]' 
+                    : 'bg-[#CCA761]/5 border-[#CCA761]/10 text-[#CCA761]/70 shadow-[0_0_8px_rgba(204,167,97,0.08)]'
+                  }`}
+                >
+                   <span className="opacity-60">{formatarData(p.data_ultima_movimentacao)}</span>
+                   <div className="w-px h-3 bg-current opacity-20" />
+                   {d === 0 && <div className="w-1.5 h-1.5 rounded-full bg-green-500 animate-pulse shadow-[0_0_5px_rgba(34,197,94,0.5)]" />}
+                   <span className="tracking-tighter">{d === 0 ? 'Atualizado Hoje' : `${d}d atrás`}</span>
+                </div>
+             )}
+          </div>
         </div>
 
-        {/* Ações */}
-        <div className="flex flex-col gap-2 shrink-0 justify-center">
+        {/* Ações Laterais */}
+        <div className="flex flex-col gap-2 shrink-0 justify-center min-w-[160px]">
            {!p.monitorado ? (
-             <button onClick={onAction} disabled={isUpdating} className="w-full lg:w-44 h-12 bg-zinc-950 hover:bg-zinc-900 border border-zinc-800 text-zinc-500 hover:text-white text-[10px] font-black uppercase rounded-xl transition-all flex items-center justify-center gap-2.5">
-               {isUpdating ? <RefreshCw size={14} className="animate-spin" /> : <Zap size={14} />}
-               Ativar Vigilância
+             <button onClick={onAction} disabled={isUpdating} className="h-12 bg-[#CCA761] hover:bg-[#b89554] text-black text-[10px] font-black uppercase rounded-2xl transition-all flex items-center justify-center gap-2.5 shadow-xl shadow-[#CCA761]/10">
+               {isUpdating ? <RefreshCw size={14} className="animate-spin" /> : <Zap size={14} fill="currentColor" />}
+               Monitorar
              </button>
            ) : (
-             <div className="space-y-2">
+             <>
+               <button onClick={onRemover} disabled={isUpdating} className="h-11 bg-zinc-950 hover:bg-red-500/5 border border-zinc-900 hover:border-red-500/20 text-zinc-700 hover:text-red-500 text-[10px] font-black uppercase rounded-2xl transition-all flex items-center justify-center gap-2">
+                 <X size={14} /> Remover
+               </button>
                <button 
                 onClick={onOrganizar}
                 disabled={organizandoState === 'loading'}
-                className={`w-full lg:w-44 h-12 border text-[10px] font-black uppercase rounded-xl transition-all flex items-center justify-center gap-2.5 
-                  ${organizandoState === 'loading' ? 'bg-zinc-950 border-zinc-800 text-zinc-600' : 
-                    organizandoState === 'done' ? 'bg-green-500/10 border-green-500/20 text-green-500' :
-                    'bg-[#CCA761]/10 border-[#CCA761]/30 text-[#CCA761] hover:bg-[#CCA761]/20'}`}
+                className="h-11 bg-zinc-900 hover:bg-zinc-800 border border-zinc-800 text-zinc-400 hover:text-white text-[10px] font-black uppercase rounded-2xl transition-all flex items-center justify-center gap-2"
                >
-                 {organizandoState === 'loading' ? <Loader2 size={14} className="animate-spin" /> : <Sparkles size={14} />}
-                 {organizandoState === 'loading' ? 'Organizando...' : 'Arrumar com IA'}
+                 <Sparkles size={14} /> Organizar IA
                </button>
-
-               <button onClick={onRemover} disabled={isUpdating} className="w-full lg:w-44 h-11 bg-transparent border border-zinc-900 hover:border-red-500/20 text-zinc-800 hover:text-red-500/50 text-[9px] font-black uppercase rounded-xl transition-all flex items-center justify-center gap-2">
-                 Parar Monitoramento
-               </button>
-             </div>
+             </>
            )}
         </div>
       </div>
@@ -323,8 +337,8 @@ function MonitoramentoContent() {
   // Estado para os botões "Organizar IA"
   const [organizando, setOrganizando] = useState<Record<string, 'idle' | 'loading' | 'done'>>({})
 
-  // Estado para Drawer Lateral (Painel de Detalhes)
-  const [processoSelecionado, setProcessoSelecionado] = useState<Processo | null>(null)
+  // Estado para o Modo de Leitura (Documento)
+  const [resumoModal, setResumoModal] = useState<string | null>(null)
 
   // Estado para "Organizar Todos"
   const [organizandoTodos, setOrganizandoTodos] = useState(false)
@@ -349,6 +363,7 @@ function MonitoramentoContent() {
         const parsed = JSON.parse(saved)
         setResult(parsed)
         setNextCursor(parsed.next_url ?? null)
+        setCarregandoTodos(false) // nunca auto-carrega ao restaurar sessão
       } catch {}
     }
   }, [])
@@ -373,7 +388,18 @@ function MonitoramentoContent() {
       setAutomationBatchesCount(0)
       try { sessionStorage.setItem('mon_result', JSON.stringify(data)) } catch {}
     } catch (e) {
-      setError(e instanceof Error ? e.message : 'Erro na conexão')
+      console.error('Erro na varredura:', e)
+      let msg = 'Falha na varredura'
+      if (e instanceof Error) {
+        msg = e.message
+        // Tentar extrair mensagem se for string JSON
+        try {
+          const parsed = JSON.parse(e.message)
+          if (parsed.MESSAGE) msg = parsed.MESSAGE
+          else if (parsed.error) msg = parsed.error
+        } catch {}
+      }
+      setError(msg)
     } finally {
       setLoading(false)
     }
@@ -388,7 +414,7 @@ function MonitoramentoContent() {
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
           oab_estado: oabEstado,
-          oab_numero: oabNumero,
+          oab_numero: oabNumero.trim(),
           next_url: nextCursor
         })
       })
@@ -692,9 +718,9 @@ function MonitoramentoContent() {
             <div className="flex flex-col md:flex-row md:items-center justify-between gap-4">
                <div className="flex gap-2 overflow-x-auto pb-1 scrollbar-hide">
                  {(['TODOS', 'ATIVO', 'ARQUIVADO', 'monitorado', 'nao_monitorado'] as FilterStatus[]).map(f => (
-                   <button key={f} onClick={() => handleFiltroStatusChange(f)} className={`px-4 py-2 rounded-xl text-[10px] font-black uppercase transition-all whitespace-nowrap border ${filtroStatus === f ? 'bg-zinc-100 text-black border-zinc-100' : 'text-zinc-600 bg-zinc-900 border-zinc-800 hover:border-zinc-700'}`}>
-                     {f === 'nao_monitorado' ? 'PENDENTES' : f === 'monitorado' ? 'VIGIADOS' : f}
-                   </button>
+                    <button key={f} onClick={() => handleFiltroStatusChange(f)} className={`px-4 py-2 rounded-xl text-[10px] font-black uppercase transition-all whitespace-nowrap border ${filtroStatus === f ? 'bg-[#CCA761] text-black border-[#CCA761] shadow-[0_0_15px_rgba(204,167,97,0.2)]' : 'text-zinc-600 bg-zinc-900 border-zinc-800 hover:border-zinc-700'}`}>
+                      {f === 'nao_monitorado' ? 'PENDENTES' : f === 'monitorado' ? 'MONITORADOS' : f}
+                    </button>
                  ))}
                </div>
                <div className="relative w-full md:w-72">
@@ -725,7 +751,7 @@ function MonitoramentoContent() {
               )}
               <div className="grid grid-cols-1 gap-4">
                 {processosPagina.map(p => (
-                  <ProcessoCard key={p.numero_processo} p={p} onSelect={() => { const next = new Set(selecionados); if (next.has(p.numero_processo)) next.delete(p.numero_processo); else next.add(p.numero_processo); setSelecionados(next); }} selecionado={selecionados.has(p.numero_processo)} onAction={() => monitorarLote([p])} onRemover={() => desmonitorar(p)} loadingId={loadingId} organizandoState={organizando[p.id || ''] || 'idle'} onOrganizar={() => handleOrganizar(p.id || '')} onAbrirDetalhes={() => setProcessoSelecionado(p)} />
+                  <ProcessoCard key={p.numero_processo} p={p} onSelect={() => { const next = new Set(selecionados); if (next.has(p.numero_processo)) next.delete(p.numero_processo); else next.add(p.numero_processo); setSelecionados(next); }} selecionado={selecionados.has(p.numero_processo)} onAction={() => monitorarLote([p])} onRemover={() => desmonitorar(p)} loadingId={loadingId} organizandoState={organizando[p.id || ''] || 'idle'} onOrganizar={() => handleOrganizar(p.id || '')} onAbrirResumo={(r) => setResumoModal(r)} />
                 ))}
               </div>
               {processosFiltrados.length === 0 && (
@@ -775,60 +801,64 @@ function MonitoramentoContent() {
         )}
       </div>
 
-      {processoSelecionado && (
-        <div className="fixed inset-0 z-50 flex justify-end">
-          <div className="absolute inset-0 bg-black/60 backdrop-blur-sm animate-in fade-in duration-300" onClick={() => setProcessoSelecionado(null)} />
-          <div className="relative w-full max-w-2xl h-full bg-[#0a0a0a] border-l border-white/10 overflow-y-auto p-8 animate-in slide-in-from-right duration-500 shadow-2xl z-10 font-sans">
-            <button onClick={() => setProcessoSelecionado(null)} className="absolute top-6 right-6 text-white/40 hover:text-white"><X size={24} /></button>
-            <div className="mb-8">
-              <span className="text-[10px] text-zinc-500 uppercase font-black tracking-[0.2em] mb-2 block">Detalhes do Processo</span>
-              <h2 className="text-white font-bold text-2xl tracking-tight mb-2">{processoSelecionado.numero_processo}</h2>
-              <div className="flex items-center gap-2">
-                <span className="text-[10px] uppercase font-bold bg-zinc-800 text-zinc-400 px-3 py-1 rounded-lg">{processoSelecionado.tribunal}</span>
-                <span className={`text-[10px] uppercase font-bold px-3 py-1 rounded-lg ${STATUS_COLOR[processoSelecionado.status] ?? 'text-zinc-600 bg-zinc-900'}`}>{processoSelecionado.status}</span>
-              </div>
-            </div>
-            <div className="grid grid-cols-1 md:grid-cols-2 gap-6 bg-white/[0.02] border border-white/5 p-6 rounded-2xl mb-8">
-              <div><p className="text-zinc-500 text-[10px] font-black uppercase tracking-widest mb-1">Polo Ativo</p><p className="text-white font-bold text-sm">{processoSelecionado.polo_ativo}</p></div>
-              <div><p className="text-zinc-500 text-[10px] font-black uppercase tracking-widest mb-1">Polo Passivo</p><p className="text-white font-bold text-sm">{processoSelecionado.polo_passivo}</p></div>
-            </div>
-            {processoSelecionado.resumo_curto && (
-              <div className="mb-8">
-                <p className="text-white/30 text-[10px] uppercase font-black tracking-widest mb-4">Análise Resumida</p>
-                <div className="bg-white/5 rounded-2xl p-6 border border-white/10 relative overflow-hidden"><div className="absolute top-0 left-0 w-1 h-full bg-[#CCA761]/40" /><p className="text-white/70 text-sm leading-relaxed italic font-medium">&quot;{processoSelecionado.resumo_curto}&quot;</p></div>
-              </div>
-            )}
-            {processoSelecionado.proxima_acao_sugerida && (
-              <div className="mb-8"><div className="bg-[#CCA761]/10 border border-[#CCA761]/20 rounded-2xl p-6"><div className="flex items-center gap-2 mb-3"><Zap size={16} className="text-[#CCA761]" fill="currentColor" /><p className="text-[#CCA761] text-[10px] font-black uppercase tracking-widest">Ação Sugerida pela IA</p></div><p className="text-white/80 text-sm font-medium leading-relaxed">{processoSelecionado.proxima_acao_sugerida}</p></div></div>
-            )}
-            {(processoSelecionado.organizacao_ia_json as any)?.tarefas?.length > 0 && (
-              <div className="mb-8">
-                <p className="text-white/30 text-[10px] uppercase font-black tracking-widest mb-4">Plano de Ação</p>
-                <div className="space-y-3">
-                  {(processoSelecionado.organizacao_ia_json as any).tarefas.map((t: any, i: number) => (
-                    <div key={i} className="bg-white/5 rounded-xl p-4 border border-white/5 flex gap-4 items-start"><div className="w-6 h-6 rounded-lg bg-zinc-800 flex items-center justify-center text-[10px] font-bold text-zinc-500 shrink-0 border border-zinc-700">{i + 1}</div><div><p className="text-white/80 text-sm font-bold">{t.titulo}</p><p className="text-white/40 text-xs mt-1 leading-relaxed">{t.descricao}</p></div></div>
-                  ))}
+      {resumoModal && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center p-4 md:p-8">
+          <div 
+            className="absolute inset-0 bg-black/90 backdrop-blur-xl animate-in fade-in duration-500"
+            onClick={() => setResumoModal(null)}
+          />
+          <div className="relative bg-[#0a0a0a] border border-[#CCA761]/30 rounded-3xl w-full max-w-4xl z-10 max-h-[90vh] overflow-hidden flex flex-col shadow-[0_0_100px_rgba(204,167,97,0.1)] animate-in zoom-in-95 duration-500">
+            {/* Cabeçalho do Documento */}
+            <div className="p-6 border-b border-zinc-900 bg-zinc-950/50 flex items-center justify-between">
+              <div className="flex items-center gap-4">
+                <div className="w-10 h-10 rounded-xl bg-[#CCA761]/10 flex items-center justify-center border border-[#CCA761]/20">
+                  <Shield size={20} className="text-[#CCA761]" />
+                </div>
+                <div>
+                  <h2 className="text-white font-black text-sm uppercase tracking-widest">Análise Estratégica MAYUS</h2>
+                  <p className="text-[#CCA761] text-[10px] font-bold uppercase tracking-tighter opacity-60">Relatório Consolidado de Inteligência</p>
                 </div>
               </div>
-            )}
-            <div className="mb-12">
-              <p className="text-white/30 text-[10px] uppercase font-black tracking-widest mb-6">Histórico Completo</p>
-              <div className="space-y-6 relative ml-1">
-                <div className="absolute left-[7px] top-2 bottom-2 w-px bg-zinc-800" />
-                {processoSelecionado.movimentacoes?.slice(0, 30).map((m, i) => (
-                  <div key={i} className="flex gap-6 group relative">
-                    <div className="w-4 h-4 rounded-full border-2 border-zinc-800 bg-[#0a0a0a] group-hover:border-[#CCA761] transition-colors shrink-0 z-10" />
-                    <div className="pb-1 transition-all group-hover:translate-x-1"><span className="text-[10px] font-black font-mono text-zinc-600 uppercase">{formatarData((m.data as string) || null)}</span><p className="text-sm text-zinc-300 font-bold mt-1 leading-snug">{((m.titulo ?? m.descricao ?? m.texto) as string) || "Visualização bloqueada."}</p>
-                      {m.resumo && <div className="mt-2 p-3 bg-zinc-950 rounded-xl border border-zinc-900 border-l-[#CCA761]/40 border-l-2 shadow-inner"><p className="text-[11px] text-zinc-500 italic leading-relaxed"><span className="text-[#CCA761]/60 font-bold not-italic mr-1">Análise:</span>{m.resumo as string}</p></div>}
+              <button 
+                onClick={() => setResumoModal(null)}
+                className="w-10 h-10 rounded-full bg-zinc-900 flex items-center justify-center text-zinc-500 hover:text-white transition-all hover:rotate-90"
+              >
+                <X size={20} />
+              </button>
+            </div>
+
+            {/* Corpo do "Documento" */}
+            <div className="flex-1 overflow-y-auto p-12 bg-zinc-900/10">
+              <div className="max-w-2xl mx-auto space-y-12">
+                 <div className="space-y-4">
+                    <div className="w-12 h-1 bg-[#CCA761]/30 rounded-full" />
+                    <p className="text-zinc-500 text-[10px] font-black uppercase tracking-[0.3em]">Resumo do Alvo</p>
+                 </div>
+                 
+                 <div className="relative">
+                    <Quote size={40} className="absolute -top-6 -left-8 text-[#CCA761]/5" />
+                    <p 
+                      className="text-white/90 text-xl leading-relaxed font-medium" 
+                      style={{ fontFamily: 'Cormorant Garamond, serif' }}
+                    >
+                      {resumoModal}
+                    </p>
+                 </div>
+
+                 <div className="pt-12 border-t border-zinc-900 flex items-center justify-between">
+                    <div className="flex items-center gap-2">
+                       <CheckCircle size={14} className="text-green-500" />
+                       <span className="text-zinc-600 text-[9px] font-black uppercase tracking-widest">Autenticado por MAYUS IA</span>
                     </div>
-                  </div>
-                ))}
+                    <p className="text-zinc-800 text-[8px] font-black uppercase tracking-[0.4em]">PROPRIEDADE ESTRATÉGICA</p>
+                 </div>
               </div>
             </div>
-            <div className="sticky bottom-0 left-0 right-0 pt-6 pb-2 bg-gradient-to-t from-[#0a0a0a] via-[#0a0a0a] to-transparent">
-               <button onClick={() => { if (processoSelecionado.id) handleOrganizar(processoSelecionado.id); }} disabled={organizando[processoSelecionado.id || ''] === 'loading'} className="w-full h-14 bg-[#CCA761]/10 border border-[#CCA761]/30 text-[#CCA761] text-xs font-black uppercase tracking-widest rounded-2xl hover:bg-[#CCA761]/20 transition-all shadow-xl shadow-[#CCA761]/5 flex items-center justify-center gap-3 disabled:opacity-50">
-                 {organizando[processoSelecionado.id || ''] === 'loading' ? <Loader2 size={18} className="animate-spin" /> : <Sparkles size={18} />}
-                 {organizando[processoSelecionado.id || ''] === 'loading' ? 'Analisando Contexto...' : 'Reorganizar com IA'}
+
+            {/* Rodapé Lateral */}
+            <div className="p-4 bg-zinc-950 border-t border-zinc-900 flex justify-end">
+               <button onClick={() => setResumoModal(null)} className="px-8 py-3 bg-[#CCA761] hover:bg-[#b89554] text-black text-[10px] font-black uppercase rounded-xl transition-all shadow-lg shadow-[#CCA761]/10">
+                 CONCLUIR LEITURA
                </button>
             </div>
           </div>

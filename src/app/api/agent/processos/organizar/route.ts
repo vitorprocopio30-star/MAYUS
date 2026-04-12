@@ -1,5 +1,6 @@
 import { createClient } from '@/lib/supabase/server'
 import { NextRequest, NextResponse } from 'next/server'
+import { getLLMClient, buildHeaders } from '@/lib/llm-router'
 
 export async function POST(req: NextRequest) {
   const supabase = createClient()
@@ -23,20 +24,22 @@ export async function POST(req: NextRequest) {
     .eq('tenant_id', proc.tenant_id)
     .in('role', ['Administrador', 'advogado', 'socio'])
 
-  // 3. Buscar TODAS as integrations do tenant (IA + Escavador)
-  const { data: integrations } = await supabase
+  // 3. Buscar chave do Escavador + cliente LLM do tenant
+  const { data: escavadorInt } = await supabase
     .from('tenant_integrations')
-    .select('provider, api_key')
+    .select('api_key')
     .eq('tenant_id', proc.tenant_id)
-    .in('provider', ['openrouter', 'openai', 'escavador'])
+    .eq('provider', 'escavador')
+    .single()
 
-  const openrouterKey  = integrations?.find(i => i.provider === 'openrouter')?.api_key
-  const openaiKey      = integrations?.find(i => i.provider === 'openai')?.api_key
-  const escavadorKey   = integrations?.find(i => i.provider === 'escavador')?.api_key || process.env.ESCAVADOR_API_KEY
-  const aiKey          = openrouterKey || openaiKey
-  if (!aiKey) return NextResponse.json({ error: 'Chave de IA não configurada' }, { status: 400 })
+  const escavadorKey = escavadorInt?.api_key || process.env.ESCAVADOR_API_KEY
 
-  const isOpenRouter = !!openrouterKey
+  let llm: Awaited<ReturnType<typeof getLLMClient>>
+  try {
+    llm = await getLLMClient(supabase, proc.tenant_id, 'organizar_processo')
+  } catch {
+    return NextResponse.json({ error: 'Chave de IA não configurada' }, { status: 400 })
+  }
 
   // 3b. Buscar movimentações reais do Escavador se tiver escavador_id
   let movimentacoesEscavador: any[] = Array.isArray(proc.movimentacoes)
@@ -139,24 +142,15 @@ Retorne exatamente este JSON:
 }`
 
   // 5. Chamar IA
-  const aiResp = await fetch(
-    isOpenRouter
-      ? 'https://openrouter.ai/api/v1/chat/completions'
-      : 'https://api.openai.com/v1/chat/completions',
-    {
-      method: 'POST',
-      headers: {
-        'Authorization': `Bearer ${aiKey}`,
-        'Content-Type': 'application/json',
-        ...(isOpenRouter && { 'HTTP-Referer': 'https://mayus-premium-pro.vercel.app' })
-      },
-      body: JSON.stringify({
-        model: isOpenRouter ? 'anthropic/claude-sonnet-4-6' : 'gpt-4o',
-        max_tokens: 1500,
-        messages: [{ role: 'user', content: prompt }]
-      })
-    }
-  )
+  const aiResp = await fetch(llm.endpoint, {
+    method: 'POST',
+    headers: buildHeaders(llm),
+    body: JSON.stringify({
+      model: llm.model,
+      max_tokens: 1500,
+      messages: [{ role: 'user', content: prompt }]
+    })
+  })
 
   if (!aiResp.ok) {
     const err = await aiResp.text()

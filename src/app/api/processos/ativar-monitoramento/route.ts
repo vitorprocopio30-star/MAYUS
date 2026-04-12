@@ -132,7 +132,7 @@ export async function POST(req: NextRequest) {
 
   // 4. Salva ID do monitoramento e dados enriquecidos no banco
   if (monitoramentoId) {
-    await adminSupabase
+    const { data: processoSalvo } = await adminSupabase
       .from('monitored_processes')
       .update({
         escavador_monitoramento_id: monitoramentoId,
@@ -140,9 +140,21 @@ export async function POST(req: NextRequest) {
       })
       .eq('numero_processo', numero_cnj)
       .eq('tenant_id', tenantId)
+      .select('id')
+      .single()
 
     // Dispara geração do resumo IA em background
     solicitarResumoIA(numero_cnj, tenantId).catch(console.error)
+
+    // Dispara organizador IA em background (fire and forget)
+    if (processoSalvo?.id) {
+      const appUrl = process.env.NEXT_PUBLIC_SITE_URL ?? process.env.NEXT_PUBLIC_APP_URL ?? 'http://localhost:3000'
+      fetch(`${appUrl}/api/agent/processos/organizar`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ processo_id: processoSalvo.id })
+      }).catch(console.error)
+    }
   }
 
   return NextResponse.json({

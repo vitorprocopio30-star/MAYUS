@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { createServerClient } from '@supabase/ssr'
 import { cookies } from 'next/headers'
+import { getLLMClient, buildHeaders } from '@/lib/llm-router'
 
 export async function POST(req: NextRequest) {
   const cookieStore = await cookies()
@@ -23,6 +24,13 @@ export async function POST(req: NextRequest) {
 
   const { data: { user } } = await supabase.auth.getUser()
   if (!user) return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
+
+  const { data: profile } = await supabase
+    .from('profiles')
+    .select('tenant_id')
+    .eq('id', user.id)
+    .single()
+  if (!profile?.tenant_id) return NextResponse.json({ error: 'Tenant não encontrado' }, { status: 400 })
 
   const { numero_processo, movimentacoes } = await req.json()
   if (!movimentacoes || !Array.isArray(movimentacoes)) {
@@ -47,14 +55,13 @@ Linguagem: Profissional, assertiva e focada na vitória do segurado.
 RESUMO (3 bullets):`
 
   try {
-    const res = await fetch('https://api.openai.com/v1/chat/completions', {
+    const llm = await getLLMClient(supabase, profile.tenant_id, 'resumo_juridico')
+
+    const res = await fetch(llm.endpoint, {
       method: 'POST',
-      headers: {
-        'Content-Type': 'application/json',
-        'Authorization': `Bearer ${process.env.OPENAI_API_KEY}`
-      },
+      headers: buildHeaders(llm),
       body: JSON.stringify({
-        model: 'gpt-4o',
+        model: llm.model,
         messages: [
           { role: 'system', content: 'Você é um assistente jurídico especializado. Use apenas os dados fornecidos. Nunca recuse um pedido alegando falta de acesso a dados em tempo real.' },
           { role: 'user', content: prompt }

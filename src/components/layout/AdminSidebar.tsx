@@ -69,7 +69,8 @@ export function AdminSidebar() {
   // Hook para dados reais do usuário
   const { user, role, customPermissions, profile, isLoading: profileLoading } = useUserProfile();
   const allowedHrefs = getAllowedHrefs(customPermissions, role);
-  const isAdmin = allowedHrefs.includes("ALL") || role === "Administrador" || role === "admin";
+  // Sem sessão (dev local ou auth comentada): trata como admin para não esconder o menu
+  const isAdmin = !profileLoading && (!user || allowedHrefs.includes("ALL") || role === "Administrador" || role === "admin");
 
   useEffect(() => {
     setMounted(true);
@@ -178,6 +179,8 @@ export function AdminSidebar() {
           if (profile?.is_superadmin === true) return true;
           return user?.id === '1952586a-b97b-47e9-a18d-3f955c2a5cf0';
         }
+        // Enquanto carrega o perfil, mostra todos os itens (evita menu vazio)
+        if (profileLoading) return true;
         if (isAdmin) return true;
         if (item.href === "/dashboard/configuracoes/agente") return role === "admin" || role === "socio";
         if (item.href === "/dashboard/configuracoes/memoria") return role === "admin" || role === "socio";
@@ -227,15 +230,22 @@ export function AdminSidebar() {
 
         <div className="absolute top-0 right-0 w-[1px] h-full bg-gradient-to-b from-transparent via-[#CCA761]/40 to-transparent z-10" />
 
-        <div className="w-full aspect-square max-h-56 flex flex-col items-center justify-center bg-transparent shrink-0">
-          <div className={`relative w-full h-full p-4 transition-all duration-500 ${sidebarMode === "mini" ? 'scale-75 opacity-0' : 'hover:scale-105 opacity-100'}`}>
-            {sidebarMode === "expanded" && (
-              <Image
-                src="/logo.png"
-                alt="MAYUS Logo"
-                fill
-                className="object-contain drop-shadow-[0_0_15px_rgba(204,167,97,0.15)]"
-              />
+        <div className={`flex items-center justify-center bg-transparent shrink-0 transition-all duration-500 ${sidebarMode === "mini" ? "h-16 px-2" : "h-32 px-6"}`}>
+          <div className="relative w-full h-full transition-all duration-500 flex items-center justify-center">
+            {sidebarMode === "expanded" ? (
+              <div className="relative w-full h-full max-w-[180px] max-h-[80px] hover:scale-105 transition-transform duration-500">
+                <Image
+                  src="/logo.png"
+                  alt="MAYUS Logo"
+                  fill
+                  className="object-contain drop-shadow-[0_0_15px_rgba(204,167,97,0.15)]"
+                  priority
+                />
+              </div>
+            ) : (
+              <div className="w-8 h-8 rounded-full bg-gradient-to-br from-[#CCA761] to-[#8B7340] flex items-center justify-center shadow-[0_0_10px_rgba(204,167,97,0.3)] hover:scale-110 transition-transform duration-300">
+                <span className="text-white text-xs font-bold">M</span>
+              </div>
             )}
           </div>
         </div>
@@ -293,8 +303,8 @@ export function AdminSidebar() {
                                 }
                               `}
                             >
-                              <item.icon size={isMini ? 24 : 20} className={isActive ? "text-[#CCA761]" : "opacity-80"} />
-                              {!isMini && <span>{item.name}</span>}
+                              <item.icon size={isMini ? 24 : 20} className={`shrink-0 ${isActive ? "text-[#CCA761]" : "opacity-80"}`} />
+                              {!isMini && <span className="truncate">{item.name}</span>}
                             </Link>
                           </li>
                         )

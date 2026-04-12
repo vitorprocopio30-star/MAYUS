@@ -1,4 +1,5 @@
 import { createClient } from '@supabase/supabase-js'
+import { getLLMClient, buildHeaders } from '@/lib/llm-router'
 
 const adminSupabase = createClient(
   process.env.NEXT_PUBLIC_SUPABASE_URL!,
@@ -30,17 +31,15 @@ function calcularDiasUteis(inicio: Date, dias: number): Date {
   return data
 }
 
-async function classificarComLLM(conteudo: string, resumo: string | null): Promise<string | null> {
+async function classificarComLLM(tenantId: string, conteudo: string, resumo: string | null): Promise<string | null> {
   const tipos = 'CONTESTACAO, SENTENCA, RECURSO, AUDIENCIA, DESPACHO, CITACAO, ARQUIVAMENTO, EXTINCAO'
   try {
-    const res = await fetch('https://api.openai.com/v1/chat/completions', {
+    const llm = await getLLMClient(adminSupabase, tenantId, 'classificar_movimentacao')
+    const res = await fetch(llm.endpoint, {
       method: 'POST',
-      headers: {
-        'Authorization': `Bearer ${process.env.OPENAI_API_KEY}`,
-        'Content-Type': 'application/json'
-      },
+      headers: buildHeaders(llm),
       body: JSON.stringify({
-        model: 'gpt-4o-mini',
+        model: llm.model,
         temperature: 0,
         max_tokens: 20,
         messages: [
@@ -82,6 +81,7 @@ export async function analisarMovimentacao(params: {
 
   // 1. Tenta LLM
   let tipoEvento = await classificarComLLM(
+    params.tenant_id,
     params.movimentacao.conteudo ?? '',
     processo?.resumo_curto ?? null
   )

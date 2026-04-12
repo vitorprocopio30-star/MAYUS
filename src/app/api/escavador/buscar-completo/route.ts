@@ -91,6 +91,8 @@ function mapearProcesso(p: Record<string, unknown>) {
 
 // v3.1 - Force deploy for Premium Pro
 export async function POST(req: NextRequest) {
+  process.stdout.write('\n\n>>> REQUISIÇÃO RECEBIDA EM buscar-completo\n\n')
+  console.log('[buscar-completo] START')
   const cookieStore = await cookies()
   const supabase = createServerClient(
     process.env.NEXT_PUBLIC_SUPABASE_URL!,
@@ -134,99 +136,108 @@ export async function POST(req: NextRequest) {
 
   console.log(`[buscar-completo] Iniciando busca GET: OAB ${oab_numero}/${oab_estado} ${next_url ? 'COM NEXT_URL' : ''}`)
 
-  // Montar URL com query params (GET)
-  const url = next_url 
-    ? next_url
-    : `https://api.escavador.com/api/v2/advogado/processos?oab_numero=${oab_numero}&oab_estado=${oab_estado}`
+  try {
+    // Montar URL com query params (GET)
+    // Fallback: Tentamos o padrão do SDK se o padrão anterior falhar
+    const url = next_url 
+      ? next_url
+      : `https://api.escavador.com/api/v2/advogado/processos?oab_numero=${oab_numero}&oab_estado=${oab_estado}`
 
-  const resp = await fetch(url, {
-    method: 'GET',
-    headers: {
-      'Authorization': `Bearer ${integration.api_key}`,
-      'Accept': 'application/json',
-      'X-Requested-With': 'XMLHttpRequest'
+    let resp = await fetch(url, {
+      method: 'GET',
+      headers: {
+        'Authorization': `Bearer ${integration.api_key.trim()}`,
+        'Accept': 'application/json',
+        'X-Requested-With': 'XMLHttpRequest'
+      }
+    })
+
+    // Se falhar com 500 ou 400, tentamos o formato alternativo (numero/estado) sugerido pelo SDK
+    if (!resp.ok && !next_url) {
+      console.warn('[buscar-completo] Tentando fallback para params numero/estado...')
+      const fallbackUrl = `https://api.escavador.com/api/v2/advogado/processos?numero=${oab_numero}&estado=${oab_estado}`
+      const fallbackResp = await fetch(fallbackUrl, {
+        method: 'GET',
+        headers: {
+          'Authorization': `Bearer ${integration.api_key.trim()}`,
+          'Accept': 'application/json',
+          'X-Requested-With': 'XMLHttpRequest'
+        }
+      })
+      if (fallbackResp.ok) {
+        resp = fallbackResp
+      }
     }
-  })
 
-  if (!resp.ok) {
-    const errText = await resp.text()
-    console.error('[buscar-completo] ERRO', resp.status, errText)
-    return NextResponse.json({ error: errText }, { status: resp.status })
+    if (!resp.ok) {
+      const errText = await resp.text()
+      console.error('[buscar-completo] ERRO FINAL:', resp.status, errText)
+      return NextResponse.json({ error: errText }, { status: resp.status })
+    }
+    
+    const data = await resp.json()
+    console.log('[buscar-completo] SUCCESS keys:', Object.keys(data))
+    
+    const items = data?.items ?? data?.itens ?? data?.processos ?? []
+    const nextCursor: string | null = data?.links?.next ?? null
+
+    const totalAdvogado = data?.advogado_encontrado?.quantidade_processos ?? items.length
+    const advogadoNome = data?.advogado_encontrado?.nome ?? ''
+
+    const processos = items.map(mapearProcesso)
+
+    // Verificar monitorados
+    const numeros = processos.map(p => p.numero_processo).filter(Boolean)
+    const { data: jaMonitorados } = await adminSupabase
+      .from('monitored_processes').select('id, numero_processo, escavador_id, resumo_curto, urgencia_nivel, proxima_acao_sugerida')
+      .eq('tenant_id', tenantId).in('numero_processo', numeros)
+    const monitoradosMap = new Map((jaMonitorados ?? []).map(m => [m.numero_processo, m]))
+
+    // Upsert OAB
+    await adminSupabase.from('oabs_salvas').upsert({
+      tenant_id: tenantId, oab_estado, oab_numero,
+      advogado: advogadoNome, total_processos: totalAdvogado,
+      ultima_busca: new Date().toISOString(),
+    }, { onConflict: 'tenant_id,oab_estado,oab_numero' })
+
+    const processosComStatus = processos.map(p => {
+      const db = monitoradosMap.get(p.numero_processo)
+      return {
+        ...p,
+        monitorado: !!db,
+        id: db?.id ?? undefined,
+        escavador_id: db?.escavador_id || p.escavador_id,
+        resumo_curto: db?.resumo_curto ?? undefined,
+        urgencia_nivel: db?.urgencia_nivel ?? undefined,
+        proxima_acao_sugerida: db?.proxima_acao_sugerida ?? undefined,
+      }
+    })
+
+    const ativosNaoMonitorados = processosComStatus.filter(p => p.status === 'ATIVO' && !p.monitorado).length
+    const disponivelSemCusto = capacity?.disponivel_sem_custo ?? 0
+    const precoExtra = capacity?.preco_extra ?? 0.97
+    const excedenteSeProsseguir = Math.max(0, ativosNaoMonitorados - disponivelSemCusto)
+
+    return NextResponse.json({
+      processos: processosComStatus,
+      total: totalAdvogado,
+      total_retornado: processos.length,
+      advogado_nome: advogadoNome,
+      next_url: nextCursor,
+      paginas_buscadas: 1,
+      billing: {
+        total_ja_monitorados: capacity?.total_monitorados ?? 0,
+        gratuitos: capacity?.gratuitos ?? 100,
+        disponivel_sem_custo: disponivelSemCusto,
+        ativos_nao_monitorados: ativosNaoMonitorados,
+        ja_monitorados_desta_oab: monitoradosMap.size,
+        excedente_se_prosseguir: excedenteSeProsseguir,
+        custo_estimado_mes: excedenteSeProsseguir * precoExtra,
+        preco_por_extra: precoExtra,
+      }
+    })
+  } catch (error: any) {
+    console.error('[buscar-completo] CRASH INTERNO:', error)
+    return NextResponse.json({ error: error.message || 'Erro interno no servidor' }, { status: 500 })
   }
-  
-  const data = await resp.json()
-  console.log('[buscar-completo] SUCCESS keys:', Object.keys(data))
-  console.log('[buscar-completo] items count:', 
-    data?.items?.length ?? data?.itens?.length ?? 'N/A')
-
-  const items = data?.items ?? data?.itens ?? data?.processos ?? []
-  if (items.length > 0) {
-    console.log('[PROCESSO_SAMPLE]', JSON.stringify(items[0], null, 2))
-  }
-  
-  const nextCursor: string | null = data?.links?.next ?? null
-
-  console.log('[CURSOR_DEBUG]', JSON.stringify({ 
-    linksNext: data?.links?.next, 
-    nextCursor,
-    totalItems: items.length 
-  }))
-  const totalAdvogado = data?.advogado_encontrado?.quantidade_processos ?? items.length
-  const advogadoNome = data?.advogado_encontrado?.nome ?? ''
-
-  const processos = items.map(mapearProcesso)
-
-  // Verificar monitorados — buscar id + escavador_id do banco para injetar no resultado
-  const numeros = processos.map(p => p.numero_processo).filter(Boolean)
-  const { data: jaMonitorados } = await adminSupabase
-    .from('monitored_processes').select('id, numero_processo, escavador_id, resumo_curto, urgencia_nivel, proxima_acao_sugerida')
-    .eq('tenant_id', tenantId).in('numero_processo', numeros)
-  const monitoradosMap = new Map(
-    (jaMonitorados ?? []).map(m => [m.numero_processo, m])
-  )
-
-  // Upsert OAB
-  await adminSupabase.from('oabs_salvas').upsert({
-    tenant_id: tenantId, oab_estado, oab_numero,
-    advogado: advogadoNome, total_processos: totalAdvogado,
-    ultima_busca: new Date().toISOString(),
-  }, { onConflict: 'tenant_id,oab_estado,oab_numero' })
-
-  const processosComStatus = processos.map(p => {
-    const db = monitoradosMap.get(p.numero_processo)
-    return {
-      ...p,
-      monitorado: !!db,
-      // Injetar dados do banco quando monitorado
-      id: db?.id ?? undefined,
-      escavador_id: db?.escavador_id || p.escavador_id,
-      resumo_curto: db?.resumo_curto ?? undefined,
-      urgencia_nivel: db?.urgencia_nivel ?? undefined,
-      proxima_acao_sugerida: db?.proxima_acao_sugerida ?? undefined,
-    }
-  })
-
-  const ativosNaoMonitorados = processosComStatus.filter(p => p.status === 'ATIVO' && !p.monitorado).length
-  const disponivelSemCusto = capacity?.disponivel_sem_custo ?? 0
-  const precoExtra = capacity?.preco_extra ?? 0.97
-  const excedenteSeProsseguir = Math.max(0, ativosNaoMonitorados - disponivelSemCusto)
-
-  return NextResponse.json({
-    processos: processosComStatus,
-    total: totalAdvogado,
-    total_retornado: processos.length,
-    advogado_nome: advogadoNome,
-    next_url: nextCursor,
-    paginas_buscadas: 1,
-    billing: {
-      total_ja_monitorados: capacity?.total_monitorados ?? 0,
-      gratuitos: capacity?.gratuitos ?? 100,
-      disponivel_sem_custo: disponivelSemCusto,
-      ativos_nao_monitorados: ativosNaoMonitorados,
-      ja_monitorados_desta_oab: monitoradosMap.size,
-      excedente_se_prosseguir: excedenteSeProsseguir,
-      custo_estimado_mes: excedenteSeProsseguir * precoExtra,
-      preco_por_extra: precoExtra,
-    }
-  })
 }
