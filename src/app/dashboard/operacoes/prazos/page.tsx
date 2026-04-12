@@ -708,7 +708,7 @@ export default function PrazosPage() {
               )
             })()}
           </div>
-        </>
+        </div>
       )}
     </div>
   )
