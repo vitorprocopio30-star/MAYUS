@@ -506,7 +506,6 @@ export default function PrazosPage() {
           ))}
         </div>
       )}
-    </div>
 
       {/* Drawer de Detalhes */}
       {isDrawerOpen && selectedItemId && (
@@ -644,5 +643,6 @@ export default function PrazosPage() {
           </div>
         </>
       )}
+    </div>
   )
 }
