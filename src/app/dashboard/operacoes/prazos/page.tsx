@@ -95,7 +95,8 @@ export default function PrazosPage() {
           profiles:responsavel_id(id, full_name, avatar_url)
         `)
         .eq('tenant_id', tenantId)
-        .in('tipo', ['sessao', 'pericia', 'audiencia', 'citacao', 'sentenca', 'recurso'])
+        .in('tipo', ['sessao', 'pericia', 'audiencia', 'citacao', 'sentenca', 'recurso', 'prazo'])
+        .not('descricao', 'ilike', '%Despacho%')
         .order('data_vencimento', { ascending: true });
 
       if (error) {
@@ -113,7 +114,7 @@ export default function PrazosPage() {
     return items.filter(item => {
       // Filtragem por ABA
       const tiposAudiencia = ['audiencia', 'sessao', 'pericia']
-      const tiposPrazo = ['citacao', 'sentenca', 'recurso']
+      const tiposPrazo = ['citacao', 'sentenca', 'recurso', 'prazo']
       const isAudiencia = tiposAudiencia.includes(item.tipo)
       const isPrazo = tiposPrazo.includes(item.tipo)
       if (activeTab === 'prazos' && !isPrazo) return false
