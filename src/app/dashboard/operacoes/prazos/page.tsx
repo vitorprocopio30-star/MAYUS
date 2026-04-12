@@ -596,7 +596,7 @@ export default function PrazosPage() {
                       {item.monitored_processes?.resumo_curto && (
                         <div className="pt-3 border-t border-white/5">
                           <p className="text-[13px] text-white/50 leading-relaxed italic">
-                            "{item.monitored_processes.resumo_curto}"
+                            &quot;{item.monitored_processes.resumo_curto}&quot;
                           </p>
                         </div>
                       )}
