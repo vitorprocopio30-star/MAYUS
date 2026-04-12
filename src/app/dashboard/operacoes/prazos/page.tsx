@@ -95,6 +95,7 @@ export default function PrazosPage() {
           profiles:responsavel_id(id, full_name, avatar_url)
         `)
         .eq('tenant_id', tenantId)
+        .in('tipo', ['prazo', 'audiencia', 'sessao', 'pericia', 'citacao', 'sentenca', 'recurso', 'outro'])
         .order('data_vencimento', { ascending: true })
 
       setItems(data || [])
@@ -107,8 +108,11 @@ export default function PrazosPage() {
   const filteredItems = useMemo(() => {
     return items.filter(item => {
       // Filtro por Aba
-      const isAudiencia = ['audiencia', 'sessao', 'pericia'].includes(item.tipo)
-      if (activeTab === 'prazos' && isAudiencia) return false
+      const tiposAudiencia = ['audiencia', 'sessao', 'pericia']
+      const tiposPrazo = ['prazo', 'citacao', 'sentenca', 'recurso', 'outro']
+      const isAudiencia = tiposAudiencia.includes(item.tipo)
+      const isPrazo = tiposPrazo.includes(item.tipo)
+      if (activeTab === 'prazos' && !isPrazo) return false
       if (activeTab === 'audiencias' && !isAudiencia) return false
 
       // Filtro por Busca (Processo ou Descrição)
@@ -266,7 +270,7 @@ export default function PrazosPage() {
       ) : (
         <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
           {filteredItems.map(item => (
-            <GlassCard key={item.id} className="hover:scale-[1.02] transform transition-all hover:border-[#CCA761]/50 hover:shadow-[0_0_24px_rgba(204,167,97,0.15)]">
+            <GlassCard key={item.id} className="border-[#CCA761]/30 hover:border-[#CCA761]/80 hover:scale-[1.02] transform transition-all hover:shadow-[0_0_24px_rgba(204,167,97,0.2)]">
               <div className="flex justify-between items-start mb-4">
                 <span className={`px-2.5 py-1 rounded-lg text-[10px] font-bold tracking-widest border border-current uppercase`}>
                   {item.tipo}
