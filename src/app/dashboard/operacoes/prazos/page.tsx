@@ -77,9 +77,11 @@ export default function PrazosPage() {
       // Carregar perfis do time para o dropdown de atribuição
       const { data: team } = await supabase
         .from('profiles')
-        .select('id, full_name, avatar_url')
+        .select('id, full_name, avatar_url, role')
         .eq('tenant_id', profile.tenant_id)
         .eq('is_active', true)
+      
+      console.log("[Prazos] Perfis carregados:", team);
       setProfiles(team || [])
 
       fetchData(profile.tenant_id)
@@ -91,7 +93,16 @@ export default function PrazosPage() {
         .from('process_prazos')
         .select(`
           *,
-          monitored_processes(numero_processo, partes, tribunal, comarca, vara),
+          monitored_processes(
+            numero_processo, 
+            partes, 
+            tribunal, 
+            comarca, 
+            vara, 
+            ultima_movimentacao_texto, 
+            resumo_curto, 
+            cliente_nome
+          ),
           profiles:responsavel_id(id, full_name, avatar_url)
         `)
         .eq('tenant_id', tenantId)
@@ -166,7 +177,7 @@ export default function PrazosPage() {
       .eq('id', id)
     
     if (!error) {
-      const profile = profiles.find(p => p.id === responsavelId)
+      const profile = responsavelId ? profiles.find(p => p.id === responsavelId) : null
       setItems(prev => prev.map(item => item.id === id ? { ...item, responsavel_id: responsavelId, profiles: profile } : item))
     }
   }
@@ -291,6 +302,15 @@ export default function PrazosPage() {
                 {item.descricao}
               </h3>
 
+              {(item.monitored_processes?.resumo_curto || item.monitored_processes?.ultima_movimentacao_texto) && (
+                <p className="text-[12px] text-white/40 font-normal leading-relaxed mb-4 line-clamp-3">
+                  {item.monitored_processes.resumo_curto || 
+                   (item.monitored_processes.ultima_movimentacao_texto?.length > 120 
+                    ? item.monitored_processes.ultima_movimentacao_texto.slice(0, 120) + '...'
+                    : item.monitored_processes.ultima_movimentacao_texto)}
+                </p>
+              )}
+
               <div className="space-y-2 mb-6">
                 <div className="flex items-center gap-2 text-white/40 text-[12px]">
                   <Clock size={14} className="text-[#CCA761]" />
@@ -300,6 +320,11 @@ export default function PrazosPage() {
                   <div className="flex items-center gap-2 text-white/40 text-[12px]">
                     <Gavel size={14} className="text-[#CCA761]" />
                     <span className="truncate">Proc: {item.monitored_processes.numero_processo}</span>
+                  </div>
+                )}
+                {item.monitored_processes?.cliente_nome && (
+                  <div className="text-[11px] text-white/20 pl-6 -mt-1 mb-2">
+                    Cliente: {item.monitored_processes.cliente_nome}
                   </div>
                 )}
                 {item.monitored_processes?.tribunal && (
@@ -374,7 +399,10 @@ export default function PrazosPage() {
                         </button>
                       ))}
                       <div className="h-[1px] bg-white/5 my-1" />
-                      <button className="w-full text-left px-3 py-2 text-xs text-white/40 hover:text-white hover:bg-red-500 bg-transparent rounded-lg transition-all flex items-center justify-between">
+                      <button 
+                        onClick={() => atribuirResponsavel(item.id, null)}
+                        className="w-full text-left px-3 py-2 text-xs text-white/40 hover:text-white hover:bg-red-500 bg-transparent rounded-lg transition-all flex items-center justify-between"
+                      >
                         Remover Responsável <UserPlus size={12} />
                       </button>
                     </div>
