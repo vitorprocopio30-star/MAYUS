@@ -309,7 +309,7 @@ export async function POST(req: Request) {
         const monitor = await EscavadorService.criarMonitoramento(escavadorIntegration.api_key, entities.numero_cnj, entities.frequencia);
 
         if (monitor && monitor.id) {
-           await serviceClient.from("cases").update({ escavador_monitoramento_id: String(monitor.id) }).eq("numero_cnj", entities.numero_cnj).eq("tenant_id", tenantId);
+           await serviceClient.from("monitored_processes").update({ escavador_monitoramento_id: String(monitor.id) }).eq("numero_processo", entities.numero_cnj).eq("tenant_id", tenantId);
         }
 
         await serviceClient.from("agent_audit_logs").update({

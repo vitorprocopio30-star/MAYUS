@@ -277,9 +277,9 @@ export async function POST(req: Request) {
     }
 
     // Provider blockers temporários
-    if (provider === "gemini" || provider === "openrouter") {
-      return NextResponse.json({ 
-        error: `Provider ${provider.toUpperCase()} temporariamente indisponível no modo kernel. Use OpenAI (gpt-4o).` 
+    if (provider === "gemini") {
+      return NextResponse.json({
+        error: `Provider GEMINI temporariamente indisponível no modo kernel.`
       }, { status: 400 });
     }
 
@@ -320,8 +320,8 @@ export async function POST(req: Request) {
       }
     }
 
-    // 8. Provider: OpenAI
-    if (provider === "openai") {
+    // 8. Provider: OpenAI / OpenRouter (API compatível)
+    if (provider === "openai" || provider === "openrouter") {
       const dynamicTools = authorizedSkills.map(skillToLLMTool);
       const messages = [
         { role: "system", content: dynamicSystemPrompt },

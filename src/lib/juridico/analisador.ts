@@ -7,17 +7,17 @@ const adminSupabase = createClient(
 )
 
 const KEYWORDS: Record<string, string> = {
-  'contestação': 'CONTESTACAO', 'contestou': 'CONTESTACAO',
-  'sentença': 'SENTENCA', 'sentenciou': 'SENTENCA',
+  'contestacao': 'CONTESTACAO', 'contestou': 'CONTESTACAO',
+  'sentenca': 'SENTENCA', 'sentenciou': 'SENTENCA',
   'julgou procedente': 'SENTENCA', 'julgou improcedente': 'SENTENCA',
-  'acórdão': 'SENTENCA', 'v.u.': 'SENTENCA',
-  'recurso': 'RECURSO', 'apelação': 'RECURSO', 'apelou': 'RECURSO',
+  'acordao': 'SENTENCA', 'v.u.': 'SENTENCA',
+  'recurso': 'RECURSO', 'apelacao': 'RECURSO', 'apelou': 'RECURSO',
   'embargos': 'RECURSO', 'agravo': 'RECURSO',
-  'audiência': 'AUDIENCIA', 'designada audiência': 'AUDIENCIA', 'pauta': 'AUDIENCIA',
+  'audiencia': 'AUDIENCIA', 'designada audiencia': 'AUDIENCIA', 'pauta': 'AUDIENCIA',
   'despacho': 'DESPACHO', 'concluso': 'DESPACHO', 'determino': 'DESPACHO',
-  'citação': 'CITACAO', 'citado': 'CITACAO', 'cite-se': 'CITACAO', 'mandado': 'CITACAO',
+  'citacao': 'CITACAO', 'citado': 'CITACAO', 'cite-se': 'CITACAO', 'mandado': 'CITACAO',
   'arquivado': 'ARQUIVAMENTO', 'arquivamento': 'ARQUIVAMENTO', 'baixa definitiva': 'ARQUIVAMENTO',
-  'extinto': 'EXTINCAO', 'extinção': 'EXTINCAO', 'homologado': 'EXTINCAO'
+  'extinto': 'EXTINCAO', 'extincao': 'EXTINCAO', 'homologado': 'EXTINCAO'
 }
 
 function calcularDiasUteis(inicio: Date, dias: number): Date {
@@ -70,7 +70,8 @@ export async function analisarMovimentacao(params: {
   movimentacao: { conteudo?: string; data?: string }
   advogado_id?: string | null
 }) {
-  const texto = (params.movimentacao.conteudo ?? '').toLowerCase()
+  const textoBruto = (params.movimentacao.conteudo ?? '').toLowerCase()
+  const texto = textoBruto.normalize("NFD").replace(/[\u0300-\u036f]/g, "")
 
   // Busca contexto do processo
   const { data: processo } = await adminSupabase

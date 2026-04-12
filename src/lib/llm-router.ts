@@ -27,13 +27,13 @@ export type LLMProvider = 'openrouter' | 'anthropic' | 'openai' | 'google' | 'gr
 
 const MODELS: Record<LLMProvider, Record<LLMUseCase, string>> = {
   openrouter: {
-    chat_geral:               'openai/gpt-5.4-nano',
-    classificar_movimentacao: 'openai/gpt-5.4-nano',
-    resumo_juridico:          'anthropic/claude-sonnet-4-6',
-    organizar_processo:       'anthropic/claude-sonnet-4-6',
-    gerar_peca:               'anthropic/claude-sonnet-4-6',
-    task_manager:             'openai/gpt-5.4-mini',
-    sdr_whatsapp:             'openai/gpt-5.4-mini',
+    chat_geral:               'qwen/qwen3.6-plus',
+    classificar_movimentacao: 'qwen/qwen3.6-plus',
+    resumo_juridico:          'qwen/qwen3.6-plus',
+    organizar_processo:       'qwen/qwen3.6-plus',
+    gerar_peca:               'qwen/qwen3.6-plus',
+    task_manager:             'qwen/qwen3.6-plus',
+    sdr_whatsapp:             'qwen/qwen3.6-plus',
   },
   anthropic: {
     chat_geral:               'claude-haiku-4-5-20251001',
