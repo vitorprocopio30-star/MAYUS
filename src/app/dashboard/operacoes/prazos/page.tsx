@@ -17,7 +17,8 @@ import {
   User,
   ExternalLink,
   Copy,
-  Check
+  Check,
+  X
 } from 'lucide-react'
 import { Montserrat, Cormorant_Garamond } from "next/font/google"
 
@@ -63,6 +64,12 @@ export default function PrazosPage() {
   const [filterTribunal, setFilterTribunal] = useState<string>('todos')
   const [currentUser, setCurrentUser] = useState<any>(null)
   const [copiedId, setCopiedId] = useState<string | null>(null)
+  
+  // Estados para o Drawer de Detalhes
+  const [selectedItemId, setSelectedItemId] = useState<string | null>(null)
+  const [isDrawerOpen, setIsDrawerOpen] = useState(false)
+  const [taskDetails, setTaskDetails] = useState<any | null>(null)
+  const [loadingTask, setLoadingTask] = useState(false)
 
   useEffect(() => {
     async function init() {
@@ -104,7 +111,8 @@ export default function PrazosPage() {
             vara, 
             ultima_movimentacao_texto, 
             resumo_curto, 
-            cliente_nome
+            cliente_nome,
+            escavador_monitoramento_id
           ),
           profiles:responsavel_id(id, full_name, avatar_url)
         `)
@@ -192,6 +200,29 @@ export default function PrazosPage() {
     if (d <= 3) return 'border-red-500/40 bg-red-500/10 text-red-400'
     if (d <= 7) return 'border-orange-500/40 bg-orange-500/10 text-orange-400'
     return 'border-[#CCA761]/40 bg-[#CCA761]/10 text-[#CCA761]'
+  }
+
+  async function handleOpenDrawer(item: any) {
+    setSelectedItemId(item.id)
+    setIsDrawerOpen(true)
+    setLoadingTask(true)
+    setTaskDetails(null)
+
+    if (item.monitored_processes?.id) {
+      console.log("[Prazos] Buscando resumo do caso para:", item.monitored_processes.id)
+      const { data, error } = await supabase
+        .from('process_tasks')
+        .select('description, stage_id, position_index')
+        .eq('monitored_process_id', item.monitored_processes.id)
+        .maybeSingle() // Usando maybeSingle para evitar erro se não existir
+
+      if (error) {
+        console.error("[Prazos] Erro ao buscar process_tasks:", error)
+      } else {
+        setTaskDetails(data)
+      }
+    }
+    setLoadingTask(false)
   }
 
   return (
@@ -289,11 +320,33 @@ export default function PrazosPage() {
       ) : (
         <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
           {filteredItems.map(item => (
-            <GlassCard key={item.id} className="border-[#CCA761]/50 hover:border-[#CCA761]/90 hover:scale-[1.02] transform transition-all hover:shadow-[0_0_24px_rgba(204,167,97,0.2)]">
+            <GlassCard 
+              key={item.id} 
+              onClick={() => handleOpenDrawer(item)}
+              className="border-[#CCA761]/50 hover:border-[#CCA761]/90 hover:scale-[1.02] transform transition-all hover:shadow-[0_0_24px_rgba(204,167,97,0.2)] cursor-pointer"
+            >
               <div className="flex justify-between items-start mb-4">
-                <span className={`px-2.5 py-1 rounded-lg text-[10px] font-bold tracking-widest border border-current uppercase`}>
-                  {item.tipo}
-                </span>
+                <div className="flex items-center gap-2">
+                  <span className={`px-2.5 py-1 rounded-lg text-[10px] font-bold tracking-widest border border-current uppercase`}>
+                    {item.tipo}
+                  </span>
+                  {item.monitored_processes?.escavador_monitoramento_id ? (
+                    <span className="flex items-center gap-1 text-[10px] text-green-400 font-bold bg-green-400/5 px-2 py-0.5 rounded border border-green-400/20">
+                      <span className="w-1.5 h-1.5 bg-green-400 rounded-full animate-pulse" />
+                      Monitorado
+                    </span>
+                  ) : (
+                    <button 
+                      onClick={(e) => {
+                        e.stopPropagation();
+                        console.log("Solicitar monitoramento para:", item.monitored_processes?.numero_processo);
+                      }}
+                      className="text-[10px] text-[#CCA761] font-bold border border-[#CCA761]/30 px-2 py-0.5 rounded hover:bg-[#CCA761]/10 transition-colors"
+                    >
+                      + Monitorar
+                    </button>
+                  )}
+                </div>
                 <div className={`px-3 py-1 rounded-full text-[11px] font-bold border transition-all ${getUrgencyStyle(item.data_vencimento, item.status)}`}>
                   {item.status === 'concluido' ? 'CONCLUÍDO' : 
                    diasRestantes(item.data_vencimento) <= 0 ? 'PRAZO FATAL' : 
@@ -325,7 +378,8 @@ export default function PrazosPage() {
                       <Gavel size={14} className="text-[#CCA761]" />
                       <span className="truncate font-medium text-[#CCA761]">Proc: {item.monitored_processes.numero_processo}</span>
                       <button 
-                        onClick={() => {
+                        onClick={(e) => {
+                          e.stopPropagation();
                           navigator.clipboard.writeText(item.monitored_processes.numero_processo);
                           setCopiedId(item.id);
                           setTimeout(() => setCopiedId(null), 2000);
@@ -375,7 +429,10 @@ export default function PrazosPage() {
                     </div>
                   ) : (
                     <button 
-                      onClick={() => atribuirResponsavel(item.id, currentUser?.id)}
+                      onClick={(e) => {
+                        e.stopPropagation()
+                        atribuirResponsavel(item.id, currentUser?.id)
+                      }}
                       className="flex items-center gap-2 text-[12px] text-red-400 hover:text-red-300 transition-colors bg-red-400/5 px-3 py-1.5 rounded-lg border border-red-400/20 shadow-lg shadow-red-900/10"
                     >
                       <UserPlus size={14} /> Assumir
@@ -387,7 +444,10 @@ export default function PrazosPage() {
                 <div className="flex items-center gap-2">
                   {item.status !== 'concluido' ? (
                     <button 
-                      onClick={() => updateStatus(item.id, 'concluido')}
+                      onClick={(e) => {
+                        e.stopPropagation()
+                        updateStatus(item.id, 'concluido')
+                      }}
                       className="p-2 rounded-lg bg-green-500/10 text-green-400 hover:bg-green-500 hover:text-black transition-all border border-green-500/20"
                       title="Marcar como Concluído"
                     >
@@ -395,7 +455,10 @@ export default function PrazosPage() {
                     </button>
                   ) : (
                     <button 
-                      onClick={() => updateStatus(item.id, 'pendente')}
+                      onClick={(e) => {
+                        e.stopPropagation()
+                        updateStatus(item.id, 'pendente')
+                      }}
                       className="p-2 rounded-lg bg-orange-500/10 text-orange-400 hover:bg-orange-500 hover:text-black transition-all border border-orange-500/20"
                       title="Reabrir Prazo"
                     >
@@ -404,7 +467,10 @@ export default function PrazosPage() {
                   )}
                   
                   <div className="relative group/menu">
-                    <button className="p-2 rounded-lg bg-white/5 text-white/40 hover:bg-white/10 transition-all border border-white/10">
+                    <button 
+                      onClick={(e) => e.stopPropagation()}
+                      className="p-2 rounded-lg bg-white/5 text-white/40 hover:bg-white/10 transition-all border border-white/10"
+                    >
                       <ChevronDown size={16} />
                     </button>
                     {/* Minimalistic Dropdown placeholder */}
@@ -413,7 +479,10 @@ export default function PrazosPage() {
                       {profiles.map(p => (
                         <button 
                           key={p.id}
-                          onClick={() => atribuirResponsavel(item.id, p.id)}
+                          onClick={(e) => {
+                            e.stopPropagation()
+                            atribuirResponsavel(item.id, p.id)
+                          }}
                           className="w-full text-left px-3 py-2 text-xs text-white/60 hover:text-white hover:bg-[#CCA761] hover:text-black rounded-lg transition-all"
                         >
                           {p.full_name}
@@ -421,7 +490,10 @@ export default function PrazosPage() {
                       ))}
                       <div className="h-[1px] bg-white/5 my-1" />
                       <button 
-                        onClick={() => atribuirResponsavel(item.id, null)}
+                        onClick={(e) => {
+                          e.stopPropagation()
+                          atribuirResponsavel(item.id, null)
+                        }}
                         className="w-full text-left px-3 py-2 text-xs text-white/40 hover:text-white hover:bg-red-500 bg-transparent rounded-lg transition-all flex items-center justify-between"
                       >
                         Remover Responsável <UserPlus size={12} />
@@ -435,5 +507,142 @@ export default function PrazosPage() {
         </div>
       )}
     </div>
+
+      {/* Drawer de Detalhes */}
+      {isDrawerOpen && selectedItemId && (
+        <>
+          {/* Overlay */}
+          <div 
+            className="fixed inset-0 bg-black/60 backdrop-blur-sm z-[60] animate-in fade-in duration-300"
+            onClick={() => setIsDrawerOpen(false)}
+          />
+          
+          {/* Drawer Content */}
+          <div className="fixed right-0 top-0 h-full w-full max-w-xl bg-[#0f0f0f] border-l border-white/10 z-[70] shadow-[-20px_0_50px_rgba(0,0,0,0.5)] flex flex-col animate-in slide-in-from-right duration-500">
+            {(() => {
+              const item = items.find(i => i.id === selectedItemId)
+              if (!item) return null
+
+              return (
+                <>
+                  {/* Drawer Header */}
+                  <div className="p-6 border-b border-white/5 flex items-center justify-between bg-[#141414]/50">
+                    <div>
+                      <h3 className="text-[#CCA761] text-[20px] font-bold tracking-tight">
+                        Detalhamento do Processo
+                      </h3>
+                      <p className="text-white/40 text-xs uppercase tracking-[0.2em] mt-1 font-medium">
+                        {item.monitored_processes?.numero_processo}
+                      </p>
+                    </div>
+                    <button 
+                      onClick={() => setIsDrawerOpen(false)}
+                      className="p-2 rounded-xl bg-white/5 text-white/40 hover:text-white hover:bg-white/10 transition-all"
+                    >
+                      <X size={20} />
+                    </button>
+                  </div>
+
+                  {/* Drawer Body */}
+                  <div className="flex-1 overflow-y-auto p-8 space-y-8 no-scrollbar">
+                    {/* Header Info */}
+                    <div className="space-y-4">
+                      <div className="flex flex-col gap-1">
+                        <label className="text-[10px] text-[#CCA761] font-black uppercase tracking-widest">Número do Processo</label>
+                        <p className="text-xl font-bold text-white tracking-wide">
+                          {item.monitored_processes?.numero_processo}
+                        </p>
+                      </div>
+
+                      <div className="grid grid-cols-2 gap-6">
+                        <div className="flex flex-col gap-1">
+                          <label className="text-[10px] text-white/30 font-black uppercase tracking-widest">Autor (Polo Ativo)</label>
+                          <p className="text-sm text-white/80 font-medium">
+                            {item.monitored_processes?.partes?.polo_ativo || '—'}
+                          </p>
+                        </div>
+                        <div className="flex flex-col gap-1">
+                          <label className="text-[10px] text-white/30 font-black uppercase tracking-widest">Réu (Polo Passivo)</label>
+                          <p className="text-sm text-white/80 font-medium">
+                            {item.monitored_processes?.partes?.polo_passivo || '—'}
+                          </p>
+                        </div>
+                      </div>
+
+                      <div className="pt-4 grid grid-cols-2 gap-6 border-t border-white/5">
+                        <div className="flex flex-col gap-1">
+                          <label className="text-[10px] text-white/30 font-black uppercase tracking-widest">Tribunal / Comarca</label>
+                          <p className="text-xs text-white/60">
+                            {item.monitored_processes?.tribunal} · {item.monitored_processes?.comarca || '—'}
+                          </p>
+                        </div>
+                        <div className="flex flex-col gap-1">
+                          <label className="text-[10px] text-white/30 font-black uppercase tracking-widest">Vencimento</label>
+                          <div className="flex items-center gap-2">
+                             <Clock size={12} className="text-[#CCA761]" />
+                             <p className="text-xs text-[#CCA761] font-bold">
+                               {formatarData(item.data_vencimento)}
+                             </p>
+                          </div>
+                        </div>
+                      </div>
+                    </div>
+
+                    {/* Descrição do Prazo */}
+                    <div className="p-6 rounded-2xl bg-white/[0.03] border border-white/5 space-y-3">
+                      <label className="text-[10px] text-[#CCA761] font-black uppercase tracking-widest">Título do Prazo / Audiência</label>
+                      <h4 className="text-lg font-medium text-white leading-tight">
+                        {item.descricao}
+                      </h4>
+                      {item.monitored_processes?.resumo_curto && (
+                        <div className="pt-3 border-t border-white/5">
+                          <p className="text-[13px] text-white/50 leading-relaxed italic">
+                            "{item.monitored_processes.resumo_curto}"
+                          </p>
+                        </div>
+                      )}
+                    </div>
+
+                    {/* Resumo do Caso (Kanban) */}
+                    <div className="space-y-4">
+                      <div className="flex items-center justify-between">
+                         <label className="text-[10px] text-[#CCA761] font-black uppercase tracking-widest">Anotações (Resumo do Caso)</label>
+                         {loadingTask && <div className="w-4 h-4 border-2 border-[#CCA761]/30 border-t-[#CCA761] rounded-full animate-spin" />}
+                      </div>
+                      
+                      <div className="min-h-[150px] p-6 rounded-2xl bg-[#111] border border-white/5">
+                        {taskDetails?.description ? (
+                          <div 
+                            className="prose prose-invert prose-sm max-w-none text-white/70"
+                            style={{ 
+                              color: 'rgba(255,255,255,0.7)',
+                              lineHeight: '1.6'
+                            }}
+                            dangerouslySetInnerHTML={{ __html: taskDetails.description }}
+                          />
+                        ) : (
+                          <p className="text-white/20 text-sm italic">
+                            {loadingTask ? 'Carregando anotações...' : 'Nenhuma anotação registrada.'}
+                          </p>
+                        )}
+                      </div>
+                    </div>
+                  </div>
+
+                  {/* Drawer Footer */}
+                  <div className="p-6 border-t border-white/5 bg-[#141414]/50 flex justify-end">
+                    <button 
+                      onClick={() => setIsDrawerOpen(false)}
+                      className="px-8 py-3 bg-white/5 hover:bg-white/10 text-white font-bold text-sm rounded-xl transition-all border border-white/5"
+                    >
+                      Fechar Detalhes
+                    </button>
+                  </div>
+                </>
+              )
+            })()}
+          </div>
+        </>
+      )}
   )
 }
