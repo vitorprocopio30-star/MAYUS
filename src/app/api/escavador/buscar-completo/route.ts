@@ -136,6 +136,31 @@ export async function POST(req: NextRequest) {
 
   console.log(`[buscar-completo] Iniciando busca GET: OAB ${oab_numero}/${oab_estado} ${next_url ? 'COM NEXT_URL' : ''}`)
 
+  // Verifica CACHE — bloqueia sangramento de saldo
+  if (!next_url) {
+    const { data: cache } = await adminSupabase
+      .from('oabs_salvas')
+      .select('ultima_busca, total_processos, advogado')
+      .eq('tenant_id', tenantId)
+      .eq('oab_estado', oab_estado)
+      .eq('oab_numero', oab_numero)
+      .single()
+
+    if (cache?.ultima_busca) {
+      const horasDesdeBusca = (new Date().getTime() - new Date(cache.ultima_busca).getTime()) / (1000 * 60 * 60)
+      if (horasDesdeBusca < 24) {
+        console.log(`[buscar-completo] CACHE HIT: OAB ${oab_numero} buscada há ${horasDesdeBusca.toFixed(1)}h. Bloqueando chamada ao Escavador.`)
+        return NextResponse.json({
+          cached: true,
+          message: `Dados sincronizados há ${Math.floor(horasDesdeBusca)}h. Próxima atualização disponível em ${Math.ceil(24 - horasDesdeBusca)}h.`,
+          advogado: cache.advogado,
+          total_processos: cache.total_processos,
+          ultima_busca: cache.ultima_busca
+        }, { status: 200 }) // 200 e não 429 — não é erro, é cache válido
+      }
+    }
+  }
+
   try {
     // Montar URL com query params (GET)
     // Fallback: Tentamos o padrão do SDK se o padrão anterior falhar

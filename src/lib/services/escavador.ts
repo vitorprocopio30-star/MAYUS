@@ -74,7 +74,7 @@ export const EscavadorService = {
         'Authorization': `Bearer ${apiKey}`,
         'Content-Type': 'application/json'
       },
-      body: JSON.stringify({ numero: numeroCNJ })
+      body: JSON.stringify({ numero: numeroCNJ, frequencia: 'SEMANAL' })
     });
     
     const responseText = await resp.text();
