@@ -266,7 +266,7 @@ export default function PrazosPage() {
       ) : (
         <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
           {filteredItems.map(item => (
-            <GlassCard key={item.id} className="hover:scale-[1.02] transform transition-all">
+            <GlassCard key={item.id} className="hover:scale-[1.02] transform transition-all hover:border-[#CCA761]/50 hover:shadow-[0_0_24px_rgba(204,167,97,0.15)]">
               <div className="flex justify-between items-start mb-4">
                 <span className={`px-2.5 py-1 rounded-lg text-[10px] font-bold tracking-widest border border-current uppercase`}>
                   {item.tipo}
@@ -305,15 +305,17 @@ export default function PrazosPage() {
                 <div className="relative group/user">
                   {item.responsavel_id ? (
                     <div className="flex items-center gap-2">
-                      <div className="w-8 h-8 rounded-full bg-[#CCA761]/20 border border-[#CCA761]/40 flex items-center justify-center overflow-hidden">
+                      <div className="w-8 h-8 rounded-full bg-[#CCA761]/20 border border-[#CCA761]/60 flex items-center justify-center overflow-hidden shrink-0">
                         {item.profiles?.avatar_url ? (
-                          <img src={item.profiles.avatar_url} alt="" className="w-full h-full object-cover" />
+                          <img src={item.profiles.avatar_url} alt={item.profiles.full_name ?? ''} className="w-full h-full object-cover" />
                         ) : (
-                          <User size={14} className="text-[#CCA761]" />
+                          <span className="text-[#CCA761] text-[13px] font-semibold leading-none">
+                            {item.profiles?.full_name?.charAt(0)?.toUpperCase() ?? '?'}
+                          </span>
                         )}
                       </div>
-                      <div className="text-[12px] text-white/60 truncate max-w-[100px]">
-                        {item.profiles?.full_name?.split(' ')[0] || 'Sem responsável'}
+                      <div className="text-[13px] text-[#CCA761] font-medium truncate max-w-[100px]">
+                        {item.profiles?.full_name?.split(' ')[0] ?? 'Sem responsável'}
                       </div>
                     </div>
                   ) : (
