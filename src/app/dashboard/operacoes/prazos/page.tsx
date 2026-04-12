@@ -320,11 +320,12 @@ export default function PrazosPage() {
       ) : (
         <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
           {filteredItems.map(item => (
-            <GlassCard 
+            <div 
               key={item.id} 
               onClick={() => handleOpenDrawer(item)}
-              className="border-[#CCA761]/50 hover:border-[#CCA761]/90 hover:scale-[1.02] transform transition-all hover:shadow-[0_0_24px_rgba(204,167,97,0.2)] cursor-pointer"
+              className="cursor-pointer"
             >
+              <GlassCard className="border-[#CCA761]/50 hover:border-[#CCA761]/90 hover:scale-[1.02] transform transition-all hover:shadow-[0_0_24px_rgba(204,167,97,0.2)] h-full">
               <div className="flex justify-between items-start mb-4">
                 <div className="flex items-center gap-2">
                   <span className={`px-2.5 py-1 rounded-lg text-[10px] font-bold tracking-widest border border-current uppercase`}>
@@ -503,7 +504,8 @@ export default function PrazosPage() {
                 </div>
               </div>
             </GlassCard>
-          ))}
+          </div>
+        ))}
         </div>
       )}
 
