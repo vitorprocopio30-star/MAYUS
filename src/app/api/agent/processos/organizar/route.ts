@@ -187,9 +187,31 @@ Retorne exatamente este JSON:
 
   // 7. Criar prazos
   if (resultado.prazos?.length > 0) {
+    const { data: existentes } = await supabase
+      .from('process_prazos')
+      .select('tipo, descricao, data_vencimento')
+      .eq('monitored_process_id', processo_id)
+
+    const chavePrazo = (tipo: string, descricao: string, dataVencimento: string) => {
+      const dia = new Date(dataVencimento).toISOString().slice(0, 10)
+      return `${tipo}|${descricao.trim().toLowerCase()}|${dia}`
+    }
+
+    const chavesExistentes = new Set(
+      (existentes || []).map((p: any) => chavePrazo(p.tipo || 'prazo', p.descricao || '', p.data_vencimento))
+    )
+
     const prazosInsert = resultado.prazos
       .filter((p: any) => p.data_vencimento_iso)
       .map((p: any) => {
+        const tipo = p.tipo || 'prazo'
+        const descricao = p.descricao || ''
+        const dataVencimento = p.data_vencimento_iso
+        const chave = chavePrazo(tipo, descricao, dataVencimento)
+
+        if (chavesExistentes.has(chave)) return null
+        chavesExistentes.add(chave)
+
         const responsavel = advogados?.find(a =>
           a.full_name?.toLowerCase().includes(
             (p.responsavel_nome || '').toLowerCase()
@@ -198,14 +220,15 @@ Retorne exatamente este JSON:
         return {
           tenant_id:              proc.tenant_id,
           monitored_process_id:   processo_id,
-          tipo:                   p.tipo || 'prazo',
-          descricao:              p.descricao,
-          data_vencimento:        p.data_vencimento_iso,
+          tipo,
+          descricao,
+          data_vencimento:        dataVencimento,
           prioridade:             p.prioridade || 'media',
           responsavel_id:         responsavel?.id || null,
           criado_por_ia:          true
         }
       })
+      .filter(Boolean)
     if (prazosInsert.length > 0) {
       await supabase.from('process_prazos').insert(prazosInsert)
     }

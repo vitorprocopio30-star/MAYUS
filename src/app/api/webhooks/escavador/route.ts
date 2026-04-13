@@ -118,7 +118,8 @@ export async function POST(req: NextRequest) {
           numero_cnj,
           tenant_id: processo.tenant_id,
           movimentacao: novaMovimentacao,
-          advogado_id: processo.advogado_responsavel_id
+          advogado_id: processo.advogado_responsavel_id,
+          escavador_movimentacao_id: String(movimentacao.id ?? '')
         }).catch(console.error)
 
         // Dispara resumo IA em background
@@ -191,4 +192,3 @@ export async function POST(req: NextRequest) {
 
   return NextResponse.json({ ok: true })
 }
-

@@ -69,11 +69,14 @@ export async function analisarMovimentacao(params: {
   processo_id: string
   numero_cnj: string
   tenant_id: string
-  movimentacao: { conteudo?: string; data?: string }
+  movimentacao: { id?: string | number; conteudo?: string; data?: string }
   advogado_id?: string | null
+  escavador_movimentacao_id?: string | null
 }) {
   const textoBruto = (params.movimentacao.conteudo ?? '').toLowerCase()
   const texto = textoBruto.normalize("NFD").replace(/[\u0300-\u036f]/g, "")
+  const escavadorMovimentacaoId =
+    (params.escavador_movimentacao_id ?? String(params.movimentacao.id ?? '')).trim() || null
 
   // Busca contexto do processo
   const { data: processo } = await adminSupabase
@@ -134,6 +137,46 @@ export async function analisarMovimentacao(params: {
   const dataBase = params.movimentacao.data ? new Date(params.movimentacao.data) : new Date()
   const vencimento = calcularDiasUteis(dataBase, prazo.dias_uteis)
 
+  // Deduplicacao idempotente por movimentacao do Escavador
+  if (escavadorMovimentacaoId) {
+    const { data: prazosDuplicados } = await adminSupabase
+      .from('process_prazos')
+      .select('id')
+      .eq('monitored_process_id', params.processo_id)
+      .eq('escavador_movimentacao_id', escavadorMovimentacaoId)
+      .limit(1)
+
+    if (prazosDuplicados && prazosDuplicados.length > 0) {
+      console.log(
+        `[ANALISADOR] Movimentacao ${escavadorMovimentacaoId} ja processada para ${params.numero_cnj}. Ignorando duplicata.`
+      )
+      return
+    }
+  }
+
+  // Fallback de deduplicacao quando nao houver ID da movimentacao
+  const inicioDiaVencimento = new Date(vencimento)
+  inicioDiaVencimento.setUTCHours(0, 0, 0, 0)
+  const fimDiaVencimento = new Date(vencimento)
+  fimDiaVencimento.setUTCHours(23, 59, 59, 999)
+
+  const { data: prazosSemelhantes } = await adminSupabase
+    .from('process_prazos')
+    .select('id')
+    .eq('monitored_process_id', params.processo_id)
+    .eq('tipo', tipoEvento === 'AUDIENCIA' ? 'audiencia' : 'prazo')
+    .eq('descricao', prazo.descricao)
+    .gte('data_vencimento', inicioDiaVencimento.toISOString())
+    .lte('data_vencimento', fimDiaVencimento.toISOString())
+    .limit(1)
+
+  if (prazosSemelhantes && prazosSemelhantes.length > 0) {
+    console.log(
+      `[ANALISADOR] Prazo semelhante ja existente para ${params.numero_cnj} (${prazo.descricao}). Ignorando duplicata.`
+    )
+    return
+  }
+
   // Conta cards no stage para position_index
   const { count } = await adminSupabase
     .from('process_tasks')
@@ -150,6 +193,7 @@ export async function analisarMovimentacao(params: {
     assigned_to: params.advogado_id ?? null,
     prazo_fatal: vencimento.toISOString(),
     processo_1grau: params.numero_cnj,
+    escavador_movimentacao_id: escavadorMovimentacaoId,
     position_index,
     tags: [prazo.tipo_tarefa],
     created_at: new Date().toISOString()
@@ -165,6 +209,7 @@ export async function analisarMovimentacao(params: {
     data_vencimento: vencimento.toISOString(),
     status: 'pendente',
     responsavel_id: params.advogado_id ?? null,
+    escavador_movimentacao_id: escavadorMovimentacaoId,
     prioridade: prazo.prioridade.toLowerCase() as any,
     criado_por_ia: true,
     created_at: new Date().toISOString()
