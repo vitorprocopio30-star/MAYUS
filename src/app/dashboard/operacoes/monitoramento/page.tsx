@@ -583,8 +583,11 @@ function MonitoramentoContent() {
     return processosFiltrados.slice(offset, offset + PAGE_SIZE)
   }, [processosFiltrados, pagina])
 
-  const totalAtivos = result?.processos.filter(p => !p.monitorado && !processoArquivado(p)).length ?? 0
+  const totalProcessosBase = result?.total_retornado ?? result?.processos.length ?? 0
   const totalArquivadosAmostra = result?.processos.filter((p) => processoArquivado(p)).length ?? 0
+  const totalAtivosPainel = Math.max(0, totalProcessosBase - totalArquivadosAmostra)
+  const totalAtivosPendentes = result?.processos.filter((p) => !p.monitorado && !processoArquivado(p)).length ?? 0
+  const diferencaTotal = result?.total && result?.total_retornado && result.total !== result.total_retornado
 
   const renderPaginacao = () => (
     <div className="flex items-center justify-between py-4 px-2 bg-zinc-900/20 rounded-2xl border border-zinc-800/50">
@@ -625,26 +628,35 @@ function MonitoramentoContent() {
               </div>
            </div>
            {result?.advogado_nome && (
-             <div className="bg-zinc-900 px-5 py-2.5 rounded-2xl border border-zinc-800 flex items-center gap-4 shadow-inner">
-                <div className="flex flex-col items-end border-r border-zinc-800 pr-4">
-                   <span className="text-[9px] text-zinc-500 uppercase font-black tracking-widest leading-none mb-1">Responsável</span>
-                   <span className="text-yellow-500 font-bold uppercase tracking-wide drop-shadow-[0_0_8px_rgba(234,179,8,0.4)]">{result.advogado_nome}</span>
+             <div className="flex flex-col items-end gap-2">
+               <div className="bg-zinc-900 px-5 py-2.5 rounded-2xl border border-zinc-800 flex items-center gap-4 shadow-inner">
+                  <div className="flex flex-col items-end border-r border-zinc-800 pr-4">
+                     <span className="text-[9px] text-zinc-500 uppercase font-black tracking-widest leading-none mb-1">Responsável</span>
+                     <span className="text-yellow-500 font-bold uppercase tracking-wide drop-shadow-[0_0_8px_rgba(234,179,8,0.4)]">{result.advogado_nome}</span>
+                  </div>
+                  <div className="flex items-center gap-4">
+                    <div className="flex flex-col border-l border-zinc-800 pl-4">
+                       <span className="text-[9px] text-zinc-500 uppercase font-black tracking-widest leading-none mb-1">Processos</span>
+                       <span className="text-white font-black text-sm leading-none">{totalProcessosBase}</span>
+                    </div>
+                    <div className="flex flex-col border-l border-zinc-800 pl-4">
+                       <span className="text-[9px] text-zinc-500 uppercase font-black tracking-widest leading-none mb-1">Ativos</span>
+                       <span className="text-green-400 font-black text-sm leading-none">{totalAtivosPainel}</span>
+                    </div>
+                    <div className="flex flex-col border-l border-zinc-800 pl-4">
+                       <span className="text-[9px] text-zinc-500 uppercase font-black tracking-widest leading-none mb-1">Arquivados</span>
+                       <span className="text-red-400 font-black text-sm leading-none">{totalArquivadosAmostra}</span>
+                    </div>
+                  </div>
                 </div>
-                <div className="flex flex-col">
-                   <span className="text-white font-black text-lg leading-none">{result.total}</span>
-                   <span className="text-[9px] text-zinc-600 uppercase font-black">Processos</span>
-                </div>
-                <div className="flex flex-col border-l border-zinc-800 pl-4">
-                   <span className="text-[9px] text-zinc-500 uppercase font-black tracking-widest leading-none mb-1">Ativos</span>
-                   <span className="text-green-400 font-black text-sm">{totalAtivos}</span>
-                </div>
-                <div className="flex flex-col border-l border-zinc-800 pl-4">
-                   <span className="text-[9px] text-zinc-500 uppercase font-black tracking-widest leading-none mb-1">Arquivados</span>
-                   <span className="text-zinc-400 font-black text-sm">{totalArquivadosAmostra}</span>
-                </div>
+                {diferencaTotal && (
+                  <p className="text-[9px] text-zinc-500 font-black uppercase tracking-widest text-right">
+                    Fonte Escavador: {result.total} | Base consolidada: {result.total_retornado}
+                  </p>
+                )}
              </div>
            )}
-        </div>
+         </div>
 
         {error && <div className="p-4 bg-red-500/5 border border-red-500/20 rounded-2xl flex items-center gap-3 text-red-500 text-xs font-bold animate-shake uppercase tracking-widest"><AlertCircle size={18} /> {error}</div>}
         {feedback && <div className="p-4 bg-green-500/5 border border-green-500/20 rounded-2xl flex items-center gap-3 text-green-400 text-xs font-bold animate-in slide-in-from-top-4 uppercase tracking-widest"><CheckCircle size={18} strokeWidth={3} /> {feedback}</div>}
@@ -661,9 +673,9 @@ function MonitoramentoContent() {
                      ))}
                   </div>
                   <div className="h-4 w-px bg-zinc-800" />
-                  {!selecionados.size && totalAtivos > 0 && (
+                  {!selecionados.size && totalAtivosPendentes > 0 && (
                      <button onClick={() => monitorarLote(result.processos.filter(p => p.status === 'ATIVO' && !p.monitorado))} className="px-5 py-2.5 bg-yellow-500 hover:bg-yellow-400 text-black text-[10px] font-black uppercase rounded-xl transition-all flex items-center gap-2 shadow-lg shadow-yellow-500/10 border-b-2 border-yellow-700">
-                        Monitorar {totalAtivos} Ativos
+                        Monitorar {totalAtivosPendentes} Ativos
                      </button>
                   )}
                   {selecionados.size > 0 && (

@@ -30,4 +30,11 @@ export type Task = {
   data_ultima_movimentacao?: string;
   client_name?: string | null;
   drive_link?: string | null;
+  movimentacoes_timeline?: {
+    data?: string | null;
+    conteudo?: string | null;
+    tipo_evento?: string | null;
+    criado_em?: string | null;
+    escavador_movimentacao_id?: number | null;
+  }[] | null;
 };

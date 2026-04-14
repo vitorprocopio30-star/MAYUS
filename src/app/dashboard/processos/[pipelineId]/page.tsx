@@ -86,6 +86,27 @@ const [pendingMove, setPendingMove] = useState<{
     fetchData();
   }, [pipelineId, profile?.tenant_id, supabase]);
 
+  const getUltimaMovimentacao = (task: Task) => {
+    if (!Array.isArray(task.movimentacoes_timeline) || task.movimentacoes_timeline.length === 0) {
+      return null;
+    }
+
+    const timeline = [...task.movimentacoes_timeline].sort((a, b) => {
+      const dataA = new Date(a.criado_em || a.data || 0).getTime();
+      const dataB = new Date(b.criado_em || b.data || 0).getTime();
+      return dataB - dataA;
+    });
+
+    return timeline[0] ?? null;
+  };
+
+  const formatarDataMovimentacao = (valor?: string | null) => {
+    if (!valor) return "";
+    const data = new Date(valor);
+    if (Number.isNaN(data.getTime())) return "";
+    return data.toLocaleDateString("pt-BR", { day: "2-digit", month: "2-digit" });
+  };
+
   const handleCreatePipeline = async () => {
     if (!profile?.tenant_id) return;
     try {
@@ -399,6 +420,7 @@ const [pendingMove, setPendingMove] = useState<{
                           >
                             {stageTasks.map((task, index) => {
                               const assignee = agents.find(a => a.id === task.assigned_to);
+                              const ultimaMovimentacao = getUltimaMovimentacao(task);
                               
                               // Check 48h Idleness
                               const timeSinceMove = new Date().getTime() - new Date(task.data_ultima_movimentacao || task.created_at).getTime();
@@ -431,7 +453,22 @@ const [pendingMove, setPendingMove] = useState<{
                                           {(task as any).processo_1grau}
                                         </p>
                                       )}
-                                      
+
+                                      {ultimaMovimentacao?.conteudo && (
+                                        <div className="mb-3 rounded-lg border border-white/10 bg-white/[0.02] px-2.5 py-2">
+                                          <p className="mb-1 flex items-center gap-1 text-[9px] font-black uppercase tracking-widest text-zinc-500">
+                                            <MessageCircle size={10} />
+                                            Ultima movimentacao
+                                            {formatarDataMovimentacao(ultimaMovimentacao.data) && (
+                                              <span className="text-zinc-600">{formatarDataMovimentacao(ultimaMovimentacao.data)}</span>
+                                            )}
+                                          </p>
+                                          <p className="line-clamp-2 text-[11px] leading-relaxed text-zinc-300">
+                                            {ultimaMovimentacao.conteudo}
+                                          </p>
+                                        </div>
+                                      )}
+                                       
                                       {task.description && (
                                         <div className="text-gray-400 text-xs mb-3 line-clamp-3 leading-relaxed">
                                           {task.description.replace(/(<([^>]+)>)/gi, "")}
@@ -525,6 +562,7 @@ const [pendingMove, setPendingMove] = useState<{
                   ) : tasks.map(task => {
                     const stage = stages.find(s => s.id === task.stage_id);
                     const assignee = agents.find(a => a.id === task.assigned_to);
+                    const ultimaMovimentacao = getUltimaMovimentacao(task);
                     return (
                       <tr key={task.id} onClick={() => openEditTaskModal(task)} className="hover:bg-white/5 cursor-pointer transition-colors group">
                         <td className="p-4">
@@ -562,6 +600,11 @@ const [pendingMove, setPendingMove] = useState<{
                               );
                             })}
                           </div>
+                          {ultimaMovimentacao?.conteudo && (
+                            <p className="mt-2 line-clamp-1 text-[11px] text-zinc-500">
+                              Mov: {ultimaMovimentacao.conteudo}
+                            </p>
+                          )}
                         </td>
                         <td className="p-4">
                           <span className="inline-flex items-center gap-2 px-2.5 py-1 rounded-md text-xs font-bold bg-[#1a1a1a] border border-[#2a2a2a]">
