@@ -39,14 +39,16 @@ function deduplicarPrazos(lista: any[]): any[] {
   const mapa = new Map<string, any>()
 
   for (const item of lista) {
+    const escId = String(item?.escavador_movimentacao_id ?? '').trim()
     const dia = item?.data_vencimento ? new Date(item.data_vencimento).toISOString().slice(0, 10) : 'sem-data'
-    const chave = [
-      item?.monitored_process_id ?? 'sem-processo',
-      item?.tipo ?? 'sem-tipo',
-      (item?.descricao ?? '').trim().toLowerCase(),
-      dia,
-      item?.status ?? 'sem-status'
-    ].join('|')
+    const chave = escId
+      ? `esc-${escId}`
+      : [
+          item?.monitored_process_id ?? 'sem-processo',
+          item?.tipo ?? 'sem-tipo',
+          (item?.descricao ?? '').trim().toLowerCase(),
+          dia
+        ].join('|')
 
     const atual = mapa.get(chave)
     if (!atual) {
@@ -249,9 +251,10 @@ export default function PrazosPage() {
   const tribunals = useMemo(() => {
     const list = new Set<string>()
     items.forEach(i => {
-      if (i.monitored_processes?.tribunal) list.add(i.monitored_processes.tribunal)
+      const tribunal = String(i.monitored_processes?.tribunal ?? '').trim()
+      if (tribunal) list.add(tribunal)
     })
-    return Array.from(list)
+    return Array.from(list).sort((a, b) => a.localeCompare(b))
   }, [items])
 
   const movimentacoesFiltradas = useMemo(() => {
@@ -657,12 +660,12 @@ export default function PrazosPage() {
                 <select 
                   value={filterResponsavel}
                   onChange={(e) => setFilterResponsavel(e.target.value)}
-                  className="bg-transparent text-sm focus:outline-none cursor-pointer"
+                  className="bg-transparent text-sm text-white focus:outline-none cursor-pointer [color-scheme:dark]"
                 >
-                  <option value="todos">Todos Responsáveis</option>
-                  <option value="sem_responsavel">Sem Responsável (Fila)</option>
+                  <option value="todos" style={{ backgroundColor: '#101012', color: '#f4f4f5' }}>Todos Responsáveis</option>
+                  <option value="sem_responsavel" style={{ backgroundColor: '#101012', color: '#f4f4f5' }}>Sem Responsável (Fila)</option>
                   {profiles.map(p => (
-                    <option key={p.id} value={p.id}>{p.full_name}</option>
+                    <option key={p.id} value={p.id} style={{ backgroundColor: '#101012', color: '#f4f4f5' }}>{p.full_name}</option>
                   ))}
                 </select>
               </div>
@@ -672,11 +675,11 @@ export default function PrazosPage() {
                 <select 
                   value={filterTribunal}
                   onChange={(e) => setFilterTribunal(e.target.value)}
-                  className="bg-transparent text-sm focus:outline-none cursor-pointer"
+                  className="bg-transparent text-sm text-white focus:outline-none cursor-pointer [color-scheme:dark]"
                 >
-                  <option value="todos">Todos Tribunais</option>
+                  <option value="todos" style={{ backgroundColor: '#101012', color: '#f4f4f5' }}>Todos Tribunais</option>
                   {tribunals.map(t => (
-                    <option key={t} value={t}>{t}</option>
+                    <option key={t} value={t} style={{ backgroundColor: '#101012', color: '#f4f4f5' }}>{t}</option>
                   ))}
                 </select>
               </div>

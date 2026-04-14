@@ -20,7 +20,9 @@ import {
   History,
   FileText,
   Clock,
-  Quote
+   Quote,
+   Archive,
+   Download
 } from 'lucide-react'
 
 // ─── Interfaces e Tipos ───
@@ -50,10 +52,14 @@ interface Processo {
 }
 
 interface Billing {
-  total_disponivel: number
-  total_pago: number
-  custo_por_processo: number
   total_ja_monitorados: number
+  gratuitos?: number
+  disponivel_sem_custo?: number
+  ativos_nao_monitorados?: number
+  ja_monitorados_desta_oab?: number
+  excedente_se_prosseguir?: number
+  custo_estimado_mes?: number
+  preco_por_extra?: number
 }
 
 interface BuscaResult {
@@ -154,19 +160,28 @@ function StatusBadge({ status }: { status: string }) {
 }
 
 function BillingBar({ billing }: { billing: Billing }) {
-  const percent = Math.min(100, (billing.total_ja_monitorados / billing.total_disponivel) * 100)
+  const limitePlano = Math.max(0, Number(billing.gratuitos ?? 0))
+  const monitorados = Math.max(0, Number(billing.total_ja_monitorados ?? 0))
+  const percent = limitePlano > 0 ? Math.min(100, (monitorados / limitePlano) * 100) : 0
+  const saldo = Math.max(0, limitePlano - monitorados)
+  const excedente = Math.max(0, Number(billing.excedente_se_prosseguir ?? 0))
+  const custoEstimado = Number(billing.custo_estimado_mes ?? 0)
+  const statusCreditos = excedente > 0
+    ? `Excedente previsto: ${excedente} (R$ ${custoEstimado.toFixed(2)})`
+    : `Saldo atual: ${saldo}`
+
   return (
     <div className="bg-zinc-900/50 border border-zinc-800 rounded-2xl p-6 flex flex-col md:flex-row items-center justify-between gap-6">
       <div className="space-y-1 text-center md:text-left">
         <p className="text-[10px] text-zinc-500 uppercase font-black tracking-widest leading-none">Capacidade do Plano</p>
-        <p className="text-white font-black text-lg">{billing.total_ja_monitorados} <span className="text-zinc-600">/</span> {billing.total_disponivel} <span className="text-zinc-600 text-[10px] uppercase ml-2 tracking-tighter">Processos</span></p>
+        <p className="text-white font-black text-lg">{monitorados} <span className="text-zinc-600">/</span> {limitePlano} <span className="text-zinc-600 text-[10px] uppercase ml-2 tracking-tighter">Processos</span></p>
       </div>
       <div className="flex-1 w-full max-w-md h-3 bg-zinc-950 rounded-full border border-zinc-800 p-0.5 overflow-hidden">
         <div className="h-full bg-gradient-to-r from-yellow-600 to-yellow-400 rounded-full shadow-[0_0_12px_rgba(234,179,8,0.3)] transition-all duration-1000" style={{ width: `${percent}%` }} />
       </div>
       <div className="text-center md:text-right">
         <p className="text-[10px] text-zinc-500 uppercase font-black tracking-widest leading-none">Status de Créditos</p>
-        <p className="text-green-500 font-bold text-xs uppercase tracking-widest mt-1">Suficiente para Varredura</p>
+        <p className={`font-bold text-xs uppercase tracking-widest mt-1 ${excedente > 0 ? 'text-yellow-500' : 'text-green-500'}`}>{statusCreditos}</p>
       </div>
     </div>
   )
@@ -205,7 +220,7 @@ function ModalConfirmacaoCusto({ dados, onConfirmar, onCancelar, loading }: { da
   )
 }
 
-function ProcessoCard({ p, onSelect, selecionado, onAction, onRemover, loadingId, organizandoState, onOrganizar, onAbrirResumo }: { p: Processo, onSelect: () => void, selecionado: boolean, onAction: () => void, onRemover: () => void, loadingId: string | null, organizandoState: 'idle' | 'loading' | 'done', onOrganizar: () => void, onAbrirResumo: (r: string) => void }) {
+function ProcessoCard({ p, onSelect, selecionado, onAction, onRemover, onArquivar, loadingId, organizandoState, onOrganizar, onAbrirResumo }: { p: Processo, onSelect: () => void, selecionado: boolean, onAction: () => void, onRemover: () => void, onArquivar: () => void, loadingId: string | null, organizandoState: 'idle' | 'loading' | 'done', onOrganizar: () => void, onAbrirResumo: (r: string) => void }) {
   const d = diasDesde(p.data_ultima_movimentacao)
   const isUpdating = loadingId === p.numero_processo
 
@@ -312,11 +327,16 @@ function ProcessoCard({ p, onSelect, selecionado, onAction, onRemover, loadingId
                {isUpdating ? <RefreshCw size={14} className="animate-spin" /> : <Zap size={14} fill="currentColor" />}
                Monitorar
              </button>
-           ) : (
-             <>
-               <button onClick={onRemover} disabled={isUpdating} className="h-11 bg-zinc-950 hover:bg-red-500/5 border border-zinc-900 hover:border-red-500/20 text-zinc-700 hover:text-red-500 text-[10px] font-black uppercase rounded-2xl transition-all flex items-center justify-center gap-2">
-                 <X size={14} /> Remover
-               </button>
+            ) : (
+              <>
+                {!processoArquivado(p) && (
+                  <button onClick={onArquivar} disabled={isUpdating} className="h-11 bg-zinc-950 hover:bg-zinc-800/80 border border-zinc-900 hover:border-zinc-600 text-zinc-600 hover:text-zinc-200 text-[10px] font-black uppercase rounded-2xl transition-all flex items-center justify-center gap-2">
+                    <Archive size={14} /> Arquivar
+                  </button>
+                )}
+                <button onClick={onRemover} disabled={isUpdating} className="h-11 bg-zinc-950 hover:bg-red-500/5 border border-zinc-900 hover:border-red-500/20 text-zinc-700 hover:text-red-500 text-[10px] font-black uppercase rounded-2xl transition-all flex items-center justify-center gap-2">
+                  <X size={14} /> Remover
+                </button>
                <button 
                 onClick={onOrganizar}
                 disabled={organizandoState === 'loading'}
@@ -653,6 +673,33 @@ function MonitoramentoContent() {
     }
   }, [])
 
+  const arquivarProcesso = useCallback(async (p: Processo) => {
+    if (!p.id && !p.numero_processo) return
+    setLoadingId(p.numero_processo)
+    setError(null)
+    try {
+      const res = await fetch('/api/monitoramento/arquivar', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ processo_id: p.id || p.numero_processo })
+      })
+      const data = await res.json()
+      if (!res.ok) throw new Error(data?.error || 'Falha ao arquivar processo')
+
+      setResult(prev => prev ? {
+        ...prev,
+        processos: prev.processos.map(item => item.numero_processo === p.numero_processo
+          ? { ...item, status: 'ARQUIVADO' }
+          : item)
+      } : prev)
+      setFeedback(`✅ Processo ${p.numero_processo} arquivado manualmente.`)
+    } catch (e: any) {
+      setError(e?.message || 'Erro ao arquivar processo')
+    } finally {
+      setLoadingId(null)
+    }
+  }, [])
+
   const handleOrganizar = useCallback(async (processoId: string) => {
     setOrganizando(prev => ({ ...prev, [processoId]: 'loading' }))
     try {
@@ -712,6 +759,57 @@ function MonitoramentoContent() {
     setOrganizandoTodos(false)
   }, [result])
 
+  const exportarCsv = () => {
+    const rows = processosFiltrados
+    if (!rows.length) {
+      setFeedback('Nenhum processo para exportar com os filtros atuais.')
+      return
+    }
+
+    const headers = [
+      'numero_processo',
+      'tribunal',
+      'status',
+      'monitorado',
+      'polo_ativo',
+      'polo_passivo',
+      'assunto',
+      'data_distribuicao',
+      'data_ultima_movimentacao',
+      'resumo_curto',
+      'proxima_acao_sugerida'
+    ]
+
+    const escapeCell = (value: unknown) => {
+      const str = String(value ?? '')
+      return `"${str.replace(/"/g, '""')}"`
+    }
+
+    const body = rows.map((p) => [
+      p.numero_processo,
+      p.tribunal,
+      p.status,
+      p.monitorado ? 'SIM' : 'NAO',
+      p.polo_ativo,
+      p.polo_passivo,
+      p.assunto,
+      p.data_distribuicao,
+      p.data_ultima_movimentacao,
+      p.resumo_curto,
+      p.proxima_acao_sugerida
+    ].map(escapeCell).join(';'))
+
+    const csv = `\uFEFF${headers.join(';')}\n${body.join('\n')}`
+    const blob = new Blob([csv], { type: 'text/csv;charset=utf-8;' })
+    const url = URL.createObjectURL(blob)
+    const a = document.createElement('a')
+    a.href = url
+    a.download = `monitoramento_processos_${new Date().toISOString().slice(0, 10)}.csv`
+    a.click()
+    URL.revokeObjectURL(url)
+    setFeedback(`✅ CSV exportado com ${rows.length} processo(s).`)
+  }
+
   const tribunaisUnicos = useMemo(() => {
     if (!result) return []
     return Array.from(new Set(result.processos.map(p => p.tribunal))).sort()
@@ -725,6 +823,7 @@ function MonitoramentoContent() {
         if (filtroStatus === 'monitorado') matchStatus = p.monitorado
         else if (filtroStatus === 'nao_monitorado') matchStatus = !p.monitorado
         else if (filtroStatus === 'ARQUIVADO') matchStatus = processoArquivado(p)
+        else if (filtroStatus === 'ATIVO') matchStatus = !processoArquivado(p)
         else if (filtroStatus !== 'TODOS') matchStatus = p.status === filtroStatus
         const matchTribunal = !filtroTribunal || p.tribunal === filtroTribunal
         const matchSearch = !search || [p.numero_processo, p.polo_ativo, p.polo_passivo, p.assunto].some(s => s?.toLowerCase().includes(search.toLowerCase()))
@@ -829,6 +928,48 @@ function MonitoramentoContent() {
         {error && <div className="p-4 bg-red-500/5 border border-red-500/20 rounded-2xl flex items-center gap-3 text-red-500 text-xs font-bold animate-shake uppercase tracking-widest"><AlertCircle size={18} /> {error}</div>}
         {feedback && <div className="p-4 bg-green-500/5 border border-green-500/20 rounded-2xl flex items-center gap-3 text-green-400 text-xs font-bold animate-in slide-in-from-top-4 uppercase tracking-widest"><CheckCircle size={18} strokeWidth={3} /> {feedback}</div>}
 
+        <div className="bg-zinc-900/30 border border-zinc-800 rounded-2xl p-3 space-y-3">
+          <div className="flex items-center justify-between gap-3">
+            <span className="text-zinc-200 text-[11px] font-black uppercase tracking-[0.2em]">Pesquisar OAB</span>
+            <button
+              onClick={() => setImportarAberto((prev) => !prev)}
+              className="text-[10px] font-black uppercase text-zinc-400 hover:text-white transition-colors"
+            >
+              {importarAberto ? 'Ocultar opções' : 'Mais opções'}
+            </button>
+          </div>
+
+          <div className="bg-zinc-900 border border-zinc-800 rounded-2xl p-2 flex flex-col md:flex-row gap-2 shadow-2xl">
+            <select value={oabEstado} onChange={e => setOabEstado(e.target.value)} className="bg-zinc-950 border border-zinc-800 rounded-xl px-4 text-xs font-bold text-zinc-400 focus:border-yellow-500/50 outline-none hover:bg-zinc-900 transition-colors">
+              {['AC','AL','AP','AM','BA','CE','DF','ES','GO','MA','MT','MS','MG','PA','PB','PR','PE','PI','RJ','RN','RS','RO','RR','SC','SP','SE','TO'].map(e => <option key={e} value={e}>{e}</option>)}
+            </select>
+            <div className="flex-1 relative">
+              <Search size={14} className="absolute left-4 top-1/2 -translate-y-1/2 text-zinc-700" />
+              <input value={oabNumero} onChange={e => setOabNumero(e.target.value)} onKeyDown={e => e.key === 'Enter' && carregarBaseSalva()} placeholder="Digite o número OAB..." className="w-full h-12 bg-zinc-950 border border-zinc-900 rounded-xl pl-11 pr-4 text-xs text-white placeholder-zinc-800 outline-none focus:border-yellow-500/50 font-medium" />
+            </div>
+            <button onClick={carregarBaseSalva} disabled={loading} className="px-6 h-12 bg-zinc-800 hover:bg-zinc-700 text-white text-[11px] font-black rounded-xl transition-all disabled:opacity-50 flex items-center justify-center gap-2 shadow-xl shadow-black/30 active:scale-95 border border-zinc-700 shrink-0 uppercase tracking-widest">
+              {loading ? <RefreshCw size={14} className="animate-spin" /> : <Zap size={14} fill="currentColor" />}
+              BASE GRAVADA
+            </button>
+            <button
+              onClick={() => {
+                const bloqueioCurto = minutosDesdeUltimaSync !== null && minutosDesdeUltimaSync < 3
+                if (bloqueioCurto) {
+                  setFeedback(`Sincronização externa realizada há ${minutosDesdeUltimaSync} min. Aguarde ao menos 3 min para evitar nova cobrança imediata.`)
+                  return
+                }
+                const confirmou = window.confirm('Atualizar do Escavador consome créditos. Deseja continuar?')
+                if (confirmou) buscar()
+              }}
+              disabled={loading}
+              className="px-6 h-12 bg-yellow-500 hover:bg-yellow-400 text-black text-[11px] font-black rounded-xl transition-all disabled:opacity-50 flex items-center justify-center gap-2.5 shadow-xl shadow-yellow-500/20 active:scale-95 border-b-4 border-yellow-600 shrink-0 uppercase tracking-widest"
+            >
+              {loading ? <RefreshCw size={14} className="animate-spin" /> : <Zap size={14} fill="currentColor" />}
+              {loading ? (sincronizandoBase ? 'SINCRONIZANDO...' : 'BUSCANDO...') : 'ATUALIZAR ESCAVADOR'}
+            </button>
+          </div>
+        </div>
+
         {result && (
           <div className="space-y-6 animate-in fade-in duration-500">
             <div className="flex flex-col lg:flex-row lg:items-center justify-between gap-4 p-4 bg-zinc-900/60 border border-zinc-800 rounded-2xl shadow-xl">
@@ -842,16 +983,16 @@ function MonitoramentoContent() {
                   </div>
                   <div className="h-4 w-px bg-zinc-800" />
                   {!selecionados.size && totalAtivosPendentes > 0 && (
-                     <button onClick={() => monitorarLote(result.processos.filter(p => p.status === 'ATIVO' && !p.monitorado))} className="px-5 py-2.5 bg-yellow-500 hover:bg-yellow-400 text-black text-[10px] font-black uppercase rounded-xl transition-all flex items-center gap-2 shadow-lg shadow-yellow-500/10 border-b-2 border-yellow-700">
-                        Monitorar {totalAtivosPendentes} Ativos
-                     </button>
+                     <button onClick={() => monitorarLote(result.processos.filter(p => !processoArquivado(p) && !p.monitorado))} className="px-5 py-2.5 bg-yellow-500 hover:bg-yellow-400 text-black text-[10px] font-black uppercase rounded-xl transition-all flex items-center gap-2 shadow-lg shadow-yellow-500/10 border-b-2 border-yellow-700">
+                         Monitorar {totalAtivosPendentes} Ativos
+                      </button>
                   )}
                   {selecionados.size > 0 && (
                      <button onClick={() => monitorarLote(result.processos.filter(p => selecionados.has(p.numero_processo)))} className="px-5 py-2.5 bg-yellow-500 hover:bg-yellow-400 text-black text-[10px] font-black uppercase rounded-xl transition-all flex items-center gap-2 border-b-2 border-yellow-700">
                         Vigiar {selecionados.size} Selecionados
                      </button>
                   )}
-                  {result.processos.filter(p => p.id).length > 0 && (
+                   {result.processos.filter(p => p.id).length > 0 && (
                     <button
                       onClick={handleOrganizarTodos}
                       disabled={organizandoTodos}
@@ -871,8 +1012,14 @@ function MonitoramentoContent() {
                       )}
                     </button>
                   )}
+                  <button
+                    onClick={exportarCsv}
+                    className="flex items-center gap-2 px-4 py-2 rounded-xl bg-zinc-900 border border-zinc-800 text-zinc-300 text-xs font-bold uppercase hover:border-zinc-700 hover:text-white transition-all"
+                  >
+                    <Download size={14} /> Exportar CSV
+                  </button>
                </div>
-            </div>
+             </div>
 
             <div className="flex items-center gap-2 overflow-x-auto pb-2 scrollbar-hide">
                 <Filter size={14} className="text-zinc-700 mx-2" />
@@ -906,7 +1053,7 @@ function MonitoramentoContent() {
               )}
               <div className="grid grid-cols-1 gap-4">
                 {processosPagina.map(p => (
-                  <ProcessoCard key={p.numero_processo} p={p} onSelect={() => { const next = new Set(selecionados); if (next.has(p.numero_processo)) next.delete(p.numero_processo); else next.add(p.numero_processo); setSelecionados(next); }} selecionado={selecionados.has(p.numero_processo)} onAction={() => monitorarLote([p])} onRemover={() => desmonitorar(p)} loadingId={loadingId} organizandoState={organizando[p.id || ''] || 'idle'} onOrganizar={() => handleOrganizar(p.id || '')} onAbrirResumo={(r) => setResumoModal(r)} />
+                  <ProcessoCard key={p.numero_processo} p={p} onSelect={() => { const next = new Set(selecionados); if (next.has(p.numero_processo)) next.delete(p.numero_processo); else next.add(p.numero_processo); setSelecionados(next); }} selecionado={selecionados.has(p.numero_processo)} onAction={() => monitorarLote([p])} onRemover={() => desmonitorar(p)} onArquivar={() => arquivarProcesso(p)} loadingId={loadingId} organizandoState={organizando[p.id || ''] || 'idle'} onOrganizar={() => handleOrganizar(p.id || '')} onAbrirResumo={(r) => setResumoModal(r)} />
                 ))}
               </div>
               {processosFiltrados.length === 0 && (
@@ -942,7 +1089,7 @@ function MonitoramentoContent() {
           </div>
         )}
 
-        <div className="mt-4 bg-zinc-900/30 border border-zinc-800 rounded-2xl p-3">
+        <div className="hidden mt-4 bg-zinc-900/30 border border-zinc-800 rounded-2xl p-3">
           <button
             onClick={() => setImportarAberto((prev) => !prev)}
             className="w-full flex items-center justify-between px-3 py-3 rounded-xl bg-zinc-950 border border-zinc-800 hover:border-zinc-700 transition-all"

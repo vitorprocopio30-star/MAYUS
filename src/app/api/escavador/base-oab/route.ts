@@ -65,7 +65,7 @@ export async function POST(req: NextRequest) {
   const { data: jaMonitorados } = numeros.length > 0
     ? await adminSupabase
         .from('monitored_processes')
-        .select('id, numero_processo, escavador_id, escavador_monitoramento_id, resumo_curto, resumo_solicitado_em, urgencia_nivel, proxima_acao_sugerida')
+        .select('id, numero_processo, status, escavador_id, escavador_monitoramento_id, resumo_curto, resumo_solicitado_em, urgencia_nivel, proxima_acao_sugerida')
         .eq('tenant_id', tenantId)
         .in('numero_processo', numeros)
     : { data: [] as any[] }
@@ -75,6 +75,7 @@ export async function POST(req: NextRequest) {
     const db = monitoradosMap.get(p.numero_processo)
     return {
       ...p,
+      status: db?.status ?? p.status ?? 'ATIVO',
       monitorado: !!db?.escavador_monitoramento_id && !!db?.id,
       id: db?.id ?? undefined,
       escavador_id: db?.escavador_id || p.escavador_id,
