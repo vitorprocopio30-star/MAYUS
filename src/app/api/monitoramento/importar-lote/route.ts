@@ -82,6 +82,7 @@ export async function POST(req: NextRequest) {
       sucessos_monitoramento: [],
       falhas_monitoramento: [],
       resumos_solicitados: 0,
+      ja_monitorados_numeros: processosJaMonitorados.map((p: Record<string, string>) => p.numero_processo),
       mensagem: 'Todos já estavam monitorados no Escavador.'
     })
 
@@ -212,6 +213,7 @@ export async function POST(req: NextRequest) {
     sucessos_monitoramento: sucessosMonitoramento,
     falhas_monitoramento: falhasMonitoramento,
     resumos_solicitados: resumosSolicitados,
+    ja_monitorados_numeros: processosJaMonitorados.map((p: Record<string, string>) => p.numero_processo),
     excedente_cobrado: excedente,
     custo_gerado: custoMensal,
     mensagem: excedente > 0

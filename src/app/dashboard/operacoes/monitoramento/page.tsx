@@ -514,10 +514,12 @@ function MonitoramentoContent() {
 
       const sucessosLista = Array.isArray(data.sucessos_monitoramento) ? data.sucessos_monitoramento : []
       const sucessosSet = new Set(sucessosLista.map((s: any) => s.numero_processo))
+      const jaMonitorados = Array.isArray(data.ja_monitorados_numeros) ? data.ja_monitorados_numeros : []
+      const jaMonitoradosSet = new Set(jaMonitorados)
       const nowIso = new Date().toISOString()
       setResult(prev => prev ? {
         ...prev,
-        processos: prev.processos.map(p => sucessosSet.has(p.numero_processo)
+        processos: prev.processos.map(p => (sucessosSet.has(p.numero_processo) || jaMonitoradosSet.has(p.numero_processo))
           ? { ...p, monitorado: true, resumo_solicitado_em: nowIso }
           : p),
         billing: { ...prev.billing, total_ja_monitorados: prev.billing.total_ja_monitorados + Number(data.importados || 0) }
@@ -530,13 +532,19 @@ function MonitoramentoContent() {
         ? data.falhas_monitoramento[0]
         : null
 
-      if (Number(data.importados || 0) === 0) {
+      if (Number(data.importados || 0) === 0 && jaMonitorados.length === 0) {
         const msg =
           data?.mensagem ||
           primeiraFalha?.motivo ||
           'Nenhum monitoramento foi criado para os processos selecionados.'
         setError(msg)
         setFeedback(null)
+        return
+      }
+
+      if (Number(data.importados || 0) === 0 && jaMonitorados.length > 0) {
+        setError(null)
+        setFeedback(`✅ ${jaMonitorados.length} processo(s) já estavam monitorados no Escavador e foram sincronizados no painel.`)
         return
       }
 
@@ -579,10 +587,12 @@ function MonitoramentoContent() {
 
       const sucessosLista = Array.isArray(data.sucessos_monitoramento) ? data.sucessos_monitoramento : []
       const sucessosSet = new Set(sucessosLista.map((s: any) => s.numero_processo))
+      const jaMonitorados = Array.isArray(data.ja_monitorados_numeros) ? data.ja_monitorados_numeros : []
+      const jaMonitoradosSet = new Set(jaMonitorados)
       const nowIso = new Date().toISOString()
       setResult(prev => prev ? {
         ...prev,
-        processos: prev.processos.map(p => sucessosSet.has(p.numero_processo)
+        processos: prev.processos.map(p => (sucessosSet.has(p.numero_processo) || jaMonitoradosSet.has(p.numero_processo))
           ? { ...p, monitorado: true, resumo_solicitado_em: nowIso }
           : p),
         billing: { ...prev.billing, total_ja_monitorados: prev.billing.total_ja_monitorados + Number(data.importados || 0) }
@@ -591,12 +601,18 @@ function MonitoramentoContent() {
       const falhasMonitoramento = Array.isArray(data.falhas_monitoramento) ? data.falhas_monitoramento.length : 0
       const resumosSolicitados = Number(data.resumos_solicitados || 0)
 
-      if (Number(data.importados || 0) === 0) {
+      if (Number(data.importados || 0) === 0 && jaMonitorados.length === 0) {
         const primeiraFalha = Array.isArray(data.falhas_monitoramento) && data.falhas_monitoramento.length > 0
           ? data.falhas_monitoramento[0]
           : null
         setError(data?.mensagem || primeiraFalha?.motivo || 'Nenhum monitoramento foi criado após confirmação.')
         setFeedback(null)
+        return
+      }
+
+      if (Number(data.importados || 0) === 0 && jaMonitorados.length > 0) {
+        setError(null)
+        setFeedback(`✅ ${jaMonitorados.length} processo(s) já estavam monitorados no Escavador e foram sincronizados no painel.`)
         return
       }
 

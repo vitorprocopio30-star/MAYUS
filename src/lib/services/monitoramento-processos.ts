@@ -144,18 +144,23 @@ export async function criarMonitoramentoProcesso({
     frequencia: frequencia || 'SEMANAL'
   }
 
-  try {
-    const payload = await escavadorFetch(
+  async function tentarCriar(payload: Record<string, unknown>) {
+    const resposta = await escavadorFetch(
       '/monitoramentos/processos',
       apiKey,
       tenantId,
       {
         method: 'POST',
-        body: JSON.stringify(payloadBase)
+        body: JSON.stringify(payload)
       }
     )
 
-    const monitoramentoId = extrairMonitoramentoId(payload)
+    const monitoramentoId = extrairMonitoramentoId(resposta)
+    return { resposta, monitoramentoId }
+  }
+
+  try {
+    const { resposta: payload, monitoramentoId } = await tentarCriar(payloadBase)
     if (!monitoramentoId) {
       return {
         ok: false,
@@ -185,17 +190,7 @@ export async function criarMonitoramentoProcesso({
 
     if (msg.includes('Escavador 422') && payloadBase.frequencia !== 'DIARIA') {
       try {
-        const payloadRetry = await escavadorFetch(
-          '/monitoramentos/processos',
-          apiKey,
-          tenantId,
-          {
-            method: 'POST',
-            body: JSON.stringify({ ...payloadBase, frequencia: 'DIARIA' })
-          }
-        )
-
-        const monitoramentoIdRetry = extrairMonitoramentoId(payloadRetry)
+        const { resposta: payloadRetry, monitoramentoId: monitoramentoIdRetry } = await tentarCriar({ ...payloadBase, frequencia: 'DIARIA' })
         if (monitoramentoIdRetry) {
           return { ok: true, monitoramentoId: monitoramentoIdRetry, payload: payloadRetry }
         }
@@ -224,6 +219,48 @@ export async function criarMonitoramentoProcesso({
           monitoramentoId: null,
           payload: null,
           error: retryErr?.message || msg || 'Falha ao criar monitoramento'
+        }
+      }
+    }
+
+    if (msg.includes('Escavador 500') || msg.includes('Escavador timeout')) {
+      const existente = await buscarMonitoramentoExistentePorNumero(apiKey, numero)
+      if (existente?.id) {
+        return {
+          ok: true,
+          monitoramentoId: existente.id,
+          payload: {
+            recovered_from_existing_after_500: true,
+            ...existente.payload
+          }
+        }
+      }
+
+      await new Promise((resolve) => setTimeout(resolve, 900))
+
+      try {
+        const { resposta: payloadRetry500, monitoramentoId: monitoramentoIdRetry500 } = await tentarCriar(payloadBase)
+        if (monitoramentoIdRetry500) {
+          return { ok: true, monitoramentoId: monitoramentoIdRetry500, payload: payloadRetry500 }
+        }
+
+        const existenteRetry500 = await buscarMonitoramentoExistentePorNumero(apiKey, numero)
+        if (existenteRetry500?.id) {
+          return {
+            ok: true,
+            monitoramentoId: existenteRetry500.id,
+            payload: {
+              recovered_from_existing_after_retry_500: true,
+              ...existenteRetry500.payload
+            }
+          }
+        }
+      } catch (retry500Err: any) {
+        return {
+          ok: false,
+          monitoramentoId: null,
+          payload: null,
+          error: `${retry500Err?.message || msg} | payload: ${JSON.stringify(payloadBase)}`
         }
       }
     }
