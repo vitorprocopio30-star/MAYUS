@@ -147,10 +147,17 @@ function inferirPoloPorAdvogado(partes: PartesProcesso, advogadoNome: string | n
 }
 
 function montarHistoricoTexto(movimentacoes: MovimentacaoHistorica[] | null | undefined): string {
-  const ultimas = (movimentacoes ?? []).slice(0, 5)
-  if (ultimas.length === 0) return 'Sem historico disponivel'
+  const sorted = [...(movimentacoes ?? [])]
+    .sort((a, b) => {
+      const da = a.data ?? ''
+      const db = b.data ?? ''
+      return db.localeCompare(da) // mais recente primeiro
+    })
+    .slice(0, 5)
 
-  return ultimas
+  if (sorted.length === 0) return 'Sem historico disponivel'
+
+  return sorted
     .map((mov) => {
       const data = mov.data ?? 'sem data'
       const descricao = mov.descricao ?? mov.conteudo ?? 'sem descricao'
