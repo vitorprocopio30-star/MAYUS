@@ -244,7 +244,7 @@ export async function POST(req: NextRequest) {
     // 5. Verificar monitorados (para marcar no UI o que já está no banco)
     const numeros = processos.map(p => p.numero_processo).filter(Boolean)
     const { data: jaMonitorados } = await adminSupabase
-      .from('monitored_processes').select('id, numero_processo, escavador_id, resumo_curto, urgencia_nivel, proxima_acao_sugerida')
+      .from('monitored_processes').select('id, numero_processo, escavador_id, escavador_monitoramento_id, resumo_curto, urgencia_nivel, proxima_acao_sugerida')
       .eq('tenant_id', tenantId).in('numero_processo', numeros)
     const monitoradosMap = new Map((jaMonitorados ?? []).map(m => [m.numero_processo, m]))
 
@@ -252,7 +252,7 @@ export async function POST(req: NextRequest) {
       const db = monitoradosMap.get(p.numero_processo)
       return {
         ...p,
-        monitorado: !!db,
+        monitorado: !!db?.escavador_monitoramento_id && !!db?.id,
         id: db?.id ?? undefined,
         escavador_id: db?.escavador_id || p.escavador_id,
         resumo_curto: db?.resumo_curto ?? undefined,

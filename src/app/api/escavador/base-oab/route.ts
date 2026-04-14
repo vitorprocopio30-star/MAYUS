@@ -75,7 +75,7 @@ export async function POST(req: NextRequest) {
     const db = monitoradosMap.get(p.numero_processo)
     return {
       ...p,
-      monitorado: !!db,
+      monitorado: !!db?.escavador_monitoramento_id && !!db?.id,
       id: db?.id ?? undefined,
       escavador_id: db?.escavador_id || p.escavador_id,
       escavador_monitoramento_id: db?.escavador_monitoramento_id ?? undefined,

@@ -21,15 +21,49 @@ type ResultadoMonitoramento = {
 }
 
 function extrairMonitoramentoId(payload: any): string | null {
-  const id =
-    payload?.id ??
-    payload?.monitoramento?.id ??
-    payload?.data?.id ??
-    payload?.resultado?.id ??
-    null
+  const candidatos = [
+    payload?.id,
+    payload?.monitoramento_id,
+    payload?.monitoramentoId,
+    payload?.monitoramento?.id,
+    payload?.data?.id,
+    payload?.data?.monitoramento_id,
+    payload?.data?.monitoramento?.id,
+    payload?.resultado?.id,
+    payload?.result?.id,
+  ]
 
-  if (id === null || id === undefined || id === '') return null
-  return String(id)
+  const idDireto = candidatos.find((v) => v !== null && v !== undefined && v !== '')
+  if (idDireto !== undefined) {
+    return String(idDireto)
+  }
+
+  const stack: any[] = [payload]
+  while (stack.length > 0) {
+    const atual = stack.pop()
+    if (!atual) continue
+
+    if (Array.isArray(atual)) {
+      atual.forEach((v) => stack.push(v))
+      continue
+    }
+
+    if (typeof atual === 'object') {
+      const chavePrioritaria =
+        atual.monitoramento_id ??
+        atual.monitoramentoId ??
+        (atual.monitoramento && atual.monitoramento.id) ??
+        atual.id
+
+      if (chavePrioritaria !== null && chavePrioritaria !== undefined && chavePrioritaria !== '') {
+        return String(chavePrioritaria)
+      }
+
+      Object.values(atual).forEach((v) => stack.push(v))
+    }
+  }
+
+  return null
 }
 
 export async function criarMonitoramentoProcesso({

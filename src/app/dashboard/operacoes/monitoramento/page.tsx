@@ -482,10 +482,13 @@ function MonitoramentoContent() {
         setConfirmacao({ ...data, processosParaImportar: ativos })
         return
       }
+
+      const sucessosLista = Array.isArray(data.sucessos_monitoramento) ? data.sucessos_monitoramento : []
+      const sucessosSet = new Set(sucessosLista.map((s: any) => s.numero_processo))
       const nowIso = new Date().toISOString()
       setResult(prev => prev ? {
         ...prev,
-        processos: prev.processos.map(p => ativos.some(a => a.numero_processo === p.numero_processo)
+        processos: prev.processos.map(p => sucessosSet.has(p.numero_processo)
           ? { ...p, monitorado: true, resumo_solicitado_em: nowIso }
           : p),
         billing: { ...prev.billing, total_ja_monitorados: prev.billing.total_ja_monitorados + Number(data.importados || 0) }
@@ -528,10 +531,12 @@ function MonitoramentoContent() {
         throw new Error(data.error || 'Falha ao confirmar monitoramento no Escavador')
       }
 
+      const sucessosLista = Array.isArray(data.sucessos_monitoramento) ? data.sucessos_monitoramento : []
+      const sucessosSet = new Set(sucessosLista.map((s: any) => s.numero_processo))
       const nowIso = new Date().toISOString()
       setResult(prev => prev ? {
         ...prev,
-        processos: prev.processos.map(p => confirmacao.processosParaImportar.some(a => a.numero_processo === p.numero_processo)
+        processos: prev.processos.map(p => sucessosSet.has(p.numero_processo)
           ? { ...p, monitorado: true, resumo_solicitado_em: nowIso }
           : p),
         billing: { ...prev.billing, total_ja_monitorados: prev.billing.total_ja_monitorados + Number(data.importados || 0) }

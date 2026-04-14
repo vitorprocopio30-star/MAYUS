@@ -110,6 +110,7 @@ export async function POST(req: NextRequest) {
   }
 
   const rows: Record<string, unknown>[] = []
+  const sucessosMonitoramento: Array<{ numero_processo: string; monitoramento_id: string }> = []
   const falhasMonitoramento: Array<{ numero_processo: string; motivo: string }> = []
 
   for (const p of novos) {
@@ -134,6 +135,10 @@ export async function POST(req: NextRequest) {
     }
 
     monitoramentoId = monitoramento.monitoramentoId
+    sucessosMonitoramento.push({
+      numero_processo: numeroProcesso,
+      monitoramento_id: monitoramentoId,
+    })
 
     rows.push({
       tenant_id: tenantId,
@@ -171,6 +176,7 @@ export async function POST(req: NextRequest) {
     return NextResponse.json({
       importados: 0,
       ignorados: existentesSet.size,
+      sucessos_monitoramento: sucessosMonitoramento,
       falhas_monitoramento: falhasMonitoramento,
       mensagem: 'Nenhum processo foi monitorado com sucesso.'
     })
@@ -196,6 +202,7 @@ export async function POST(req: NextRequest) {
   return NextResponse.json({
     importados,
     ignorados: processosJaMonitorados.length,
+    sucessos_monitoramento: sucessosMonitoramento,
     falhas_monitoramento: falhasMonitoramento,
     resumos_solicitados: resumosSolicitados,
     excedente_cobrado: excedente,

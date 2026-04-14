@@ -111,6 +111,7 @@ export default function PrazosPage() {
   
   // Estados para o Drawer de Detalhes
   const [selectedItemId, setSelectedItemId] = useState<string | null>(null)
+  const [selectedItemData, setSelectedItemData] = useState<any | null>(null)
   const [selectedMovimentacao, setSelectedMovimentacao] = useState<any | null>(null)
   const [isDrawerOpen, setIsDrawerOpen] = useState(false)
   const [taskDetails, setTaskDetails] = useState<any | null>(null)
@@ -503,7 +504,8 @@ export default function PrazosPage() {
   }
 
   async function handleOpenDrawer(item: any, movimentacao: any | null = null) {
-    setSelectedItemId(item.id)
+    setSelectedItemId(item.id ?? null)
+    setSelectedItemData(item ?? null)
     setSelectedMovimentacao(movimentacao)
     setIsDrawerOpen(true)
     setLoadingTask(true)
@@ -528,8 +530,8 @@ export default function PrazosPage() {
   }
 
   async function handleSaveAnnotation() {
-    if (!selectedItemId || !tenantId) return
-    const item = items.find(i => i.id === selectedItemId)
+    if (!tenantId) return
+    const item = selectedItemData ?? items.find(i => i.id === selectedItemId)
     if (!item?.monitored_process_id) return
 
     setIsSavingAnnotation(true)
@@ -1013,19 +1015,27 @@ export default function PrazosPage() {
       )}
 
       {/* Drawer de Detalhes (Modal Centralizado) */}
-      {isDrawerOpen && selectedItemId && (
+      {isDrawerOpen && (selectedItemData || selectedItemId) && (
         <div className="fixed inset-0 z-[60] flex items-center justify-center p-4">
           {/* Overlay */}
           <div 
             className="fixed inset-0 bg-black/60 backdrop-blur-sm z-[60] animate-in fade-in duration-300"
-            onClick={() => setIsDrawerOpen(false)}
+            onClick={() => {
+              setIsDrawerOpen(false)
+              setSelectedItemData(null)
+              setSelectedMovimentacao(null)
+            }}
           />
           
           {/* Modal Content */}
           <div className="relative bg-[#0f0f0f] border border-[#CCA761]/20 z-[61] shadow-2xl flex flex-col animate-in zoom-in-95 duration-300 rounded-2xl overflow-hidden max-w-2xl w-full max-h-[90vh]">
             {(() => {
-              const item = items.find(i => i.id === selectedItemId)
-              if (!item) return null
+              const item = selectedItemData ?? items.find(i => i.id === selectedItemId)
+              if (!item) {
+                return (
+                  <div className="p-8 text-center text-white/50">Detalhes indisponíveis para este registro.</div>
+                )
+              }
 
               return (
                 <>
@@ -1040,7 +1050,11 @@ export default function PrazosPage() {
                       </p>
                     </div>
                     <button 
-                      onClick={() => setIsDrawerOpen(false)}
+                      onClick={() => {
+                        setIsDrawerOpen(false)
+                        setSelectedItemData(null)
+                        setSelectedMovimentacao(null)
+                      }}
                       className="p-2 rounded-xl bg-white/5 text-white/40 hover:text-white hover:bg-white/10 transition-all"
                     >
                       <X size={20} />
@@ -1187,7 +1201,11 @@ export default function PrazosPage() {
                   {/* Drawer Footer */}
                   <div className="p-6 border-t border-white/5 bg-[#141414]/50 flex justify-end">
                     <button 
-                      onClick={() => setIsDrawerOpen(false)}
+                      onClick={() => {
+                        setIsDrawerOpen(false)
+                        setSelectedItemData(null)
+                        setSelectedMovimentacao(null)
+                      }}
                       className="px-8 py-3 bg-white/5 hover:bg-white/10 text-white font-bold text-sm rounded-xl transition-all border border-white/5"
                     >
                       Fechar Detalhes
