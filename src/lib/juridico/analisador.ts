@@ -20,6 +20,38 @@ const KEYWORDS: Record<string, string> = {
   'extinto': 'EXTINCAO', 'extincao': 'EXTINCAO', 'homologado': 'EXTINCAO'
 }
 
+type PartesProcesso = {
+  polo_ativo?: string
+  polo_passivo?: string
+} | null
+
+type MovimentacaoHistorica = {
+  data?: string
+  descricao?: string
+  conteudo?: string
+}
+
+type MonitoredProcessContext = {
+  numero_processo: string | null
+  resumo_curto: string | null
+  cliente_nome: string | null
+  tribunal: string | null
+  partes: PartesProcesso
+  movimentacoes: MovimentacaoHistorica[] | null
+  advogado_responsavel_id?: string | null
+}
+
+type AnalisePrazoLLM =
+  | { gerar: false; motivo: string }
+  | {
+      gerar: true
+      tipo: 'prazo' | 'audiencia' | 'recurso' | 'citacao' | 'sentenca'
+      descricao: string
+      data_vencimento?: string
+      urgencia?: 'alta' | 'media' | 'baixa'
+      motivo: string
+    }
+
 function calcularDiasUteis(inicio: Date, dias: number): Date {
   let count = 0
   const data = new Date(inicio)
@@ -65,6 +97,224 @@ async function classificarComLLM(tenantId: string, conteudo: string, resumo: str
   }
 }
 
+function normalizarTexto(value: string | null | undefined): string {
+  return (value ?? '')
+    .toLowerCase()
+    .normalize('NFD')
+    .replace(/[\u0300-\u036f]/g, '')
+    .trim()
+}
+
+function inferirPoloEscritorio(clienteNome: string | null, partes: PartesProcesso): string {
+  const cliente = normalizarTexto(clienteNome)
+  const poloAtivo = normalizarTexto(partes?.polo_ativo)
+  const poloPassivo = normalizarTexto(partes?.polo_passivo)
+  const primeiroNomeCliente = cliente.split(' ').filter(Boolean)[0] ?? ''
+
+  const representaAutor =
+    (!!cliente && !!poloAtivo && (poloAtivo.includes(cliente) || cliente.includes(poloAtivo.split(' ')[0] ?? ''))) ||
+    (!!primeiroNomeCliente && poloAtivo.includes(primeiroNomeCliente))
+
+  if (representaAutor) return 'AUTOR (polo ativo)'
+  if (!!cliente && !!poloPassivo && (poloPassivo.includes(cliente) || poloPassivo.includes(primeiroNomeCliente))) {
+    return 'REU (polo passivo)'
+  }
+
+  return 'INDETERMINADO'
+}
+
+function inferirPoloPorAdvogado(partes: PartesProcesso, advogadoNome: string | null, oabRegistro: string | null): string {
+  const poloAtivo = normalizarTexto(partes?.polo_ativo)
+  const poloPassivo = normalizarTexto(partes?.polo_passivo)
+  const advogado = normalizarTexto(advogadoNome)
+  const oab = normalizarTexto(oabRegistro).replace(/\D/g, '')
+  const primeiroNomeAdvogado = advogado.split(' ').filter(Boolean)[0] ?? ''
+
+  const matchAtivo =
+    (!!advogado && poloAtivo.includes(advogado)) ||
+    (!!primeiroNomeAdvogado && poloAtivo.includes(primeiroNomeAdvogado)) ||
+    (!!oab && poloAtivo.includes(oab))
+
+  const matchPassivo =
+    (!!advogado && poloPassivo.includes(advogado)) ||
+    (!!primeiroNomeAdvogado && poloPassivo.includes(primeiroNomeAdvogado)) ||
+    (!!oab && poloPassivo.includes(oab))
+
+  if (matchAtivo && !matchPassivo) return 'AUTOR (polo ativo)'
+  if (matchPassivo && !matchAtivo) return 'REU (polo passivo)'
+  return 'INDETERMINADO'
+}
+
+function montarHistoricoTexto(movimentacoes: MovimentacaoHistorica[] | null | undefined): string {
+  const ultimas = (movimentacoes ?? []).slice(0, 5)
+  if (ultimas.length === 0) return 'Sem historico disponivel'
+
+  return ultimas
+    .map((mov) => {
+      const data = mov.data ?? 'sem data'
+      const descricao = mov.descricao ?? mov.conteudo ?? 'sem descricao'
+      return `- ${data}: ${descricao}`
+    })
+    .join('\n')
+}
+
+function limparJsonResposta(responseText: string): string {
+  return responseText.replace(/```json|```/gi, '').trim()
+}
+
+function mapearTipoEventoPorAnalise(analise: AnalisePrazoLLM | null, texto: string): string | null {
+  if (!analise || !analise.gerar) return null
+
+  if (analise.tipo === 'audiencia') return 'AUDIENCIA'
+  if (analise.tipo === 'recurso') return 'RECURSO'
+  if (analise.tipo === 'citacao') return 'CITACAO'
+  if (analise.tipo === 'sentenca') return 'SENTENCA'
+
+  const descricao = normalizarTexto(analise.descricao)
+
+  if (descricao.includes('replica') || descricao.includes('réplica') || texto.includes('contest')) {
+    return 'CONTESTACAO'
+  }
+
+  if (descricao.includes('contrarrazo') || descricao.includes('contrarraz')) {
+    return 'RECURSO'
+  }
+
+  if (descricao.includes('contestacao') || descricao.includes('contestação')) {
+    return 'CITACAO'
+  }
+
+  return null
+}
+
+function parseDataVencimentoLLM(value: string | undefined): Date | null {
+  if (!value || !/^\d{4}-\d{2}-\d{2}$/.test(value)) return null
+  const parsed = new Date(`${value}T00:00:00`)
+  return Number.isNaN(parsed.getTime()) ? null : parsed
+}
+
+function mapearPrioridade(analise: AnalisePrazoLLM | null): string | null {
+  if (!analise || !analise.gerar) return null
+  if (analise.urgencia === 'alta') return 'alta'
+  if (analise.urgencia === 'media') return 'media'
+  if (analise.urgencia === 'baixa') return 'baixa'
+  return null
+}
+
+async function analisarComLLM(params: {
+  tenantId: string
+  monitoredProcess: MonitoredProcessContext
+  textoMovimentacao: string
+}): Promise<AnalisePrazoLLM | null> {
+  try {
+    const llm = await getLLMClient(adminSupabase, params.tenantId, 'classificar_movimentacao')
+    let poloEscritorio = inferirPoloEscritorio(
+      params.monitoredProcess.cliente_nome,
+      params.monitoredProcess.partes
+    )
+
+    if (poloEscritorio === 'INDETERMINADO' && params.monitoredProcess.advogado_responsavel_id) {
+      const { data: advogado } = await adminSupabase
+        .from('profiles')
+        .select('full_name, oab_registro')
+        .eq('id', params.monitoredProcess.advogado_responsavel_id)
+        .maybeSingle()
+
+      poloEscritorio = inferirPoloPorAdvogado(
+        params.monitoredProcess.partes,
+        advogado?.full_name ?? null,
+        advogado?.oab_registro ?? null
+      )
+    }
+
+    const historicoTexto = montarHistoricoTexto(params.monitoredProcess.movimentacoes)
+    const prompt = `Você é um assistente jurídico especializado em direito processual civil brasileiro.
+
+CONTEXTO DO PROCESSO:
+- Número: ${params.monitoredProcess.numero_processo ?? 'não disponível'}
+- Cliente: ${params.monitoredProcess.cliente_nome ?? 'não disponível'}
+- O escritório representa: ${poloEscritorio}
+- Tribunal: ${params.monitoredProcess.tribunal ?? 'não disponível'}
+
+ÚLTIMAS MOVIMENTAÇÕES (histórico):
+${historicoTexto}
+
+NOVA MOVIMENTAÇÃO A ANALISAR:
+"${params.textoMovimentacao}"
+
+REGRAS OBRIGATÓRIAS — Analise antes de gerar qualquer prazo:
+
+1. POLO: O escritório representa ${poloEscritorio}.
+   - Se a peça foi protocolada PELO escritório (pelo nosso cliente) → ato JÁ REALIZADO, NÃO gerar prazo.
+   - Se a peça foi protocolada PELA PARTE CONTRÁRIA e gera obrigação de resposta → gerar prazo.
+   - Se a movimentação é uma INTIMAÇÃO direcionada ao escritório → gerar prazo.
+
+2. FASE PROCESSUAL: Verifique o histórico.
+   - Se já houve audiência ou ata de audiência → NÃO gerar prazo de contestação (fase já superada).
+   - Se já houve sentença → NÃO gerar prazo de contestação ou réplica.
+   - Se o recurso foi interposto PELO ESCRITÓRIO → NÃO gerar prazo de contrarrazões (é obrigação do adversário).
+   - Se o recurso foi interposto PELO ADVERSÁRIO → gerar prazo de contrarrazões.
+
+3. DESPACHOS: Despachos de mero expediente (ex: "Despacho — Verificar cumprimento") NÃO geram prazos processuais. NUNCA gerar prazo para despachos.
+
+4. SE NÃO HÁ PRAZO REAL: Retorne exatamente: { "gerar": false, "motivo": "<explicação>" }
+
+SE houver prazo real, retorne JSON:
+{
+  "gerar": true,
+  "tipo": "prazo" | "audiencia" | "recurso" | "citacao" | "sentenca",
+  "descricao": "<descrição clara da ação que o escritório deve tomar>",
+  "data_vencimento": "<YYYY-MM-DD>",
+  "urgencia": "alta" | "media" | "baixa",
+  "motivo": "<por que este prazo foi gerado>"
+}
+
+Responda APENAS com o JSON, sem texto adicional.`
+
+    const res = await fetch(llm.endpoint, {
+      method: 'POST',
+      headers: buildHeaders(llm),
+      body: JSON.stringify({
+        model: llm.model,
+        temperature: 0,
+        max_tokens: 400,
+        messages: [{ role: 'user', content: prompt }]
+      })
+    })
+
+    const data = await res.json()
+    const responseText = data.choices?.[0]?.message?.content?.trim()
+    if (!responseText) return null
+
+    const parsed = JSON.parse(limparJsonResposta(responseText))
+    if (parsed?.gerar === false) {
+      return { gerar: false, motivo: String(parsed.motivo ?? 'Sem motivo informado') }
+    }
+
+    const tipo = parsed?.tipo
+    const descricao = String(parsed?.descricao ?? '').trim()
+    if (
+      parsed?.gerar === true &&
+      ['prazo', 'audiencia', 'recurso', 'citacao', 'sentenca'].includes(tipo) &&
+      descricao
+    ) {
+      return {
+        gerar: true,
+        tipo,
+        descricao,
+        data_vencimento: parsed?.data_vencimento,
+        urgencia: parsed?.urgencia,
+        motivo: String(parsed?.motivo ?? 'Motivo não informado')
+      }
+    }
+
+    return null
+  } catch (err) {
+    console.error('[ANALISADOR] Falha ao analisar com LLM:', err)
+    return null
+  }
+}
+
 export async function analisarMovimentacao(params: {
   processo_id: string
   numero_cnj: string
@@ -81,18 +331,26 @@ export async function analisarMovimentacao(params: {
   // Busca contexto do processo
   const { data: processo } = await adminSupabase
     .from('monitored_processes')
-    .select('resumo_curto, cliente_nome')
+    .select('numero_processo, resumo_curto, cliente_nome, tribunal, partes, movimentacoes, advogado_responsavel_id')
     .eq('id', params.processo_id)
     .single()
 
-  // 1. Tenta LLM
-  let tipoEvento = await classificarComLLM(
-    params.tenant_id,
-    params.movimentacao.conteudo ?? '',
-    processo?.resumo_curto ?? null
-  )
+  const analiseLLM = processo
+    ? await analisarComLLM({
+        tenantId: params.tenant_id,
+        monitoredProcess: processo as MonitoredProcessContext,
+        textoMovimentacao: params.movimentacao.conteudo ?? ''
+      })
+    : null
 
-  // 2. Fallback keywords
+  if (analiseLLM && !analiseLLM.gerar) {
+    console.log(`[ANALISADOR] Prazo nao gerado: ${analiseLLM.motivo}`)
+    return
+  }
+
+  let tipoEvento = mapearTipoEventoPorAnalise(analiseLLM, texto)
+
+  // Fallback para classificacao por keywords se o JSON do LLM falhar
   if (!tipoEvento) {
     const textoLower = texto.toLowerCase()
 
@@ -135,8 +393,10 @@ export async function analisarMovimentacao(params: {
   }
 
   const dataBase = params.movimentacao.data ? new Date(params.movimentacao.data) : new Date()
-  const vencimento = calcularDiasUteis(dataBase, prazo.dias_uteis)
-  const descricaoPrazo = String(prazo.descricao ?? '').trim()
+  const vencimento = parseDataVencimentoLLM(analiseLLM && analiseLLM.gerar ? analiseLLM.data_vencimento : undefined)
+    ?? calcularDiasUteis(dataBase, prazo.dias_uteis)
+  const descricaoPrazo = String(analiseLLM?.gerar ? analiseLLM.descricao : prazo.descricao ?? '').trim()
+  const prioridadePrazo = mapearPrioridade(analiseLLM) ?? prazo.prioridade.toLowerCase()
 
   // Nao gerar prazo para despachos genericos
   if (descricaoPrazo.toLowerCase().includes('despacho')) {
@@ -218,7 +478,7 @@ export async function analisarMovimentacao(params: {
       status: 'pendente',
       responsavel_id: params.advogado_id ?? null,
       escavador_movimentacao_id: escavadorMovimentacaoId,
-      prioridade: prazo.prioridade.toLowerCase() as any,
+      prioridade: prioridadePrazo as any,
       criado_por_ia: true,
       created_at: new Date().toISOString()
     },
