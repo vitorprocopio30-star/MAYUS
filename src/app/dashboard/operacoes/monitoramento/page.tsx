@@ -409,7 +409,10 @@ function MonitoramentoContent() {
       setResult(data)
       setBaseSincronizada(true)
       const qtdArquivados = (data.processos || []).filter((p: Processo) => processoArquivado(p)).length
-      setFeedback(`Base sincronizada: ${data.total_retornado || 0} processos carregados (${qtdArquivados} arquivados).`)
+      const totalApi = Number(data.total || 0)
+      const totalBase = Number(data.total_retornado || 0)
+      const diffInfo = totalApi > totalBase ? ` (${totalApi} na API)` : ''
+      setFeedback(`Base sincronizada: ${totalBase} processos carregados${diffInfo} (${qtdArquivados} arquivados).`)
     } catch (e) {
       console.error('Erro na varredura:', e)
       let msg = 'Falha na varredura'
@@ -583,6 +586,26 @@ function MonitoramentoContent() {
   const totalAtivos = result?.processos.filter(p => !p.monitorado && !processoArquivado(p)).length ?? 0
   const totalArquivadosAmostra = result?.processos.filter((p) => processoArquivado(p)).length ?? 0
 
+  const renderPaginacao = () => (
+    <div className="flex items-center justify-between py-4 px-2 bg-zinc-900/20 rounded-2xl border border-zinc-800/50">
+      <span className="text-zinc-500 text-[10px] font-black uppercase tracking-widest px-2">{processosFiltrados.length} processos · pág {pagina}/{totalPages}</span>
+      <div className="flex gap-1.5">
+        <button onClick={() => setPage(1)} disabled={pagina === 1} className="px-3 py-1.5 rounded-xl border border-zinc-800 bg-zinc-950 text-zinc-500 text-[9px] font-black uppercase disabled:opacity-20 hover:border-zinc-700 hover:text-zinc-300">« Primeira</button>
+        <button onClick={() => setPage(Math.max(1, pagina - 1))} disabled={pagina === 1} className="px-3 py-1.5 rounded-xl border border-zinc-800 bg-zinc-950 text-zinc-500 text-[9px] font-black uppercase disabled:opacity-20 hover:border-zinc-700 hover:text-zinc-300">Anterior</button>
+        {Array.from({ length: Math.min(5, totalPages) }, (_, i) => {
+          const start = Math.max(1, Math.min(pagina - 2, totalPages - 4))
+          const n = start + i
+          if (n < 1 || n > totalPages) return null
+          return (
+            <button key={n} onClick={() => setPage(n)} className={`w-7 h-7 rounded-lg text-[9px] font-black ${n === pagina ? 'bg-yellow-500 text-black' : 'border border-zinc-800 bg-zinc-950 text-zinc-600 uppercase'}`}>{n}</button>
+          )
+        })}
+        <button onClick={() => setPage(Math.min(totalPages, pagina + 1))} disabled={pagina === totalPages} className="px-3 py-1.5 rounded-xl border border-zinc-800 bg-zinc-950 text-zinc-500 text-[9px] font-black uppercase disabled:opacity-20 hover:border-zinc-700 hover:text-zinc-300">Próxima</button>
+        <button onClick={() => setPage(totalPages)} disabled={pagina === totalPages} className="px-3 py-1.5 rounded-xl border border-zinc-800 bg-zinc-950 text-zinc-500 text-[9px] font-black uppercase disabled:opacity-20 hover:border-zinc-700 hover:text-zinc-300">Última »</button>
+      </div>
+    </div>
+  )
+
   const handleFiltroStatusChange = (f: FilterStatus) => { setFiltroStatus(f); setPagina(1); }
   const handleSearchChange = (v: string) => { setSearch(v); setPagina(1); }
 
@@ -610,6 +633,10 @@ function MonitoramentoContent() {
                 <div className="flex flex-col">
                    <span className="text-white font-black text-lg leading-none">{result.total}</span>
                    <span className="text-[9px] text-zinc-600 uppercase font-black">Processos</span>
+                </div>
+                <div className="flex flex-col border-l border-zinc-800 pl-4">
+                   <span className="text-[9px] text-zinc-500 uppercase font-black tracking-widest leading-none mb-1">Ativos</span>
+                   <span className="text-green-400 font-black text-sm">{totalAtivos}</span>
                 </div>
                 <div className="flex flex-col border-l border-zinc-800 pl-4">
                    <span className="text-[9px] text-zinc-500 uppercase font-black tracking-widest leading-none mb-1">Arquivados</span>
@@ -695,23 +722,7 @@ function MonitoramentoContent() {
 
             <div className="space-y-4">
               {totalPages > 1 && (
-                <div className="flex items-center justify-between py-4 px-2 bg-zinc-900/20 rounded-2xl border border-zinc-800/50">
-                  <span className="text-zinc-500 text-[10px] font-black uppercase tracking-widest px-2">{processosFiltrados.length} processos · pág {pagina}/{totalPages}</span>
-                  <div className="flex gap-1.5">
-                    <button onClick={() => setPage(1)} disabled={pagina === 1} className="px-3 py-1.5 rounded-xl border border-zinc-800 bg-zinc-950 text-zinc-500 text-[9px] font-black uppercase disabled:opacity-20 hover:border-zinc-700 hover:text-zinc-300">« Primeira</button>
-                    <button onClick={() => setPage(Math.max(1, pagina - 1))} disabled={pagina === 1} className="px-3 py-1.5 rounded-xl border border-zinc-800 bg-zinc-950 text-zinc-500 text-[9px] font-black uppercase disabled:opacity-20 hover:border-zinc-700 hover:text-zinc-300">Anterior</button>
-                    {Array.from({ length: Math.min(5, totalPages) }, (_, i) => {
-                      const start = Math.max(1, Math.min(pagina - 2, totalPages - 4))
-                      const n = start + i
-                      if (n < 1 || n > totalPages) return null
-                      return (
-                        <button key={n} onClick={() => setPage(n)} className={`w-7 h-7 rounded-lg text-[9px] font-black ${n === pagina ? 'bg-yellow-500 text-black' : 'border border-zinc-800 bg-zinc-950 text-zinc-600 uppercase'}`}>{n}</button>
-                      )
-                    })}
-                    <button onClick={() => setPage(Math.min(totalPages, pagina + 1))} disabled={pagina === totalPages} className="px-3 py-1.5 rounded-xl border border-zinc-800 bg-zinc-950 text-zinc-500 text-[9px] font-black uppercase disabled:opacity-20 hover:border-zinc-700 hover:text-zinc-300">Próxima</button>
-                    <button onClick={() => setPage(totalPages)} disabled={pagina === totalPages} className="px-3 py-1.5 rounded-xl border border-zinc-800 bg-zinc-950 text-zinc-500 text-[9px] font-black uppercase disabled:opacity-20 hover:border-zinc-700 hover:text-zinc-300">Última »</button>
-                  </div>
-                </div>
+                renderPaginacao()
               )}
               <div className="grid grid-cols-1 gap-4">
                 {processosPagina.map(p => (
@@ -724,6 +735,7 @@ function MonitoramentoContent() {
                    <p className="text-zinc-500 text-xs font-black uppercase tracking-[0.3em]">Nenhum Alvo Identificado</p>
                 </div>
               )}
+              {totalPages > 1 && renderPaginacao()}
             </div>
 
             <BillingBar billing={result.billing} />
