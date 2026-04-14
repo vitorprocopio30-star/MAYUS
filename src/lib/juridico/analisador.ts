@@ -36,6 +36,7 @@ type MonitoredProcessContext = {
   resumo_curto: string | null
   cliente_nome: string | null
   tribunal: string | null
+  classe_processual?: string | null
   partes: PartesProcesso
   movimentacoes: MovimentacaoHistorica[] | null
   advogado_responsavel_id?: string | null
@@ -235,6 +236,7 @@ CONTEXTO DO PROCESSO:
 - Cliente: ${params.monitoredProcess.cliente_nome ?? 'não disponível'}
 - O escritório representa: ${poloEscritorio}
 - Tribunal: ${params.monitoredProcess.tribunal ?? 'não disponível'}
+- Classe processual: ${params.monitoredProcess.classe_processual ?? 'não disponível'}
 
 ÚLTIMAS MOVIMENTAÇÕES (histórico):
 ${historicoTexto}
@@ -258,6 +260,12 @@ REGRAS OBRIGATÓRIAS — Analise antes de gerar qualquer prazo:
 3. DESPACHOS: Despachos de mero expediente (ex: "Despacho — Verificar cumprimento") NÃO geram prazos processuais. NUNCA gerar prazo para despachos.
 
 4. SE NÃO HÁ PRAZO REAL: Retorne exatamente: { "gerar": false, "motivo": "<explicação>" }
+
+5. CLASSE PROCESSUAL:
+   - Se a classe for "Agravo de Instrumento" e o cliente for o AGRAVADO (polo passivo do agravo) → gerar prazo de Contrarrazões de Agravo (15 dias úteis).
+   - Se a classe for "Agravo de Instrumento" e o cliente for o AGRAVANTE (polo ativo) → o recurso foi interposto pelo escritório, NÃO gerar prazo.
+   - Se a classe for "Apelação" e o cliente for o APELADO → gerar prazo de Contrarrazões de Apelação.
+   - Se a classe for "Apelação" e o cliente for o APELANTE → o recurso foi interposto pelo escritório, NÃO gerar prazo.
 
 SE houver prazo real, retorne JSON:
 {
@@ -331,7 +339,7 @@ export async function analisarMovimentacao(params: {
   // Busca contexto do processo
   const { data: processo } = await adminSupabase
     .from('monitored_processes')
-    .select('numero_processo, resumo_curto, cliente_nome, tribunal, partes, movimentacoes, advogado_responsavel_id')
+    .select('numero_processo, resumo_curto, cliente_nome, tribunal, partes, movimentacoes, advogado_responsavel_id, classe_processual')
     .eq('id', params.processo_id)
     .single()
 
