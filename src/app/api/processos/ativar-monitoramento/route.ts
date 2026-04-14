@@ -1,7 +1,7 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { createClient } from '@supabase/supabase-js'
 import { escavadorFetch } from '@/lib/services/escavador-client'
-import { solicitarResumoIA } from '@/lib/services/escavador-ia'
+import { criarMonitoramentoProcesso, solicitarResumoProcesso } from '@/lib/services/monitoramento-processos'
 
 const adminSupabase = createClient(
   process.env.NEXT_PUBLIC_SUPABASE_URL!,
@@ -102,65 +102,59 @@ export async function POST(req: NextRequest) {
     status: capa?.status_predito ?? 'ATIVO'
   }
 
-  // 3. Ativa monitoramento semanal via API V1
-  let monitoramentoId: string | null = null
-  try {
-    const resMonitor = await fetch(
-      'https://api.escavador.com/api/v1/monitoramentos',
-      {
-        method: 'POST',
-        headers: {
-          Authorization: `Bearer ${integration.api_key}`,
-          'Content-Type': 'application/json',
-          'X-Requested-With': 'XMLHttpRequest'
-        },
-        body: JSON.stringify({
-          tipo: 'PROCESSO',
-          valor: numero_cnj,
-          frequencia: 'SEMANAL',
-          enviar_callback: 1
-        })
-      }
-    )
-    if (resMonitor.ok) {
-      const mon = await resMonitor.json()
-      monitoramentoId = String(mon.id ?? '')
-    }
-  } catch (e) {
-    console.error('[ATIVAR_MONITORAMENTO] Erro ao criar monitoramento V1:', e)
-  }
+  // 3. Ativa monitoramento via API V2
+  const monitoramento = await criarMonitoramentoProcesso({
+    tenantId,
+    apiKey: integration.api_key,
+    numeroProcesso: numero_cnj,
+    frequencia: 'semanal'
+  })
+  const monitoramentoId = monitoramento.monitoramentoId
 
   // 4. Salva ID do monitoramento e dados enriquecidos no banco
-  if (monitoramentoId) {
-    const { data: processoSalvo } = await adminSupabase
-      .from('monitored_processes')
-      .update({
-        escavador_monitoramento_id: monitoramentoId,
-        monitoramento_ativo: true
-      })
-      .eq('numero_processo', numero_cnj)
-      .eq('tenant_id', tenantId)
-      .select('id')
-      .single()
+  const { data: processoSalvo } = await adminSupabase
+    .from('monitored_processes')
+    .upsert({
+      tenant_id: tenantId,
+      numero_processo: numero_cnj,
+      tribunal: dadosEnriquecidos.tribunal,
+      assunto: dadosEnriquecidos.assunto,
+      partes: {
+        polo_ativo: dadosEnriquecidos.polo_ativo,
+        polo_passivo: dadosEnriquecidos.polo_passivo,
+      },
+      data_ultima_movimentacao: dadosCompletos?.data_ultima_movimentacao ?? null,
+      escavador_monitoramento_id: monitoramentoId,
+      monitoramento_ativo: !!monitoramentoId,
+      ultima_atualizacao_escavador: new Date().toISOString(),
+      ativo: true
+    }, { onConflict: 'tenant_id,numero_processo' })
+    .select('id')
+    .single()
 
-    // Dispara geração do resumo IA em background
-    solicitarResumoIA(numero_cnj, tenantId).catch(console.error)
+  const resumoSolicitado = monitoramentoId
+    ? await solicitarResumoProcesso(tenantId, integration.api_key, numero_cnj)
+    : false
 
-    // Dispara organizador IA em background (fire and forget)
-    if (processoSalvo?.id) {
-      const appUrl = process.env.NEXT_PUBLIC_SITE_URL ?? process.env.NEXT_PUBLIC_APP_URL ?? 'http://localhost:3000'
-      fetch(`${appUrl}/api/agent/processos/organizar`, {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ processo_id: processoSalvo.id })
-      }).catch(console.error)
-    }
+  // Dispara organizador IA em background
+  if (processoSalvo?.id && token) {
+    const appUrl = process.env.NEXT_PUBLIC_SITE_URL ?? process.env.NEXT_PUBLIC_APP_URL ?? 'http://localhost:3000'
+    fetch(`${appUrl}/api/agent/processos/organizar`, {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+        Authorization: `Bearer ${token}`
+      },
+      body: JSON.stringify({ processo_id: processoSalvo.id })
+    }).catch(console.error)
   }
 
   return NextResponse.json({
-    ok: true,
+    ok: !!monitoramentoId,
+    monitoramento_erro: monitoramento.error ?? null,
     monitoramento_id: monitoramentoId,
     monitoramento_ativo: !!monitoramentoId,
+    resumo_solicitado: resumoSolicitado,
     dados_completos: dadosEnriquecidos
   })
 }

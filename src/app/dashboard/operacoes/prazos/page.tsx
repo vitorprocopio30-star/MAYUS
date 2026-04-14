@@ -97,6 +97,8 @@ const supabase = createClient()
 export default function PrazosPage() {
   const [activeTab, setActiveTab] = useState<TabType>('prazos')
   const [items, setItems] = useState<any[]>([])
+  const [movementRecords, setMovementRecords] = useState<any[]>([])
+  const [monitoredContexts, setMonitoredContexts] = useState<any[]>([])
   const [profiles, setProfiles] = useState<any[]>([])
   const [loading, setLoading] = useState(true)
   const [searchTerm, setSearchTerm] = useState('')
@@ -109,6 +111,7 @@ export default function PrazosPage() {
   
   // Estados para o Drawer de Detalhes
   const [selectedItemId, setSelectedItemId] = useState<string | null>(null)
+  const [selectedMovimentacao, setSelectedMovimentacao] = useState<any | null>(null)
   const [isDrawerOpen, setIsDrawerOpen] = useState(false)
   const [taskDetails, setTaskDetails] = useState<any | null>(null)
   const [loadingTask, setLoadingTask] = useState(false)
@@ -146,34 +149,63 @@ export default function PrazosPage() {
 
     async function fetchData(tenantId: string) {
       setLoading(true)
-      const { data, error } = await supabase
-        .from('process_prazos')
-        .select(`
-          *,
-          monitored_processes(
-            numero_processo, 
-            partes, 
-            tribunal, 
-            comarca, 
-            vara, 
-            data_ultima_movimentacao,
-            ultima_movimentacao_texto, 
-            resumo_curto, 
-            cliente_nome,
-            escavador_monitoramento_id
-          ),
-          process_tasks:process_task_id(id, movimentacoes_timeline),
-          profiles:responsavel_id(id, full_name, avatar_url)
-        `)
-        .eq('tenant_id', tenantId)
-        .in('tipo', ['sessao', 'pericia', 'audiencia', 'citacao', 'sentenca', 'recurso', 'prazo'])
-        .not('descricao', 'ilike', '%Despacho%')
-        .order('data_vencimento', { ascending: true });
+      const [prazosRes, movimentacoesRes, contextosRes] = await Promise.all([
+        supabase
+          .from('process_prazos')
+          .select(`
+            *,
+            monitored_processes(
+              numero_processo, 
+              partes, 
+              tribunal, 
+              comarca, 
+              vara, 
+              assunto,
+              classe_processual,
+              tipo_acao,
+              fase_atual,
+              data_ultima_movimentacao,
+              ultima_movimentacao_texto, 
+              resumo_curto, 
+              cliente_nome,
+              escavador_monitoramento_id
+            ),
+            process_tasks:process_task_id(id, movimentacoes_timeline),
+            profiles:responsavel_id(id, full_name, avatar_url)
+          `)
+          .eq('tenant_id', tenantId)
+          .in('tipo', ['sessao', 'pericia', 'audiencia', 'citacao', 'sentenca', 'recurso', 'prazo'])
+          .not('descricao', 'ilike', '%Despacho%')
+          .order('data_vencimento', { ascending: true }),
+        supabase
+          .from('process_movimentacoes')
+          .select('id, numero_cnj, data, conteudo, fonte, created_at')
+          .eq('tenant_id', tenantId)
+          .order('data', { ascending: false })
+          .order('created_at', { ascending: false })
+          .limit(1000),
+        supabase
+          .from('monitored_processes')
+          .select('numero_processo, partes, tribunal, comarca, vara, assunto, classe_processual, tipo_acao, fase_atual, data_ultima_movimentacao, ultima_movimentacao_texto, resumo_curto, cliente_nome, escavador_monitoramento_id')
+          .eq('tenant_id', tenantId)
+      ])
 
-      if (error) {
-        console.error('Erro ao buscar prazos:', error);
+      if (prazosRes.error) {
+        console.error('Erro ao buscar prazos:', prazosRes.error)
       } else {
-        setItems(deduplicarPrazos(data || []));
+        setItems(deduplicarPrazos(prazosRes.data || []))
+      }
+
+      if (movimentacoesRes.error) {
+        console.error('Erro ao buscar movimentações:', movimentacoesRes.error)
+      } else {
+        setMovementRecords(movimentacoesRes.data || [])
+      }
+
+      if (contextosRes.error) {
+        console.error('Erro ao buscar contexto de processos:', contextosRes.error)
+      } else {
+        setMonitoredContexts(contextosRes.data || [])
       }
       setLoading(false);
     }
@@ -226,6 +258,105 @@ export default function PrazosPage() {
     const dedupe = new Set<string>()
     const lista: any[] = []
 
+    const itemByNumero = new Map<string, any>()
+    items.forEach((item) => {
+      const numero = item.monitored_processes?.numero_processo
+      if (numero && !itemByNumero.has(numero)) {
+        itemByNumero.set(numero, item)
+      }
+    })
+
+    const contextoByNumero = new Map<string, any>()
+    monitoredContexts.forEach((ctx) => {
+      if (ctx?.numero_processo) contextoByNumero.set(ctx.numero_processo, ctx)
+    })
+
+    items.forEach((item) => {
+      const numero = item.monitored_processes?.numero_processo
+      if (numero && !contextoByNumero.has(numero)) {
+        contextoByNumero.set(numero, item.monitored_processes)
+      }
+    })
+
+    function buildFallbackItem(numeroProcesso: string, contexto: any, dataReferencia: string | null) {
+      return {
+        id: `mov-${numeroProcesso}-${dataReferencia || 'sem-data'}`,
+        tipo: 'movimentacao',
+        descricao: contexto?.assunto || contexto?.ultima_movimentacao_texto || 'Movimentação processual',
+        status: 'pendente',
+        data_vencimento: dataReferencia,
+        process_task_id: null,
+        monitored_processes: {
+          numero_processo: numeroProcesso,
+          partes: contexto?.partes || {},
+          tribunal: contexto?.tribunal,
+          comarca: contexto?.comarca,
+          vara: contexto?.vara,
+          assunto: contexto?.assunto,
+          classe_processual: contexto?.classe_processual,
+          tipo_acao: contexto?.tipo_acao,
+          fase_atual: contexto?.fase_atual,
+          data_ultima_movimentacao: contexto?.data_ultima_movimentacao,
+          ultima_movimentacao_texto: contexto?.ultima_movimentacao_texto,
+          resumo_curto: contexto?.resumo_curto,
+          cliente_nome: contexto?.cliente_nome,
+          escavador_monitoramento_id: contexto?.escavador_monitoramento_id
+        }
+      }
+    }
+
+    movementRecords.forEach((registro: any, index: number) => {
+      const numeroProcesso = String(registro?.numero_cnj ?? '').trim()
+      if (!numeroProcesso) return
+
+      const contexto = contextoByNumero.get(numeroProcesso)
+      const item = itemByNumero.get(numeroProcesso) || buildFallbackItem(numeroProcesso, contexto, registro?.data || registro?.created_at || null)
+      const dataReferencia = registro?.data || registro?.created_at || contexto?.data_ultima_movimentacao || null
+      const dataISO = normalizarDataISO(dataReferencia)
+      if (movementDateFilter && dataISO !== movementDateFilter) return
+
+      const conteudo = String(registro?.conteudo ?? contexto?.ultima_movimentacao_texto ?? '').trim()
+      const cliente = String(contexto?.cliente_nome ?? item?.monitored_processes?.cliente_nome ?? '')
+      const tribunal = String(contexto?.tribunal ?? item?.monitored_processes?.tribunal ?? '')
+      const assunto = String(contexto?.assunto ?? '')
+      const classeProcessual = String(contexto?.classe_processual ?? '')
+      const tipoAcao = String(contexto?.tipo_acao ?? '')
+      const faseAtual = String(contexto?.fase_atual ?? '')
+      const comarca = String(contexto?.comarca ?? '')
+      const vara = String(contexto?.vara ?? '')
+      const poloAtivo = String(contexto?.partes?.polo_ativo ?? '')
+      const poloPassivo = String(contexto?.partes?.polo_passivo ?? '')
+      const resumoCurto = String(contexto?.resumo_curto ?? '')
+
+      const baseBusca = `${conteudo} ${numeroProcesso} ${cliente} ${tribunal} ${assunto} ${classeProcessual} ${tipoAcao} ${faseAtual} ${poloAtivo} ${poloPassivo}`.toLowerCase()
+      if (busca && !baseBusca.includes(busca)) return
+
+      const dedupeKey = registro?.id ? `pm-${registro.id}` : `pm-${numeroProcesso}-${dataISO}-${index}`
+      if (dedupe.has(dedupeKey)) return
+      dedupe.add(dedupeKey)
+
+      lista.push({
+        id: dedupeKey,
+        item,
+        conteudo: conteudo || 'Movimentação sem descrição',
+        dataReferencia,
+        dataISO,
+        tipoEvento: String(registro?.fonte ?? 'movimentacao'),
+        numeroProcesso,
+        cliente,
+        tribunal,
+        comarca,
+        vara,
+        assunto,
+        classeProcessual,
+        tipoAcao,
+        faseAtual,
+        poloAtivo,
+        poloPassivo,
+        resumoCurto
+      })
+    })
+
     for (const item of items) {
       const timeline = item.process_tasks?.movimentacoes_timeline
       if (!Array.isArray(timeline)) continue
@@ -242,8 +373,17 @@ export default function PrazosPage() {
         const descricao = String(item.descricao ?? '')
         const tipoEvento = String(mov?.tipo_evento ?? item.tipo ?? 'movimentacao')
         const tribunal = String(item.monitored_processes?.tribunal ?? '')
+        const comarca = String(item.monitored_processes?.comarca ?? '')
+        const vara = String(item.monitored_processes?.vara ?? '')
+        const assunto = String(item.monitored_processes?.assunto ?? '')
+        const classeProcessual = String(item.monitored_processes?.classe_processual ?? '')
+        const tipoAcao = String(item.monitored_processes?.tipo_acao ?? '')
+        const faseAtual = String(item.monitored_processes?.fase_atual ?? '')
+        const poloAtivo = String(item.monitored_processes?.partes?.polo_ativo ?? '')
+        const poloPassivo = String(item.monitored_processes?.partes?.polo_passivo ?? '')
+        const resumoCurto = String(item.monitored_processes?.resumo_curto ?? '')
 
-        const baseBusca = `${conteudo} ${numeroProcesso} ${cliente} ${descricao}`.toLowerCase()
+        const baseBusca = `${conteudo} ${numeroProcesso} ${cliente} ${descricao} ${tribunal} ${assunto} ${classeProcessual} ${tipoAcao} ${faseAtual} ${poloAtivo} ${poloPassivo}`.toLowerCase()
         if (busca && !baseBusca.includes(busca)) return
 
         const dedupeKey = mov?.escavador_movimentacao_id
@@ -262,7 +402,16 @@ export default function PrazosPage() {
           tipoEvento,
           numeroProcesso,
           cliente,
-          tribunal
+          tribunal,
+          comarca,
+          vara,
+          assunto,
+          classeProcessual,
+          tipoAcao,
+          faseAtual,
+          poloAtivo,
+          poloPassivo,
+          resumoCurto
         })
       })
     }
@@ -272,7 +421,7 @@ export default function PrazosPage() {
       const tb = new Date(b.dataReferencia || 0).getTime()
       return tb - ta
     })
-  }, [items, searchTerm, movementDateFilter])
+  }, [items, monitoredContexts, movementRecords, searchTerm, movementDateFilter])
 
   async function updateStatus(id: string, newStatus: string) {
     const { error } = await supabase
@@ -306,8 +455,9 @@ export default function PrazosPage() {
     return 'border-[#CCA761]/40 bg-[#CCA761]/10 text-[#CCA761]'
   }
 
-  async function handleOpenDrawer(item: any) {
+  async function handleOpenDrawer(item: any, movimentacao: any | null = null) {
     setSelectedItemId(item.id)
+    setSelectedMovimentacao(movimentacao)
     setIsDrawerOpen(true)
     setLoadingTask(true)
     setTaskDetails(null)
@@ -509,7 +659,7 @@ export default function PrazosPage() {
             {movimentacoesFiltradas.map((mov) => (
               <div
                 key={mov.id}
-                onClick={() => handleOpenDrawer(mov.item)}
+                onClick={() => handleOpenDrawer(mov.item, mov)}
                 className="cursor-pointer"
               >
                 <GlassCard className="border-[#CCA761]/40 hover:border-[#CCA761]/80 hover:scale-[1.01] transform transition-all hover:shadow-[0_0_24px_rgba(204,167,97,0.16)] h-full">
@@ -530,7 +680,7 @@ export default function PrazosPage() {
                     <div className="text-[10px] uppercase tracking-[0.18em] text-white/30 font-semibold mb-2">
                       Última movimentação
                     </div>
-                    <p className="text-[13px] text-white/70 leading-relaxed line-clamp-4">
+                    <p className="text-[13px] text-white/70 leading-relaxed whitespace-pre-wrap break-words max-h-56 overflow-y-auto pr-1">
                       {mov.conteudo}
                     </p>
                   </div>
@@ -565,7 +715,34 @@ export default function PrazosPage() {
                         )}
                         {mov.tribunal && (
                           <div className="text-[10px] text-white/20 uppercase tracking-wider pl-6">
-                            {mov.tribunal}
+                            {mov.tribunal}{mov.comarca ? ` · ${mov.comarca}` : ''}{mov.vara ? ` · ${mov.vara}` : ''}
+                          </div>
+                        )}
+                        {mov.assunto && (
+                          <div className="text-[11px] text-white/45 pl-6 leading-tight">
+                            Assunto: {mov.assunto}
+                          </div>
+                        )}
+                        {(mov.classeProcessual || mov.tipoAcao) && (
+                          <div className="text-[10px] text-white/35 uppercase tracking-wider pl-6 leading-tight">
+                            {mov.classeProcessual || '—'}{mov.tipoAcao ? ` · ${mov.tipoAcao}` : ''}
+                          </div>
+                        )}
+                        {mov.faseAtual && (
+                          <div className="text-[10px] text-[#CCA761]/80 uppercase tracking-wider pl-6 leading-tight">
+                            Fase: {mov.faseAtual}
+                          </div>
+                        )}
+                        {(mov.poloAtivo || mov.poloPassivo) && (
+                          <div className="text-[10px] text-white/35 pl-6 leading-tight">
+                            {mov.poloAtivo ? `Ativo: ${mov.poloAtivo}` : ''}
+                            {mov.poloAtivo && mov.poloPassivo ? ' · ' : ''}
+                            {mov.poloPassivo ? `Passivo: ${mov.poloPassivo}` : ''}
+                          </div>
+                        )}
+                        {mov.resumoCurto && (
+                          <div className="text-[11px] text-white/25 italic pl-6 leading-relaxed line-clamp-2">
+                            &quot;{mov.resumoCurto}&quot;
                           </div>
                         )}
                       </div>
@@ -594,11 +771,11 @@ export default function PrazosPage() {
       ) : (
         <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
           {filteredItems.map(item => (
-            <div 
-              key={item.id} 
-              onClick={() => handleOpenDrawer(item)}
-              className="cursor-pointer"
-            >
+              <div 
+                key={item.id} 
+                onClick={() => handleOpenDrawer(item, null)}
+                className="cursor-pointer"
+              >
               <GlassCard className="border-[#CCA761]/50 hover:border-[#CCA761]/90 hover:scale-[1.02] transform transition-all hover:shadow-[0_0_24px_rgba(204,167,97,0.2)] h-full">
               <div className="flex justify-between items-start mb-4">
                 <div className="flex items-center gap-2">
@@ -862,6 +1039,23 @@ export default function PrazosPage() {
                         </div>
                       </div>
                     </div>
+
+                    {/* Movimentação Completa */}
+                    {(selectedMovimentacao?.conteudo || item.monitored_processes?.ultima_movimentacao_texto) && (
+                      <div className="p-6 rounded-2xl bg-white/[0.03] border border-white/5 space-y-3">
+                        <div className="flex items-center justify-between gap-3 flex-wrap">
+                          <label className="text-[10px] text-[#CCA761] font-black uppercase tracking-widest">Movimentação Completa</label>
+                          <span className="text-[11px] text-white/40">
+                            {formatarData(selectedMovimentacao?.dataISO || selectedMovimentacao?.dataReferencia || item.monitored_processes?.data_ultima_movimentacao || null)}
+                          </span>
+                        </div>
+                        <div className="max-h-64 overflow-y-auto pr-1">
+                          <p className="text-[13px] text-white/75 leading-relaxed whitespace-pre-wrap break-words">
+                            {selectedMovimentacao?.conteudo || item.monitored_processes?.ultima_movimentacao_texto}
+                          </p>
+                        </div>
+                      </div>
+                    )}
 
                     {/* Descrição do Prazo */}
                     <div className="p-6 rounded-2xl bg-white/[0.03] border border-white/5 space-y-3">

@@ -40,6 +40,7 @@ interface Processo {
   monitorado?: boolean
   link_estudo?: string
   resumo_curto?: string
+  resumo_solicitado_em?: string | null
   proxima_acao_sugerida?: string
   organizacao_ia_json?: any
   escavador_monitoramento_id?: number
@@ -254,12 +255,23 @@ function ProcessoCard({ p, onSelect, selecionado, onAction, onRemover, loadingId
             <div className="relative group/resumo cursor-pointer" onClick={() => onAbrirResumo(p.resumo_curto!)}>
               <div className="bg-white/5 border border-white/10 rounded-2xl p-4 transition-all group-hover/resumo:bg-white/10">
                  <p className="text-zinc-400 text-[11px] leading-relaxed italic line-clamp-3">
-                   {p.resumo_curto}
+                    {p.resumo_curto}
                  </p>
                  <div className="mt-2 flex items-center gap-1.5 text-[#CCA761] text-[9px] font-black uppercase tracking-widest">
                     <ChevronDown size={12} /> LER MAIS
                  </div>
               </div>
+            </div>
+          )}
+
+          {!p.resumo_curto && p.resumo_solicitado_em && (
+            <div className="bg-[#CCA761]/5 border border-[#CCA761]/20 rounded-2xl p-4">
+              <p className="text-[#CCA761]/90 text-[10px] font-black uppercase tracking-widest mb-1">
+                Resumo em processamento
+              </p>
+              <p className="text-zinc-500 text-[11px] leading-relaxed">
+                O monitoramento foi criado e o resumo da IA foi solicitado. Aguarde a sincronização do Escavador.
+              </p>
             </div>
           )}
 
@@ -452,23 +464,33 @@ function MonitoramentoContent() {
         setConfirmacao({ ...data, processosParaImportar: ativos })
         return
       }
+      const nowIso = new Date().toISOString()
       setResult(prev => prev ? {
         ...prev,
-        processos: prev.processos.map(p => ativos.some(a => a.numero_processo === p.numero_processo) ? { ...p, monitorado: true } : p),
-        billing: { ...prev.billing, total_ja_monitorados: prev.billing.total_ja_monitorados + ativos.length }
+        processos: prev.processos.map(p => ativos.some(a => a.numero_processo === p.numero_processo)
+          ? { ...p, monitorado: true, resumo_solicitado_em: nowIso }
+          : p),
+        billing: { ...prev.billing, total_ja_monitorados: prev.billing.total_ja_monitorados + Number(data.importados || 0) }
       } : prev)
       setSelecionados(new Set())
+      if (oabNumero.trim()) {
+        await carregarBaseOab(oabEstado, oabNumero)
+      }
+
+      const falhasMonitoramento = Array.isArray(data.falhas_monitoramento) ? data.falhas_monitoramento.length : 0
+      const resumosSolicitados = Number(data.resumos_solicitados || 0)
       setFeedback(
-        qtdArquivados > 0
-          ? `⚠️ ${qtdArquivados} arquivados ignorados. ✅ ${ativos.length} processos agora sob vigilância.`
-          : `✅ ${ativos.length} processos agora sob vigilância estratégica`
+        `${qtdArquivados > 0 ? `⚠️ ${qtdArquivados} arquivados ignorados. ` : ''}` +
+        `✅ ${Number(data.importados || 0)} monitorados. ` +
+        `🧠 ${resumosSolicitados} resumo(s) solicitado(s).` +
+        `${falhasMonitoramento > 0 ? ` ❌ ${falhasMonitoramento} falha(s) de monitoramento.` : ''}`
       )
     } catch (e) {
       setError('Erro ao monitorar processos')
     } finally {
       setImportandoLote(false)
     }
-  }, [])
+  }, [carregarBaseOab, oabEstado, oabNumero])
 
   const desmonitorar = useCallback(async (p: Processo) => {
     setLoadingId(p.numero_processo)

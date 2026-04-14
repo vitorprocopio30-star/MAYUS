@@ -65,7 +65,7 @@ export async function POST(req: NextRequest) {
   const { data: jaMonitorados } = numeros.length > 0
     ? await adminSupabase
         .from('monitored_processes')
-        .select('id, numero_processo, escavador_id, resumo_curto, urgencia_nivel, proxima_acao_sugerida')
+        .select('id, numero_processo, escavador_id, escavador_monitoramento_id, resumo_curto, resumo_solicitado_em, urgencia_nivel, proxima_acao_sugerida')
         .eq('tenant_id', tenantId)
         .in('numero_processo', numeros)
     : { data: [] as any[] }
@@ -78,7 +78,9 @@ export async function POST(req: NextRequest) {
       monitorado: !!db,
       id: db?.id ?? undefined,
       escavador_id: db?.escavador_id || p.escavador_id,
+      escavador_monitoramento_id: db?.escavador_monitoramento_id ?? undefined,
       resumo_curto: db?.resumo_curto ?? p.resumo_curto ?? undefined,
+      resumo_solicitado_em: db?.resumo_solicitado_em ?? undefined,
       urgencia_nivel: db?.urgencia_nivel ?? p.urgencia_nivel ?? undefined,
       proxima_acao_sugerida: db?.proxima_acao_sugerida ?? p.proxima_acao_sugerida ?? undefined,
     }

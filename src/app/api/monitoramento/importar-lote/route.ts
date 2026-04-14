@@ -2,6 +2,7 @@ import { NextRequest, NextResponse } from 'next/server'
 import { createClient } from '@supabase/supabase-js'
 import { createServerClient } from '@supabase/ssr'
 import { cookies } from 'next/headers'
+import { criarMonitoramentoProcesso, solicitarResumoProcesso } from '@/lib/services/monitoramento-processos'
 
 interface MonitoramentoCapacity {
   total_monitorados: number
@@ -88,31 +89,37 @@ export async function POST(req: NextRequest) {
     .in('status', ['active', 'connected'])
     .single()
 
-  // Montar rows com TODOS os campos ricos e sincronizar com Escavador
-  const rows = await Promise.all(novos.map(async (p: Record<string, unknown>) => {
-    // Sincronizar com Escavador v2
+  const rows: Record<string, unknown>[] = []
+  const falhasMonitoramento: Array<{ numero_processo: string; motivo: string }> = []
+
+  for (const p of novos) {
+    const numeroProcesso = String(p.numero_processo ?? '')
+    if (!numeroProcesso) continue
+
+    let monitoramentoId: string | null = null
+
     if (integration?.api_key) {
-      try {
-        await fetch('https://api.escavador.com/api/v2/monitoramentos/processos', {
-          method: 'POST',
-          headers: {
-            'Authorization': `Bearer ${integration.api_key}`,
-            'Content-Type': 'application/json',
-            'X-Requested-With': 'XMLHttpRequest'
-          },
-          body: JSON.stringify({
-            numero: p.numero_processo,
-            frequencia: 'semanal',
-          })
+      const monitoramento = await criarMonitoramentoProcesso({
+        tenantId,
+        apiKey: integration.api_key,
+        numeroProcesso,
+        frequencia: 'semanal'
+      })
+
+      if (!monitoramento.ok || !monitoramento.monitoramentoId) {
+        falhasMonitoramento.push({
+          numero_processo: numeroProcesso,
+          motivo: monitoramento.error || 'Falha ao criar monitoramento no Escavador'
         })
-      } catch (err) {
-        console.error(`[sinc-escavador] Erro no processo ${p.numero_processo}:`, err)
+        continue
       }
+
+      monitoramentoId = monitoramento.monitoramentoId
     }
 
-    return {
+    rows.push({
       tenant_id: tenantId,
-      numero_processo: p.numero_processo,
+      numero_processo: numeroProcesso,
       tribunal: p.tribunal,
       comarca: p.comarca ?? null,
       vara: p.vara ?? null,
@@ -134,12 +141,22 @@ export async function POST(req: NextRequest) {
       ultima_movimentacao_texto: p.ultima_movimentacao_texto ?? null,
       data_ultima_movimentacao: p.data_ultima_movimentacao ?? null,
       escavador_id: p.escavador_id ?? null,
+      escavador_monitoramento_id: monitoramentoId,
       raw_escavador: p.raw_escavador ?? null,
       ultima_atualizacao_escavador: new Date().toISOString(),
-      monitoramento_ativo: true,
+      monitoramento_ativo: !!monitoramentoId,
       ativo: true,
-    }
-  }))
+    })
+  }
+
+  if (rows.length === 0) {
+    return NextResponse.json({
+      importados: 0,
+      ignorados: existentesSet.size,
+      falhas_monitoramento: falhasMonitoramento,
+      mensagem: 'Nenhum processo foi monitorado com sucesso.'
+    })
+  }
 
   const { error } = await adminSupabase
     .from('monitored_processes')
@@ -150,12 +167,22 @@ export async function POST(req: NextRequest) {
     return NextResponse.json({ error: error.message }, { status: 500 })
   }
 
-  const importados = novos.length
+  const importados = rows.length
   await adminSupabase.rpc('increment_processos_monitorados', { p_tenant_id: tenantId, p_quantidade: importados })
+
+  let resumosSolicitados = 0
+  if (integration?.api_key) {
+    const resultadosResumo = await Promise.allSettled(
+      rows.map((r) => solicitarResumoProcesso(tenantId, integration.api_key, String(r.numero_processo)))
+    )
+    resumosSolicitados = resultadosResumo.filter((r) => r.status === 'fulfilled' && r.value).length
+  }
 
   return NextResponse.json({
     importados,
     ignorados: existentesSet.size,
+    falhas_monitoramento: falhasMonitoramento,
+    resumos_solicitados: resumosSolicitados,
     excedente_cobrado: excedente,
     custo_gerado: custoMensal,
     mensagem: excedente > 0
