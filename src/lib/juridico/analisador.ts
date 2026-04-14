@@ -459,34 +459,84 @@ export async function analisarMovimentacao(params: {
       return
   }
 
-  // Conta cards no stage para position_index
-  const { count } = await adminSupabase
-    .from('process_tasks')
-    .select('*', { count: 'exact', head: true })
-    .eq('stage_id', '5ecb8f05-042d-40e7-a093-e1f3ce8478da')
-  const position_index = count ?? 0
-
-  // Cria card no Kanban (process_tasks)
-  const { data: task } = await adminSupabase.from('process_tasks').insert({
-    pipeline_id: '7b4d39bb-785c-402a-826d-0088867d934c',
-    stage_id: '5ecb8f05-042d-40e7-a093-e1f3ce8478da',
-    title: `${descricaoPrazo}`,
-    description: `Processo: ${params.numero_cnj}\nCliente: ${processo?.cliente_nome ?? 'N/D'}\n\n${params.movimentacao.conteudo}`,
-    assigned_to: params.advogado_id ?? null,
-    prazo_fatal: vencimento.toISOString(),
-    processo_1grau: params.numero_cnj,
+  // Upsert do card do processo — um card por processo, movimentacoes acumuladas
+  const movimentacaoEntry = {
+    data: params.movimentacao.data ?? new Date().toISOString().slice(0, 10),
+    conteudo: params.movimentacao.conteudo ?? '',
+    tipo_evento: tipoEvento,
     escavador_movimentacao_id: escavadorMovimentacaoId,
-    position_index,
-    tags: [prazo.tipo_tarefa],
-    created_at: new Date().toISOString()
-  }).select('id').single()
+    criado_em: new Date().toISOString()
+  }
+
+  const { data: cardsExistentes } = await adminSupabase
+    .from('process_tasks')
+    .select('id, movimentacoes_timeline')
+    .eq('processo_1grau', params.numero_cnj)
+    .eq('pipeline_id', '7b4d39bb-785c-402a-826d-0088867d934c')
+    .order('updated_at', { ascending: false })
+    .limit(1)
+
+  const cardExistente = cardsExistentes?.[0] ?? null
+  let taskId: string | null = null
+
+  if (cardExistente) {
+    const timelineAtual = Array.isArray(cardExistente.movimentacoes_timeline)
+      ? cardExistente.movimentacoes_timeline
+      : []
+    const timelineAtualizada = [...timelineAtual, movimentacaoEntry]
+
+    await adminSupabase
+      .from('process_tasks')
+      .update({
+        movimentacoes_timeline: timelineAtualizada,
+        andamento_1grau: descricaoPrazo,
+        prazo_fatal: vencimento.toISOString(),
+        escavador_movimentacao_id: escavadorMovimentacaoId,
+        updated_at: new Date().toISOString()
+      })
+      .eq('id', cardExistente.id)
+
+    taskId = cardExistente.id
+  } else {
+    const { count } = await adminSupabase
+      .from('process_tasks')
+      .select('*', { count: 'exact', head: true })
+      .eq('stage_id', '5ecb8f05-042d-40e7-a093-e1f3ce8478da')
+    const position_index = count ?? 0
+
+    const { data: novoCard } = await adminSupabase.from('process_tasks').insert({
+      pipeline_id: '7b4d39bb-785c-402a-826d-0088867d934c',
+      stage_id: '5ecb8f05-042d-40e7-a093-e1f3ce8478da',
+      title: processo?.cliente_nome ?? params.numero_cnj,
+      client_name: processo?.cliente_nome ?? '',
+      processo_1grau: params.numero_cnj,
+      andamento_1grau: descricaoPrazo,
+      prazo_fatal: vencimento.toISOString(),
+      movimentacoes_timeline: [movimentacaoEntry],
+      assigned_to: params.advogado_id ?? null,
+      escavador_movimentacao_id: escavadorMovimentacaoId,
+      tags: [tipoEvento],
+      position_index,
+      created_at: new Date().toISOString(),
+      updated_at: new Date().toISOString()
+    }).select('id').single()
+
+    taskId = novoCard?.id ?? null
+
+    if (taskId) {
+      await adminSupabase
+        .from('monitored_processes')
+        .update({ linked_task_id: taskId })
+        .eq('id', params.processo_id)
+    }
+  }
 
   // Registra em process_prazos
   await adminSupabase.from('process_prazos').upsert(
     {
       tenant_id: params.tenant_id,
       monitored_process_id: params.processo_id,
-      process_task_id: task?.id ?? null,
+      process_task_id: taskId,
       tipo: tipoEvento === 'AUDIENCIA' ? 'audiencia' : 'prazo',
       descricao: descricaoPrazo,
       data_vencimento: vencimento.toISOString(),
