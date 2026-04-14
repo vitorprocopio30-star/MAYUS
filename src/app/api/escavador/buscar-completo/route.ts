@@ -55,6 +55,8 @@ function mapearProcesso(p: Record<string, unknown>) {
       return 'ATIVO'
     })() as string,
     fase_atual: (fonte.status_predito ?? p.fase ?? capa.fase ?? 'CONHECIMENTO') as string,
+    fontes_tribunais_estao_arquivadas: p.fontes_tribunais_estao_arquivadas === true,
+    status_predito: String(fonte.status_predito ?? p.status ?? 'ATIVO'),
 
     // Partes (polo simples para colunas)
     polo_ativo: (p.titulo_polo_ativo ?? capa.polo_ativo ?? '—') as string,

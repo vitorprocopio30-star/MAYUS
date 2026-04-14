@@ -2,7 +2,6 @@
 'use client'
 
 import { useState, useEffect, useCallback, useMemo, Suspense } from 'react'
-import { createClient } from '@/lib/supabase/client'
 import { 
   Search, 
   RefreshCw, 
@@ -45,6 +44,8 @@ interface Processo {
   organizacao_ia_json?: any
   escavador_monitoramento_id?: number
   partes?: any
+  fontes_tribunais_estao_arquivadas?: boolean
+  status_predito?: string
 }
 
 interface Billing {
@@ -71,25 +72,6 @@ interface ConfirmacaoLote {
   processosParaImportar: Processo[]
 }
 
-interface ProcessoMonitorado {
-  id: string
-  numero_processo: string
-  tribunal: string | null
-  status: string | null
-  partes: { polo_ativo?: string; polo_passivo?: string } | null
-  cliente_nome: string | null
-  resumo_curto: string | null
-  proxima_acao_sugerida: string | null
-  escavador_monitoramento_id: string | null
-  data_ultima_movimentacao: string | null
-  ultima_movimentacao_texto: string | null
-  linked_task_id: string | null
-  ativo: boolean | null
-  classe_processual: string | null
-  vara: string | null
-  comarca: string | null
-}
-
 type FilterStatus = 'TODOS' | 'ATIVO' | 'ARQUIVADO' | 'monitorado' | 'nao_monitorado'
 type SortOrder = 'distribuicao' | 'urgencia' | 'tribunal'
 
@@ -98,8 +80,6 @@ const STATUS_COLOR: Record<string, string> = {
   'ARQUIVADO': 'text-zinc-500 bg-zinc-500/10 border-zinc-500/20',
   'SUSPENSO': 'text-yellow-500 bg-yellow-500/10 border-yellow-500/20'
 }
-
-const supabase = createClient()
 
 // ─── Funções Auxiliares ───
 
@@ -240,6 +220,11 @@ function ProcessoCard({ p, onSelect, selecionado, onAction, onRemover, loadingId
                <div className="flex items-center gap-2">
                  <span className="px-2.5 py-1 rounded-full bg-[#CCA761]/10 border-[#CCA761]/20 text-[#CCA761]/90 text-[8px] font-black uppercase tracking-widest shadow-[0_0_5px_rgba(204,167,97,0.05)]">{p.tribunal}</span>
                  <StatusBadge status={p.status} />
+                 {processoArquivado(p) && (
+                   <span className="px-2 py-0.5 rounded text-[8px] font-black uppercase bg-zinc-800 text-zinc-500 border border-zinc-700">
+                     ARQUIVADO
+                   </span>
+                 )}
                  <span className="px-2.5 py-1 rounded-full bg-green-500/5 border border-green-500/20 text-green-500/60 text-[8px] font-black uppercase tracking-widest flex items-center gap-1.5">
                    <RefreshCw size={10} /> SINCRONIZADO
                  </span>
@@ -327,6 +312,14 @@ function ProcessoCard({ p, onSelect, selecionado, onAction, onRemover, loadingId
   )
 }
 
+function processoArquivado(p: Processo): boolean {
+  return (
+    p.fontes_tribunais_estao_arquivadas === true ||
+    p.status_predito === 'INATIVO' ||
+    p.status === 'ARQUIVADO'
+  )
+}
+
 // ─── Componente Principal ───
 
 function MonitoramentoContent() {
@@ -341,8 +334,6 @@ function MonitoramentoContent() {
 
   const [tab, setTab] = useState<'oab' | 'numero' | 'cpf'>('oab')
   const [importarAberto, setImportarAberto] = useState(false)
-  const [processosMonitorados, setProcessosMonitorados] = useState<ProcessoMonitorado[]>([])
-  const [loadingMonitorados, setLoadingMonitorados] = useState(true)
   const [oabEstado, setOabEstado] = useState('RJ')
   const [oabNumero, setOabNumero] = useState('')
   const [loading, setLoading] = useState(false)
@@ -371,47 +362,6 @@ function MonitoramentoContent() {
 
   const PAGE_SIZE = 20
 
-  const carregarMonitorados = useCallback(async () => {
-    setLoadingMonitorados(true)
-    try {
-      const { data: { user } } = await supabase.auth.getUser()
-      if (!user) {
-        setProcessosMonitorados([])
-        return
-      }
-
-      const { data: profile } = await supabase
-        .from('profiles')
-        .select('tenant_id')
-        .eq('id', user.id)
-        .single()
-
-      if (!profile?.tenant_id) {
-        setProcessosMonitorados([])
-        return
-      }
-
-      const { data } = await supabase
-        .from('monitored_processes')
-        .select(`
-          id, numero_processo, tribunal, status, partes, cliente_nome,
-          resumo_curto, proxima_acao_sugerida, escavador_monitoramento_id,
-          data_ultima_movimentacao, ultima_movimentacao_texto, linked_task_id,
-          ativo, classe_processual, vara, comarca
-        `)
-        .eq('tenant_id', profile.tenant_id)
-        .eq('ativo', true)
-        .order('data_ultima_movimentacao', { ascending: false })
-
-      setProcessosMonitorados((data as ProcessoMonitorado[]) || [])
-    } catch (e) {
-      console.error('[Monitoramento] Erro ao carregar monitorados:', e)
-      setProcessosMonitorados([])
-    } finally {
-      setLoadingMonitorados(false)
-    }
-  }, [])
-
   const setPage = (p: number) => {
     setPagina(p)
     window.scrollTo({ top: 300, behavior: 'smooth' })
@@ -433,8 +383,7 @@ function MonitoramentoContent() {
       } catch {}
     }
 
-    carregarMonitorados()
-  }, [carregarMonitorados])
+  }, [])
 
   const buscar = useCallback(async () => {
     if (!oabNumero.trim()) return
@@ -518,33 +467,43 @@ function MonitoramentoContent() {
   }, [result])
 
   const monitorarLote = useCallback(async (processos: Processo[]) => {
-    if (processos.length === 0) return
+    const ativos = processos.filter((p) => !processoArquivado(p))
+    const qtdArquivados = processos.length - ativos.length
+
+    if (ativos.length === 0) {
+      setFeedback('Todos os processos selecionados estão arquivados — nenhum foi monitorado.')
+      return
+    }
+
     setImportandoLote(true)
     try {
       const res = await fetch('/api/monitoramento/importar-lote', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ processos, confirmar_custo: false })
+        body: JSON.stringify({ processos: ativos, confirmar_custo: false })
       })
       const data = await res.json()
       if (data.requer_confirmacao) {
-        setConfirmacao({ ...data, processosParaImportar: processos })
+        setConfirmacao({ ...data, processosParaImportar: ativos })
         return
       }
       setResult(prev => prev ? {
         ...prev,
-        processos: prev.processos.map(p => processos.some(a => a.numero_processo === p.numero_processo) ? { ...p, monitorado: true } : p),
-        billing: { ...prev.billing, total_ja_monitorados: prev.billing.total_ja_monitorados + processos.length }
+        processos: prev.processos.map(p => ativos.some(a => a.numero_processo === p.numero_processo) ? { ...p, monitorado: true } : p),
+        billing: { ...prev.billing, total_ja_monitorados: prev.billing.total_ja_monitorados + ativos.length }
       } : prev)
-      await carregarMonitorados()
       setSelecionados(new Set())
-      setFeedback(`✅ ${processos.length} processos agora sob vigilância estratégica`)
+      setFeedback(
+        qtdArquivados > 0
+          ? `⚠️ ${qtdArquivados} arquivados ignorados. ✅ ${ativos.length} processos agora sob vigilância.`
+          : `✅ ${ativos.length} processos agora sob vigilância estratégica`
+      )
     } catch (e) {
       setError('Erro ao monitorar processos')
     } finally {
       setImportandoLote(false)
     }
-  }, [carregarMonitorados])
+  }, [])
 
   const desmonitorar = useCallback(async (p: Processo) => {
     setLoadingId(p.numero_processo)
@@ -560,14 +519,13 @@ function MonitoramentoContent() {
         total_retornado: Math.max(0, (prev.total_retornado || 1) - 1),
         billing: { ...prev.billing, total_ja_monitorados: Math.max(0, prev.billing.total_ja_monitorados - 1) }
       } : prev)
-      await carregarMonitorados()
       setFeedback('✅ Vigilância desativada e processo ocultado')
     } catch (e) {
       setError('Erro ao remover monitoramento')
     } finally {
       setLoadingId(null)
     }
-  }, [carregarMonitorados])
+  }, [])
 
   const handleOrganizar = useCallback(async (processoId: string) => {
     setOrganizando(prev => ({ ...prev, [processoId]: 'loading' }))
@@ -659,7 +617,7 @@ function MonitoramentoContent() {
     return processosFiltrados.slice(offset, offset + PAGE_SIZE)
   }, [processosFiltrados, pagina])
 
-  const totalAtivos = result?.processos.filter(p => p.status === 'ATIVO' && !p.monitorado).length ?? 0
+  const totalAtivos = result?.processos.filter(p => !p.monitorado && !processoArquivado(p)).length ?? 0
 
   const handleFiltroStatusChange = (f: FilterStatus) => { setFiltroStatus(f); setPagina(1); }
   const handleSearchChange = (v: string) => { setSearch(v); setPagina(1); }
@@ -691,98 +649,6 @@ function MonitoramentoContent() {
                 </div>
              </div>
            )}
-        </div>
-
-        <div className="bg-zinc-900/40 border border-zinc-800 rounded-2xl p-5 space-y-4">
-          <div className="flex items-center justify-between gap-3">
-            <h2 className="text-white text-sm font-black uppercase tracking-widest">Processos Monitorados</h2>
-            <span className="text-zinc-500 text-[10px] font-black uppercase tracking-widest">
-              {loadingMonitorados ? 'Carregando...' : `${processosMonitorados.length} ativos`}
-            </span>
-          </div>
-
-          {loadingMonitorados ? (
-            <div className="grid grid-cols-1 gap-3">
-              {[1, 2, 3].map((skeleton) => (
-                <div key={skeleton} className="h-24 rounded-2xl bg-zinc-900/70 border border-zinc-800 animate-pulse" />
-              ))}
-            </div>
-          ) : processosMonitorados.length === 0 ? (
-            <div className="py-10 text-center bg-zinc-950/60 border border-zinc-800 rounded-2xl">
-              <p className="text-zinc-500 text-[10px] font-black uppercase tracking-[0.2em]">Nenhum processo monitorado ativo</p>
-            </div>
-          ) : (
-            <div className="grid grid-cols-1 gap-3">
-              {processosMonitorados.map((proc) => {
-                const partes = proc.partes || {}
-                return (
-                  <div key={proc.id} className="rounded-2xl border border-zinc-800 bg-zinc-950/60 p-4 space-y-3">
-                    <div className="flex items-center justify-between gap-3 flex-wrap">
-                      <div className="flex items-center gap-2 flex-wrap">
-                        <span className="text-[#CCA761] font-black text-xs tracking-wide">{proc.numero_processo}</span>
-                        <span className="text-[9px] uppercase font-black text-zinc-500 bg-zinc-900 border border-zinc-800 rounded-full px-2 py-1">
-                          {proc.tribunal || 'Tribunal N/D'}
-                        </span>
-                        <StatusBadge status={proc.status || 'ATIVO'} />
-                        {proc.escavador_monitoramento_id && (
-                          <span className="text-[9px] uppercase font-black text-green-400 bg-green-500/10 border border-green-500/20 rounded-full px-2 py-1">
-                            Monitorado
-                          </span>
-                        )}
-                      </div>
-                      <span className="text-zinc-500 text-[10px] font-black uppercase tracking-wider">
-                        {formatarData(proc.data_ultima_movimentacao)}
-                      </span>
-                    </div>
-
-                    <div className="grid grid-cols-1 md:grid-cols-2 gap-3 text-[11px]">
-                      <div>
-                        <p className="text-zinc-600 uppercase text-[9px] font-black tracking-widest mb-1">Polo ativo</p>
-                        <p className="text-zinc-200 font-semibold">{partes.polo_ativo || '—'}</p>
-                      </div>
-                      <div>
-                        <p className="text-zinc-600 uppercase text-[9px] font-black tracking-widest mb-1">Polo passivo</p>
-                        <p className="text-zinc-200 font-semibold">{partes.polo_passivo || '—'}</p>
-                      </div>
-                    </div>
-                  </div>
-                )
-              })}
-            </div>
-          )}
-        </div>
-
-        <div className="bg-zinc-900/30 border border-zinc-800 rounded-2xl p-3">
-          <button
-            onClick={() => setImportarAberto((prev) => !prev)}
-            className="w-full flex items-center justify-between px-3 py-3 rounded-xl bg-zinc-950 border border-zinc-800 hover:border-zinc-700 transition-all"
-          >
-            <span className="text-zinc-200 text-[11px] font-black uppercase tracking-[0.2em]">+ Importar Processos por OAB</span>
-            {importarAberto ? <ChevronUp size={14} className="text-zinc-400" /> : <ChevronDown size={14} className="text-zinc-400" />}
-          </button>
-        </div>
-
-        {importarAberto && (
-        <div className="space-y-6">
-        <div className="bg-zinc-900 border border-zinc-800 rounded-2xl p-2 flex flex-col md:flex-row gap-2 shadow-2xl">
-           <div className="flex bg-zinc-950 rounded-xl p-1 border border-zinc-800 shrink-0">
-             {([['oab', 'OAB'], ['numero', 'Nº CNJ'], ['cpf', 'DOCS']] as const).map(([k, l]) => (
-               <button key={k} onClick={() => setTab(k)} className={`px-5 py-2 rounded-lg text-xs font-black transition-all ${tab === k ? 'bg-yellow-500 text-black shadow-lg shadow-yellow-500/20' : 'text-zinc-600 hover:text-zinc-300'}`}>{l}</button>
-             ))}
-           </div>
-           {tab === 'oab' && (
-             <select value={oabEstado} onChange={e => setOabEstado(e.target.value)} className="bg-zinc-950 border border-zinc-800 rounded-xl px-4 text-xs font-bold text-zinc-400 focus:border-yellow-500/50 outline-none hover:bg-zinc-900 transition-colors">
-               {['AC','AL','AP','AM','BA','CE','DF','ES','GO','MA','MT','MS','MG','PA','PB','PR','PE','PI','RJ','RN','RS','RO','RR','SC','SP','SE','TO'].map(e => <option key={e} value={e}>{e}</option>)}
-             </select>
-           )}
-           <div className="flex-1 relative">
-             <Search size={14} className="absolute left-4 top-1/2 -translate-y-1/2 text-zinc-700" />
-             <input value={oabNumero} onChange={e => setOabNumero(e.target.value)} onKeyDown={e => e.key === 'Enter' && buscar()} placeholder="Digite os dados para busca..." className="w-full h-full bg-zinc-950 border border-zinc-900 rounded-xl pl-11 pr-4 text-xs text-white placeholder-zinc-800 outline-none focus:border-yellow-500/50 font-medium" />
-           </div>
-           <button onClick={buscar} disabled={loading} className="px-8 h-12 bg-yellow-500 hover:bg-yellow-400 text-black text-xs font-black rounded-xl transition-all disabled:opacity-50 flex items-center justify-center gap-2.5 shadow-xl shadow-yellow-500/20 active:scale-95 border-b-4 border-yellow-600 shrink-0 uppercase tracking-widest">
-             {loading ? <RefreshCw size={14} className="animate-spin" /> : <Zap size={14} fill="currentColor" />}
-             {loading ? 'BUSCANDO...' : 'INICIAR VARREDURA'}
-           </button>
         </div>
 
         {error && <div className="p-4 bg-red-500/5 border border-red-500/20 rounded-2xl flex items-center gap-3 text-red-500 text-xs font-bold animate-shake uppercase tracking-widest"><AlertCircle size={18} /> {error}</div>}
@@ -910,8 +776,6 @@ function MonitoramentoContent() {
             <BillingBar billing={result.billing} />
           </div>
         )}
-        </div>
-        )}
 
         {!result && !loading && (
           <div className="text-center py-32 space-y-8 animate-in fade-in zoom-in-95 duration-700">
@@ -932,6 +796,43 @@ function MonitoramentoContent() {
             <p className="text-white font-black text-xs uppercase tracking-[0.4em] animate-pulse">Sincronizando Canais Oficiais</p>
           </div>
         )}
+
+        <div className="mt-4 bg-zinc-900/30 border border-zinc-800 rounded-2xl p-3">
+          <button
+            onClick={() => setImportarAberto((prev) => !prev)}
+            className="w-full flex items-center justify-between px-3 py-3 rounded-xl bg-zinc-950 border border-zinc-800 hover:border-zinc-700 transition-all"
+          >
+            <span className="text-zinc-200 text-[11px] font-black uppercase tracking-[0.2em]">
+              + Importar Processos por OAB
+            </span>
+            {importarAberto ? <ChevronUp size={14} className="text-zinc-400" /> : <ChevronDown size={14} className="text-zinc-400" />}
+          </button>
+
+          {importarAberto && (
+            <div className="mt-4 space-y-4">
+              <div className="bg-zinc-900 border border-zinc-800 rounded-2xl p-2 flex flex-col md:flex-row gap-2 shadow-2xl">
+                <div className="flex bg-zinc-950 rounded-xl p-1 border border-zinc-800 shrink-0">
+                  {([['oab', 'OAB'], ['numero', 'Nº CNJ'], ['cpf', 'DOCS']] as const).map(([k, l]) => (
+                    <button key={k} onClick={() => setTab(k)} className={`px-5 py-2 rounded-lg text-xs font-black transition-all ${tab === k ? 'bg-yellow-500 text-black shadow-lg shadow-yellow-500/20' : 'text-zinc-600 hover:text-zinc-300'}`}>{l}</button>
+                  ))}
+                </div>
+                {tab === 'oab' && (
+                  <select value={oabEstado} onChange={e => setOabEstado(e.target.value)} className="bg-zinc-950 border border-zinc-800 rounded-xl px-4 text-xs font-bold text-zinc-400 focus:border-yellow-500/50 outline-none hover:bg-zinc-900 transition-colors">
+                    {['AC','AL','AP','AM','BA','CE','DF','ES','GO','MA','MT','MS','MG','PA','PB','PR','PE','PI','RJ','RN','RS','RO','RR','SC','SP','SE','TO'].map(e => <option key={e} value={e}>{e}</option>)}
+                  </select>
+                )}
+                <div className="flex-1 relative">
+                  <Search size={14} className="absolute left-4 top-1/2 -translate-y-1/2 text-zinc-700" />
+                  <input value={oabNumero} onChange={e => setOabNumero(e.target.value)} onKeyDown={e => e.key === 'Enter' && buscar()} placeholder="Digite os dados para busca..." className="w-full h-full bg-zinc-950 border border-zinc-900 rounded-xl pl-11 pr-4 text-xs text-white placeholder-zinc-800 outline-none focus:border-yellow-500/50 font-medium" />
+                </div>
+                <button onClick={buscar} disabled={loading} className="px-8 h-12 bg-yellow-500 hover:bg-yellow-400 text-black text-xs font-black rounded-xl transition-all disabled:opacity-50 flex items-center justify-center gap-2.5 shadow-xl shadow-yellow-500/20 active:scale-95 border-b-4 border-yellow-600 shrink-0 uppercase tracking-widest">
+                  {loading ? <RefreshCw size={14} className="animate-spin" /> : <Zap size={14} fill="currentColor" />}
+                  {loading ? 'BUSCANDO...' : 'INICIAR VARREDURA'}
+                </button>
+              </div>
+            </div>
+          )}
+        </div>
       </div>
 
       {resumoModal && (
