@@ -136,6 +136,13 @@ export async function analisarMovimentacao(params: {
 
   const dataBase = params.movimentacao.data ? new Date(params.movimentacao.data) : new Date()
   const vencimento = calcularDiasUteis(dataBase, prazo.dias_uteis)
+  const descricaoPrazo = String(prazo.descricao ?? '').trim()
+
+  // Nao gerar prazo para despachos genericos
+  if (descricaoPrazo.toLowerCase().includes('despacho')) {
+    console.log(`[ANALISADOR] Despacho generico ignorado para ${params.numero_cnj}.`)
+    return
+  }
 
   // Deduplicacao idempotente por movimentacao do Escavador
   if (escavadorMovimentacaoId) {
@@ -165,16 +172,16 @@ export async function analisarMovimentacao(params: {
     .select('id')
     .eq('monitored_process_id', params.processo_id)
     .eq('tipo', tipoEvento === 'AUDIENCIA' ? 'audiencia' : 'prazo')
-    .eq('descricao', prazo.descricao)
+    .eq('descricao', descricaoPrazo)
     .gte('data_vencimento', inicioDiaVencimento.toISOString())
     .lte('data_vencimento', fimDiaVencimento.toISOString())
     .limit(1)
 
   if (prazosSemelhantes && prazosSemelhantes.length > 0) {
-    console.log(
-      `[ANALISADOR] Prazo semelhante ja existente para ${params.numero_cnj} (${prazo.descricao}). Ignorando duplicata.`
-    )
-    return
+      console.log(
+      `[ANALISADOR] Prazo semelhante ja existente para ${params.numero_cnj} (${descricaoPrazo}). Ignorando duplicata.`
+      )
+      return
   }
 
   // Conta cards no stage para position_index
@@ -188,7 +195,7 @@ export async function analisarMovimentacao(params: {
   const { data: task } = await adminSupabase.from('process_tasks').insert({
     pipeline_id: '7b4d39bb-785c-402a-826d-0088867d934c',
     stage_id: '5ecb8f05-042d-40e7-a093-e1f3ce8478da',
-    title: `${prazo.descricao}`,
+    title: `${descricaoPrazo}`,
     description: `Processo: ${params.numero_cnj}\nCliente: ${processo?.cliente_nome ?? 'N/D'}\n\n${params.movimentacao.conteudo}`,
     assigned_to: params.advogado_id ?? null,
     prazo_fatal: vencimento.toISOString(),
@@ -200,20 +207,26 @@ export async function analisarMovimentacao(params: {
   }).select('id').single()
 
   // Registra em process_prazos
-  await adminSupabase.from('process_prazos').insert({
-    tenant_id: params.tenant_id,
-    monitored_process_id: params.processo_id,
-    process_task_id: task?.id ?? null,
-    tipo: tipoEvento === 'AUDIENCIA' ? 'audiencia' : 'prazo',
-    descricao: prazo.descricao,
-    data_vencimento: vencimento.toISOString(),
-    status: 'pendente',
-    responsavel_id: params.advogado_id ?? null,
-    escavador_movimentacao_id: escavadorMovimentacaoId,
-    prioridade: prazo.prioridade.toLowerCase() as any,
-    criado_por_ia: true,
-    created_at: new Date().toISOString()
-  })
+  await adminSupabase.from('process_prazos').upsert(
+    {
+      tenant_id: params.tenant_id,
+      monitored_process_id: params.processo_id,
+      process_task_id: task?.id ?? null,
+      tipo: tipoEvento === 'AUDIENCIA' ? 'audiencia' : 'prazo',
+      descricao: descricaoPrazo,
+      data_vencimento: vencimento.toISOString(),
+      status: 'pendente',
+      responsavel_id: params.advogado_id ?? null,
+      escavador_movimentacao_id: escavadorMovimentacaoId,
+      prioridade: prazo.prioridade.toLowerCase() as any,
+      criado_por_ia: true,
+      created_at: new Date().toISOString()
+    },
+    {
+      onConflict: 'monitored_process_id,tipo,descricao,data_vencimento',
+      ignoreDuplicates: true
+    }
+  )
 
   console.log(`[ANALISADOR] ✅ ${prazo.tipo_tarefa} criado para ${params.numero_cnj} — vence ${vencimento.toDateString()}`)
 }

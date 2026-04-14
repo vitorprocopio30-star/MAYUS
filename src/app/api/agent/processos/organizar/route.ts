@@ -230,7 +230,13 @@ Retorne exatamente este JSON:
       })
       .filter(Boolean)
     if (prazosInsert.length > 0) {
-      await supabase.from('process_prazos').insert(prazosInsert)
+      await supabase.from('process_prazos').upsert(
+        prazosInsert as any,
+        {
+          onConflict: 'monitored_process_id,tipo,descricao,data_vencimento',
+          ignoreDuplicates: true
+        }
+      )
     }
   }
 
