@@ -1,5 +1,16 @@
 const BASE_URL = "https://api.escavador.com/api/v2";
 
+type OABSearchGuard = {
+  allowPaidSearch?: boolean;
+  source?: string;
+};
+
+function assertOABPaidSearchAllowed(guard?: OABSearchGuard) {
+  if (!guard?.allowPaidSearch || guard?.source !== 'monitoramento_ui_sync_button') {
+    throw new Error('Busca OAB bloqueada: consentimento explícito ausente.');
+  }
+}
+
 async function fetchEscavador(endpoint: string, apiKey: string, options: RequestInit = {}) {
   const url = `${BASE_URL}${endpoint}`;
   
@@ -37,23 +48,41 @@ export const EscavadorService = {
   },
 
   // 3. Buscar por OAB
-  buscarPorOAB: async (apiKey: string, oabEstado: string, oabNumero: string, page = 1) => {
+  buscarPorOAB: async (
+    apiKey: string,
+    oabEstado: string,
+    oabNumero: string,
+    page = 1,
+    limit = 100,
+    guard?: OABSearchGuard
+  ) => {
+    assertOABPaidSearchAllowed(guard)
+
     const params = new URLSearchParams({
       oab_estado: oabEstado,
       oab_numero: oabNumero,
-      limit: '100',
+      limit: String(limit),
       page: String(page)
     })
     return await fetchEscavador(`/advogado/processos?${params.toString()}`, apiKey)
   },
 
   // 3.1 Buscar por OAB Federal (Justiça Federal)
-  buscarPorOABFederal: async (apiKey: string, oabEstado: string, oabNumero: string, page = 1) => {
+  buscarPorOABFederal: async (
+    apiKey: string,
+    oabEstado: string,
+    oabNumero: string,
+    page = 1,
+    limit = 100,
+    guard?: OABSearchGuard
+  ) => {
+    assertOABPaidSearchAllowed(guard)
+
     const params = new URLSearchParams({
       oab_estado: oabEstado,
       oab_numero: oabNumero,
       justica: 'FEDERAL',
-      limit: '100',
+      limit: String(limit),
       page: String(page)
     })
     return await fetchEscavador(`/advogado/processos?${params.toString()}`, apiKey)

@@ -324,68 +324,11 @@ export async function POST(req: Request) {
     }
     
     if (handlerType === "kanban_import_oab") {
-      try {
-        const tenantId = approverProfile.tenant_id as string;
-        const { data: escavadorIntegration } = await serviceClient
-          .from("tenant_integrations")
-          .select("api_key")
-          .eq("tenant_id", tenantId)
-          .eq("provider", "escavador")
-          .single();
-
-        if (!escavadorIntegration?.api_key) {
-          await serviceClient.from("agent_audit_logs").update({ status: "fallback_triggered", approved_by: approverId, approved_at: new Date().toISOString() }).eq("id", auditLogId);
-          return NextResponse.json({ error: "Integração Escavador não configurada.", status: "approved_not_executed", auditLogId }, { status: 500 });
-        }
-
-        // 1. Buscar todos os processos da OAB no Escavador
-        const processos = await EscavadorService.buscarPorOAB(
-          escavadorIntegration.api_key,
-          entities.oab_estado,
-          entities.oab_numero
-        );
-
-        // 2. Para cada processo, criar card no Kanban
-        let criados = 0;
-        let duplicatas = 0;
-
-        for (const p of processos?.items || []) {
-          const cnj = p.numero_cnj;
-
-          // Checar duplicata
-          const { data: exists } = await serviceClient
-            .from("process_tasks")
-            .select("id")
-            .eq("pipeline_id", "7b4d39bb-785c-402a-826d-0088867d934c")
-            .eq("processo_1grau", cnj)
-            .maybeSingle();
-
-          if (exists) { duplicatas++; continue; }
-
-          // Criar o card
-          await serviceClient.from("process_tasks").insert({
-            pipeline_id: "7b4d39bb-785c-402a-826d-0088867d934c",
-            stage_id: "5ecb8f05-042d-40e7-a093-e1f3ce8478da", // RECOLHER DOCUMENTOS
-            title: p.titulo_polo_ativo || p.numero_cnj,
-            client_name: p.titulo_polo_ativo || "Cliente não identificado",
-            processo_1grau: cnj,
-            andamento_1grau: p.data_ultima_movimentacao || null,
-            orgao_julgador: p.fontes?.[0]?.tribunal || null,
-            assigned_to: entities.advogado_id || null,
-            position_index: criados
-          });
-          criados++;
-        }
-
-        await serviceClient.from("agent_audit_logs").update({
-          payload_executed: { idempotencyKey, skill: skillName, handler_type: handlerType, criados, duplicatas, executed_at: new Date().toISOString() }
-        }).eq("id", auditLogId);
-
-        return NextResponse.json({ status: "executed", message: `Importação concluída. ${criados} processos criados no Kanban. ${duplicatas} já existiam.`, auditLogId, approvedBy: approverId });
-      } catch (err: any) {
-        console.error("[Approve] Erro na execucao kanban_import:", err);
-        return NextResponse.json({ error: err.message || "Falha ao importar processos", status: "approved_not_executed", auditLogId }, { status: 500 });
-      }
+      return NextResponse.json({
+        error: "Importação por OAB via IA está temporariamente bloqueada por proteção de custos. Use o painel de monitoramento com confirmação explícita.",
+        status: "approved_not_executed",
+        auditLogId,
+      }, { status: 403 });
     }
 
     // handler_type null ou desconhecido — skill aprovada, sem executor server-side

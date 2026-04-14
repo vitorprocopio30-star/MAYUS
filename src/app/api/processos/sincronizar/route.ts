@@ -70,10 +70,10 @@ export async function POST(req: NextRequest) {
   for (let page = pagina_inicio; page <= pageFim; page++) {
     const [resE, resF] = await Promise.all([
       (EscavadorService as any)
-        .buscarPorOAB(apiKey, estado, numero, page, 100)
+        .buscarPorOAB(apiKey, estado, numero, page, 100, { allowPaidSearch: true, source: 'monitoramento_ui_sync_button' })
         .catch(() => null),
       (EscavadorService as any)
-        .buscarPorOABFederal(apiKey, estado, numero, page, 100)
+        .buscarPorOABFederal(apiKey, estado, numero, page, 100, { allowPaidSearch: true, source: 'monitoramento_ui_sync_button' })
         .catch(() => null)
     ])
 

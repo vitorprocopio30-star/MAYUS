@@ -1,7 +1,21 @@
-import { NextResponse } from 'next/server'
+import { NextRequest, NextResponse } from 'next/server'
 import { createClient } from '@supabase/supabase-js'
 
-export async function GET() {
+export async function GET(req: NextRequest) {
+  if (process.env.NODE_ENV === 'production') {
+    return NextResponse.json({ error: 'Not found' }, { status: 404 })
+  }
+
+  const requiredSecret = process.env.ESCAVADOR_TEST_ROUTE_SECRET
+  if (!requiredSecret) {
+    return NextResponse.json({ error: 'Rota de teste desabilitada' }, { status: 403 })
+  }
+
+  const incomingSecret = req.headers.get('x-test-secret')
+  if (incomingSecret !== requiredSecret) {
+    return NextResponse.json({ error: 'Forbidden' }, { status: 403 })
+  }
+
   const supabase = createClient(
     process.env.NEXT_PUBLIC_SUPABASE_URL!,
     process.env.SUPABASE_SERVICE_ROLE_KEY!

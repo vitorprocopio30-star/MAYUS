@@ -83,8 +83,22 @@ export async function POST(req: NextRequest) {
 
       // 1 e 2. Busca Estadual e Federal simultâneas - APENAS 1 PÁGINA CADA (Economia de créditos)
       const [resEstadual, resFederal] = await Promise.all([
-        EscavadorService.buscarPorOAB(apiKey, estado.trim(), numero.trim(), 1),
-        EscavadorService.buscarPorOABFederal(apiKey, estado.trim(), numero.trim(), 1)
+        EscavadorService.buscarPorOAB(
+          apiKey,
+          estado.trim(),
+          numero.trim(),
+          1,
+          100,
+          { allowPaidSearch: true, source: 'monitoramento_ui_sync_button' }
+        ),
+        EscavadorService.buscarPorOABFederal(
+          apiKey,
+          estado.trim(),
+          numero.trim(),
+          1,
+          100,
+          { allowPaidSearch: true, source: 'monitoramento_ui_sync_button' }
+        )
       ])
 
       const advogado = resEstadual?.advogado_encontrado ?? resFederal?.advogado_encontrado ?? null

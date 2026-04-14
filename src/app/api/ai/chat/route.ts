@@ -405,8 +405,10 @@ export async function POST(req: Request) {
                 const resumo = `**Processo ${resData.numero_cnj}**\nTribunal: ${resultado.tribunal || 'N/A'}\nStatus: Encontrado com sucesso.`;
                 return NextResponse.json({ reply: resumo, data: resultado, kernel: { status: "executed", auditLogId: execResult.auditLogId } });
               } else if (matchedSkill?.handler_type === "escavador_oab") {
-                const processos = await EscavadorService.buscarPorOAB(escavadorIntegration.api_key, resData.oab_estado, resData.oab_numero);
-                return NextResponse.json({ reply: `Foram encontrados registros para a OAB ${resData.oab_numero}/${resData.oab_estado}. Resposta completa internamente.`, data: processos, kernel: { status: "executed", auditLogId: execResult.auditLogId } });
+                return NextResponse.json({
+                  reply: "Consulta de OAB via IA está temporariamente bloqueada por proteção de custos. Use o botão 'Atualizar Escavador' no painel de monitoramento.",
+                  kernel: { status: "blocked", auditLogId: execResult.auditLogId }
+                });
               } else if (matchedSkill?.handler_type === "escavador_cpf") {
                 const processos = await EscavadorService.buscarPorCPFCNPJ(escavadorIntegration.api_key, resData.cpf_cnpj);
                 return NextResponse.json({ reply: `Foram encontrados registros para o documento informado. Resposta completa internamente.`, data: processos, kernel: { status: "executed", auditLogId: execResult.auditLogId } });
