@@ -130,7 +130,7 @@ export async function POST(req: NextRequest) {
       tenantId,
       apiKey: integration.api_key,
       numeroProcesso,
-      frequencia: 'semanal'
+      frequencia: 'SEMANAL'
     })
 
     if (!monitoramento.ok || !monitoramento.monitoramentoId) {

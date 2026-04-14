@@ -107,7 +107,7 @@ export async function POST(req: NextRequest) {
     tenantId,
     apiKey: integration.api_key,
     numeroProcesso: numero_cnj,
-    frequencia: 'semanal'
+    frequencia: 'SEMANAL'
   })
   const monitoramentoId = monitoramento.monitoramentoId
 
