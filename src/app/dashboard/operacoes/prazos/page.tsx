@@ -75,7 +75,22 @@ function GlassCard({ children, className = "" }: { children: React.ReactNode; cl
   );
 }
 
-type TabType = 'prazos' | 'audiencias'
+type TabType = 'movimentacoes' | 'prazos' | 'audiencias'
+
+function normalizarDataISO(valor?: string | null): string {
+  if (!valor) return ''
+
+  if (/^\d{4}-\d{2}-\d{2}$/.test(valor)) return valor
+
+  if (/^\d{2}\/\d{2}\/\d{4}$/.test(valor)) {
+    const [dia, mes, ano] = valor.split('/')
+    return `${ano}-${mes}-${dia}`
+  }
+
+  const data = new Date(valor)
+  if (Number.isNaN(data.getTime())) return ''
+  return data.toISOString().slice(0, 10)
+}
 
 const supabase = createClient()
 
@@ -85,6 +100,7 @@ export default function PrazosPage() {
   const [profiles, setProfiles] = useState<any[]>([])
   const [loading, setLoading] = useState(true)
   const [searchTerm, setSearchTerm] = useState('')
+  const [movementDateFilter, setMovementDateFilter] = useState('')
   const [filterResponsavel, setFilterResponsavel] = useState<string>('todos')
   const [filterTribunal, setFilterTribunal] = useState<string>('todos')
   const [currentUser, setCurrentUser] = useState<any>(null)
@@ -140,11 +156,13 @@ export default function PrazosPage() {
             tribunal, 
             comarca, 
             vara, 
+            data_ultima_movimentacao,
             ultima_movimentacao_texto, 
             resumo_curto, 
             cliente_nome,
             escavador_monitoramento_id
           ),
+          process_tasks:process_task_id(id, movimentacoes_timeline),
           profiles:responsavel_id(id, full_name, avatar_url)
         `)
         .eq('tenant_id', tenantId)
@@ -170,8 +188,10 @@ export default function PrazosPage() {
       const tiposPrazo = ['citacao', 'sentenca', 'recurso', 'prazo']
       const isAudiencia = tiposAudiencia.includes(item.tipo)
       const isPrazo = tiposPrazo.includes(item.tipo)
-      if (activeTab === 'prazos' && !isPrazo) return false
-      if (activeTab === 'audiencias' && !isAudiencia) return false
+      if (activeTab !== 'movimentacoes') {
+        if (activeTab === 'prazos' && !isPrazo) return false
+        if (activeTab === 'audiencias' && !isAudiencia) return false
+      }
 
       // Filtro por Busca (Processo ou Descrição)
       const searchLower = searchTerm.toLowerCase()
@@ -200,6 +220,59 @@ export default function PrazosPage() {
     })
     return Array.from(list)
   }, [items])
+
+  const movimentacoesFiltradas = useMemo(() => {
+    const busca = searchTerm.trim().toLowerCase()
+    const dedupe = new Set<string>()
+    const lista: any[] = []
+
+    for (const item of items) {
+      const timeline = item.process_tasks?.movimentacoes_timeline
+      if (!Array.isArray(timeline)) continue
+
+      timeline.forEach((mov: any, index: number) => {
+        const dataReferencia = mov?.criado_em || mov?.data || item.monitored_processes?.data_ultima_movimentacao || null
+        const dataISO = normalizarDataISO(dataReferencia)
+
+        if (movementDateFilter && dataISO !== movementDateFilter) return
+
+        const conteudo = String(mov?.conteudo ?? '').trim()
+        const numeroProcesso = String(item.monitored_processes?.numero_processo ?? '')
+        const cliente = String(item.monitored_processes?.cliente_nome ?? '')
+        const descricao = String(item.descricao ?? '')
+        const tipoEvento = String(mov?.tipo_evento ?? item.tipo ?? 'movimentacao')
+        const tribunal = String(item.monitored_processes?.tribunal ?? '')
+
+        const baseBusca = `${conteudo} ${numeroProcesso} ${cliente} ${descricao}`.toLowerCase()
+        if (busca && !baseBusca.includes(busca)) return
+
+        const dedupeKey = mov?.escavador_movimentacao_id
+          ? `esc-${mov.escavador_movimentacao_id}`
+          : `${item.id}-${dataISO}-${conteudo}-${index}`
+
+        if (dedupe.has(dedupeKey)) return
+        dedupe.add(dedupeKey)
+
+        lista.push({
+          id: dedupeKey,
+          item,
+          conteudo: conteudo || 'Movimentação sem descrição',
+          dataReferencia,
+          dataISO,
+          tipoEvento,
+          numeroProcesso,
+          cliente,
+          tribunal
+        })
+      })
+    }
+
+    return lista.sort((a, b) => {
+      const ta = new Date(a.dataReferencia || 0).getTime()
+      const tb = new Date(b.dataReferencia || 0).getTime()
+      return tb - ta
+    })
+  }, [items, searchTerm, movementDateFilter])
 
   async function updateStatus(id: string, newStatus: string) {
     const { error } = await supabase
@@ -321,16 +394,22 @@ export default function PrazosPage() {
         </div>
 
         {/* Tabs */}
-        <div className="flex bg-white/5 p-1 rounded-2xl border border-white/10 backdrop-blur-xl">
+        <div className="grid grid-cols-3 gap-1 w-full sm:w-[480px] bg-white/5 p-1 rounded-2xl border border-white/10 backdrop-blur-xl">
+          <button 
+            onClick={() => setActiveTab('movimentacoes')}
+            className={`w-full px-4 py-2.5 rounded-xl text-sm font-medium transition-all duration-300 ${activeTab === 'movimentacoes' ? 'bg-[#CCA761] text-black shadow-lg shadow-[#CCA761]/20' : 'text-white/40 hover:text-white/70'}`}
+          >
+            Movimentações
+          </button>
           <button 
             onClick={() => setActiveTab('prazos')}
-            className={`px-8 py-2.5 rounded-xl text-sm font-medium transition-all duration-300 ${activeTab === 'prazos' ? 'bg-[#CCA761] text-black shadow-lg shadow-[#CCA761]/20' : 'text-white/40 hover:text-white/70'}`}
+            className={`w-full px-4 py-2.5 rounded-xl text-sm font-medium transition-all duration-300 ${activeTab === 'prazos' ? 'bg-[#CCA761] text-black shadow-lg shadow-[#CCA761]/20' : 'text-white/40 hover:text-white/70'}`}
           >
             Prazos
           </button>
           <button 
             onClick={() => setActiveTab('audiencias')}
-            className={`px-8 py-2.5 rounded-xl text-sm font-medium transition-all duration-300 ${activeTab === 'audiencias' ? 'bg-[#CCA761] text-black shadow-lg shadow-[#CCA761]/20' : 'text-white/40 hover:text-white/70'}`}
+            className={`w-full px-4 py-2.5 rounded-xl text-sm font-medium transition-all duration-300 ${activeTab === 'audiencias' ? 'bg-[#CCA761] text-black shadow-lg shadow-[#CCA761]/20' : 'text-white/40 hover:text-white/70'}`}
           >
             Audiências
           </button>
@@ -344,43 +423,66 @@ export default function PrazosPage() {
             <Search className="absolute left-4 top-1/2 -translate-y-1/2 text-white/20" size={18} />
             <input 
               type="text" 
-              placeholder="Buscar por processo ou descrição..."
+              placeholder={activeTab === 'movimentacoes' ? 'Buscar por processo, cliente ou movimentação...' : 'Buscar por processo ou descrição...'}
               value={searchTerm}
               onChange={(e) => setSearchTerm(e.target.value)}
               className="w-full bg-white/5 border border-white/10 rounded-xl py-3 pl-12 pr-4 text-sm focus:outline-none focus:border-[#CCA761]/50 transition-all"
             />
           </div>
 
-          <div className="flex items-center gap-4 flex-wrap">
-            <div className="flex items-center gap-2 bg-white/5 border border-white/10 rounded-xl px-4 py-2">
-              <User size={16} className="text-[#CCA761]" />
-              <select 
-                value={filterResponsavel}
-                onChange={(e) => setFilterResponsavel(e.target.value)}
-                className="bg-transparent text-sm focus:outline-none cursor-pointer"
-              >
-                <option value="todos">Todos Responsáveis</option>
-                <option value="sem_responsavel">Sem Responsável (Fila)</option>
-                {profiles.map(p => (
-                  <option key={p.id} value={p.id}>{p.full_name}</option>
-                ))}
-              </select>
+          {activeTab === 'movimentacoes' ? (
+            <div className="flex items-center gap-3 flex-wrap">
+              <div className="flex items-center gap-2 bg-white/5 border border-white/10 rounded-xl px-3 py-2 min-h-[44px]">
+                <Calendar size={16} className="text-[#CCA761]" />
+                <input
+                  type="date"
+                  value={movementDateFilter}
+                  onChange={(e) => setMovementDateFilter(e.target.value)}
+                  className="bg-transparent text-sm focus:outline-none text-white [color-scheme:dark]"
+                  title="Filtrar movimentações por data"
+                />
+              </div>
+              {movementDateFilter && (
+                <button
+                  onClick={() => setMovementDateFilter('')}
+                  className="h-[44px] px-4 rounded-xl bg-white/5 hover:bg-white/10 text-white/70 hover:text-white text-sm border border-white/10 transition-all"
+                >
+                  Limpar data
+                </button>
+              )}
             </div>
+          ) : (
+            <div className="flex items-center gap-4 flex-wrap">
+              <div className="flex items-center gap-2 bg-white/5 border border-white/10 rounded-xl px-4 py-2">
+                <User size={16} className="text-[#CCA761]" />
+                <select 
+                  value={filterResponsavel}
+                  onChange={(e) => setFilterResponsavel(e.target.value)}
+                  className="bg-transparent text-sm focus:outline-none cursor-pointer"
+                >
+                  <option value="todos">Todos Responsáveis</option>
+                  <option value="sem_responsavel">Sem Responsável (Fila)</option>
+                  {profiles.map(p => (
+                    <option key={p.id} value={p.id}>{p.full_name}</option>
+                  ))}
+                </select>
+              </div>
 
-            <div className="flex items-center gap-2 bg-white/5 border border-white/10 rounded-xl px-4 py-2">
-              <Gavel size={16} className="text-[#CCA761]" />
-              <select 
-                value={filterTribunal}
-                onChange={(e) => setFilterTribunal(e.target.value)}
-                className="bg-transparent text-sm focus:outline-none cursor-pointer"
-              >
-                <option value="todos">Todos Tribunais</option>
-                {tribunals.map(t => (
-                  <option key={t} value={t}>{t}</option>
-                ))}
-              </select>
+              <div className="flex items-center gap-2 bg-white/5 border border-white/10 rounded-xl px-4 py-2">
+                <Gavel size={16} className="text-[#CCA761]" />
+                <select 
+                  value={filterTribunal}
+                  onChange={(e) => setFilterTribunal(e.target.value)}
+                  className="bg-transparent text-sm focus:outline-none cursor-pointer"
+                >
+                  <option value="todos">Todos Tribunais</option>
+                  {tribunals.map(t => (
+                    <option key={t} value={t}>{t}</option>
+                  ))}
+                </select>
+              </div>
             </div>
-          </div>
+          )}
         </div>
       </GlassCard>
 
@@ -391,6 +493,96 @@ export default function PrazosPage() {
             <div key={i} className="h-48 bg-white/5 rounded-2xl border border-white/10" />
           ))}
         </div>
+      ) : activeTab === 'movimentacoes' ? (
+        movimentacoesFiltradas.length === 0 ? (
+          <div className="text-center py-24 border border-dashed border-white/10 rounded-3xl bg-white/[0.02]">
+            <Calendar size={64} className="mx-auto mb-6 text-white/10" />
+            <h3 className="text-xl text-white/60 mb-2">Nenhuma movimentação encontrada</h3>
+            <p className="text-white/30 max-w-md mx-auto">
+              {movementDateFilter
+                ? `Não há movimentações registradas na data ${formatarData(movementDateFilter)}.`
+                : 'As movimentações diárias aparecerão aqui assim que forem processadas.'}
+            </p>
+          </div>
+        ) : (
+          <div className="grid grid-cols-1 md:grid-cols-2 xl:grid-cols-3 gap-6">
+            {movimentacoesFiltradas.map((mov) => (
+              <div
+                key={mov.id}
+                onClick={() => handleOpenDrawer(mov.item)}
+                className="cursor-pointer"
+              >
+                <GlassCard className="border-[#CCA761]/40 hover:border-[#CCA761]/80 hover:scale-[1.01] transform transition-all hover:shadow-[0_0_24px_rgba(204,167,97,0.16)] h-full">
+                  <div className="flex items-start justify-between gap-3 mb-4">
+                    <span className="px-2.5 py-1 rounded-lg text-[10px] font-bold tracking-widest border border-[#CCA761]/40 text-[#CCA761] uppercase">
+                      Movimentação
+                    </span>
+                    <span className="px-3 py-1 rounded-full text-[11px] font-bold border border-white/10 text-white/60 bg-white/5">
+                      {formatarData(mov.dataISO || mov.dataReferencia)}
+                    </span>
+                  </div>
+
+                  <h3 className="text-[17px] font-medium text-white mb-3 leading-snug line-clamp-2">
+                    {mov.item.descricao || 'Atualização processual'}
+                  </h3>
+
+                  <div className="rounded-xl border border-white/10 bg-white/[0.02] p-4 mb-4">
+                    <div className="text-[10px] uppercase tracking-[0.18em] text-white/30 font-semibold mb-2">
+                      Última movimentação
+                    </div>
+                    <p className="text-[13px] text-white/70 leading-relaxed line-clamp-4">
+                      {mov.conteudo}
+                    </p>
+                  </div>
+
+                  <div className="space-y-2 mb-6">
+                    <div className="flex items-center gap-2 text-white/40 text-[12px]">
+                      <Clock size={14} className="text-[#CCA761]" />
+                      <span>Registro: {formatarData(mov.dataISO || mov.dataReferencia)}</span>
+                    </div>
+                    {mov.numeroProcesso && (
+                      <div className="space-y-1">
+                        <div className="flex items-center gap-2 text-[13px] group/cnj-mov">
+                          <Gavel size={14} className="text-[#CCA761]" />
+                          <span className="truncate font-medium text-[#CCA761]">Proc: {mov.numeroProcesso}</span>
+                          <button
+                            onClick={(e) => {
+                              e.stopPropagation()
+                              navigator.clipboard.writeText(mov.numeroProcesso)
+                              setCopiedId(mov.id)
+                              setTimeout(() => setCopiedId(null), 2000)
+                            }}
+                            className="opacity-0 group-hover/cnj-mov:opacity-100 p-1 hover:bg-white/10 rounded transition-all text-[#CCA761]"
+                            title="Copiar número do processo"
+                          >
+                            {copiedId === mov.id ? <Check size={12} /> : <Copy size={12} />}
+                          </button>
+                        </div>
+                        {mov.cliente && (
+                          <div className="text-[11px] text-white/30 pl-6 leading-tight">
+                            Cliente: {mov.cliente}
+                          </div>
+                        )}
+                        {mov.tribunal && (
+                          <div className="text-[10px] text-white/20 uppercase tracking-wider pl-6">
+                            {mov.tribunal}
+                          </div>
+                        )}
+                      </div>
+                    )}
+                  </div>
+
+                  <div className="mt-auto pt-4 border-t border-white/5 flex items-center justify-between">
+                    <span className="text-[11px] uppercase tracking-wider text-white/30">
+                      {mov.tipoEvento}
+                    </span>
+                    <span className="text-[11px] text-[#CCA761]">Abrir detalhes</span>
+                  </div>
+                </GlassCard>
+              </div>
+            ))}
+          </div>
+        )
       ) : filteredItems.length === 0 ? (
           <div className="text-center py-24 border border-dashed border-white/10 rounded-3xl bg-white/[0.02]">
             <Calendar size={64} className="mx-auto mb-6 text-white/10" />
@@ -516,7 +708,7 @@ export default function PrazosPage() {
                         e.stopPropagation()
                         atribuirResponsavel(item.id, currentUser?.id)
                       }}
-                      className="flex items-center gap-2 text-[12px] text-red-400 hover:text-red-300 transition-colors bg-red-400/5 px-3 py-1.5 rounded-lg border border-red-400/20 shadow-lg shadow-red-900/10"
+                      className="h-10 flex items-center gap-2 text-[12px] text-red-400 hover:text-red-300 transition-colors bg-red-400/5 px-4 rounded-lg border border-red-400/20 shadow-lg shadow-red-900/10"
                     >
                       <UserPlus size={14} /> Assumir
                     </button>
@@ -531,7 +723,7 @@ export default function PrazosPage() {
                         e.stopPropagation()
                         updateStatus(item.id, 'concluido')
                       }}
-                      className="p-2 rounded-lg bg-green-500/10 text-green-400 hover:bg-green-500 hover:text-black transition-all border border-green-500/20"
+                      className="h-10 w-10 flex items-center justify-center rounded-lg bg-green-500/10 text-green-400 hover:bg-green-500 hover:text-black transition-all border border-green-500/20"
                       title="Marcar como Concluído"
                     >
                       <CheckCircle size={16} />
@@ -542,7 +734,7 @@ export default function PrazosPage() {
                         e.stopPropagation()
                         updateStatus(item.id, 'pendente')
                       }}
-                      className="p-2 rounded-lg bg-orange-500/10 text-orange-400 hover:bg-orange-500 hover:text-black transition-all border border-orange-500/20"
+                      className="h-10 w-10 flex items-center justify-center rounded-lg bg-orange-500/10 text-orange-400 hover:bg-orange-500 hover:text-black transition-all border border-orange-500/20"
                       title="Reabrir Prazo"
                     >
                       <Clock size={16} />
@@ -552,7 +744,7 @@ export default function PrazosPage() {
                   <div className="relative group/menu">
                     <button 
                       onClick={(e) => e.stopPropagation()}
-                      className="p-2 rounded-lg bg-white/5 text-white/40 hover:bg-white/10 transition-all border border-white/10"
+                      className="h-10 w-10 flex items-center justify-center rounded-lg bg-white/5 text-white/40 hover:bg-white/10 transition-all border border-white/10"
                     >
                       <ChevronDown size={16} />
                     </button>
