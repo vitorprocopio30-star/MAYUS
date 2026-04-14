@@ -8,6 +8,40 @@ const adminSupabase = createClient(
   process.env.SUPABASE_SERVICE_ROLE_KEY!
 )
 
+async function resolverTenantPorApiKey(req: NextRequest) {
+  const authHeader = req.headers.get('authorization') ?? req.headers.get('Authorization') ?? ''
+  const bearer = authHeader.replace(/^Bearer\s+/i, '').trim()
+  const apiKeyHeader = req.headers.get('x-escavador-api-key')?.trim() ?? ''
+  const possivelApiKey = apiKeyHeader || bearer
+
+  if (!possivelApiKey || possivelApiKey === process.env.ESCAVADOR_WEBHOOK_SECRET) return null
+
+  const { data: integ } = await adminSupabase
+    .from('tenant_integrations')
+    .select('tenant_id')
+    .eq('provider', 'escavador')
+    .eq('api_key', possivelApiKey)
+    .maybeSingle()
+
+  return integ?.tenant_id ?? null
+}
+
+async function resolverTenantPorMonitoramentoOab(monitoramentoId: string | null) {
+  if (!monitoramentoId) return null
+
+  const { data: integracoes } = await adminSupabase
+    .from('tenant_integrations')
+    .select('tenant_id, metadata')
+    .eq('provider', 'escavador')
+
+  const match = (integracoes ?? []).find((integ: any) => {
+    const monitoramentoOabId = String(integ?.metadata?.monitoramento_oab_id ?? '')
+    return monitoramentoOabId && monitoramentoOabId === monitoramentoId
+  })
+
+  return match?.tenant_id ?? null
+}
+
 
 
 
@@ -22,6 +56,112 @@ export async function POST(req: NextRequest) {
   console.log('[ESCAVADOR_WEBHOOK] Payload recebido:', JSON.stringify(body, null, 2))
 
   const evento = body.event ?? body.evento ?? ''
+
+  // Evento: processo novo detectado via monitoramento por OAB
+  if (evento === 'novo_processo' || evento === 'processo_encontrado') {
+    const numeroCnj =
+      body?.processo?.numero_cnj ??
+      body?.processo?.numero_novo ??
+      body?.numero_cnj ??
+      body?.numero_processo
+
+    const monitoramentoIdOab = String(body?.monitoramento?.id ?? body?.monitoramentos?.[0]?.id ?? '') || null
+    const tenantId =
+      body?.tenant_id ??
+      (await resolverTenantPorMonitoramentoOab(monitoramentoIdOab)) ??
+      (await resolverTenantPorApiKey(req))
+
+    if (!numeroCnj || !tenantId) {
+      console.log('[webhook-escavador] novo_processo: sem numero_cnj ou tenant_id')
+      return NextResponse.json({ ok: true })
+    }
+
+    const { data: existente } = await adminSupabase
+      .from('monitored_processes')
+      .select('id')
+      .eq('tenant_id', tenantId)
+      .eq('numero_processo', numeroCnj)
+      .maybeSingle()
+
+    if (existente) {
+      console.log(`[webhook-escavador] Processo ${numeroCnj} já monitorado.`)
+      return NextResponse.json({ ok: true })
+    }
+
+    const dadosProcesso = body?.processo ?? {}
+    const partes = dadosProcesso?.partes ?? {}
+
+    const { data: novoProcesso } = await adminSupabase
+      .from('monitored_processes')
+      .insert({
+        tenant_id: tenantId,
+        numero_processo: numeroCnj,
+        tribunal: dadosProcesso?.tribunal ?? dadosProcesso?.orgao_julgador ?? '',
+        status: 'ATIVO',
+        partes: {
+          polo_ativo: partes?.polo_ativo ?? dadosProcesso?.titulo_polo_ativo ?? '',
+          polo_passivo: partes?.polo_passivo ?? dadosProcesso?.titulo_polo_passivo ?? ''
+        },
+        ativo: true,
+        monitoramento_ativo: false,
+        escavador_id: dadosProcesso?.id?.toString() ?? null,
+        created_at: new Date().toISOString(),
+        updated_at: new Date().toISOString()
+      })
+      .select('id')
+      .single()
+
+    if (!novoProcesso?.id) {
+      console.error('[webhook-escavador] Falha ao inserir processo novo')
+      return NextResponse.json({ ok: true })
+    }
+
+    const { data: integ } = await adminSupabase
+      .from('tenant_integrations')
+      .select('api_key')
+      .eq('tenant_id', tenantId)
+      .eq('provider', 'escavador')
+      .single()
+
+    if (integ?.api_key) {
+      const monRes = await fetch('https://api.escavador.com/api/v2/monitoramentos', {
+        method: 'POST',
+        headers: {
+          Authorization: `Bearer ${integ.api_key}`,
+          'Content-Type': 'application/json',
+          Accept: 'application/json',
+          'X-Requested-With': 'XMLHttpRequest'
+        },
+        body: JSON.stringify({
+          tipo: 'processo',
+          numero_cnj: numeroCnj,
+          frequencia: 'SEMANAL',
+          ativo: true
+        })
+      })
+
+      const monData = await monRes.json().catch(() => null)
+      if (monRes.ok && monData?.id) {
+        await adminSupabase
+          .from('monitored_processes')
+          .update({
+            escavador_monitoramento_id: monData.id.toString(),
+            monitoramento_ativo: true
+          })
+          .eq('id', novoProcesso.id)
+      }
+    }
+
+    await adminSupabase.from('process_update_queue').insert({
+      tenant_id: tenantId,
+      numero_cnj: numeroCnj,
+      status: 'PENDENTE',
+      created_at: new Date().toISOString()
+    })
+
+    console.log(`[webhook-escavador] ✅ Processo novo importado automaticamente: ${numeroCnj}`)
+    return NextResponse.json({ ok: true })
+  }
 
   // 2. Evento: nova movimentação no Diário Oficial
   if (evento === 'nova_movimentacao' || evento === 'diario_movimentacao_nova') {

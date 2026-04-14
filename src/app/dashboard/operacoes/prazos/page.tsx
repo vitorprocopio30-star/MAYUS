@@ -2,20 +2,15 @@
 
 import { useEffect, useState, useMemo } from 'react'
 import { createClient } from '@/lib/supabase/client'
-import { 
-  Clock, 
-  AlertTriangle, 
-  CheckCircle2, 
-  Filter, 
-  Search, 
-  UserPlus, 
+import {
+  Clock,
+  Search,
+  UserPlus,
   ChevronDown,
   Calendar,
   Gavel,
   CheckCircle,
-  MoreVertical,
   User,
-  ExternalLink,
   Copy,
   Check,
   X
@@ -40,6 +35,35 @@ function diasRestantes(data: string): number {
   return Math.ceil(diff / (1000 * 60 * 60 * 24))
 }
 
+function deduplicarPrazos(lista: any[]): any[] {
+  const mapa = new Map<string, any>()
+
+  for (const item of lista) {
+    const dia = item?.data_vencimento ? new Date(item.data_vencimento).toISOString().slice(0, 10) : 'sem-data'
+    const chave = [
+      item?.monitored_process_id ?? 'sem-processo',
+      item?.tipo ?? 'sem-tipo',
+      (item?.descricao ?? '').trim().toLowerCase(),
+      dia,
+      item?.status ?? 'sem-status'
+    ].join('|')
+
+    const atual = mapa.get(chave)
+    if (!atual) {
+      mapa.set(chave, item)
+      continue
+    }
+
+    const atualTs = new Date(atual.created_at || 0).getTime()
+    const novoTs = new Date(item.created_at || 0).getTime()
+    if (novoTs > atualTs) {
+      mapa.set(chave, item)
+    }
+  }
+
+  return Array.from(mapa.values())
+}
+
 function GlassCard({ children, className = "" }: { children: React.ReactNode; className?: string }) {
   return (
     <div className={`rounded-2xl overflow-hidden p-6 relative group border border-[#CCA761]/10 bg-gradient-to-b from-[#111111]/90 to-[#050505]/90 backdrop-blur-md shadow-[0_8px_32px_rgba(0,0,0,0.4)] ring-1 ring-white/5 transition-all duration-500 ${className}`}>
@@ -53,8 +77,9 @@ function GlassCard({ children, className = "" }: { children: React.ReactNode; cl
 
 type TabType = 'prazos' | 'audiencias'
 
+const supabase = createClient()
+
 export default function PrazosPage() {
-  const supabase = createClient()
   const [activeTab, setActiveTab] = useState<TabType>('prazos')
   const [items, setItems] = useState<any[]>([])
   const [profiles, setProfiles] = useState<any[]>([])
@@ -130,13 +155,13 @@ export default function PrazosPage() {
       if (error) {
         console.error('Erro ao buscar prazos:', error);
       } else {
-        setItems(data || []);
+        setItems(deduplicarPrazos(data || []));
       }
       setLoading(false);
     }
 
     init()
-  }, [supabase])
+  }, [])
 
   const filteredItems = useMemo(() => {
     return items.filter(item => {
@@ -215,12 +240,11 @@ export default function PrazosPage() {
     setTaskDetails(null)
     setAnnotationText('')
 
-    if (item.monitored_processes?.id) {
-      console.log("[Prazos] Buscando resumo do caso para:", item.monitored_processes.id)
+    if (item.process_task_id) {
       const { data, error } = await supabase
         .from('process_tasks')
         .select('*')
-        .eq('monitored_process_id', item.monitored_processes.id)
+        .eq('id', item.process_task_id)
         .maybeSingle()
 
       if (error) {
@@ -236,7 +260,7 @@ export default function PrazosPage() {
   async function handleSaveAnnotation() {
     if (!selectedItemId || !tenantId) return
     const item = items.find(i => i.id === selectedItemId)
-    if (!item?.monitored_processes?.id) return
+    if (!item?.monitored_process_id) return
 
     setIsSavingAnnotation(true)
     
@@ -254,19 +278,24 @@ export default function PrazosPage() {
         if (error) throw error
       } else {
         // Insert
-        const { data, error } = await supabase
-          .from('process_tasks')
-          .insert({
-            tenant_id: tenantId,
-            monitored_process_id: item.monitored_processes.id,
+        // Salvamento via API (service role contorna RLS de pipeline_id)
+        const res = await fetch('/api/prazos/salvar-anotacao', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({
+            monitored_process_id: item.monitored_process_id,
+            numero_processo: item.monitored_processes?.numero_processo,
             description: annotationText,
-            title: `Anotações: ${item.monitored_processes.numero_processo}`,
-            position_index: 0
+            tenant_id: tenantId,
           })
-          .select()
-        
-        if (error) throw error
-        setTaskDetails(data?.[0] ?? null)
+        })
+        const json = await res.json()
+        if (!res.ok) throw new Error(json.error ?? 'Erro ao salvar')
+        const newTask = json.task ?? null
+        setTaskDetails(newTask)
+        if (newTask?.id) {
+          setItems(prev => prev.map(i => i.id === selectedItemId ? { ...i, process_task_id: newTask.id } : i))
+        }
       }
 
       setSaveSuccess(true)

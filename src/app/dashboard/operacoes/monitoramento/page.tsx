@@ -2,6 +2,7 @@
 'use client'
 
 import { useState, useEffect, useCallback, useMemo, Suspense } from 'react'
+import { createClient } from '@/lib/supabase/client'
 import { 
   Search, 
   RefreshCw, 
@@ -70,6 +71,25 @@ interface ConfirmacaoLote {
   processosParaImportar: Processo[]
 }
 
+interface ProcessoMonitorado {
+  id: string
+  numero_processo: string
+  tribunal: string | null
+  status: string | null
+  partes: { polo_ativo?: string; polo_passivo?: string } | null
+  cliente_nome: string | null
+  resumo_curto: string | null
+  proxima_acao_sugerida: string | null
+  escavador_monitoramento_id: string | null
+  data_ultima_movimentacao: string | null
+  ultima_movimentacao_texto: string | null
+  linked_task_id: string | null
+  ativo: boolean | null
+  classe_processual: string | null
+  vara: string | null
+  comarca: string | null
+}
+
 type FilterStatus = 'TODOS' | 'ATIVO' | 'ARQUIVADO' | 'monitorado' | 'nao_monitorado'
 type SortOrder = 'distribuicao' | 'urgencia' | 'tribunal'
 
@@ -78,6 +98,8 @@ const STATUS_COLOR: Record<string, string> = {
   'ARQUIVADO': 'text-zinc-500 bg-zinc-500/10 border-zinc-500/20',
   'SUSPENSO': 'text-yellow-500 bg-yellow-500/10 border-yellow-500/20'
 }
+
+const supabase = createClient()
 
 // ─── Funções Auxiliares ───
 
@@ -318,6 +340,9 @@ function MonitoramentoContent() {
   const [progressoCarregamento, setProgressoCarregamento] = useState("")
 
   const [tab, setTab] = useState<'oab' | 'numero' | 'cpf'>('oab')
+  const [importarAberto, setImportarAberto] = useState(false)
+  const [processosMonitorados, setProcessosMonitorados] = useState<ProcessoMonitorado[]>([])
+  const [loadingMonitorados, setLoadingMonitorados] = useState(true)
   const [oabEstado, setOabEstado] = useState('RJ')
   const [oabNumero, setOabNumero] = useState('')
   const [loading, setLoading] = useState(false)
@@ -346,6 +371,47 @@ function MonitoramentoContent() {
 
   const PAGE_SIZE = 20
 
+  const carregarMonitorados = useCallback(async () => {
+    setLoadingMonitorados(true)
+    try {
+      const { data: { user } } = await supabase.auth.getUser()
+      if (!user) {
+        setProcessosMonitorados([])
+        return
+      }
+
+      const { data: profile } = await supabase
+        .from('profiles')
+        .select('tenant_id')
+        .eq('id', user.id)
+        .single()
+
+      if (!profile?.tenant_id) {
+        setProcessosMonitorados([])
+        return
+      }
+
+      const { data } = await supabase
+        .from('monitored_processes')
+        .select(`
+          id, numero_processo, tribunal, status, partes, cliente_nome,
+          resumo_curto, proxima_acao_sugerida, escavador_monitoramento_id,
+          data_ultima_movimentacao, ultima_movimentacao_texto, linked_task_id,
+          ativo, classe_processual, vara, comarca
+        `)
+        .eq('tenant_id', profile.tenant_id)
+        .eq('ativo', true)
+        .order('data_ultima_movimentacao', { ascending: false })
+
+      setProcessosMonitorados((data as ProcessoMonitorado[]) || [])
+    } catch (e) {
+      console.error('[Monitoramento] Erro ao carregar monitorados:', e)
+      setProcessosMonitorados([])
+    } finally {
+      setLoadingMonitorados(false)
+    }
+  }, [])
+
   const setPage = (p: number) => {
     setPagina(p)
     window.scrollTo({ top: 300, behavior: 'smooth' })
@@ -366,7 +432,9 @@ function MonitoramentoContent() {
         setCarregandoTodos(false) // nunca auto-carrega ao restaurar sessão
       } catch {}
     }
-  }, [])
+
+    carregarMonitorados()
+  }, [carregarMonitorados])
 
   const buscar = useCallback(async () => {
     if (!oabNumero.trim()) return
@@ -468,6 +536,7 @@ function MonitoramentoContent() {
         processos: prev.processos.map(p => processos.some(a => a.numero_processo === p.numero_processo) ? { ...p, monitorado: true } : p),
         billing: { ...prev.billing, total_ja_monitorados: prev.billing.total_ja_monitorados + processos.length }
       } : prev)
+      await carregarMonitorados()
       setSelecionados(new Set())
       setFeedback(`✅ ${processos.length} processos agora sob vigilância estratégica`)
     } catch (e) {
@@ -475,7 +544,7 @@ function MonitoramentoContent() {
     } finally {
       setImportandoLote(false)
     }
-  }, [])
+  }, [carregarMonitorados])
 
   const desmonitorar = useCallback(async (p: Processo) => {
     setLoadingId(p.numero_processo)
@@ -491,13 +560,14 @@ function MonitoramentoContent() {
         total_retornado: Math.max(0, (prev.total_retornado || 1) - 1),
         billing: { ...prev.billing, total_ja_monitorados: Math.max(0, prev.billing.total_ja_monitorados - 1) }
       } : prev)
+      await carregarMonitorados()
       setFeedback('✅ Vigilância desativada e processo ocultado')
     } catch (e) {
       setError('Erro ao remover monitoramento')
     } finally {
       setLoadingId(null)
     }
-  }, [])
+  }, [carregarMonitorados])
 
   const handleOrganizar = useCallback(async (processoId: string) => {
     setOrganizando(prev => ({ ...prev, [processoId]: 'loading' }))
@@ -623,6 +693,77 @@ function MonitoramentoContent() {
            )}
         </div>
 
+        <div className="bg-zinc-900/40 border border-zinc-800 rounded-2xl p-5 space-y-4">
+          <div className="flex items-center justify-between gap-3">
+            <h2 className="text-white text-sm font-black uppercase tracking-widest">Processos Monitorados</h2>
+            <span className="text-zinc-500 text-[10px] font-black uppercase tracking-widest">
+              {loadingMonitorados ? 'Carregando...' : `${processosMonitorados.length} ativos`}
+            </span>
+          </div>
+
+          {loadingMonitorados ? (
+            <div className="grid grid-cols-1 gap-3">
+              {[1, 2, 3].map((skeleton) => (
+                <div key={skeleton} className="h-24 rounded-2xl bg-zinc-900/70 border border-zinc-800 animate-pulse" />
+              ))}
+            </div>
+          ) : processosMonitorados.length === 0 ? (
+            <div className="py-10 text-center bg-zinc-950/60 border border-zinc-800 rounded-2xl">
+              <p className="text-zinc-500 text-[10px] font-black uppercase tracking-[0.2em]">Nenhum processo monitorado ativo</p>
+            </div>
+          ) : (
+            <div className="grid grid-cols-1 gap-3">
+              {processosMonitorados.map((proc) => {
+                const partes = proc.partes || {}
+                return (
+                  <div key={proc.id} className="rounded-2xl border border-zinc-800 bg-zinc-950/60 p-4 space-y-3">
+                    <div className="flex items-center justify-between gap-3 flex-wrap">
+                      <div className="flex items-center gap-2 flex-wrap">
+                        <span className="text-[#CCA761] font-black text-xs tracking-wide">{proc.numero_processo}</span>
+                        <span className="text-[9px] uppercase font-black text-zinc-500 bg-zinc-900 border border-zinc-800 rounded-full px-2 py-1">
+                          {proc.tribunal || 'Tribunal N/D'}
+                        </span>
+                        <StatusBadge status={proc.status || 'ATIVO'} />
+                        {proc.escavador_monitoramento_id && (
+                          <span className="text-[9px] uppercase font-black text-green-400 bg-green-500/10 border border-green-500/20 rounded-full px-2 py-1">
+                            Monitorado
+                          </span>
+                        )}
+                      </div>
+                      <span className="text-zinc-500 text-[10px] font-black uppercase tracking-wider">
+                        {formatarData(proc.data_ultima_movimentacao)}
+                      </span>
+                    </div>
+
+                    <div className="grid grid-cols-1 md:grid-cols-2 gap-3 text-[11px]">
+                      <div>
+                        <p className="text-zinc-600 uppercase text-[9px] font-black tracking-widest mb-1">Polo ativo</p>
+                        <p className="text-zinc-200 font-semibold">{partes.polo_ativo || '—'}</p>
+                      </div>
+                      <div>
+                        <p className="text-zinc-600 uppercase text-[9px] font-black tracking-widest mb-1">Polo passivo</p>
+                        <p className="text-zinc-200 font-semibold">{partes.polo_passivo || '—'}</p>
+                      </div>
+                    </div>
+                  </div>
+                )
+              })}
+            </div>
+          )}
+        </div>
+
+        <div className="bg-zinc-900/30 border border-zinc-800 rounded-2xl p-3">
+          <button
+            onClick={() => setImportarAberto((prev) => !prev)}
+            className="w-full flex items-center justify-between px-3 py-3 rounded-xl bg-zinc-950 border border-zinc-800 hover:border-zinc-700 transition-all"
+          >
+            <span className="text-zinc-200 text-[11px] font-black uppercase tracking-[0.2em]">+ Importar Processos por OAB</span>
+            {importarAberto ? <ChevronUp size={14} className="text-zinc-400" /> : <ChevronDown size={14} className="text-zinc-400" />}
+          </button>
+        </div>
+
+        {importarAberto && (
+        <div className="space-y-6">
         <div className="bg-zinc-900 border border-zinc-800 rounded-2xl p-2 flex flex-col md:flex-row gap-2 shadow-2xl">
            <div className="flex bg-zinc-950 rounded-xl p-1 border border-zinc-800 shrink-0">
              {([['oab', 'OAB'], ['numero', 'Nº CNJ'], ['cpf', 'DOCS']] as const).map(([k, l]) => (
@@ -768,6 +909,8 @@ function MonitoramentoContent() {
             )}
             <BillingBar billing={result.billing} />
           </div>
+        )}
+        </div>
         )}
 
         {!result && !loading && (

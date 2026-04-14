@@ -51,3 +51,6 @@ dev_err.txt
 errors.txt
 server_output_fresh.txt
 save_meta_token.mjs
+.vercel-api-key
+
+.vercel
