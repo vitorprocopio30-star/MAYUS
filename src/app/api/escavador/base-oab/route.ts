@@ -97,12 +97,14 @@ export async function POST(req: NextRequest) {
 
   return NextResponse.json({
     exists: true,
+    fonte: 'cache',
     processos: processosComStatus,
     total: cache.total ?? processosComStatus.length,
     total_retornado: processosComStatus.length,
     advogado_nome: (cache.advogado as any)?.nome ?? '',
     next_url: null,
     paginas_buscadas: cache.total_paginas ?? null,
+    ultima_sincronizacao: cache.updated_at ?? null,
     sincronizado: cache.sincronizado ?? false,
     billing: {
       total_ja_monitorados: capacity?.total_monitorados ?? 0,

@@ -63,13 +63,20 @@ interface BuscaResult {
   processos: Processo[]
   billing: Billing
   next_url?: string
+  paginas_buscadas?: number | null
+  ultima_sincronizacao?: string | null
+  fonte?: 'cache' | 'escavador'
 }
 
 interface ConfirmacaoLote {
-  total: number
-  custo_estimado: number
-  ja_monitorados: number
+  total?: number
+  custo_estimado?: number
+  custo_mensal?: number
+  ja_monitorados?: number
   novos: number
+  gratuitos_disponiveis?: number
+  excedente?: number
+  preco_por_extra?: number
   processosParaImportar: Processo[]
 }
 
@@ -166,6 +173,7 @@ function BillingBar({ billing }: { billing: Billing }) {
 }
 
 function ModalConfirmacaoCusto({ dados, onConfirmar, onCancelar, loading }: { dados: ConfirmacaoLote, onConfirmar: () => void, onCancelar: () => void, loading: boolean }) {
+  const custo = Number(dados.custo_mensal ?? dados.custo_estimado ?? 0)
   return (
     <div className="fixed inset-0 z-[100] flex items-center justify-center p-4 bg-black/80 backdrop-blur-md animate-in fade-in duration-300">
       <div className="w-full max-w-md bg-zinc-900 border border-zinc-800 rounded-3xl p-8 shadow-2xl space-y-6">
@@ -183,9 +191,9 @@ function ModalConfirmacaoCusto({ dados, onConfirmar, onCancelar, loading }: { da
           </div>
           <div className="text-center pl-4">
              <p className="text-[9px] text-zinc-600 font-black uppercase mb-1">Custo Estimado</p>
-             <p className="text-yellow-500 font-black text-lg">R$ {dados.custo_estimado.toFixed(2)}</p>
-          </div>
-        </div>
+             <p className="text-yellow-500 font-black text-lg">R$ {custo.toFixed(2)}</p>
+           </div>
+         </div>
         <div className="flex gap-3">
           <button onClick={onCancelar} className="flex-1 py-4 rounded-xl text-[10px] font-black uppercase text-zinc-500 hover:text-white transition-all">Cancelar</button>
           <button onClick={onConfirmar} disabled={loading} className="flex-[2] py-4 bg-yellow-500 hover:bg-yellow-400 text-black text-[10px] font-black uppercase rounded-xl transition-all shadow-xl shadow-yellow-500/20 active:scale-95 border-b-4 border-yellow-700">
@@ -356,6 +364,7 @@ function MonitoramentoContent() {
   const [ordenacao, setOrdenacao] = useState<SortOrder>('urgencia')
   const [selecionados, setSelecionados] = useState<Set<string>>(new Set())
   const [loadingId, setLoadingId] = useState<string | null>(null)
+  const [lastExternalSyncAt, setLastExternalSyncAt] = useState<string | null>(null)
 
   // Estado para os botões "Organizar IA"
   const [organizando, setOrganizando] = useState<Record<string, 'idle' | 'loading' | 'done'>>({})
@@ -380,7 +389,11 @@ function MonitoramentoContent() {
       const res = await fetch('/api/escavador/base-oab', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ oab_estado: estado, oab_numero: numero.trim() })
+        body: JSON.stringify({
+          oab_estado: estado,
+          oab_numero: numero.trim(),
+          source: 'monitoramento_ui_cached_load'
+        })
       })
       const data = await res.json()
       if (!res.ok) return
@@ -389,6 +402,7 @@ function MonitoramentoContent() {
         return
       }
       setResult(data)
+      setLastExternalSyncAt(data?.ultima_sincronizacao ?? null)
       setBaseSincronizada(true)
     } catch {}
   }, [])
@@ -429,11 +443,16 @@ function MonitoramentoContent() {
       const res = await fetch('/api/escavador/sincronizar-oab', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ oab_estado: oabEstado, oab_numero: oabNumero.trim() })
+        body: JSON.stringify({
+          oab_estado: oabEstado,
+          oab_numero: oabNumero.trim(),
+          source: 'monitoramento_ui_sync_button'
+        })
       })
       const data = await res.json()
       if (!res.ok) throw new Error(data.error ?? 'Falha na varredura')
       setResult(data)
+      setLastExternalSyncAt(data?.ultima_sincronizacao ?? new Date().toISOString())
       setBaseSincronizada(true)
       const qtdArquivados = (data.processos || []).filter((p: Processo) => processoArquivado(p)).length
       const totalApi = Number(data.total || 0)
@@ -459,12 +478,20 @@ function MonitoramentoContent() {
     }
   }, [oabEstado, oabNumero])
   const monitorarLote = useCallback(async (processos: Processo[]) => {
+    const monitoramentoIndividual = processos.length === 1
+    const numeroAlvo = monitoramentoIndividual ? processos[0]?.numero_processo ?? null : null
+
     const ativos = processos.filter((p) => !processoArquivado(p))
     const qtdArquivados = processos.length - ativos.length
 
     if (ativos.length === 0) {
       setFeedback('Todos os processos selecionados estão arquivados — nenhum foi monitorado.')
       return
+    }
+
+    if (numeroAlvo) {
+      setLoadingId(numeroAlvo)
+      setFeedback('Enviando solicitação de monitoramento...')
     }
 
     setImportandoLote(true)
@@ -480,6 +507,7 @@ function MonitoramentoContent() {
       }
       if (data.requer_confirmacao) {
         setConfirmacao({ ...data, processosParaImportar: ativos })
+        setFeedback('Confirmação de investimento necessária para concluir o monitoramento.')
         return
       }
 
@@ -500,24 +528,35 @@ function MonitoramentoContent() {
 
       const falhasMonitoramento = Array.isArray(data.falhas_monitoramento) ? data.falhas_monitoramento.length : 0
       const resumosSolicitados = Number(data.resumos_solicitados || 0)
+      const primeiraFalha = Array.isArray(data.falhas_monitoramento) && data.falhas_monitoramento.length > 0
+        ? data.falhas_monitoramento[0]
+        : null
       setFeedback(
         `${qtdArquivados > 0 ? `⚠️ ${qtdArquivados} arquivados ignorados. ` : ''}` +
         `✅ ${Number(data.importados || 0)} monitorados. ` +
         `🧠 ${resumosSolicitados} resumo(s) solicitado(s).` +
         `${falhasMonitoramento > 0 ? ` ❌ ${falhasMonitoramento} falha(s) de monitoramento.` : ''}`
       )
+      if (monitoramentoIndividual && Number(data.importados || 0) === 0) {
+        setError(primeiraFalha?.motivo || 'Não foi possível criar monitoramento para este processo no Escavador.')
+      }
     } catch (e: any) {
       setError(e?.message || 'Erro ao monitorar processos')
     } finally {
       setImportandoLote(false)
+      if (numeroAlvo) setLoadingId(null)
     }
   }, [carregarBaseOab, oabEstado, oabNumero])
 
   const confirmarMonitoramentoLote = useCallback(async () => {
     if (!confirmacao) return
 
+    const monitoramentoIndividual = confirmacao.processosParaImportar.length === 1
+    const numeroAlvo = monitoramentoIndividual ? confirmacao.processosParaImportar[0]?.numero_processo ?? null : null
+
     setConfirmandoLote(true)
     setError(null)
+    if (numeroAlvo) setLoadingId(numeroAlvo)
 
     try {
       const res = await fetch('/api/monitoramento/importar-lote', {
@@ -559,6 +598,7 @@ function MonitoramentoContent() {
       setError(e?.message || 'Erro ao confirmar monitoramento')
     } finally {
       setConfirmandoLote(false)
+      if (numeroAlvo) setLoadingId(null)
     }
   }, [carregarBaseOab, confirmacao, oabEstado, oabNumero])
 
@@ -680,6 +720,13 @@ function MonitoramentoContent() {
   const totalAtivosPainel = Math.max(0, totalProcessosBase - totalArquivadosAmostra)
   const totalAtivosPendentes = result?.processos.filter((p) => !p.monitorado && !processoArquivado(p)).length ?? 0
   const diferencaTotal = result?.total && result?.total_retornado && result.total !== result.total_retornado
+  const minutosDesdeUltimaSync = useMemo(() => {
+    const base = lastExternalSyncAt || result?.ultima_sincronizacao || null
+    if (!base) return null
+    const ts = new Date(base).getTime()
+    if (Number.isNaN(ts)) return null
+    return Math.max(0, Math.floor((Date.now() - ts) / 60000))
+  }, [lastExternalSyncAt, result?.ultima_sincronizacao])
 
   const renderPaginacao = () => (
     <div className="flex items-center justify-between py-4 px-2 bg-zinc-900/20 rounded-2xl border border-zinc-800/50">
@@ -900,6 +947,11 @@ function MonitoramentoContent() {
                 </button>
                 <button
                   onClick={() => {
+                    const bloqueioCurto = minutosDesdeUltimaSync !== null && minutosDesdeUltimaSync < 3
+                    if (bloqueioCurto) {
+                      setFeedback(`Sincronização externa realizada há ${minutosDesdeUltimaSync} min. Aguarde ao menos 3 min para evitar nova cobrança imediata.`)
+                      return
+                    }
                     const confirmou = window.confirm('Atualizar do Escavador consome créditos. Deseja continuar?')
                     if (confirmou) buscar()
                   }}
@@ -913,6 +965,11 @@ function MonitoramentoContent() {
               <p className="text-[10px] text-zinc-500 uppercase tracking-widest px-1">
                 Carregar base usa dados salvos. Atualizar Escavador pode cobrar por requisição.
               </p>
+              {result?.ultima_sincronizacao && (
+                <p className="text-[10px] text-zinc-600 px-1">
+                  Última sincronização externa: {formatarData(result.ultima_sincronizacao)}{result?.paginas_buscadas ? ` · ${result.paginas_buscadas} página(s)` : ''}
+                </p>
+              )}
             </div>
           )}
         </div>

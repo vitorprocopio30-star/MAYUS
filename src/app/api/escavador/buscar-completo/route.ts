@@ -116,8 +116,9 @@ export async function POST(req: NextRequest) {
   const { data: { user } } = await supabase.auth.getUser()
   if (!user) return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
 
-  const { oab_estado, oab_numero, cursor, next_url } = await req.json()
+  const { oab_estado, oab_numero, cursor, next_url, source } = await req.json()
   if (!oab_estado || !oab_numero) return NextResponse.json({ error: 'OAB inválida' }, { status: 400 })
+  const requestSource = String(source || 'unknown')
 
   const { data: profile } = await adminSupabase
     .from('profiles').select('tenant_id').eq('id', user.id).single()
@@ -209,6 +210,15 @@ export async function POST(req: NextRequest) {
       const errText = await resp.text()
       console.error('[buscar-completo] ERRO FINAL:', resp.status, errText)
       return NextResponse.json({ error: errText }, { status: resp.status })
+    }
+
+    const creditos = Number(resp.headers.get('Creditos-Utilizados') ?? 0)
+    if (creditos > 0) {
+      await adminSupabase.from('api_usage_log').insert({
+        tenant_id: tenantId,
+        endpoint: `/advogado/processos [source:${requestSource}] [buscar-completo]`,
+        creditos
+      })
     }
     
     const data = await resp.json()

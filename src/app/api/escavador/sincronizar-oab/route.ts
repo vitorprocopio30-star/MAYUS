@@ -85,8 +85,9 @@ export async function POST(req: NextRequest) {
   const { data: { user } } = await supabase.auth.getUser()
   if (!user) return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
 
-  const { oab_estado, oab_numero } = await req.json()
+  const { oab_estado, oab_numero, source } = await req.json()
   if (!oab_estado || !oab_numero) return NextResponse.json({ error: 'OAB inválida' }, { status: 400 })
+  const requestSource = String(source || 'unknown')
 
   const { data: profile } = await adminSupabase
     .from('profiles')
@@ -132,6 +133,15 @@ export async function POST(req: NextRequest) {
     if (!resp.ok) {
       const errText = await resp.text()
       return NextResponse.json({ error: errText }, { status: resp.status })
+    }
+
+    const creditos = Number(resp.headers.get('Creditos-Utilizados') ?? 0)
+    if (creditos > 0) {
+      await adminSupabase.from('api_usage_log').insert({
+        tenant_id: tenantId,
+        endpoint: `/advogado/processos [source:${requestSource}] [page:${pages}]`,
+        creditos
+      })
     }
 
     const data = await resp.json()
@@ -200,12 +210,14 @@ export async function POST(req: NextRequest) {
   }, { onConflict: 'tenant_id,oab_estado,oab_numero' })
 
   return NextResponse.json({
+    fonte: 'escavador',
     processos: processosComStatus,
     total: totalAdvogado || processosComStatus.length,
     total_retornado: processosComStatus.length,
     advogado_nome: advogadoNome,
     next_url: null,
     paginas_buscadas: pages,
+    ultima_sincronizacao: new Date().toISOString(),
     billing: {
       total_ja_monitorados: capacity?.total_monitorados ?? 0,
       gratuitos: capacity?.gratuitos ?? 100,
