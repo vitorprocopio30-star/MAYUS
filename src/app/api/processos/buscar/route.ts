@@ -40,7 +40,7 @@ export async function POST(req: NextRequest) {
 
     const tenantId = profile.tenant_id
 
-    const { query, tipo, allow_paid_search } = await req.json() as { query: string; tipo: 'numero' | 'oab' | 'cpf'; allow_paid_search?: boolean }
+    const { query, tipo, allow_paid_search, source } = await req.json() as { query: string; tipo: 'numero' | 'oab' | 'cpf'; allow_paid_search?: boolean; source?: string }
 
     if (!query?.trim()) return NextResponse.json({ error: 'Query obrigatória.' }, { status: 400 })
     if (!['numero', 'oab', 'cpf'].includes(tipo)) return NextResponse.json({ error: 'Tipo inválido.' }, { status: 400 })
@@ -72,7 +72,7 @@ export async function POST(req: NextRequest) {
     }
 
     if (tipo === 'oab') {
-      if (!allow_paid_search) {
+      if (!allow_paid_search || source !== 'monitoramento_ui_sync_button') {
         return NextResponse.json({ error: 'Busca de OAB bloqueada sem confirmação explícita.' }, { status: 400 })
       }
 

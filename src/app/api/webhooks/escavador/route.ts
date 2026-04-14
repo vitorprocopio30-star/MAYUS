@@ -124,7 +124,7 @@ export async function POST(req: NextRequest) {
       .single()
 
     if (integ?.api_key) {
-      const monRes = await fetch('https://api.escavador.com/api/v2/monitoramentos', {
+      const monRes = await fetch('https://api.escavador.com/api/v2/monitoramentos/processos', {
         method: 'POST',
         headers: {
           Authorization: `Bearer ${integ.api_key}`,
@@ -133,10 +133,8 @@ export async function POST(req: NextRequest) {
           'X-Requested-With': 'XMLHttpRequest'
         },
         body: JSON.stringify({
-          tipo: 'processo',
-          numero_cnj: numeroCnj,
-          frequencia: 'SEMANAL',
-          ativo: true
+          numero: numeroCnj,
+          frequencia: 'SEMANAL'
         })
       })
 

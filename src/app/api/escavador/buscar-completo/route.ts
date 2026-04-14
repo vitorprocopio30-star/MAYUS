@@ -120,7 +120,7 @@ export async function POST(req: NextRequest) {
   if (!oab_estado || !oab_numero) return NextResponse.json({ error: 'OAB inválida' }, { status: 400 })
   const requestSource = String(source || 'unknown')
 
-  if (!allow_paid_search) {
+  if (!allow_paid_search || requestSource !== 'monitoramento_ui_sync_button') {
     return NextResponse.json(
       { error: 'Busca completa de OAB bloqueada sem confirmação explícita.' },
       { status: 400 }

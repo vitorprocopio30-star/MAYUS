@@ -1,5 +1,7 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { createClient } from '@supabase/supabase-js'
+import { createServerClient } from '@supabase/ssr'
+import { cookies } from 'next/headers'
 
 const adminSupabase = createClient(
   process.env.NEXT_PUBLIC_SUPABASE_URL!,
@@ -7,10 +9,39 @@ const adminSupabase = createClient(
 )
 
 export async function POST(req: NextRequest) {
-  const { tenant_id, oab_numero, oab_estado } = await req.json()
-  if (!tenant_id || !oab_numero || !oab_estado) {
-    return NextResponse.json({ error: 'Parâmetros obrigatórios: tenant_id, oab_numero, oab_estado' }, { status: 400 })
+  const cookieStore = await cookies()
+  const supabase = createServerClient(
+    process.env.NEXT_PUBLIC_SUPABASE_URL!,
+    process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY!,
+    {
+      cookies: {
+        getAll() { return cookieStore.getAll() },
+        setAll(cookiesToSet) {
+          try {
+            cookiesToSet.forEach(({ name, value, options }) => cookieStore.set(name, value, options))
+          } catch {}
+        },
+      },
+    }
+  )
+
+  const { data: { user } } = await supabase.auth.getUser()
+  if (!user) return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
+
+  const { oab_numero, oab_estado } = await req.json()
+  if (!oab_numero || !oab_estado) {
+    return NextResponse.json({ error: 'Parâmetros obrigatórios: oab_numero, oab_estado' }, { status: 400 })
   }
+
+  const { data: profile } = await adminSupabase
+    .from('profiles')
+    .select('tenant_id')
+    .eq('id', user.id)
+    .single()
+
+  if (!profile?.tenant_id) return NextResponse.json({ error: 'Tenant não encontrado' }, { status: 400 })
+
+  const tenant_id = profile.tenant_id
 
   const { data: integ } = await adminSupabase
     .from('tenant_integrations')
@@ -23,7 +54,9 @@ export async function POST(req: NextRequest) {
     return NextResponse.json({ error: 'Escavador não configurado' }, { status: 400 })
   }
 
-  const res = await fetch('https://api.escavador.com/api/v2/monitoramentos', {
+  const termoPrincipal = `OAB/${String(oab_estado).toUpperCase()} ${String(oab_numero).trim()}`
+
+  const res = await fetch('https://api.escavador.com/api/v2/monitoramentos/novos-processos', {
     method: 'POST',
     headers: {
       Authorization: `Bearer ${integ.api_key}`,
@@ -32,10 +65,11 @@ export async function POST(req: NextRequest) {
       'X-Requested-With': 'XMLHttpRequest'
     },
     body: JSON.stringify({
-      tipo: 'termo',
-      termo: `OAB/${oab_estado} ${oab_numero}`,
-      frequencia: 'DIARIA',
-      ativo: true
+      termo: termoPrincipal,
+      variacoes: [
+        `OAB ${String(oab_estado).toUpperCase()} ${String(oab_numero).trim()}`,
+        `${String(oab_estado).toUpperCase()}${String(oab_numero).trim()}`
+      ]
     })
   })
 
@@ -51,6 +85,7 @@ export async function POST(req: NextRequest) {
       metadata: {
         ...(integ.metadata as Record<string, unknown> | null),
         monitoramento_oab_id: data?.id,
+        monitoramento_oab_termo: termoPrincipal,
         oab_numero,
         oab_estado,
         criado_em: new Date().toISOString()

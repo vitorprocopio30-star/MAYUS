@@ -46,9 +46,9 @@ export async function POST(req: NextRequest) {
   if (!apiKey)
     return NextResponse.json({ error: 'Escavador não configurado' }, { status: 400 })
 
-  const { cache_key, query, pagina_inicio = 2, allow_paid_search } = await req.json()
+  const { cache_key, query, pagina_inicio = 2, allow_paid_search, source } = await req.json()
 
-  if (!allow_paid_search) {
+  if (!allow_paid_search || source !== 'monitoramento_ui_sync_button') {
     return NextResponse.json({ error: 'Sincronização de OAB bloqueada sem confirmação explícita.' }, { status: 400 })
   }
 
