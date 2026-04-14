@@ -1,0 +1,218 @@
+import { NextRequest, NextResponse } from 'next/server'
+import { createClient } from '@supabase/supabase-js'
+import { createServerClient } from '@supabase/ssr'
+import { cookies } from 'next/headers'
+
+interface MonitoramentoCapacity {
+  total_monitorados: number
+  gratuitos: number
+  disponivel_sem_custo: number
+  preco_extra: number
+}
+
+const adminSupabase = createClient(
+  process.env.NEXT_PUBLIC_SUPABASE_URL!,
+  process.env.SUPABASE_SERVICE_ROLE_KEY!,
+  { auth: { autoRefreshToken: false, persistSession: false } }
+)
+
+function mapearProcesso(p: Record<string, unknown>) {
+  const fontes = (p.fontes as Record<string, unknown>[]) ?? []
+  const fonte = fontes[0] ?? {}
+  const capa = (fonte.capa as Record<string, unknown>) ?? {}
+  const unidade = (p.unidade_origem as Record<string, unknown>) ?? {}
+  const envolvidos = (fonte.envolvidos as Record<string, unknown>[]) ?? []
+  const movimentacoes = (fonte.movimentacoes as Record<string, unknown>[]) ?? []
+
+  return {
+    numero_processo: (p.numero_cnj ?? p.numero) as string,
+    escavador_id: String((fonte as any).processo_fonte_id || p.id || ''),
+    tribunal: (unidade.sigla_tribunal ?? unidade.tribunal_sigla ?? unidade.nome ?? (fonte as any).sigla_tribunal ?? '—') as string,
+    comarca: (unidade.comarca ?? unidade.municipio ?? (fonte as any).comarca ?? null) as string | null,
+    vara: (capa.orgao_julgador ?? (fonte as any).orgao_julgador ?? null) as string | null,
+    assunto: (capa.assunto ?? (fonte as any).assunto ?? '—') as string,
+    classe_processual: (capa.classe ?? p.classe ?? (fonte as any).classe ?? null) as string | null,
+    tipo_acao: (capa.tipo ?? (fonte as any).tipo ?? null) as string | null,
+    status: (() => {
+      const encerrado = p.encerrado === true || p.encerrado === 1 || p.encerrado === 'true'
+      const statusPredito = String(fonte.status_predito ?? p.status ?? capa.status ?? capa.situacao ?? '')
+      const tituloStatus = String(p.titulo ?? p.nome_status ?? p.situacao ?? '').toUpperCase()
+      const combinado = (statusPredito + ' ' + tituloStatus).toUpperCase()
+      if (encerrado) return 'ARQUIVADO'
+      if (['BAIXADO', 'ENCERRADO', 'EXTINTO', 'ARQUIVADO', 'SUSPENSO', 'JULGADO', 'CANCELADO'].some(s => combinado.includes(s))) return 'ARQUIVADO'
+      return 'ATIVO'
+    })() as string,
+    fase_atual: (fonte.status_predito ?? p.fase ?? capa.fase ?? 'CONHECIMENTO') as string,
+    fontes_tribunais_estao_arquivadas: p.fontes_tribunais_estao_arquivadas === true,
+    status_predito: String(fonte.status_predito ?? p.status ?? 'ATIVO'),
+    polo_ativo: (p.titulo_polo_ativo ?? capa.polo_ativo ?? '—') as string,
+    polo_passivo: (p.titulo_polo_passivo ?? capa.polo_passivo ?? '—') as string,
+    valor_causa: (capa.valor_causa_formatado ?? (typeof capa.valor_causa === 'object' && capa.valor_causa !== null
+      ? (capa.valor_causa as any).valor_formatado || (capa.valor_causa as any).valor
+      : (capa.valor_causa ?? null))) as string | null,
+    data_distribuicao: (capa.data_inicio ?? capa.data_distribuicao ?? p.data_distribuicao ?? null) as string | null,
+    data_ultima_movimentacao: (capa.data_ultima_movimentacao ?? (movimentacoes[0]?.data as string) ?? (p.data_ultima_movimentacao as string) ?? null) as string | null,
+    ultima_movimentacao_texto: (() => {
+      const m = (movimentacoes[0] as Record<string, unknown>) ?? {}
+      const texto = (capa.ultimo_movimento as any)?.conteudo || capa.ultimo_movimento || m.conteudo || m.titulo || m.descricao || m.texto || m.resumo || null
+      if (texto && typeof texto === 'object' && !Array.isArray(texto)) return (texto as any).conteudo || (texto as any).texto || JSON.stringify(texto)
+      return (texto as string | null)
+    })(),
+    ultima_movimentacao_resumo: (movimentacoes[0]?.resumo ?? null) as string | null,
+    envolvidos,
+    movimentacoes: movimentacoes.slice(0, 20),
+    raw_escavador: p,
+  }
+}
+
+export async function POST(req: NextRequest) {
+  const cookieStore = await cookies()
+  const supabase = createServerClient(
+    process.env.NEXT_PUBLIC_SUPABASE_URL!,
+    process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY!,
+    {
+      cookies: {
+        getAll() { return cookieStore.getAll() },
+        setAll(cookiesToSet) {
+          try {
+            cookiesToSet.forEach(({ name, value, options }) => cookieStore.set(name, value, options))
+          } catch {}
+        },
+      },
+    }
+  )
+
+  const { data: { user } } = await supabase.auth.getUser()
+  if (!user) return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
+
+  const { oab_estado, oab_numero } = await req.json()
+  if (!oab_estado || !oab_numero) return NextResponse.json({ error: 'OAB inválida' }, { status: 400 })
+
+  const { data: profile } = await adminSupabase
+    .from('profiles')
+    .select('tenant_id')
+    .eq('id', user.id)
+    .single()
+  if (!profile?.tenant_id) return NextResponse.json({ error: 'No tenant' }, { status: 400 })
+  const tenantId = profile.tenant_id
+
+  const { data: capacity } = await adminSupabase
+    .rpc('check_monitoramento_capacity', { p_tenant_id: tenantId })
+    .single() as { data: MonitoramentoCapacity | null; error: unknown }
+
+  const { data: integration } = await adminSupabase
+    .from('tenant_integrations')
+    .select('api_key')
+    .eq('tenant_id', tenantId)
+    .eq('provider', 'escavador')
+    .in('status', ['active', 'connected'])
+    .single()
+
+  if (!integration?.api_key) {
+    return NextResponse.json({ error: 'Escavador não configurado' }, { status: 400 })
+  }
+
+  let nextUrl: string | null = `https://api.escavador.com/api/v2/advogado/processos?oab_numero=${oab_numero}&oab_estado=${oab_estado}`
+  let pages = 0
+  let totalAdvogado = 0
+  let advogadoNome = ''
+  const all: any[] = []
+
+  while (nextUrl && pages < 100) {
+    pages += 1
+    const resp = await fetch(nextUrl, {
+      method: 'GET',
+      headers: {
+        Authorization: `Bearer ${integration.api_key.trim()}`,
+        Accept: 'application/json',
+        'X-Requested-With': 'XMLHttpRequest'
+      }
+    })
+
+    if (!resp.ok) {
+      const errText = await resp.text()
+      return NextResponse.json({ error: errText }, { status: resp.status })
+    }
+
+    const data = await resp.json()
+    const items = data?.items ?? data?.itens ?? data?.processos ?? []
+    nextUrl = data?.links?.next ?? null
+    totalAdvogado = data?.advogado_encontrado?.quantidade_processos ?? totalAdvogado
+    advogadoNome = data?.advogado_encontrado?.nome ?? advogadoNome
+
+    for (const item of items) {
+      all.push(mapearProcesso(item))
+    }
+  }
+
+  const unicos = Array.from(new Map(all.map((p: any) => [p.numero_processo, p])).values())
+
+  const numeros = unicos.map((p: any) => p.numero_processo).filter(Boolean)
+  const { data: jaMonitorados } = numeros.length > 0
+    ? await adminSupabase
+        .from('monitored_processes')
+        .select('id, numero_processo, escavador_id, resumo_curto, urgencia_nivel, proxima_acao_sugerida')
+        .eq('tenant_id', tenantId)
+        .in('numero_processo', numeros)
+    : { data: [] as any[] }
+
+  const monitoradosMap = new Map((jaMonitorados ?? []).map((m: any) => [m.numero_processo, m]))
+  const processosComStatus = unicos.map((p: any) => {
+    const db = monitoradosMap.get(p.numero_processo)
+    return {
+      ...p,
+      monitorado: !!db,
+      id: db?.id ?? undefined,
+      escavador_id: db?.escavador_id || p.escavador_id,
+      resumo_curto: db?.resumo_curto ?? undefined,
+      urgencia_nivel: db?.urgencia_nivel ?? undefined,
+      proxima_acao_sugerida: db?.proxima_acao_sugerida ?? undefined,
+    }
+  })
+
+  const ativosNaoMonitorados = processosComStatus.filter((p: any) => p.status === 'ATIVO' && !p.monitorado).length
+  const disponivelSemCusto = capacity?.disponivel_sem_custo ?? 0
+  const precoExtra = capacity?.preco_extra ?? 0.97
+  const excedenteSeProsseguir = Math.max(0, ativosNaoMonitorados - disponivelSemCusto)
+
+  const cacheKey = `OAB_FULL:${String(oab_estado).toUpperCase()}:${String(oab_numero)}`
+  await adminSupabase.from('processos_cache').upsert({
+    tenant_id: tenantId,
+    cache_key: cacheKey,
+    processos: processosComStatus,
+    total: totalAdvogado || processosComStatus.length,
+    advogado: { nome: advogadoNome },
+    total_paginas: pages,
+    pagina_atual: pages,
+    sincronizado: true,
+    updated_at: new Date().toISOString()
+  }, { onConflict: 'tenant_id,cache_key' })
+
+  await adminSupabase.from('oabs_salvas').upsert({
+    tenant_id: tenantId,
+    oab_estado,
+    oab_numero,
+    advogado: advogadoNome,
+    total_processos: totalAdvogado || processosComStatus.length,
+    ultima_busca: new Date().toISOString(),
+  }, { onConflict: 'tenant_id,oab_estado,oab_numero' })
+
+  return NextResponse.json({
+    processos: processosComStatus,
+    total: totalAdvogado || processosComStatus.length,
+    total_retornado: processosComStatus.length,
+    advogado_nome: advogadoNome,
+    next_url: null,
+    paginas_buscadas: pages,
+    billing: {
+      total_ja_monitorados: capacity?.total_monitorados ?? 0,
+      gratuitos: capacity?.gratuitos ?? 100,
+      disponivel_sem_custo: disponivelSemCusto,
+      ativos_nao_monitorados: ativosNaoMonitorados,
+      ja_monitorados_desta_oab: monitoradosMap.size,
+      excedente_se_prosseguir: excedenteSeProsseguir,
+      custo_estimado_mes: excedenteSeProsseguir * precoExtra,
+      preco_por_extra: precoExtra,
+    }
+  })
+}

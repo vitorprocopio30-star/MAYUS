@@ -324,14 +324,9 @@ function processoArquivado(p: Processo): boolean {
 
 function MonitoramentoContent() {
   const [pagina, setPagina] = useState(1)
-  const [nextCursor, setNextCursor] = useState<string|null>(null)
-  const [carregandoMais, setCarregandoMais] = useState(false)
+  const [sincronizandoBase, setSincronizandoBase] = useState(false)
+  const [baseSincronizada, setBaseSincronizada] = useState(false)
   
-  // Estados para Automação de Carga
-  const [carregandoTodos, setCarregandoTodos] = useState(false)
-  const [automationBatchesCount, setAutomationBatchesCount] = useState(0)
-  const [progressoCarregamento, setProgressoCarregamento] = useState("")
-
   const [tab, setTab] = useState<'oab' | 'numero' | 'cpf'>('oab')
   const [importarAberto, setImportarAberto] = useState(false)
   const [oabEstado, setOabEstado] = useState('RJ')
@@ -367,32 +362,44 @@ function MonitoramentoContent() {
     window.scrollTo({ top: 300, behavior: 'smooth' })
   }
 
+  const carregarBaseOab = useCallback(async (estado: string, numero: string) => {
+    if (!numero.trim()) return
+    try {
+      const res = await fetch('/api/escavador/base-oab', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ oab_estado: estado, oab_numero: numero.trim() })
+      })
+      const data = await res.json()
+      if (!res.ok) return
+      if (!data?.exists) {
+        setBaseSincronizada(false)
+        return
+      }
+      setResult(data)
+      setBaseSincronizada(true)
+    } catch {}
+  }, [])
+
   useEffect(() => {
     const s = localStorage.getItem('mayus_oab_numero')
     const e = localStorage.getItem('mayus_oab_estado')
     if (s) setOabNumero(s)
     if (e) setOabEstado(e)
 
-    const saved = sessionStorage.getItem('mon_result')
-    if (saved) {
-      try {
-        const parsed = JSON.parse(saved)
-        setResult(parsed)
-        setNextCursor(parsed.next_url ?? null)
-        setCarregandoTodos(false) // nunca auto-carrega ao restaurar sessão
-      } catch {}
+    if (s) {
+      carregarBaseOab(e || 'RJ', s)
     }
-
-  }, [])
+  }, [carregarBaseOab])
 
   const buscar = useCallback(async () => {
     if (!oabNumero.trim()) return
-    setLoading(true); setError(null); setFeedback(null); setSelecionados(new Set()); setPagina(1)
+    setLoading(true); setSincronizandoBase(true); setError(null); setFeedback(null); setSelecionados(new Set()); setPagina(1)
     try {
       localStorage.setItem('mayus_oab_numero', oabNumero.trim())
       localStorage.setItem('mayus_oab_estado', oabEstado)
 
-      const res = await fetch('/api/escavador/buscar-completo', {
+      const res = await fetch('/api/escavador/sincronizar-oab', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ oab_estado: oabEstado, oab_numero: oabNumero.trim() })
@@ -400,10 +407,9 @@ function MonitoramentoContent() {
       const data = await res.json()
       if (!res.ok) throw new Error(data.error ?? 'Falha na varredura')
       setResult(data)
-      setNextCursor(data.next_url ?? null)
-      setCarregandoTodos(false) // nunca auto-carrega
-      setAutomationBatchesCount(0)
-      try { sessionStorage.setItem('mon_result', JSON.stringify(data)) } catch {}
+      setBaseSincronizada(true)
+      const qtdArquivados = (data.processos || []).filter((p: Processo) => processoArquivado(p)).length
+      setFeedback(`Base sincronizada: ${data.total_retornado || 0} processos carregados (${qtdArquivados} arquivados).`)
     } catch (e) {
       console.error('Erro na varredura:', e)
       let msg = 'Falha na varredura'
@@ -418,54 +424,10 @@ function MonitoramentoContent() {
       }
       setError(msg)
     } finally {
+      setSincronizandoBase(false)
       setLoading(false)
     }
   }, [oabEstado, oabNumero])
-
-  const carregarMais = useCallback(async () => {
-    if (!nextCursor || carregandoMais) return
-    setCarregandoMais(true)
-    try {
-      const res = await fetch('/api/escavador/buscar-completo', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({
-          oab_estado: oabEstado,
-          oab_numero: oabNumero.trim(),
-          next_url: nextCursor
-        })
-      })
-      const data = await res.json()
-      setNextCursor(data.next_url ?? null)
-      setResult(prev => prev ? {
-        ...prev,
-        processos: [...prev.processos, ...data.processos],
-        total_retornado: (prev.total_retornado ?? 0) + data.processos.length
-      } : data)
-      try {
-         const currentSavedStr = sessionStorage.getItem('mon_result')
-         if (currentSavedStr) {
-            const currentSaved = JSON.parse(currentSavedStr)
-            sessionStorage.setItem('mon_result', JSON.stringify({
-              ...currentSaved,
-              processos: [...(currentSaved.processos ?? []), ...data.processos],
-              total_retornado: (currentSaved.total_retornado ?? 0) + data.processos.length,
-              next_url: data.next_url ?? null
-            }))
-         }
-      } catch {}
-    } finally {
-      setCarregandoMais(false)
-    }
-  }, [nextCursor, oabEstado, oabNumero, carregandoMais])
-
-
-  useEffect(() => {
-    if (result) {
-      setProgressoCarregamento(`${result.total_retornado}/${result.total}`)
-    }
-  }, [result])
-
   const monitorarLote = useCallback(async (processos: Processo[]) => {
     const ativos = processos.filter((p) => !processoArquivado(p))
     const qtdArquivados = processos.length - ativos.length
@@ -619,6 +581,7 @@ function MonitoramentoContent() {
   }, [processosFiltrados, pagina])
 
   const totalAtivos = result?.processos.filter(p => !p.monitorado && !processoArquivado(p)).length ?? 0
+  const totalArquivadosAmostra = result?.processos.filter((p) => processoArquivado(p)).length ?? 0
 
   const handleFiltroStatusChange = (f: FilterStatus) => { setFiltroStatus(f); setPagina(1); }
   const handleSearchChange = (v: string) => { setSearch(v); setPagina(1); }
@@ -647,6 +610,10 @@ function MonitoramentoContent() {
                 <div className="flex flex-col">
                    <span className="text-white font-black text-lg leading-none">{result.total}</span>
                    <span className="text-[9px] text-zinc-600 uppercase font-black">Processos</span>
+                </div>
+                <div className="flex flex-col border-l border-zinc-800 pl-4">
+                   <span className="text-[9px] text-zinc-500 uppercase font-black tracking-widest leading-none mb-1">Arquivados</span>
+                   <span className="text-zinc-400 font-black text-sm">{totalArquivadosAmostra}</span>
                 </div>
              </div>
            )}
@@ -759,21 +726,6 @@ function MonitoramentoContent() {
               )}
             </div>
 
-            {nextCursor && (
-              <div className="mt-8">
-                {carregandoTodos ? (
-                  <div className="w-full py-6 flex flex-col items-center justify-center gap-3 bg-zinc-900/40 rounded-2xl border border-zinc-800 animate-pulse">
-                    <Loader2 size={24} className="text-[#CCA761] animate-spin" />
-                    <p className="text-[#CCA761] text-[10px] font-black uppercase tracking-[0.3em]">Carregando processos... {progressoCarregamento}</p>
-                  </div>
-                ) : (
-                  <button onClick={() => carregarMais()} disabled={carregandoMais} className="w-full py-4 rounded-2xl border border-[#CCA761]/30 bg-[#CCA761]/5 text-[#CCA761] text-[10px] font-black uppercase tracking-widest hover:bg-[#CCA761]/10 transition-all flex items-center justify-center gap-2">
-                    {carregandoMais ? <Loader2 size={14} className="animate-spin" /> : <ChevronDown size={14} />}
-                    {carregandoMais ? 'BUSCANDO LOTE...' : `Carregar mais processos (${result.total - (result.total_retornado || 0)} restantes)`}
-                  </button>
-                )}
-              </div>
-            )}
             <BillingBar billing={result.billing} />
           </div>
         )}
@@ -828,7 +780,7 @@ function MonitoramentoContent() {
                 </div>
                 <button onClick={buscar} disabled={loading} className="px-8 h-12 bg-yellow-500 hover:bg-yellow-400 text-black text-xs font-black rounded-xl transition-all disabled:opacity-50 flex items-center justify-center gap-2.5 shadow-xl shadow-yellow-500/20 active:scale-95 border-b-4 border-yellow-600 shrink-0 uppercase tracking-widest">
                   {loading ? <RefreshCw size={14} className="animate-spin" /> : <Zap size={14} fill="currentColor" />}
-                  {loading ? 'BUSCANDO...' : 'INICIAR VARREDURA'}
+                  {loading ? (sincronizandoBase ? 'SINCRONIZANDO...' : 'BUSCANDO...') : (baseSincronizada ? 'ATUALIZAR BASE DA OAB' : 'SINCRONIZAR BASE COMPLETA')}
                 </button>
               </div>
             </div>
