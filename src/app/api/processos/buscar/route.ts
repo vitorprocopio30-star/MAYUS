@@ -40,7 +40,7 @@ export async function POST(req: NextRequest) {
 
     const tenantId = profile.tenant_id
 
-    const { query, tipo } = await req.json() as { query: string; tipo: 'numero' | 'oab' | 'cpf' }
+    const { query, tipo, allow_paid_search } = await req.json() as { query: string; tipo: 'numero' | 'oab' | 'cpf'; allow_paid_search?: boolean }
 
     if (!query?.trim()) return NextResponse.json({ error: 'Query obrigatória.' }, { status: 400 })
     if (!['numero', 'oab', 'cpf'].includes(tipo)) return NextResponse.json({ error: 'Tipo inválido.' }, { status: 400 })
@@ -72,6 +72,10 @@ export async function POST(req: NextRequest) {
     }
 
     if (tipo === 'oab') {
+      if (!allow_paid_search) {
+        return NextResponse.json({ error: 'Busca de OAB bloqueada sem confirmação explícita.' }, { status: 400 })
+      }
+
       const [estado, numero] = query.trim().split('/')
       if (!estado || !numero) {
         return NextResponse.json({ error: 'Formato OAB inválido. Use: RJ/211558' }, { status: 400 })

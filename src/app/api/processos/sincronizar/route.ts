@@ -46,7 +46,11 @@ export async function POST(req: NextRequest) {
   if (!apiKey)
     return NextResponse.json({ error: 'Escavador não configurado' }, { status: 400 })
 
-  const { cache_key, query, pagina_inicio = 2 } = await req.json()
+  const { cache_key, query, pagina_inicio = 2, allow_paid_search } = await req.json()
+
+  if (!allow_paid_search) {
+    return NextResponse.json({ error: 'Sincronização de OAB bloqueada sem confirmação explícita.' }, { status: 400 })
+  }
 
   const { data: cache } = await adminSupabase
     .from('processos_cache')

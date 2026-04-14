@@ -116,9 +116,16 @@ export async function POST(req: NextRequest) {
   const { data: { user } } = await supabase.auth.getUser()
   if (!user) return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
 
-  const { oab_estado, oab_numero, cursor, next_url, source } = await req.json()
+  const { oab_estado, oab_numero, cursor, next_url, source, allow_paid_search } = await req.json()
   if (!oab_estado || !oab_numero) return NextResponse.json({ error: 'OAB inválida' }, { status: 400 })
   const requestSource = String(source || 'unknown')
+
+  if (!allow_paid_search) {
+    return NextResponse.json(
+      { error: 'Busca completa de OAB bloqueada sem confirmação explícita.' },
+      { status: 400 }
+    )
+  }
 
   const { data: profile } = await adminSupabase
     .from('profiles').select('tenant_id').eq('id', user.id).single()

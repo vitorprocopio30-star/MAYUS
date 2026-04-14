@@ -446,7 +446,8 @@ function MonitoramentoContent() {
         body: JSON.stringify({
           oab_estado: oabEstado,
           oab_numero: oabNumero.trim(),
-          source: 'monitoramento_ui_sync_button'
+          source: 'monitoramento_ui_sync_button',
+          allow_paid_search: true
         })
       })
       const data = await res.json()
@@ -522,9 +523,6 @@ function MonitoramentoContent() {
         billing: { ...prev.billing, total_ja_monitorados: prev.billing.total_ja_monitorados + Number(data.importados || 0) }
       } : prev)
       setSelecionados(new Set())
-      if (oabNumero.trim()) {
-        await carregarBaseOab(oabEstado, oabNumero)
-      }
 
       const falhasMonitoramento = Array.isArray(data.falhas_monitoramento) ? data.falhas_monitoramento.length : 0
       const resumosSolicitados = Number(data.resumos_solicitados || 0)
@@ -555,7 +553,7 @@ function MonitoramentoContent() {
       setImportandoLote(false)
       if (numeroAlvo) setLoadingId(null)
     }
-  }, [carregarBaseOab, oabEstado, oabNumero])
+  }, [])
 
   const confirmarMonitoramentoLote = useCallback(async () => {
     if (!confirmacao) return
@@ -590,10 +588,6 @@ function MonitoramentoContent() {
         billing: { ...prev.billing, total_ja_monitorados: prev.billing.total_ja_monitorados + Number(data.importados || 0) }
       } : prev)
 
-      if (oabNumero.trim()) {
-        await carregarBaseOab(oabEstado, oabNumero)
-      }
-
       const falhasMonitoramento = Array.isArray(data.falhas_monitoramento) ? data.falhas_monitoramento.length : 0
       const resumosSolicitados = Number(data.resumos_solicitados || 0)
 
@@ -619,7 +613,7 @@ function MonitoramentoContent() {
       setConfirmandoLote(false)
       if (numeroAlvo) setLoadingId(null)
     }
-  }, [carregarBaseOab, confirmacao, oabEstado, oabNumero])
+  }, [confirmacao])
 
   const desmonitorar = useCallback(async (p: Processo) => {
     setLoadingId(p.numero_processo)
