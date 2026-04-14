@@ -76,7 +76,14 @@ export async function POST(req: NextRequest) {
   const novos = processos.filter((p: Record<string, string>) => !existentesSet.has(p.numero_processo))
 
   if (novos.length === 0)
-    return NextResponse.json({ importados: 0, mensagem: 'Todos já estavam monitorados.' })
+    return NextResponse.json({
+      importados: 0,
+      ignorados: processosJaMonitorados.length,
+      sucessos_monitoramento: [],
+      falhas_monitoramento: [],
+      resumos_solicitados: 0,
+      mensagem: 'Todos já estavam monitorados no Escavador.'
+    })
 
   const excedente = Math.max(0, novos.length - disponivelSemCusto)
   const custoMensal = excedente * precoExtra

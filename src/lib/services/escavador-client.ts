@@ -7,6 +7,7 @@ const adminSupabase = createClient(
 
 const ESCAVADOR_BASE_V2 = 'https://api.escavador.com/api/v2'
 const LIMITE_CENTAVOS_DEFAULT = Number(process.env.ESCAVADOR_LIMITE_CENTAVOS ?? 4000)
+const ESCAVADOR_TIMEOUT_MS = Number(process.env.ESCAVADOR_TIMEOUT_MS ?? 30000)
 
 export async function escavadorFetch(
   path: string,
@@ -19,15 +20,29 @@ export async function escavadorFetch(
     ? `https://api.escavador.com/api${path}`
     : `${ESCAVADOR_BASE_V2}${path}`
 
-  const res = await fetch(url, {
-    ...options,
-    headers: {
-      Authorization: `Bearer ${apiKey}`,
-      'Content-Type': 'application/json',
-      'X-Requested-With': 'XMLHttpRequest',
-      ...((options.headers as Record<string, string>) ?? {})
+  const controller = new AbortController()
+  const timeout = setTimeout(() => controller.abort(), ESCAVADOR_TIMEOUT_MS)
+
+  let res: Response
+  try {
+    res = await fetch(url, {
+      ...options,
+      signal: controller.signal,
+      headers: {
+        Authorization: `Bearer ${apiKey}`,
+        'Content-Type': 'application/json',
+        'X-Requested-With': 'XMLHttpRequest',
+        ...((options.headers as Record<string, string>) ?? {})
+      }
+    })
+  } catch (error: any) {
+    if (error?.name === 'AbortError') {
+      throw new Error(`Escavador timeout após ${Math.round(ESCAVADOR_TIMEOUT_MS / 1000)}s`) 
     }
-  })
+    throw error
+  } finally {
+    clearTimeout(timeout)
+  }
 
   const creditos = Number(res.headers.get('Creditos-Utilizados') ?? 0)
 

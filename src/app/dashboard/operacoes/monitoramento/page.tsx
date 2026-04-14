@@ -531,15 +531,24 @@ function MonitoramentoContent() {
       const primeiraFalha = Array.isArray(data.falhas_monitoramento) && data.falhas_monitoramento.length > 0
         ? data.falhas_monitoramento[0]
         : null
+
+      if (Number(data.importados || 0) === 0) {
+        const msg =
+          data?.mensagem ||
+          primeiraFalha?.motivo ||
+          'Nenhum monitoramento foi criado para os processos selecionados.'
+        setError(msg)
+        setFeedback(null)
+        return
+      }
+
       setFeedback(
         `${qtdArquivados > 0 ? `⚠️ ${qtdArquivados} arquivados ignorados. ` : ''}` +
         `✅ ${Number(data.importados || 0)} monitorados. ` +
         `🧠 ${resumosSolicitados} resumo(s) solicitado(s).` +
         `${falhasMonitoramento > 0 ? ` ❌ ${falhasMonitoramento} falha(s) de monitoramento.` : ''}`
       )
-      if (monitoramentoIndividual && Number(data.importados || 0) === 0) {
-        setError(primeiraFalha?.motivo || 'Não foi possível criar monitoramento para este processo no Escavador.')
-      }
+      if (monitoramentoIndividual && primeiraFalha?.motivo) setError(primeiraFalha.motivo)
     } catch (e: any) {
       setError(e?.message || 'Erro ao monitorar processos')
     } finally {
@@ -587,6 +596,16 @@ function MonitoramentoContent() {
 
       const falhasMonitoramento = Array.isArray(data.falhas_monitoramento) ? data.falhas_monitoramento.length : 0
       const resumosSolicitados = Number(data.resumos_solicitados || 0)
+
+      if (Number(data.importados || 0) === 0) {
+        const primeiraFalha = Array.isArray(data.falhas_monitoramento) && data.falhas_monitoramento.length > 0
+          ? data.falhas_monitoramento[0]
+          : null
+        setError(data?.mensagem || primeiraFalha?.motivo || 'Nenhum monitoramento foi criado após confirmação.')
+        setFeedback(null)
+        return
+      }
+
       setFeedback(
         `✅ ${Number(data.importados || 0)} monitorados após confirmação de custo. ` +
         `🧠 ${resumosSolicitados} resumo(s) solicitado(s).` +
