@@ -598,6 +598,8 @@ function MonitoramentoContent() {
         let matchStatus = true
         if (filtroStatus === 'monitorado') matchStatus = p.monitorado
         else if (filtroStatus === 'nao_monitorado') matchStatus = !p.monitorado
+        else if (filtroStatus === 'ARQUIVADO') matchStatus = processoArquivado(p)
+        else if (filtroStatus === 'ARQUIVADO') matchStatus = processoArquivado(p)
         else if (filtroStatus !== 'TODOS') matchStatus = p.status === filtroStatus
         const matchTribunal = !filtroTribunal || p.tribunal === filtroTribunal
         const matchSearch = !search || [p.numero_processo, p.polo_ativo, p.polo_passivo, p.assunto].some(s => s?.toLowerCase().includes(search.toLowerCase()))
