@@ -54,12 +54,25 @@ export async function POST(req: NextRequest) {
   const disponivelSemCusto = Math.max(0, gratuitos - jaMonitorados)
   const precoExtra = capacity?.preco_extra ?? 0.97
 
-  // Filtrar duplicatas
+  // Filtrar duplicatas: só ignorar quem já tem monitoramento remoto ativo
   const numeros = processos.map((p: Record<string, string>) => p.numero_processo)
   const { data: existentes } = await adminSupabase
-    .from('monitored_processes').select('numero_processo')
+    .from('monitored_processes').select('numero_processo, escavador_monitoramento_id, monitoramento_ativo')
     .eq('tenant_id', tenantId).in('numero_processo', numeros)
-  const existentesSet = new Set((existentes ?? []).map((e: { numero_processo: string }) => e.numero_processo))
+  const existentesMap = new Map((existentes ?? []).map((e: any) => [
+    e.numero_processo,
+    {
+      escavador_monitoramento_id: e.escavador_monitoramento_id,
+      monitoramento_ativo: e.monitoramento_ativo,
+    }
+  ]))
+
+  const processosJaMonitorados = processos.filter((p: Record<string, string>) => {
+    const ex = existentesMap.get(p.numero_processo)
+    return !!(ex?.escavador_monitoramento_id && ex?.monitoramento_ativo)
+  })
+
+  const existentesSet = new Set(processosJaMonitorados.map((p: Record<string, string>) => p.numero_processo))
   const novos = processos.filter((p: Record<string, string>) => !existentesSet.has(p.numero_processo))
 
   if (novos.length === 0)
@@ -89,6 +102,13 @@ export async function POST(req: NextRequest) {
     .in('status', ['active', 'connected'])
     .single()
 
+  if (!integration?.api_key) {
+    return NextResponse.json(
+      { error: 'Integração Escavador não configurada ou inativa.' },
+      { status: 400 }
+    )
+  }
+
   const rows: Record<string, unknown>[] = []
   const falhasMonitoramento: Array<{ numero_processo: string; motivo: string }> = []
 
@@ -98,24 +118,22 @@ export async function POST(req: NextRequest) {
 
     let monitoramentoId: string | null = null
 
-    if (integration?.api_key) {
-      const monitoramento = await criarMonitoramentoProcesso({
-        tenantId,
-        apiKey: integration.api_key,
-        numeroProcesso,
-        frequencia: 'semanal'
+    const monitoramento = await criarMonitoramentoProcesso({
+      tenantId,
+      apiKey: integration.api_key,
+      numeroProcesso,
+      frequencia: 'semanal'
+    })
+
+    if (!monitoramento.ok || !monitoramento.monitoramentoId) {
+      falhasMonitoramento.push({
+        numero_processo: numeroProcesso,
+        motivo: monitoramento.error || 'Falha ao criar monitoramento no Escavador'
       })
-
-      if (!monitoramento.ok || !monitoramento.monitoramentoId) {
-        falhasMonitoramento.push({
-          numero_processo: numeroProcesso,
-          motivo: monitoramento.error || 'Falha ao criar monitoramento no Escavador'
-        })
-        continue
-      }
-
-      monitoramentoId = monitoramento.monitoramentoId
+      continue
     }
+
+    monitoramentoId = monitoramento.monitoramentoId
 
     rows.push({
       tenant_id: tenantId,
@@ -160,7 +178,7 @@ export async function POST(req: NextRequest) {
 
   const { error } = await adminSupabase
     .from('monitored_processes')
-    .insert(rows)
+    .upsert(rows, { onConflict: 'tenant_id,numero_processo' })
 
   if (error && !error.message.includes('duplicate')) {
     console.error('[importar-lote]', error)
@@ -170,17 +188,14 @@ export async function POST(req: NextRequest) {
   const importados = rows.length
   await adminSupabase.rpc('increment_processos_monitorados', { p_tenant_id: tenantId, p_quantidade: importados })
 
-  let resumosSolicitados = 0
-  if (integration?.api_key) {
-    const resultadosResumo = await Promise.allSettled(
-      rows.map((r) => solicitarResumoProcesso(tenantId, integration.api_key, String(r.numero_processo)))
-    )
-    resumosSolicitados = resultadosResumo.filter((r) => r.status === 'fulfilled' && r.value).length
-  }
+  const resultadosResumo = await Promise.allSettled(
+    rows.map((r) => solicitarResumoProcesso(tenantId, integration.api_key, String(r.numero_processo)))
+  )
+  const resumosSolicitados = resultadosResumo.filter((r) => r.status === 'fulfilled' && r.value).length
 
   return NextResponse.json({
     importados,
-    ignorados: existentesSet.size,
+    ignorados: processosJaMonitorados.length,
     falhas_monitoramento: falhasMonitoramento,
     resumos_solicitados: resumosSolicitados,
     excedente_cobrado: excedente,

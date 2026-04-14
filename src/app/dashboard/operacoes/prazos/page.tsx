@@ -256,6 +256,7 @@ export default function PrazosPage() {
   const movimentacoesFiltradas = useMemo(() => {
     const busca = searchTerm.trim().toLowerCase()
     const dedupe = new Set<string>()
+    const assinaturaEvento = new Set<string>()
     const lista: any[] = []
 
     const itemByNumero = new Map<string, any>()
@@ -335,6 +336,10 @@ export default function PrazosPage() {
       if (dedupe.has(dedupeKey)) return
       dedupe.add(dedupeKey)
 
+      const assinatura = `${numeroProcesso}-${dataISO}-${conteudo.toLowerCase().replace(/\s+/g, ' ').slice(0, 220)}`
+      if (assinaturaEvento.has(assinatura)) return
+      assinaturaEvento.add(assinatura)
+
       lista.push({
         id: dedupeKey,
         item,
@@ -393,6 +398,10 @@ export default function PrazosPage() {
         if (dedupe.has(dedupeKey)) return
         dedupe.add(dedupeKey)
 
+        const assinatura = `${numeroProcesso}-${dataISO}-${conteudo.toLowerCase().replace(/\s+/g, ' ').slice(0, 220)}`
+        if (assinaturaEvento.has(assinatura)) return
+        assinaturaEvento.add(assinatura)
+
         lista.push({
           id: dedupeKey,
           item,
@@ -416,7 +425,45 @@ export default function PrazosPage() {
       })
     }
 
-    return lista.sort((a, b) => {
+    const agrupadoPorProcesso = new Map<string, any>()
+
+    lista.forEach((mov) => {
+      const numero = mov.numeroProcesso || 'sem-processo'
+      const dataAtual = new Date(mov.dataReferencia || 0).getTime()
+
+      if (!agrupadoPorProcesso.has(numero)) {
+        agrupadoPorProcesso.set(numero, {
+          ...mov,
+          historico: [mov],
+          quantidadeMovimentacoes: 1,
+        })
+        return
+      }
+
+      const atual = agrupadoPorProcesso.get(numero)
+      const dataPrincipal = new Date(atual.dataReferencia || 0).getTime()
+      const historico = [...(atual.historico || []), mov].sort((a: any, b: any) => {
+        const ta = new Date(a.dataReferencia || 0).getTime()
+        const tb = new Date(b.dataReferencia || 0).getTime()
+        return tb - ta
+      })
+
+      if (dataAtual > dataPrincipal) {
+        agrupadoPorProcesso.set(numero, {
+          ...mov,
+          historico,
+          quantidadeMovimentacoes: historico.length,
+        })
+      } else {
+        agrupadoPorProcesso.set(numero, {
+          ...atual,
+          historico,
+          quantidadeMovimentacoes: historico.length,
+        })
+      }
+    })
+
+    return Array.from(agrupadoPorProcesso.values()).sort((a, b) => {
       const ta = new Date(a.dataReferencia || 0).getTime()
       const tb = new Date(b.dataReferencia || 0).getTime()
       return tb - ta
@@ -664,9 +711,14 @@ export default function PrazosPage() {
               >
                 <GlassCard className="border-[#CCA761]/40 hover:border-[#CCA761]/80 hover:scale-[1.01] transform transition-all hover:shadow-[0_0_24px_rgba(204,167,97,0.16)] h-full">
                   <div className="flex items-start justify-between gap-3 mb-4">
-                    <span className="px-2.5 py-1 rounded-lg text-[10px] font-bold tracking-widest border border-[#CCA761]/40 text-[#CCA761] uppercase">
-                      Movimentação
-                    </span>
+                    <div className="flex items-center gap-2 flex-wrap">
+                      <span className="px-2.5 py-1 rounded-lg text-[10px] font-bold tracking-widest border border-[#CCA761]/40 text-[#CCA761] uppercase">
+                        Movimentação
+                      </span>
+                      <span className="px-2.5 py-1 rounded-full text-[10px] font-bold border border-[#CCA761]/30 text-[#CCA761]/90 bg-[#CCA761]/10">
+                        {mov.quantidadeMovimentacoes || 1} evento(s)
+                      </span>
+                    </div>
                     <span className="px-3 py-1 rounded-full text-[11px] font-bold border border-white/10 text-white/60 bg-white/5">
                       {formatarData(mov.dataISO || mov.dataReferencia)}
                     </span>
@@ -1053,6 +1105,29 @@ export default function PrazosPage() {
                           <p className="text-[13px] text-white/75 leading-relaxed whitespace-pre-wrap break-words">
                             {selectedMovimentacao?.conteudo || item.monitored_processes?.ultima_movimentacao_texto}
                           </p>
+                        </div>
+                      </div>
+                    )}
+
+                    {Array.isArray(selectedMovimentacao?.historico) && selectedMovimentacao.historico.length > 1 && (
+                      <div className="p-6 rounded-2xl bg-white/[0.03] border border-white/5 space-y-4">
+                        <div className="flex items-center justify-between gap-3">
+                          <label className="text-[10px] text-[#CCA761] font-black uppercase tracking-widest">Histórico de Movimentações</label>
+                          <span className="text-[11px] text-white/40">{selectedMovimentacao.historico.length} registros</span>
+                        </div>
+
+                        <div className="max-h-72 overflow-y-auto space-y-3 pr-1">
+                          {selectedMovimentacao.historico.slice(1).map((movHist: any) => (
+                            <div key={movHist.id} className="rounded-xl border border-white/10 bg-black/20 p-4 space-y-2">
+                              <div className="flex items-center justify-between">
+                                <span className="text-[10px] uppercase tracking-wider text-white/30">Movimentação</span>
+                                <span className="text-[10px] text-[#CCA761]">{formatarData(movHist.dataISO || movHist.dataReferencia || null)}</span>
+                              </div>
+                              <p className="text-[12px] text-white/70 leading-relaxed whitespace-pre-wrap break-words">
+                                {movHist.conteudo || 'Sem conteúdo'}
+                              </p>
+                            </div>
+                          ))}
                         </div>
                       </div>
                     )}

@@ -404,6 +404,21 @@ function MonitoramentoContent() {
     }
   }, [carregarBaseOab])
 
+  const carregarBaseSalva = useCallback(async () => {
+    if (!oabNumero.trim()) return
+    setError(null)
+    setFeedback(null)
+    setLoading(true)
+    try {
+      localStorage.setItem('mayus_oab_numero', oabNumero.trim())
+      localStorage.setItem('mayus_oab_estado', oabEstado)
+      await carregarBaseOab(oabEstado, oabNumero.trim())
+      setFeedback('Base local carregada sem consumo de créditos do Escavador.')
+    } finally {
+      setLoading(false)
+    }
+  }, [carregarBaseOab, oabEstado, oabNumero])
+
   const buscar = useCallback(async () => {
     if (!oabNumero.trim()) return
     setLoading(true); setSincronizandoBase(true); setError(null); setFeedback(null); setSelecionados(new Set()); setPagina(1)
@@ -460,6 +475,9 @@ function MonitoramentoContent() {
         body: JSON.stringify({ processos: ativos, confirmar_custo: false })
       })
       const data = await res.json()
+      if (!res.ok) {
+        throw new Error(data.error || 'Falha ao monitorar processos no Escavador')
+      }
       if (data.requer_confirmacao) {
         setConfirmacao({ ...data, processosParaImportar: ativos })
         return
@@ -485,12 +503,59 @@ function MonitoramentoContent() {
         `🧠 ${resumosSolicitados} resumo(s) solicitado(s).` +
         `${falhasMonitoramento > 0 ? ` ❌ ${falhasMonitoramento} falha(s) de monitoramento.` : ''}`
       )
-    } catch (e) {
-      setError('Erro ao monitorar processos')
+    } catch (e: any) {
+      setError(e?.message || 'Erro ao monitorar processos')
     } finally {
       setImportandoLote(false)
     }
   }, [carregarBaseOab, oabEstado, oabNumero])
+
+  const confirmarMonitoramentoLote = useCallback(async () => {
+    if (!confirmacao) return
+
+    setConfirmandoLote(true)
+    setError(null)
+
+    try {
+      const res = await fetch('/api/monitoramento/importar-lote', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ processos: confirmacao.processosParaImportar, confirmar_custo: true })
+      })
+
+      const data = await res.json()
+      if (!res.ok) {
+        throw new Error(data.error || 'Falha ao confirmar monitoramento no Escavador')
+      }
+
+      const nowIso = new Date().toISOString()
+      setResult(prev => prev ? {
+        ...prev,
+        processos: prev.processos.map(p => confirmacao.processosParaImportar.some(a => a.numero_processo === p.numero_processo)
+          ? { ...p, monitorado: true, resumo_solicitado_em: nowIso }
+          : p),
+        billing: { ...prev.billing, total_ja_monitorados: prev.billing.total_ja_monitorados + Number(data.importados || 0) }
+      } : prev)
+
+      if (oabNumero.trim()) {
+        await carregarBaseOab(oabEstado, oabNumero)
+      }
+
+      const falhasMonitoramento = Array.isArray(data.falhas_monitoramento) ? data.falhas_monitoramento.length : 0
+      const resumosSolicitados = Number(data.resumos_solicitados || 0)
+      setFeedback(
+        `✅ ${Number(data.importados || 0)} monitorados após confirmação de custo. ` +
+        `🧠 ${resumosSolicitados} resumo(s) solicitado(s).` +
+        `${falhasMonitoramento > 0 ? ` ❌ ${falhasMonitoramento} falha(s) de monitoramento.` : ''}`
+      )
+      setSelecionados(new Set())
+      setConfirmacao(null)
+    } catch (e: any) {
+      setError(e?.message || 'Erro ao confirmar monitoramento')
+    } finally {
+      setConfirmandoLote(false)
+    }
+  }, [carregarBaseOab, confirmacao, oabEstado, oabNumero])
 
   const desmonitorar = useCallback(async (p: Processo) => {
     setLoadingId(p.numero_processo)
@@ -636,7 +701,7 @@ function MonitoramentoContent() {
 
   return (
     <>
-      {confirmacao && <ModalConfirmacaoCusto dados={confirmacao} onConfirmar={buscar} onCancelar={() => setConfirmacao(null)} loading={confirmandoLote} />}
+      {confirmacao && <ModalConfirmacaoCusto dados={confirmacao} onConfirmar={confirmarMonitoramentoLote} onCancelar={() => setConfirmacao(null)} loading={confirmandoLote} />}
 
       <div className="p-6 max-w-6xl mx-auto space-y-6">
         <div className="flex items-center justify-between gap-4">
@@ -822,13 +887,27 @@ function MonitoramentoContent() {
                 )}
                 <div className="flex-1 relative">
                   <Search size={14} className="absolute left-4 top-1/2 -translate-y-1/2 text-zinc-700" />
-                  <input value={oabNumero} onChange={e => setOabNumero(e.target.value)} onKeyDown={e => e.key === 'Enter' && buscar()} placeholder="Digite os dados para busca..." className="w-full h-full bg-zinc-950 border border-zinc-900 rounded-xl pl-11 pr-4 text-xs text-white placeholder-zinc-800 outline-none focus:border-yellow-500/50 font-medium" />
+                  <input value={oabNumero} onChange={e => setOabNumero(e.target.value)} onKeyDown={e => e.key === 'Enter' && carregarBaseSalva()} placeholder="Digite os dados para busca..." className="w-full h-full bg-zinc-950 border border-zinc-900 rounded-xl pl-11 pr-4 text-xs text-white placeholder-zinc-800 outline-none focus:border-yellow-500/50 font-medium" />
                 </div>
-                <button onClick={buscar} disabled={loading} className="px-8 h-12 bg-yellow-500 hover:bg-yellow-400 text-black text-xs font-black rounded-xl transition-all disabled:opacity-50 flex items-center justify-center gap-2.5 shadow-xl shadow-yellow-500/20 active:scale-95 border-b-4 border-yellow-600 shrink-0 uppercase tracking-widest">
+                <button onClick={carregarBaseSalva} disabled={loading} className="px-6 h-12 bg-zinc-800 hover:bg-zinc-700 text-white text-[11px] font-black rounded-xl transition-all disabled:opacity-50 flex items-center justify-center gap-2 shadow-xl shadow-black/30 active:scale-95 border border-zinc-700 shrink-0 uppercase tracking-widest">
                   {loading ? <RefreshCw size={14} className="animate-spin" /> : <Zap size={14} fill="currentColor" />}
-                  {loading ? (sincronizandoBase ? 'SINCRONIZANDO...' : 'BUSCANDO...') : (baseSincronizada ? 'ATUALIZAR BASE DA OAB' : 'SINCRONIZAR BASE COMPLETA')}
+                  CARREGAR BASE GRAVADA
+                </button>
+                <button
+                  onClick={() => {
+                    const confirmou = window.confirm('Atualizar do Escavador consome créditos. Deseja continuar?')
+                    if (confirmou) buscar()
+                  }}
+                  disabled={loading}
+                  className="px-6 h-12 bg-yellow-500 hover:bg-yellow-400 text-black text-[11px] font-black rounded-xl transition-all disabled:opacity-50 flex items-center justify-center gap-2.5 shadow-xl shadow-yellow-500/20 active:scale-95 border-b-4 border-yellow-600 shrink-0 uppercase tracking-widest"
+                >
+                  {loading ? <RefreshCw size={14} className="animate-spin" /> : <Zap size={14} fill="currentColor" />}
+                  {loading ? (sincronizandoBase ? 'SINCRONIZANDO...' : 'BUSCANDO...') : 'ATUALIZAR ESCAVADOR'}
                 </button>
               </div>
+              <p className="text-[10px] text-zinc-500 uppercase tracking-widest px-1">
+                Carregar base usa dados salvos. Atualizar Escavador pode cobrar por requisição.
+              </p>
             </div>
           )}
         </div>
