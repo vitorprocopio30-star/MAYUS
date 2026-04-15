@@ -62,6 +62,46 @@ function escolherEtapaFallback(stages: any[]): string | null {
   return visiveis[0]?.id ?? null
 }
 
+function pontuarPipelineNome(nome?: string | null) {
+  const n = normalizarNomeEtapa(nome)
+  let score = 0
+  if (n.includes('controle juridico')) score += 6
+  if (n.includes('jurid')) score += 4
+  if (n.includes('processo')) score += 2
+  if (n.includes('crm')) score -= 3
+  if (n.includes('venda')) score -= 2
+  return score
+}
+
+function escolherEtapaSemantica(stages: any[], sinais: string[]) {
+  const visiveis = (stages || []).filter((s: any) => !etapaEhMovimentacoes(s?.name))
+  if (visiveis.length === 0) return null
+
+  const contexto = normalizarDescricaoPrazo(sinais.join(' '))
+
+  const regras = [
+    { match: ['contrarrazo', 'agravo'], etapa: ['contrarrazoes de agravo', 'contrarrazoes'] },
+    { match: ['agravo'], etapa: ['agravo de instrumento', 'agravo'] },
+    { match: ['contest'], etapa: ['contestacao'] },
+    { match: ['replica'], etapa: ['replica', 'contrarrazoes'] },
+    { match: ['protocol'], etapa: ['protocolar inicial', 'protocolo'] },
+    { match: ['inicial', 'peticao'], etapa: ['fazer inicial', 'peticao inicial'] },
+    { match: ['document', 'diligenc'], etapa: ['recolher documentos', 'documentos'] },
+    { match: ['sentenca', 'embargos'], etapa: ['embargos', 'sentenca', 'recursos'] },
+  ]
+
+  for (const regra of regras) {
+    if (!regra.match.every((m) => contexto.includes(m))) continue
+    const found = visiveis.find((s: any) => {
+      const n = normalizarNomeEtapa(s?.name)
+      return regra.etapa.some((e) => n.includes(e))
+    })
+    if (found?.id) return found.id
+  }
+
+  return null
+}
+
 export async function POST(req: NextRequest) {
   const supabase = createClient()
   const { data: { user } } = await supabase.auth.getUser()
@@ -125,14 +165,18 @@ export async function POST(req: NextRequest) {
   }
 
   if (!pipelineId) {
-    const { data: defaultPipeline } = await supabase
+    const { data: allPipelines } = await supabase
       .from('process_pipelines')
-      .select('id')
+      .select('id, name')
       .eq('tenant_id', proc.tenant_id)
       .order('created_at', { ascending: true })
-      .limit(1)
-      .maybeSingle()
-    pipelineId = defaultPipeline?.id ?? null
+      .limit(50)
+
+    const best = (allPipelines || [])
+      .map((p: any) => ({ ...p, _score: pontuarPipelineNome(p?.name) }))
+      .sort((a: any, b: any) => b._score - a._score)[0]
+
+    pipelineId = best?.id ?? allPipelines?.[0]?.id ?? null
   }
 
   const { data: stages } = pipelineId
@@ -272,9 +316,16 @@ Retorne exatamente este JSON:
   }
 
   const etapaValida = etapasDisponiveis.find((s: any) => s.id === resultado.kanban_stage_id)
+  const etapaSemantica = escolherEtapaSemantica(etapasVisiveis, [
+    resultado?.proxima_acao_sugerida || '',
+    resultado?.resumo_curto || '',
+    ...(Array.isArray(resultado?.prazos) ? resultado.prazos.map((p: any) => p?.descricao || '') : []),
+    ...movimentacoes.map((m: any) => m?.texto || m?.descricao || m?.tipo || ''),
+  ])
+
   const etapaEscolhidaId = (etapaValida && !etapaEhMovimentacoes(etapaValida.name)
     ? etapaValida.id
-    : etapaFallbackId) || null
+    : etapaSemantica || etapaFallbackId) || null
 
   // 6. Persistir resultado
   const agora = new Date().toISOString()
@@ -405,6 +456,7 @@ Retorne exatamente este JSON:
   return NextResponse.json({
     success: true,
     processo_atualizado: procAtualizado,
+    pipeline_id:         pipelineId,
     prazos_criados:      resultado.prazos?.length || 0,
     peca_sugerida:       resultado.peca_sugerida,
     kanban_stage_id:     etapaEscolhidaId,

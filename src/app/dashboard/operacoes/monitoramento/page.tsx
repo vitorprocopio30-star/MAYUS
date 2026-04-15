@@ -717,11 +717,14 @@ function MonitoramentoContent() {
           ...prev,
           processos: prev.processos.map(p => p.id === processoId ? { ...p, ...data.processo_atualizado } : p)
         } : prev)
+        setFeedback('Organização concluída e card atualizado no fluxo jurídico.')
       } else {
         setOrganizando(prev => ({ ...prev, [processoId]: 'idle' }))
+        setError(data?.error || 'Não foi possível organizar este processo com IA.')
       }
     } catch {
       setOrganizando(prev => ({ ...prev, [processoId]: 'idle' }))
+      setError('Erro de comunicação ao organizar processo com IA.')
     }
   }, [])
 

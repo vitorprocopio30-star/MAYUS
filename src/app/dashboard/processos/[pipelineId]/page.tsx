@@ -371,38 +371,26 @@ const [pendingMove, setPendingMove] = useState<{
       {/* MAIN CONTENT */}
       <main className="flex-1 overflow-hidden relative">
         {viewMode === "board" ? (
-          <div className="h-full w-full overflow-x-auto overflow-y-hidden p-6 pb-2 relative" style={{ scrollbarWidth: 'thin', scrollbarColor: '#CCA76130 transparent' }}>
-            {/* Feixe de Luz Mágico Horizontal */}
-            <div className="absolute top-0 left-0 right-0 h-[2px] z-50 pointer-events-none opacity-80 overflow-hidden">
-               <div className="h-full w-[150px] bg-gradient-to-r from-transparent via-white to-transparent blur-[1px] animate-[neonBeam_3s_ease-in-out_infinite_alternate]" style={{ boxShadow: '0 0 15px 3px #fff' }} />
-            </div>
+          <div className="h-full w-full overflow-x-auto overflow-y-hidden p-6 pb-2 relative" style={{ scrollbarWidth: 'thin', scrollbarColor: '#3f3f4630 transparent' }}>
 
             <DragDropContext onDragEnd={onDragEnd}>
-              <div className="flex items-start gap-6 h-full pb-10">
+              <div className="flex items-start gap-4 h-full pb-6">
                 {visibleStages.map(stage => {
                   const stageTasks = tasks.filter(t => t.stage_id === stage.id).sort((a,b) => a.position_index - b.position_index);
                   
                   return (
-                    <div key={stage.id} className="flex flex-col flex-none w-80 h-full max-h-full bg-[#090909] rounded-2xl border relative shadow-[0_12px_24px_rgba(0,0,0,0.55)] overflow-hidden transition-all duration-500" style={{ borderColor: `${stage.color}40` }}>
-                      <div className="p-4 relative backdrop-blur-md flex flex-row items-center justify-between z-10 border-b border-white/10 overflow-hidden rounded-t-2xl">
-                        {/* Preenchimento Glass Completo */}
-                        <div className="absolute inset-0 opacity-[0.16] rounded-t-2xl" style={{ backgroundColor: stage.color }} />
-                        
-                        {/* Linha superior incandescente (Tarja Superior) + Feixe de Luz Mágico */}
-                        <div className="absolute top-0 left-0 w-full h-[2px] bg-white opacity-90 overflow-hidden" style={{ backgroundColor: stage.color, boxShadow: `0 0 15px ${stage.color}` }}>
-                           {/* Feixe de Luz Mágico Horizontal Correndo */}
-                           <div className="absolute top-0 bottom-0 w-[50px] bg-gradient-to-r from-transparent via-white to-transparent blur-[1px] animate-[neonBeam_2.5s_ease-in-out_infinite_alternate]" style={{ boxShadow: '0 0 10px 2px #fff' }} />
-                        </div>
-                        
+                    <div key={stage.id} className="flex flex-col flex-none w-[340px] h-full max-h-full bg-[#090909] rounded-2xl border border-zinc-800 overflow-hidden">
+                      <div className="p-3.5 relative flex flex-row items-center justify-between z-10 border-b border-zinc-800/80 overflow-hidden rounded-t-2xl">
+                        <div className="absolute inset-0 opacity-[0.09] rounded-t-2xl" style={{ backgroundColor: stage.color }} />
                         <div className="flex items-center gap-2 relative z-10 w-full justify-between">
                           <div className="flex items-center gap-3">
-                            <h3 className="font-black text-white text-[11px] tracking-widest uppercase drop-shadow-[0_0_10px_rgba(255,255,255,0.3)]">{stage.name}</h3>
+                            <h3 className="font-black text-white text-[11px] tracking-widest uppercase">{stage.name}</h3>
                             <div className="relative inline-flex items-center justify-center">
-                               <span className="text-[10px] font-bold px-2 py-0.5 rounded-lg border backdrop-blur-md relative z-10 text-white" style={{ borderColor: stage.color }}>
+                               <span className="text-[10px] font-bold px-2 py-0.5 rounded-lg border bg-black/30 relative z-10 text-white" style={{ borderColor: `${stage.color}88` }}>
                                  {stageTasks.length}
                                </span>
-                               <div className="absolute inset-0 rounded-lg opacity-20" style={{ backgroundColor: stage.color }} />
-                            </div>
+                               <div className="absolute inset-0 rounded-lg opacity-10" style={{ backgroundColor: stage.color }} />
+                             </div>
                           </div>
                           <button onClick={() => openNewTaskModal(stage.id)} className="text-gray-400 hover:text-white p-1 hover:bg-white/10 rounded-lg transition-colors"><Plus size={16} /></button>
                         </div>
@@ -413,7 +401,7 @@ const [pendingMove, setPendingMove] = useState<{
                           <div
                             ref={provided.innerRef}
                             {...provided.droppableProps}
-                            className={`flex-1 flex flex-col gap-3.5 px-3.5 py-4 overflow-y-auto no-scrollbar transition-colors ${snapshot.isDraggingOver ? 'bg-[#151515] ring-inset ring-1 ring-white/10' : ''}`}
+                            className={`flex-1 flex flex-col gap-2.5 px-3 py-3 overflow-y-auto no-scrollbar transition-colors ${snapshot.isDraggingOver ? 'bg-[#131313]' : ''}`}
                           >
                             {stageTasks.map((task, index) => {
                               const assignee = agents.find(a => a.id === task.assigned_to);
@@ -432,7 +420,7 @@ const [pendingMove, setPendingMove] = useState<{
                                       {...provided.draggableProps}
                                       {...provided.dragHandleProps}
                                       onClick={() => openEditTaskModal(task)}
-                                      className={`group relative overflow-hidden px-4 py-3 rounded-xl border bg-[#0d0d0d] hover:bg-[#121212] cursor-grab active:cursor-grabbing transition-all duration-200 ${showIdleAlert ? 'border-red-500/40' : 'border-white/10'}`}
+                                      className={`group relative overflow-hidden px-3.5 py-3 rounded-xl border bg-[#0c0c0c] hover:bg-[#111] cursor-grab active:cursor-grabbing transition-all duration-150 ${showIdleAlert ? 'border-red-500/35' : 'border-zinc-800'}`}
                                       style={{ ...provided.draggableProps.style }}
                                     >
                                       {showIdleAlert && (
@@ -441,9 +429,9 @@ const [pendingMove, setPendingMove] = useState<{
                                          </div>
                                       )}
                                       
-                                      <div className="absolute top-3 bottom-3 left-0 w-[2px] shadow-[0_0_12px_currentColor] opacity-90 transition-opacity rounded-r-full group-hover:w-[3px]" style={{ backgroundColor: stage.color, color: stage.color }} />
-                                      {task.client_name && <div className="text-[#CCA761] text-[10px] font-black uppercase tracking-widest mb-1 line-clamp-1 flex items-center gap-1"><UserIcon size={10} /> {task.client_name}</div>}
-                                      <h4 className="text-white text-[15px] font-bold tracking-wide mb-2 line-clamp-2 drop-shadow-sm group-hover:text-[#CCA761] transition-colors">{task.title}</h4>
+                                       <div className="absolute top-3 bottom-3 left-0 w-[2px] opacity-70 rounded-r-full" style={{ backgroundColor: stage.color, color: stage.color }} />
+                                       {task.client_name && <div className="text-[#CCA761] text-[10px] font-black uppercase tracking-widest mb-1 line-clamp-1 flex items-center gap-1"><UserIcon size={10} /> {task.client_name}</div>}
+                                       <h4 className="text-white text-[14px] font-bold tracking-wide mb-1.5 line-clamp-2 group-hover:text-[#CCA761] transition-colors">{task.title}</h4>
                                       {(task as any).processo_1grau && (
                                         <p className="text-[10px] font-mono text-zinc-500 mt-1 mb-2 truncate">
                                           {(task as any).processo_1grau}
@@ -451,13 +439,13 @@ const [pendingMove, setPendingMove] = useState<{
                                       )}
 
                                       {task.description && (
-                                        <div className="text-gray-400 text-xs mb-3 line-clamp-2 leading-relaxed">
+                                        <div className="text-zinc-400 text-[12px] mb-2.5 line-clamp-1 leading-relaxed">
                                           {task.description.replace(/(<([^>]+)>)/gi, "")}
                                         </div>
                                       )}
                                        
                                       {task.sector && (
-                                        <div className="mb-4">
+                                        <div className="mb-3">
                                           {(() => {
                                             const [name, color] = task.sector.includes('|') ? task.sector.split('|') : [task.sector, '#60a5fa'];
                                             return (
@@ -469,7 +457,7 @@ const [pendingMove, setPendingMove] = useState<{
                                         </div>
                                       )}
 
-                                      <div className="flex items-center justify-between text-[11px] text-gray-500 mt-auto pt-2 border-t border-white/5">
+                                       <div className="flex items-center justify-between text-[11px] text-zinc-500 mt-auto pt-2 border-t border-zinc-800/70">
                                         <div className="flex items-center gap-1.5">
                                           <Calendar size={12} />
                                           {new Date(task.created_at).toLocaleDateString('pt-BR', { day: '2-digit', month: 'short' })}
