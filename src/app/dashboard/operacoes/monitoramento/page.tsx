@@ -22,7 +22,9 @@ import {
   Clock,
   Quote,
   Archive,
-  Download
+  Download,
+  Copy,
+  Check
 } from 'lucide-react'
 
 // ─── Interfaces e Tipos ───
@@ -100,14 +102,23 @@ const STATUS_COLOR: Record<string, string> = {
 function parseDataBR(dataStr: string | null): number {
   if (!dataStr) return 0
   try {
-    // Detecta ISO (YYYY-MM-DD) ou Completo
-    if (dataStr.includes('-')) {
-      const semTime = dataStr.split('T')[0]
-      const [a, m, d] = semTime.split('-').map(Number)
-      return new Date(a, m - 1, d).getTime() || 0
+    const normalized = String(dataStr).trim()
+
+    if (normalized.includes('/')) {
+      const [d, m, a] = normalized.split('/').map(Number)
+      const date = new Date(a, m - 1, d)
+      return date.getTime() || 0
     }
+
+    const isoLike = normalized.includes(' ') && normalized.includes('-')
+      ? normalized.replace(' ', 'T')
+      : normalized
+
+    const parsedIso = Date.parse(isoLike)
+    if (!Number.isNaN(parsedIso)) return parsedIso
+
     // Formato BR (DD/MM/YYYY)
-    const [d, m, a] = dataStr.split('/').map(Number)
+    const [d, m, a] = normalized.split('/').map(Number)
     const date = new Date(a, m - 1, d)
     return date.getTime() || 0
   } catch { return 0 }
@@ -223,6 +234,18 @@ function ModalConfirmacaoCusto({ dados, onConfirmar, onCancelar, loading }: { da
 function ProcessoCard({ p, onSelect, selecionado, onAction, onRemover, onArquivar, loadingId, organizandoState, onOrganizar, onAbrirResumo }: { p: Processo, onSelect: () => void, selecionado: boolean, onAction: () => void, onRemover: () => void, onArquivar: () => void, loadingId: string | null, organizandoState: 'idle' | 'loading' | 'done', onOrganizar: () => void, onAbrirResumo: (r: string) => void }) {
   const d = diasDesde(p.data_ultima_movimentacao)
   const isUpdating = loadingId === p.numero_processo
+  const [copiedProcess, setCopiedProcess] = useState(false)
+
+  const copyProcessNumber = async () => {
+    if (!p.numero_processo || typeof navigator === 'undefined' || !navigator.clipboard) return
+    try {
+      await navigator.clipboard.writeText(p.numero_processo)
+      setCopiedProcess(true)
+      setTimeout(() => setCopiedProcess(false), 1200)
+    } catch {
+      // noop
+    }
+  }
 
   return (
     <div className={`group relative bg-[#070707] border transition-all duration-700 rounded-3xl p-6 border-[#CCA761]/60 shadow-[0_0_25px_rgba(204,167,97,0.04)] bg-gradient-to-br from-[#CCA761]/5 via-transparent to-transparent ${selecionado ? 'ring-2 ring-[#CCA761] ring-offset-4 ring-offset-black' : ''}`}>
@@ -239,9 +262,18 @@ function ProcessoCard({ p, onSelect, selecionado, onAction, onRemover, onArquiva
         <div className="flex-1 space-y-6">
           {/* Header do Card */}
           <div className="flex items-center justify-between gap-4">
-            <div className="flex items-center gap-3 flex-wrap">
-               <h3 className="text-lg font-black text-[#CCA761] tracking-tight leading-none">{p.numero_processo}</h3>
+             <div className="flex items-center gap-3 flex-wrap">
                <div className="flex items-center gap-2">
+                 <h3 className="text-lg font-black text-[#CCA761] tracking-tight leading-none">{p.numero_processo}</h3>
+                 <button
+                   onClick={copyProcessNumber}
+                   title="Copiar número do processo"
+                   className="inline-flex items-center gap-1 px-2 py-1 rounded-lg border border-[#CCA761]/30 text-[#CCA761] text-[9px] font-black uppercase tracking-widest hover:bg-[#CCA761]/10 transition-colors"
+                 >
+                   {copiedProcess ? <Check size={11} /> : <Copy size={11} />} {copiedProcess ? 'Copiado' : 'Copiar'}
+                 </button>
+               </div>
+                <div className="flex items-center gap-2">
                  <span className="px-2.5 py-1 rounded-full bg-[#CCA761]/10 border-[#CCA761]/20 text-[#CCA761]/90 text-[8px] font-black uppercase tracking-widest shadow-[0_0_5px_rgba(204,167,97,0.05)]">{p.tribunal}</span>
                  <StatusBadge status={p.status} />
                  {processoArquivado(p) && (
@@ -258,8 +290,11 @@ function ProcessoCard({ p, onSelect, selecionado, onAction, onRemover, onArquiva
                    </span>
                  )}
                </div>
-            </div>
-          </div>
+             </div>
+             <div className="text-[10px] uppercase tracking-widest font-black text-zinc-500">
+               Autor: <span className="text-white">{p.polo_ativo || '—'}</span>
+             </div>
+           </div>
 
           {/* Partes */}
           <div className="flex flex-col md:flex-row gap-8 items-start">

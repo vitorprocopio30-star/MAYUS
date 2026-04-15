@@ -30,6 +30,8 @@ export type AgendaTaskRecord = {
   type?: string | null;
   color?: string | null;
   client_name?: string | null;
+  process_number?: string | null;
+  author_name?: string | null;
   created_at?: string | null;
 };
 
@@ -109,17 +111,19 @@ export function sortAgendaTasks<T extends AgendaTaskRecord>(tasks: T[]) {
 }
 
 export function toAgendaEvent(task: AgendaTaskRecord) {
-  const scheduledAt = task.scheduled_for ? new Date(task.scheduled_for) : null;
+  const normalizedStatus = normalizeAgendaStatus(task.status);
+  const completedAt = task.completed_at ? new Date(task.completed_at) : null;
+  const hasCompletedTime = normalizedStatus === "Concluído" && completedAt && !Number.isNaN(completedAt.getTime());
 
   return {
     ...task,
-    status: normalizeAgendaStatus(task.status),
+    status: normalizedStatus,
     urgency: normalizeUrgencyLabel(task.urgency),
     category: task.category || getUrgencyLabel(task.urgency),
     color: task.color || getUrgencyColor(task.urgency),
-    time_text: scheduledAt
-      ? scheduledAt.toLocaleTimeString("pt-BR", { hour: "2-digit", minute: "2-digit" })
-      : "--:--",
+    time_text: hasCompletedTime
+      ? completedAt.toLocaleTimeString("pt-BR", { hour: "2-digit", minute: "2-digit" })
+      : "--",
     person: task.completed_by_name_snapshot || task.assigned_name_snapshot || "Equipe MAYUS",
   };
 }

@@ -3,7 +3,7 @@
 import { useEffect, useState, useMemo, useRef } from "react";
 import { createClient } from "@/lib/supabase/client";
 import confetti from "canvas-confetti";
-import { Clock, AlertCircle, Star, Wand2, Calendar, CheckCircle2, Trophy, Coins, Gift, Lock, Unlock } from "lucide-react";
+import { Clock, AlertCircle, Star, Wand2, Calendar, CheckCircle2, Trophy, Coins, Gift, Lock, Unlock, Copy, Check } from "lucide-react";
 import { Montserrat, Cormorant_Garamond } from "next/font/google";
 import { useGamification } from "@/hooks/useGamification";
 import { formatDateKey, sortAgendaTasks, toAgendaEvent, toDayRange } from "@/lib/agenda/userTasks";
@@ -31,6 +31,11 @@ export default function AgendaDiariaPage() {
   const [myCoins, setMyCoins] = useState(1250);
   const [showCoinAnim, setShowCoinAnim] = useState(false);
   const [donated, setDonated] = useState(false);
+  const [isRealtimeOn, setIsRealtimeOn] = useState(true);
+  const [showFilters, setShowFilters] = useState(false);
+  const [statusFilter, setStatusFilter] = useState<"all" | "pending" | "in_progress" | "done">("all");
+  const [typeFilter, setTypeFilter] = useState<"all" | "Prazo" | "Processo" | "CRM">("all");
+  const [copiedTaskId, setCopiedTaskId] = useState<string | null>(null);
   const supabase = createClient();
 
   const MOTIVATIONAL_QUOTES = [
@@ -118,7 +123,42 @@ export default function AgendaDiariaPage() {
       .eq("assigned_to", user.id)
       .gte("scheduled_for", startIso);
 
-    const sortedTasks = sortAgendaTasks(userTasks || []).map(toAgendaEvent);
+    const processPrazoIds = (userTasks || [])
+      .filter((task: any) => task.source_table === "process_prazos" && task.source_id)
+      .map((task: any) => String(task.source_id));
+
+    let processContextByPrazoId = new Map<string, any>();
+    if (processPrazoIds.length > 0) {
+      const { data: prazoContextRows } = await supabase
+        .from("process_prazos")
+        .select("id, monitored_processes(numero_processo, partes, cliente_nome)")
+        .in("id", processPrazoIds);
+
+      processContextByPrazoId = new Map(
+        (prazoContextRows || []).map((row: any) => [
+          String(row.id),
+          {
+            process_number: row.monitored_processes?.numero_processo || null,
+            author_name: row.monitored_processes?.partes?.polo_ativo || null,
+            client_name: row.monitored_processes?.cliente_nome || null,
+          },
+        ])
+      );
+    }
+
+    const enrichedTasks = (userTasks || []).map((task: any) => {
+      if (task.source_table !== "process_prazos") return task;
+      const ctx = processContextByPrazoId.get(String(task.source_id));
+      if (!ctx) return task;
+      return {
+        ...task,
+        process_number: ctx.process_number,
+        author_name: ctx.author_name,
+        client_name: task.client_name || ctx.client_name,
+      };
+    });
+
+    const sortedTasks = sortAgendaTasks(enrichedTasks).map(toAgendaEvent);
     setEvents(sortedTasks.filter((task: any) => !task.is_critical));
     setCriticalDeadlines(sortedTasks.filter((task: any) => task.is_critical));
     setIsLoading(false);
@@ -137,12 +177,14 @@ export default function AgendaDiariaPage() {
        if (localStorage.getItem('didDonate') === 'true') setDonated(true);
     }
 
+    if (!isRealtimeOn) return;
+
     const channel = supabase
       .channel('realtime_user_tasks')
       .on(
         'postgres_changes',
         { event: '*', schema: 'public', table: 'user_tasks' },
-        (payload) => {
+        () => {
           fetchTasks();
         }
       )
@@ -151,15 +193,25 @@ export default function AgendaDiariaPage() {
     return () => {
       supabase.removeChannel(channel);
     };
-  }, []);
+  }, [isRealtimeOn]);
+
+  const getReward = (task: any) => {
+    const normalized = String(task.category || task.urgency || "")
+      .normalize("NFD")
+      .replace(/[\u0300-\u036f]/g, "")
+      .toUpperCase();
+    if (normalized === "URGENTE") return 100;
+    if (normalized === "ATENCAO") return 50;
+    return 20;
+  };
 
   const toggleStatus = async (task: any) => {
     const newStatus = task.status === 'Concluído' ? 'Pendente' : 'Concluído';
     const { data: { user } } = await supabase.auth.getUser();
     
-    // Gamification Hook: Reward the user with coins
+    const reward = getReward(task);
+
     if (newStatus === 'Concluído') {
-      const reward = task.category === 'URGENTE' ? 100 : task.category === 'ATENÇÃO' ? 50 : 20;
       setMyCoins(prev => {
         const nc = prev + reward;
         if (typeof window !== 'undefined') localStorage.setItem('mayusCoins', nc.toString());
@@ -175,6 +227,12 @@ export default function AgendaDiariaPage() {
       
       setShowCoinAnim(true);
       setTimeout(() => setShowCoinAnim(false), 2000);
+    } else if (task.status === 'Concluído') {
+      setMyCoins(prev => {
+        const nc = Math.max(0, prev - reward);
+        if (typeof window !== 'undefined') localStorage.setItem('mayusCoins', nc.toString());
+        return nc;
+      });
     }
 
     const updatePayload: Record<string, any> = {
@@ -208,8 +266,18 @@ export default function AgendaDiariaPage() {
     });
   };
 
-  const totalTasks = events.length;
-  const completedTasks = useMemo(() => events.filter(e => e.status === 'Concluído').length, [events]);
+  const visibleEvents = useMemo(() => {
+    return events.filter((ev) => {
+      if (statusFilter === "pending" && ev.status !== "Pendente") return false;
+      if (statusFilter === "in_progress" && ev.status !== "Em andamento") return false;
+      if (statusFilter === "done" && ev.status !== "Concluído") return false;
+      if (typeFilter !== "all" && ev.type !== typeFilter) return false;
+      return true;
+    });
+  }, [events, statusFilter, typeFilter]);
+
+  const totalTasks = visibleEvents.length;
+  const completedTasks = useMemo(() => visibleEvents.filter(e => e.status === 'Concluído').length, [visibleEvents]);
   const progress = useMemo(() => totalTasks > 0 ? Math.round((completedTasks / totalTasks) * 100) : 0, [totalTasks, completedTasks]);
   const isKilled = useMemo(() => totalTasks > 0 && completedTasks === totalTasks, [totalTasks, completedTasks]);
 
@@ -235,6 +303,21 @@ export default function AgendaDiariaPage() {
         if (typeof window !== 'undefined') localStorage.setItem('didDonate', 'true');
       }
     }, 50);
+  };
+
+  const copyProcessNumber = async (event: React.MouseEvent, task: any) => {
+    event.stopPropagation();
+    if (!task.process_number || typeof navigator === "undefined" || !navigator.clipboard) return;
+
+    try {
+      await navigator.clipboard.writeText(task.process_number);
+      setCopiedTaskId(task.id);
+      setTimeout(() => {
+        setCopiedTaskId((current) => (current === task.id ? null : current));
+      }, 1200);
+    } catch {
+      // noop
+    }
   };
 
   useEffect(() => {
@@ -356,10 +439,57 @@ export default function AgendaDiariaPage() {
                   <Clock size={18} className="text-[#CCA761] drop-shadow-[0_0_8px_rgba(204,167,97,0.8)]" /> Compromisos do Dia
                 </h3>
                 <div className="flex gap-2">
-                  <button className="text-[10px] text-gray-400 font-bold uppercase tracking-widest bg-white/5 px-3 py-1 rounded-lg border border-white/5 whitespace-nowrap">Ao Vivo (Realtime)</button>
-                  <button className="text-[10px] text-[#CCA761] font-bold uppercase tracking-widest border border-[#CCA761]/30 hover:bg-[#CCA761]/10 transition-colors px-3 py-1 rounded-lg">Filtros</button>
+                  <button
+                    onClick={() => setIsRealtimeOn((prev) => !prev)}
+                    className={`text-[10px] font-bold uppercase tracking-widest px-3 py-1 rounded-lg border whitespace-nowrap transition-colors ${isRealtimeOn ? "text-[#4ade80] bg-[#4ade80]/10 border-[#4ade80]/30" : "text-gray-400 bg-white/5 border-white/5"}`}
+                  >
+                    Ao Vivo ({isRealtimeOn ? "Ligado" : "Pausado"})
+                  </button>
+                  <button
+                    onClick={() => setShowFilters((prev) => !prev)}
+                    className={`text-[10px] font-bold uppercase tracking-widest border transition-colors px-3 py-1 rounded-lg ${showFilters ? "text-black bg-[#CCA761] border-[#CCA761]" : "text-[#CCA761] border-[#CCA761]/30 hover:bg-[#CCA761]/10"}`}
+                  >
+                    Filtros
+                  </button>
                 </div>
               </div>
+
+              {showFilters && (
+                <div className="mb-4 p-3 rounded-xl border border-white/10 bg-white/5 flex flex-col gap-3">
+                  <div className="flex flex-wrap gap-2">
+                    {[
+                      ["all", "Todos"],
+                      ["pending", "Pendentes"],
+                      ["in_progress", "Em andamento"],
+                      ["done", "Concluídas"],
+                    ].map(([value, label]) => (
+                      <button
+                        key={value}
+                        onClick={() => setStatusFilter(value as any)}
+                        className={`text-[10px] font-black uppercase tracking-widest px-3 py-1 rounded-lg border ${statusFilter === value ? "bg-[#CCA761] text-black border-[#CCA761]" : "border-white/10 text-gray-400 hover:text-white"}`}
+                      >
+                        {label}
+                      </button>
+                    ))}
+                  </div>
+                  <div className="flex flex-wrap gap-2">
+                    {[
+                      ["all", "Todos os tipos"],
+                      ["Prazo", "Prazo"],
+                      ["Processo", "Processo"],
+                      ["CRM", "CRM"],
+                    ].map(([value, label]) => (
+                      <button
+                        key={value}
+                        onClick={() => setTypeFilter(value as any)}
+                        className={`text-[10px] font-black uppercase tracking-widest px-3 py-1 rounded-lg border ${typeFilter === value ? "bg-[#CCA761] text-black border-[#CCA761]" : "border-white/10 text-gray-400 hover:text-white"}`}
+                      >
+                        {label}
+                      </button>
+                    ))}
+                  </div>
+                </div>
+              )}
 
               {/* BARRA DE PROGRESSO ANIMADA */}
               {showProgressBar && (
@@ -399,9 +529,9 @@ export default function AgendaDiariaPage() {
               )}
 
               <div className="space-y-3 pb-10">
-                {events.length === 0 ? (
+                {visibleEvents.length === 0 ? (
                   <div className="text-center py-12 text-gray-500 text-sm">Nenhuma atividade agendada.</div>
-                ) : events.map((ev, i) => {
+                ) : visibleEvents.map((ev, i) => {
                   const isDone = ev.status === 'Concluído';
                   const active = ev.active || false;
                   const bdgColor = ev.color || '#CCA761';
@@ -455,10 +585,27 @@ export default function AgendaDiariaPage() {
                               </div>
                             </div>
 
-                            {/* TÍTULO DA TAREFA */}
-                            <h4 className={`text-sm font-bold tracking-wide transition-colors duration-500 mt-1 ${isDone ? 'text-[#4ade80] line-through decoration-[#4ade80]/50' : 'text-white'
-                              }`}>{ev.title}</h4>
-                             
+                             {/* TÍTULO DA TAREFA */}
+                             <h4 className={`text-sm font-bold tracking-wide transition-colors duration-500 mt-1 ${isDone ? 'text-[#4ade80] line-through decoration-[#4ade80]/50' : 'text-white'
+                               }`}>{ev.title}</h4>
+
+                             {ev.process_number && (
+                               <div className="mt-2 flex items-center gap-2 flex-wrap">
+                                 <span className="text-[10px] font-black tracking-wide text-[#CCA761]">Proc: {ev.process_number}</span>
+                                 <button
+                                   onClick={(event) => copyProcessNumber(event, ev)}
+                                   title="Copiar número do processo"
+                                   className="inline-flex items-center gap-1 px-2 py-0.5 rounded border border-[#CCA761]/30 text-[#CCA761] text-[9px] font-bold hover:bg-[#CCA761]/10"
+                                 >
+                                   {copiedTaskId === ev.id ? <Check size={10} /> : <Copy size={10} />} {copiedTaskId === ev.id ? "Copiado" : "Copiar"}
+                                 </button>
+                               </div>
+                             )}
+
+                             {ev.author_name && (
+                               <p className="text-[10px] text-gray-400 font-semibold mt-1">Autor: {ev.author_name}</p>
+                             )}
+                              
                              {/* CADEADO VISUAL (Trancada) */}
                              {gamificationEnabled && ev.status === 'Em andamento' && (
                                <div className="flex items-center gap-1.5 mt-2 text-[#CCA761] bg-[#CCA761]/10 px-2 py-1 rounded w-max border border-[#CCA761]/30">
