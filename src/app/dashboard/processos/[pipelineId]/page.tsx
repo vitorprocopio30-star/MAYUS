@@ -10,7 +10,7 @@ import { DragDropContext, Droppable, Draggable, DropResult } from "@hello-pangea
 import { 
   Plus, Settings, LayoutTemplate, List,
   Tag as TagIcon, User as UserIcon, AlignLeft, X, Trash2,
-  Calendar, CheckCircle2, AlertTriangle, ArrowRight, MessageCircle
+  Calendar, CheckCircle2, AlertTriangle, ArrowRight
 } from "lucide-react";
 import { toast } from "sonner";
 import { TagsInput } from "react-tag-input-component";
@@ -28,6 +28,19 @@ const ReactQuill = dynamic(() => import("react-quill"), {
   ssr: false,
   loading: () => <div className="h-[250px] w-full bg-white/5 animate-pulse rounded-lg" />
 });
+
+function normalizarNomeEtapa(nome?: string | null) {
+  return String(nome ?? '')
+    .toLowerCase()
+    .normalize('NFD')
+    .replace(/[\u0300-\u036f]/g, '')
+    .trim()
+}
+
+function etapaOcultaNoBoard(nome?: string | null) {
+  const n = normalizarNomeEtapa(nome)
+  return n.includes('movimentac')
+}
 
 export default function PipelinePage() {
   const { pipelineId } = useParams() as { pipelineId: string };
@@ -85,27 +98,6 @@ const [pendingMove, setPendingMove] = useState<{
     }
     fetchData();
   }, [pipelineId, profile?.tenant_id, supabase]);
-
-  const getUltimaMovimentacao = (task: Task) => {
-    if (!Array.isArray(task.movimentacoes_timeline) || task.movimentacoes_timeline.length === 0) {
-      return null;
-    }
-
-    const timeline = [...task.movimentacoes_timeline].sort((a, b) => {
-      const dataA = new Date(a.criado_em || a.data || 0).getTime();
-      const dataB = new Date(b.criado_em || b.data || 0).getTime();
-      return dataB - dataA;
-    });
-
-    return timeline[0] ?? null;
-  };
-
-  const formatarDataMovimentacao = (valor?: string | null) => {
-    if (!valor) return "";
-    const data = new Date(valor);
-    if (Number.isNaN(data.getTime())) return "";
-    return data.toLocaleDateString("pt-BR", { day: "2-digit", month: "2-digit" });
-  };
 
   const handleCreatePipeline = async () => {
     if (!profile?.tenant_id) return;
@@ -259,8 +251,13 @@ const [pendingMove, setPendingMove] = useState<{
   
   const [defaultStageId, setDefaultStageId] = useState("");
 
+  const visibleStages = useMemo(
+    () => stages.filter((s) => !etapaOcultaNoBoard(s.name)),
+    [stages]
+  );
+
   const openNewTaskModal = (stageId?: string) => {
-    setDefaultStageId(stageId || (stages[0]?.id ?? ""));
+    setDefaultStageId(stageId || (visibleStages[0]?.id ?? stages[0]?.id ?? ""));
     setEditingTask(null);
     setIsTaskModalOpen(true);
   };
@@ -382,7 +379,7 @@ const [pendingMove, setPendingMove] = useState<{
 
             <DragDropContext onDragEnd={onDragEnd}>
               <div className="flex items-start gap-6 h-full pb-10">
-                {stages.map(stage => {
+                {visibleStages.map(stage => {
                   const stageTasks = tasks.filter(t => t.stage_id === stage.id).sort((a,b) => a.position_index - b.position_index);
                   
                   return (
@@ -420,7 +417,6 @@ const [pendingMove, setPendingMove] = useState<{
                           >
                             {stageTasks.map((task, index) => {
                               const assignee = agents.find(a => a.id === task.assigned_to);
-                              const ultimaMovimentacao = getUltimaMovimentacao(task);
                               
                               // Check 48h Idleness
                               const timeSinceMove = new Date().getTime() - new Date(task.data_ultima_movimentacao || task.created_at).getTime();
@@ -436,7 +432,7 @@ const [pendingMove, setPendingMove] = useState<{
                                       {...provided.draggableProps}
                                       {...provided.dragHandleProps}
                                       onClick={() => openEditTaskModal(task)}
-                                      className={`group relative overflow-hidden px-4 py-4 rounded-xl border bg-white/[0.015] backdrop-blur-xl shadow-[inset_0_1px_0_rgba(255,255,255,0.06),0_4px_12px_rgba(0,0,0,0.25)] hover:bg-white/[0.03] hover:shadow-[inset_0_1px_0_rgba(255,255,255,0.1),0_8px_20px_rgba(0,0,0,0.4)] cursor-grab active:cursor-grabbing transition-all duration-300 ${showIdleAlert ? 'border-red-500/50 shadow-[0_0_15px_rgba(239,68,68,0.15)] ring-1 ring-red-500/20' : 'border-white/10'}`}
+                                      className={`group relative overflow-hidden px-4 py-3 rounded-xl border bg-[#0d0d0d] hover:bg-[#121212] cursor-grab active:cursor-grabbing transition-all duration-200 ${showIdleAlert ? 'border-red-500/40' : 'border-white/10'}`}
                                       style={{ ...provided.draggableProps.style }}
                                     >
                                       {showIdleAlert && (
@@ -454,53 +450,22 @@ const [pendingMove, setPendingMove] = useState<{
                                         </p>
                                       )}
 
-                                      {ultimaMovimentacao?.conteudo && (
-                                        <div className="mb-3 rounded-lg border border-white/10 bg-white/[0.02] px-2.5 py-2">
-                                          <p className="mb-1 flex items-center gap-1 text-[9px] font-black uppercase tracking-widest text-zinc-500">
-                                            <MessageCircle size={10} />
-                                            Ultima movimentacao
-                                            {formatarDataMovimentacao(ultimaMovimentacao.data) && (
-                                              <span className="text-zinc-600">{formatarDataMovimentacao(ultimaMovimentacao.data)}</span>
-                                            )}
-                                          </p>
-                                          <p className="line-clamp-2 text-[11px] leading-relaxed text-zinc-300">
-                                            {ultimaMovimentacao.conteudo}
-                                          </p>
-                                        </div>
-                                      )}
-                                       
                                       {task.description && (
-                                        <div className="text-gray-400 text-xs mb-3 line-clamp-3 leading-relaxed">
+                                        <div className="text-gray-400 text-xs mb-3 line-clamp-2 leading-relaxed">
                                           {task.description.replace(/(<([^>]+)>)/gi, "")}
                                         </div>
                                       )}
-                                      
-                                      {(task.tags?.length > 0 || task.sector) && (
-                                        <div className="flex flex-wrap gap-2 mb-4">
-                                          {task.sector && (() => {
+                                       
+                                      {task.sector && (
+                                        <div className="mb-4">
+                                          {(() => {
                                             const [name, color] = task.sector.includes('|') ? task.sector.split('|') : [task.sector, '#60a5fa'];
                                             return (
-                                              <span 
-                                                className="text-[9px] font-black uppercase tracking-widest px-2 py-1 rounded bg-[#111] border shadow-sm"
-                                                style={{ color: color, borderColor: color, boxShadow: `0 0 5px ${color}40` }}
-                                              >
+                                              <span className="text-[9px] font-black uppercase tracking-widest px-2 py-1 rounded bg-[#111] border" style={{ color: color, borderColor: color }}>
                                                 {name}
                                               </span>
                                             );
                                           })()}
-                                          {task.tags && task.tags.slice(0, 3).map(tag => {
-                                            const [name, color] = tag.includes('|') ? tag.split('|') : [tag, '#CCA761'];
-                                            return (
-                                              <span 
-                                                key={tag} 
-                                                className="text-[9px] font-black uppercase tracking-widest px-2 py-1 rounded bg-[#111] border shadow-sm"
-                                                style={{ color: color, borderColor: color, boxShadow: `0 0 5px ${color}40` }}
-                                              >
-                                                {name}
-                                              </span>
-                                            );
-                                          })}
-                                          {task.tags.length > 3 && <span className="text-[10px] text-gray-500 font-bold px-1 py-0.5 bg-white/5 rounded">+{task.tags.length - 3}</span>}
                                         </div>
                                       )}
 
@@ -560,9 +525,8 @@ const [pendingMove, setPendingMove] = useState<{
                   {tasks.length === 0 ? (
                     <tr><td colSpan={4} className="p-8 text-center text-gray-500">Nenhuma tarefa encontrada.</td></tr>
                   ) : tasks.map(task => {
-                    const stage = stages.find(s => s.id === task.stage_id);
+                    const stage = visibleStages.find(s => s.id === task.stage_id) || stages.find(s => s.id === task.stage_id);
                     const assignee = agents.find(a => a.id === task.assigned_to);
-                    const ultimaMovimentacao = getUltimaMovimentacao(task);
                     return (
                       <tr key={task.id} onClick={() => openEditTaskModal(task)} className="hover:bg-white/5 cursor-pointer transition-colors group">
                         <td className="p-4">

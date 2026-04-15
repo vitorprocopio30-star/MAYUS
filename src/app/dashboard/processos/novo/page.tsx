@@ -218,40 +218,8 @@ export default function NovoProcessoPage() {
                     />
                   </div>
 
-                  {/* Toggles e Ações */}
+                  {/* Ações */}
                   <div className="flex items-center gap-4 w-full md:w-auto mt-2 md:mt-0 pt-2 md:pt-0 border-t border-white/5 md:border-t-0 pl-2">
-                    
-                    <label className="flex items-center gap-2 cursor-pointer bg-black/20 px-3 py-1.5 rounded-md border border-white/5">
-                      <span className="text-xs text-gray-400 font-medium">Perdido</span>
-                      <div className="relative inline-flex items-center">
-                        <input 
-                          type="checkbox" 
-                          checked={stage.is_loss}
-                          onChange={e => {
-                            updateStage(stage.id, "is_loss", e.target.checked);
-                            if (e.target.checked) updateStage(stage.id, "is_win", false);
-                          }}
-                          className="sr-only peer"
-                        />
-                        <div className="w-8 h-4 bg-gray-700 peer-focus:outline-none rounded-full peer peer-checked:after:translate-x-full peer-checked:after:border-white after:content-[''] after:absolute after:top-[2px] after:left-[2px] after:bg-white after:border-gray-300 after:border after:rounded-full after:h-3 after:w-3 after:transition-all peer-checked:bg-[#3b82f6]"></div>
-                      </div>
-                    </label>
-
-                    <label className="flex items-center gap-2 cursor-pointer bg-black/20 px-3 py-1.5 rounded-md border border-white/5">
-                      <span className="text-xs text-gray-400 font-medium">Ganho</span>
-                      <div className="relative inline-flex items-center">
-                        <input 
-                          type="checkbox" 
-                          checked={stage.is_win}
-                          onChange={e => {
-                            updateStage(stage.id, "is_win", e.target.checked);
-                            if (e.target.checked) updateStage(stage.id, "is_loss", false);
-                          }}
-                          className="sr-only peer"
-                        />
-                        <div className="w-8 h-4 bg-gray-700 peer-focus:outline-none rounded-full peer peer-checked:after:translate-x-full peer-checked:after:border-white after:content-[''] after:absolute after:top-[2px] after:left-[2px] after:bg-white after:border-gray-300 after:border after:rounded-full after:h-3 after:w-3 after:transition-all peer-checked:bg-[#10b981]"></div>
-                      </div>
-                    </label>
 
                     <button 
                       onClick={() => handleRemoveStage(stage.id)}

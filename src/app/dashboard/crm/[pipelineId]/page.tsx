@@ -23,6 +23,19 @@ import "react-quill/dist/quill.snow.css";
 import { Pipeline, Stage, Profile, Task } from "@/types/crm";
 import CrmTaskModal from "@/components/crm/CrmTaskModal";
 
+function normalizarNomeEtapa(nome?: string | null) {
+  return String(nome ?? '')
+    .toLowerCase()
+    .normalize('NFD')
+    .replace(/[\u0300-\u036f]/g, '')
+    .trim()
+}
+
+function etapaOcultaNoBoard(nome?: string | null) {
+  const n = normalizarNomeEtapa(nome)
+  return n.includes('movimentac')
+}
+
 // Dynamic import for ReactQuill to avoid SSR issues
 const ReactQuill = dynamic(() => import("react-quill"), { 
   ssr: false,
@@ -239,8 +252,13 @@ export default function PipelinePage() {
   
   const [defaultStageId, setDefaultStageId] = useState("");
 
+  const visibleStages = useMemo(
+    () => stages.filter((s) => !etapaOcultaNoBoard(s.name)),
+    [stages]
+  );
+
   const openNewTaskModal = (stageId?: string) => {
-    setDefaultStageId(stageId || (stages[0]?.id ?? ""));
+    setDefaultStageId(stageId || (visibleStages[0]?.id ?? stages[0]?.id ?? ""));
     setEditingTask(null);
     setIsTaskModalOpen(true);
   };
@@ -362,7 +380,7 @@ export default function PipelinePage() {
 
             <DragDropContext onDragEnd={onDragEnd}>
               <div className="flex items-start gap-6 h-full pb-10">
-                {stages.map(stage => {
+                {visibleStages.map(stage => {
                   const stageTasks = tasks.filter(t => t.stage_id === stage.id).sort((a,b) => a.position_index - b.position_index);
                   
                   return (
@@ -415,7 +433,7 @@ export default function PipelinePage() {
                                       {...provided.draggableProps}
                                       {...provided.dragHandleProps}
                                       onClick={() => openEditTaskModal(task)}
-                                      className={`group relative overflow-hidden px-4 py-4 rounded-xl border bg-white/[0.015] backdrop-blur-xl shadow-[inset_0_1px_0_rgba(255,255,255,0.06),0_4px_12px_rgba(0,0,0,0.25)] hover:bg-white/[0.03] hover:shadow-[inset_0_1px_0_rgba(255,255,255,0.1),0_8px_20px_rgba(0,0,0,0.4)] cursor-grab active:cursor-grabbing transition-all duration-300 ${showIdleAlert ? 'border-red-500/50 shadow-[0_0_15px_rgba(239,68,68,0.15)] ring-1 ring-red-500/20' : 'border-white/10'}`}
+                                      className={`group relative overflow-hidden px-4 py-3 rounded-xl border bg-[#0d0d0d] hover:bg-[#121212] cursor-grab active:cursor-grabbing transition-all duration-200 ${showIdleAlert ? 'border-red-500/40' : 'border-white/10'}`}
                                       style={{ ...provided.draggableProps.style }}
                                     >
                                       {showIdleAlert && (
@@ -428,37 +446,21 @@ export default function PipelinePage() {
                                       <h4 className="text-white text-[15px] font-bold tracking-wide mb-2 line-clamp-2 drop-shadow-sm group-hover:text-[#CCA761] transition-colors">{task.title}</h4>
                                       
                                       {task.description && (
-                                        <div className="text-gray-400 text-xs mb-3 line-clamp-3 leading-relaxed">
+                                        <div className="text-gray-400 text-xs mb-3 line-clamp-2 leading-relaxed">
                                           {task.description.replace(/(<([^>]+)>)/gi, "")}
                                         </div>
                                       )}
-                                      
-                                      {(task.tags?.length > 0 || task.sector) && (
-                                        <div className="flex flex-wrap gap-2 mb-4">
-                                          {task.sector && (() => {
+                                       
+                                      {task.sector && (
+                                        <div className="mb-4">
+                                          {(() => {
                                             const [name, color] = task.sector.includes('|') ? task.sector.split('|') : [task.sector, '#60a5fa'];
                                             return (
-                                              <span 
-                                                className="text-[9px] font-black uppercase tracking-widest px-2 py-1 rounded bg-[#111] border shadow-sm"
-                                                style={{ color: color, borderColor: color, boxShadow: `0 0 5px ${color}40` }}
-                                              >
+                                              <span className="text-[9px] font-black uppercase tracking-widest px-2 py-1 rounded bg-[#111] border" style={{ color: color, borderColor: color }}>
                                                 {name}
                                               </span>
                                             );
                                           })()}
-                                          {task.tags && task.tags.slice(0, 3).map(tag => {
-                                            const [name, color] = tag.includes('|') ? tag.split('|') : [tag, '#CCA761'];
-                                            return (
-                                              <span 
-                                                key={tag} 
-                                                className="text-[9px] font-black uppercase tracking-widest px-2 py-1 rounded bg-[#111] border shadow-sm"
-                                                style={{ color: color, borderColor: color, boxShadow: `0 0 5px ${color}40` }}
-                                              >
-                                                {name}
-                                              </span>
-                                            );
-                                          })}
-                                          {task.tags.length > 3 && <span className="text-[10px] text-gray-500 font-bold px-1 py-0.5 bg-white/5 rounded">+{task.tags.length - 3}</span>}
                                         </div>
                                       )}
 
@@ -513,7 +515,7 @@ export default function PipelinePage() {
                   {tasks.length === 0 ? (
                     <tr><td colSpan={4} className="p-8 text-center text-gray-500">Nenhuma tarefa encontrada.</td></tr>
                   ) : tasks.map(task => {
-                    const stage = stages.find(s => s.id === task.stage_id);
+                    const stage = visibleStages.find(s => s.id === task.stage_id) || stages.find(s => s.id === task.stage_id);
                     const assignee = agents.find(a => a.id === task.assigned_to);
                     return (
                       <tr key={task.id} onClick={() => openEditTaskModal(task)} className="hover:bg-white/5 cursor-pointer transition-colors group">

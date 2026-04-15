@@ -29,6 +29,39 @@ function chavePrazoCanonica(tipo: string, descricao: string, dataVencimento: str
   return `${tipo}|${categoria}|${agruparSemDia ? 'sem-dia' : dia}`
 }
 
+function normalizarNomeEtapa(nome?: string | null) {
+  return String(nome ?? '')
+    .toLowerCase()
+    .normalize('NFD')
+    .replace(/[\u0300-\u036f]/g, '')
+    .trim()
+}
+
+function etapaEhMovimentacoes(nome?: string | null) {
+  return normalizarNomeEtapa(nome).includes('movimentac')
+}
+
+function escolherEtapaFallback(stages: any[]): string | null {
+  if (!Array.isArray(stages) || stages.length === 0) return null
+  const visiveis = stages.filter((s) => !etapaEhMovimentacoes(s?.name))
+  if (visiveis.length === 0) return stages[0]?.id ?? null
+
+  const prioridades = [
+    'recolher documentos',
+    'fazer inicial',
+    'protocolar inicial',
+    'contestacao',
+    'contrarrazoes',
+  ]
+
+  for (const prioridade of prioridades) {
+    const match = visiveis.find((s) => normalizarNomeEtapa(s?.name).includes(prioridade))
+    if (match?.id) return match.id
+  }
+
+  return visiveis[0]?.id ?? null
+}
+
 export async function POST(req: NextRequest) {
   const supabase = createClient()
   const { data: { user } } = await supabase.auth.getUser()
@@ -68,7 +101,53 @@ export async function POST(req: NextRequest) {
     return NextResponse.json({ error: 'Chave de IA não configurada' }, { status: 400 })
   }
 
-  // 3b. Buscar movimentações reais do Escavador se tiver escavador_id
+  // 3b. Resolver pipeline e etapas reais
+  let pipelineId: string | null = null
+
+  if (proc.linked_task_id) {
+    const { data: linkedTask } = await supabase
+      .from('process_tasks')
+      .select('pipeline_id')
+      .eq('id', proc.linked_task_id)
+      .maybeSingle()
+    pipelineId = linkedTask?.pipeline_id ?? null
+  }
+
+  if (!pipelineId && proc.numero_processo) {
+    const { data: taskByProcesso } = await supabase
+      .from('process_tasks')
+      .select('pipeline_id')
+      .eq('processo_1grau', proc.numero_processo)
+      .order('updated_at', { ascending: false })
+      .limit(1)
+      .maybeSingle()
+    pipelineId = taskByProcesso?.pipeline_id ?? null
+  }
+
+  if (!pipelineId) {
+    const { data: defaultPipeline } = await supabase
+      .from('process_pipelines')
+      .select('id')
+      .eq('tenant_id', proc.tenant_id)
+      .order('created_at', { ascending: true })
+      .limit(1)
+      .maybeSingle()
+    pipelineId = defaultPipeline?.id ?? null
+  }
+
+  const { data: stages } = pipelineId
+    ? await supabase
+        .from('process_stages')
+        .select('id, name, order_index')
+        .eq('pipeline_id', pipelineId)
+        .order('order_index', { ascending: true })
+    : { data: [] as any[] }
+
+  const etapasDisponiveis = Array.isArray(stages) ? stages : []
+  const etapasVisiveis = etapasDisponiveis.filter((s: any) => !etapaEhMovimentacoes(s?.name))
+  const etapaFallbackId = escolherEtapaFallback(etapasDisponiveis)
+
+  // 3c. Buscar movimentações reais do provedor externo se tiver escavador_id
   let movimentacoesEscavador: any[] = Array.isArray(proc.movimentacoes)
     ? proc.movimentacoes : []
 
@@ -127,10 +206,7 @@ ADVOGADOS DO ESCRITÓRIO:
 ${advogados?.map(a => `- ${a.full_name} (${a.role})`).join('\n') || 'Não informado'}
 
 KANBAN (colunas disponíveis):
-- RECOLHER DOCUMENTOS  (id: 5ecb8f05-042d-40e7-a093-e1f3ce8478da)
-- FAZER INICIAL        (id: 5c5df981-85f0-49c9-a1dc-a2d61bb5a617)
-- PROTOCOLAR INICIAL   (id: fcf23a26-8bac-49b4-b143-1588c661b794)
-- NEGOCIAÇÃO           (id: 1aac8658-1941-4661-9146-75ceb65d3b7a)
+${etapasVisiveis.map((s: any) => `- ${String(s.name || '').toUpperCase()} (id: ${s.id})`).join('\n') || '- SEM ETAPAS CADASTRADAS'}
 `
 
   const prompt = `Você é o MAYUS, assistente jurídico especializado em advocacia brasileira.
@@ -194,6 +270,11 @@ Retorne exatamente este JSON:
   } catch {
     return NextResponse.json({ error: 'IA retornou JSON inválido', raw: rawText }, { status: 500 })
   }
+
+  const etapaValida = etapasDisponiveis.find((s: any) => s.id === resultado.kanban_stage_id)
+  const etapaEscolhidaId = (etapaValida && !etapaEhMovimentacoes(etapaValida.name)
+    ? etapaValida.id
+    : etapaFallbackId) || null
 
   // 6. Persistir resultado
   const agora = new Date().toISOString()
@@ -265,15 +346,15 @@ Retorne exatamente este JSON:
   // 8. Mover Kanban se processo já estiver vinculado
   let novoCard: { id: string } | null = null
 
-  if (proc.linked_task_id && resultado.kanban_stage_id) {
+  if (proc.linked_task_id && etapaEscolhidaId) {
     await supabase
       .from('process_tasks')
-      .update({ stage_id: resultado.kanban_stage_id, updated_at: agora })
+      .update({ stage_id: etapaEscolhidaId, updated_at: agora })
       .eq('id', proc.linked_task_id)
   }
 
   // 8b. Criar card no Kanban se ainda não existe
-  if (!proc.linked_task_id && resultado.kanban_stage_id) {
+  if (!proc.linked_task_id && etapaEscolhidaId && pipelineId) {
     const partes = proc.partes as any
 
     // Buscar admin do tenant para assigned_to
@@ -287,8 +368,8 @@ Retorne exatamente este JSON:
     const { data: cardCriado } = await supabase
       .from('process_tasks')
       .insert({
-        pipeline_id:    '7b4d39bb-785c-402a-826d-0088867d934c',
-        stage_id:       resultado.kanban_stage_id,
+        pipeline_id:    pipelineId,
+        stage_id:       etapaEscolhidaId,
         title:          proc.cliente_nome || partes?.polo_ativo || partes?.ativo || proc.numero_processo,
         description:    resultado.resumo_curto,
         client_name:    proc.cliente_nome || partes?.polo_ativo || partes?.ativo || '',
@@ -326,6 +407,7 @@ Retorne exatamente este JSON:
     processo_atualizado: procAtualizado,
     prazos_criados:      resultado.prazos?.length || 0,
     peca_sugerida:       resultado.peca_sugerida,
+    kanban_stage_id:     etapaEscolhidaId,
     kanban_card_criado:  !!novoCard?.id
   })
 }

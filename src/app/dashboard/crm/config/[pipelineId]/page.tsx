@@ -377,34 +377,8 @@ export default function ConfigFunilPage() {
                     />
                   </div>
 
-                  {/* Toggles e Ações */}
+                  {/* Ações */}
                   <div className="flex flex-wrap items-center justify-end gap-3 w-full md:w-auto mt-2 md:mt-0 pt-3 md:pt-0 border-t border-white/5 md:border-t-0 pl-2 z-10">
-                    
-                    <label className="flex items-center gap-2 cursor-pointer bg-black/40 px-3 py-2 rounded-xl border border-white/5 hover:border-red-500/30 transition-colors shadow-inner" title="Marcar como Perda">
-                      <span className="text-[10px] font-black uppercase tracking-widest text-red-400">Perdido</span>
-                      <div className="relative inline-flex items-center">
-                        <input 
-                          type="checkbox" 
-                          checked={stage.is_loss}
-                          onChange={e => updateStageData(stage.id, e.target.checked ? { is_loss: true, is_win: false } : { is_loss: false })}
-                          className="sr-only peer"
-                        />
-                        <div className="w-8 h-4 bg-gray-800 peer-focus:outline-none rounded-full peer peer-checked:after:translate-x-full peer-checked:after:border-white after:content-[''] after:absolute after:top-[2px] after:left-[2px] after:bg-gray-400 after:rounded-full after:h-3 after:w-3 after:transition-all peer-checked:bg-gradient-to-r peer-checked:from-red-500 peer-checked:to-red-600 peer-checked:after:bg-white inset-shadow-sm"></div>
-                      </div>
-                    </label>
-
-                    <label className="flex items-center gap-2 cursor-pointer bg-black/40 px-3 py-2 rounded-xl border border-white/5 hover:border-green-500/30 transition-colors shadow-inner" title="Marcar como Ganho">
-                      <span className="text-[10px] font-black uppercase tracking-widest text-green-400">Ganho</span>
-                      <div className="relative inline-flex items-center">
-                        <input 
-                          type="checkbox" 
-                          checked={stage.is_win}
-                          onChange={e => updateStageData(stage.id, e.target.checked ? { is_win: true, is_loss: false } : { is_win: false })}
-                          className="sr-only peer"
-                        />
-                        <div className="w-8 h-4 bg-gray-800 peer-focus:outline-none rounded-full peer peer-checked:after:translate-x-full peer-checked:after:border-white after:content-[''] after:absolute after:top-[2px] after:left-[2px] after:bg-gray-400 after:rounded-full after:h-3 after:w-3 after:transition-all peer-checked:bg-gradient-to-r peer-checked:from-green-500 peer-checked:to-green-600 peer-checked:after:bg-white inset-shadow-sm"></div>
-                      </div>
-                    </label>
 
                     <button 
                       onClick={() => handleRemoveStage(stage.id, stage.is_new)}
@@ -531,7 +505,7 @@ export default function ConfigFunilPage() {
           </section>
 
           {/* SEC 4: Caixas de entrada */}
-          <section className="space-y-4 pt-8 mt-8 border-t border-white/5 relative">
+          {false && <section className="space-y-4 pt-8 mt-8 border-t border-white/5 relative">
             <div className="absolute top-0 right-0 w-64 h-64 bg-[#CCA761] opacity-[0.03] blur-[100px] pointer-events-none" />
             
             <div className="flex items-center gap-3 mb-2">
@@ -592,10 +566,10 @@ export default function ConfigFunilPage() {
                 )}
               </div>
             </div>
-          </section>
+          </section>}
 
           {/* SEC 5: Automação */}
-          <section className="space-y-6 pt-8 mt-8 border-t border-white/5">
+          {false && <section className="space-y-6 pt-8 mt-8 border-t border-white/5">
             <div>
               <h2 className="text-xl font-bold text-white tracking-wide">Automações do Funil</h2>
               <p className="text-sm text-gray-400 mt-1.5 leading-relaxed">
@@ -630,7 +604,7 @@ export default function ConfigFunilPage() {
                 </div>
               ))}
             </div>
-          </section>
+          </section>}
 
           {/* SEC 5: Excluir funil */}
           <section className="space-y-4 pt-8 mt-6 border-t border-white/5">
