@@ -564,11 +564,6 @@ const [pendingMove, setPendingMove] = useState<{
                               );
                             })}
                           </div>
-                          {ultimaMovimentacao?.conteudo && (
-                            <p className="mt-2 line-clamp-1 text-[11px] text-zinc-500">
-                              Mov: {ultimaMovimentacao.conteudo}
-                            </p>
-                          )}
                         </td>
                         <td className="p-4">
                           <span className="inline-flex items-center gap-2 px-2.5 py-1 rounded-md text-xs font-bold bg-[#1a1a1a] border border-[#2a2a2a]">
