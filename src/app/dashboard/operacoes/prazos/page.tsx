@@ -2,6 +2,7 @@
 
 import { useEffect, useState, useMemo } from 'react'
 import { createClient } from '@/lib/supabase/client'
+import { buildAgendaPayloadFromProcessPrazo, syncAgendaTaskBySource } from '@/lib/agenda/userTasks'
 import {
   Clock,
   Search,
@@ -189,6 +190,31 @@ export default function PrazosPage() {
   const [annotationText, setAnnotationText] = useState('')
   const [isSavingAnnotation, setIsSavingAnnotation] = useState(false)
   const [saveSuccess, setSaveSuccess] = useState(false)
+
+  const getProfileById = (profileId: string | null | undefined) => {
+    if (!profileId) return null
+    return profiles.find((profile) => profile.id === profileId) || null
+  }
+
+  async function syncPrazoAgenda(item: any, overrides?: Record<string, any>) {
+    if (!tenantId) return
+
+    const nextItem = { ...item, ...(overrides || {}) }
+    const assignedProfile = getProfileById(nextItem.responsavel_id)
+    const currentProfile = getProfileById(currentUser?.id)
+
+    await syncAgendaTaskBySource(
+      supabase,
+      buildAgendaPayloadFromProcessPrazo({
+        tenantId,
+        prazo: nextItem,
+        assignedName: assignedProfile?.full_name || null,
+        createdBy: currentUser?.id || null,
+        completedBy: String(nextItem.status ?? '').toLowerCase() === 'concluido' ? currentUser?.id || null : null,
+        completedByName: String(nextItem.status ?? '').toLowerCase() === 'concluido' ? currentProfile?.full_name || assignedProfile?.full_name || null : null,
+      })
+    )
+  }
 
   useEffect(() => {
     async function init() {
@@ -549,6 +575,11 @@ export default function PrazosPage() {
       .eq('id', id)
     
     if (!error) {
+      const currentItem = items.find((item) => item.id === id)
+      const updatedItem = currentItem ? { ...currentItem, status: newStatus } : null
+      if (updatedItem) {
+        await syncPrazoAgenda(updatedItem)
+      }
       setItems(prev => prev.map(item => item.id === id ? { ...item, status: newStatus } : item))
     }
   }
@@ -561,6 +592,11 @@ export default function PrazosPage() {
     
     if (!error) {
       const profile = responsavelId ? profiles.find(p => p.id === responsavelId) : null
+      const currentItem = items.find((item) => item.id === id)
+      const updatedItem = currentItem ? { ...currentItem, responsavel_id: responsavelId, profiles: profile } : null
+      if (updatedItem) {
+        await syncPrazoAgenda(updatedItem)
+      }
       setItems(prev => prev.map(item => item.id === id ? { ...item, responsavel_id: responsavelId, profiles: profile } : item))
     }
   }

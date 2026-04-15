@@ -141,10 +141,34 @@ function buildBasePayload(params: {
   type?: string | null;
   color?: string | null;
   clientName?: string | null;
+  status?: string | null;
+  completedAt?: string | null;
+  completedBy?: string | null;
+  completedByName?: string | null;
 }) {
   const urgency = normalizeUrgencyLabel(params.urgency);
+  const status = normalizeAgendaStatus(params.status);
+  const legacyUrgency =
+    urgency === "URGENTE"
+      ? "urgente"
+      : urgency === "ATENCAO"
+        ? "alta"
+        : urgency === "TRANQUILO"
+          ? "baixa"
+          : "normal";
+  const legacyType = String(params.type || "Tarefa").toLowerCase();
+  const scheduledFor = params.scheduledFor || new Date().toISOString();
+
   return {
     tenant_id: params.tenantId,
+    user_id: params.assignedTo || null,
+    titulo: params.title,
+    descricao: params.description || null,
+    tipo: legacyType,
+    data_inicio: scheduledFor,
+    urgencia: legacyUrgency,
+    origem: params.sourceTable === "process_prazos" ? "processo" : "manual",
+    criado_por_ia: Boolean(params.createdByAgent),
     source_table: params.sourceTable,
     source_id: params.sourceId,
     title: params.title,
@@ -154,7 +178,11 @@ function buildBasePayload(params: {
     created_by: params.createdBy || null,
     created_by_agent: params.createdByAgent || null,
     urgency,
-    scheduled_for: params.scheduledFor || new Date().toISOString(),
+    status,
+    scheduled_for: scheduledFor,
+    completed_at: params.completedAt || null,
+    completed_by: params.completedBy || null,
+    completed_by_name_snapshot: params.completedByName || null,
     is_critical: Boolean(params.isCritical || urgency === "URGENTE"),
     category: params.category || getUrgencyLabel(urgency),
     type: params.type || "Tarefa",
@@ -219,6 +247,48 @@ export function buildAgendaPayloadFromProcessTask(params: {
   });
 }
 
+export function buildAgendaPayloadFromProcessPrazo(params: {
+  tenantId: string;
+  prazo: any;
+  assignedName?: string | null;
+  createdBy?: string | null;
+  createdByAgent?: string | null;
+  completedBy?: string | null;
+  completedByName?: string | null;
+}) {
+  const urgency = params.prazo?.data_vencimento
+    ? inferUrgencyFromDeadline(params.prazo.data_vencimento)
+    : inferUrgencyFromText(
+        params.prazo?.tipo,
+        params.prazo?.descricao,
+        params.prazo?.monitored_processes?.ultima_movimentacao_texto
+      );
+
+  const isCompleted = String(params.prazo?.status ?? "").toLowerCase() === "concluido";
+
+  return buildBasePayload({
+    tenantId: params.tenantId,
+    sourceTable: "process_prazos",
+    sourceId: params.prazo.id,
+    title: params.prazo.descricao || params.prazo.monitored_processes?.numero_processo || "Prazo processual",
+    description: params.prazo.monitored_processes?.resumo_curto || params.prazo.monitored_processes?.ultima_movimentacao_texto || null,
+    assignedTo: params.prazo.responsavel_id,
+    assignedName: params.assignedName,
+    createdBy: params.createdBy,
+    createdByAgent: params.createdByAgent,
+    urgency,
+    status: isCompleted ? "Concluído" : "Pendente",
+    scheduledFor: params.prazo.data_vencimento || params.prazo.created_at || new Date().toISOString(),
+    completedAt: isCompleted ? params.prazo.completed_at || new Date().toISOString() : null,
+    completedBy: isCompleted ? params.completedBy || params.prazo.responsavel_id || null : null,
+    completedByName: isCompleted ? params.completedByName || params.assignedName || null : null,
+    isCritical: urgency === "URGENTE",
+    category: getUrgencyLabel(urgency),
+    type: "Prazo",
+    clientName: params.prazo.monitored_processes?.cliente_nome || null,
+  });
+}
+
 export async function syncAgendaTaskBySource(supabase: any, payload: Record<string, any>) {
   const { data: existing, error: selectError } = await supabase
     .from(USER_TASKS_TABLE)
@@ -240,10 +310,10 @@ export async function syncAgendaTaskBySource(supabase: any, payload: Record<stri
 
   const insertPayload = {
     ...payload,
-    status: "Pendente",
-    completed_at: null,
-    completed_by: null,
-    completed_by_name_snapshot: null,
+    status: payload.status || "Pendente",
+    completed_at: payload.completed_at || null,
+    completed_by: payload.completed_by || null,
+    completed_by_name_snapshot: payload.completed_by_name_snapshot || null,
   };
 
   const { data, error } = await supabase

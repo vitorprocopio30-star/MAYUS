@@ -83,13 +83,12 @@ export default function AgendaGlobalPage() {
       return;
     }
 
-    const { startIso, endIso } = toDayRange(selectedDate);
+    const { startIso } = toDayRange(selectedDate);
     const { data: userTasks } = await supabase
       .from('user_tasks')
       .select('*')
       .eq('tenant_id', profile.tenant_id)
-      .gte('scheduled_for', startIso)
-      .lte('scheduled_for', endIso);
+      .gte('scheduled_for', startIso);
 
     const normalizedTasks = sortAgendaTasks(userTasks || []).map(toAgendaEvent).map((task: any) => {
       if (task.status === 'Concluído') return task;
@@ -583,19 +582,9 @@ export default function AgendaGlobalPage() {
                 </h4>
                 <div className="space-y-4">
                   {criticalDeadlines.length === 0 ? (
-                    [
-                      { title: "Contestação Vencendo", client: "Silva & Irmãos", time: "Hoje, 18h", color: "#f87171" },
-                      { title: "Recurso Especial", client: "Alpha Group", time: "Amanhã, 12h", color: "#CCA761" },
-                      { title: "Réplica Trabalhista", client: "Individual", time: "Sex, 24/03", color: "#22d3ee" }
-                    ].map((p, i) => (
-                      <div key={i} className="p-4 bg-black/40 rounded-xl border border-white/5 hover:border-white/10 transition-colors opacity-80">
-                        <div className="flex justify-between items-start mb-2">
-                          <span className="text-xs font-bold text-white">{p.title}</span>
-                          <span className="text-[8px] font-black text-[#0a0a0a] px-2 py-0.5 rounded-sm uppercase" style={{ backgroundColor: p.color }}>{p.time}</span>
-                        </div>
-                        <p className="text-[10px] text-gray-500 font-semibold tracking-wide">Cliente: {p.client}</p>
-                      </div>
-                    ))
+                    <div className="p-4 bg-black/40 rounded-xl border border-white/5 text-[11px] text-gray-500">
+                      Nenhum prazo critico real encontrado para a selecao atual.
+                    </div>
                   ) : (
                     criticalDeadlines.map((p, i) => (
                       <div key={i} className="p-4 bg-black/40 rounded-xl border border-white/5 hover:border-white/10 transition-colors">
