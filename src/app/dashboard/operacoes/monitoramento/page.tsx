@@ -20,9 +20,9 @@ import {
   History,
   FileText,
   Clock,
-   Quote,
-   Archive,
-   Download
+  Quote,
+  Archive,
+  Download
 } from 'lucide-react'
 
 // ─── Interfaces e Tipos ───
@@ -197,7 +197,7 @@ function ModalConfirmacaoCusto({ dados, onConfirmar, onCancelar, loading }: { da
         </div>
         <div className="text-center space-y-2">
            <h3 className="text-white font-black text-xl uppercase tracking-tighter">Investimento Requerido</h3>
-           <p className="text-zinc-500 text-xs leading-relaxed font-medium">A monitoração desses {dados.novos} novos processos requer o uso de créditos da API Escavador.</p>
+           <p className="text-zinc-500 text-xs leading-relaxed font-medium">A monitoração desses {dados.novos} novos processos requer o uso de créditos da busca externa.</p>
         </div>
         <div className="bg-zinc-950 rounded-2xl p-6 border border-zinc-800 grid grid-cols-2 gap-4 divide-x divide-zinc-900">
           <div className="text-center">
@@ -293,7 +293,7 @@ function ProcessoCard({ p, onSelect, selecionado, onAction, onRemover, onArquiva
                 Resumo em processamento
               </p>
               <p className="text-zinc-500 text-[11px] leading-relaxed">
-                O monitoramento foi criado e o resumo da IA foi solicitado. Aguarde a sincronização do Escavador.
+                O monitoramento foi criado e o resumo da IA foi solicitado. Aguarde a sincronização da fonte externa.
               </p>
             </div>
           )}
@@ -302,7 +302,7 @@ function ProcessoCard({ p, onSelect, selecionado, onAction, onRemover, onArquiva
           <div className="flex items-center gap-4">
              <div className="flex items-center gap-2 bg-green-500/5 border border-green-500/10 px-3 py-1.5 rounded-full">
                 <div className="w-2 h-2 rounded-full bg-green-500/60 shadow-[0_0_8px_rgba(34,197,94,0.4)]" />
-                <span className="text-green-500/80 text-[9px] font-black uppercase tracking-[0.2em]">Monitoramento Normal</span>
+                <span className="text-green-500/80 text-[9px] font-black uppercase tracking-[0.2em]">Monitoramento Ativo</span>
              </div>
              {d !== null && (
                 <div className={`px-3 py-1.5 rounded-full border text-[9px] font-black uppercase tracking-widest flex items-center gap-3 transition-all duration-700
@@ -323,22 +323,24 @@ function ProcessoCard({ p, onSelect, selecionado, onAction, onRemover, onArquiva
         {/* Ações Laterais */}
         <div className="flex flex-col gap-2 shrink-0 justify-center min-w-[160px]">
            {!p.monitorado ? (
-             <button onClick={onAction} disabled={isUpdating} className="h-12 bg-[#CCA761] hover:bg-[#b89554] text-black text-[10px] font-black uppercase rounded-2xl transition-all flex items-center justify-center gap-2.5 shadow-xl shadow-[#CCA761]/10">
-               {isUpdating ? <RefreshCw size={14} className="animate-spin" /> : <Zap size={14} fill="currentColor" />}
-               Monitorar
-             </button>
-            ) : (
               <>
                 {!processoArquivado(p) && (
                   <button onClick={onArquivar} disabled={isUpdating} className="h-11 bg-zinc-950 hover:bg-zinc-800/80 border border-zinc-900 hover:border-zinc-600 text-zinc-600 hover:text-zinc-200 text-[10px] font-black uppercase rounded-2xl transition-all flex items-center justify-center gap-2">
                     <Archive size={14} /> Arquivar
                   </button>
                 )}
-                <button onClick={onRemover} disabled={isUpdating} className="h-11 bg-zinc-950 hover:bg-red-500/5 border border-zinc-900 hover:border-red-500/20 text-zinc-700 hover:text-red-500 text-[10px] font-black uppercase rounded-2xl transition-all flex items-center justify-center gap-2">
-                  <X size={14} /> Remover
+                <button onClick={onAction} disabled={isUpdating || processoArquivado(p)} className="h-12 bg-[#CCA761] hover:bg-[#b89554] text-black text-[10px] font-black uppercase rounded-2xl transition-all flex items-center justify-center gap-2.5 shadow-xl shadow-[#CCA761]/10 disabled:opacity-40 disabled:cursor-not-allowed">
+                  {isUpdating ? <RefreshCw size={14} className="animate-spin" /> : <Zap size={14} fill="currentColor" />}
+                  Monitorar
                 </button>
-               <button 
-                onClick={onOrganizar}
+              </>
+            ) : (
+              <>
+                <button onClick={onRemover} disabled={isUpdating} className="h-11 bg-zinc-950 hover:bg-red-500/5 border border-zinc-900 hover:border-red-500/20 text-zinc-700 hover:text-red-500 text-[10px] font-black uppercase rounded-2xl transition-all flex items-center justify-center gap-2">
+                  <X size={14} /> Desativar Vigilancia
+                </button>
+                <button 
+                 onClick={onOrganizar}
                 disabled={organizandoState === 'loading'}
                 className="h-11 bg-zinc-900 hover:bg-zinc-800 border border-zinc-800 text-zinc-400 hover:text-white text-[10px] font-black uppercase rounded-2xl transition-all flex items-center justify-center gap-2"
                >
@@ -447,7 +449,7 @@ function MonitoramentoContent() {
       localStorage.setItem('mayus_oab_numero', oabNumero.trim())
       localStorage.setItem('mayus_oab_estado', oabEstado)
       await carregarBaseOab(oabEstado, oabNumero.trim())
-      setFeedback('Base local carregada sem consumo de créditos do Escavador.')
+      setFeedback('Base local carregada sem consumo de créditos da busca externa.')
     } finally {
       setLoading(false)
     }
@@ -524,7 +526,7 @@ function MonitoramentoContent() {
       })
       const data = await res.json()
       if (!res.ok) {
-        throw new Error(data.error || 'Falha ao monitorar processos no Escavador')
+        throw new Error(data.error || 'Falha ao monitorar processos na fonte externa')
       }
       if (data.requer_confirmacao) {
         setConfirmacao({ ...data, processosParaImportar: ativos })
@@ -564,7 +566,7 @@ function MonitoramentoContent() {
 
       if (Number(data.importados || 0) === 0 && jaMonitorados.length > 0) {
         setError(null)
-        setFeedback(`✅ ${jaMonitorados.length} processo(s) já estavam monitorados no Escavador e foram sincronizados no painel.`)
+        setFeedback(`✅ ${jaMonitorados.length} processo(s) já estavam monitorados na fonte externa e foram sincronizados no painel.`)
         return
       }
 
@@ -602,7 +604,7 @@ function MonitoramentoContent() {
 
       const data = await res.json()
       if (!res.ok) {
-        throw new Error(data.error || 'Falha ao confirmar monitoramento no Escavador')
+        throw new Error(data.error || 'Falha ao confirmar monitoramento na fonte externa')
       }
 
       const sucessosLista = Array.isArray(data.sucessos_monitoramento) ? data.sucessos_monitoramento : []
@@ -632,7 +634,7 @@ function MonitoramentoContent() {
 
       if (Number(data.importados || 0) === 0 && jaMonitorados.length > 0) {
         setError(null)
-        setFeedback(`✅ ${jaMonitorados.length} processo(s) já estavam monitorados no Escavador e foram sincronizados no painel.`)
+        setFeedback(`✅ ${jaMonitorados.length} processo(s) já estavam monitorados na fonte externa e foram sincronizados no painel.`)
         return
       }
 
@@ -856,6 +858,24 @@ function MonitoramentoContent() {
     return Math.max(0, Math.floor((Date.now() - ts) / 60000))
   }, [lastExternalSyncAt, result?.ultima_sincronizacao])
 
+  const jaTevePesquisaExterna = useMemo(() => {
+    return Boolean(lastExternalSyncAt || result?.ultima_sincronizacao)
+  }, [lastExternalSyncAt, result?.ultima_sincronizacao])
+
+  const confirmarBuscaExterna = useCallback(() => {
+    const bloqueioCurto = minutosDesdeUltimaSync !== null && minutosDesdeUltimaSync < 3
+    if (bloqueioCurto) {
+      setFeedback(`Sincronização externa realizada há ${minutosDesdeUltimaSync} min. Aguarde ao menos 3 min para evitar nova cobrança imediata.`)
+      return
+    }
+
+    const aviso = jaTevePesquisaExterna
+      ? 'Esta OAB já teve pesquisa externa. Nova consulta pode gerar nova cobrança. Deseja continuar?'
+      : 'Pesquisar OAB na fonte externa pode gerar cobrança. Deseja continuar?'
+
+    if (window.confirm(aviso)) buscar()
+  }, [buscar, jaTevePesquisaExterna, minutosDesdeUltimaSync])
+
   const renderPaginacao = () => (
     <div className="flex items-center justify-between py-4 px-2 bg-zinc-900/20 rounded-2xl border border-zinc-800/50">
       <span className="text-zinc-500 text-[10px] font-black uppercase tracking-widest px-2">{processosFiltrados.length} processos · pág {pagina}/{totalPages}</span>
@@ -918,7 +938,7 @@ function MonitoramentoContent() {
                 </div>
                 {diferencaTotal && (
                   <p className="text-[9px] text-zinc-500 font-black uppercase tracking-widest text-right">
-                    Fonte Escavador: {result.total} | Base consolidada: {result.total_retornado}
+                    Fonte externa: {result.total} | Base consolidada: {result.total_retornado}
                   </p>
                 )}
              </div>
@@ -952,22 +972,19 @@ function MonitoramentoContent() {
               BASE GRAVADA
             </button>
             <button
-              onClick={() => {
-                const bloqueioCurto = minutosDesdeUltimaSync !== null && minutosDesdeUltimaSync < 3
-                if (bloqueioCurto) {
-                  setFeedback(`Sincronização externa realizada há ${minutosDesdeUltimaSync} min. Aguarde ao menos 3 min para evitar nova cobrança imediata.`)
-                  return
-                }
-                const confirmou = window.confirm('Atualizar do Escavador consome créditos. Deseja continuar?')
-                if (confirmou) buscar()
-              }}
+              onClick={confirmarBuscaExterna}
               disabled={loading}
               className="px-6 h-12 bg-yellow-500 hover:bg-yellow-400 text-black text-[11px] font-black rounded-xl transition-all disabled:opacity-50 flex items-center justify-center gap-2.5 shadow-xl shadow-yellow-500/20 active:scale-95 border-b-4 border-yellow-600 shrink-0 uppercase tracking-widest"
             >
               {loading ? <RefreshCw size={14} className="animate-spin" /> : <Zap size={14} fill="currentColor" />}
-              {loading ? (sincronizandoBase ? 'SINCRONIZANDO...' : 'BUSCANDO...') : 'ATUALIZAR ESCAVADOR'}
+              {loading ? (sincronizandoBase ? 'SINCRONIZANDO...' : 'BUSCANDO...') : 'ATUALIZAR FONTE EXTERNA'}
             </button>
           </div>
+          <p className={`px-1 text-[10px] uppercase tracking-widest ${jaTevePesquisaExterna ? 'text-yellow-500/80' : 'text-zinc-500'}`}>
+            {jaTevePesquisaExterna
+              ? 'Esta OAB já teve pesquisa externa. Nova consulta pode gerar cobrança adicional.'
+              : 'Pesquisar OAB na fonte externa pode gerar cobrança.'}
+          </p>
         </div>
 
         {result && (
@@ -1122,24 +1139,16 @@ function MonitoramentoContent() {
                   CARREGAR BASE GRAVADA
                 </button>
                 <button
-                  onClick={() => {
-                    const bloqueioCurto = minutosDesdeUltimaSync !== null && minutosDesdeUltimaSync < 3
-                    if (bloqueioCurto) {
-                      setFeedback(`Sincronização externa realizada há ${minutosDesdeUltimaSync} min. Aguarde ao menos 3 min para evitar nova cobrança imediata.`)
-                      return
-                    }
-                    const confirmou = window.confirm('Atualizar do Escavador consome créditos. Deseja continuar?')
-                    if (confirmou) buscar()
-                  }}
+                  onClick={confirmarBuscaExterna}
                   disabled={loading}
                   className="px-6 h-12 bg-yellow-500 hover:bg-yellow-400 text-black text-[11px] font-black rounded-xl transition-all disabled:opacity-50 flex items-center justify-center gap-2.5 shadow-xl shadow-yellow-500/20 active:scale-95 border-b-4 border-yellow-600 shrink-0 uppercase tracking-widest"
                 >
                   {loading ? <RefreshCw size={14} className="animate-spin" /> : <Zap size={14} fill="currentColor" />}
-                  {loading ? (sincronizandoBase ? 'SINCRONIZANDO...' : 'BUSCANDO...') : 'ATUALIZAR ESCAVADOR'}
+                  {loading ? (sincronizandoBase ? 'SINCRONIZANDO...' : 'BUSCANDO...') : 'ATUALIZAR FONTE EXTERNA'}
                 </button>
               </div>
               <p className="text-[10px] text-zinc-500 uppercase tracking-widest px-1">
-                Carregar base usa dados salvos. Atualizar Escavador pode cobrar por requisição.
+                Carregar base usa dados salvos. Atualizar fonte externa pode cobrar por requisição.
               </p>
               {result?.ultima_sincronizacao && (
                 <p className="text-[10px] text-zinc-600 px-1">

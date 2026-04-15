@@ -35,25 +35,62 @@ function diasRestantes(data: string): number {
   return Math.ceil(diff / (1000 * 60 * 60 * 24))
 }
 
+function normalizarDescricaoPrazo(value: string | null | undefined): string {
+  const texto = String(value ?? '')
+    .toLowerCase()
+    .normalize('NFD')
+    .replace(/[\u0300-\u036f]/g, '')
+    .replace(/[^a-z0-9\s]/g, ' ')
+    .replace(/\s+/g, ' ')
+    .trim()
+
+  if (!texto) return 'sem-descricao'
+  if (texto.includes('replica') && texto.includes('contest')) return 'replica_contestacao'
+  if (texto.includes('contrarrazo') || texto.includes('contrarraz')) return 'contrarrazoes'
+  if (texto.includes('embargos') && texto.includes('declar')) return 'embargos_declaracao'
+  if (texto.includes('sentenca') && texto.includes('public')) return 'publicacao_sentenca'
+  if (texto.includes('grupo de sentenca') || texto.includes('prolacao da sentenca')) return 'grupo_sentenca_administrativo'
+
+  return texto
+}
+
+function ehPrazoDeSentenca(item: any): boolean {
+  const texto = normalizarDescricaoPrazo(
+    `${item?.tipo ?? ''} ${item?.descricao ?? ''} ${item?.monitored_processes?.ultima_movimentacao_texto ?? ''}`
+  )
+  return texto.includes('sentenca') || item?.tipo === 'sentenca'
+}
+
 function deduplicarPrazos(lista: any[]): any[] {
   const mapa = new Map<string, any>()
 
   for (const item of lista) {
     const escId = String(item?.escavador_movimentacao_id ?? '').trim()
     const dia = item?.data_vencimento ? new Date(item.data_vencimento).toISOString().slice(0, 10) : 'sem-data'
+    const categoriaDescricao = normalizarDescricaoPrazo(item?.descricao)
+    const agruparSemDia = ['replica_contestacao', 'contrarrazoes', 'embargos_declaracao'].includes(categoriaDescricao)
     const chave = escId
       ? `esc-${escId}`
       : [
           item?.monitored_process_id ?? 'sem-processo',
           item?.tipo ?? 'sem-tipo',
-          (item?.descricao ?? '').trim().toLowerCase(),
-          dia
+          categoriaDescricao,
+          agruparSemDia ? 'sem-dia' : dia
         ].join('|')
 
     const atual = mapa.get(chave)
     if (!atual) {
       mapa.set(chave, item)
       continue
+    }
+
+    if (agruparSemDia) {
+      const atualVenc = new Date(atual?.data_vencimento || 0).getTime()
+      const novoVenc = new Date(item?.data_vencimento || 0).getTime()
+      if (Number.isFinite(novoVenc) && (!Number.isFinite(atualVenc) || novoVenc < atualVenc)) {
+        mapa.set(chave, item)
+        continue
+      }
     }
 
     const atualTs = new Date(atual.created_at || 0).getTime()
@@ -881,6 +918,11 @@ export default function PrazosPage() {
                   <Clock size={14} className="text-[#CCA761]" />
                   <span>Vencimento: {formatarData(item.data_vencimento)}</span>
                 </div>
+                {ehPrazoDeSentenca(item) && (
+                  <div className="ml-6 rounded-lg border border-yellow-500/30 bg-yellow-500/10 px-3 py-2 text-[11px] text-yellow-300">
+                    Alerta: verificar embargos de declaração em 5 dias úteis da sentença.
+                  </div>
+                )}
                 {item.monitored_processes?.numero_processo && (
                   <div className="space-y-1">
                     <div className="flex items-center gap-2 text-[13px] group/cnj">

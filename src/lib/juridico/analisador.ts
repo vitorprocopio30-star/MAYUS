@@ -106,6 +106,21 @@ function normalizarTexto(value: string | null | undefined): string {
     .trim()
 }
 
+function categorizarDescricaoPrazo(value: string | null | undefined): string {
+  const texto = normalizarTexto(value)
+    .replace(/[^a-z0-9\s]/g, ' ')
+    .replace(/\s+/g, ' ')
+    .trim()
+
+  if (!texto) return 'sem-descricao'
+  if (texto.includes('replica') && texto.includes('contest')) return 'replica_contestacao'
+  if (texto.includes('contrarrazo') || texto.includes('contrarraz')) return 'contrarrazoes'
+  if (texto.includes('embargos') && texto.includes('declar')) return 'embargos_declaracao'
+  if (texto.includes('sentenca') && texto.includes('public')) return 'publicacao_sentenca'
+
+  return texto
+}
+
 function inferirPoloEscritorio(clienteNome: string | null, partes: PartesProcesso): string {
   const cliente = normalizarTexto(clienteNome)
   const poloAtivo = normalizarTexto(partes?.polo_ativo)
@@ -444,15 +459,19 @@ export async function analisarMovimentacao(params: {
 
   const { data: prazosSemelhantes } = await adminSupabase
     .from('process_prazos')
-    .select('id')
+    .select('id, descricao')
     .eq('monitored_process_id', params.processo_id)
     .eq('tipo', tipoEvento === 'AUDIENCIA' ? 'audiencia' : 'prazo')
-    .eq('descricao', descricaoPrazo)
     .gte('data_vencimento', inicioDiaVencimento.toISOString())
     .lte('data_vencimento', fimDiaVencimento.toISOString())
-    .limit(1)
+    .limit(20)
 
-  if (prazosSemelhantes && prazosSemelhantes.length > 0) {
+  const categoriaAtual = categorizarDescricaoPrazo(descricaoPrazo)
+  const duplicadoSemantico = Array.isArray(prazosSemelhantes)
+    ? prazosSemelhantes.some((item: any) => categorizarDescricaoPrazo(item?.descricao) === categoriaAtual)
+    : false
+
+  if (duplicadoSemantico) {
       console.log(
       `[ANALISADOR] Prazo semelhante ja existente para ${params.numero_cnj} (${descricaoPrazo}). Ignorando duplicata.`
       )
