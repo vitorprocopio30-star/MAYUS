@@ -86,13 +86,33 @@ export async function updateSession(request: NextRequest) {
 
   // ==== RBAC: Controle Dinâmico de Acesso por Perfil ====
   if (user && request.nextUrl.pathname.startsWith("/dashboard")) {
-    const role = user.app_metadata?.role as string | undefined;
-    const customPermissions = (user.app_metadata?.custom_permissions as string[]) || [];
+    let role = user.app_metadata?.role as string | undefined;
+    let customPermissions = (user.app_metadata?.custom_permissions as string[]) || [];
+    const appTenantId = user.app_metadata?.tenant_id as string | undefined;
     const path = request.nextUrl.pathname;
 
     // Pula a checagem para a própria página de acesso negado (evita loop)
     if (path === "/dashboard/acesso-negado") {
       return supabaseResponse;
+    }
+
+    // Fallback para perfis antigos/inconsistentes: usa dados de profiles
+    // quando o token nao possui dados suficientes para RBAC.
+    if (!role || customPermissions.length === 0 || !appTenantId) {
+      const { data: profileAccess } = await supabase
+        .from("profiles")
+        .select("role, custom_permissions")
+        .eq("id", user.id)
+        .maybeSingle();
+
+      if (profileAccess) {
+        role = role || (profileAccess.role as string | undefined);
+        if (customPermissions.length === 0) {
+          customPermissions = Array.isArray(profileAccess.custom_permissions)
+            ? (profileAccess.custom_permissions as string[])
+            : [];
+        }
+      }
     }
 
     // Verifica permissão usando o mapa centralizado

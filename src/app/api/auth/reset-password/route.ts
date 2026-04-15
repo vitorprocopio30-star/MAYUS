@@ -1,5 +1,6 @@
 import { NextResponse } from "next/server";
 import { createClient } from "@supabase/supabase-js";
+import { resolvePublicAppUrl } from "@/lib/url/resolve-public-app-url";
 
 export async function POST(req: Request) {
   try {
@@ -24,8 +25,9 @@ export async function POST(req: Request) {
 
     // Usa o Supabase Auth para enviar o e-mail de reset nativamente
     // O Supabase cuida do envio do e-mail automaticamente
+    const appUrl = resolvePublicAppUrl(req);
     const { error: authError } = await supabase.auth.resetPasswordForEmail(email, {
-      redirectTo: `${process.env.NEXT_PUBLIC_SITE_URL || 'http://localhost:3000'}/auth/update-password`,
+      redirectTo: `${appUrl}/auth/update-password`,
     });
 
     if (authError) {

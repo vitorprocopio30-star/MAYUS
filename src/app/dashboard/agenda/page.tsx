@@ -402,6 +402,15 @@ export default function AgendaDiariaPage() {
     return { reward: 20, category: "ROTINA", color: "#9ca3af", isCritical: false };
   };
 
+  const isTaskEditableByOwner = (task: any) => {
+    const sourceTable = String(task?.source_table || "");
+    const createdByAgent = String(task?.created_by_agent || "").trim();
+
+    if (sourceTable === "manual_admin") return false;
+    if (createdByAgent.length > 0) return false;
+    return sourceTable === "manual_private";
+  };
+
   const openCreateTaskModal = () => {
     setEditingTaskId(null);
     setNewTaskTitle("");
@@ -416,6 +425,10 @@ export default function AgendaDiariaPage() {
 
   const openEditTaskModal = (event: React.MouseEvent, task: any) => {
     event.stopPropagation();
+    if (!isTaskEditableByOwner(task)) {
+      alert("Esta tarefa foi atribuida por Auditoria/IA e nao pode ser editada na Agenda Diaria.");
+      return;
+    }
     setEditingTaskId(task.id);
     setNewTaskTitle(task.title || "");
     setNewTaskDescription(task.description || "");
@@ -455,7 +468,9 @@ export default function AgendaDiariaPage() {
           .from("user_tasks")
           .update(updatePayload)
           .eq("id", editingTaskId)
-          .eq("assigned_to", currentUserId);
+          .eq("assigned_to", currentUserId)
+          .eq("source_table", "manual_private")
+          .is("created_by_agent", null);
         error = response.error;
       } else {
         const payload = buildAgendaPayloadFromManualTask({
@@ -511,7 +526,8 @@ export default function AgendaDiariaPage() {
         .delete()
         .eq("id", editingTaskId)
         .eq("assigned_to", currentUserId)
-        .in("source_table", ["manual_private", "manual_admin"]);
+        .eq("source_table", "manual_private")
+        .is("created_by_agent", null);
 
       if (error) throw error;
 
@@ -858,7 +874,7 @@ export default function AgendaDiariaPage() {
                         </div>
 
                         <div className="absolute top-2 right-2 sm:static sm:top-auto sm:right-auto text-right flex flex-col items-end z-20">
-                          {(ev.source_table === "manual_private" || ev.source_table === "manual_admin") && ev.status !== 'Concluído' && (
+                          {isTaskEditableByOwner(ev) && ev.status !== 'Concluído' && (
                             <button
                               onClick={(event) => openEditTaskModal(event, ev)}
                               className="mb-2 p-2 rounded-lg transition-colors border shadow-sm backdrop-blur-sm bg-[#111] text-[#CCA761] border-[#CCA761]/20 hover:bg-[#CCA761]/10"

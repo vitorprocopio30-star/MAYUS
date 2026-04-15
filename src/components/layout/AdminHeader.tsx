@@ -225,8 +225,16 @@ export function AdminHeader() {
                 </>
               )}
             </div>
-            <div className="w-10 h-10 rounded-full bg-gradient-to-tr from-[#CCA761] to-[#8B7340] border-2 border-[#111] flex items-center justify-center text-black shadow-lg font-bold text-sm">
-              {isLoading ? "..." : initials}
+            <div className="w-10 h-10 rounded-full bg-gradient-to-tr from-[#CCA761] to-[#8B7340] border-2 border-[#111] flex items-center justify-center text-black shadow-lg font-bold text-sm overflow-hidden">
+              {!isLoading && profile?.avatar_url ? (
+                <img
+                  src={profile.avatar_url}
+                  alt={displayName}
+                  className="w-full h-full object-cover"
+                />
+              ) : (
+                isLoading ? "..." : initials
+              )}
             </div>
           </button>
 

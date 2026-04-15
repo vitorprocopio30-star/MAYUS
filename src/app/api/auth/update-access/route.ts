@@ -35,13 +35,25 @@ export async function POST(req: Request) {
        return NextResponse.json({ error: "Membro não encontrado neste escritório." }, { status: 404 });
     }
 
+    const normalizedPermissions = Array.isArray(permissions) ? permissions : [];
+
     // 3. Atualiza os metadados do Auth no Supabase (JWT)
-    // Isso garante que o Middleware bloqueará o acesso instantaneamente.
+    // Preserva campos existentes para nao perder tenant_id nem outros metadados.
+    const { data: authUserData, error: authUserError } = await supabaseAdmin.auth.admin.getUserById(memberId);
+    if (authUserError || !authUserData.user) {
+      console.error("Erro ao buscar usuario no auth:", authUserError);
+      return NextResponse.json({ error: "Nao foi possivel localizar o usuario no Auth." }, { status: 500 });
+    }
+
+    const existingAppMetadata = authUserData.user.app_metadata || {};
+
     const { error: updateAuthError } = await supabaseAdmin.auth.admin.updateUserById(memberId, {
       app_metadata: {
-        custom_permissions: permissions,
+        ...existingAppMetadata,
+        tenant_id: memberProfile.tenant_id,
+        custom_permissions: normalizedPermissions,
         role: role,
-        department_id: departmentId
+        department_id: departmentId || null,
       }
     });
 
@@ -53,7 +65,7 @@ export async function POST(req: Request) {
     // 4. Atualiza a tabela pública (profiles) para exibição nativa
     const { error: updateProfileError } = await supabaseAdmin
       .from("profiles")
-      .update({ role, custom_permissions: permissions, department_id: departmentId })
+      .update({ role, custom_permissions: normalizedPermissions, department_id: departmentId || null })
       .eq("id", memberId);
 
     if (updateProfileError) {
@@ -66,7 +78,7 @@ export async function POST(req: Request) {
       actor_id: user.id,
       action: "UPDATE_ACCESS",
       entity: "auth",
-      new_data: { member_id: memberId, role_assigned: role, permissions },
+      new_data: { member_id: memberId, role_assigned: role, permissions: normalizedPermissions },
     });
 
     return NextResponse.json({ success: true });

@@ -227,7 +227,6 @@ export default function EquipePage() {
         .filter((prof) => persistedIds.has(prof.id) && prof.name.trim().length > 0)
         .map((prof) => ({
           id: prof.id,
-          tenant_id: tenantId,
           full_name: prof.name.trim(),
           role: (prof.role === "Outro" ? (prof.customRole || "Colaborador") : prof.role || "Colaborador").trim(),
           department_id: prof.department_id || null,
@@ -235,23 +234,22 @@ export default function EquipePage() {
           is_active: true,
         }));
 
-      if (payload.length > 0) {
-        const { error: upsertError } = await supabase
-          .from("profiles")
-          .upsert(payload, { onConflict: "id" });
-        if (upsertError) throw upsertError;
-      }
-
       const remainingIds = new Set(professionals.map((prof) => prof.id));
       const removedIds = originalProfileIds.filter((id) => !remainingIds.has(id));
 
-      if (removedIds.length > 0) {
-        const { error: removeError } = await supabase
-          .from("profiles")
-          .update({ is_active: false })
-          .in("id", removedIds)
-          .eq("tenant_id", tenantId);
-        if (removeError) throw removeError;
+      const response = await fetch("/api/profiles/bulk-update", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          tenantId,
+          upserts: payload,
+          removedIds,
+        }),
+      });
+
+      const result = await response.json().catch(() => null);
+      if (!response.ok) {
+        throw new Error(result?.error || "Erro ao salvar profissionais.");
       }
 
       setOriginalProfileIds(professionals.map((prof) => prof.id));
