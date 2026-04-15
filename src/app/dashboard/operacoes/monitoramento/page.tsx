@@ -124,11 +124,39 @@ function parseDataBR(dataStr: string | null): number {
   } catch { return 0 }
 }
 
+function parseCalendarDayTs(dataStr: string | null): number {
+  if (!dataStr) return 0
+  try {
+    const normalized = String(dataStr).trim()
+
+    if (normalized.includes('/')) {
+      const datePart = normalized.split(' ')[0]
+      const [d, m, a] = datePart.split('/').map(Number)
+      const local = new Date(a, m - 1, d)
+      return local.getTime() || 0
+    }
+
+    if (normalized.includes('-')) {
+      const datePart = normalized.split('T')[0].split(' ')[0]
+      const [a, m, d] = datePart.split('-').map(Number)
+      const local = new Date(a, m - 1, d)
+      return local.getTime() || 0
+    }
+
+    return 0
+  } catch {
+    return 0
+  }
+}
+
 function formatarData(data: string | null) {
   if (!data) return '--/--/----'
   try {
-    // Se já estiver no formato BR, retorna
-    if (data.includes('/') && data.split('/').length === 3) return data
+    // Se já estiver no formato BR, retorna apenas a parte de data
+    if (data.includes('/')) {
+      const part = data.split(' ')[0]
+      if (part.split('/').length === 3) return part
+    }
     
     // Se for ISO ou timestamp com espaço (YYYY-MM-DD...)
     if (data.includes('-')) {
@@ -144,7 +172,7 @@ function formatarData(data: string | null) {
 
 function diasDesde(data: string | null) {
   if (!data) return null
-  const timestamp = parseDataBR(data)
+  const timestamp = parseCalendarDayTs(data)
   if (timestamp === 0) return null
   
   const h = new Date()

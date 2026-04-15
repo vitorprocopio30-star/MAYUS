@@ -48,6 +48,8 @@ export default function EquipePage() {
   const [plans, setPlans] = useState<CareerPlan[]>([]);
   const [departments, setDepartments] = useState<Department[]>([]);
   const [saveLoading, setSaveLoading] = useState(false);
+  const [uploadingPhotoId, setUploadingPhotoId] = useState<string | null>(null);
+  const [originalProfileIds, setOriginalProfileIds] = useState<string[]>([]);
 
   const loadData = useCallback(async () => {
     if (!tenantId) return;
@@ -60,12 +62,32 @@ export default function EquipePage() {
       .eq("tenant_id", tenantId);
     if (depts) setDepartments(depts);
 
-    // Carregar dados de localStorage (Simulação de DB)
+    const { data: profileRows, error: profileError } = await supabase
+      .from("profiles")
+      .select("id, full_name, role, avatar_url, department_id, is_active")
+      .eq("tenant_id", tenantId)
+      .eq("is_active", true)
+      .order("created_at", { ascending: true });
+
+    if (profileError) {
+      toast.error("Erro ao carregar profissionais: " + profileError.message);
+    } else {
+      const mapped: ProfessionalData[] = (profileRows || []).map((row: any) => ({
+        id: row.id,
+        name: row.full_name || "",
+        role: row.role || "",
+        customRole: row.role || "",
+        baseSalary: "",
+        receivesCommissionByLevel: false,
+        careerPlanId: "",
+        avatarUrl: row.avatar_url || undefined,
+        department_id: row.department_id || undefined,
+      }));
+      setProfessionals(mapped);
+      setOriginalProfileIds(mapped.map((p) => p.id));
+    }
+
     if (typeof window !== "undefined") {
-      const savedProf = localStorage.getItem("MTO_COMMERCIAL_PROF");
-      if (savedProf) {
-        try { setProfessionals(JSON.parse(savedProf)); } catch(e){}
-      }
       const savedPlans = localStorage.getItem("MTO_COMMERCIAL_PLANS");
       if (savedPlans) {
         try { setPlans(JSON.parse(savedPlans)); } catch(e){}
@@ -81,7 +103,9 @@ export default function EquipePage() {
 
   // Funções de Gerenciamento
   const handleAddProfessional = () => {
-    const newId = Math.random().toString(36).substr(2, 9);
+    const newId = typeof crypto !== "undefined" && "randomUUID" in crypto
+      ? crypto.randomUUID()
+      : Math.random().toString(36).slice(2, 11);
     setProfessionals([...professionals, {
       id: newId, name: "", role: "", baseSalary: 0, receivesCommissionByLevel: false, careerPlanId: ""
     }]);
@@ -91,16 +115,40 @@ export default function EquipePage() {
     setProfessionals(prev => prev.map(p => p.id === profId ? { ...p, [field]: value } : p));
   };
 
-  const handlePhotoUpload = (profId: string, file: File | null) => {
+  const handlePhotoUpload = async (profId: string, file: File | null) => {
     if (!file) return;
-    const reader = new FileReader();
-    reader.onload = (e) => {
-       if (e.target?.result) {
-         handleUpdateProfessional(profId, "avatarUrl", e.target.result as string);
-         toast.success("Foto carregada!");
-       }
-    };
-    reader.readAsDataURL(file);
+    if (!tenantId) {
+      toast.error("Tenant não identificado para upload de foto.");
+      return;
+    }
+
+    setUploadingPhotoId(profId);
+    try {
+      const extension = (file.name.split('.').pop() || 'jpg').toLowerCase();
+      const filePath = `${tenantId}/${profId}-${Date.now()}.${extension}`;
+
+      const { error: uploadError } = await supabase
+        .storage
+        .from('avatars')
+        .upload(filePath, file, { upsert: true });
+
+      if (uploadError) throw uploadError;
+
+      const { data: publicData } = supabase
+        .storage
+        .from('avatars')
+        .getPublicUrl(filePath);
+
+      const publicUrl = publicData?.publicUrl;
+      if (!publicUrl) throw new Error('URL pública não retornada para avatar.');
+
+      handleUpdateProfessional(profId, "avatarUrl", publicUrl);
+      toast.success("Foto carregada com sucesso!");
+    } catch (error: any) {
+      toast.error(error?.message || "Falha ao carregar foto.");
+    } finally {
+      setUploadingPhotoId(null);
+    }
   };
 
   const handleDeleteProfessional = (profId: string) => {
@@ -109,13 +157,47 @@ export default function EquipePage() {
 
   const handleSaveProfessionals = async () => {
     setSaveLoading(true);
-    if (typeof window !== "undefined") {
-      localStorage.setItem("MTO_COMMERCIAL_PROF", JSON.stringify(professionals));
-    }
-    setTimeout(() => {
+    try {
+      if (!tenantId) throw new Error("Tenant não identificado.");
+
+      const payload = professionals
+        .filter((prof) => prof.name.trim().length > 0)
+        .map((prof) => ({
+          id: prof.id,
+          tenant_id: tenantId,
+          full_name: prof.name.trim(),
+          role: (prof.role === "Outro" ? (prof.customRole || "Colaborador") : prof.role || "Colaborador").trim(),
+          department_id: prof.department_id || null,
+          avatar_url: prof.avatarUrl || null,
+          is_active: true,
+        }));
+
+      if (payload.length > 0) {
+        const { error: upsertError } = await supabase
+          .from("profiles")
+          .upsert(payload, { onConflict: "id" });
+        if (upsertError) throw upsertError;
+      }
+
+      const remainingIds = new Set(professionals.map((prof) => prof.id));
+      const removedIds = originalProfileIds.filter((id) => !remainingIds.has(id));
+
+      if (removedIds.length > 0) {
+        const { error: removeError } = await supabase
+          .from("profiles")
+          .update({ is_active: false })
+          .in("id", removedIds)
+          .eq("tenant_id", tenantId);
+        if (removeError) throw removeError;
+      }
+
+      setOriginalProfileIds(professionals.map((prof) => prof.id));
+      toast.success("Profissionais salvos no banco com sucesso!");
+    } catch (error: any) {
+      toast.error(error?.message || "Erro ao salvar profissionais.");
+    } finally {
       setSaveLoading(false);
-      toast.success("Dados salvos com sucesso!");
-    }, 800);
+    }
   };
 
   if (!profileLoading && role !== "Administrador" && role !== "mayus_admin" && role !== "admin") {
@@ -213,6 +295,11 @@ export default function EquipePage() {
                              </>
                            )}
                         </div>
+                        {uploadingPhotoId === prof.id && (
+                          <div className="absolute inset-0 bg-black/70 flex items-center justify-center">
+                            <Loader2 size={16} className="text-[#CCA761] animate-spin" />
+                          </div>
+                        )}
                      </label>
                      <div className="flex-1">
                         <input 

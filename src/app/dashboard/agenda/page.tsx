@@ -502,6 +502,27 @@ export default function AgendaDiariaPage() {
     fetchTasks();
   };
 
+  const handleDeleteTask = async () => {
+    if (!editingTaskId || !currentUserId) return;
+    setIsCreatingTask(true);
+    try {
+      const { error } = await supabase
+        .from("user_tasks")
+        .delete()
+        .eq("id", editingTaskId)
+        .eq("assigned_to", currentUserId)
+        .in("source_table", ["manual_private", "manual_admin"]);
+
+      if (error) throw error;
+
+      setEditingTaskId(null);
+      setShowCreateTaskModal(false);
+      fetchTasks();
+    } finally {
+      setIsCreatingTask(false);
+    }
+  };
+
   useEffect(() => {
      if (isKilled) {
         confetti({
@@ -837,7 +858,7 @@ export default function AgendaDiariaPage() {
                         </div>
 
                         <div className="absolute top-2 right-2 sm:static sm:top-auto sm:right-auto text-right flex flex-col items-end z-20">
-                          {(ev.source_table === "manual_private" || ev.source_table === "manual_admin") && (
+                          {(ev.source_table === "manual_private" || ev.source_table === "manual_admin") && ev.status !== 'Concluído' && (
                             <button
                               onClick={(event) => openEditTaskModal(event, ev)}
                               className="mb-2 p-2 rounded-lg transition-colors border shadow-sm backdrop-blur-sm bg-[#111] text-[#CCA761] border-[#CCA761]/20 hover:bg-[#CCA761]/10"
@@ -964,6 +985,15 @@ export default function AgendaDiariaPage() {
                 {newTaskVisibility === "private" ? "Tarefa pessoal: visivel apenas para voce na Agenda Diaria." : "Tarefa global: pode aparecer tambem na Agenda Global."}
               </p>
               <div className="flex justify-end pt-2">
+                {editingTaskId && (
+                  <button
+                    onClick={handleDeleteTask}
+                    disabled={isCreatingTask}
+                    className="mr-auto bg-red-500/10 border border-red-500/30 text-red-400 px-4 py-2 rounded-lg text-xs font-black uppercase tracking-widest disabled:opacity-50"
+                  >
+                    Excluir
+                  </button>
+                )}
                 <button
                   onClick={handleCreatePersonalTask}
                   disabled={isCreatingTask || !newTaskTitle.trim()}

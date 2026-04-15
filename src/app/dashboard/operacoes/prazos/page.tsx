@@ -1106,7 +1106,7 @@ export default function PrazosPage() {
                           }}
                           className="w-full text-left px-3 py-2 text-xs text-white/60 hover:text-white hover:bg-[#CCA761] hover:text-black rounded-lg transition-all"
                         >
-                          {p.full_name}
+                          {p.full_name || `Colaborador ${String(p.id).slice(0, 6)}`}
                         </button>
                       ))}
                       <div className="h-[1px] bg-white/5 my-1" />
