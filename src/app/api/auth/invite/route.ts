@@ -2,6 +2,7 @@ import { NextResponse } from "next/server";
 import { createClient } from "@/lib/supabase/server";
 import { supabaseAdmin } from "@/lib/supabase/admin";
 import { resolvePublicAppUrl } from "@/lib/url/resolve-public-app-url";
+import { isFullAccessRole, isStandardAccessRole, normalizeAccessRole } from "@/lib/permissions";
 
 function sanitizePermissions(input: unknown): string[] {
   if (!Array.isArray(input)) return [];
@@ -66,9 +67,10 @@ export async function POST(req: Request) {
   try {
     const body = await req.json();
     const email = String(body.email || "").trim().toLowerCase();
-    const role = String(body.role || "").trim();
+    const role = normalizeAccessRole(body.role);
     const department_id = body.department_id ? String(body.department_id) : null;
-    const permissions = sanitizePermissions(body.permissions);
+    const incomingPermissions = sanitizePermissions(body.permissions);
+    const permissions = isFullAccessRole(role) ? ["ALL"] : incomingPermissions;
     const supabase = createClient();
 
     // 1. Verificar se o solicitante é um Admin autenticado
@@ -89,7 +91,7 @@ export async function POST(req: Request) {
 
     console.log("[Invite API] Solicitante:", user.email, "Role:", requesterRole, "TenantID:", tenantId);
 
-    if (requesterRole !== "Administrador" && requesterRole !== "mayus_admin" && requesterRole !== "admin" && !isSuperadmin) {
+    if (!isFullAccessRole(requesterRole) && !isSuperadmin) {
       console.warn("[Invite API] Acesso Negado: Role insuficiente:", requesterRole);
       return NextResponse.json({ error: "Apenas Administradores podem convidar membros." }, { status: 403 });
     }
@@ -101,6 +103,10 @@ export async function POST(req: Request) {
 
     if (!email || !role) {
       return NextResponse.json({ error: "E-mail e perfil são obrigatórios." }, { status: 400 });
+    }
+
+    if (!isStandardAccessRole(role)) {
+      return NextResponse.json({ error: "Nivel de acesso invalido. Escolha um perfil padronizado." }, { status: 400 });
     }
 
     const appUrl = resolvePublicAppUrl(req);

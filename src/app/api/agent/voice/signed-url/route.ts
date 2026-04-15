@@ -46,7 +46,7 @@ export async function GET(req: NextRequest) {
     }
 
     // 2. Role Check: Restrição Executiva (admin, socio, Administrador)
-    const permittedRoles = ["admin", "socio", "Administrador"];
+    const permittedRoles = ["admin", "socio", "Sócio", "Administrador"];
     if (!permittedRoles.includes(profile.role || "")) {
        return NextResponse.json({ error: "Acesso restrito ao nível executivo." }, { status: 403 });
     }

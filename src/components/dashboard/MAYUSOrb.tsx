@@ -39,7 +39,7 @@ export function MAYUSOrb() {
 
   // --- HANDLER DE CLIQUE (BOTÃO PRINCIPAL) ---
   const toggleListening = useCallback(async () => {
-    const allowed = ["admin", "socio", "Administrador"];
+    const allowed = ["admin", "socio", "Sócio", "Administrador"];
     if (!allowed.includes(role || "")) {
       toast.error("Módulo Vocal MAYUS restrito ao nível executivo.");
       return;

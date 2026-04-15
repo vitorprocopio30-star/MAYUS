@@ -16,7 +16,7 @@ function normalizeString(value: unknown): string {
 }
 
 function isPrivileged(role: string | null | undefined, isSuperadmin: boolean | null | undefined): boolean {
-  return isSuperadmin === true || role === "Administrador" || role === "admin" || role === "mayus_admin";
+  return isSuperadmin === true || role === "Administrador" || role === "admin" || role === "mayus_admin" || role === "Sócio" || role === "socio";
 }
 
 export async function POST(req: Request) {

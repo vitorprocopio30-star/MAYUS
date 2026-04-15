@@ -43,7 +43,7 @@ import {
 import { useState, useEffect } from "react";
 import { useTheme } from "next-themes";
 import { useUserProfile } from "@/hooks/useUserProfile";
-import { getAllowedHrefs } from "@/lib/permissions";
+import { getAllowedHrefs, isFullAccessRole } from "@/lib/permissions";
 
 const cormorant = Cormorant_Garamond({ subsets: ["latin"], weight: ["400", "500", "600", "700"], style: ["normal", "italic"] });
 const montserrat = Montserrat({ subsets: ["latin"], weight: ["300", "400", "500", "600", "700"] });
@@ -70,7 +70,7 @@ export function AdminSidebar() {
   const { user, role, customPermissions, profile, isLoading: profileLoading } = useUserProfile();
   const allowedHrefs = getAllowedHrefs(customPermissions, role);
   // Sem sessão (dev local ou auth comentada): trata como admin para não esconder o menu
-  const isAdmin = !profileLoading && (!user || allowedHrefs.includes("ALL") || role === "Administrador" || role === "admin");
+  const isAdmin = !profileLoading && (!user || allowedHrefs.includes("ALL") || isFullAccessRole(role));
 
   useEffect(() => {
     setMounted(true);
@@ -182,9 +182,9 @@ export function AdminSidebar() {
         // Enquanto carrega o perfil, mostra todos os itens (evita menu vazio)
         if (profileLoading) return true;
         if (isAdmin) return true;
-        if (item.href === "/dashboard/configuracoes/agente") return role === "admin" || role === "socio";
-        if (item.href === "/dashboard/configuracoes/memoria") return role === "admin" || role === "socio";
-        if (item.href === "/dashboard/configuracoes/voz") return role === "admin" || role === "socio";
+        if (item.href === "/dashboard/configuracoes/agente") return role === "admin" || role === "socio" || role === "Sócio" || role === "Administrador";
+        if (item.href === "/dashboard/configuracoes/memoria") return role === "admin" || role === "socio" || role === "Sócio" || role === "Administrador";
+        if (item.href === "/dashboard/configuracoes/voz") return role === "admin" || role === "socio" || role === "Sócio" || role === "Administrador";
         if (item.href === "/dashboard/agenda-admin") return false;
         if (item.href === "/dashboard") return true;
         if (item.href === "/dashboard/equipe") return false;

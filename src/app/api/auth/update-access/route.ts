@@ -1,10 +1,12 @@
 import { NextResponse } from "next/server";
 import { createClient } from "@/lib/supabase/server";
 import { supabaseAdmin } from "@/lib/supabase/admin";
+import { isFullAccessRole, isStandardAccessRole, normalizeAccessRole } from "@/lib/permissions";
 
 export async function POST(req: Request) {
   try {
-    const { memberId, role, permissions, departmentId } = await req.json();
+    const { memberId, role: rawRole, permissions, departmentId } = await req.json();
+    const role = normalizeAccessRole(rawRole);
     const supabase = createClient();
 
     // 1. Verificar se o solicitante é um Admin autenticado
@@ -13,15 +15,26 @@ export async function POST(req: Request) {
       return NextResponse.json({ error: "Não autorizado." }, { status: 401 });
     }
 
-    const requesterRole = user.app_metadata?.role;
-    const tenantId = user.app_metadata?.tenant_id;
+    const { data: requesterProfile } = await supabaseAdmin
+      .from("profiles")
+      .select("role, tenant_id, is_superadmin")
+      .eq("id", user.id)
+      .maybeSingle();
 
-    if (requesterRole !== "Administrador" && requesterRole !== "mayus_admin" && requesterRole !== "admin") {
+    const requesterRole = normalizeAccessRole(requesterProfile?.role || user.app_metadata?.role);
+    const tenantId = requesterProfile?.tenant_id || user.app_metadata?.tenant_id;
+    const isSuperadmin = requesterProfile?.is_superadmin === true;
+
+    if (!isFullAccessRole(requesterRole) && !isSuperadmin) {
       return NextResponse.json({ error: "Apenas Administradores podem alterar acessos." }, { status: 403 });
     }
 
     if (!tenantId || !memberId) {
       return NextResponse.json({ error: "Dados incompletos." }, { status: 400 });
+    }
+
+    if (!isStandardAccessRole(role)) {
+      return NextResponse.json({ error: "Nivel de acesso invalido. Use um perfil padronizado." }, { status: 400 });
     }
 
     // 2. Garante que o membro a ser editado pertence ao mesmo tenant
@@ -35,7 +48,8 @@ export async function POST(req: Request) {
        return NextResponse.json({ error: "Membro não encontrado neste escritório." }, { status: 404 });
     }
 
-    const normalizedPermissions = Array.isArray(permissions) ? permissions : [];
+    const requestedPermissions = Array.isArray(permissions) ? permissions : [];
+    const normalizedPermissions = isFullAccessRole(role) ? ["ALL"] : requestedPermissions;
 
     // 3. Atualiza os metadados do Auth no Supabase (JWT)
     // Preserva campos existentes para nao perder tenant_id nem outros metadados.

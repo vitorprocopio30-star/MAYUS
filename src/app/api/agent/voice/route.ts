@@ -38,7 +38,7 @@ async function getAuthorizedUser() {
     .eq("id", user.id)
     .single();
 
-  if (!profile || !["admin", "socio", "Administrador"].includes(profile.role)) {
+  if (!profile || !["admin", "socio", "Sócio", "Administrador"].includes(profile.role)) {
     throw new Error("Forbidden");
   }
 

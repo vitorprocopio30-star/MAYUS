@@ -18,6 +18,37 @@ export const APP_MODULES = [
 
 export type AppModuleId = typeof APP_MODULES[number]["id"] | "ALL";
 
+export const FULL_ACCESS_ROLES = ["Administrador", "admin", "Sócio", "socio", "mayus_admin"] as const;
+export const STANDARD_ACCESS_ROLES = ["Administrador", "Sócio", "Advogado", "Estagiário", "Financeiro", "SDR", "mayus_admin"] as const;
+
+export function normalizeAccessRole(role: unknown): string {
+  const raw = String(role || "").trim();
+  const compact = raw
+    .normalize("NFD")
+    .replace(/[\u0300-\u036f]/g, "")
+    .toLowerCase();
+
+  if (compact === "admin" || compact === "administrador") return "Administrador";
+  if (compact === "socio") return "Sócio";
+  if (compact === "advogado" || compact === "advogada") return "Advogado";
+  if (compact === "estagiario") return "Estagiário";
+  if (compact === "financeiro") return "Financeiro";
+  if (compact === "sdr") return "SDR";
+  if (compact === "mayus_admin") return "mayus_admin";
+
+  return raw;
+}
+
+export function isFullAccessRole(role?: string): boolean {
+  if (!role) return false;
+  return FULL_ACCESS_ROLES.includes(role as (typeof FULL_ACCESS_ROLES)[number]);
+}
+
+export function isStandardAccessRole(role?: string): boolean {
+  if (!role) return false;
+  return STANDARD_ACCESS_ROLES.includes(role as (typeof STANDARD_ACCESS_ROLES)[number]);
+}
+
 // Mapeamento de Rotas (pathname) para qual Módulo ela pertence
 export const ROUTE_TO_MODULE: Record<string, AppModuleId> = {
   "/dashboard": "dashboard",
@@ -30,6 +61,9 @@ export const ROUTE_TO_MODULE: Record<string, AppModuleId> = {
   "/dashboard/crm": "clientes",
   "/dashboard/vendas": "clientes",
   "/dashboard/processos": "processos",
+  "/dashboard/operacoes": "processos",
+  "/dashboard/operacoes/monitoramento": "processos",
+  "/dashboard/operacoes/prazos": "processos",
   "/dashboard/prazos": "processos",
   "/dashboard/documentos": "documentos",
   "/dashboard/faturamento": "faturamento",
@@ -42,6 +76,8 @@ export const ROUTE_TO_MODULE: Record<string, AppModuleId> = {
   "/dashboard/equipe-ia": "config_agentes",
   "/dashboard/equipe": "equipe",
   "/dashboard/configuracoes": "config_agentes",
+  "/dashboard/configuracoes/departamentos": "config_agentes",
+  "/dashboard/configuracoes/comercial": "config_agentes",
   "/dashboard/configuracoes/usuarios": "config_agentes",
 };
 
@@ -50,7 +86,7 @@ export const ROUTE_TO_MODULE: Record<string, AppModuleId> = {
 // -----------------------------------------------------------------------
 export function hasAccess(customPermissions: string[], pathname: string, role?: string): boolean {
   // Administrador dono tem acesso total independente de chaves
-  if (role === "Administrador" || role === "admin" || customPermissions.includes("ALL")) return true;
+  if (isFullAccessRole(role) || customPermissions.includes("ALL")) return true;
 
   // A raiz do dashboard pode ser acessada se tiver permissão "dashboard"
   if (pathname === "/dashboard") {
@@ -76,7 +112,7 @@ export function hasAccess(customPermissions: string[], pathname: string, role?: 
 // Retorna a lista de prefixos permitidos p/ a Sidebar (filtragem visual)
 // -----------------------------------------------------------------------
 export function getAllowedHrefs(customPermissions: string[] | undefined, role?: string): string[] {
-  if (role === "Administrador" || role === "admin") return ["ALL"];
+  if (isFullAccessRole(role)) return ["ALL"];
   if (!customPermissions || customPermissions.length === 0) return [];
   if (customPermissions.includes("ALL")) return ["ALL"];
 

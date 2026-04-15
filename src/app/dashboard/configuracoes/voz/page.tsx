@@ -27,7 +27,7 @@ export default function VozConfiguracoesPage() {
 
   useEffect(() => {
     if (!profileLoading) {
-      if (role === "admin" || role === "socio" || role === "Administrador") {
+      if (role === "admin" || role === "socio" || role === "Sócio" || role === "Administrador") {
         loadData();
       } else {
         setIsLoading(false);
@@ -96,7 +96,7 @@ export default function VozConfiguracoesPage() {
     );
   }
 
-  if (role !== "admin" && role !== "socio" && role !== "Administrador") {
+  if (role !== "admin" && role !== "socio" && role !== "Sócio" && role !== "Administrador") {
     return (
       <div className="p-10 text-center animate-in fade-in">
         <h2 className={`text-2xl font-bold text-red-500 mb-2 ${cormorant.className}`}>Acesso Restrito</h2>

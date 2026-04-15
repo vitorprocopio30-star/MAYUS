@@ -9,7 +9,7 @@ import {
 } from "lucide-react";
 import { createClient } from "@/lib/supabase/client";
 import { useUserProfile } from "@/hooks/useUserProfile";
-import { APP_MODULES } from "@/lib/permissions";
+import { APP_MODULES, STANDARD_ACCESS_ROLES } from "@/lib/permissions";
 import { toast } from "sonner";
 import { useRouter } from "next/navigation";
 
@@ -32,6 +32,8 @@ interface Department {
   id: string;
   name: string;
 }
+
+const ACCESS_ROLE_OPTIONS = STANDARD_ACCESS_ROLES;
 
 export default function UsuariosPermissoesPage() {
   const router = useRouter();
@@ -95,7 +97,7 @@ export default function UsuariosPermissoesPage() {
 
   const handleInvite = async () => {
     if (!inviteEmail || !inviteRole) {
-      toast.error("E-mail e Cargo são obrigatórios.");
+      toast.error("E-mail e nivel de acesso sao obrigatorios.");
       return;
     }
     setInviteLoading(true);
@@ -109,7 +111,11 @@ export default function UsuariosPermissoesPage() {
       if (!res.ok) {
         toast.error(data.error || "Erro ao enviar convite.");
       } else {
-        toast.success(`Convite enviado para ${inviteEmail}!`);
+        if (data?.reused_existing_user) {
+          toast.success(`Acesso de ${inviteEmail} atualizado com sucesso.`);
+        } else {
+          toast.success(`Convite enviado para ${inviteEmail}!`);
+        }
         setShowInviteModal(false);
         setInviteEmail("");
         setInviteRole("");
@@ -167,7 +173,7 @@ export default function UsuariosPermissoesPage() {
     }
   };
 
-  if (!profileLoading && role !== "Administrador" && role !== "admin" && role !== "mayus_admin") {
+  if (!profileLoading && role !== "Administrador" && role !== "admin" && role !== "mayus_admin" && role !== "Sócio" && role !== "socio") {
     return (
       <div className={`min-h-[60vh] flex items-center justify-center ${montserrat.className}`}>
         <div className="text-center">
@@ -299,8 +305,20 @@ export default function UsuariosPermissoesPage() {
                 </div>
               )}
               <div className="space-y-1.5">
-                <label className="text-xs font-semibold text-gray-300 uppercase tracking-wider">Cargo / Título de Acesso *</label>
-                <input type="text" value={editMember ? editRole : inviteRole} onChange={(e) => editMember ? setEditRole(e.target.value) : setInviteRole(e.target.value)} placeholder="Ex: Sócio, Associado..." className="w-full bg-[#0a0a0a] border border-[#2a2a2a] text-white rounded-lg px-4 py-3 text-sm focus:outline-none focus:ring-1 focus:ring-[#CCA761] transition-all" />
+                <label className="text-xs font-semibold text-gray-300 uppercase tracking-wider">Nível de Acesso *</label>
+                <select
+                  value={editMember ? editRole : inviteRole}
+                  onChange={(e) => editMember ? setEditRole(e.target.value) : setInviteRole(e.target.value)}
+                  className="w-full bg-[#0a0a0a] border border-[#2a2a2a] text-white rounded-lg px-4 py-3 text-sm focus:outline-none focus:ring-1 focus:ring-[#CCA761] transition-all appearance-none"
+                >
+                  <option value="">Selecione o nivel de acesso</option>
+                  {ACCESS_ROLE_OPTIONS.map((accessRole) => (
+                    <option key={accessRole} value={accessRole}>{accessRole}</option>
+                  ))}
+                  {(editMember && editRole && !ACCESS_ROLE_OPTIONS.includes(editRole as any)) && (
+                    <option value={editRole}>{editRole}</option>
+                  )}
+                </select>
               </div>
 
               <div className="space-y-1.5">
