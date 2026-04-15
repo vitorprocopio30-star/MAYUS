@@ -82,7 +82,7 @@ export default function PipelinePage() {
           supabase.from("crm_pipelines").select("*").eq("id", pipelineId).single(),
           supabase.from("crm_stages").select("*").eq("pipeline_id", pipelineId).order("order_index"),
           supabase.from("crm_tasks").select("*").eq("pipeline_id", pipelineId).order("position_index"),
-          supabase.from("profiles").select("id, full_name, avatar_url").eq("tenant_id", profile.tenant_id),
+          supabase.from("profiles").select("id, full_name, avatar_url").eq("tenant_id", profile.tenant_id).eq("is_active", true),
           supabase.from("crm_pipelines").select("*").eq("tenant_id", profile.tenant_id).order("created_at")
         ]);
 

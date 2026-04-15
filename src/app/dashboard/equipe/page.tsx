@@ -38,6 +38,68 @@ type ProfessionalData = {
   department_id?: string;
 };
 
+const MAX_AVATAR_FILE_BYTES = 12 * 1024 * 1024;
+const TARGET_AVATAR_MAX_BYTES = 900 * 1024;
+const MAX_AVATAR_DIMENSION = 1400;
+
+function loadImageElement(file: File): Promise<HTMLImageElement> {
+  return new Promise((resolve, reject) => {
+    const objectUrl = URL.createObjectURL(file);
+    const image = new Image();
+
+    image.onload = () => {
+      URL.revokeObjectURL(objectUrl);
+      resolve(image);
+    };
+
+    image.onerror = () => {
+      URL.revokeObjectURL(objectUrl);
+      reject(new Error("Nao foi possivel processar esta imagem."));
+    };
+
+    image.src = objectUrl;
+  });
+}
+
+async function optimizeAvatarForUpload(file: File): Promise<File> {
+  if (!file.type.startsWith("image/")) {
+    throw new Error("Selecione um arquivo de imagem valido.");
+  }
+
+  const image = await loadImageElement(file);
+  const largestSide = Math.max(image.width, image.height);
+  const scale = largestSide > MAX_AVATAR_DIMENSION ? MAX_AVATAR_DIMENSION / largestSide : 1;
+
+  const width = Math.max(1, Math.round(image.width * scale));
+  const height = Math.max(1, Math.round(image.height * scale));
+
+  const canvas = document.createElement("canvas");
+  canvas.width = width;
+  canvas.height = height;
+
+  const context = canvas.getContext("2d");
+  if (!context) {
+    throw new Error("Nao foi possivel preparar a imagem para upload.");
+  }
+
+  context.drawImage(image, 0, 0, width, height);
+
+  let quality = 0.9;
+  let blob = await new Promise<Blob | null>((resolve) => canvas.toBlob(resolve, "image/jpeg", quality));
+
+  while (blob && blob.size > TARGET_AVATAR_MAX_BYTES && quality > 0.45) {
+    quality -= 0.1;
+    blob = await new Promise<Blob | null>((resolve) => canvas.toBlob(resolve, "image/jpeg", quality));
+  }
+
+  if (!blob) {
+    throw new Error("Nao foi possivel finalizar a compressao da imagem.");
+  }
+
+  const baseName = file.name.replace(/\.[^.]+$/, "") || "avatar";
+  return new File([blob], `${baseName}.jpg`, { type: "image/jpeg" });
+}
+
 export default function EquipePage() {
   const router = useRouter();
   const { role, tenantId, isLoading: profileLoading } = useUserProfile();
@@ -101,16 +163,6 @@ export default function EquipePage() {
     if (tenantId) loadData();
   }, [tenantId, loadData]);
 
-  // Funções de Gerenciamento
-  const handleAddProfessional = () => {
-    const newId = typeof crypto !== "undefined" && "randomUUID" in crypto
-      ? crypto.randomUUID()
-      : Math.random().toString(36).slice(2, 11);
-    setProfessionals([...professionals, {
-      id: newId, name: "", role: "", baseSalary: 0, receivesCommissionByLevel: false, careerPlanId: ""
-    }]);
-  };
-
   const handleUpdateProfessional = (profId: string, field: keyof ProfessionalData, value: any) => {
     setProfessionals(prev => prev.map(p => p.id === profId ? { ...p, [field]: value } : p));
   };
@@ -122,15 +174,20 @@ export default function EquipePage() {
       return;
     }
 
+    if (file.size > MAX_AVATAR_FILE_BYTES) {
+      toast.error("Imagem muito grande. Use um arquivo de ate 12 MB.");
+      return;
+    }
+
     setUploadingPhotoId(profId);
     try {
-      const extension = (file.name.split('.').pop() || 'jpg').toLowerCase();
-      const filePath = `${tenantId}/${profId}-${Date.now()}.${extension}`;
+      const optimizedFile = await optimizeAvatarForUpload(file);
+      const filePath = `${tenantId}/${profId}-${Date.now()}.jpg`;
 
       const { error: uploadError } = await supabase
         .storage
         .from('avatars')
-        .upload(filePath, file, { upsert: true });
+        .upload(filePath, optimizedFile, { upsert: true, contentType: "image/jpeg" });
 
       if (uploadError) throw uploadError;
 
@@ -145,7 +202,12 @@ export default function EquipePage() {
       handleUpdateProfessional(profId, "avatarUrl", publicUrl);
       toast.success("Foto carregada com sucesso!");
     } catch (error: any) {
-      toast.error(error?.message || "Falha ao carregar foto.");
+      const message = String(error?.message || "");
+      if (message.toLowerCase().includes("maximum allowed size") || message.toLowerCase().includes("object exceeded")) {
+        toast.error("A imagem ainda ficou acima do limite permitido. Tente uma foto menor.");
+      } else {
+        toast.error(message || "Falha ao carregar foto.");
+      }
     } finally {
       setUploadingPhotoId(null);
     }
@@ -159,9 +221,10 @@ export default function EquipePage() {
     setSaveLoading(true);
     try {
       if (!tenantId) throw new Error("Tenant não identificado.");
+      const persistedIds = new Set(originalProfileIds);
 
       const payload = professionals
-        .filter((prof) => prof.name.trim().length > 0)
+        .filter((prof) => persistedIds.has(prof.id) && prof.name.trim().length > 0)
         .map((prof) => ({
           id: prof.id,
           tenant_id: tenantId,
@@ -237,24 +300,24 @@ export default function EquipePage() {
              SALVAR ALTERAÇÕES
            </button>
            <button 
-             onClick={handleAddProfessional}
+             onClick={() => router.push("/dashboard/configuracoes/usuarios")}
              className="flex items-center gap-2 px-6 py-3 bg-[#4ade80]/5 hover:bg-[#4ade80]/10 border border-[#4ade80]/20 hover:border-[#4ade80]/40 rounded-lg transition-all text-[#4ade80] font-bold text-[10px] uppercase tracking-widest"
-           >
-              <Plus size={14} /> NOVO PROFISSIONAL
-           </button>
-        </div>
+            >
+               <Plus size={14} /> CONVIDAR MEMBRO
+            </button>
+         </div>
       </div>
 
       <div className="space-y-8 animate-fade-in pb-20">
          <div className="grid grid-cols-1 md:grid-cols-2 xl:grid-cols-3 gap-6">
            {isLoading ? (
              <div className="col-span-full flex items-center justify-center py-20"><Loader2 size={32} className="text-[#CCA761] animate-spin" /></div>
-           ) : professionals.length === 0 ? (
-             <div className="col-span-full py-20 text-center bg-white/[0.02] border border-dashed border-white/10 rounded-2xl">
-               <Users size={40} className="mx-auto mb-4 text-gray-700" />
-               <p className="text-gray-500 text-sm">Nenhum profissional cadastrado.</p>
-               <button onClick={handleAddProfessional} className="mt-4 text-[#CCA761] text-[10px] font-black uppercase tracking-widest hover:underline">+ Adicionar Primeiro</button>
-             </div>
+            ) : professionals.length === 0 ? (
+              <div className="col-span-full py-20 text-center bg-white/[0.02] border border-dashed border-white/10 rounded-2xl">
+                <Users size={40} className="mx-auto mb-4 text-gray-700" />
+                <p className="text-gray-500 text-sm">Nenhum profissional cadastrado.</p>
+                <button onClick={() => router.push("/dashboard/configuracoes/usuarios")} className="mt-4 text-[#CCA761] text-[10px] font-black uppercase tracking-widest hover:underline">+ Convidar Primeiro Membro</button>
+              </div>
            ) : (
              professionals.map((prof) => (
                <div key={prof.id} className="bg-[#0C0C0C] border border-white/5 hover:border-[#CCA761]/30 transition-all rounded-2xl p-6 relative group shadow-2xl">
