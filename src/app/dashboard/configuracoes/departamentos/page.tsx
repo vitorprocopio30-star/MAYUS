@@ -6,7 +6,7 @@ import { createClient } from "@/lib/supabase/client";
 import { useUserProfile } from "@/hooks/useUserProfile";
 import { 
   Building2, Plus, Trash2, Edit3, Save, X, Loader2, Palette, Users, AlertCircle,
-  Briefcase, Landmark, Globe, MapPin, Phone, Mail
+  Briefcase, Landmark, Globe, MapPin, Phone, Mail, ImageIcon, Upload
 } from "lucide-react";
 import { toast } from "sonner";
 
@@ -27,6 +27,67 @@ const PRESET_COLORS = [
   "#8B5CF6", "#EC4899", "#14B8A6", "#F59E0B", "#6366F1"
 ];
 
+const MAX_OFFICE_LOGO_BYTES = 12 * 1024 * 1024;
+const TARGET_OFFICE_LOGO_BYTES = 900 * 1024;
+const MAX_OFFICE_LOGO_DIMENSION = 1600;
+
+function loadImageElement(file: File): Promise<HTMLImageElement> {
+  return new Promise((resolve, reject) => {
+    const objectUrl = URL.createObjectURL(file);
+    const image = new Image();
+
+    image.onload = () => {
+      URL.revokeObjectURL(objectUrl);
+      resolve(image);
+    };
+
+    image.onerror = () => {
+      URL.revokeObjectURL(objectUrl);
+      reject(new Error("Nao foi possivel processar esta imagem."));
+    };
+
+    image.src = objectUrl;
+  });
+}
+
+async function optimizeOfficeLogo(file: File): Promise<File> {
+  if (!file.type.startsWith("image/")) {
+    throw new Error("Selecione um arquivo de imagem valido.");
+  }
+
+  const image = await loadImageElement(file);
+  const largestSide = Math.max(image.width, image.height);
+  const scale = largestSide > MAX_OFFICE_LOGO_DIMENSION ? MAX_OFFICE_LOGO_DIMENSION / largestSide : 1;
+  const width = Math.max(1, Math.round(image.width * scale));
+  const height = Math.max(1, Math.round(image.height * scale));
+
+  const canvas = document.createElement("canvas");
+  canvas.width = width;
+  canvas.height = height;
+  const context = canvas.getContext("2d");
+
+  if (!context) {
+    throw new Error("Nao foi possivel preparar a imagem para upload.");
+  }
+
+  context.drawImage(image, 0, 0, width, height);
+
+  let quality = 0.92;
+  let blob = await new Promise<Blob | null>((resolve) => canvas.toBlob(resolve, "image/jpeg", quality));
+
+  while (blob && blob.size > TARGET_OFFICE_LOGO_BYTES && quality > 0.45) {
+    quality -= 0.1;
+    blob = await new Promise<Blob | null>((resolve) => canvas.toBlob(resolve, "image/jpeg", quality));
+  }
+
+  if (!blob) {
+    throw new Error("Nao foi possivel finalizar a compressao da imagem.");
+  }
+
+  const baseName = file.name.replace(/\.[^.]+$/, "") || "office-logo";
+  return new File([blob], `${baseName}.jpg`, { type: "image/jpeg" });
+}
+
 export default function DepartamentosPage() {
   const { profile } = useUserProfile();
   const supabase = createClient();
@@ -44,7 +105,8 @@ export default function DepartamentosPage() {
     email: "",
     phone: "",
     address: "",
-    website: ""
+    website: "",
+    logoUrl: "",
   });
 
   // Criar/Editar Dept
@@ -55,11 +117,12 @@ export default function DepartamentosPage() {
   const [draftDesc, setDraftDesc] = useState("");
 
   const [memberCounts, setMemberCounts] = useState<Record<string, number>>({});
+  const [uploadingOfficeLogo, setUploadingOfficeLogo] = useState(false);
 
   useEffect(() => {
     if (profile?.tenant_id) {
        loadDepartments();
-       loadOfficeData();
+       void loadOfficeData();
     }
   }, [profile?.tenant_id]);
 
@@ -92,33 +155,165 @@ export default function DepartamentosPage() {
     setIsLoading(false);
   };
 
-  const loadOfficeData = () => {
+  const loadOfficeData = async () => {
+    if (!profile?.tenant_id) return;
+
+    let fallbackData: any = null;
     if (typeof window !== "undefined") {
       const saved = localStorage.getItem("MTO_OFFICE_DATA");
       if (saved) {
-        try { setOfficeData(JSON.parse(saved)); } catch(e){}
+        try {
+          fallbackData = JSON.parse(saved);
+        } catch {
+          fallbackData = null;
+        }
       } else {
-        // Tenta pegar do comercial se não houver aqui
         const comm = localStorage.getItem("MTO_COMMERCIAL_GENERAL");
         if (comm) {
-          try { 
-            const data = JSON.parse(comm);
-            if (data.companyName) setOfficeData(prev => ({...prev, name: data.companyName}));
-          } catch(e){}
+          try {
+            const parsed = JSON.parse(comm);
+            fallbackData = { name: parsed.companyName || "" };
+          } catch {
+            fallbackData = null;
+          }
         }
       }
     }
+
+    const [{ data: tenantData }, { data: settingsData }] = await Promise.all([
+      supabase
+        .from("tenants")
+        .select("name, cnpj")
+        .eq("id", profile.tenant_id)
+        .maybeSingle(),
+      supabase
+        .from("tenant_settings")
+        .select("branding")
+        .eq("tenant_id", profile.tenant_id)
+        .maybeSingle(),
+    ]);
+
+    const branding = (settingsData?.branding as Record<string, any> | undefined) || {};
+    setOfficeData({
+      name: String(branding.office_name || tenantData?.name || fallbackData?.name || "MAYUS Advocacia Premium"),
+      cnpj: String(branding.office_cnpj || tenantData?.cnpj || fallbackData?.cnpj || ""),
+      oab: String(branding.office_oab || fallbackData?.oab || ""),
+      email: String(branding.office_email || fallbackData?.email || ""),
+      phone: String(branding.office_phone || fallbackData?.phone || ""),
+      address: String(branding.office_address || fallbackData?.address || ""),
+      website: String(branding.office_website || fallbackData?.website || ""),
+      logoUrl: String(branding.office_logo_url || fallbackData?.logoUrl || ""),
+    });
   };
 
-  const handleSaveOffice = () => {
-    setIsSaving(true);
-    if (typeof window !== "undefined") {
-      localStorage.setItem("MTO_OFFICE_DATA", JSON.stringify(officeData));
+  const handleSaveOffice = async () => {
+    if (!profile?.tenant_id) {
+      toast.error("Tenant nao identificado para salvar dados do escritorio.");
+      return;
     }
-    setTimeout(() => {
+
+    setIsSaving(true);
+    try {
+      const normalizedName = officeData.name.trim() || "Escritorio";
+      const normalizedCnpj = officeData.cnpj.trim() || null;
+
+      const { error: tenantError } = await supabase
+        .from("tenants")
+        .update({ name: normalizedName, cnpj: normalizedCnpj })
+        .eq("id", profile.tenant_id);
+
+      if (tenantError) throw tenantError;
+
+      const { data: currentSettings, error: settingsReadError } = await supabase
+        .from("tenant_settings")
+        .select("branding")
+        .eq("tenant_id", profile.tenant_id)
+        .maybeSingle();
+
+      if (settingsReadError) throw settingsReadError;
+
+      const mergedBranding = {
+        ...((currentSettings?.branding as Record<string, any>) || {}),
+        office_name: normalizedName,
+        office_cnpj: officeData.cnpj.trim(),
+        office_oab: officeData.oab.trim(),
+        office_email: officeData.email.trim(),
+        office_phone: officeData.phone.trim(),
+        office_address: officeData.address.trim(),
+        office_website: officeData.website.trim(),
+        office_logo_url: officeData.logoUrl.trim() || null,
+      };
+
+      const { error: settingsWriteError } = await supabase
+        .from("tenant_settings")
+        .upsert(
+          {
+            tenant_id: profile.tenant_id,
+            branding: mergedBranding,
+            updated_at: new Date().toISOString(),
+          },
+          { onConflict: "tenant_id" }
+        );
+
+      if (settingsWriteError) throw settingsWriteError;
+
+      if (typeof window !== "undefined") {
+        localStorage.setItem("MTO_OFFICE_DATA", JSON.stringify({ ...officeData, name: normalizedName }));
+        const comm = localStorage.getItem("MTO_COMMERCIAL_GENERAL");
+        let commObj: Record<string, any> = {};
+        if (comm) {
+          try {
+            commObj = JSON.parse(comm);
+          } catch {
+            commObj = {};
+          }
+        }
+        localStorage.setItem("MTO_COMMERCIAL_GENERAL", JSON.stringify({ ...commObj, companyName: normalizedName }));
+      }
+
+      toast.success("Dados do escritorio salvos com sucesso!");
+    } catch (error: any) {
+      toast.error(error?.message || "Erro ao salvar dados do escritorio.");
+    } finally {
       setIsSaving(false);
-      toast.success("Dados do escritório salvos!");
-    }, 1000);
+    }
+  };
+
+  const handleOfficeLogoUpload = async (file: File | null) => {
+    if (!file || !profile?.tenant_id) return;
+
+    if (file.size > MAX_OFFICE_LOGO_BYTES) {
+      toast.error("Imagem muito grande. Use um arquivo de ate 12 MB.");
+      return;
+    }
+
+    setUploadingOfficeLogo(true);
+    try {
+      const optimized = await optimizeOfficeLogo(file);
+      const filePath = `${profile.tenant_id}/office-logo-${Date.now()}.jpg`;
+      const { error: uploadError } = await supabase
+        .storage
+        .from("avatars")
+        .upload(filePath, optimized, { upsert: true, contentType: "image/jpeg" });
+
+      if (uploadError) throw uploadError;
+
+      const { data: publicData } = supabase.storage.from("avatars").getPublicUrl(filePath);
+      const publicUrl = publicData?.publicUrl;
+      if (!publicUrl) throw new Error("Nao foi possivel obter URL publica da logo.");
+
+      setOfficeData((prev) => ({ ...prev, logoUrl: publicUrl }));
+      toast.success("Logo carregada com sucesso!");
+    } catch (error: any) {
+      const message = String(error?.message || "").toLowerCase();
+      if (message.includes("maximum allowed size") || message.includes("object exceeded")) {
+        toast.error("A imagem ficou acima do limite do storage. Tente uma imagem menor.");
+      } else {
+        toast.error(error?.message || "Erro ao enviar logo do escritorio.");
+      }
+    } finally {
+      setUploadingOfficeLogo(false);
+    }
   };
 
   if (profile && profile.role !== "Administrador" && profile.role !== "admin" && profile.role !== "mayus_admin" && profile.role !== "Sócio" && profile.role !== "socio") {
@@ -271,6 +466,43 @@ export default function DepartamentosPage() {
                 </h2>
 
                 <div className="grid grid-cols-1 md:grid-cols-2 gap-8 relative z-10">
+                   <div className="space-y-3 md:col-span-2">
+                     <label className="text-[9px] text-gray-500 uppercase tracking-widest font-black ml-1">Logo / Foto do Escritório</label>
+                     <div className="flex items-center gap-4 p-4 bg-[#0a0a0a] border border-[#222] rounded-xl">
+                       <label className="w-24 h-24 rounded-2xl bg-gradient-to-br from-[#111] to-[#1a1a1a] border border-white/10 flex items-center justify-center cursor-pointer overflow-hidden relative group">
+                         {officeData.logoUrl ? (
+                           <img src={officeData.logoUrl} alt="Logo do escritorio" className="w-full h-full object-cover transition-transform group-hover:scale-105" />
+                         ) : (
+                           <ImageIcon size={24} className="text-gray-600" />
+                         )}
+                         {uploadingOfficeLogo && (
+                           <div className="absolute inset-0 bg-black/50 flex items-center justify-center">
+                             <Loader2 size={18} className="animate-spin text-[#CCA761]" />
+                           </div>
+                         )}
+                         <input
+                           type="file"
+                           accept="image/*"
+                           className="hidden"
+                           onChange={(e) => handleOfficeLogoUpload(e.target.files?.[0] || null)}
+                         />
+                       </label>
+                       <div className="space-y-2">
+                         <p className="text-xs text-gray-300 font-semibold">Envie a logo institucional para aparecer nas configuracoes do escritorio.</p>
+                         <p className="text-[10px] text-gray-500 uppercase tracking-wider">PNG, JPG ou WEBP ate 12MB</p>
+                         <label className="inline-flex items-center gap-2 px-4 py-2 bg-[#CCA761]/10 hover:bg-[#CCA761]/20 border border-[#CCA761]/30 text-[#CCA761] rounded-lg text-[10px] font-black uppercase tracking-widest cursor-pointer transition-colors">
+                           <Upload size={14} /> Alterar Logo
+                           <input
+                             type="file"
+                             accept="image/*"
+                             className="hidden"
+                             onChange={(e) => handleOfficeLogoUpload(e.target.files?.[0] || null)}
+                           />
+                         </label>
+                       </div>
+                     </div>
+                   </div>
+
                    <div className="space-y-2">
                      <label className="text-[9px] text-gray-500 uppercase tracking-widest font-black ml-1">Nome Fantasia / Razão Social</label>
                      <div className="relative">

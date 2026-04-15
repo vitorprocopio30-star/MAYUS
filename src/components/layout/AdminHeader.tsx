@@ -15,6 +15,8 @@ const montserrat = Montserrat({ subsets: ["latin"], weight: ["400", "500", "600"
 const roleLabels: Record<string, string> = {
   Administrador: "Administrador",
   admin: "Administrador",
+  "Sócio": "Sócio",
+  socio: "Sócio",
   Advogado: "Advogado",
   SDR: "SDR",
   Financeiro: "Financeiro",
@@ -132,25 +134,24 @@ export function AdminHeader() {
   return (
     <header className={`h-20 border-b border-border bg-card/80 backdrop-blur-md sticky top-0 z-30 px-6 flex items-center justify-between ${montserrat.className}`}>
       
-      {/* Search Layout / Dynamic Company Name */}
+      {/* Office + Search */}
       <div className="hidden md:flex items-center gap-4 flex-1">
-         {globalName ? (
-            <div className="px-4 py-2 border border-white/5 bg-[#111111]/50 rounded-xl shadow-inner flex items-center gap-3">
-               <div className="w-6 h-6 rounded-full bg-gradient-to-tr from-[#CCA761] to-[#e4ce99] flex items-center justify-center text-black font-black text-xs shadow-[0_0_10px_rgba(204,167,97,0.4)]">
-                  {globalName.charAt(0).toUpperCase()}
-               </div>
-               <span className="text-[#CCA761] font-bold tracking-[0.15em] text-sm uppercase">{globalName}</span>
-            </div>
-         ) : (
-            <div className="flex items-center gap-3 bg-gray-100 dark:bg-[#111111] px-4 py-2.5 rounded-xl max-w-md border border-transparent dark:border-[#222] focus-within:border-[#CCA761] transition-colors w-full">
-              <Search size={18} className="text-gray-400" />
-              <input 
-                type="text" 
-                placeholder="Buscar clientes, contratos ou processos..." 
-                className="bg-transparent border-none outline-none text-sm w-full text-gray-800 dark:text-gray-200 placeholder:text-gray-500"
-              />
-            </div>
-         )}
+        <div className="px-4 py-2 border border-white/5 bg-[#111111]/50 rounded-xl shadow-inner flex items-center gap-3 shrink-0">
+          <div className="w-6 h-6 rounded-full bg-gradient-to-tr from-[#CCA761] to-[#e4ce99] flex items-center justify-center text-black font-black text-xs shadow-[0_0_10px_rgba(204,167,97,0.4)]">
+            {(globalName || "Escritório").charAt(0).toUpperCase()}
+          </div>
+          <span className="text-[#CCA761] font-bold tracking-[0.15em] text-sm uppercase">
+            {globalName || "Escritório"}
+          </span>
+        </div>
+        <div className="flex items-center gap-3 bg-gray-100 dark:bg-[#111111] px-4 py-2.5 rounded-xl border border-transparent dark:border-[#222] focus-within:border-[#CCA761] transition-colors w-full max-w-xl">
+          <Search size={18} className="text-gray-400" />
+          <input 
+            type="text" 
+            placeholder="Buscar clientes, contratos ou processos..." 
+            className="bg-transparent border-none outline-none text-sm w-full text-gray-800 dark:text-gray-200 placeholder:text-gray-500"
+          />
+        </div>
       </div>
       <div className="md:hidden" /> {/* Spacer for mobile where search is hidden */}
 

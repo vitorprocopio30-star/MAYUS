@@ -230,10 +230,10 @@ export function AdminSidebar() {
 
         <div className="absolute top-0 right-0 w-[1px] h-full bg-gradient-to-b from-transparent via-[#CCA761]/40 to-transparent z-10" />
 
-        <div className={`flex items-center justify-center bg-transparent shrink-0 transition-all duration-500 ${sidebarMode === "mini" ? "h-16 px-2" : "h-36 px-6"}`}>
+        <div className={`flex items-center justify-center bg-transparent shrink-0 transition-all duration-500 ${sidebarMode === "mini" ? "h-16 px-2" : "h-44 px-5"}`}>
           <div className="relative w-full h-full transition-all duration-500 flex items-center justify-center">
             {sidebarMode === "expanded" ? (
-              <div className="relative w-full h-full max-w-[220px] max-h-[110px] hover:scale-105 transition-transform duration-500">
+              <div className="relative w-full h-full max-w-[270px] max-h-[155px] hover:scale-105 transition-transform duration-500">
                 <Image
                   src="/logo.png"
                   alt="MAYUS Logo"
