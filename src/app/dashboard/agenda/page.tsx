@@ -267,12 +267,26 @@ export default function AgendaDiariaPage() {
   };
 
   const visibleEvents = useMemo(() => {
-    return events.filter((ev) => {
+    const filtered = events.filter((ev) => {
       if (statusFilter === "pending" && ev.status !== "Pendente") return false;
       if (statusFilter === "in_progress" && ev.status !== "Em andamento") return false;
       if (statusFilter === "done" && ev.status !== "Concluído") return false;
       if (typeFilter !== "all" && ev.type !== typeFilter) return false;
       return true;
+    });
+
+    return filtered.sort((a, b) => {
+      const aDone = a.status === "Concluído";
+      const bDone = b.status === "Concluído";
+
+      if (aDone && bDone) {
+        const aTs = a.completed_at ? new Date(a.completed_at).getTime() : 0;
+        const bTs = b.completed_at ? new Date(b.completed_at).getTime() : 0;
+        return bTs - aTs;
+      }
+
+      if (aDone !== bDone) return aDone ? 1 : -1;
+      return 0;
     });
   }, [events, statusFilter, typeFilter]);
 
@@ -595,9 +609,9 @@ export default function AgendaDiariaPage() {
                                  <button
                                    onClick={(event) => copyProcessNumber(event, ev)}
                                    title="Copiar número do processo"
-                                   className="inline-flex items-center gap-1 px-2 py-0.5 rounded border border-[#CCA761]/30 text-[#CCA761] text-[9px] font-bold hover:bg-[#CCA761]/10"
+                                   className="inline-flex items-center justify-center w-6 h-6 rounded border border-[#CCA761]/30 text-[#CCA761] hover:bg-[#CCA761]/10"
                                  >
-                                   {copiedTaskId === ev.id ? <Check size={10} /> : <Copy size={10} />} {copiedTaskId === ev.id ? "Copiado" : "Copiar"}
+                                   {copiedTaskId === ev.id ? <Check size={11} /> : <Copy size={11} />}
                                  </button>
                                </div>
                              )}

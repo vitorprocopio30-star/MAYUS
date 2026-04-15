@@ -152,8 +152,19 @@ export default function AgendaGlobalPage() {
     setEvents(prev => prev.map(ev => ev.id === task.id ? { ...ev, assigned_to: user?.id ?? null, assigned_name_snapshot: viewerName, person: viewerName, stolen: true } : ev));
   };
 
+  const pendingEvents = useMemo(() => events.filter((e) => e.status !== 'Concluído'), [events]);
+  const completedEvents = useMemo(() => {
+    return events
+      .filter((e) => e.status === 'Concluído')
+      .sort((a, b) => {
+        const aTs = a.completed_at ? new Date(a.completed_at).getTime() : 0;
+        const bTs = b.completed_at ? new Date(b.completed_at).getTime() : 0;
+        return bTs - aTs;
+      });
+  }, [events]);
+
   const totalTasks = events.length;
-  const completedTasks = useMemo(() => events.filter(e => e.status === 'Concluído').length, [events]);
+  const completedTasks = completedEvents.length;
   
   // RANKING EM TEMPO REAL COMPUTADO (MAYUS COINS)
   const rankingMap = useMemo(() => {
@@ -411,9 +422,9 @@ export default function AgendaGlobalPage() {
               )}
 
               <div className="grid grid-cols-2 md:grid-cols-3 xl:grid-cols-4 2xl:grid-cols-5 gap-4 lg:gap-6 pb-4">
-                {events.filter(e => e.status !== 'Concluído').length === 0 ? (
+                {pendingEvents.length === 0 ? (
                   <div className="col-span-full text-center py-12 text-gray-500 text-sm">Todas as atividades pendentes foram concluídas.</div>
-                ) : events.filter(e => e.status !== 'Concluído').map((ev, i) => {
+                ) : pendingEvents.map((ev, i) => {
                   const active = ev.active || false;
                   const bdgColor = ev.color || '#CCA761';
 
@@ -513,7 +524,7 @@ export default function AgendaGlobalPage() {
               </div>
 
               {/* MURAL DAS VITÓRIAS */}
-              {events.filter(e => e.status === 'Concluído').length > 0 && (
+              {completedEvents.length > 0 && (
                 <div className="mt-8 animate-fade-in-up">
                   <div className="flex flex-col sm:flex-row items-start sm:items-center justify-between px-4 py-3 bg-gradient-to-r from-[#4ade80]/10 to-transparent rounded-xl border-l-[3px] border-[#4ade80] mb-6 shadow-md gap-4">
                     <h3 className="text-sm font-black tracking-widest uppercase flex items-center gap-3 text-[#4ade80]">
@@ -522,7 +533,7 @@ export default function AgendaGlobalPage() {
                   </div>
 
                   <div className="space-y-3 pb-10">
-                    {events.filter(e => e.status === 'Concluído').map((ev, i) => {
+                    {completedEvents.map((ev, i) => {
                       const active = ev.active || false;
                       const bdgColor = ev.color || '#CCA761';
                       const cardBgClass = 'border-[#4ade80]/30 bg-[#111] hover:bg-[#151515] shadow-[0_0_20px_rgba(74,222,128,0.05)]';

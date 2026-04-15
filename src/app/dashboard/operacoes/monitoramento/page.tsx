@@ -130,9 +130,10 @@ function formatarData(data: string | null) {
     // Se já estiver no formato BR, retorna
     if (data.includes('/') && data.split('/').length === 3) return data
     
-    // Se for ISO (YYYY-MM-DD...)
+    // Se for ISO ou timestamp com espaço (YYYY-MM-DD...)
     if (data.includes('-')) {
-      const semTime = data.split('T')[0]
+      const normalized = data.includes(' ') && data.includes('-') ? data.replace(' ', 'T') : data
+      const semTime = normalized.split('T')[0]
       const [a, m, d] = semTime.split('-').map(Number)
       return `${String(d).padStart(2, '0')}/${String(m).padStart(2, '0')}/${a}`
     }
@@ -150,13 +151,47 @@ function diasDesde(data: string | null) {
   const m = new Date(timestamp)
   
   // Zera horas para comparação de dias de calendário (fuso local)
-  h.setHours(0, 0, 0, 0)
-  m.setHours(0, 0, 0, 0)
+  const hojeLocal = new Date(h.getFullYear(), h.getMonth(), h.getDate())
+  const movLocal = new Date(m.getFullYear(), m.getMonth(), m.getDate())
   
-  const diff = h.getTime() - m.getTime()
-  const dias = Math.round(diff / 86400000)
+  const diff = hojeLocal.getTime() - movLocal.getTime()
+  const dias = Math.floor(diff / 86400000)
   
   return dias < 0 ? 0 : dias
+}
+
+function getDataUltimaMovimentacao(p: Processo): string | null {
+  const candidates: string[] = []
+
+  if (p.data_ultima_movimentacao) candidates.push(p.data_ultima_movimentacao)
+
+  for (const mov of p.movimentacoes || []) {
+    const possibleDates = [
+      mov?.data,
+      mov?.data_movimentacao,
+      mov?.criado_em,
+      mov?.created_at,
+      mov?.timestamp,
+      mov?.date,
+    ]
+
+    for (const value of possibleDates) {
+      if (typeof value === 'string' && value.trim()) candidates.push(value.trim())
+    }
+  }
+
+  let best: string | null = null
+  let bestTs = 0
+
+  for (const candidate of candidates) {
+    const ts = parseDataBR(candidate)
+    if (ts > bestTs) {
+      bestTs = ts
+      best = candidate
+    }
+  }
+
+  return best
 }
 
 // ─── Sub-componentes ───
@@ -232,7 +267,8 @@ function ModalConfirmacaoCusto({ dados, onConfirmar, onCancelar, loading }: { da
 }
 
 function ProcessoCard({ p, onSelect, selecionado, onAction, onRemover, onArquivar, loadingId, organizandoState, onOrganizar, onAbrirResumo }: { p: Processo, onSelect: () => void, selecionado: boolean, onAction: () => void, onRemover: () => void, onArquivar: () => void, loadingId: string | null, organizandoState: 'idle' | 'loading' | 'done', onOrganizar: () => void, onAbrirResumo: (r: string) => void }) {
-  const d = diasDesde(p.data_ultima_movimentacao)
+  const ultimaMov = getDataUltimaMovimentacao(p)
+  const d = diasDesde(ultimaMov)
   const isUpdating = loadingId === p.numero_processo
   const [copiedProcess, setCopiedProcess] = useState(false)
 
@@ -268,9 +304,9 @@ function ProcessoCard({ p, onSelect, selecionado, onAction, onRemover, onArquiva
                  <button
                    onClick={copyProcessNumber}
                    title="Copiar número do processo"
-                   className="inline-flex items-center gap-1 px-2 py-1 rounded-lg border border-[#CCA761]/30 text-[#CCA761] text-[9px] font-black uppercase tracking-widest hover:bg-[#CCA761]/10 transition-colors"
+                   className="inline-flex items-center justify-center w-7 h-7 rounded-lg border border-[#CCA761]/30 text-[#CCA761] hover:bg-[#CCA761]/10 transition-colors"
                  >
-                   {copiedProcess ? <Check size={11} /> : <Copy size={11} />} {copiedProcess ? 'Copiado' : 'Copiar'}
+                   {copiedProcess ? <Check size={12} /> : <Copy size={12} />}
                  </button>
                </div>
                 <div className="flex items-center gap-2">
@@ -346,7 +382,7 @@ function ProcessoCard({ p, onSelect, selecionado, onAction, onRemover, onArquiva
                     : 'bg-[#CCA761]/5 border-[#CCA761]/10 text-[#CCA761]/70 shadow-[0_0_8px_rgba(204,167,97,0.08)]'
                   }`}
                 >
-                   <span className="opacity-60">{formatarData(p.data_ultima_movimentacao)}</span>
+                   <span className="opacity-60">{formatarData(ultimaMov)}</span>
                    <div className="w-px h-3 bg-current opacity-20" />
                    {d === 0 && <div className="w-1.5 h-1.5 rounded-full bg-green-500 animate-pulse shadow-[0_0_5px_rgba(34,197,94,0.5)]" />}
                    <span className="tracking-tighter">{d === 0 ? 'Atualizado Hoje' : `${d}d atrás`}</span>
@@ -871,7 +907,7 @@ function MonitoramentoContent() {
       })
       .sort((a, b) => {
         if (ordenacao === 'distribuicao') return parseDataBR(b.data_distribuicao) - parseDataBR(a.data_distribuicao)
-        if (ordenacao === 'urgencia') return parseDataBR(b.data_ultima_movimentacao) - parseDataBR(a.data_ultima_movimentacao)
+        if (ordenacao === 'urgencia') return parseDataBR(getDataUltimaMovimentacao(b)) - parseDataBR(getDataUltimaMovimentacao(a))
         if (ordenacao === 'tribunal') return a.tribunal.localeCompare(b.tribunal)
         return 0
       })
