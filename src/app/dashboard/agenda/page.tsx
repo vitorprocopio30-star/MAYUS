@@ -150,11 +150,39 @@ export default function AgendaDiariaPage() {
       const startAt = new Date(startIso).getTime();
       const endAt = new Date(endIso).getTime();
       const isReminder = Boolean(task.show_only_on_date);
+      const normalizedStatus = String(task.status || "")
+        .normalize("NFD")
+        .replace(/[\u0300-\u036f]/g, "")
+        .toLowerCase();
+      const isDone = normalizedStatus === "concluido";
 
       if (Number.isNaN(scheduledAt)) return !isReminder;
       if (isReminder) return scheduledAt >= startAt && scheduledAt <= endAt;
+      if (!isDone && scheduledAt < startAt) return true;
       return scheduledAt >= startAt;
     });
+
+    const assignedIds = Array.from(
+      new Set(
+        (scopedTasks || [])
+          .map((task: any) => String(task.assigned_to || "").trim())
+          .filter(Boolean)
+      )
+    );
+
+    let avatarByProfileId = new Map<string, string>();
+    if (assignedIds.length > 0) {
+      const { data: assignedProfiles } = await supabase
+        .from("profiles")
+        .select("id, avatar_url")
+        .in("id", assignedIds);
+
+      avatarByProfileId = new Map(
+        (assignedProfiles || [])
+          .filter((profile: any) => Boolean(profile?.id) && Boolean(profile?.avatar_url))
+          .map((profile: any) => [String(profile.id), String(profile.avatar_url)])
+      );
+    }
 
     const processPrazoIds = (scopedTasks || [])
       .filter((task: any) => task.source_table === "process_prazos" && task.source_id)
@@ -180,14 +208,26 @@ export default function AgendaDiariaPage() {
     }
 
     const enrichedTasks = (scopedTasks || []).map((task: any) => {
-      if (task.source_table !== "process_prazos") return task;
+      const avatarUrl = task.assigned_to ? avatarByProfileId.get(String(task.assigned_to)) || null : null;
+      if (task.source_table !== "process_prazos") {
+        return {
+          ...task,
+          assigned_avatar_url: avatarUrl,
+        };
+      }
       const ctx = processContextByPrazoId.get(String(task.source_id));
-      if (!ctx) return task;
+      if (!ctx) {
+        return {
+          ...task,
+          assigned_avatar_url: avatarUrl,
+        };
+      }
       return {
         ...task,
         process_number: ctx.process_number,
         author_name: ctx.author_name,
         client_name: task.client_name || ctx.client_name,
+        assigned_avatar_url: avatarUrl,
       };
     });
 
@@ -239,6 +279,8 @@ export default function AgendaDiariaPage() {
   }, [isRealtimeOn]);
 
   const getReward = (task: any) => {
+    const sourceTable = String(task?.source_table || "");
+    if (sourceTable === "manual_private") return 0;
     if (typeof task.reward_coins === "number") return task.reward_coins;
     const normalized = String(task.category || task.urgency || "")
       .normalize("NFD")
@@ -458,7 +500,7 @@ export default function AgendaDiariaPage() {
           type: newTaskType,
           visibility: newTaskVisibility,
           show_only_on_date: newTaskReminderOnly,
-          reward_coins: meta.reward,
+          reward_coins: 0,
           category: meta.category,
           color: meta.color,
           is_critical: meta.isCritical,
@@ -486,6 +528,7 @@ export default function AgendaDiariaPage() {
           type: newTaskType,
           visibility: newTaskVisibility,
           showOnlyOnDate: newTaskReminderOnly,
+          rewardCoins: 0,
         });
         const response = await supabase.from("user_tasks").insert(payload);
         error = response.error;
@@ -829,6 +872,19 @@ export default function AgendaDiariaPage() {
                                 
                                 {ev.created_by_agent && (
                                   <span className="text-[8px] bg-white/5 border border-white/10 text-gray-300 font-bold px-1.5 py-0.5 rounded flex items-center gap-1"><Wand2 size={10} /> {ev.created_by_agent}</span>
+                                )}
+
+                                {ev.assigned_name_snapshot && (
+                                  <span className="inline-flex items-center gap-1.5 text-[9px] text-gray-300 border border-white/10 bg-white/5 rounded-full px-2 py-0.5">
+                                    {ev.assigned_avatar_url ? (
+                                      <img src={ev.assigned_avatar_url} alt={ev.assigned_name_snapshot} className="w-4 h-4 rounded-full object-cover" />
+                                    ) : (
+                                      <span className="w-4 h-4 rounded-full bg-[#CCA761]/30 text-[#CCA761] flex items-center justify-center text-[8px] font-black">
+                                        {String(ev.assigned_name_snapshot).slice(0, 1).toUpperCase()}
+                                      </span>
+                                    )}
+                                    {ev.assigned_name_snapshot}
+                                  </span>
                                 )}
                               </div>
                               

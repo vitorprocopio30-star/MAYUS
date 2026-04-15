@@ -243,6 +243,13 @@ export function AdminHeader() {
           {profileOpen && (
             <div className="absolute right-0 mt-3 w-52 bg-card rounded-xl shadow-xl border border-border overflow-hidden py-1 z-50 animate-fade-in-up" style={{ animationDuration: '0.15s' }}>
               <button 
+                onClick={() => { router.push("/dashboard/perfil"); setProfileOpen(false); }}
+                className="w-full text-left px-4 py-3 text-sm text-gray-700 dark:text-gray-300 hover:bg-gray-50 dark:hover:bg-[#1a1a1a] flex items-center gap-3 transition-colors"
+              >
+                <User size={16} />
+                Meu Perfil
+              </button>
+              <button 
                 onClick={() => { router.push("/dashboard/configuracoes"); setProfileOpen(false); }}
                 className="w-full text-left px-4 py-3 text-sm text-gray-700 dark:text-gray-300 hover:bg-gray-50 dark:hover:bg-[#1a1a1a] flex items-center gap-3 transition-colors"
               >

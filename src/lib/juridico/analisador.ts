@@ -20,6 +20,38 @@ const KEYWORDS: Record<string, string> = {
   'extinto': 'EXTINCAO', 'extincao': 'EXTINCAO', 'homologado': 'EXTINCAO'
 }
 
+const HIGH_SIGNAL_PATTERNS = [
+  /prazo/i,
+  /intimac/i,
+  /citac/i,
+  /contestac/i,
+  /apela(c|ç)ao/i,
+  /contrarrazo/i,
+  /embargos?/i,
+  /audienc/i,
+  /sentenc/i,
+  /recurso/i,
+  /agravo/i,
+]
+
+const LOW_SIGNAL_PATTERNS = [
+  /juntada/i,
+  /certid(a|ã)o/i,
+  /mero expediente/i,
+  /decurso de prazo/i,
+  /protocolo/i,
+  /remessa/i,
+  /redistribuic/i,
+  /expediente/i,
+]
+
+function isLikelyLowSignalMovement(texto: string): boolean {
+  if (!texto.trim()) return true
+  const hasHighSignal = HIGH_SIGNAL_PATTERNS.some((pattern) => pattern.test(texto))
+  if (hasHighSignal) return false
+  return LOW_SIGNAL_PATTERNS.some((pattern) => pattern.test(texto))
+}
+
 type PartesProcesso = {
   polo_ativo?: string
   polo_passivo?: string
@@ -285,7 +317,9 @@ REGRAS OBRIGATÓRIAS — Analise antes de gerar qualquer prazo:
 
 4. SE NÃO HÁ PRAZO REAL: Retorne exatamente: { "gerar": false, "motivo": "<explicação>" }
 
-5. CLASSE PROCESSUAL:
+5. MOVIMENTAÇÕES BUROCRÁTICAS: Se for apenas juntada, certidão, protocolo, remessa, redistribuição ou outro andamento sem obrigação concreta para o escritório, retorne gerar=false.
+
+6. CLASSE PROCESSUAL:
    - Se a classe for "Agravo de Instrumento" e o cliente for o AGRAVADO (polo passivo do agravo) → gerar prazo de Contrarrazões de Agravo (15 dias úteis).
    - Se a classe for "Agravo de Instrumento" e o cliente for o AGRAVANTE (polo ativo) → o recurso foi interposto pelo escritório, NÃO gerar prazo.
    - Se a classe for "Apelação" e o cliente for o APELADO → gerar prazo de Contrarrazões de Apelação.
@@ -359,6 +393,11 @@ export async function analisarMovimentacao(params: {
   const texto = textoBruto.normalize("NFD").replace(/[\u0300-\u036f]/g, "")
   const escavadorMovimentacaoId =
     (params.escavador_movimentacao_id ?? String(params.movimentacao.id ?? '')).trim() || null
+
+  if (isLikelyLowSignalMovement(texto)) {
+    console.log(`[ANALISADOR] Movimentacao de baixo sinal ignorada para ${params.numero_cnj}.`)
+    return
+  }
 
   // Busca contexto do processo
   const { data: processo } = await adminSupabase

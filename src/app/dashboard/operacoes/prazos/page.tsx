@@ -241,10 +241,10 @@ export default function PrazosPage() {
       console.log("[Prazos] Perfis carregados:", team);
       setProfiles(team || [])
 
-      fetchData(profile.tenant_id)
+      fetchData(profile.tenant_id, user.id, team || [])
     }
 
-    async function fetchData(tenantId: string) {
+    async function fetchData(tenantId: string, loggedUserId: string, teamProfiles: any[]) {
       setLoading(true)
       const [prazosRes, movimentacoesRes, contextosRes] = await Promise.all([
         supabase
@@ -290,7 +290,33 @@ export default function PrazosPage() {
       if (prazosRes.error) {
         console.error('Erro ao buscar prazos:', prazosRes.error)
       } else {
-        setItems(deduplicarPrazos(prazosRes.data || []))
+        const dedupedItems = deduplicarPrazos(prazosRes.data || [])
+        setItems(dedupedItems)
+
+        const userProfile = (teamProfiles || []).find((profile) => profile.id === loggedUserId)
+        for (const prazoItem of dedupedItems) {
+          try {
+            const assignedProfile = prazoItem?.responsavel_id
+              ? (teamProfiles || []).find((profile) => profile.id === prazoItem.responsavel_id)
+              : null
+
+            await syncAgendaTaskBySource(
+              supabase,
+              buildAgendaPayloadFromProcessPrazo({
+                tenantId,
+                prazo: prazoItem,
+                assignedName: assignedProfile?.full_name || null,
+                createdBy: loggedUserId,
+                completedBy: String(prazoItem.status ?? '').toLowerCase() === 'concluido' ? loggedUserId : null,
+                completedByName: String(prazoItem.status ?? '').toLowerCase() === 'concluido'
+                  ? userProfile?.full_name || assignedProfile?.full_name || null
+                  : null,
+              })
+            )
+          } catch (error) {
+            console.error('[Prazos] Falha ao sincronizar agenda para prazo:', prazoItem?.id, error)
+          }
+        }
       }
 
       if (movimentacoesRes.error) {

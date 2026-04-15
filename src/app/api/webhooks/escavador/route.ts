@@ -168,6 +168,8 @@ export async function POST(req: NextRequest) {
     const monitoramentos = Array.isArray(rawMon) ? rawMon : [rawMon]
     
     const movimentacao = body.movimentacao ?? {}
+    const movimentacaoId = String(movimentacao.id ?? '').trim() || null
+    const resumoSolicitadoNoEvento = new Set<string>()
 
     for (const mon of monitoramentos) {
       // Extração robusta do número do processo (inclui mon.numero aprovado pelo user)
@@ -189,7 +191,7 @@ export async function POST(req: NextRequest) {
       const monitoramentoIdEscavador = String(mon.id ?? '')
       let { data: processos } = await adminSupabase
         .from('monitored_processes')
-        .select('id, tenant_id, movimentacoes, advogado_responsavel_id, escavador_monitoramento_id')
+        .select('id, tenant_id, movimentacoes, advogado_responsavel_id, escavador_monitoramento_id, resumo_solicitado_em')
         .eq('escavador_monitoramento_id', monitoramentoIdEscavador)
 
       // Fallback por numero_processo (CNJ)
@@ -197,7 +199,7 @@ export async function POST(req: NextRequest) {
         console.log(`[ESCAVADOR_WEBHOOK] ID ${monitoramentoIdEscavador} não encontrado. Tentando CNJ: ${numero_cnj}`)
         const { data: fallback } = await adminSupabase
           .from('monitored_processes')
-          .select('id, tenant_id, movimentacoes, advogado_responsavel_id, escavador_monitoramento_id')
+          .select('id, tenant_id, movimentacoes, advogado_responsavel_id, escavador_monitoramento_id, resumo_solicitado_em')
           .eq('numero_processo', numero_cnj)
         processos = fallback
 
@@ -215,7 +217,7 @@ export async function POST(req: NextRequest) {
       }
 
       const novaMovimentacao = {
-        id: movimentacao.id,
+        id: movimentacaoId,
         data: movimentacao.data_formatada ?? movimentacao.data,
         conteudo: movimentacao.snippet ?? movimentacao.conteudo,
         diario: movimentacao.diario_oficial,
@@ -224,10 +226,19 @@ export async function POST(req: NextRequest) {
       }
 
       for (const processo of processos ?? []) {
+        const historicoAtual = Array.isArray(processo.movimentacoes) ? processo.movimentacoes : []
+        const jaTemMovimentacao = movimentacaoId
+          ? historicoAtual.some((mov: any) => String(mov?.id ?? '').trim() === movimentacaoId)
+          : false
+
+        if (jaTemMovimentacao) {
+          continue
+        }
+
         // Mantém histórico dos últimos 50 movimentos
         const movimentacoes = [
           novaMovimentacao,
-          ...((processo.movimentacoes as any[]) ?? [])
+          ...historicoAtual
         ].slice(0, 50)
 
         // Atualiza processo monitorado
@@ -235,6 +246,7 @@ export async function POST(req: NextRequest) {
           .from('monitored_processes')
           .update({
             movimentacoes,
+            data_ultima_movimentacao: novaMovimentacao.data ?? null,
             ultima_movimentacao_texto: novaMovimentacao.conteudo,
             updated_at: new Date().toISOString()
           })
@@ -257,11 +269,28 @@ export async function POST(req: NextRequest) {
           tenant_id: processo.tenant_id,
           movimentacao: novaMovimentacao,
           advogado_id: processo.advogado_responsavel_id,
-          escavador_movimentacao_id: String(movimentacao.id ?? '')
+          escavador_movimentacao_id: movimentacaoId ?? ''
         }).catch(console.error)
 
-        // Dispara resumo IA em background
-        solicitarResumoIA(numero_cnj, processo.tenant_id).catch(console.error)
+        // Dispara resumo IA em background apenas uma vez por processo neste evento
+        const resumoKey = `${processo.tenant_id}:${numero_cnj}`
+        const ultimaSolicitacaoTs = processo.resumo_solicitado_em
+          ? new Date(processo.resumo_solicitado_em).getTime()
+          : 0
+        const cooldownAtivo = Number.isFinite(ultimaSolicitacaoTs) && ultimaSolicitacaoTs > 0
+          ? Date.now() - ultimaSolicitacaoTs < 20 * 60 * 1000
+          : false
+
+        if (!resumoSolicitadoNoEvento.has(resumoKey) && !cooldownAtivo) {
+          resumoSolicitadoNoEvento.add(resumoKey)
+
+          await adminSupabase
+            .from('monitored_processes')
+            .update({ resumo_solicitado_em: new Date().toISOString() })
+            .eq('id', processo.id)
+
+          solicitarResumoIA(numero_cnj, processo.tenant_id).catch(console.error)
+        }
       }
     }
   }

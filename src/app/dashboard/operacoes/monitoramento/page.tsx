@@ -105,7 +105,8 @@ function parseDataBR(dataStr: string | null): number {
     const normalized = String(dataStr).trim()
 
     if (normalized.includes('/')) {
-      const [d, m, a] = normalized.split('/').map(Number)
+      const datePart = normalized.split(' ')[0]
+      const [d, m, a] = datePart.split('/').map(Number)
       const date = new Date(a, m - 1, d)
       return date.getTime() || 0
     }

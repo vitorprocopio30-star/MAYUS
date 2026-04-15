@@ -65,7 +65,7 @@ export async function POST(req: NextRequest) {
   const { data: jaMonitorados } = numeros.length > 0
     ? await adminSupabase
         .from('monitored_processes')
-        .select('id, numero_processo, status, escavador_id, escavador_monitoramento_id, resumo_curto, resumo_solicitado_em, urgencia_nivel, proxima_acao_sugerida')
+        .select('id, numero_processo, status, escavador_id, escavador_monitoramento_id, resumo_curto, resumo_solicitado_em, urgencia_nivel, proxima_acao_sugerida, data_ultima_movimentacao, ultima_movimentacao_texto, movimentacoes')
         .eq('tenant_id', tenantId)
         .in('numero_processo', numeros)
     : { data: [] as any[] }
@@ -84,6 +84,9 @@ export async function POST(req: NextRequest) {
       resumo_solicitado_em: db?.resumo_solicitado_em ?? undefined,
       urgencia_nivel: db?.urgencia_nivel ?? p.urgencia_nivel ?? undefined,
       proxima_acao_sugerida: db?.proxima_acao_sugerida ?? p.proxima_acao_sugerida ?? undefined,
+      data_ultima_movimentacao: db?.data_ultima_movimentacao ?? p.data_ultima_movimentacao ?? undefined,
+      ultima_movimentacao_texto: db?.ultima_movimentacao_texto ?? p.ultima_movimentacao_texto ?? undefined,
+      movimentacoes: Array.isArray(db?.movimentacoes) ? db.movimentacoes : p.movimentacoes,
     }
   })
 

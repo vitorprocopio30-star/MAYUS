@@ -337,6 +337,7 @@ export function buildAgendaPayloadFromManualTask(params: {
   type?: string | null;
   visibility: "private" | "global";
   showOnlyOnDate?: boolean;
+  rewardCoins?: number;
 }) {
   const urgency = normalizeUrgencyLabel(params.urgency);
   return buildBasePayload({
@@ -356,6 +357,7 @@ export function buildAgendaPayloadFromManualTask(params: {
     visibility: params.visibility,
     taskKind: "task",
     showOnlyOnDate: Boolean(params.showOnlyOnDate),
+    rewardCoins: params.rewardCoins,
   });
 }
 
