@@ -116,7 +116,9 @@ function categorizarDescricaoPrazo(value: string | null | undefined): string {
   if (texto.includes('replica') && texto.includes('contest')) return 'replica_contestacao'
   if (texto.includes('contrarrazo') || texto.includes('contrarraz')) return 'contrarrazoes'
   if (texto.includes('embargos') && texto.includes('declar')) return 'embargos_declaracao'
-  if (texto.includes('sentenca') && texto.includes('public')) return 'publicacao_sentenca'
+  if (texto.includes('sentenca') && (texto.includes('public') || texto.includes('grupo') || texto.includes('prolacao') || texto.includes('julg'))) {
+    return 'sentenca_monitoramento'
+  }
 
   return texto
 }
@@ -457,16 +459,24 @@ export async function analisarMovimentacao(params: {
   const fimDiaVencimento = new Date(vencimento)
   fimDiaVencimento.setUTCHours(23, 59, 59, 999)
 
-  const { data: prazosSemelhantes } = await adminSupabase
+  const categoriaAtual = categorizarDescricaoPrazo(descricaoPrazo)
+  const agruparSemDia = ['replica_contestacao', 'contrarrazoes', 'embargos_declaracao', 'sentenca_monitoramento'].includes(categoriaAtual)
+
+  let querySemelhantes = adminSupabase
     .from('process_prazos')
     .select('id, descricao')
     .eq('monitored_process_id', params.processo_id)
     .eq('tipo', tipoEvento === 'AUDIENCIA' ? 'audiencia' : 'prazo')
-    .gte('data_vencimento', inicioDiaVencimento.toISOString())
-    .lte('data_vencimento', fimDiaVencimento.toISOString())
-    .limit(20)
+    .limit(50)
 
-  const categoriaAtual = categorizarDescricaoPrazo(descricaoPrazo)
+  if (!agruparSemDia) {
+    querySemelhantes = querySemelhantes
+      .gte('data_vencimento', inicioDiaVencimento.toISOString())
+      .lte('data_vencimento', fimDiaVencimento.toISOString())
+  }
+
+  const { data: prazosSemelhantes } = await querySemelhantes
+
   const duplicadoSemantico = Array.isArray(prazosSemelhantes)
     ? prazosSemelhantes.some((item: any) => categorizarDescricaoPrazo(item?.descricao) === categoriaAtual)
     : false

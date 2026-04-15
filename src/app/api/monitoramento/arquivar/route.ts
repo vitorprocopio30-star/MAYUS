@@ -31,7 +31,7 @@ export async function POST(req: NextRequest) {
   const { data: { user } } = await supabase.auth.getUser()
   if (!user) return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
 
-  const { processo_id } = await req.json()
+  const { processo_id, processo } = await req.json()
   if (!processo_id) return NextResponse.json({ error: 'processo_id é obrigatório' }, { status: 400 })
 
   const { data: profile } = await adminSupabase
@@ -42,19 +42,59 @@ export async function POST(req: NextRequest) {
 
   if (!profile?.tenant_id) return NextResponse.json({ error: 'No tenant' }, { status: 400 })
 
-  let query = adminSupabase
-    .from('monitored_processes')
-    .update({ status: 'ARQUIVADO', updated_at: new Date().toISOString() })
-    .eq('tenant_id', profile.tenant_id)
+  const isUuid = typeof processo_id === 'string' && processo_id.includes('-') && processo_id.length === 36
+  const numeroProcesso = String(processo?.numero_processo || (isUuid ? '' : processo_id) || '').trim()
+  const now = new Date().toISOString()
 
-  if (processo_id.includes('-') && processo_id.length === 36) {
-    query = query.eq('id', processo_id)
-  } else {
-    query = query.eq('numero_processo', processo_id)
+  if (isUuid) {
+    const { data: updatedById, error: updatedByIdError } = await adminSupabase
+      .from('monitored_processes')
+      .update({ status: 'ARQUIVADO', updated_at: now })
+      .eq('tenant_id', profile.tenant_id)
+      .eq('id', processo_id)
+      .select('id, numero_processo, status')
+      .maybeSingle()
+
+    if (updatedByIdError) return NextResponse.json({ error: updatedByIdError.message }, { status: 500 })
+    if (updatedById) return NextResponse.json({ success: true, processo: updatedById })
   }
 
-  const { data, error } = await query.select('id, numero_processo, status').single()
-  if (error) return NextResponse.json({ error: error.message }, { status: 500 })
+  if (!numeroProcesso) {
+    return NextResponse.json({ error: 'numero_processo é obrigatório para arquivar processo não monitorado' }, { status: 400 })
+  }
 
-  return NextResponse.json({ success: true, processo: data })
+  const payload = {
+    tenant_id: profile.tenant_id,
+    numero_processo: numeroProcesso,
+    tribunal: processo?.tribunal ?? null,
+    comarca: processo?.comarca ?? null,
+    vara: processo?.vara ?? null,
+    assunto: processo?.assunto ?? null,
+    classe_processual: processo?.classe_processual ?? null,
+    tipo_acao: processo?.tipo_acao ?? null,
+    fase_atual: processo?.fase_atual ?? null,
+    status: 'ARQUIVADO',
+    data_distribuicao: processo?.data_distribuicao ?? null,
+    data_ultima_movimentacao: processo?.data_ultima_movimentacao ?? null,
+    ultima_movimentacao_texto: processo?.ultima_movimentacao_texto ?? null,
+    partes: {
+      polo_ativo: processo?.polo_ativo ?? null,
+      polo_passivo: processo?.polo_passivo ?? null,
+      data_inicio: processo?.data_distribuicao ?? null,
+      valor_causa: processo?.valor_causa ?? null,
+    },
+    monitoramento_ativo: false,
+    ativo: true,
+    updated_at: now,
+  }
+
+  const { data: upserted, error: upsertError } = await adminSupabase
+    .from('monitored_processes')
+    .upsert(payload, { onConflict: 'tenant_id,numero_processo' })
+    .select('id, numero_processo, status')
+    .single()
+
+  if (upsertError) return NextResponse.json({ error: upsertError.message }, { status: 500 })
+
+  return NextResponse.json({ success: true, processo: upserted })
 }

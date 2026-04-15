@@ -2,6 +2,33 @@ import { createClient } from '@/lib/supabase/server'
 import { NextRequest, NextResponse } from 'next/server'
 import { getLLMClient, buildHeaders } from '@/lib/llm-router'
 
+function normalizarDescricaoPrazo(value: string | null | undefined): string {
+  const texto = String(value ?? '')
+    .toLowerCase()
+    .normalize('NFD')
+    .replace(/[\u0300-\u036f]/g, '')
+    .replace(/[^a-z0-9\s]/g, ' ')
+    .replace(/\s+/g, ' ')
+    .trim()
+
+  if (!texto) return 'sem-descricao'
+  if (texto.includes('replica') && texto.includes('contest')) return 'replica_contestacao'
+  if (texto.includes('contrarrazo') || texto.includes('contrarraz')) return 'contrarrazoes'
+  if (texto.includes('embargos') && texto.includes('declar')) return 'embargos_declaracao'
+  if (texto.includes('sentenca') && (texto.includes('public') || texto.includes('grupo') || texto.includes('prolacao') || texto.includes('julg'))) {
+    return 'sentenca_monitoramento'
+  }
+
+  return texto
+}
+
+function chavePrazoCanonica(tipo: string, descricao: string, dataVencimento: string) {
+  const categoria = normalizarDescricaoPrazo(descricao)
+  const agruparSemDia = ['replica_contestacao', 'contrarrazoes', 'embargos_declaracao', 'sentenca_monitoramento'].includes(categoria)
+  const dia = dataVencimento ? new Date(dataVencimento).toISOString().slice(0, 10) : 'sem-data'
+  return `${tipo}|${categoria}|${agruparSemDia ? 'sem-dia' : dia}`
+}
+
 export async function POST(req: NextRequest) {
   const supabase = createClient()
   const { data: { user } } = await supabase.auth.getUser()
@@ -192,13 +219,8 @@ Retorne exatamente este JSON:
       .select('tipo, descricao, data_vencimento')
       .eq('monitored_process_id', processo_id)
 
-    const chavePrazo = (tipo: string, descricao: string, dataVencimento: string) => {
-      const dia = new Date(dataVencimento).toISOString().slice(0, 10)
-      return `${tipo}|${descricao.trim().toLowerCase()}|${dia}`
-    }
-
     const chavesExistentes = new Set(
-      (existentes || []).map((p: any) => chavePrazo(p.tipo || 'prazo', p.descricao || '', p.data_vencimento))
+      (existentes || []).map((p: any) => chavePrazoCanonica(p.tipo || 'prazo', p.descricao || '', p.data_vencimento))
     )
 
     const prazosInsert = resultado.prazos
@@ -207,7 +229,7 @@ Retorne exatamente este JSON:
         const tipo = p.tipo || 'prazo'
         const descricao = p.descricao || ''
         const dataVencimento = p.data_vencimento_iso
-        const chave = chavePrazo(tipo, descricao, dataVencimento)
+        const chave = chavePrazoCanonica(tipo, descricao, dataVencimento)
 
         if (chavesExistentes.has(chave)) return null
         chavesExistentes.add(chave)

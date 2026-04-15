@@ -683,7 +683,7 @@ function MonitoramentoContent() {
       const res = await fetch('/api/monitoramento/arquivar', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ processo_id: p.id || p.numero_processo })
+        body: JSON.stringify({ processo_id: p.id || p.numero_processo, processo: p })
       })
       const data = await res.json()
       if (!res.ok) throw new Error(data?.error || 'Falha ao arquivar processo')

@@ -35,6 +35,17 @@ function diasRestantes(data: string): number {
   return Math.ceil(diff / (1000 * 60 * 60 * 24))
 }
 
+function adicionarDiasUteis(base: Date, dias: number): Date {
+  const data = new Date(base)
+  let count = 0
+  while (count < dias) {
+    data.setDate(data.getDate() + 1)
+    const diaSemana = data.getDay()
+    if (diaSemana !== 0 && diaSemana !== 6) count++
+  }
+  return data
+}
+
 function normalizarDescricaoPrazo(value: string | null | undefined): string {
   const texto = String(value ?? '')
     .toLowerCase()
@@ -48,8 +59,9 @@ function normalizarDescricaoPrazo(value: string | null | undefined): string {
   if (texto.includes('replica') && texto.includes('contest')) return 'replica_contestacao'
   if (texto.includes('contrarrazo') || texto.includes('contrarraz')) return 'contrarrazoes'
   if (texto.includes('embargos') && texto.includes('declar')) return 'embargos_declaracao'
-  if (texto.includes('sentenca') && texto.includes('public')) return 'publicacao_sentenca'
-  if (texto.includes('grupo de sentenca') || texto.includes('prolacao da sentenca')) return 'grupo_sentenca_administrativo'
+  if (texto.includes('sentenca') && (texto.includes('public') || texto.includes('grupo') || texto.includes('prolacao') || texto.includes('julg'))) {
+    return 'sentenca_monitoramento'
+  }
 
   return texto
 }
@@ -58,7 +70,22 @@ function ehPrazoDeSentenca(item: any): boolean {
   const texto = normalizarDescricaoPrazo(
     `${item?.tipo ?? ''} ${item?.descricao ?? ''} ${item?.monitored_processes?.ultima_movimentacao_texto ?? ''}`
   )
-  return texto.includes('sentenca') || item?.tipo === 'sentenca'
+  return texto.includes('sentenca') || texto === 'sentenca_monitoramento' || item?.tipo === 'sentenca'
+}
+
+function obterVencimentoEmbargosDeclaracao(item: any): string | null {
+  const base = [
+    item?.monitored_processes?.data_ultima_movimentacao,
+    item?.created_at,
+    item?.data_vencimento,
+  ].find((v) => !!v)
+
+  if (!base) return null
+  const dataBase = new Date(base)
+  if (Number.isNaN(dataBase.getTime())) return null
+
+  const venc = adicionarDiasUteis(dataBase, 5)
+  return venc.toISOString()
 }
 
 function deduplicarPrazos(lista: any[]): any[] {
@@ -68,14 +95,18 @@ function deduplicarPrazos(lista: any[]): any[] {
     const escId = String(item?.escavador_movimentacao_id ?? '').trim()
     const dia = item?.data_vencimento ? new Date(item.data_vencimento).toISOString().slice(0, 10) : 'sem-data'
     const categoriaDescricao = normalizarDescricaoPrazo(item?.descricao)
-    const agruparSemDia = ['replica_contestacao', 'contrarrazoes', 'embargos_declaracao'].includes(categoriaDescricao)
-    const chave = escId
-      ? `esc-${escId}`
+    const agrupaveis = ['replica_contestacao', 'contrarrazoes', 'embargos_declaracao', 'sentenca_monitoramento']
+    const agruparSemDia = agrupaveis.includes(categoriaDescricao)
+    const identificadorProcesso = item?.monitored_process_id ?? item?.monitored_processes?.numero_processo ?? 'sem-processo'
+    const chave = agruparSemDia
+      ? [identificadorProcesso, item?.tipo ?? 'sem-tipo', categoriaDescricao, 'sem-dia'].join('|')
+      : escId
+        ? `esc-${escId}`
       : [
-          item?.monitored_process_id ?? 'sem-processo',
+          identificadorProcesso,
           item?.tipo ?? 'sem-tipo',
           categoriaDescricao,
-          agruparSemDia ? 'sem-dia' : dia
+          dia
         ].join('|')
 
     const atual = mapa.get(chave)
@@ -918,11 +949,14 @@ export default function PrazosPage() {
                   <Clock size={14} className="text-[#CCA761]" />
                   <span>Vencimento: {formatarData(item.data_vencimento)}</span>
                 </div>
-                {ehPrazoDeSentenca(item) && (
-                  <div className="ml-6 rounded-lg border border-yellow-500/30 bg-yellow-500/10 px-3 py-2 text-[11px] text-yellow-300">
-                    Alerta: verificar embargos de declaração em 5 dias úteis da sentença.
-                  </div>
-                )}
+                {ehPrazoDeSentenca(item) && (() => {
+                  const vencimentoEmbargos = obterVencimentoEmbargosDeclaracao(item)
+                  return (
+                    <div className="ml-6 rounded-lg border border-yellow-500/30 bg-yellow-500/10 px-3 py-2 text-[11px] text-yellow-300">
+                      {`Alerta: embargos de declaração em 5 dias úteis${vencimentoEmbargos ? ` (venc. estimado: ${formatarData(vencimentoEmbargos)})` : ''}.`}
+                    </div>
+                  )
+                })()}
                 {item.monitored_processes?.numero_processo && (
                   <div className="space-y-1">
                     <div className="flex items-center gap-2 text-[13px] group/cnj">
