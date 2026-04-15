@@ -3,6 +3,11 @@ import dynamic from "next/dynamic";
 import { User as UserIcon, AlignLeft, X, Trash2, Calendar, CheckCircle2, ArrowRight, MessageCircle, Tag as TagIcon, Plus } from "lucide-react";
 import { toast } from "sonner";
 import { createClient } from "@/lib/supabase/client";
+import {
+  buildAgendaPayloadFromProcessTask,
+  deleteAgendaTaskBySource,
+  syncAgendaTaskBySource,
+} from "@/lib/agenda/userTasks";
 import { Pipeline, Stage, Profile, Task } from "@/types/processos";
 import "react-quill/dist/quill.snow.css";
 
@@ -55,6 +60,11 @@ export default function ProcessosTaskModal({
   const [taskDriveLink, setTaskDriveLink] = useState("");
   
   // Pending Move State for Win/Loss
+
+  const getAssignedAgentName = (assignedTo: string | null | undefined) => {
+    if (!assignedTo) return null;
+    return agents.find((agent) => agent.id === assignedTo)?.full_name || null;
+  };
 
   // Initialize state when modal opens
   useEffect(() => {
@@ -138,6 +148,16 @@ export default function ProcessosTaskModal({
           drive_link: taskDriveLink || null
         }).eq("id", editingTask.id).select().single();
         if (error) throw error;
+
+        await syncAgendaTaskBySource(
+          supabase,
+          buildAgendaPayloadFromProcessTask({
+            tenantId: profile!.tenant_id,
+            task: data,
+            assignedName: getAssignedAgentName(data.assigned_to),
+            createdBy: profile?.id || null,
+          })
+        );
         
         onSaveSuccess(data, false);
         toast.success("Processo atualizado.");
@@ -172,6 +192,16 @@ export default function ProcessosTaskModal({
           drive_link: taskDriveLink || null
         }).select().single();
         if (error) throw error;
+
+        await syncAgendaTaskBySource(
+          supabase,
+          buildAgendaPayloadFromProcessTask({
+            tenantId: profile!.tenant_id,
+            task: data,
+            assignedName: getAssignedAgentName(data.assigned_to),
+            createdBy: profile?.id || null,
+          })
+        );
         
         onSaveSuccess(data, true);
         toast.success("Processo criado.");
@@ -191,6 +221,7 @@ export default function ProcessosTaskModal({
     try {
       const { error } = await supabase.from("process_tasks").delete().eq("id", editingTask.id);
       if (error) throw error;
+      await deleteAgendaTaskBySource(supabase, "process_tasks", editingTask.id);
       onDeleteSuccess(editingTask.id);
       onClose();
     } catch (err) {

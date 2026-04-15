@@ -1,4 +1,5 @@
 import { createClient } from '@/lib/supabase/server'
+import { buildAgendaPayloadFromProcessTask, syncAgendaTaskBySource } from '@/lib/agenda/userTasks'
 import { NextRequest, NextResponse } from 'next/server'
 import { getLLMClient, buildHeaders } from '@/lib/llm-router'
 
@@ -411,7 +412,7 @@ Retorne exatamente este JSON:
     // Buscar admin do tenant para assigned_to
     const { data: advResp } = await supabase
       .from('profiles')
-      .select('id')
+      .select('id, full_name')
       .eq('tenant_id', proc.tenant_id)
       .eq('role', 'Administrador')
       .single()
@@ -436,10 +437,23 @@ Retorne exatamente este JSON:
         position_index: 0,
         assigned_to:    advResp?.id || null,
       })
-      .select('id')
+      .select('*')
       .single()
 
     novoCard = cardCriado
+
+    if (cardCriado?.id) {
+      await syncAgendaTaskBySource(
+        supabase,
+        buildAgendaPayloadFromProcessTask({
+          tenantId: proc.tenant_id,
+          task: cardCriado,
+          assignedName: advResp?.full_name || null,
+          createdBy: user.id,
+          createdByAgent: 'organizar_processo',
+        })
+      )
+    }
 
     if (novoCard?.id) {
       await supabase

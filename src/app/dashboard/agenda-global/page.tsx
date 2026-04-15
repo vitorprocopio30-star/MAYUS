@@ -6,6 +6,7 @@ import { Clock, AlertCircle, Star, Wand2, Calendar, CheckCircle2, Trophy, Sword,
 import Link from "next/link";
 import { Montserrat, Cormorant_Garamond } from "next/font/google";
 import { useGamification } from "@/hooks/useGamification";
+import { formatDateKey, sortAgendaTasks, toAgendaEvent, toDayRange } from "@/lib/agenda/userTasks";
 
 const montserrat = Montserrat({ subsets: ["latin"], weight: ["300", "400", "500", "600", "700"] });
 const cormorant = Cormorant_Garamond({ subsets: ["latin"], weight: ["400", "600", "700"], style: ["normal", "italic"] });
@@ -26,6 +27,7 @@ export default function AgendaGlobalPage() {
   const [events, setEvents] = useState<any[]>([]);
   const [criticalDeadlines, setCriticalDeadlines] = useState<any[]>([]);
   const [isLoading, setIsLoading] = useState(true);
+  const [viewerName, setViewerName] = useState("Você");
   
   // Mock do departamento real do profissional logado
   const userDepartment: string = 'Comercial';
@@ -34,7 +36,7 @@ export default function AgendaGlobalPage() {
 
   const dailyQuote = "O talento vence jogos, mas o trabalho em equipe e a inteligência vencem campeonatos.";
 
-  const [selectedDate, setSelectedDate] = useState<number>(new Date().getDate());
+  const [selectedDate, setSelectedDate] = useState<string>(formatDateKey(new Date()));
 
   const WEEK_DAYS = useMemo(() => {
     const list = [];
@@ -47,75 +49,55 @@ export default function AgendaGlobalPage() {
     for (let i = 0; i < 7; i++) {
        const d = new Date(startOfWeek);
        d.setDate(startOfWeek.getDate() + i);
-       list.push({
-          day: weekMap[d.getDay()],
-          date: d.getDate().toString(),
-          active: d.getDate() === today.getDate() && d.getMonth() === today.getMonth()
-       });
-    }
-    return list;
+        list.push({
+           day: weekMap[d.getDay()],
+           date: d.getDate().toString(),
+           active: d.getDate() === today.getDate() && d.getMonth() === today.getMonth(),
+           dateKey: formatDateKey(d),
+        });
+     }
+     return list;
   }, []);
 
   const fetchTasks = async () => {
+    setIsLoading(true);
     const { data: { user } } = await supabase.auth.getUser();
     if (!user) {
+      setEvents([]);
+      setCriticalDeadlines([]);
       setIsLoading(false);
       return;
     }
-    const tenantId = user.user_metadata?.tenant_id || user.app_metadata?.tenant_id;
+    const { data: profile } = await supabase
+      .from("profiles")
+      .select("tenant_id, full_name")
+      .eq("id", user.id)
+      .maybeSingle();
 
-    const isTodaySelected = selectedDate === new Date().getDate();
+    setViewerName(profile?.full_name || user.user_metadata?.full_name || user.email?.split("@")[0] || "Você");
 
-    if (!isTodaySelected) {
-       setEvents([]);
-       setCriticalDeadlines([]);
-       setIsLoading(false);
-       return;
+    if (!profile?.tenant_id) {
+      setEvents([]);
+      setCriticalDeadlines([]);
+      setIsLoading(false);
+      return;
     }
 
-    if (tenantId) {
-      const { data: userTasks } = await supabase
-        .from('user_tasks')
-        .select('*')
-        .eq('tenant_id', tenantId)
-        .order('time_text', { ascending: true });
+    const { startIso, endIso } = toDayRange(selectedDate);
+    const { data: userTasks } = await supabase
+      .from('user_tasks')
+      .select('*')
+      .eq('tenant_id', profile.tenant_id)
+      .gte('scheduled_for', startIso)
+      .lte('scheduled_for', endIso);
 
-      if (userTasks && userTasks.length > 0) {
-        setEvents(userTasks.filter(t => !t.is_critical));
-        setCriticalDeadlines(userTasks.filter(t => t.is_critical));
-      } else {
-        setEvents(getUnifiedTasks());
-      }
-    } else {
-      setEvents(getUnifiedTasks());
-    }
+    const normalizedTasks = sortAgendaTasks(userTasks || []).map(toAgendaEvent).map((task: any) => {
+      if (task.status === 'Concluído') return task;
+      return { ...task, person: 'Equipe MAYUS' };
+    });
+    setEvents(normalizedTasks.filter((task: any) => !task.is_critical));
+    setCriticalDeadlines(normalizedTasks.filter((task: any) => task.is_critical));
     setIsLoading(false);
-  };
-
-  const getUnifiedTasks = () => {
-    if (typeof window === 'undefined') return [];
-    const saved = localStorage.getItem('@mayus:unified_tasks_v3');
-    if (saved) return JSON.parse(saved);
-
-    const now = new Date();
-    const h = now.getHours();
-    const pad = (n: number) => n.toString().padStart(2, '0');
-    
-    const initial = [
-      { id: "t1", time_text: pad(h) + ":00", title: "Daily de Alinhamento (Kickoff)", category: "Gestão", person: "Todos", type: "Reunião", color: "#f87171", status: "Pendente", active: true },
-      { id: "t2", time_text: pad((h+1)%24) + ":00", title: "Review de Leads Cadenciados", category: "Comercial", person: "Equipe SDR", type: "Reunião", color: "#CCA761", status: "Pendente" },
-      { id: "t3", time_text: pad((h+2)%24) + ":30", title: "Elaboração de Contrato Social", category: "Societário", person: "Dra. Mariana", type: "Documento", color: "#b4a0f8", status: "Pendente" },
-      { id: "t4", time_text: pad((h+3)%24) + ":00", title: "Fechamento: Empresa Alpha", category: "Vendas", person: "Ana S.", type: "Call", color: "#CCA761", status: "Em andamento" },
-      { id: "t5", time_text: pad((h+4)%24) + ":15", title: "Triagem de Protocolos PJe", category: "Judicial", person: "Paralegal", type: "Análise", color: "#22d3ee", status: "Pendente" },
-      
-      { id: "t6", time_text: pad((h)%24) + ":45", title: "Audiência de Conciliação Virtual", category: "URGENTE", person: "Você", type: "Audiência", color: "#f87171", status: "Pendente", active: true },
-      { id: "t7", time_text: pad((h+1)%24) + ":30", title: "Responder cliente sobre Liminar", category: "ATENÇÃO", person: "Você", type: "Atendimento", color: "#CCA761", status: "Pendente" },
-      { id: "t8", time_text: pad((h+3)%24) + ":00", title: "Revisar Distrato Societário Ouro", category: "ATENÇÃO", person: "Você", type: "Documento", color: "#CCA761", status: "Pendente" },
-      { id: "t9", time_text: pad((h+5)%24) + ":15", title: "Ler Diário Oficial", category: "TRANQUILO", person: "Você", type: "Leitura", color: "#22d3ee", status: "Pendente" },
-      { id: "t10", time_text: pad((h+7)%24) + ":45", title: "Atualizar CRM MAYUS", category: "ROTINA", person: "Você", type: "Sistema", color: "#9ca3af", status: "Pendente" },
-    ];
-    localStorage.setItem('@mayus:unified_tasks_v3', JSON.stringify(initial));
-    return initial;
   };
 
   // Substituído por getUnifiedTasks
@@ -128,11 +110,6 @@ export default function AgendaGlobalPage() {
   useEffect(() => {
     fetchTasks();
     
-    if (typeof window !== 'undefined') {
-       // EVENTO TEMPO REAL: Escuta mudanças feitas em outras abas (Ex: Agenda Diária do Usuário)
-       window.addEventListener('storage', fetchTasks);
-    }
-
     const channel = supabase
       .channel('realtime_user_tasks')
       .on(
@@ -146,36 +123,34 @@ export default function AgendaGlobalPage() {
 
     return () => {
       supabase.removeChannel(channel);
-      if (typeof window !== 'undefined') {
-         window.removeEventListener('storage', fetchTasks);
-      }
     };
   }, []);
 
   const toggleStatus = async (task: any) => {
     const newStatus = task.status === 'Concluído' ? 'Pendente' : 'Concluído';
-    
-    if (typeof window !== 'undefined') {
-       const allUnified = JSON.parse(localStorage.getItem('@mayus:unified_tasks_v3') || '[]');
-       const updatedUnified = allUnified.map((e: any) => e.id === task.id ? { ...e, status: newStatus } : e);
-       localStorage.setItem('@mayus:unified_tasks_v3', JSON.stringify(updatedUnified));
-       window.dispatchEvent(new Event('storage'));
-    }
+    const { data: { user } } = await supabase.auth.getUser();
+    const updatePayload: Record<string, any> = {
+      status: newStatus,
+      completed_at: newStatus === 'Concluído' ? new Date().toISOString() : null,
+      completed_by: newStatus === 'Concluído' ? user?.id ?? null : null,
+      completed_by_name_snapshot: newStatus === 'Concluído' ? viewerName : null,
+    };
 
-    setEvents(prev => prev.map(e => e.id === task.id ? { ...e, status: newStatus } : e));
+    await supabase.from('user_tasks').update(updatePayload).eq('id', task.id);
+
+    setEvents(prev => prev.map(e => e.id === task.id ? { ...e, ...updatePayload, status: newStatus, person: newStatus === 'Concluído' ? viewerName : e.person } : e));
   };
 
   const stealTask = async (e: React.MouseEvent, task: any) => {
     e.stopPropagation(); // Avoid triggering toggleStatus
-    
-    if (typeof window !== 'undefined') {
-       const allUnified = JSON.parse(localStorage.getItem('@mayus:unified_tasks_v3') || '[]');
-       const updatedUnified = allUnified.map((ev: any) => ev.id === task.id ? { ...ev, person: "Você", stolen: true } : ev);
-       localStorage.setItem('@mayus:unified_tasks_v3', JSON.stringify(updatedUnified));
-       window.dispatchEvent(new Event('storage'));
-    }
 
-    setEvents(prev => prev.map(ev => ev.id === task.id ? { ...ev, person: "Você", stolen: true } : ev));
+    const { data: { user } } = await supabase.auth.getUser();
+    await supabase
+      .from('user_tasks')
+      .update({ assigned_to: user?.id ?? null, assigned_name_snapshot: viewerName })
+      .eq('id', task.id);
+
+    setEvents(prev => prev.map(ev => ev.id === task.id ? { ...ev, assigned_to: user?.id ?? null, assigned_name_snapshot: viewerName, person: viewerName, stolen: true } : ev));
   };
 
   const totalTasks = events.length;
@@ -332,11 +307,11 @@ export default function AgendaGlobalPage() {
         {/* Seletor de Semana Premium */}
         <div className="flex justify-between items-center gap-2 p-1 bg-white/5 rounded-2xl border border-white/10 shadow-inner overflow-x-auto hide-scrollbar">
           {WEEK_DAYS.map((d, i) => {
-            const active = parseInt(d.date) === selectedDate;
+            const active = d.dateKey === selectedDate;
             return (
               <button
                 key={i}
-                onClick={() => setSelectedDate(parseInt(d.date))}
+                onClick={() => setSelectedDate(d.dateKey)}
                 className={`min-w-[70px] flex-1 flex flex-col items-center py-4 rounded-xl transition-all ${active ? 'bg-[#CCA761] text-[#0a0a0a] shadow-[0_0_20px_rgba(204,167,97,0.3)]' : 'hover:bg-white/5 text-gray-500 hover:text-white'}`}
               >
                 <span className="text-[10px] font-black uppercase tracking-tighter mb-1">{d.day}</span>
@@ -523,7 +498,7 @@ export default function AgendaGlobalPage() {
                           <div className="absolute bottom-0 right-0 p-3 opacity-0 group-hover:opacity-100 transition-opacity duration-300 z-50">
                             <button 
                               onClick={(e) => stealTask(e, ev)}
-                              title={`Assumir tarefa pendente de ${ev.person}`}
+                              title="Assumir tarefa pendente"
                               className="flex items-center gap-1.5 bg-gradient-to-r from-[#ef4444] to-[#b91c1c] text-white px-3 py-1.5 rounded-lg border border-[#fca5a5]/50 shadow-[0_0_15px_rgba(239,68,68,0.5)] hover:scale-105 hover:-translate-y-1 transition-all group/btn"
                             >
                               <Sword size={12} className="group-hover/btn:animate-[bounce_0.5s_ease-in-out_infinite]" />

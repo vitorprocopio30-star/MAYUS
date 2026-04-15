@@ -4,6 +4,7 @@ import { useEffect, useState, useMemo } from "react";
 import { createClient } from "@/lib/supabase/client";
 import { ShieldCheck, Search, Filter, Calendar, CheckCircle2, Clock, Sword, User, BrainCircuit } from "lucide-react";
 import { Montserrat, Cormorant_Garamond } from "next/font/google";
+import { sortAgendaTasks, toAgendaEvent } from "@/lib/agenda/userTasks";
 
 const montserrat = Montserrat({ subsets: ["latin"], weight: ["300", "400", "500", "600", "700", "900"] });
 const cormorant = Cormorant_Garamond({ subsets: ["latin"], weight: ["400", "600", "700"], style: ["normal", "italic"] });
@@ -21,55 +22,30 @@ export default function AgendaAdminPage() {
       setIsLoading(false);
       return;
     }
-    const tenantId = user.user_metadata?.tenant_id || user.app_metadata?.tenant_id;
+    const { data: profile } = await supabase
+      .from('profiles')
+      .select('tenant_id')
+      .eq('id', user.id)
+      .maybeSingle();
 
-    if (tenantId) {
-      const { data: allTasks } = await supabase
-        .from('user_tasks')
-        .select('*')
-        .eq('tenant_id', tenantId)
-        .order('created_at', { ascending: false });
-
-      if (allTasks && allTasks.length > 0) setTasks(allTasks);
-      else setTasks(getUnifiedTasks());
-    } else {
-      setTasks(getUnifiedTasks());
+    if (!profile?.tenant_id) {
+      setTasks([]);
+      setIsLoading(false);
+      return;
     }
+
+    const { data: allTasks } = await supabase
+      .from('user_tasks')
+      .select('*')
+      .eq('tenant_id', profile.tenant_id);
+
+    const normalized = sortAgendaTasks(allTasks || []).map(toAgendaEvent);
+    setTasks(normalized);
     setIsLoading(false);
-  };
-
-  const getUnifiedTasks = () => {
-    if (typeof window === 'undefined') return [];
-    const saved = localStorage.getItem('@mayus:unified_tasks_v3');
-    if (saved) return JSON.parse(saved);
-
-    const now = new Date();
-    const h = now.getHours();
-    const pad = (n: number) => n.toString().padStart(2, '0');
-    
-    const initial = [
-      { id: "t1", time_text: pad(h) + ":00", title: "Daily de Alinhamento (Kickoff)", category: "Gestão", person: "Todos", type: "Reunião", color: "#f87171", status: "Pendente", active: true },
-      { id: "t2", time_text: pad((h+1)%24) + ":00", title: "Review de Leads Cadenciados", category: "Comercial", person: "Equipe SDR", type: "Reunião", color: "#CCA761", status: "Pendente" },
-      { id: "t3", time_text: pad((h+2)%24) + ":30", title: "Elaboração de Contrato Social", category: "Societário", person: "Dra. Mariana", type: "Documento", color: "#b4a0f8", status: "Pendente" },
-      { id: "t4", time_text: pad((h+3)%24) + ":00", title: "Fechamento: Empresa Alpha", category: "Vendas", person: "Ana S.", type: "Call", color: "#CCA761", status: "Em andamento" },
-      { id: "t5", time_text: pad((h+4)%24) + ":15", title: "Triagem de Protocolos PJe", category: "Judicial", person: "Paralegal", type: "Análise", color: "#22d3ee", status: "Pendente" },
-      
-      { id: "t6", time_text: pad((h)%24) + ":45", title: "Audiência de Conciliação Virtual", category: "URGENTE", person: "Você", type: "Audiência", color: "#f87171", status: "Pendente", active: true },
-      { id: "t7", time_text: pad((h+1)%24) + ":30", title: "Responder cliente sobre Liminar", category: "ATENÇÃO", person: "Você", type: "Atendimento", color: "#CCA761", status: "Pendente" },
-      { id: "t8", time_text: pad((h+3)%24) + ":00", title: "Revisar Distrato Societário Ouro", category: "ATENÇÃO", person: "Você", type: "Documento", color: "#CCA761", status: "Pendente" },
-      { id: "t9", time_text: pad((h+5)%24) + ":15", title: "Ler Diário Oficial", category: "TRANQUILO", person: "Você", type: "Leitura", color: "#22d3ee", status: "Pendente" },
-      { id: "t10", time_text: pad((h+7)%24) + ":45", title: "Atualizar CRM MAYUS", category: "ROTINA", person: "Você", type: "Sistema", color: "#9ca3af", status: "Pendente" },
-    ];
-    localStorage.setItem('@mayus:unified_tasks_v3', JSON.stringify(initial));
-    return initial;
   };
 
   useEffect(() => {
     fetchAllTasks();
-
-    if (typeof window !== 'undefined') {
-       window.addEventListener('storage', fetchAllTasks);
-    }
 
     // Listener de Tempo Real para o Painel da Chefia
     const channel = supabase
@@ -86,9 +62,6 @@ export default function AgendaAdminPage() {
 
     return () => {
       supabase.removeChannel(channel);
-      if (typeof window !== 'undefined') {
-         window.removeEventListener('storage', fetchAllTasks);
-      }
     };
   }, []);
 
@@ -112,7 +85,7 @@ export default function AgendaAdminPage() {
   const totalTasks = tasks.length;
   const completedTasks = tasks.filter(t => t.status === 'Concluído').length;
   const pendingTasks = totalTasks - completedTasks;
-  const aiGenerated = tasks.filter(t => t.created_by_ai).length; // Hypothetical flag if they have it, or just a mock stat
+   const aiGenerated = tasks.filter(t => t.created_by_agent).length;
 
   return (
     <div className={`w-full max-w-7xl mx-auto space-y-8 pb-24 ${montserrat.className}`}>

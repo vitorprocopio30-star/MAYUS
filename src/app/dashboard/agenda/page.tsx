@@ -6,6 +6,7 @@ import confetti from "canvas-confetti";
 import { Clock, AlertCircle, Star, Wand2, Calendar, CheckCircle2, Trophy, Coins, Gift, Lock, Unlock } from "lucide-react";
 import { Montserrat, Cormorant_Garamond } from "next/font/google";
 import { useGamification } from "@/hooks/useGamification";
+import { formatDateKey, sortAgendaTasks, toAgendaEvent, toDayRange } from "@/lib/agenda/userTasks";
 
 const montserrat = Montserrat({ subsets: ["latin"], weight: ["300", "400", "500", "600", "700"] });
 const cormorant = Cormorant_Garamond({ subsets: ["latin"], weight: ["400", "600", "700"], style: ["normal", "italic"] });
@@ -49,9 +50,8 @@ export default function AgendaDiariaPage() {
   const hour = new Date().getHours();
   const greeting = hour < 12 ? 'Bom dia' : hour < 18 ? 'Boa tarde' : 'Boa noite';
 
-  const [selectedDate, setSelectedDate] = useState<number>(new Date().getDate());
+  const [selectedDate, setSelectedDate] = useState<string>(formatDateKey(new Date()));
   const calendarRef1 = useRef<HTMLInputElement>(null);
-  const calendarRef2 = useRef<HTMLInputElement>(null);
 
   const openCalendar1 = () => {
     if (calendarRef1.current) {
@@ -60,17 +60,6 @@ export default function AgendaDiariaPage() {
           calendarRef1.current.showPicker();
        } else {
           calendarRef1.current.focus();
-       }
-    }
-  };
-
-  const openCalendar2 = () => {
-    if (calendarRef2.current) {
-       if ('showPicker' in HTMLInputElement.prototype) {
-          // @ts-ignore
-          calendarRef2.current.showPicker();
-       } else {
-          calendarRef2.current.focus();
        }
     }
   };
@@ -89,88 +78,50 @@ export default function AgendaDiariaPage() {
        list.push({
           day: weekMap[d.getDay()],
           date: d.getDate().toString(),
-          fullDate: d
-       });
-    }
-    return list;
+          fullDate: d,
+          dateKey: formatDateKey(d),
+        });
+     }
+     return list;
   }, []);
 
-  // Substituto limpo para garantir que mock events não travem mais a interface
-
-  // UNIFIED MOCK DA MAYUS SYSTEM
-  const getUnifiedTasks = () => {
-    if (typeof window === 'undefined') return [];
-    const saved = localStorage.getItem('@mayus:unified_tasks_v3');
-    if (saved) return JSON.parse(saved);
-
-    const now = new Date();
-    const h = now.getHours();
-    const pad = (n: number) => n.toString().padStart(2, '0');
-    
-    // Gera tarefas dinâmicas usando o fuso horário atual
-    const initial = [
-      { id: "t1", time_text: pad(h) + ":00", title: "Daily de Alinhamento (Kickoff)", category: "Gestão", person: "Todos", type: "Reunião", color: "#f87171", status: "Pendente", active: true },
-      { id: "t2", time_text: pad((h+1)%24) + ":00", title: "Review de Leads Cadenciados", category: "Comercial", person: "Equipe SDR", type: "Reunião", color: "#CCA761", status: "Pendente" },
-      { id: "t3", time_text: pad((h+2)%24) + ":30", title: "Elaboração de Contrato Social", category: "Societário", person: "Dra. Mariana", type: "Documento", color: "#b4a0f8", status: "Pendente" },
-      { id: "t4", time_text: pad((h+3)%24) + ":00", title: "Fechamento: Empresa Alpha", category: "Vendas", person: "Ana S.", type: "Call", color: "#CCA761", status: "Em andamento" },
-      { id: "t5", time_text: pad((h+4)%24) + ":15", title: "Triagem de Protocolos PJe", category: "Judicial", person: "Paralegal", type: "Análise", color: "#22d3ee", status: "Pendente" },
-      
-      { id: "t6", time_text: pad((h)%24) + ":45", title: "Audiência de Conciliação Virtual", category: "URGENTE", person: "Você", type: "Audiência", color: "#f87171", status: "Pendente", active: true },
-      { id: "t7", time_text: pad((h+1)%24) + ":30", title: "Responder cliente sobre Liminar", category: "ATENÇÃO", person: "Você", type: "Atendimento", color: "#CCA761", status: "Pendente" },
-      { id: "t8", time_text: pad((h+3)%24) + ":00", title: "Revisar Distrato Societário Ouro", category: "ATENÇÃO", person: "Você", type: "Documento", color: "#CCA761", status: "Pendente" },
-      { id: "t9", time_text: pad((h+5)%24) + ":15", title: "Ler Diário Oficial", category: "TRANQUILO", person: "Você", type: "Leitura", color: "#22d3ee", status: "Pendente" },
-      { id: "t10", time_text: pad((h+7)%24) + ":45", title: "Atualizar CRM MAYUS", category: "ROTINA", person: "Você", type: "Sistema", color: "#9ca3af", status: "Pendente" },
-    ];
-    localStorage.setItem('@mayus:unified_tasks_v3', JSON.stringify(initial));
-    return initial;
-  };
-
   const fetchTasks = async () => {
+    setIsLoading(true);
     const { data: { user } } = await supabase.auth.getUser();
-    
-    // Sempre pega da unificada para funcionar 100% perfeitamente no Demo
-    const allUnified = getUnifiedTasks();
-    const myTasks = allUnified.filter((t: any) => t.person === 'Você' || t.person === 'Todos');
-    
-    // Ordena
-    const sortedTasks = myTasks.sort((a: any, b: any) => {
-      const priorityOrder: Record<string, number> = { 'URGENTE': 1, 'ATENÇÃO': 2, 'ROTINA': 3 };
-      const aHasTime = a.time_text && a.time_text.trim() !== "" && a.time_text !== "--:--";
-      const bHasTime = b.time_text && b.time_text.trim() !== "" && b.time_text !== "--:--";
-
-      if (!aHasTime && bHasTime) return -1;
-      if (aHasTime && !bHasTime) return 1;
-      if (!aHasTime && !bHasTime) {
-         const pA = priorityOrder[a.category?.toUpperCase()] || 99;
-         const pB = priorityOrder[b.category?.toUpperCase()] || 99;
-         if (pA !== pB) return pA - pB;
-      }
-      if (aHasTime && bHasTime) {
-         return a.time_text.localeCompare(b.time_text);
-      }
-      return 0;
-    });
-
-    // Filtragem por Data Ativa: Só mostra as tarefas se a data selecionada for "Hoje". 
-    // Em produção, as tarefas teriam campo "date" no banco e o filtro usaria o "selectedDate".
-    const isTodaySelected = selectedDate === new Date().getDate();
-
-    if (!isTodaySelected) {
-       setEvents([]);
-       setCriticalDeadlines([]);
-       setIsLoading(false);
-       return;
+    if (!user) {
+      setEvents([]);
+      setCriticalDeadlines([]);
+      setIsLoading(false);
+      return;
     }
 
-    setEvents(sortedTasks.filter((t: any) => !t.is_critical));
-    setCriticalDeadlines(sortedTasks.filter((t: any) => t.is_critical));
-    
-    // Simular nome e carregamento real
-    if (user) {
-      const name = user.user_metadata?.full_name || user.user_metadata?.name || user.email?.split('@')[0] || "Líder";
-      setUserName(name);
+    const { data: profile } = await supabase
+      .from("profiles")
+      .select("tenant_id, full_name")
+      .eq("id", user.id)
+      .maybeSingle();
+
+    setUserName(profile?.full_name || user.user_metadata?.full_name || user.email?.split('@')[0] || "Líder");
+
+    if (!profile?.tenant_id) {
+      setEvents([]);
+      setCriticalDeadlines([]);
+      setIsLoading(false);
+      return;
     }
-    
+
+    const { startIso, endIso } = toDayRange(selectedDate);
+    const { data: userTasks } = await supabase
+      .from("user_tasks")
+      .select("*")
+      .eq("tenant_id", profile.tenant_id)
+      .eq("assigned_to", user.id)
+      .gte("scheduled_for", startIso)
+      .lte("scheduled_for", endIso);
+
+    const sortedTasks = sortAgendaTasks(userTasks || []).map(toAgendaEvent);
+    setEvents(sortedTasks.filter((task: any) => !task.is_critical));
+    setCriticalDeadlines(sortedTasks.filter((task: any) => task.is_critical));
     setIsLoading(false);
   };
 
@@ -185,9 +136,6 @@ export default function AgendaDiariaPage() {
        const savedCoins = localStorage.getItem('mayusCoins');
        if (savedCoins) setMyCoins(parseInt(savedCoins, 10));
        if (localStorage.getItem('didDonate') === 'true') setDonated(true);
-       
-       // EVENTO TEMPO REAL: Escuta mudanças feitas em outras abas (Ex: Agenda Global)
-       window.addEventListener('storage', fetchTasks);
     }
 
     const channel = supabase
@@ -203,14 +151,12 @@ export default function AgendaDiariaPage() {
 
     return () => {
       supabase.removeChannel(channel);
-      if (typeof window !== 'undefined') {
-         window.removeEventListener('storage', fetchTasks);
-      }
     };
   }, []);
 
   const toggleStatus = async (task: any) => {
     const newStatus = task.status === 'Concluído' ? 'Pendente' : 'Concluído';
+    const { data: { user } } = await supabase.auth.getUser();
     
     // Gamification Hook: Reward the user with coins
     if (newStatus === 'Concluído') {
@@ -231,19 +177,18 @@ export default function AgendaDiariaPage() {
       setShowCoinAnim(true);
       setTimeout(() => setShowCoinAnim(false), 2000);
     }
-    
-    // Atualiza Unified Source of Truth
-    if (typeof window !== 'undefined') {
-       const allUnified = JSON.parse(localStorage.getItem('@mayus:unified_tasks_v3') || '[]');
-       const updatedUnified = allUnified.map((e: any) => e.id === task.id ? { ...e, status: newStatus } : e);
-       localStorage.setItem('@mayus:unified_tasks_v3', JSON.stringify(updatedUnified));
-       
-       // Force trigger local to sync immediately alongside remote
-       window.dispatchEvent(new Event('storage'));
-    }
+
+    const updatePayload: Record<string, any> = {
+      status: newStatus,
+      completed_at: newStatus === 'Concluído' ? new Date().toISOString() : null,
+      completed_by: newStatus === 'Concluído' ? user?.id ?? null : null,
+      completed_by_name_snapshot: newStatus === 'Concluído' ? userName : null,
+    };
+
+    await supabase.from('user_tasks').update(updatePayload).eq('id', task.id);
     
     // Atualiza Visual Local para Feedback Imediato
-    setEvents(prev => prev.map(e => e.id === task.id ? { ...e, status: newStatus } : e));
+    setEvents(prev => prev.map(e => e.id === task.id ? { ...e, ...updatePayload, status: newStatus, person: newStatus === 'Concluído' ? userName : e.assigned_name_snapshot || e.person } : e));
   };
 
   const lockTask = (e: React.MouseEvent, task: any) => {
@@ -257,14 +202,8 @@ export default function AgendaDiariaPage() {
       }
       
       const newStatus = task.status === 'Em andamento' ? 'Pendente' : 'Em andamento';
-      
-      // Atualiza Unified Source of Truth
-      if (typeof window !== 'undefined') {
-         const allUnified = JSON.parse(localStorage.getItem('@mayus:unified_tasks_v3') || '[]');
-         const updatedUnified = allUnified.map((e: any) => e.id === task.id ? { ...e, status: newStatus } : e);
-         localStorage.setItem('@mayus:unified_tasks_v3', JSON.stringify(updatedUnified));
-         window.dispatchEvent(new Event('storage'));
-      }
+
+      supabase.from('user_tasks').update({ status: newStatus }).eq('id', task.id);
       
       return prev.map(ev => ev.id === task.id ? { ...ev, status: newStatus } : ev);
     });
@@ -367,17 +306,16 @@ export default function AgendaDiariaPage() {
                  type="date" 
                  title="Abrir calendário"
                  ref={calendarRef1}
-                 className="absolute inset-0 w-0 h-0 opacity-0 pointer-events-none"
-                 style={{ border: 0, padding: 0 }}
-                 onChange={(e) => {
-                    const dateVal = e.target.value; 
-                    if (dateVal) {
-                       const d = new Date(dateVal);
-                       d.setMinutes(d.getMinutes() + d.getTimezoneOffset());
-                       setSelectedDate(d.getDate());
-                    }
-                 }}
-              />
+                 value={selectedDate}
+                  className="absolute inset-0 w-0 h-0 opacity-0 pointer-events-none"
+                  style={{ border: 0, padding: 0 }}
+                  onChange={(e) => {
+                     const dateVal = e.target.value; 
+                     if (dateVal) {
+                        setSelectedDate(dateVal);
+                     }
+                  }}
+               />
               <button onClick={openCalendar1} className="flex h-full items-center gap-2 bg-gradient-to-r from-[#CCA761] to-[#eadd87] text-[#0a0a0a] font-black uppercase tracking-widest px-4 py-2.5 rounded-xl hover:scale-105 transition-transform shadow-[0_0_20px_rgba(204,167,97,0.3)] text-xs">
                 <Calendar size={14} /> Calendário
               </button>
@@ -390,11 +328,11 @@ export default function AgendaDiariaPage() {
         {/* Seletor de Semana Premium */}
         <div className="flex justify-between items-center gap-2 p-1 bg-white/5 rounded-2xl border border-white/10 shadow-inner overflow-x-auto hide-scrollbar">
           {WEEK_DAYS.map((d, i) => {
-            const active = parseInt(d.date) === selectedDate;
+            const active = d.dateKey === selectedDate;
             return (
               <button
                 key={i}
-                onClick={() => setSelectedDate(parseInt(d.date))}
+                onClick={() => setSelectedDate(d.dateKey)}
                 className={`min-w-[70px] flex-1 flex flex-col items-center py-4 rounded-xl transition-all ${active ? 'bg-[#CCA761] text-[#0a0a0a] shadow-[0_0_20px_rgba(204,167,97,0.3)]' : 'hover:bg-white/5 text-gray-500 hover:text-white'}`}
               >
                 <span className="text-[10px] font-black uppercase tracking-tighter mb-1">{d.day}</span>
