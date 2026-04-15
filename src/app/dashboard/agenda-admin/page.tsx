@@ -2,9 +2,9 @@
 
 import { useEffect, useState, useMemo } from "react";
 import { createClient } from "@/lib/supabase/client";
-import { ShieldCheck, Search, Filter, Calendar, CheckCircle2, Clock, Sword, User, BrainCircuit } from "lucide-react";
+import { ShieldCheck, Search, Filter, Calendar, CheckCircle2, Clock, Sword, User, BrainCircuit, Plus, X } from "lucide-react";
 import { Montserrat, Cormorant_Garamond } from "next/font/google";
-import { sortAgendaTasks, toAgendaEvent } from "@/lib/agenda/userTasks";
+import { buildAgendaPayloadFromManualTask, buildAgendaPayloadFromMission, sortAgendaTasks, toAgendaEvent } from "@/lib/agenda/userTasks";
 
 const montserrat = Montserrat({ subsets: ["latin"], weight: ["300", "400", "500", "600", "700", "900"] });
 const cormorant = Cormorant_Garamond({ subsets: ["latin"], weight: ["400", "600", "700"], style: ["normal", "italic"] });
@@ -13,6 +13,18 @@ export default function AgendaAdminPage() {
   const [tasks, setTasks] = useState<any[]>([]);
   const [isLoading, setIsLoading] = useState(true);
   const [searchTerm, setSearchTerm] = useState("");
+  const [tenantId, setTenantId] = useState<string | null>(null);
+  const [profiles, setProfiles] = useState<any[]>([]);
+  const [showCreateTask, setShowCreateTask] = useState(false);
+  const [showCreateMission, setShowCreateMission] = useState(false);
+  const [newTitle, setNewTitle] = useState("");
+  const [newDescription, setNewDescription] = useState("");
+  const [newUrgency, setNewUrgency] = useState<"URGENTE" | "ATENCAO" | "ROTINA" | "TRANQUILO">("ROTINA");
+  const [newType, setNewType] = useState("Tarefa");
+  const [newAssignedTo, setNewAssignedTo] = useState("");
+  const [newDate, setNewDate] = useState(new Date().toISOString().slice(0, 10));
+  const [newReward, setNewReward] = useState("1000");
+  const [isSaving, setIsSaving] = useState(false);
   const supabase = createClient();
 
   const fetchAllTasks = async () => {
@@ -34,10 +46,21 @@ export default function AgendaAdminPage() {
       return;
     }
 
+    setTenantId(profile.tenant_id);
+
+    const { data: teamProfiles } = await supabase
+      .from("profiles")
+      .select("id, full_name, role, is_active")
+      .eq("tenant_id", profile.tenant_id)
+      .order("created_at", { ascending: true });
+
+    setProfiles((teamProfiles || []).filter((member: any) => member.is_active !== false));
+
     const { data: allTasks } = await supabase
       .from('user_tasks')
       .select('*')
-      .eq('tenant_id', profile.tenant_id);
+      .eq('tenant_id', profile.tenant_id)
+      .or('visibility.eq.global,visibility.is.null');
 
     const normalized = sortAgendaTasks(allTasks || []).map(toAgendaEvent);
     setTasks(normalized);
@@ -87,6 +110,64 @@ export default function AgendaAdminPage() {
   const pendingTasks = totalTasks - completedTasks;
    const aiGenerated = tasks.filter(t => t.created_by_agent).length;
 
+  const resetCreateForm = () => {
+    setNewTitle("");
+    setNewDescription("");
+    setNewUrgency("ROTINA");
+    setNewType("Tarefa");
+    setNewAssignedTo("");
+    setNewDate(new Date().toISOString().slice(0, 10));
+    setNewReward("1000");
+  };
+
+  const createAdminTask = async (kind: "task" | "mission") => {
+    if (!tenantId || !newTitle.trim()) return;
+    setIsSaving(true);
+    try {
+      const assignedName = profiles.find((p) => p.id === newAssignedTo)?.full_name || null;
+      const { data: authData } = await supabase.auth.getUser();
+      const createdBy = authData.user?.id || null;
+
+      const payload = kind === "mission"
+        ? buildAgendaPayloadFromMission({
+            tenantId,
+            title: newTitle.trim(),
+            description: newDescription || null,
+            assignedTo: newAssignedTo || null,
+            assignedName,
+            createdBy,
+            createdByRole: "Administrador",
+            urgency: newUrgency,
+            rewardCoins: Number(newReward || "1000"),
+            expiresAt: newDate ? `${newDate}T23:59:59.000Z` : null,
+            visibility: "global",
+          })
+        : buildAgendaPayloadFromManualTask({
+            tenantId,
+            title: newTitle.trim(),
+            description: newDescription || null,
+            assignedTo: newAssignedTo || null,
+            assignedName,
+            createdBy,
+            createdByRole: "Administrador",
+            urgency: newUrgency,
+            scheduledFor: newDate ? `${newDate}T09:00:00.000Z` : null,
+            type: newType,
+            visibility: "global",
+          });
+
+      const { error } = await supabase.from("user_tasks").insert(payload);
+      if (error) throw error;
+
+      setShowCreateTask(false);
+      setShowCreateMission(false);
+      resetCreateForm();
+      fetchAllTasks();
+    } finally {
+      setIsSaving(false);
+    }
+  };
+
   return (
     <div className={`w-full max-w-7xl mx-auto space-y-8 pb-24 ${montserrat.className}`}>
       {/* Header Premium Chefia */}
@@ -121,6 +202,21 @@ export default function AgendaAdminPage() {
       </div>
 
       {/* Caixa de Pesquisa */}
+      <div className="flex flex-wrap gap-2">
+        <button
+          onClick={() => { resetCreateForm(); setShowCreateTask(true); }}
+          className="flex items-center gap-2 px-4 py-2 rounded-lg bg-[#111] border border-[#CCA761]/30 text-[#CCA761] text-xs font-black uppercase tracking-widest"
+        >
+          <Plus size={14} /> Nova tarefa (global)
+        </button>
+        <button
+          onClick={() => { resetCreateForm(); setShowCreateMission(true); }}
+          className="flex items-center gap-2 px-4 py-2 rounded-lg bg-[#111] border border-red-500/40 text-red-400 text-xs font-black uppercase tracking-widest"
+        >
+          <Plus size={14} /> Nova missão
+        </button>
+      </div>
+
       <div className="flex items-center gap-4 bg-[#050505] p-2 rounded-xl border border-white/10 shadow-lg">
         <div className="flex-1 flex items-center gap-3 px-4">
           <Search size={20} className="text-gray-500" />
@@ -211,6 +307,56 @@ export default function AgendaAdminPage() {
               )
             })
           )}
+        </div>
+      )}
+
+      {(showCreateTask || showCreateMission) && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center p-4">
+          <div className="absolute inset-0 bg-black/70" onClick={() => { setShowCreateTask(false); setShowCreateMission(false); }} />
+          <div className="relative w-full max-w-2xl rounded-2xl border border-[#CCA761]/20 bg-[#0a0a0a] p-6">
+            <button className="absolute top-4 right-4 p-2 rounded-lg bg-white/5 text-gray-400" onClick={() => { setShowCreateTask(false); setShowCreateMission(false); }}>
+              <X size={16} />
+            </button>
+            <h3 className="text-lg text-white font-bold mb-4">{showCreateMission ? "Nova missão" : "Nova tarefa global"}</h3>
+            <div className="space-y-3">
+              <input value={newTitle} onChange={(e) => setNewTitle(e.target.value)} placeholder="Título" className="w-full bg-[#151515] border border-white/10 rounded-lg px-3 py-2 text-sm text-white" />
+              <textarea value={newDescription} onChange={(e) => setNewDescription(e.target.value)} placeholder="Descrição" className="w-full bg-[#151515] border border-white/10 rounded-lg px-3 py-2 text-sm text-white min-h-[90px]" />
+              <div className="grid grid-cols-1 sm:grid-cols-3 gap-3">
+                <select value={newAssignedTo} onChange={(e) => setNewAssignedTo(e.target.value)} className="bg-[#151515] border border-white/10 rounded-lg px-3 py-2 text-sm text-white">
+                  <option value="">Sem responsável</option>
+                  {profiles.map((member) => (
+                    <option key={member.id} value={member.id}>{member.full_name || `Colaborador ${String(member.id).slice(0, 6)}`}</option>
+                  ))}
+                </select>
+                <select value={newUrgency} onChange={(e) => setNewUrgency(e.target.value as any)} className="bg-[#151515] border border-white/10 rounded-lg px-3 py-2 text-sm text-white">
+                  <option value="URGENTE">Urgente</option>
+                  <option value="ATENCAO">Atenção</option>
+                  <option value="ROTINA">Rotina</option>
+                  <option value="TRANQUILO">Tranquilo</option>
+                </select>
+                <input type="date" value={newDate} onChange={(e) => setNewDate(e.target.value)} className="bg-[#151515] border border-white/10 rounded-lg px-3 py-2 text-sm text-white" />
+              </div>
+              {showCreateMission ? (
+                <input value={newReward} onChange={(e) => setNewReward(e.target.value)} placeholder="Recompensa em coins" className="w-full bg-[#151515] border border-white/10 rounded-lg px-3 py-2 text-sm text-white" />
+              ) : (
+                <select value={newType} onChange={(e) => setNewType(e.target.value)} className="w-full bg-[#151515] border border-white/10 rounded-lg px-3 py-2 text-sm text-white">
+                  <option value="Tarefa">Tarefa</option>
+                  <option value="Prazo">Prazo</option>
+                  <option value="Processo">Processo</option>
+                  <option value="CRM">CRM</option>
+                </select>
+              )}
+              <div className="flex justify-end pt-2">
+                <button
+                  onClick={() => createAdminTask(showCreateMission ? "mission" : "task")}
+                  disabled={isSaving || !newTitle.trim()}
+                  className="bg-gradient-to-r from-[#CCA761] to-[#eadd87] text-black px-4 py-2 rounded-lg text-xs font-black uppercase tracking-widest disabled:opacity-50"
+                >
+                  {isSaving ? "Salvando..." : showCreateMission ? "Criar missão" : "Criar tarefa"}
+                </button>
+              </div>
+            </div>
+          </div>
         </div>
       )}
     </div>

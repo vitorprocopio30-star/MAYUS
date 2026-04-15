@@ -327,9 +327,6 @@ function ProcessoCard({ p, onSelect, selecionado, onAction, onRemover, onArquiva
                  )}
                </div>
              </div>
-             <div className="text-[10px] uppercase tracking-widest font-black text-zinc-500">
-               Autor: <span className="text-white">{p.polo_ativo || '—'}</span>
-             </div>
            </div>
 
           {/* Partes */}

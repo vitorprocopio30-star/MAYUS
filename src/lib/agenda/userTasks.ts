@@ -32,6 +32,12 @@ export type AgendaTaskRecord = {
   client_name?: string | null;
   process_number?: string | null;
   author_name?: string | null;
+  visibility?: "private" | "global" | null;
+  task_kind?: "task" | "mission" | null;
+  reward_coins?: number | null;
+  mission_type?: string | null;
+  expires_at?: string | null;
+  created_by_role?: string | null;
   created_at?: string | null;
 };
 
@@ -125,6 +131,9 @@ export function toAgendaEvent(task: AgendaTaskRecord) {
       ? completedAt.toLocaleTimeString("pt-BR", { hour: "2-digit", minute: "2-digit" })
       : "--",
     person: task.completed_by_name_snapshot || task.assigned_name_snapshot || "Equipe MAYUS",
+    visibility: task.visibility || "global",
+    task_kind: task.task_kind || "task",
+    reward_coins: task.reward_coins ?? (normalizeUrgencyLabel(task.urgency) === "URGENTE" ? 100 : normalizeUrgencyLabel(task.urgency) === "ATENCAO" ? 50 : 20),
   };
 }
 
@@ -149,6 +158,12 @@ function buildBasePayload(params: {
   completedAt?: string | null;
   completedBy?: string | null;
   completedByName?: string | null;
+  visibility?: "private" | "global";
+  taskKind?: "task" | "mission";
+  rewardCoins?: number;
+  missionType?: string | null;
+  expiresAt?: string | null;
+  createdByRole?: string | null;
 }) {
   const urgency = normalizeUrgencyLabel(params.urgency);
   const status = normalizeAgendaStatus(params.status);
@@ -187,6 +202,12 @@ function buildBasePayload(params: {
     completed_at: params.completedAt || null,
     completed_by: params.completedBy || null,
     completed_by_name_snapshot: params.completedByName || null,
+    visibility: params.visibility || "global",
+    task_kind: params.taskKind || "task",
+    reward_coins: params.rewardCoins ?? (urgency === "URGENTE" ? 100 : urgency === "ATENCAO" ? 50 : 20),
+    mission_type: params.missionType || null,
+    expires_at: params.expiresAt || null,
+    created_by_role: params.createdByRole || null,
     is_critical: Boolean(params.isCritical || urgency === "URGENTE"),
     category: params.category || getUrgencyLabel(urgency),
     type: params.type || "Tarefa",
@@ -218,6 +239,8 @@ export function buildAgendaPayloadFromCrmTask(params: {
     category: getUrgencyLabel(urgency),
     type: "CRM",
     clientName: params.task.client_name || null,
+    visibility: "global",
+    taskKind: "task",
   });
 }
 
@@ -248,6 +271,8 @@ export function buildAgendaPayloadFromProcessTask(params: {
     category: getUrgencyLabel(urgency),
     type: "Processo",
     clientName: params.task.client_name || null,
+    visibility: "global",
+    taskKind: "task",
   });
 }
 
@@ -290,6 +315,78 @@ export function buildAgendaPayloadFromProcessPrazo(params: {
     category: getUrgencyLabel(urgency),
     type: "Prazo",
     clientName: params.prazo.monitored_processes?.cliente_nome || null,
+    visibility: "global",
+    taskKind: "task",
+  });
+}
+
+export function buildAgendaPayloadFromManualTask(params: {
+  tenantId: string;
+  title: string;
+  description?: string | null;
+  assignedTo?: string | null;
+  assignedName?: string | null;
+  createdBy?: string | null;
+  createdByRole?: string | null;
+  urgency?: string | null;
+  scheduledFor?: string | null;
+  type?: string | null;
+  visibility: "private" | "global";
+}) {
+  const urgency = normalizeUrgencyLabel(params.urgency);
+  return buildBasePayload({
+    tenantId: params.tenantId,
+    sourceTable: params.visibility === "private" ? "manual_private" : "manual_admin",
+    sourceId: `manual-${Date.now()}-${Math.random().toString(36).slice(2, 8)}`,
+    title: params.title,
+    description: params.description || null,
+    assignedTo: params.assignedTo || null,
+    assignedName: params.assignedName || null,
+    createdBy: params.createdBy || null,
+    createdByRole: params.createdByRole || null,
+    urgency,
+    scheduledFor: params.scheduledFor || new Date().toISOString(),
+    category: getUrgencyLabel(urgency),
+    type: params.type || "Tarefa",
+    visibility: params.visibility,
+    taskKind: "task",
+  });
+}
+
+export function buildAgendaPayloadFromMission(params: {
+  tenantId: string;
+  title: string;
+  description?: string | null;
+  assignedTo?: string | null;
+  assignedName?: string | null;
+  createdBy?: string | null;
+  createdByRole?: string | null;
+  urgency?: string | null;
+  rewardCoins?: number;
+  expiresAt?: string | null;
+  missionType?: string | null;
+  visibility?: "private" | "global";
+}) {
+  const urgency = normalizeUrgencyLabel(params.urgency);
+  return buildBasePayload({
+    tenantId: params.tenantId,
+    sourceTable: "manual_mission",
+    sourceId: `mission-${Date.now()}-${Math.random().toString(36).slice(2, 8)}`,
+    title: params.title,
+    description: params.description || null,
+    assignedTo: params.assignedTo || null,
+    assignedName: params.assignedName || null,
+    createdBy: params.createdBy || null,
+    createdByRole: params.createdByRole || null,
+    urgency,
+    scheduledFor: new Date().toISOString(),
+    category: "OPORTUNIDADE",
+    type: "Missão",
+    visibility: params.visibility || "global",
+    taskKind: "mission",
+    rewardCoins: params.rewardCoins ?? 1000,
+    missionType: params.missionType || "especial",
+    expiresAt: params.expiresAt || null,
   });
 }
 

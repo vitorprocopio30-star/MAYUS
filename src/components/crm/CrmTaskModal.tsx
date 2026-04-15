@@ -293,7 +293,7 @@ export default function CrmTaskModal({
                   >
                     <option value="">Não atribuído</option>
                     {agents.map(agent => (
-                      <option key={agent.id} value={agent.id}>{agent.full_name}</option>
+                      <option key={agent.id} value={agent.id}>{agent.full_name || `Colaborador ${String(agent.id).slice(0, 6)}`}</option>
                     ))}
                   </select>
                 </div>

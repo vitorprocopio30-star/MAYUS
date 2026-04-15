@@ -28,6 +28,7 @@ export default function AgendaGlobalPage() {
   const [criticalDeadlines, setCriticalDeadlines] = useState<any[]>([]);
   const [isLoading, setIsLoading] = useState(true);
   const [viewerName, setViewerName] = useState("Você");
+  const [activeMission, setActiveMission] = useState<any | null>(null);
   
   // Mock do departamento real do profissional logado
   const userDepartment: string = 'Comercial';
@@ -88,14 +89,26 @@ export default function AgendaGlobalPage() {
       .from('user_tasks')
       .select('*')
       .eq('tenant_id', profile.tenant_id)
+      .or('visibility.eq.global,visibility.is.null')
       .gte('scheduled_for', startIso);
 
     const normalizedTasks = sortAgendaTasks(userTasks || []).map(toAgendaEvent).map((task: any) => {
       if (task.status === 'Concluído') return task;
       return { ...task, person: 'Equipe MAYUS' };
     });
-    setEvents(normalizedTasks.filter((task: any) => !task.is_critical));
-    setCriticalDeadlines(normalizedTasks.filter((task: any) => task.is_critical));
+
+    const missions = normalizedTasks
+      .filter((task: any) => task.task_kind === 'mission' && task.status !== 'Concluído')
+      .sort((a: any, b: any) => {
+        const aTs = a.created_at ? new Date(a.created_at).getTime() : 0;
+        const bTs = b.created_at ? new Date(b.created_at).getTime() : 0;
+        return bTs - aTs;
+      });
+
+    const taskItems = normalizedTasks.filter((task: any) => task.task_kind !== 'mission');
+    setActiveMission(missions[0] || null);
+    setEvents(taskItems.filter((task: any) => !task.is_critical));
+    setCriticalDeadlines(taskItems.filter((task: any) => task.is_critical));
     setIsLoading(false);
   };
 
@@ -214,6 +227,17 @@ export default function AgendaGlobalPage() {
   const isKilled = useMemo(() => totalTasks > 0 && completedTasks === totalTasks, [totalTasks, completedTasks]);
 
   const showProgressBar = completedTasks > 0;
+
+  const buildInsightText = useMemo(() => {
+    const pending = pendingEvents.length;
+    const urgent = pendingEvents.filter((task) => String(task.urgency).toUpperCase() === 'URGENTE').length;
+    const critical = criticalDeadlines.filter((task) => task.status !== 'Concluído').length;
+
+    if (urgent >= 5) return `O escritorio possui ${urgent} tarefas urgentes abertas. Reforce distribuicao entre os responsaveis para evitar gargalo.`;
+    if (critical > 0) return `Foram detectados ${critical} prazos criticos no dia. Priorize baixa assistida para reduzir risco operacional.`;
+    if (pending >= 15) return `A agenda global tem ${pending} pendencias. Sugiro blocos de execucao por urgencia e tipo.`;
+    return 'Fluxo global estavel. Mantenha o ritmo de baixa das agendas diarias para sustentar a previsibilidade.';
+  }, [pendingEvents, criticalDeadlines]);
 
   return (
     <div className={`w-full max-w-7xl mx-auto space-y-8 pb-24 ${montserrat.className}`}>
@@ -342,8 +366,7 @@ export default function AgendaGlobalPage() {
             {/* Timeline e Tarefas Restantes */}
             <div className="lg:col-span-2 space-y-6">
 
-              {/* PAINEL MAYUS: BOUNTIES DIÁRIOS */}
-              {gamificationEnabled && (
+              {activeMission && (
                 <div className="relative p-[1px] rounded-xl bg-gradient-to-r from-[#ef4444] via-[#CCA761] to-[#ef4444] animate-pulse mb-8 overflow-hidden group shadow-[0_0_30px_rgba(239,68,68,0.2)]">
                   <div className="absolute inset-0 bg-gradient-to-r from-[#ef4444]/20 via-[#CCA761]/30 to-[#ef4444]/20 blur-xl" />
                   <div className="bg-[#050505]/95 backdrop-blur-xl rounded-xl p-5 md:p-6 w-full relative z-10">
@@ -351,17 +374,17 @@ export default function AgendaGlobalPage() {
                       
                       <div className="flex flex-col items-center md:items-start text-center md:text-left gap-3 w-full md:w-3/4">
                          <span className="flex items-center justify-center md:justify-start gap-1.5 text-[9px] sm:text-[10px] font-black uppercase tracking-[0.2em] text-[#ef4444] bg-[#ef4444]/10 px-3 py-1 rounded w-fit border border-[#ef4444]/30 shadow-[0_0_15px_rgba(239,68,68,0.3)]">
-                           <Target size={12} className="animate-[ping_2s_cubic-bezier(0,0,0.2,1)_infinite]" /> OPORTUNIDADE ESPECIAL
-                         </span>
-                         <h3 className="text-white text-lg md:text-xl font-bold tracking-tight">Recuperação de Ouro Frio</h3>
-                         <p className="text-xs sm:text-sm text-gray-400 font-medium leading-relaxed italic"><strong className="text-[#CCA761]">Aviso do MAYUS:</strong> &quot;Detectei muitos Leads Premium do Comercial parados há mais de 10 dias esperando contato. O primeiro SDR/Closer que puxar 10 ligações agora e fechar a jornada no CRM leva todas as moedas.&quot;</p>
-                      </div>
+                            <Target size={12} className="animate-[ping_2s_cubic-bezier(0,0,0.2,1)_infinite]" /> OPORTUNIDADE ESPECIAL
+                          </span>
+                         <h3 className="text-white text-lg md:text-xl font-bold tracking-tight">{activeMission.title}</h3>
+                         <p className="text-xs sm:text-sm text-gray-400 font-medium leading-relaxed italic"><strong className="text-[#CCA761]">Aviso do MAYUS:</strong> &quot;{activeMission.description || 'Missao operacional ativa para acelerar a execucao da equipe.'}&quot;</p>
+                       </div>
   
                       <div className="w-full md:w-1/4 flex flex-col items-center justify-center gap-3 border-t md:border-t-0 md:border-l border-white/10 pt-4 md:pt-0 pl-0 md:pl-4">
                         <div className="flex flex-col items-center">
                           <span className="text-[10px] font-black uppercase text-gray-500 tracking-widest mb-1">Recompensa</span>
                           <div className="flex items-center gap-2 text-[#CCA761] font-black text-2xl h-8 drop-shadow-[0_0_10px_rgba(204,167,97,0.5)]">
-                            +1.000 <Coins size={20} className="animate-pulse text-[#FFD700]" />
+                            +{activeMission.reward_coins ?? 1000} <Coins size={20} className="animate-pulse text-[#FFD700]" />
                           </div>
                         </div>
                         <button className="w-full bg-gradient-to-r from-[#ef4444] to-[#b91c1c] text-white text-[10px] sm:text-xs font-black uppercase tracking-widest py-2.5 rounded-lg hover:scale-105 transition-transform shadow-[0_0_20px_rgba(239,68,68,0.4)] border border-[#fca5a5]/30 mt-2">
@@ -613,7 +636,7 @@ export default function AgendaGlobalPage() {
               <div className="p-6 rounded-2xl border border-[#CCA761]/30 bg-gradient-to-br from-[#CCA761]/20 to-transparent">
                 <Star className="text-[#CCA761] mb-4" size={24} />
                 <h5 className="text-sm font-bold text-white mb-2 tracking-wide">Insight da Inteligência (MAYUS)</h5>
-                <p className="text-[11px] text-gray-400 leading-relaxed italic font-medium">&quot;Doutor, você tem 3 audiências seguidas na quarta-feira. Recomendo revisar os relatórios de pauta agora para evitar sobrecarga operativa.&quot;</p>
+                <p className="text-[11px] text-gray-400 leading-relaxed italic font-medium">&quot;{buildInsightText}&quot;</p>
               </div>
             </div>
 

@@ -3,10 +3,10 @@
 import { useEffect, useState, useMemo, useRef } from "react";
 import { createClient } from "@/lib/supabase/client";
 import confetti from "canvas-confetti";
-import { Clock, AlertCircle, Star, Wand2, Calendar, CheckCircle2, Trophy, Coins, Gift, Lock, Unlock, Copy, Check } from "lucide-react";
+import { Clock, AlertCircle, Star, Wand2, Calendar, CheckCircle2, Trophy, Coins, Gift, Lock, Unlock, Copy, Check, Plus, Target, X } from "lucide-react";
 import { Montserrat, Cormorant_Garamond } from "next/font/google";
 import { useGamification } from "@/hooks/useGamification";
-import { formatDateKey, sortAgendaTasks, toAgendaEvent, toDayRange } from "@/lib/agenda/userTasks";
+import { buildAgendaPayloadFromManualTask, formatDateKey, sortAgendaTasks, toAgendaEvent, toDayRange } from "@/lib/agenda/userTasks";
 
 const montserrat = Montserrat({ subsets: ["latin"], weight: ["300", "400", "500", "600", "700"] });
 const cormorant = Cormorant_Garamond({ subsets: ["latin"], weight: ["400", "600", "700"], style: ["normal", "italic"] });
@@ -18,6 +18,7 @@ function GlassCard({ children, className = "" }: { children: React.ReactNode; cl
       <div className="relative z-10 w-full h-full flex flex-col justify-between">
         {children}
       </div>
+
     </div>
   );
 }
@@ -36,6 +37,17 @@ export default function AgendaDiariaPage() {
   const [statusFilter, setStatusFilter] = useState<"all" | "pending" | "in_progress" | "done">("all");
   const [typeFilter, setTypeFilter] = useState<"all" | "Prazo" | "Processo" | "CRM">("all");
   const [copiedTaskId, setCopiedTaskId] = useState<string | null>(null);
+  const [tenantId, setTenantId] = useState<string | null>(null);
+  const [currentUserId, setCurrentUserId] = useState<string | null>(null);
+  const [currentUserRole, setCurrentUserRole] = useState<string | null>(null);
+  const [activeMission, setActiveMission] = useState<any | null>(null);
+  const [showCreateTaskModal, setShowCreateTaskModal] = useState(false);
+  const [newTaskTitle, setNewTaskTitle] = useState("");
+  const [newTaskDescription, setNewTaskDescription] = useState("");
+  const [newTaskUrgency, setNewTaskUrgency] = useState<"URGENTE" | "ATENCAO" | "ROTINA" | "TRANQUILO">("ROTINA");
+  const [newTaskType, setNewTaskType] = useState<"Tarefa" | "Prazo" | "Processo" | "CRM">("Tarefa");
+  const [newTaskScheduledFor, setNewTaskScheduledFor] = useState(formatDateKey(new Date()));
+  const [isCreatingTask, setIsCreatingTask] = useState(false);
   const supabase = createClient();
 
   const MOTIVATIONAL_QUOTES = [
@@ -102,11 +114,14 @@ export default function AgendaDiariaPage() {
 
     const { data: profile } = await supabase
       .from("profiles")
-      .select("tenant_id, full_name")
+      .select("tenant_id, full_name, role")
       .eq("id", user.id)
       .maybeSingle();
 
     setUserName(profile?.full_name || user.user_metadata?.full_name || user.email?.split('@')[0] || "Líder");
+    setCurrentUserId(user.id);
+    setTenantId(profile?.tenant_id || null);
+    setCurrentUserRole(profile?.role || null);
 
     if (!profile?.tenant_id) {
       setEvents([]);
@@ -120,10 +135,17 @@ export default function AgendaDiariaPage() {
       .from("user_tasks")
       .select("*")
       .eq("tenant_id", profile.tenant_id)
-      .eq("assigned_to", user.id)
+      .neq("source_table", "manual_validation")
       .gte("scheduled_for", startIso);
 
-    const processPrazoIds = (userTasks || [])
+    const scopedTasks = (userTasks || []).filter((task: any) => {
+      const visibility = task.visibility || "global";
+      const isMine = task.assigned_to === user.id && (visibility === "private" || visibility === "global");
+      const isClaimableMission = task.task_kind === "mission" && visibility === "global" && !task.assigned_to;
+      return isMine || isClaimableMission;
+    });
+
+    const processPrazoIds = (scopedTasks || [])
       .filter((task: any) => task.source_table === "process_prazos" && task.source_id)
       .map((task: any) => String(task.source_id));
 
@@ -146,7 +168,7 @@ export default function AgendaDiariaPage() {
       );
     }
 
-    const enrichedTasks = (userTasks || []).map((task: any) => {
+    const enrichedTasks = (scopedTasks || []).map((task: any) => {
       if (task.source_table !== "process_prazos") return task;
       const ctx = processContextByPrazoId.get(String(task.source_id));
       if (!ctx) return task;
@@ -158,9 +180,19 @@ export default function AgendaDiariaPage() {
       };
     });
 
-    const sortedTasks = sortAgendaTasks(enrichedTasks).map(toAgendaEvent);
-    setEvents(sortedTasks.filter((task: any) => !task.is_critical));
-    setCriticalDeadlines(sortedTasks.filter((task: any) => task.is_critical));
+    const normalizedTasks = sortAgendaTasks(enrichedTasks).map(toAgendaEvent);
+    const missions = normalizedTasks
+      .filter((task: any) => task.task_kind === "mission" && task.status !== "Concluído")
+      .sort((a: any, b: any) => {
+        const aTs = a.created_at ? new Date(a.created_at).getTime() : 0;
+        const bTs = b.created_at ? new Date(b.created_at).getTime() : 0;
+        return bTs - aTs;
+      });
+    const taskItems = normalizedTasks.filter((task: any) => task.task_kind !== "mission");
+
+    setActiveMission(missions[0] || null);
+    setEvents(taskItems.filter((task: any) => !task.is_critical));
+    setCriticalDeadlines(taskItems.filter((task: any) => task.is_critical));
     setIsLoading(false);
   };
 
@@ -334,6 +366,65 @@ export default function AgendaDiariaPage() {
     }
   };
 
+  const buildInsightText = useMemo(() => {
+    const pending = events.filter((task) => task.status !== "Concluído").length;
+    const urgent = events.filter((task) => String(task.urgency).toUpperCase() === "URGENTE" && task.status !== "Concluído").length;
+    const critical = criticalDeadlines.filter((task) => task.status !== "Concluído").length;
+
+    if (urgent >= 3) {
+      return `Voce possui ${urgent} tarefas urgentes abertas. Priorize as duas primeiras para reduzir risco de atraso operacional.`;
+    }
+    if (critical > 0) {
+      return `Existem ${critical} prazos criticos no seu radar. Recomendo revisar o andamento e registrar baixa parcial ainda hoje.`;
+    }
+    if (pending >= 8) {
+      return `Sua fila esta com ${pending} tarefas pendentes. Foque em blocos de 3 para aumentar o throughput da agenda.`;
+    }
+    return "Fluxo estavel. Mantenha o foco nas tarefas em andamento para fechar o dia com margem operacional.";
+  }, [events, criticalDeadlines]);
+
+  const handleCreatePersonalTask = async () => {
+    if (!tenantId || !currentUserId || !newTaskTitle.trim()) return;
+    setIsCreatingTask(true);
+    try {
+      const payload = buildAgendaPayloadFromManualTask({
+        tenantId,
+        title: newTaskTitle.trim(),
+        description: newTaskDescription.trim() || null,
+        assignedTo: currentUserId,
+        assignedName: userName,
+        createdBy: currentUserId,
+        createdByRole: currentUserRole,
+        urgency: newTaskUrgency,
+        scheduledFor: `${newTaskScheduledFor}T09:00:00.000Z`,
+        type: newTaskType,
+        visibility: "private",
+      });
+
+      const { error } = await supabase.from("user_tasks").insert(payload);
+      if (error) throw error;
+
+      setNewTaskTitle("");
+      setNewTaskDescription("");
+      setNewTaskUrgency("ROTINA");
+      setNewTaskType("Tarefa");
+      setNewTaskScheduledFor(formatDateKey(new Date()));
+      setShowCreateTaskModal(false);
+      fetchTasks();
+    } finally {
+      setIsCreatingTask(false);
+    }
+  };
+
+  const handleClaimMission = async () => {
+    if (!activeMission || !currentUserId) return;
+    await supabase
+      .from("user_tasks")
+      .update({ assigned_to: currentUserId, assigned_name_snapshot: userName })
+      .eq("id", activeMission.id);
+    fetchTasks();
+  };
+
   useEffect(() => {
      if (isKilled) {
         confetti({
@@ -392,6 +483,12 @@ export default function AgendaDiariaPage() {
           )}
           
           <div className="flex gap-2">
+            <button
+              onClick={() => setShowCreateTaskModal(true)}
+              className="flex items-center gap-2 bg-[#111] border border-[#CCA761]/30 text-[#CCA761] font-black uppercase tracking-widest px-4 py-2.5 rounded-xl hover:bg-[#CCA761]/10 transition-colors text-xs"
+            >
+              <Plus size={14} /> Nova tarefa
+            </button>
             {gamificationEnabled && (
               <button onClick={handleDonateCoins} className={`flex items-center gap-2 border font-bold uppercase tracking-widest px-4 py-2.5 rounded-xl transition-all shadow-sm text-xs ${donated ? 'bg-[#0a0a0a] border-white/5 text-gray-500 cursor-not-allowed opacity-50' : 'bg-[#111] border-[#CCA761]/30 text-[#CCA761] hover:bg-[#CCA761]/10 hover:-translate-y-0.5 shadow-[0_5px_15px_rgba(204,167,97,0.15)]'}`}>
                 <Gift size={14} /> Reconhecer
@@ -448,6 +545,38 @@ export default function AgendaDiariaPage() {
 
             {/* Timeline e Tarefas Restantes */}
             <div className="lg:col-span-2 space-y-6">
+              {activeMission && (
+                <div className="relative p-[1px] rounded-xl bg-gradient-to-r from-[#ef4444] via-[#CCA761] to-[#ef4444] mb-2 overflow-hidden group shadow-[0_0_30px_rgba(239,68,68,0.2)]">
+                  <div className="absolute inset-0 bg-gradient-to-r from-[#ef4444]/20 via-[#CCA761]/30 to-[#ef4444]/20 blur-xl" />
+                  <div className="bg-[#050505]/95 backdrop-blur-xl rounded-xl p-5 md:p-6 w-full relative z-10">
+                    <div className="flex flex-col md:flex-row items-center gap-6 justify-between">
+                      <div className="flex flex-col items-center md:items-start text-center md:text-left gap-3 w-full md:w-3/4">
+                        <span className="flex items-center justify-center md:justify-start gap-1.5 text-[9px] sm:text-[10px] font-black uppercase tracking-[0.2em] text-[#ef4444] bg-[#ef4444]/10 px-3 py-1 rounded w-fit border border-[#ef4444]/30 shadow-[0_0_15px_rgba(239,68,68,0.3)]">
+                          <Target size={12} /> Oportunidade Especial
+                        </span>
+                        <h3 className="text-white text-lg md:text-xl font-bold tracking-tight">{activeMission.title}</h3>
+                        <p className="text-xs sm:text-sm text-gray-400 font-medium leading-relaxed italic">{activeMission.description || "Missao operacional ativa para acelerar os resultados do dia."}</p>
+                      </div>
+
+                      <div className="w-full md:w-1/4 flex flex-col items-center justify-center gap-3 border-t md:border-t-0 md:border-l border-white/10 pt-4 md:pt-0 pl-0 md:pl-4">
+                        <div className="flex flex-col items-center">
+                          <span className="text-[10px] font-black uppercase text-gray-500 tracking-widest mb-1">Recompensa</span>
+                          <div className="flex items-center gap-2 text-[#CCA761] font-black text-2xl h-8 drop-shadow-[0_0_10px_rgba(204,167,97,0.5)]">
+                            +{activeMission.reward_coins ?? 1000} <Coins size={20} className="text-[#FFD700]" />
+                          </div>
+                        </div>
+                        <button
+                          onClick={handleClaimMission}
+                          className="w-full bg-gradient-to-r from-[#ef4444] to-[#b91c1c] text-white text-[10px] sm:text-xs font-black uppercase tracking-widest py-2.5 rounded-lg hover:scale-105 transition-transform shadow-[0_0_20px_rgba(239,68,68,0.4)] border border-[#fca5a5]/30 mt-2"
+                        >
+                          Assumir Missao
+                        </button>
+                      </div>
+                    </div>
+                  </div>
+                </div>
+              )}
+
               <div className="flex flex-col sm:flex-row items-start sm:items-center justify-between px-4 py-3 bg-gradient-to-r from-[#111111] to-transparent rounded-xl border-l-[3px] border-[#CCA761] mb-6 shadow-md gap-4">
                 <h3 className="text-sm font-black tracking-widest uppercase flex items-center gap-3 bg-gradient-to-r from-[#CCA761] to-[#f1d58d] bg-clip-text text-transparent">
                   <Clock size={18} className="text-[#CCA761] drop-shadow-[0_0_8px_rgba(204,167,97,0.8)]" /> Compromisos do Dia
@@ -683,13 +812,64 @@ export default function AgendaDiariaPage() {
               <div className="p-6 rounded-2xl border border-[#CCA761]/30 bg-gradient-to-br from-[#CCA761]/20 to-transparent">
                 <Star className="text-[#CCA761] mb-4" size={24} />
                 <h5 className="text-sm font-bold text-white mb-2 tracking-wide">Insight da Inteligência (MAYUS)</h5>
-                <p className="text-[11px] text-gray-400 leading-relaxed italic font-medium">&quot;Doutor, você tem 3 audiências seguidas na quarta-feira. Recomendo revisar os relatórios de pauta agora para evitar sobrecarga operativa.&quot;</p>
+                <p className="text-[11px] text-gray-400 leading-relaxed italic font-medium">&quot;{buildInsightText}&quot;</p>
               </div>
             </div>
 
           </div>
         )}
       </div>
+
+      {showCreateTaskModal && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center p-4">
+          <div className="absolute inset-0 bg-black/70 backdrop-blur-sm" onClick={() => setShowCreateTaskModal(false)} />
+          <div className="relative w-full max-w-xl rounded-2xl border border-[#CCA761]/30 bg-[#0a0a0a] p-6 shadow-[0_0_30px_rgba(0,0,0,0.6)]">
+            <button onClick={() => setShowCreateTaskModal(false)} className="absolute top-4 right-4 p-2 rounded-lg bg-white/5 text-gray-400 hover:text-white">
+              <X size={16} />
+            </button>
+            <h4 className="text-lg font-bold text-white mb-4">Nova tarefa pessoal</h4>
+            <div className="space-y-3">
+              <input
+                value={newTaskTitle}
+                onChange={(e) => setNewTaskTitle(e.target.value)}
+                placeholder="Titulo da tarefa"
+                className="w-full bg-[#151515] border border-white/10 rounded-lg px-3 py-2 text-sm text-white"
+              />
+              <textarea
+                value={newTaskDescription}
+                onChange={(e) => setNewTaskDescription(e.target.value)}
+                placeholder="Descricao opcional"
+                className="w-full bg-[#151515] border border-white/10 rounded-lg px-3 py-2 text-sm text-white min-h-[90px]"
+              />
+              <div className="grid grid-cols-1 sm:grid-cols-3 gap-3">
+                <select value={newTaskUrgency} onChange={(e) => setNewTaskUrgency(e.target.value as any)} className="bg-[#151515] border border-white/10 rounded-lg px-3 py-2 text-sm text-white">
+                  <option value="URGENTE">Urgente</option>
+                  <option value="ATENCAO">Atencao</option>
+                  <option value="ROTINA">Rotina</option>
+                  <option value="TRANQUILO">Tranquilo</option>
+                </select>
+                <select value={newTaskType} onChange={(e) => setNewTaskType(e.target.value as any)} className="bg-[#151515] border border-white/10 rounded-lg px-3 py-2 text-sm text-white">
+                  <option value="Tarefa">Tarefa</option>
+                  <option value="Prazo">Prazo</option>
+                  <option value="Processo">Processo</option>
+                  <option value="CRM">CRM</option>
+                </select>
+                <input type="date" value={newTaskScheduledFor} onChange={(e) => setNewTaskScheduledFor(e.target.value)} className="bg-[#151515] border border-white/10 rounded-lg px-3 py-2 text-sm text-white" />
+              </div>
+              <p className="text-[11px] text-gray-500">Tarefa pessoal: visivel apenas para voce na Agenda Diaria.</p>
+              <div className="flex justify-end pt-2">
+                <button
+                  onClick={handleCreatePersonalTask}
+                  disabled={isCreatingTask || !newTaskTitle.trim()}
+                  className="bg-gradient-to-r from-[#CCA761] to-[#eadd87] text-black px-4 py-2 rounded-lg text-xs font-black uppercase tracking-widest disabled:opacity-50"
+                >
+                  {isCreatingTask ? "Salvando..." : "Criar tarefa"}
+                </button>
+              </div>
+            </div>
+          </div>
+        </div>
+      )}
     </div>
   );
 }
