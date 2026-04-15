@@ -21,6 +21,8 @@ export default function AgendaAdminPage() {
   const [newDescription, setNewDescription] = useState("");
   const [newUrgency, setNewUrgency] = useState<"URGENTE" | "ATENCAO" | "ROTINA" | "TRANQUILO">("ROTINA");
   const [newType, setNewType] = useState("Tarefa");
+  const [newVisibility, setNewVisibility] = useState<"private" | "global">("global");
+  const [newReminderOnly, setNewReminderOnly] = useState(false);
   const [newAssignedTo, setNewAssignedTo] = useState("");
   const [newDate, setNewDate] = useState(new Date().toISOString().slice(0, 10));
   const [newReward, setNewReward] = useState("1000");
@@ -115,6 +117,8 @@ export default function AgendaAdminPage() {
     setNewDescription("");
     setNewUrgency("ROTINA");
     setNewType("Tarefa");
+    setNewVisibility("global");
+    setNewReminderOnly(false);
     setNewAssignedTo("");
     setNewDate(new Date().toISOString().slice(0, 10));
     setNewReward("1000");
@@ -140,7 +144,8 @@ export default function AgendaAdminPage() {
             urgency: newUrgency,
             rewardCoins: Number(newReward || "1000"),
             expiresAt: newDate ? `${newDate}T23:59:59.000Z` : null,
-            visibility: "global",
+            visibility: newVisibility,
+            showOnlyOnDate: newReminderOnly,
           })
         : buildAgendaPayloadFromManualTask({
             tenantId,
@@ -153,7 +158,8 @@ export default function AgendaAdminPage() {
             urgency: newUrgency,
             scheduledFor: newDate ? `${newDate}T09:00:00.000Z` : null,
             type: newType,
-            visibility: "global",
+            visibility: newVisibility,
+            showOnlyOnDate: newReminderOnly,
           });
 
       const { error } = await supabase.from("user_tasks").insert(payload);
@@ -335,6 +341,16 @@ export default function AgendaAdminPage() {
                   <option value="TRANQUILO">Tranquilo</option>
                 </select>
                 <input type="date" value={newDate} onChange={(e) => setNewDate(e.target.value)} className="bg-[#151515] border border-white/10 rounded-lg px-3 py-2 text-sm text-white" />
+              </div>
+              <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+                <select value={newVisibility} onChange={(e) => setNewVisibility(e.target.value as any)} className="bg-[#151515] border border-white/10 rounded-lg px-3 py-2 text-sm text-white">
+                  <option value="global">Global (aparece na Agenda Global)</option>
+                  <option value="private">Pessoal (somente do responsável)</option>
+                </select>
+                <label className="flex items-center gap-2 text-sm text-gray-300 bg-[#151515] border border-white/10 rounded-lg px-3 py-2">
+                  <input type="checkbox" checked={newReminderOnly} onChange={(e) => setNewReminderOnly(e.target.checked)} />
+                  Mostrar somente na data marcada (lembrete)
+                </label>
               </div>
               {showCreateMission ? (
                 <input value={newReward} onChange={(e) => setNewReward(e.target.value)} placeholder="Recompensa em coins" className="w-full bg-[#151515] border border-white/10 rounded-lg px-3 py-2 text-sm text-white" />

@@ -84,15 +84,25 @@ export default function AgendaGlobalPage() {
       return;
     }
 
-    const { startIso } = toDayRange(selectedDate);
+    const { startIso, endIso } = toDayRange(selectedDate);
     const { data: userTasks } = await supabase
       .from('user_tasks')
       .select('*')
       .eq('tenant_id', profile.tenant_id)
-      .or('visibility.eq.global,visibility.is.null')
-      .gte('scheduled_for', startIso);
+      .or('visibility.eq.global,visibility.is.null');
 
-    const normalizedTasks = sortAgendaTasks(userTasks || []).map(toAgendaEvent).map((task: any) => {
+    const filteredByDate = (userTasks || []).filter((task: any) => {
+      const scheduledAt = new Date(task.scheduled_for || task.created_at || 0).getTime();
+      const startAt = new Date(startIso).getTime();
+      const endAt = new Date(endIso).getTime();
+      const isReminder = Boolean(task.show_only_on_date);
+
+      if (Number.isNaN(scheduledAt)) return !isReminder;
+      if (isReminder) return scheduledAt >= startAt && scheduledAt <= endAt;
+      return scheduledAt >= startAt;
+    });
+
+    const normalizedTasks = sortAgendaTasks(filteredByDate).map(toAgendaEvent).map((task: any) => {
       if (task.status === 'Concluído') return task;
       return { ...task, person: 'Equipe MAYUS' };
     });

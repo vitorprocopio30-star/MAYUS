@@ -38,6 +38,7 @@ export type AgendaTaskRecord = {
   mission_type?: string | null;
   expires_at?: string | null;
   created_by_role?: string | null;
+  show_only_on_date?: boolean | null;
   created_at?: string | null;
 };
 
@@ -134,6 +135,7 @@ export function toAgendaEvent(task: AgendaTaskRecord) {
     visibility: task.visibility || "global",
     task_kind: task.task_kind || "task",
     reward_coins: task.reward_coins ?? (normalizeUrgencyLabel(task.urgency) === "URGENTE" ? 100 : normalizeUrgencyLabel(task.urgency) === "ATENCAO" ? 50 : 20),
+    show_only_on_date: Boolean(task.show_only_on_date),
   };
 }
 
@@ -164,6 +166,7 @@ function buildBasePayload(params: {
   missionType?: string | null;
   expiresAt?: string | null;
   createdByRole?: string | null;
+  showOnlyOnDate?: boolean;
 }) {
   const urgency = normalizeUrgencyLabel(params.urgency);
   const status = normalizeAgendaStatus(params.status);
@@ -208,6 +211,7 @@ function buildBasePayload(params: {
     mission_type: params.missionType || null,
     expires_at: params.expiresAt || null,
     created_by_role: params.createdByRole || null,
+    show_only_on_date: Boolean(params.showOnlyOnDate),
     is_critical: Boolean(params.isCritical || urgency === "URGENTE"),
     category: params.category || getUrgencyLabel(urgency),
     type: params.type || "Tarefa",
@@ -332,6 +336,7 @@ export function buildAgendaPayloadFromManualTask(params: {
   scheduledFor?: string | null;
   type?: string | null;
   visibility: "private" | "global";
+  showOnlyOnDate?: boolean;
 }) {
   const urgency = normalizeUrgencyLabel(params.urgency);
   return buildBasePayload({
@@ -350,6 +355,7 @@ export function buildAgendaPayloadFromManualTask(params: {
     type: params.type || "Tarefa",
     visibility: params.visibility,
     taskKind: "task",
+    showOnlyOnDate: Boolean(params.showOnlyOnDate),
   });
 }
 
@@ -366,6 +372,7 @@ export function buildAgendaPayloadFromMission(params: {
   expiresAt?: string | null;
   missionType?: string | null;
   visibility?: "private" | "global";
+  showOnlyOnDate?: boolean;
 }) {
   const urgency = normalizeUrgencyLabel(params.urgency);
   return buildBasePayload({
@@ -387,6 +394,7 @@ export function buildAgendaPayloadFromMission(params: {
     rewardCoins: params.rewardCoins ?? 1000,
     missionType: params.missionType || "especial",
     expiresAt: params.expiresAt || null,
+    showOnlyOnDate: Boolean(params.showOnlyOnDate),
   });
 }
 
