@@ -646,7 +646,7 @@ export default function AgendaDiariaPage() {
       {/* Header da Página */}
       <div className="flex flex-col md:flex-row justify-between items-start md:items-end pb-4 border-b border-[#CCA761]/20 relative z-40 gap-6">
         <div className="flex items-start gap-4 md:gap-5 w-full">
-          <div className="relative shrink-0 mt-2 md:mt-5 md:mb-[-4px]">
+          <div className="relative shrink-0 mt-3 md:mt-6 mb-[-10px] md:mb-[-16px]">
             <div className="w-20 h-20 md:w-24 md:h-24 rounded-2xl border border-[#CCA761]/35 bg-gradient-to-br from-[#CCA761]/20 to-[#0a0a0a] p-[2px] shadow-[0_0_25px_rgba(204,167,97,0.2)]">
               <div className="w-full h-full rounded-[14px] overflow-hidden bg-[#0a0a0a] flex items-center justify-center">
                 {userAvatarUrl ? (
