@@ -119,7 +119,7 @@ export default function LandingPage() {
         {/* Central 3D Spline (Z-10: Behind text) */}
         <div className="absolute inset-0 z-10 w-full h-full flex justify-center items-center pointer-events-none select-none overflow-hidden">
           <Reveal delay={0.3} width="100%" className="w-full h-full relative flex items-center justify-center">
-             <div className="relative w-[150vw] h-[120vh] transition-all duration-1000 ease-out flex items-center justify-center -translate-y-[6%]">
+             <div className="relative w-[150vw] h-[120vh] transition-all duration-1000 ease-out flex items-center justify-center translate-x-[5%] translate-y-[18%]">
                 <Spline scene="https://prod.spline.design/antVG5gJ69HRFMFs/scene.splinecode" className="w-full h-full object-cover scale-[0.5] md:scale-[0.6] lg:scale-[0.7]" />
              </div>
           </Reveal>
