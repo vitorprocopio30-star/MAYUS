@@ -464,19 +464,18 @@ export default function AgendaDiariaPage() {
   const canAssignGlobalTask = currentUserRole === "Administrador" || currentUserRole === "mayus_admin" || currentUserRole === "admin" || currentUserRole === "socio" || currentUserRole === "Sócio";
 
   const deadlineStats = useMemo(() => {
-    const allTasks = [...events, ...criticalDeadlines];
-    const deadlines = allTasks.filter((task) => task.source_table === "process_prazos" || task.type === "Prazo");
-    const openDeadlines = deadlines.filter((task) => task.status !== "Concluído");
+    const visibleDeadlines = visibleEvents.filter((task) => task.source_table === "process_prazos" || task.type === "Prazo");
+    const openDeadlines = visibleDeadlines.filter((task) => task.status !== "Concluído");
     const myOpenDeadlines = openDeadlines.filter((task) => String(task.assigned_to || "") === String(currentUserId || ""));
     const criticalOpen = criticalDeadlines.filter((task) => task.status !== "Concluído").length;
 
     return {
-      total: deadlines.length,
+      total: visibleDeadlines.length,
       open: openDeadlines.length,
       criticalOpen,
       mine: myOpenDeadlines.length,
     };
-  }, [events, criticalDeadlines, currentUserId]);
+  }, [visibleEvents, criticalDeadlines, currentUserId]);
 
   const urgencyToMeta = (urgency: "URGENTE" | "ATENCAO" | "ROTINA" | "TRANQUILO") => {
     if (urgency === "URGENTE") return { reward: 100, category: "URGENTE", color: "#f87171", isCritical: true };
@@ -647,7 +646,7 @@ export default function AgendaDiariaPage() {
       {/* Header da Página */}
       <div className="flex flex-col md:flex-row justify-between items-start md:items-end pb-4 border-b border-[#CCA761]/20 relative z-40 gap-6">
         <div className="flex items-start gap-4 md:gap-5 w-full">
-          <div className="relative shrink-0 mt-1">
+          <div className="relative shrink-0 mt-2 md:mt-5 md:mb-[-4px]">
             <div className="w-20 h-20 md:w-24 md:h-24 rounded-2xl border border-[#CCA761]/35 bg-gradient-to-br from-[#CCA761]/20 to-[#0a0a0a] p-[2px] shadow-[0_0_25px_rgba(204,167,97,0.2)]">
               <div className="w-full h-full rounded-[14px] overflow-hidden bg-[#0a0a0a] flex items-center justify-center">
                 {userAvatarUrl ? (

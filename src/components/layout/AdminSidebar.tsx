@@ -235,7 +235,7 @@ export function AdminSidebar() {
             {sidebarMode === "expanded" ? (
               <div className="relative w-full h-full max-w-[310px] max-h-[205px] hover:scale-105 transition-transform duration-500">
                 <Image
-                  src="/logo_premium.png"
+                  src="/logo.png"
                   alt="MAYUS Logo"
                   fill
                   className="object-contain drop-shadow-[0_0_18px_rgba(204,167,97,0.2)]"
