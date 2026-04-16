@@ -599,10 +599,27 @@ export default function AgendaDiariaPage() {
       setNotesOnlyTask(null);
       setNotesOnlyValue("");
     } catch (error: any) {
-      alert(error?.message ? `Não foi possível salvar as anotações: ${error.message}` : "Não foi possível salvar as anotações.");
+      const message = String(error?.message || "");
+      if (message.includes("responsible_notes")) {
+        alert("Este banco ainda não tem o campo de anotações. Rode as migrations pendentes para liberar essa edição.");
+      } else {
+        alert(error?.message ? `Não foi possível salvar as anotações: ${error.message}` : "Não foi possível salvar as anotações.");
+      }
     } finally {
       setIsSavingNotesOnly(false);
     }
+  };
+
+  const hasMissingTaskColumns = (error: any) => {
+    const message = String(error?.message || "");
+    return message.includes("responsible_notes") || message.includes("process_number");
+  };
+
+  const withoutExtendedTaskColumns = (payload: Record<string, any>) => {
+    const sanitized = { ...payload };
+    delete sanitized.process_number;
+    delete sanitized.responsible_notes;
+    return sanitized;
   };
 
   const handleCreatePersonalTask = async () => {
@@ -642,6 +659,17 @@ export default function AgendaDiariaPage() {
           .eq("source_table", "manual_private")
           .is("created_by_agent", null);
         error = response.error;
+
+        if (error && hasMissingTaskColumns(error)) {
+          const legacyResponse = await supabase
+            .from("user_tasks")
+            .update(withoutExtendedTaskColumns(updatePayload))
+            .eq("id", editingTaskId)
+            .eq("assigned_to", currentUserId)
+            .eq("source_table", "manual_private")
+            .is("created_by_agent", null);
+          error = legacyResponse.error;
+        }
       } else {
         const payload = buildAgendaPayloadFromManualTask({
           tenantId,
@@ -662,6 +690,11 @@ export default function AgendaDiariaPage() {
         });
         const response = await supabase.from("user_tasks").insert(payload);
         error = response.error;
+
+        if (error && hasMissingTaskColumns(error)) {
+          const legacyResponse = await supabase.from("user_tasks").insert(withoutExtendedTaskColumns(payload));
+          error = legacyResponse.error;
+        }
       }
 
       if (error) throw error;
@@ -679,14 +712,7 @@ export default function AgendaDiariaPage() {
       setShowCreateTaskModal(false);
       fetchTasks();
     } catch (error: any) {
-      const message = String(error?.message || "");
-      const isMissingColumn = message.includes("responsible_notes") || message.includes("process_number");
-
-      if (isMissingColumn) {
-        alert("Não foi possível salvar porque o banco ainda não foi atualizado com os novos campos de tarefas. Rode as migrations pendentes e tente novamente.");
-      } else {
-        alert(error?.message ? `Não foi possível criar/salvar a tarefa: ${error.message}` : "Não foi possível criar/salvar a tarefa.");
-      }
+      alert(error?.message ? `Não foi possível criar/salvar a tarefa: ${error.message}` : "Não foi possível criar/salvar a tarefa.");
     } finally {
       setIsCreatingTask(false);
     }
