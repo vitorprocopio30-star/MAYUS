@@ -10,7 +10,7 @@ import { DragDropContext, Droppable, Draggable, DropResult } from "@hello-pangea
 import { 
   Plus, Settings, LayoutTemplate, List,
   Tag as TagIcon, User as UserIcon, AlignLeft, X, Trash2,
-  Calendar, CheckCircle2, AlertTriangle, ArrowRight
+  Calendar, CheckCircle2, AlertTriangle, ArrowRight, Copy, Check
 } from "lucide-react";
 import { toast } from "sonner";
 import { TagsInput } from "react-tag-input-component";
@@ -60,6 +60,7 @@ export default function PipelinePage() {
   const [viewMode, setViewMode] = useState<"board" | "list">("board");
   const [isTaskModalOpen, setIsTaskModalOpen] = useState(false);
   const [editingTask, setEditingTask] = useState<Task | null>(null);
+  const [copiedTextKey, setCopiedTextKey] = useState<string | null>(null);
 
   
 const [pendingMove, setPendingMove] = useState<{ 
@@ -98,6 +99,19 @@ const [pendingMove, setPendingMove] = useState<{
     }
     fetchData();
   }, [pipelineId, profile?.tenant_id, supabase]);
+
+  const copyText = async (key: string, text: string) => {
+    if (!text || typeof navigator === "undefined" || !navigator.clipboard) return;
+    try {
+      await navigator.clipboard.writeText(text);
+      setCopiedTextKey(key);
+      setTimeout(() => {
+        setCopiedTextKey((current) => (current === key ? null : current));
+      }, 1200);
+    } catch {
+      // noop
+    }
+  };
 
   const handleCreatePipeline = async () => {
     if (!profile?.tenant_id) return;
@@ -411,6 +425,9 @@ const [pendingMove, setPendingMove] = useState<{
                               const isIdle = timeSinceMove > (48 * 60 * 60 * 1000); // 48 horas em ms
                               // Ociosidade só é perigosa se não estiver ganho nem perdido
                               const showIdleAlert = isIdle && !stage.is_win && !stage.is_loss;
+                              const isUrgent = String(task.urgency || "").toUpperCase() === "URGENTE";
+                              const hasFatalDeadline = Boolean(task.prazo_fatal);
+                              const safeTaskDate = task.prazo_fatal || task.created_at;
 
                               return (
                                 <Draggable key={task.id} draggableId={task.id} index={index}>
@@ -420,9 +437,12 @@ const [pendingMove, setPendingMove] = useState<{
                                       {...provided.draggableProps}
                                       {...provided.dragHandleProps}
                                       onClick={() => openEditTaskModal(task)}
-                                      className={`group relative overflow-hidden px-3.5 py-3 rounded-xl border bg-[#0c0c0c] hover:bg-[#111] cursor-grab active:cursor-grabbing transition-all duration-150 ${showIdleAlert ? 'border-red-500/35' : 'border-zinc-800'}`}
+                                      className={`group relative overflow-hidden px-3.5 py-3 rounded-xl border bg-[#0c0c0c] hover:bg-[#111] cursor-grab active:cursor-grabbing transition-all duration-150 ${(showIdleAlert || isUrgent || hasFatalDeadline) ? 'border-red-500/40' : 'border-zinc-800'}`}
                                       style={{ ...provided.draggableProps.style }}
                                     >
+                                      {(isUrgent || hasFatalDeadline) && (
+                                        <div className="absolute top-0 left-0 right-0 h-0.5 bg-red-500/80" />
+                                      )}
                                       {showIdleAlert && (
                                          <div className="absolute top-0 right-0 px-2 py-0.5 bg-red-500/10 text-red-500 border-b border-l border-red-500/20 rounded-bl-lg text-[9px] font-black uppercase flex items-center gap-1 shadow-sm">
                                            <AlertTriangle size={10} /> Parado {Math.floor(timeSinceMove / (1000 * 60 * 60 * 24))}d
@@ -432,15 +452,71 @@ const [pendingMove, setPendingMove] = useState<{
                                        <div className="absolute top-3 bottom-3 left-0 w-[2px] opacity-70 rounded-r-full" style={{ backgroundColor: stage.color, color: stage.color }} />
                                        {task.client_name && <div className="text-[#CCA761] text-[10px] font-black uppercase tracking-widest mb-1 line-clamp-1 flex items-center gap-1"><UserIcon size={10} /> {task.client_name}</div>}
                                        <h4 className="text-white text-[14px] font-bold tracking-wide mb-1.5 line-clamp-2 group-hover:text-[#CCA761] transition-colors">{task.title}</h4>
-                                      {(task as any).processo_1grau && (
-                                        <p className="text-[10px] font-mono text-zinc-500 mt-1 mb-2 truncate">
-                                          {(task as any).processo_1grau}
-                                        </p>
+
+                                      {task.process_number && (
+                                        <div className="flex items-center gap-1.5 mb-2">
+                                          <p className="text-[10px] font-mono text-zinc-400 truncate">Proc: {task.process_number}</p>
+                                          <button
+                                            type="button"
+                                            onClick={(event) => {
+                                              event.stopPropagation();
+                                              copyText(`process-${task.id}`, task.process_number || "");
+                                            }}
+                                            className="w-5 h-5 rounded border border-[#CCA761]/30 text-[#CCA761] hover:bg-[#CCA761]/10 flex items-center justify-center"
+                                            title="Copiar número do processo"
+                                          >
+                                            {copiedTextKey === `process-${task.id}` ? <Check size={10} /> : <Copy size={10} />}
+                                          </button>
+                                        </div>
                                       )}
 
                                       {task.description && (
-                                        <div className="text-zinc-400 text-[12px] mb-2.5 line-clamp-1 leading-relaxed">
-                                          {task.description.replace(/(<([^>]+)>)/gi, "")}
+                                        <div className="mb-2.5">
+                                          <div className="flex items-center justify-between gap-2 mb-1">
+                                            <span className="text-[9px] uppercase tracking-widest text-zinc-500 font-black">Resumo</span>
+                                            <button
+                                              type="button"
+                                              onClick={(event) => {
+                                                event.stopPropagation();
+                                                copyText(`summary-${task.id}`, task.description?.replace(/(<([^>]+)>)/gi, " ").trim() || "");
+                                              }}
+                                              className="w-5 h-5 rounded border border-[#CCA761]/30 text-[#CCA761] hover:bg-[#CCA761]/10 flex items-center justify-center"
+                                              title="Copiar resumo"
+                                            >
+                                              {copiedTextKey === `summary-${task.id}` ? <Check size={10} /> : <Copy size={10} />}
+                                            </button>
+                                          </div>
+                                          <div className="text-zinc-400 text-[12px] line-clamp-1 leading-relaxed">
+                                            {task.description.replace(/(<([^>]+)>)/gi, "")}
+                                          </div>
+                                        </div>
+                                      )}
+
+                                      {task.responsible_notes && (
+                                        <div className="mb-2.5">
+                                          <div className="flex items-center justify-between gap-2 mb-1">
+                                            <span className="text-[9px] uppercase tracking-widest text-zinc-500 font-black">Anotações</span>
+                                            <button
+                                              type="button"
+                                              onClick={(event) => {
+                                                event.stopPropagation();
+                                                copyText(`notes-${task.id}`, task.responsible_notes || "");
+                                              }}
+                                              className="w-5 h-5 rounded border border-[#CCA761]/30 text-[#CCA761] hover:bg-[#CCA761]/10 flex items-center justify-center"
+                                              title="Copiar anotações"
+                                            >
+                                              {copiedTextKey === `notes-${task.id}` ? <Check size={10} /> : <Copy size={10} />}
+                                            </button>
+                                          </div>
+                                          <div className="text-zinc-400 text-[12px] line-clamp-1 leading-relaxed">
+                                            {task.responsible_notes}
+                                          </div>
+                                        </div>
+                                      )}
+
+                                      {task.prazo_fatal && (
+                                        <div className="mb-2.5 inline-flex items-center gap-1.5 text-[10px] font-black uppercase tracking-widest px-2 py-1 rounded border border-red-500/40 bg-red-500/10 text-red-400">
+                                          <AlertTriangle size={10} /> Fatal: {new Date(task.prazo_fatal).toLocaleDateString('pt-BR')}
                                         </div>
                                       )}
                                        
@@ -460,7 +536,7 @@ const [pendingMove, setPendingMove] = useState<{
                                        <div className="flex items-center justify-between text-[11px] text-zinc-500 mt-auto pt-2 border-t border-zinc-800/70">
                                         <div className="flex items-center gap-1.5">
                                           <Calendar size={12} />
-                                          {new Date(task.created_at).toLocaleDateString('pt-BR', { day: '2-digit', month: 'short' })}
+                                          {new Date(safeTaskDate).toLocaleDateString('pt-BR', { day: '2-digit', month: 'short' })}
                                           {task.drive_link && (
                                             <a href={task.drive_link} target="_blank" rel="noopener noreferrer" className="ml-1 text-[#4285F4] hover:brightness-125 transition-all" title="Abrir Google Drive" onClick={e => e.stopPropagation()}>
                                               <svg className="w-3.5 h-3.5" viewBox="0 0 24 24" fill="currentColor"><path d="M7 15l4.5-8h9L16 15H7zm-1.5-1l4.5-8L5.5 2 1 10l4.5 4zm6 1l-1.5 3h9l1.5-3h-9z" /></svg>
@@ -527,6 +603,22 @@ const [pendingMove, setPendingMove] = useState<{
                                 </a>
                              )}
                           </div>
+                          {task.process_number && (
+                            <div className="flex items-center gap-2 mb-1">
+                              <span className="text-[10px] text-zinc-400 font-mono">Proc: {task.process_number}</span>
+                              <button
+                                type="button"
+                                onClick={(event) => {
+                                  event.stopPropagation();
+                                  copyText(`list-process-${task.id}`, task.process_number || "");
+                                }}
+                                className="w-5 h-5 rounded border border-[#CCA761]/30 text-[#CCA761] hover:bg-[#CCA761]/10 flex items-center justify-center"
+                                title="Copiar número do processo"
+                              >
+                                {copiedTextKey === `list-process-${task.id}` ? <Check size={10} /> : <Copy size={10} />}
+                              </button>
+                            </div>
+                          )}
                           <div className="flex gap-1.5 flex-wrap">
                              {task.sector && (() => {
                                const [name, color] = task.sector.includes('|') ? task.sector.split('|') : [task.sector, '#60a5fa'];
@@ -601,6 +693,9 @@ const [pendingMove, setPendingMove] = useState<{
             setTasks([...tasks, updatedTask]);
           } else {
             setTasks(tasks.map(t => t.id === updatedTask.id ? updatedTask : t));
+          }
+          if (updatedTask.assigned_to) {
+            router.push(`/dashboard/agenda?assignee=${updatedTask.assigned_to}`);
           }
         }}
         onDeleteSuccess={(taskId) => {

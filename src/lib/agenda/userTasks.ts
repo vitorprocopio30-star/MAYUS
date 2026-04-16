@@ -5,7 +5,6 @@ export const URGENCY_ORDER: Record<string, number> = {
   ATENCAO: 2,
   ATENÇÃO: 2,
   ROTINA: 3,
-  TRANQUILO: 4,
 };
 
 export type AgendaTaskRecord = {
@@ -31,6 +30,7 @@ export type AgendaTaskRecord = {
   color?: string | null;
   client_name?: string | null;
   process_number?: string | null;
+  responsible_notes?: string | null;
   author_name?: string | null;
   visibility?: "private" | "global" | null;
   task_kind?: "task" | "mission" | null;
@@ -72,8 +72,7 @@ export function inferUrgencyFromDeadline(deadline?: string | null) {
 
   if (diffDays <= 0) return "URGENTE";
   if (diffDays <= 2) return "ATENCAO";
-  if (diffDays <= 7) return "ROTINA";
-  return "TRANQUILO";
+  return "ROTINA";
 }
 
 export function inferUrgencyFromText(...values: Array<string | null | undefined>) {
@@ -86,15 +85,13 @@ export function inferUrgencyFromText(...values: Array<string | null | undefined>
 
   if (/(urgente|prazo fatal|hoje|liminar|audiencia)/.test(text)) return "URGENTE";
   if (/(atencao|atencao|amanha|follow-?up|retorno)/.test(text)) return "ATENCAO";
-  if (/(rotina|crm|cadencia|cadencia|alinhamento)/.test(text)) return "ROTINA";
-  return "TRANQUILO";
+  return "ROTINA";
 }
 
 export function getUrgencyColor(urgency?: string | null) {
   const normalized = normalizeUrgencyLabel(urgency);
   if (normalized === "URGENTE") return "#f87171";
   if (normalized === "ATENCAO") return "#CCA761";
-  if (normalized === "TRANQUILO") return "#22d3ee";
   return "#9ca3af";
 }
 
@@ -106,14 +103,22 @@ export function getUrgencyLabel(urgency?: string | null) {
 
 export function sortAgendaTasks<T extends AgendaTaskRecord>(tasks: T[]) {
   return [...tasks].sort((a, b) => {
+    const aDone = normalizeAgendaStatus(a.status) === "Concluído";
+    const bDone = normalizeAgendaStatus(b.status) === "Concluído";
+    if (aDone !== bDone) return aDone ? 1 : -1;
+
     const urgencyDiff =
       (URGENCY_ORDER[normalizeUrgencyLabel(a.urgency)] ?? 99) -
       (URGENCY_ORDER[normalizeUrgencyLabel(b.urgency)] ?? 99);
-    if (urgencyDiff !== 0) return urgencyDiff;
 
-    const aTime = a.scheduled_for || a.created_at || "";
-    const bTime = b.scheduled_for || b.created_at || "";
-    return aTime.localeCompare(bTime);
+    const aTime = new Date(a.scheduled_for || a.created_at || 0).getTime();
+    const bTime = new Date(b.scheduled_for || b.created_at || 0).getTime();
+    const validATime = Number.isNaN(aTime) ? Number.MAX_SAFE_INTEGER : aTime;
+    const validBTime = Number.isNaN(bTime) ? Number.MAX_SAFE_INTEGER : bTime;
+    if (validATime !== validBTime) return validATime - validBTime;
+
+    if (urgencyDiff !== 0) return urgencyDiff;
+    return String(a.id || "").localeCompare(String(b.id || ""));
   });
 }
 
@@ -167,6 +172,8 @@ function buildBasePayload(params: {
   expiresAt?: string | null;
   createdByRole?: string | null;
   showOnlyOnDate?: boolean;
+  processNumber?: string | null;
+  responsibleNotes?: string | null;
 }) {
   const urgency = normalizeUrgencyLabel(params.urgency);
   const status = normalizeAgendaStatus(params.status);
@@ -175,9 +182,7 @@ function buildBasePayload(params: {
       ? "urgente"
       : urgency === "ATENCAO"
         ? "alta"
-        : urgency === "TRANQUILO"
-          ? "baixa"
-          : "normal";
+        : "normal";
   const legacyType = String(params.type || "Tarefa").toLowerCase();
   const scheduledFor = params.scheduledFor || new Date().toISOString();
 
@@ -217,6 +222,8 @@ function buildBasePayload(params: {
     type: params.type || "Tarefa",
     color: params.color || getUrgencyColor(urgency),
     client_name: params.clientName || null,
+    process_number: params.processNumber || null,
+    responsible_notes: params.responsibleNotes || null,
   };
 }
 
@@ -255,9 +262,11 @@ export function buildAgendaPayloadFromProcessTask(params: {
   createdBy?: string | null;
   createdByAgent?: string | null;
 }) {
-  const urgency = params.task?.prazo_fatal
-    ? inferUrgencyFromDeadline(params.task.prazo_fatal)
-    : inferUrgencyFromText(params.task?.title, params.task?.description, params.task?.demanda);
+  const urgency = params.task?.urgency
+    ? normalizeUrgencyLabel(params.task.urgency)
+    : params.task?.prazo_fatal
+      ? inferUrgencyFromDeadline(params.task.prazo_fatal)
+      : inferUrgencyFromText(params.task?.title, params.task?.description, params.task?.demanda);
 
   return buildBasePayload({
     tenantId: params.tenantId,
@@ -275,6 +284,8 @@ export function buildAgendaPayloadFromProcessTask(params: {
     category: getUrgencyLabel(urgency),
     type: "Processo",
     clientName: params.task.client_name || null,
+    processNumber: params.task.process_number || params.task.processo_1grau || null,
+    responsibleNotes: params.task.responsible_notes || null,
     visibility: "global",
     taskKind: "task",
   });
@@ -338,6 +349,8 @@ export function buildAgendaPayloadFromManualTask(params: {
   visibility: "private" | "global";
   showOnlyOnDate?: boolean;
   rewardCoins?: number;
+  processNumber?: string | null;
+  responsibleNotes?: string | null;
 }) {
   const urgency = normalizeUrgencyLabel(params.urgency);
   return buildBasePayload({
@@ -358,6 +371,8 @@ export function buildAgendaPayloadFromManualTask(params: {
     taskKind: "task",
     showOnlyOnDate: Boolean(params.showOnlyOnDate),
     rewardCoins: params.rewardCoins,
+    processNumber: params.processNumber || null,
+    responsibleNotes: params.responsibleNotes || null,
   });
 }
 

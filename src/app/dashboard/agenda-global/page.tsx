@@ -2,7 +2,7 @@
 
 import { useEffect, useState, useMemo } from "react";
 import { createClient } from "@/lib/supabase/client";
-import { Clock, AlertCircle, Star, Wand2, Calendar, CheckCircle2, Trophy, Sword, Lock, Target, Coins, Crown } from "lucide-react";
+import { Clock, AlertCircle, Star, Wand2, Calendar, CheckCircle2, Trophy, Sword, Lock, Target, Coins, Crown, Copy, Check } from "lucide-react";
 import Link from "next/link";
 import { Montserrat, Cormorant_Garamond } from "next/font/google";
 import { useGamification } from "@/hooks/useGamification";
@@ -29,6 +29,7 @@ export default function AgendaGlobalPage() {
   const [isLoading, setIsLoading] = useState(true);
   const [viewerName, setViewerName] = useState("Você");
   const [activeMission, setActiveMission] = useState<any | null>(null);
+  const [copiedTextKey, setCopiedTextKey] = useState<string | null>(null);
   
   // Mock do departamento real do profissional logado
   const userDepartment: string = 'Comercial';
@@ -179,6 +180,20 @@ export default function AgendaGlobalPage() {
       .eq('id', task.id);
 
     setEvents(prev => prev.map(ev => ev.id === task.id ? { ...ev, assigned_to: user?.id ?? null, assigned_name_snapshot: viewerName, person: viewerName, stolen: true } : ev));
+  };
+
+  const copyTaskText = async (event: React.MouseEvent, key: string, text?: string | null) => {
+    event.stopPropagation();
+    if (!text || typeof navigator === "undefined" || !navigator.clipboard) return;
+    try {
+      await navigator.clipboard.writeText(text);
+      setCopiedTextKey(key);
+      setTimeout(() => {
+        setCopiedTextKey((current) => (current === key ? null : current));
+      }, 1200);
+    } catch {
+      // noop
+    }
   };
 
   const pendingEvents = useMemo(() => events.filter((e) => e.status !== 'Concluído'), [events]);
@@ -466,15 +481,18 @@ export default function AgendaGlobalPage() {
                 ) : pendingEvents.map((ev, i) => {
                   const active = ev.active || false;
                   const bdgColor = ev.color || '#CCA761';
+                  const isUrgentTask = String(ev.urgency || '').toUpperCase() === 'URGENTE';
 
-                  const cardBgClass = 'bg-[#050505] hover:bg-[#0a0a0a] opacity-80 hover:opacity-100';
+                  const cardBgClass = isUrgentTask
+                    ? 'bg-[#140909] hover:bg-[#1a0b0b] opacity-95 hover:opacity-100 border-red-500/40 shadow-[0_0_20px_rgba(239,68,68,0.15)]'
+                    : 'bg-[#050505] hover:bg-[#0a0a0a] opacity-80 hover:opacity-100';
 
                   return (
                     <div key={`pend-${i}`} className={`group relative transition-all duration-500`}>
                       <div
                         onClick={() => toggleStatus(ev)}
                         className={`flex flex-col justify-start gap-4 p-4 rounded-xl border transition-all duration-500 cursor-pointer relative ${cardBgClass} min-h-[160px] h-full mt-4 group-hover:-translate-y-1 shadow-lg hover:shadow-[0_10px_30px_rgba(0,0,0,0.5)]`}
-                        style={{ borderColor: `${bdgColor}50`, borderTopWidth: '2px', borderTopColor: bdgColor }}
+                        style={{ borderColor: isUrgentTask ? 'rgba(239,68,68,0.45)' : `${bdgColor}50`, borderTopWidth: '2px', borderTopColor: isUrgentTask ? '#ef4444' : bdgColor }}
                       >
                         {/* Alfinete Push Pin Misto (Realista 3D com Neon Sutil) */}
                         <div className="absolute -top-6 left-1/2 -translate-x-1/2 z-30 transform group-hover:-translate-y-1 group-hover:scale-110 transition-all duration-300 shadow-transparent flex items-end justify-center" style={{ filter: `drop-shadow(0 6px 4px rgba(0,0,0,0.5)) drop-shadow(0 0 8px ${bdgColor}80)` }}>
@@ -533,7 +551,37 @@ export default function AgendaGlobalPage() {
                              )}
                            </div>
                            <h4 className={`text-sm font-bold tracking-wide transition-colors duration-500 text-white line-clamp-3 leading-snug break-words pr-2 mt-1 ${ev.stolen ? 'text-[#ef4444]' : ''}`}>{ev.title}</h4>
-                        </div>
+                           {ev.description && (
+                             <div className="mt-1.5 p-2 rounded border border-white/10 bg-black/20">
+                               <div className="flex items-center justify-between gap-2 mb-1">
+                                 <span className="text-[8px] uppercase tracking-widest text-zinc-500 font-black">Resumo</span>
+                                 <button
+                                   onClick={(event) => copyTaskText(event, `global-summary-${ev.id}`, String(ev.description || ''))}
+                                   className="inline-flex items-center justify-center w-5 h-5 rounded border border-[#CCA761]/30 text-[#CCA761] hover:bg-[#CCA761]/10"
+                                   title="Copiar resumo"
+                                 >
+                                   {copiedTextKey === `global-summary-${ev.id}` ? <Check size={10} /> : <Copy size={10} />}
+                                 </button>
+                               </div>
+                               <p className="text-[10px] text-zinc-400 line-clamp-2">{String(ev.description || '')}</p>
+                             </div>
+                           )}
+                           {ev.responsible_notes && (
+                             <div className="mt-1.5 p-2 rounded border border-white/10 bg-black/20">
+                               <div className="flex items-center justify-between gap-2 mb-1">
+                                 <span className="text-[8px] uppercase tracking-widest text-zinc-500 font-black">Anotações</span>
+                                 <button
+                                   onClick={(event) => copyTaskText(event, `global-notes-${ev.id}`, String(ev.responsible_notes || ''))}
+                                   className="inline-flex items-center justify-center w-5 h-5 rounded border border-[#CCA761]/30 text-[#CCA761] hover:bg-[#CCA761]/10"
+                                   title="Copiar anotações"
+                                 >
+                                   {copiedTextKey === `global-notes-${ev.id}` ? <Check size={10} /> : <Copy size={10} />}
+                                 </button>
+                               </div>
+                               <p className="text-[10px] text-zinc-400 line-clamp-2">{String(ev.responsible_notes || '')}</p>
+                             </div>
+                           )}
+                         </div>
                         
                         {/* Steal Task Overlay System */}
                         {ev.person !== "Você" && ev.status === "Em andamento" && (

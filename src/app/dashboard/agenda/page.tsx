@@ -47,13 +47,16 @@ export default function AgendaDiariaPage() {
   const [editingTaskId, setEditingTaskId] = useState<string | null>(null);
   const [newTaskTitle, setNewTaskTitle] = useState("");
   const [newTaskDescription, setNewTaskDescription] = useState("");
-  const [newTaskUrgency, setNewTaskUrgency] = useState<"URGENTE" | "ATENCAO" | "ROTINA" | "TRANQUILO">("ROTINA");
+  const [newTaskResponsibleNotes, setNewTaskResponsibleNotes] = useState("");
+  const [newTaskProcessNumber, setNewTaskProcessNumber] = useState("");
+  const [newTaskUrgency, setNewTaskUrgency] = useState<"URGENTE" | "ATENCAO" | "ROTINA">("ROTINA");
   const [newTaskType, setNewTaskType] = useState<"Tarefa" | "Prazo" | "Processo" | "CRM">("Tarefa");
   const [newTaskVisibility, setNewTaskVisibility] = useState<"private" | "global">("private");
   const [newTaskAssignedTo, setNewTaskAssignedTo] = useState<string>("");
   const [newTaskReminderOnly, setNewTaskReminderOnly] = useState(false);
   const [newTaskScheduledFor, setNewTaskScheduledFor] = useState(formatDateKey(new Date()));
   const [isCreatingTask, setIsCreatingTask] = useState(false);
+  const [copiedTextKey, setCopiedTextKey] = useState<string | null>(null);
   const supabase = createClient();
 
   const MOTIVATIONAL_QUOTES = [
@@ -164,9 +167,13 @@ export default function AgendaDiariaPage() {
       .eq("tenant_id", profile.tenant_id)
       .neq("source_table", "manual_validation");
 
+    const assigneeParam = typeof window !== "undefined"
+      ? new URLSearchParams(window.location.search).get("assignee")
+      : null;
+    const visibleAssignee = assigneeParam || user.id;
     const scopedTasks = (userTasks || []).filter((task: any) => {
       const visibility = task.visibility || "global";
-      const isMine = task.assigned_to === user.id && (visibility === "private" || visibility === "global");
+      const isMine = task.assigned_to === visibleAssignee && (visibility === "private" || visibility === "global");
       const isClaimableMission = task.task_kind === "mission" && visibility === "global" && !task.assigned_to;
       if (!isMine && !isClaimableMission) return false;
 
@@ -444,6 +451,20 @@ export default function AgendaDiariaPage() {
     }
   };
 
+  const copyTaskText = async (event: React.MouseEvent, key: string, text?: string | null) => {
+    event.stopPropagation();
+    if (!text || typeof navigator === "undefined" || !navigator.clipboard) return;
+    try {
+      await navigator.clipboard.writeText(text);
+      setCopiedTextKey(key);
+      setTimeout(() => {
+        setCopiedTextKey((current) => (current === key ? null : current));
+      }, 1200);
+    } catch {
+      // noop
+    }
+  };
+
   const buildInsightText = useMemo(() => {
     const pending = events.filter((task) => task.status !== "Concluído").length;
     const urgent = events.filter((task) => String(task.urgency).toUpperCase() === "URGENTE" && task.status !== "Concluído").length;
@@ -477,10 +498,9 @@ export default function AgendaDiariaPage() {
     };
   }, [visibleEvents, criticalDeadlines, currentUserId]);
 
-  const urgencyToMeta = (urgency: "URGENTE" | "ATENCAO" | "ROTINA" | "TRANQUILO") => {
+  const urgencyToMeta = (urgency: "URGENTE" | "ATENCAO" | "ROTINA") => {
     if (urgency === "URGENTE") return { reward: 100, category: "URGENTE", color: "#f87171", isCritical: true };
     if (urgency === "ATENCAO") return { reward: 50, category: "ATENÇÃO", color: "#CCA761", isCritical: false };
-    if (urgency === "TRANQUILO") return { reward: 20, category: "TRANQUILO", color: "#22d3ee", isCritical: false };
     return { reward: 20, category: "ROTINA", color: "#9ca3af", isCritical: false };
   };
 
@@ -497,6 +517,8 @@ export default function AgendaDiariaPage() {
     setEditingTaskId(null);
     setNewTaskTitle("");
     setNewTaskDescription("");
+    setNewTaskResponsibleNotes("");
+    setNewTaskProcessNumber("");
     setNewTaskUrgency("ROTINA");
     setNewTaskType("Tarefa");
     setNewTaskVisibility("private");
@@ -515,6 +537,8 @@ export default function AgendaDiariaPage() {
     setEditingTaskId(task.id);
     setNewTaskTitle(task.title || "");
     setNewTaskDescription(task.description || "");
+    setNewTaskResponsibleNotes(task.responsible_notes || "");
+    setNewTaskProcessNumber(task.process_number || "");
     setNewTaskUrgency((task.urgency || "ROTINA") as any);
     setNewTaskType((task.type || "Tarefa") as any);
     setNewTaskVisibility((task.visibility || "private") as any);
@@ -540,6 +564,8 @@ export default function AgendaDiariaPage() {
         const updatePayload = {
           title: newTaskTitle.trim(),
           description: newTaskDescription.trim() || null,
+          responsible_notes: newTaskResponsibleNotes.trim() || null,
+          process_number: newTaskProcessNumber.trim() || null,
           urgency: newTaskUrgency,
           scheduled_for: scheduledFor,
           type: newTaskType,
@@ -564,6 +590,8 @@ export default function AgendaDiariaPage() {
           tenantId,
           title: newTaskTitle.trim(),
           description: newTaskDescription.trim() || null,
+          responsibleNotes: newTaskResponsibleNotes.trim() || null,
+          processNumber: newTaskProcessNumber.trim() || null,
           assignedTo,
           assignedName,
           createdBy: currentUserId,
@@ -583,6 +611,8 @@ export default function AgendaDiariaPage() {
 
       setNewTaskTitle("");
       setNewTaskDescription("");
+      setNewTaskResponsibleNotes("");
+      setNewTaskProcessNumber("");
       setNewTaskUrgency("ROTINA");
       setNewTaskType("Tarefa");
       setNewTaskVisibility("private");
@@ -894,14 +924,17 @@ export default function AgendaDiariaPage() {
                   const isDone = ev.status === 'Concluído';
                   const active = ev.active || false;
                   const bdgColor = ev.color || '#CCA761';
+                  const isUrgentTask = String(ev.urgency || '').toUpperCase() === 'URGENTE';
 
                   // Lógica Visual: Escura quando pendente, Verde + Vibrante quando concluída. Cor do badge mantém.
                   const cardBgClass = isDone
                     ? 'border-[#4ade80]/30 bg-[#111] hover:bg-[#151515] shadow-[0_0_20px_rgba(74,222,128,0.05)]' // Feito -> Fundo premium com borda verde
-                    : 'border-white/5 bg-[#050505] hover:bg-[#0a0a0a] opacity-80 hover:opacity-100'; // Pendente -> Escuro para focar no tempo
+                    : isUrgentTask
+                      ? 'border-red-500/40 bg-[#140909] hover:bg-[#1a0b0b] opacity-95 hover:opacity-100 shadow-[0_0_20px_rgba(239,68,68,0.15)]'
+                      : 'border-white/5 bg-[#050505] hover:bg-[#0a0a0a] opacity-80 hover:opacity-100'; // Pendente -> Escuro para focar no tempo
 
-                  const leftLineColor = isDone ? '#4ade80' : 'rgba(255,255,255,0.1)';
-                  const leftGlaow = isDone ? '0 0 10px rgba(74,222,128,0.5)' : 'none';
+                  const leftLineColor = isDone ? '#4ade80' : isUrgentTask ? '#ef4444' : 'rgba(255,255,255,0.1)';
+                  const leftGlaow = isDone ? '0 0 10px rgba(74,222,128,0.5)' : isUrgentTask ? '0 0 10px rgba(239,68,68,0.5)' : 'none';
 
                   return (
                     <div key={i} className={`group relative flex items-center gap-4 transition-all duration-500 ${isDone ? '-translate-y-0.5' : ''}`}>
@@ -977,6 +1010,38 @@ export default function AgendaDiariaPage() {
                              {ev.author_name && (
                                <p className="text-[10px] text-gray-400 font-semibold mt-1">Autor: {ev.author_name}</p>
                              )}
+
+                              {ev.description && (
+                                <div className="mt-2 p-2 rounded border border-white/10 bg-black/20 max-w-lg">
+                                  <div className="flex items-center justify-between gap-2 mb-1">
+                                    <span className="text-[9px] uppercase tracking-widest text-zinc-500 font-black">Resumo</span>
+                                    <button
+                                      onClick={(event) => copyTaskText(event, `summary-${ev.id}`, String(ev.description || ""))}
+                                      className="inline-flex items-center justify-center w-5 h-5 rounded border border-[#CCA761]/30 text-[#CCA761] hover:bg-[#CCA761]/10"
+                                      title="Copiar resumo"
+                                    >
+                                      {copiedTextKey === `summary-${ev.id}` ? <Check size={10} /> : <Copy size={10} />}
+                                    </button>
+                                  </div>
+                                  <p className="text-[10px] text-zinc-400 line-clamp-2">{String(ev.description || "")}</p>
+                                </div>
+                              )}
+
+                              {ev.responsible_notes && (
+                                <div className="mt-2 p-2 rounded border border-white/10 bg-black/20 max-w-lg">
+                                  <div className="flex items-center justify-between gap-2 mb-1">
+                                    <span className="text-[9px] uppercase tracking-widest text-zinc-500 font-black">Anotações</span>
+                                    <button
+                                      onClick={(event) => copyTaskText(event, `notes-${ev.id}`, String(ev.responsible_notes || ""))}
+                                      className="inline-flex items-center justify-center w-5 h-5 rounded border border-[#CCA761]/30 text-[#CCA761] hover:bg-[#CCA761]/10"
+                                      title="Copiar anotações"
+                                    >
+                                      {copiedTextKey === `notes-${ev.id}` ? <Check size={10} /> : <Copy size={10} />}
+                                    </button>
+                                  </div>
+                                  <p className="text-[10px] text-zinc-400 line-clamp-2">{String(ev.responsible_notes || "")}</p>
+                                </div>
+                              )}
                               
                              {/* CADEADO VISUAL (Trancada) */}
                              {gamificationEnabled && ev.status === 'Em andamento' && (
@@ -1073,15 +1138,56 @@ export default function AgendaDiariaPage() {
               <textarea
                 value={newTaskDescription}
                 onChange={(e) => setNewTaskDescription(e.target.value)}
-                placeholder="Descricao opcional"
+                placeholder="Resumo da tarefa"
                 className="w-full bg-[#151515] border border-white/10 rounded-lg px-3 py-2 text-sm text-white min-h-[90px]"
               />
+              <div className="flex justify-end">
+                <button
+                  type="button"
+                  onClick={(event) => copyTaskText(event, "modal-summary", newTaskDescription)}
+                  className="inline-flex items-center gap-1 text-[10px] text-[#CCA761] border border-[#CCA761]/30 rounded px-2 py-0.5 hover:bg-[#CCA761]/10"
+                >
+                  {copiedTextKey === "modal-summary" ? <Check size={11} /> : <Copy size={11} />}
+                  Copiar resumo
+                </button>
+              </div>
+              <textarea
+                value={newTaskResponsibleNotes}
+                onChange={(e) => setNewTaskResponsibleNotes(e.target.value)}
+                placeholder="Anotações do responsável"
+                className="w-full bg-[#151515] border border-white/10 rounded-lg px-3 py-2 text-sm text-white min-h-[90px]"
+              />
+              <div className="flex justify-end">
+                <button
+                  type="button"
+                  onClick={(event) => copyTaskText(event, "modal-notes", newTaskResponsibleNotes)}
+                  className="inline-flex items-center gap-1 text-[10px] text-[#CCA761] border border-[#CCA761]/30 rounded px-2 py-0.5 hover:bg-[#CCA761]/10"
+                >
+                  {copiedTextKey === "modal-notes" ? <Check size={11} /> : <Copy size={11} />}
+                  Copiar anotações
+                </button>
+              </div>
+              <input
+                value={newTaskProcessNumber}
+                onChange={(e) => setNewTaskProcessNumber(e.target.value)}
+                placeholder="Número do processo (opcional)"
+                className="w-full bg-[#151515] border border-white/10 rounded-lg px-3 py-2 text-sm text-white"
+              />
+              <div className="flex justify-end">
+                <button
+                  type="button"
+                  onClick={(event) => copyTaskText(event, "modal-process", newTaskProcessNumber)}
+                  className="inline-flex items-center gap-1 text-[10px] text-[#CCA761] border border-[#CCA761]/30 rounded px-2 py-0.5 hover:bg-[#CCA761]/10"
+                >
+                  {copiedTextKey === "modal-process" ? <Check size={11} /> : <Copy size={11} />}
+                  Copiar número
+                </button>
+              </div>
               <div className="grid grid-cols-1 sm:grid-cols-3 gap-3">
                 <select value={newTaskUrgency} onChange={(e) => setNewTaskUrgency(e.target.value as any)} className="bg-[#151515] border border-white/10 rounded-lg px-3 py-2 text-sm text-white">
                   <option value="URGENTE">Urgente</option>
                   <option value="ATENCAO">Atencao</option>
                   <option value="ROTINA">Rotina</option>
-                  <option value="TRANQUILO">Tranquilo</option>
                 </select>
                 <select value={newTaskType} onChange={(e) => setNewTaskType(e.target.value as any)} className="bg-[#151515] border border-white/10 rounded-lg px-3 py-2 text-sm text-white">
                   <option value="Tarefa">Tarefa</option>

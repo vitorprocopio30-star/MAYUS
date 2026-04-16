@@ -1,6 +1,6 @@
 import { useState, useEffect } from "react";
 import dynamic from "next/dynamic";
-import { User as UserIcon, AlignLeft, X, Trash2, Calendar, CheckCircle2, ArrowRight, MessageCircle, Tag as TagIcon, Plus } from "lucide-react";
+import { User as UserIcon, AlignLeft, X, Trash2, Calendar, CheckCircle2, ArrowRight, MessageCircle, Tag as TagIcon, Plus, Copy, Check } from "lucide-react";
 import { toast } from "sonner";
 import { createClient } from "@/lib/supabase/client";
 import {
@@ -37,7 +37,10 @@ export default function ProcessosTaskModal({
 
   // Task Form State
   const [taskTitle, setTaskTitle] = useState("");
+  const [taskProcessNumber, setTaskProcessNumber] = useState("");
   const [taskDesc, setTaskDesc] = useState("");
+  const [taskResponsibleNotes, setTaskResponsibleNotes] = useState("");
+  const [taskUrgency, setTaskUrgency] = useState<"URGENTE" | "ATENCAO" | "ROTINA">("ROTINA");
   const [taskStageId, setTaskStageId] = useState("");
   const [taskAssignedTo, setTaskAssignedTo] = useState<string | null>(null);
   const [taskTags, setTaskTags] = useState<string[]>([]);
@@ -58,6 +61,9 @@ export default function ProcessosTaskModal({
   const [taskLiminarDeferida, setTaskLiminarDeferida] = useState(false);
   const [taskClientName, setTaskClientName] = useState("");
   const [taskDriveLink, setTaskDriveLink] = useState("");
+  const [availableTags, setAvailableTags] = useState<string[]>([]);
+  const [newTagName, setNewTagName] = useState("");
+  const [copiedKey, setCopiedKey] = useState<string | null>(null);
   
   // Pending Move State for Win/Loss
 
@@ -71,7 +77,10 @@ export default function ProcessosTaskModal({
     if (isOpen) {
       if (editingTask) {
         setTaskTitle(editingTask.title);
+        setTaskProcessNumber(editingTask.process_number || "");
         setTaskDesc(editingTask.description || "");
+        setTaskResponsibleNotes(editingTask.responsible_notes || "");
+        setTaskUrgency(editingTask.urgency || "ROTINA");
         setTaskStageId(editingTask.stage_id);
         setTaskAssignedTo(editingTask.assigned_to);
         setTaskTags(editingTask.tags || []);
@@ -93,7 +102,10 @@ export default function ProcessosTaskModal({
         setTaskDriveLink(editingTask.drive_link || "");
       } else {
         setTaskTitle("");
+        setTaskProcessNumber("");
         setTaskDesc("");
+        setTaskResponsibleNotes("");
+        setTaskUrgency("ROTINA");
         setTaskStageId(defaultStageId || (stages[0]?.id ?? ""));
         setTaskAssignedTo(null);
         setTaskTags([]);
@@ -114,8 +126,58 @@ export default function ProcessosTaskModal({
         setTaskClientName("");
         setTaskDriveLink("");
       }
+
+      setAvailableTags(pipeline?.tags || []);
+      setNewTagName("");
+      setCopiedKey(null);
     }
-  }, [isOpen, editingTask, defaultStageId, stages]);
+  }, [isOpen, editingTask, defaultStageId, stages, pipeline?.tags]);
+
+  const copyText = async (key: string, value: string) => {
+    if (!value || typeof navigator === "undefined" || !navigator.clipboard) return;
+    try {
+      await navigator.clipboard.writeText(value);
+      setCopiedKey(key);
+      setTimeout(() => {
+        setCopiedKey((current) => (current === key ? null : current));
+      }, 1200);
+    } catch {
+      // noop
+    }
+  };
+
+  const handleCreateTag = async () => {
+    const tagName = newTagName.trim();
+    if (!tagName || !pipeline?.id) return;
+
+    const normalized = tagName.toLowerCase();
+    const alreadyExists = availableTags.some((tag) => {
+      const [name] = tag.includes("|") ? tag.split("|") : [tag];
+      return name.trim().toLowerCase() === normalized;
+    });
+    if (alreadyExists) {
+      toast.error("Essa etiqueta já existe neste processo.");
+      return;
+    }
+
+    const value = `${tagName}|${tagColor}`;
+    const nextTags = [...availableTags, value];
+
+    const { error } = await supabase
+      .from("process_pipelines")
+      .update({ tags: nextTags })
+      .eq("id", pipeline.id);
+
+    if (error) {
+      toast.error("Não foi possível criar a etiqueta.");
+      return;
+    }
+
+    setAvailableTags(nextTags);
+    setTaskTags((prev) => (prev.includes(value) ? prev : [...prev, value]));
+    setNewTagName("");
+    toast.success("Etiqueta criada.");
+  };
 
   const handeSaveTask = async () => {
     if (!taskTitle.trim()) { toast.error("Título é obrigatório."); return; }
@@ -126,7 +188,10 @@ export default function ProcessosTaskModal({
       if (editingTask) {
         const { data, error } = await supabase.from("process_tasks").update({
           title: taskTitle,
+          process_number: taskProcessNumber || null,
           description: taskDesc,
+          responsible_notes: taskResponsibleNotes || null,
+          urgency: taskUrgency,
           stage_id: taskStageId,
           assigned_to: taskAssignedTo,
           tags: taskTags,
@@ -170,7 +235,10 @@ export default function ProcessosTaskModal({
           pipeline_id: pipeline!.id,
           stage_id: taskStageId,
           title: taskTitle,
+          process_number: taskProcessNumber || null,
           description: taskDesc,
+          responsible_notes: taskResponsibleNotes || null,
+          urgency: taskUrgency,
           position_index: 0,
           assigned_to: taskAssignedTo,
           tags: taskTags,
@@ -270,13 +338,42 @@ export default function ProcessosTaskModal({
             <div className="flex-1 overflow-y-auto p-6 no-scrollbar grid grid-cols-1 lg:grid-cols-4 gap-8">
               <div className="lg:col-span-3 space-y-6">
                 <div className="space-y-1.5">
-                  <label className="text-xs font-bold text-gray-400 uppercase tracking-widest">Nº do Processo</label>
+                  <label className="text-xs font-bold text-gray-400 uppercase tracking-widest">Título da Tarefa</label>
                   <input type="text" value={taskTitle} onChange={e => setTaskTitle(e.target.value)}
                     className="w-full bg-[#1a1a1a] border border-[#2a2a2a] text-[#CCA761] rounded-lg px-4 py-3 text-lg font-bold focus:outline-none focus:border-[#CCA761]/50 placeholder-gray-700 transition-colors"
-                    placeholder="Ex: 0000000-00.0000.0.00.0000" autoFocus />
+                    placeholder="Ex: Revisar petição de tutela" autoFocus />
                 </div>
 
                 <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
+                  <div className="space-y-1.5">
+                    <label className="text-xs font-bold text-gray-400 uppercase tracking-widest flex items-center justify-between gap-2">
+                      <span className="flex items-center gap-2"><Calendar size={14} /> Número do Processo (Opcional)</span>
+                      <button
+                        type="button"
+                        onClick={() => copyText("process_number", taskProcessNumber)}
+                        className="inline-flex items-center gap-1 text-[10px] text-[#CCA761] border border-[#CCA761]/30 rounded px-2 py-0.5 hover:bg-[#CCA761]/10"
+                      >
+                        {copiedKey === "process_number" ? <Check size={11} /> : <Copy size={11} />}
+                        Copiar
+                      </button>
+                    </label>
+                    <input type="text" value={taskProcessNumber} onChange={e => setTaskProcessNumber(e.target.value)}
+                      className="w-full bg-[#1a1a1a] border border-[#2a2a2a] text-white rounded-lg px-4 py-3 text-sm focus:outline-none focus:border-[#CCA761]/50 placeholder-gray-700 transition-colors"
+                      placeholder="Ex: 0000000-00.0000.0.00.0000" />
+                  </div>
+                  <div className="space-y-1.5">
+                    <label className="text-xs font-bold text-gray-400 uppercase tracking-widest">Urgência</label>
+                    <select
+                      value={taskUrgency}
+                      onChange={e => setTaskUrgency(e.target.value as "URGENTE" | "ATENCAO" | "ROTINA")}
+                      className="w-full bg-[#1a1a1a] border border-[#2a2a2a] text-white rounded-lg px-4 py-3 text-sm focus:outline-none focus:border-[#CCA761]/50 transition-colors appearance-none cursor-pointer"
+                    >
+                      <option value="URGENTE">Urgente</option>
+                      <option value="ATENCAO">Atenção</option>
+                      <option value="ROTINA">Rotina</option>
+                    </select>
+                  </div>
+
                   <div className="space-y-1.5">
                     <label className="text-xs font-bold text-gray-400 uppercase tracking-widest flex items-center gap-2">
                        <UserIcon size={14} /> Nome do Cliente
@@ -380,9 +477,19 @@ export default function ProcessosTaskModal({
                 </div>
 
                 <div className="space-y-1.5 mt-6">
-                  <label className="text-xs font-bold text-gray-400 uppercase tracking-widest flex items-center gap-2">
-                    <AlignLeft size={14} /> Resumo do Caso
-                  </label>
+                  <div className="flex items-center justify-between gap-2">
+                    <label className="text-xs font-bold text-gray-400 uppercase tracking-widest flex items-center gap-2">
+                      <AlignLeft size={14} /> Resumo
+                    </label>
+                    <button
+                      type="button"
+                      onClick={() => copyText("summary", taskDesc.replace(/<[^>]+>/g, " ").trim())}
+                      className="inline-flex items-center gap-1 text-[10px] text-[#CCA761] border border-[#CCA761]/30 rounded px-2 py-0.5 hover:bg-[#CCA761]/10"
+                    >
+                      {copiedKey === "summary" ? <Check size={11} /> : <Copy size={11} />}
+                      Copiar
+                    </button>
+                  </div>
                   <div className="prose prose-invert max-w-none">
                     <ReactQuill 
                       theme="snow"
@@ -392,6 +499,28 @@ export default function ProcessosTaskModal({
                       placeholder="Adicione informações, observações e detalhes do processo..."
                     />
                   </div>
+                </div>
+
+                <div className="space-y-1.5 mt-6">
+                  <div className="flex items-center justify-between gap-2">
+                    <label className="text-xs font-bold text-gray-400 uppercase tracking-widest flex items-center gap-2">
+                      <AlignLeft size={14} /> Anotações do Responsável
+                    </label>
+                    <button
+                      type="button"
+                      onClick={() => copyText("responsible_notes", taskResponsibleNotes)}
+                      className="inline-flex items-center gap-1 text-[10px] text-[#CCA761] border border-[#CCA761]/30 rounded px-2 py-0.5 hover:bg-[#CCA761]/10"
+                    >
+                      {copiedKey === "responsible_notes" ? <Check size={11} /> : <Copy size={11} />}
+                      Copiar
+                    </button>
+                  </div>
+                  <textarea
+                    value={taskResponsibleNotes}
+                    onChange={(e) => setTaskResponsibleNotes(e.target.value)}
+                    className="w-full min-h-[110px] bg-[#1a1a1a] border border-[#2a2a2a] text-white rounded-lg px-4 py-3 text-sm focus:outline-none focus:border-[#CCA761]/50 placeholder-gray-700 transition-colors"
+                    placeholder="Anotações operacionais do responsável: próximos passos, pendências e observações."
+                  />
                 </div>
               </div>
 
@@ -487,8 +616,8 @@ export default function ProcessosTaskModal({
                   
                   {/* Selector de Etiquetas */}
                   <div className="flex flex-wrap gap-2 mb-2 p-3 bg-[#1a1a1a] border border-[#2a2a2a] rounded-lg min-h-[50px]">
-                    {pipeline?.tags && pipeline.tags.length > 0 ? (
-                      pipeline.tags.map(tag => {
+                    {availableTags.length > 0 ? (
+                      availableTags.map(tag => {
                         const [name, color] = tag.includes('|') ? tag.split('|') : [tag, '#CCA761'];
                         const isSelected = taskTags.includes(tag);
                         return (
@@ -520,8 +649,30 @@ export default function ProcessosTaskModal({
                         );
                       })
                     ) : (
-                      <span className="text-xs text-gray-500 italic flex items-center h-full">Nenhuma etiqueta configurada neste Processo. Acesse as Configurações para criar.</span>
+                      <span className="text-xs text-gray-500 italic flex items-center h-full">Nenhuma etiqueta configurada neste Processo. Crie uma abaixo.</span>
                     )}
+                  </div>
+                  <div className="grid grid-cols-[1fr_auto_auto] gap-2">
+                    <input
+                      type="text"
+                      value={newTagName}
+                      onChange={(e) => setNewTagName(e.target.value)}
+                      placeholder="Nova etiqueta"
+                      className="bg-[#1a1a1a] border border-[#2a2a2a] text-white rounded-lg px-3 py-2 text-xs focus:outline-none focus:border-[#CCA761]/50 placeholder-gray-600"
+                    />
+                    <input
+                      type="color"
+                      value={tagColor}
+                      onChange={(e) => setTagColor(e.target.value)}
+                      className="w-11 h-9 rounded-lg border border-[#2a2a2a] bg-[#1a1a1a] p-1 cursor-pointer"
+                    />
+                    <button
+                      type="button"
+                      onClick={handleCreateTag}
+                      className="px-3 h-9 rounded-lg bg-[#CCA761]/15 border border-[#CCA761]/30 text-[#CCA761] text-[10px] font-black uppercase tracking-widest hover:bg-[#CCA761]/25"
+                    >
+                      Criar
+                    </button>
                   </div>
                   <style jsx global>{`
                     /* ReactQuill Dark Mode Overrides */

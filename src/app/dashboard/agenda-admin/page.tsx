@@ -19,7 +19,7 @@ export default function AgendaAdminPage() {
   const [showCreateMission, setShowCreateMission] = useState(false);
   const [newTitle, setNewTitle] = useState("");
   const [newDescription, setNewDescription] = useState("");
-  const [newUrgency, setNewUrgency] = useState<"URGENTE" | "ATENCAO" | "ROTINA" | "TRANQUILO">("ROTINA");
+  const [newUrgency, setNewUrgency] = useState<"URGENTE" | "ATENCAO" | "ROTINA">("ROTINA");
   const [newType, setNewType] = useState("Tarefa");
   const [newVisibility, setNewVisibility] = useState<"private" | "global">("global");
   const [newReminderOnly, setNewReminderOnly] = useState(false);
@@ -338,7 +338,6 @@ export default function AgendaAdminPage() {
                   <option value="URGENTE">Urgente</option>
                   <option value="ATENCAO">Atenção</option>
                   <option value="ROTINA">Rotina</option>
-                  <option value="TRANQUILO">Tranquilo</option>
                 </select>
                 <input type="date" value={newDate} onChange={(e) => setNewDate(e.target.value)} className="bg-[#151515] border border-white/10 rounded-lg px-3 py-2 text-sm text-white" />
               </div>
