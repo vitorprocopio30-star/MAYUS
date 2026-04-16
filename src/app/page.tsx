@@ -80,7 +80,7 @@ export default function LandingPage() {
            <div className="flex flex-col">
               <span className={`text-xl lg:text-3xl font-black tracking-[0.4em] text-white uppercase leading-none ${cormorant.className} italic`}>MAYUS</span>
               <span className="text-[7px] lg:text-[9px] tracking-[0.6em] text-[#CCA761] font-bold uppercase mt-1">Soberania Digital</span>
-           </div>
+            </div>
         </div>
 
         <div className="hidden lg:flex items-center gap-12 text-[10px] font-black tracking-[0.4em] uppercase text-gray-500">
@@ -120,8 +120,8 @@ export default function LandingPage() {
         <div className="absolute inset-0 z-10 w-full h-full flex justify-center items-center pointer-events-none select-none overflow-hidden">
           <Reveal delay={0.3} width="100%" className="w-full h-full relative flex items-center justify-center">
              <div className="relative w-[150vw] h-[120vh] transition-all duration-1000 ease-out flex items-center justify-center translate-x-[5%] translate-y-[18%]">
-                <Spline scene="https://prod.spline.design/antVG5gJ69HRFMFs/scene.splinecode" className="w-full h-full object-cover scale-[0.5] md:scale-[0.6] lg:scale-[0.7]" />
-             </div>
+                <Spline scene="https://my.spline.design/nexbotrobotcharacterconcept-7Simj6efOOyVgSUP8UaomUii/" className="w-full h-full object-cover scale-[0.5] md:scale-[0.6] lg:scale-[0.7]" />
+              </div>
           </Reveal>
         </div>
 
