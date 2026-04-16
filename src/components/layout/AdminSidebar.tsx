@@ -233,14 +233,34 @@ export function AdminSidebar() {
         <div className={`flex items-center justify-center bg-transparent shrink-0 transition-all duration-500 ${sidebarMode === "mini" ? "h-16 px-2" : "h-56 px-1"}`}>
           <div className="relative w-full h-full transition-all duration-500 flex items-center justify-center">
             {sidebarMode === "expanded" ? (
-              <div className="relative w-full h-full hover:scale-105 transition-transform duration-500">
-                <Image
-                  src="/mayus_logo.png"
-                  alt="MAYUS Logo"
-                  fill
-                  className="object-contain scale-[1.22] drop-shadow-[0_0_18px_rgba(204,167,97,0.2)]"
-                  priority
-                />
+              <div className="flex h-full w-full flex-col items-center justify-center gap-2 pt-3">
+                <div className="relative h-[128px] w-[128px] transition-transform duration-500 hover:scale-[1.03]">
+                  <div
+                    className="absolute inset-0 rounded-full bg-[radial-gradient(circle,rgba(204,167,97,0.10)_0%,rgba(204,167,97,0)_72%)] blur-xl"
+                    aria-hidden="true"
+                  />
+                  <div
+                    className="absolute inset-[10px] rounded-full border border-[#CCA761]/12"
+                    aria-hidden="true"
+                  />
+                  <div
+                    className="relative h-full w-full"
+                    style={{ animation: "mayusSpin 28s linear infinite" }}
+                  >
+                    <Image
+                      src="/mayus_logo.png"
+                      alt="MAYUS Monograma"
+                      fill
+                      className="object-contain scale-[0.94] drop-shadow-[0_0_16px_rgba(204,167,97,0.18)]"
+                      priority
+                    />
+                  </div>
+                </div>
+                <div className="flex flex-col items-center leading-none pb-1">
+                  <span className={`text-[1.7rem] font-semibold tracking-[0.22em] text-[#CCA761] drop-shadow-[0_0_12px_rgba(204,167,97,0.10)] ${cormorant.className}`}>
+                    MAYUS
+                  </span>
+                </div>
               </div>
             ) : (
               <div className="w-8 h-8 rounded-full bg-gradient-to-br from-[#CCA761] to-[#8B7340] flex items-center justify-center shadow-[0_0_10px_rgba(204,167,97,0.3)] hover:scale-110 transition-transform duration-300">
@@ -346,6 +366,17 @@ export function AdminSidebar() {
           <ChevronRight size={20} className="group-hover:scale-125 transition-transform" />
         </button>
       )}
+
+      <style jsx global>{`
+        @keyframes mayusSpin {
+          from {
+            transform: rotate(0deg);
+          }
+          to {
+            transform: rotate(360deg);
+          }
+        }
+      `}</style>
     </>
   );
 }
