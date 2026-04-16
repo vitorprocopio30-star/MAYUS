@@ -44,6 +44,7 @@ export default function UsuariosPermissoesPage() {
   const [isLoading, setIsLoading] = useState(true);
   const [searchTerm, setSearchTerm] = useState("");
   const [departments, setDepartments] = useState<Department[]>([]);
+  const [brokenAvatars, setBrokenAvatars] = useState<Record<string, boolean>>({});
 
   // Modal de Convite
   const [showInviteModal, setShowInviteModal] = useState(false);
@@ -238,19 +239,20 @@ export default function UsuariosPermissoesPage() {
               <div key={member.id} className="grid grid-cols-1 md:grid-cols-12 gap-2 md:gap-4 px-6 py-5 border-b border-white/5 hover:bg-white/[0.02] transition-colors items-center">
                 <div className="col-span-4 flex items-center gap-3">
                   <div className={`w-10 h-10 rounded-full flex items-center justify-center text-xs font-bold shrink-0 overflow-hidden relative ${member.is_active ? "bg-gradient-to-tr from-[#CCA761] to-[#8B7340] text-black" : "bg-gray-800 text-gray-500"}`}>
-                    {member.avatar_url ? (
+                    {member.avatar_url && !brokenAvatars[member.id] ? (
                       <img 
                         src={member.avatar_url} 
                         alt={member.full_name} 
                         className="w-full h-full object-cover"
-                        onError={(e) => {
-                          (e.target as HTMLImageElement).style.display = 'none';
+                        onError={() => {
+                          setBrokenAvatars((prev) => ({ ...prev, [member.id]: true }));
                         }}
                       />
-                    ) : null}
-                    <span className="absolute inset-0 flex items-center justify-center">
-                      {member.full_name.split(" ").map(n => n[0]).join("").slice(0, 2).toUpperCase()}
-                    </span>
+                    ) : (
+                      <span className="absolute inset-0 flex items-center justify-center">
+                        {member.full_name.split(" ").map(n => n[0]).join("").slice(0, 2).toUpperCase()}
+                      </span>
+                    )}
                   </div>
                   <div><p className={`text-white font-medium text-sm ${!member.is_active ? "line-through opacity-50" : ""}`}>{member.full_name}</p></div>
                 </div>

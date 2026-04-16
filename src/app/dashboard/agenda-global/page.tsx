@@ -96,9 +96,15 @@ export default function AgendaGlobalPage() {
       const startAt = new Date(startIso).getTime();
       const endAt = new Date(endIso).getTime();
       const isReminder = Boolean(task.show_only_on_date);
+      const normalizedStatus = String(task.status || "")
+        .normalize("NFD")
+        .replace(/[\u0300-\u036f]/g, "")
+        .toLowerCase();
+      const isDone = normalizedStatus === "concluido";
 
       if (Number.isNaN(scheduledAt)) return !isReminder;
       if (isReminder) return scheduledAt >= startAt && scheduledAt <= endAt;
+      if (!isDone && scheduledAt < startAt) return true;
       return scheduledAt >= startAt;
     });
 

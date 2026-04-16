@@ -27,8 +27,10 @@ export default function AgendaDiariaPage() {
   const { enabled: gamificationEnabled } = useGamification();
   const [events, setEvents] = useState<any[]>([]);
   const [criticalDeadlines, setCriticalDeadlines] = useState<any[]>([]);
+  const [teamMembers, setTeamMembers] = useState<Array<{ id: string; full_name: string; avatar_url: string | null }>>([]);
   const [isLoading, setIsLoading] = useState(true);
   const [userName, setUserName] = useState("Líder");
+  const [userAvatarUrl, setUserAvatarUrl] = useState<string | null>(null);
   const [myCoins, setMyCoins] = useState(1250);
   const [showCoinAnim, setShowCoinAnim] = useState(false);
   const [donated, setDonated] = useState(false);
@@ -48,6 +50,7 @@ export default function AgendaDiariaPage() {
   const [newTaskUrgency, setNewTaskUrgency] = useState<"URGENTE" | "ATENCAO" | "ROTINA" | "TRANQUILO">("ROTINA");
   const [newTaskType, setNewTaskType] = useState<"Tarefa" | "Prazo" | "Processo" | "CRM">("Tarefa");
   const [newTaskVisibility, setNewTaskVisibility] = useState<"private" | "global">("private");
+  const [newTaskAssignedTo, setNewTaskAssignedTo] = useState<string>("");
   const [newTaskReminderOnly, setNewTaskReminderOnly] = useState(false);
   const [newTaskScheduledFor, setNewTaskScheduledFor] = useState(formatDateKey(new Date()));
   const [isCreatingTask, setIsCreatingTask] = useState(false);
@@ -117,20 +120,41 @@ export default function AgendaDiariaPage() {
 
     const { data: profile } = await supabase
       .from("profiles")
-      .select("tenant_id, full_name, role")
+      .select("tenant_id, full_name, role, avatar_url")
       .eq("id", user.id)
       .maybeSingle();
 
     setUserName(profile?.full_name || user.user_metadata?.full_name || user.email?.split('@')[0] || "Líder");
+    setUserAvatarUrl(profile?.avatar_url || null);
     setCurrentUserId(user.id);
     setTenantId(profile?.tenant_id || null);
     setCurrentUserRole(profile?.role || null);
+    setNewTaskAssignedTo((prev) => prev || user.id);
 
     if (!profile?.tenant_id) {
       setEvents([]);
       setCriticalDeadlines([]);
+      setTeamMembers([]);
       setIsLoading(false);
       return;
+    }
+
+    const { data: tenantProfiles } = await supabase
+      .from("profiles")
+      .select("id, full_name, avatar_url")
+      .eq("tenant_id", profile.tenant_id)
+      .eq("is_active", true)
+      .order("full_name", { ascending: true });
+
+    const normalizedTeam = (tenantProfiles || []).map((member: any) => ({
+      id: String(member.id),
+      full_name: String(member.full_name || "Membro"),
+      avatar_url: member.avatar_url ? String(member.avatar_url) : null,
+    }));
+
+    setTeamMembers(normalizedTeam);
+    if (!newTaskAssignedTo || !normalizedTeam.some((member) => member.id === newTaskAssignedTo)) {
+      setNewTaskAssignedTo(user.id);
     }
 
     const { startIso, endIso } = toDayRange(selectedDate);
@@ -437,6 +461,23 @@ export default function AgendaDiariaPage() {
     return "Fluxo estavel. Mantenha o foco nas tarefas em andamento para fechar o dia com margem operacional.";
   }, [events, criticalDeadlines]);
 
+  const canAssignGlobalTask = currentUserRole === "Administrador" || currentUserRole === "mayus_admin" || currentUserRole === "admin" || currentUserRole === "socio" || currentUserRole === "Sócio";
+
+  const deadlineStats = useMemo(() => {
+    const allTasks = [...events, ...criticalDeadlines];
+    const deadlines = allTasks.filter((task) => task.source_table === "process_prazos" || task.type === "Prazo");
+    const openDeadlines = deadlines.filter((task) => task.status !== "Concluído");
+    const myOpenDeadlines = openDeadlines.filter((task) => String(task.assigned_to || "") === String(currentUserId || ""));
+    const criticalOpen = criticalDeadlines.filter((task) => task.status !== "Concluído").length;
+
+    return {
+      total: deadlines.length,
+      open: openDeadlines.length,
+      criticalOpen,
+      mine: myOpenDeadlines.length,
+    };
+  }, [events, criticalDeadlines, currentUserId]);
+
   const urgencyToMeta = (urgency: "URGENTE" | "ATENCAO" | "ROTINA" | "TRANQUILO") => {
     if (urgency === "URGENTE") return { reward: 100, category: "URGENTE", color: "#f87171", isCritical: true };
     if (urgency === "ATENCAO") return { reward: 50, category: "ATENÇÃO", color: "#CCA761", isCritical: false };
@@ -460,6 +501,7 @@ export default function AgendaDiariaPage() {
     setNewTaskUrgency("ROTINA");
     setNewTaskType("Tarefa");
     setNewTaskVisibility("private");
+    setNewTaskAssignedTo(currentUserId || "");
     setNewTaskReminderOnly(false);
     setNewTaskScheduledFor(formatDateKey(new Date()));
     setShowCreateTaskModal(true);
@@ -489,6 +531,10 @@ export default function AgendaDiariaPage() {
     try {
       const scheduledFor = `${newTaskScheduledFor}T09:00:00.000Z`;
       const meta = urgencyToMeta(newTaskUrgency);
+      const isPrivateTask = newTaskVisibility === "private";
+      const selectedMember = teamMembers.find((member) => member.id === newTaskAssignedTo) || null;
+      const assignedTo = isPrivateTask ? currentUserId : (selectedMember?.id || currentUserId);
+      const assignedName = isPrivateTask ? userName : (selectedMember?.full_name || userName);
 
       let error: any = null;
       if (editingTaskId) {
@@ -519,8 +565,8 @@ export default function AgendaDiariaPage() {
           tenantId,
           title: newTaskTitle.trim(),
           description: newTaskDescription.trim() || null,
-          assignedTo: currentUserId,
-          assignedName: userName,
+          assignedTo,
+          assignedName,
           createdBy: currentUserId,
           createdByRole: currentUserRole,
           urgency: newTaskUrgency,
@@ -541,6 +587,7 @@ export default function AgendaDiariaPage() {
       setNewTaskUrgency("ROTINA");
       setNewTaskType("Tarefa");
       setNewTaskVisibility("private");
+      setNewTaskAssignedTo(currentUserId || "");
       setNewTaskReminderOnly(false);
       setNewTaskScheduledFor(formatDateKey(new Date()));
       setEditingTaskId(null);
@@ -599,22 +646,35 @@ export default function AgendaDiariaPage() {
 
       {/* Header da Página */}
       <div className="flex flex-col md:flex-row justify-between items-start md:items-end pb-4 border-b border-[#CCA761]/20 relative z-40 gap-6">
-        <div>
-           <h1 className={`text-5xl lg:text-7xl text-[#CCA761] mb-1 font-bold tracking-tight ${cormorant.className} italic drop-shadow-[0_0_20px_rgba(204,167,97,0.3)]`}>
-             Sua Agenda
-           </h1>
-           <div className="flex items-center gap-3 mt-2 flex-wrap">
-             <p className="text-[#CCA761] text-lg font-bold tracking-widest uppercase">{greeting}, {userName}</p>
-             {/* Badge Privado de Ranking do Usuário */}
-             {gamificationEnabled && (
-               <div title="Sua posição de produtividade nesta sprint" className="flex items-center gap-2 bg-[#CCA761]/10 border border-[#CCA761]/40 px-3 py-0.5 rounded-full shadow-[0_0_15px_rgba(204,167,97,0.2)] animate-[pulse_3s_ease-in-out_infinite] group hover:bg-[#CCA761]/20 transition-all cursor-default relative overflow-hidden">
-                 <div className="absolute inset-0 bg-gradient-to-r from-transparent via-white/20 to-transparent translate-x-[-100%] group-hover:translate-x-[100%] transition-transform duration-1000" />
-                 <Trophy size={14} className="text-[#CCA761] group-hover:scale-110 transition-transform relative z-10" />
-                 <span className="text-[#CCA761] text-[10px] font-black tracking-widest uppercase relative z-10 drop-shadow-md">Posição: 2º Lugar</span>
-               </div>
-             )}
-           </div>
-           <p className="text-[#a1a1aa] text-[11px] mt-2 font-semibold italic border-l-2 border-[#CCA761] pl-3 max-w-lg tracking-wide bg-gradient-to-r from-[#CCA761]/5 to-transparent py-1 pr-2 rounded-r-md">&quot;{dailyQuote}&quot;</p>
+        <div className="flex items-start gap-4 md:gap-5 w-full">
+          <div className="relative shrink-0 mt-1">
+            <div className="w-20 h-20 md:w-24 md:h-24 rounded-2xl border border-[#CCA761]/35 bg-gradient-to-br from-[#CCA761]/20 to-[#0a0a0a] p-[2px] shadow-[0_0_25px_rgba(204,167,97,0.2)]">
+              <div className="w-full h-full rounded-[14px] overflow-hidden bg-[#0a0a0a] flex items-center justify-center">
+                {userAvatarUrl ? (
+                  <img src={userAvatarUrl} alt={userName} className="w-full h-full object-cover" />
+                ) : (
+                  <span className="text-[#CCA761] text-2xl font-black uppercase">{String(userName || "L").slice(0, 1)}</span>
+                )}
+              </div>
+            </div>
+          </div>
+          <div className="pt-0.5">
+             <h1 className={`text-5xl lg:text-7xl text-[#CCA761] mb-1 font-bold tracking-tight ${cormorant.className} italic drop-shadow-[0_0_20px_rgba(204,167,97,0.3)]`}>
+               Sua Agenda
+             </h1>
+             <div className="flex items-center gap-3 mt-2 flex-wrap">
+               <p className="text-[#CCA761] text-lg font-bold tracking-widest uppercase">{greeting}, {userName}</p>
+               {/* Badge Privado de Ranking do Usuário */}
+               {gamificationEnabled && (
+                 <div title="Sua posição de produtividade nesta sprint" className="flex items-center gap-2 bg-[#CCA761]/10 border border-[#CCA761]/40 px-3 py-0.5 rounded-full shadow-[0_0_15px_rgba(204,167,97,0.2)] animate-[pulse_3s_ease-in-out_infinite] group hover:bg-[#CCA761]/20 transition-all cursor-default relative overflow-hidden">
+                   <div className="absolute inset-0 bg-gradient-to-r from-transparent via-white/20 to-transparent translate-x-[-100%] group-hover:translate-x-[100%] transition-transform duration-1000" />
+                   <Trophy size={14} className="text-[#CCA761] group-hover:scale-110 transition-transform relative z-10" />
+                   <span className="text-[#CCA761] text-[10px] font-black tracking-widest uppercase relative z-10 drop-shadow-md">Posição: 2º Lugar</span>
+                 </div>
+               )}
+             </div>
+             <p className="text-[#a1a1aa] text-[11px] mt-2 font-semibold italic border-l-2 border-[#CCA761] pl-3 max-w-lg tracking-wide bg-gradient-to-r from-[#CCA761]/5 to-transparent py-1 pr-2 rounded-r-md">&quot;{dailyQuote}&quot;</p>
+          </div>
         </div>
         <div className="flex flex-col items-end gap-3 w-full md:w-auto">
           {/* A Carteira (Wallet) */}
@@ -969,22 +1029,19 @@ export default function AgendaDiariaPage() {
                 <h4 className="text-[10px] text-[#f87171] font-black uppercase tracking-widest mb-6 flex items-center gap-2">
                   <AlertCircle size={14} /> Prazos Críticos (Escritório)
                 </h4>
-                <div className="space-y-4">
-                  {criticalDeadlines.length === 0 ? (
-                    <div className="p-4 bg-black/40 rounded-xl border border-white/5 text-[11px] text-gray-500">
-                      Nenhum prazo critico real encontrado para a selecao atual.
-                    </div>
-                  ) : (
-                    criticalDeadlines.map((p, i) => (
-                      <div key={i} className="p-4 bg-black/40 rounded-xl border border-white/5 hover:border-white/10 transition-colors">
-                        <div className="flex justify-between items-start mb-2">
-                          <span className="text-xs font-bold text-white">{p.title}</span>
-                          <span className="text-[8px] font-black text-[#0a0a0a] px-2 py-0.5 rounded-sm uppercase" style={{ backgroundColor: p.color || '#f87171' }}>{p.time_text}</span>
-                        </div>
-                        <p className="text-[10px] text-gray-500 font-semibold tracking-wide">Cliente: {p.client_name || '-'}</p>
-                      </div>
-                    ))
-                  )}
+                <div className="grid grid-cols-2 gap-3">
+                  <div className="p-4 bg-black/40 rounded-xl border border-white/5">
+                    <p className="text-[10px] uppercase tracking-widest text-gray-500 font-black">Prazos do dia</p>
+                    <p className="mt-1 text-2xl font-black text-white">{deadlineStats.total}</p>
+                  </div>
+                  <div className="p-4 bg-black/40 rounded-xl border border-[#f87171]/30">
+                    <p className="text-[10px] uppercase tracking-widest text-[#f87171] font-black">Críticos abertos</p>
+                    <p className="mt-1 text-2xl font-black text-[#f87171]">{deadlineStats.criticalOpen}</p>
+                  </div>
+                  <div className="p-4 bg-black/40 rounded-xl border border-white/5 col-span-2">
+                    <p className="text-[10px] uppercase tracking-widest text-gray-500 font-black">Abertos com você</p>
+                    <p className="mt-1 text-xl font-black text-[#CCA761]">{deadlineStats.mine} <span className="text-sm font-semibold text-gray-500">de {deadlineStats.open}</span></p>
+                  </div>
                 </div>
               </GlassCard>
 
@@ -1006,7 +1063,7 @@ export default function AgendaDiariaPage() {
             <button onClick={() => { setShowCreateTaskModal(false); setEditingTaskId(null); }} className="absolute top-4 right-4 p-2 rounded-lg bg-white/5 text-gray-400 hover:text-white">
               <X size={16} />
             </button>
-            <h4 className="text-lg font-bold text-white mb-4">{editingTaskId ? "Editar tarefa" : "Nova tarefa pessoal"}</h4>
+            <h4 className="text-lg font-bold text-white mb-4">{editingTaskId ? "Editar tarefa" : "Nova tarefa"}</h4>
             <div className="space-y-3">
               <input
                 value={newTaskTitle}
@@ -1039,10 +1096,26 @@ export default function AgendaDiariaPage() {
               <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
                 <select value={newTaskVisibility} onChange={(e) => setNewTaskVisibility(e.target.value as any)} className="bg-[#151515] border border-white/10 rounded-lg px-3 py-2 text-sm text-white">
                   <option value="private">Pessoal (nao vai para global)</option>
-                  {(currentUserRole === "Administrador" || currentUserRole === "mayus_admin" || currentUserRole === "admin") && (
+                  {canAssignGlobalTask && (
                     <option value="global">Global (vai para agenda global)</option>
                   )}
                 </select>
+                <select
+                  value={newTaskVisibility === "private" ? currentUserId || "" : newTaskAssignedTo}
+                  onChange={(e) => setNewTaskAssignedTo(e.target.value)}
+                  disabled={newTaskVisibility === "private" || teamMembers.length === 0}
+                  className="bg-[#151515] border border-white/10 rounded-lg px-3 py-2 text-sm text-white disabled:opacity-50 disabled:cursor-not-allowed"
+                >
+                  <option value={currentUserId || ""}>Responsável: você</option>
+                  {teamMembers.map((member) => (
+                    <option key={member.id} value={member.id}>
+                      {member.full_name}
+                    </option>
+                  ))}
+                </select>
+              </div>
+
+              <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
                 <label className="flex items-center gap-2 text-sm text-gray-300 bg-[#151515] border border-white/10 rounded-lg px-3 py-2">
                   <input
                     type="checkbox"
