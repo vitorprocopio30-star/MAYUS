@@ -42,6 +42,39 @@ function etapaOcultaNoBoard(nome?: string | null) {
   return n.includes('movimentac')
 }
 
+function getFatalDeadlineMeta(dateValue?: string | null) {
+  if (!dateValue) return null;
+  const due = new Date(dateValue);
+  if (Number.isNaN(due.getTime())) return null;
+
+  const now = new Date();
+  const nowStart = new Date(now.getFullYear(), now.getMonth(), now.getDate()).getTime();
+  const dueStart = new Date(due.getFullYear(), due.getMonth(), due.getDate()).getTime();
+  const diffDays = Math.floor((dueStart - nowStart) / (1000 * 60 * 60 * 24));
+
+  if (diffDays <= 3) {
+    return {
+      borderClass: "border-red-500/40",
+      badgeClass: "border-red-500/40 bg-red-500/10 text-red-400",
+      stripeClass: "bg-red-500/80",
+    };
+  }
+
+  if (diffDays <= 10) {
+    return {
+      borderClass: "border-amber-500/40",
+      badgeClass: "border-amber-500/40 bg-amber-500/10 text-amber-300",
+      stripeClass: "bg-amber-500/80",
+    };
+  }
+
+  return {
+    borderClass: "border-emerald-500/40",
+    badgeClass: "border-emerald-500/40 bg-emerald-500/10 text-emerald-300",
+    stripeClass: "bg-emerald-500/80",
+  };
+}
+
 export default function PipelinePage() {
   const { pipelineId } = useParams() as { pipelineId: string };
   const router = useRouter();
@@ -428,6 +461,7 @@ const [pendingMove, setPendingMove] = useState<{
                               const isUrgent = String(task.urgency || "").toUpperCase() === "URGENTE";
                               const hasFatalDeadline = Boolean(task.prazo_fatal);
                               const safeTaskDate = task.prazo_fatal || task.created_at;
+                              const fatalMeta = getFatalDeadlineMeta(task.prazo_fatal);
 
                               return (
                                 <Draggable key={task.id} draggableId={task.id} index={index}>
@@ -437,11 +471,11 @@ const [pendingMove, setPendingMove] = useState<{
                                       {...provided.draggableProps}
                                       {...provided.dragHandleProps}
                                       onClick={() => openEditTaskModal(task)}
-                                      className={`group relative overflow-hidden px-3.5 py-3 rounded-xl border bg-[#0c0c0c] hover:bg-[#111] cursor-grab active:cursor-grabbing transition-all duration-150 ${(showIdleAlert || isUrgent || hasFatalDeadline) ? 'border-red-500/40' : 'border-zinc-800'}`}
+                                      className={`group relative overflow-hidden px-3.5 py-3 rounded-xl border bg-[#0c0c0c] hover:bg-[#111] cursor-grab active:cursor-grabbing transition-all duration-150 ${showIdleAlert || isUrgent ? 'border-red-500/40' : hasFatalDeadline && fatalMeta ? fatalMeta.borderClass : 'border-zinc-800'}`}
                                       style={{ ...provided.draggableProps.style }}
                                     >
                                       {(isUrgent || hasFatalDeadline) && (
-                                        <div className="absolute top-0 left-0 right-0 h-0.5 bg-red-500/80" />
+                                        <div className={`absolute top-0 left-0 right-0 h-0.5 ${isUrgent ? 'bg-red-500/80' : (fatalMeta?.stripeClass || 'bg-red-500/80')}`} />
                                       )}
                                       {showIdleAlert && (
                                          <div className="absolute top-0 right-0 px-2 py-0.5 bg-red-500/10 text-red-500 border-b border-l border-red-500/20 rounded-bl-lg text-[9px] font-black uppercase flex items-center gap-1 shadow-sm">
@@ -515,7 +549,7 @@ const [pendingMove, setPendingMove] = useState<{
                                       )}
 
                                       {task.prazo_fatal && (
-                                        <div className="mb-2.5 inline-flex items-center gap-1.5 text-[10px] font-black uppercase tracking-widest px-2 py-1 rounded border border-red-500/40 bg-red-500/10 text-red-400">
+                                        <div className={`mb-2.5 inline-flex items-center gap-1.5 text-[10px] font-black uppercase tracking-widest px-2 py-1 rounded border ${fatalMeta?.badgeClass || 'border-red-500/40 bg-red-500/10 text-red-400'}`}>
                                           <AlertTriangle size={10} /> Fatal: {new Date(task.prazo_fatal).toLocaleDateString('pt-BR')}
                                         </div>
                                       )}
@@ -591,6 +625,7 @@ const [pendingMove, setPendingMove] = useState<{
                   ) : tasks.map(task => {
                     const stage = visibleStages.find(s => s.id === task.stage_id) || stages.find(s => s.id === task.stage_id);
                     const assignee = agents.find(a => a.id === task.assigned_to);
+                    const fatalMeta = getFatalDeadlineMeta(task.prazo_fatal);
                     return (
                       <tr key={task.id} onClick={() => openEditTaskModal(task)} className="hover:bg-white/5 cursor-pointer transition-colors group">
                         <td className="p-4">
@@ -617,6 +652,11 @@ const [pendingMove, setPendingMove] = useState<{
                               >
                                 {copiedTextKey === `list-process-${task.id}` ? <Check size={10} /> : <Copy size={10} />}
                               </button>
+                            </div>
+                          )}
+                          {task.prazo_fatal && (
+                            <div className={`inline-flex items-center gap-1.5 mb-2 text-[10px] font-black uppercase tracking-widest px-2 py-1 rounded border ${fatalMeta?.badgeClass || 'border-red-500/40 bg-red-500/10 text-red-400'}`}>
+                              <AlertTriangle size={10} /> Fatal: {new Date(task.prazo_fatal).toLocaleDateString('pt-BR')}
                             </div>
                           )}
                           <div className="flex gap-1.5 flex-wrap">

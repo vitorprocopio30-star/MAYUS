@@ -46,7 +46,6 @@ export default function AgendaDiariaPage() {
   const [showCreateTaskModal, setShowCreateTaskModal] = useState(false);
   const [editingTaskId, setEditingTaskId] = useState<string | null>(null);
   const [newTaskTitle, setNewTaskTitle] = useState("");
-  const [newTaskDescription, setNewTaskDescription] = useState("");
   const [newTaskResponsibleNotes, setNewTaskResponsibleNotes] = useState("");
   const [newTaskProcessNumber, setNewTaskProcessNumber] = useState("");
   const [newTaskUrgency, setNewTaskUrgency] = useState<"URGENTE" | "ATENCAO" | "ROTINA">("ROTINA");
@@ -57,7 +56,38 @@ export default function AgendaDiariaPage() {
   const [newTaskScheduledFor, setNewTaskScheduledFor] = useState(formatDateKey(new Date()));
   const [isCreatingTask, setIsCreatingTask] = useState(false);
   const [copiedTextKey, setCopiedTextKey] = useState<string | null>(null);
+  const [notesOnlyTask, setNotesOnlyTask] = useState<any | null>(null);
+  const [notesOnlyValue, setNotesOnlyValue] = useState("");
+  const [isSavingNotesOnly, setIsSavingNotesOnly] = useState(false);
   const supabase = createClient();
+
+  const getDeadlineMeta = (dateValue?: string | null) => {
+    if (!dateValue) return null;
+    const today = new Date();
+    const due = new Date(dateValue);
+    if (Number.isNaN(due.getTime())) return null;
+
+    const todayStart = new Date(today.getFullYear(), today.getMonth(), today.getDate()).getTime();
+    const dueStart = new Date(due.getFullYear(), due.getMonth(), due.getDate()).getTime();
+    const diffDays = Math.floor((dueStart - todayStart) / (1000 * 60 * 60 * 24));
+
+    if (diffDays <= 3) {
+      return {
+        diffDays,
+        className: "border-red-500/40 bg-red-500/10 text-red-400",
+      };
+    }
+    if (diffDays <= 10) {
+      return {
+        diffDays,
+        className: "border-amber-500/40 bg-amber-500/10 text-amber-300",
+      };
+    }
+    return {
+      diffDays,
+      className: "border-emerald-500/40 bg-emerald-500/10 text-emerald-300",
+    };
+  };
 
   const MOTIVATIONAL_QUOTES = [
     "A disciplina converte a avalanche de trabalho em faturamento livre.",
@@ -516,7 +546,6 @@ export default function AgendaDiariaPage() {
   const openCreateTaskModal = () => {
     setEditingTaskId(null);
     setNewTaskTitle("");
-    setNewTaskDescription("");
     setNewTaskResponsibleNotes("");
     setNewTaskProcessNumber("");
     setNewTaskUrgency("ROTINA");
@@ -536,7 +565,6 @@ export default function AgendaDiariaPage() {
     }
     setEditingTaskId(task.id);
     setNewTaskTitle(task.title || "");
-    setNewTaskDescription(task.description || "");
     setNewTaskResponsibleNotes(task.responsible_notes || "");
     setNewTaskProcessNumber(task.process_number || "");
     setNewTaskUrgency((task.urgency || "ROTINA") as any);
@@ -546,6 +574,35 @@ export default function AgendaDiariaPage() {
     const dateKey = String(task.scheduled_for || "").slice(0, 10);
     setNewTaskScheduledFor(dateKey || formatDateKey(new Date()));
     setShowCreateTaskModal(true);
+  };
+
+  const openNotesOnlyModal = (event: React.MouseEvent, task: any) => {
+    event.stopPropagation();
+    setNotesOnlyTask(task);
+    setNotesOnlyValue(task.responsible_notes || "");
+  };
+
+  const saveNotesOnly = async () => {
+    if (!notesOnlyTask?.id || !currentUserId) return;
+    setIsSavingNotesOnly(true);
+    try {
+      const { error } = await supabase
+        .from("user_tasks")
+        .update({ responsible_notes: notesOnlyValue.trim() || null })
+        .eq("id", notesOnlyTask.id)
+        .eq("assigned_to", currentUserId);
+
+      if (error) throw error;
+
+      setEvents((prev) => prev.map((ev) => ev.id === notesOnlyTask.id ? { ...ev, responsible_notes: notesOnlyValue.trim() || null } : ev));
+      setCriticalDeadlines((prev) => prev.map((ev) => ev.id === notesOnlyTask.id ? { ...ev, responsible_notes: notesOnlyValue.trim() || null } : ev));
+      setNotesOnlyTask(null);
+      setNotesOnlyValue("");
+    } catch (error: any) {
+      alert(error?.message ? `Não foi possível salvar as anotações: ${error.message}` : "Não foi possível salvar as anotações.");
+    } finally {
+      setIsSavingNotesOnly(false);
+    }
   };
 
   const handleCreatePersonalTask = async () => {
@@ -563,7 +620,7 @@ export default function AgendaDiariaPage() {
       if (editingTaskId) {
         const updatePayload = {
           title: newTaskTitle.trim(),
-          description: newTaskDescription.trim() || null,
+          description: null,
           responsible_notes: newTaskResponsibleNotes.trim() || null,
           process_number: newTaskProcessNumber.trim() || null,
           urgency: newTaskUrgency,
@@ -589,7 +646,7 @@ export default function AgendaDiariaPage() {
         const payload = buildAgendaPayloadFromManualTask({
           tenantId,
           title: newTaskTitle.trim(),
-          description: newTaskDescription.trim() || null,
+          description: null,
           responsibleNotes: newTaskResponsibleNotes.trim() || null,
           processNumber: newTaskProcessNumber.trim() || null,
           assignedTo,
@@ -610,7 +667,6 @@ export default function AgendaDiariaPage() {
       if (error) throw error;
 
       setNewTaskTitle("");
-      setNewTaskDescription("");
       setNewTaskResponsibleNotes("");
       setNewTaskProcessNumber("");
       setNewTaskUrgency("ROTINA");
@@ -622,6 +678,15 @@ export default function AgendaDiariaPage() {
       setEditingTaskId(null);
       setShowCreateTaskModal(false);
       fetchTasks();
+    } catch (error: any) {
+      const message = String(error?.message || "");
+      const isMissingColumn = message.includes("responsible_notes") || message.includes("process_number");
+
+      if (isMissingColumn) {
+        alert("Não foi possível salvar porque o banco ainda não foi atualizado com os novos campos de tarefas. Rode as migrations pendentes e tente novamente.");
+      } else {
+        alert(error?.message ? `Não foi possível criar/salvar a tarefa: ${error.message}` : "Não foi possível criar/salvar a tarefa.");
+      }
     } finally {
       setIsCreatingTask(false);
     }
@@ -925,6 +990,7 @@ export default function AgendaDiariaPage() {
                   const active = ev.active || false;
                   const bdgColor = ev.color || '#CCA761';
                   const isUrgentTask = String(ev.urgency || '').toUpperCase() === 'URGENTE';
+                  const deadlineMeta = getDeadlineMeta(ev.scheduled_for);
 
                   // Lógica Visual: Escura quando pendente, Verde + Vibrante quando concluída. Cor do badge mantém.
                   const cardBgClass = isDone
@@ -1007,9 +1073,15 @@ export default function AgendaDiariaPage() {
                                </div>
                              )}
 
-                             {ev.author_name && (
-                               <p className="text-[10px] text-gray-400 font-semibold mt-1">Autor: {ev.author_name}</p>
-                             )}
+                              {ev.author_name && (
+                                <p className="text-[10px] text-gray-400 font-semibold mt-1">Autor: {ev.author_name}</p>
+                              )}
+
+                              {deadlineMeta && (
+                                <div className={`mt-2 inline-flex items-center gap-1.5 px-2 py-1 rounded border text-[9px] font-black uppercase tracking-widest ${deadlineMeta.className}`}>
+                                  <Calendar size={10} /> Fatal: {new Date(ev.scheduled_for).toLocaleDateString("pt-BR")}
+                                </div>
+                              )}
 
                               {ev.description && (
                                 <div className="mt-2 p-2 rounded border border-white/10 bg-black/20 max-w-lg">
@@ -1059,6 +1131,15 @@ export default function AgendaDiariaPage() {
                               onClick={(event) => openEditTaskModal(event, ev)}
                               className="mb-2 p-2 rounded-lg transition-colors border shadow-sm backdrop-blur-sm bg-[#111] text-[#CCA761] border-[#CCA761]/20 hover:bg-[#CCA761]/10"
                               title="Editar tarefa"
+                            >
+                              <Pencil size={14} />
+                            </button>
+                          )}
+                          {!isTaskEditableByOwner(ev) && ev.status !== 'Concluído' && String(ev.assigned_to || "") === String(currentUserId || "") && (
+                            <button
+                              onClick={(event) => openNotesOnlyModal(event, ev)}
+                              className="mb-2 p-2 rounded-lg transition-colors border shadow-sm backdrop-blur-sm bg-[#111] text-[#CCA761] border-[#CCA761]/20 hover:bg-[#CCA761]/10"
+                              title="Editar somente anotações"
                             >
                               <Pencil size={14} />
                             </button>
@@ -1135,52 +1216,36 @@ export default function AgendaDiariaPage() {
                 placeholder="Titulo da tarefa"
                 className="w-full bg-[#151515] border border-white/10 rounded-lg px-3 py-2 text-sm text-white"
               />
-              <textarea
-                value={newTaskDescription}
-                onChange={(e) => setNewTaskDescription(e.target.value)}
-                placeholder="Resumo da tarefa"
-                className="w-full bg-[#151515] border border-white/10 rounded-lg px-3 py-2 text-sm text-white min-h-[90px]"
-              />
-              <div className="flex justify-end">
-                <button
-                  type="button"
-                  onClick={(event) => copyTaskText(event, "modal-summary", newTaskDescription)}
-                  className="inline-flex items-center gap-1 text-[10px] text-[#CCA761] border border-[#CCA761]/30 rounded px-2 py-0.5 hover:bg-[#CCA761]/10"
-                >
-                  {copiedTextKey === "modal-summary" ? <Check size={11} /> : <Copy size={11} />}
-                  Copiar resumo
-                </button>
-              </div>
-              <textarea
-                value={newTaskResponsibleNotes}
-                onChange={(e) => setNewTaskResponsibleNotes(e.target.value)}
-                placeholder="Anotações do responsável"
-                className="w-full bg-[#151515] border border-white/10 rounded-lg px-3 py-2 text-sm text-white min-h-[90px]"
-              />
-              <div className="flex justify-end">
+              <div className="relative">
+                <textarea
+                  value={newTaskResponsibleNotes}
+                  onChange={(e) => setNewTaskResponsibleNotes(e.target.value)}
+                  placeholder="Anotações do responsável"
+                  className="w-full bg-[#151515] border border-white/10 rounded-lg px-3 py-2 pr-10 text-sm text-white min-h-[90px]"
+                />
                 <button
                   type="button"
                   onClick={(event) => copyTaskText(event, "modal-notes", newTaskResponsibleNotes)}
-                  className="inline-flex items-center gap-1 text-[10px] text-[#CCA761] border border-[#CCA761]/30 rounded px-2 py-0.5 hover:bg-[#CCA761]/10"
+                  className="absolute top-2 right-2 inline-flex items-center justify-center w-7 h-7 rounded border border-[#CCA761]/30 text-[#CCA761] hover:bg-[#CCA761]/10"
+                  title="Copiar anotações"
                 >
                   {copiedTextKey === "modal-notes" ? <Check size={11} /> : <Copy size={11} />}
-                  Copiar anotações
                 </button>
               </div>
-              <input
-                value={newTaskProcessNumber}
-                onChange={(e) => setNewTaskProcessNumber(e.target.value)}
-                placeholder="Número do processo (opcional)"
-                className="w-full bg-[#151515] border border-white/10 rounded-lg px-3 py-2 text-sm text-white"
-              />
-              <div className="flex justify-end">
+              <div className="relative">
+                <input
+                  value={newTaskProcessNumber}
+                  onChange={(e) => setNewTaskProcessNumber(e.target.value)}
+                  placeholder="Número do processo (opcional)"
+                  className="w-full bg-[#151515] border border-white/10 rounded-lg px-3 py-2 pr-10 text-sm text-white"
+                />
                 <button
                   type="button"
                   onClick={(event) => copyTaskText(event, "modal-process", newTaskProcessNumber)}
-                  className="inline-flex items-center gap-1 text-[10px] text-[#CCA761] border border-[#CCA761]/30 rounded px-2 py-0.5 hover:bg-[#CCA761]/10"
+                  className="absolute top-1/2 -translate-y-1/2 right-2 inline-flex items-center justify-center w-7 h-7 rounded border border-[#CCA761]/30 text-[#CCA761] hover:bg-[#CCA761]/10"
+                  title="Copiar número do processo"
                 >
                   {copiedTextKey === "modal-process" ? <Check size={11} /> : <Copy size={11} />}
-                  Copiar número
                 </button>
               </div>
               <div className="grid grid-cols-1 sm:grid-cols-3 gap-3">
@@ -1252,6 +1317,44 @@ export default function AgendaDiariaPage() {
                   {isCreatingTask ? "Salvando..." : editingTaskId ? "Salvar edição" : "Criar tarefa"}
                 </button>
               </div>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {notesOnlyTask && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center p-4">
+          <div className="absolute inset-0 bg-black/70 backdrop-blur-sm" onClick={() => { setNotesOnlyTask(null); setNotesOnlyValue(""); }} />
+          <div className="relative w-full max-w-lg rounded-2xl border border-[#CCA761]/30 bg-[#0a0a0a] p-6 shadow-[0_0_30px_rgba(0,0,0,0.6)]">
+            <button onClick={() => { setNotesOnlyTask(null); setNotesOnlyValue(""); }} className="absolute top-4 right-4 p-2 rounded-lg bg-white/5 text-gray-400 hover:text-white">
+              <X size={16} />
+            </button>
+            <h4 className="text-lg font-bold text-white mb-3">Anotações do responsável</h4>
+            <p className="text-[11px] text-gray-500 mb-3">Nesta tarefa você pode editar somente as anotações.</p>
+            <div className="relative">
+              <textarea
+                value={notesOnlyValue}
+                onChange={(e) => setNotesOnlyValue(e.target.value)}
+                placeholder="Escreva suas anotações"
+                className="w-full min-h-[140px] bg-[#151515] border border-white/10 rounded-lg px-3 py-2 pr-10 text-sm text-white"
+              />
+              <button
+                type="button"
+                onClick={(event) => copyTaskText(event, "notes-only-modal", notesOnlyValue)}
+                className="absolute top-2 right-2 inline-flex items-center justify-center w-7 h-7 rounded border border-[#CCA761]/30 text-[#CCA761] hover:bg-[#CCA761]/10"
+                title="Copiar anotações"
+              >
+                {copiedTextKey === "notes-only-modal" ? <Check size={11} /> : <Copy size={11} />}
+              </button>
+            </div>
+            <div className="flex justify-end mt-4">
+              <button
+                onClick={saveNotesOnly}
+                disabled={isSavingNotesOnly}
+                className="bg-gradient-to-r from-[#CCA761] to-[#eadd87] text-black px-4 py-2 rounded-lg text-xs font-black uppercase tracking-widest disabled:opacity-50"
+              >
+                {isSavingNotesOnly ? "Salvando..." : "Salvar anotações"}
+              </button>
             </div>
           </div>
         </div>

@@ -30,6 +30,21 @@ export default function AgendaGlobalPage() {
   const [viewerName, setViewerName] = useState("Você");
   const [activeMission, setActiveMission] = useState<any | null>(null);
   const [copiedTextKey, setCopiedTextKey] = useState<string | null>(null);
+
+  const getDeadlineMeta = (dateValue?: string | null) => {
+    if (!dateValue) return null;
+    const due = new Date(dateValue);
+    if (Number.isNaN(due.getTime())) return null;
+
+    const now = new Date();
+    const nowStart = new Date(now.getFullYear(), now.getMonth(), now.getDate()).getTime();
+    const dueStart = new Date(due.getFullYear(), due.getMonth(), due.getDate()).getTime();
+    const diffDays = Math.floor((dueStart - nowStart) / (1000 * 60 * 60 * 24));
+
+    if (diffDays <= 3) return "border-red-500/40 bg-red-500/10 text-red-400";
+    if (diffDays <= 10) return "border-amber-500/40 bg-amber-500/10 text-amber-300";
+    return "border-emerald-500/40 bg-emerald-500/10 text-emerald-300";
+  };
   
   // Mock do departamento real do profissional logado
   const userDepartment: string = 'Comercial';
@@ -482,6 +497,7 @@ export default function AgendaGlobalPage() {
                   const active = ev.active || false;
                   const bdgColor = ev.color || '#CCA761';
                   const isUrgentTask = String(ev.urgency || '').toUpperCase() === 'URGENTE';
+                  const deadlineClass = getDeadlineMeta(ev.scheduled_for);
 
                   const cardBgClass = isUrgentTask
                     ? 'bg-[#140909] hover:bg-[#1a0b0b] opacity-95 hover:opacity-100 border-red-500/40 shadow-[0_0_20px_rgba(239,68,68,0.15)]'
@@ -579,6 +595,11 @@ export default function AgendaGlobalPage() {
                                  </button>
                                </div>
                                <p className="text-[10px] text-zinc-400 line-clamp-2">{String(ev.responsible_notes || '')}</p>
+                            </div>
+                           )}
+                           {deadlineClass && (
+                             <div className={`mt-1.5 inline-flex items-center gap-1.5 text-[8px] font-black uppercase tracking-widest px-2 py-1 rounded border ${deadlineClass}`}>
+                               <Calendar size={10} /> Fatal: {new Date(ev.scheduled_for).toLocaleDateString('pt-BR')}
                              </div>
                            )}
                          </div>

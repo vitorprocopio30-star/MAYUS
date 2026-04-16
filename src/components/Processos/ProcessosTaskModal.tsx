@@ -1,6 +1,6 @@
 import { useState, useEffect } from "react";
 import dynamic from "next/dynamic";
-import { User as UserIcon, AlignLeft, X, Trash2, Calendar, CheckCircle2, ArrowRight, MessageCircle, Tag as TagIcon, Plus, Copy, Check } from "lucide-react";
+import { User as UserIcon, AlignLeft, X, Trash2, Calendar, CheckCircle2, ArrowRight, MessageCircle, Tag as TagIcon, Plus, Copy, Check, Pencil } from "lucide-react";
 import { toast } from "sonner";
 import { createClient } from "@/lib/supabase/client";
 import {
@@ -63,6 +63,7 @@ export default function ProcessosTaskModal({
   const [taskDriveLink, setTaskDriveLink] = useState("");
   const [availableTags, setAvailableTags] = useState<string[]>([]);
   const [newTagName, setNewTagName] = useState("");
+  const [editingTagOriginal, setEditingTagOriginal] = useState<string | null>(null);
   const [copiedKey, setCopiedKey] = useState<string | null>(null);
   
   // Pending Move State for Win/Loss
@@ -129,6 +130,7 @@ export default function ProcessosTaskModal({
 
       setAvailableTags(pipeline?.tags || []);
       setNewTagName("");
+      setEditingTagOriginal(null);
       setCopiedKey(null);
     }
   }, [isOpen, editingTask, defaultStageId, stages, pipeline?.tags]);
@@ -152,6 +154,7 @@ export default function ProcessosTaskModal({
 
     const normalized = tagName.toLowerCase();
     const alreadyExists = availableTags.some((tag) => {
+      if (editingTagOriginal && tag === editingTagOriginal) return false;
       const [name] = tag.includes("|") ? tag.split("|") : [tag];
       return name.trim().toLowerCase() === normalized;
     });
@@ -161,7 +164,13 @@ export default function ProcessosTaskModal({
     }
 
     const value = `${tagName}|${tagColor}`;
-    const nextTags = [...availableTags, value];
+    let nextTags = [...availableTags];
+
+    if (editingTagOriginal) {
+      nextTags = nextTags.map((tag) => (tag === editingTagOriginal ? value : tag));
+    } else {
+      nextTags = [...nextTags, value];
+    }
 
     const { error } = await supabase
       .from("process_pipelines")
@@ -169,14 +178,34 @@ export default function ProcessosTaskModal({
       .eq("id", pipeline.id);
 
     if (error) {
-      toast.error("Não foi possível criar a etiqueta.");
+      toast.error(editingTagOriginal ? "Não foi possível atualizar a etiqueta." : "Não foi possível criar a etiqueta.");
       return;
     }
 
     setAvailableTags(nextTags);
-    setTaskTags((prev) => (prev.includes(value) ? prev : [...prev, value]));
+    setTaskTags((prev) => {
+      if (editingTagOriginal) {
+        const replaced = prev.map((tag) => (tag === editingTagOriginal ? value : tag));
+        return replaced.includes(value) ? replaced : [...replaced, value];
+      }
+      return prev.includes(value) ? prev : [...prev, value];
+    });
     setNewTagName("");
-    toast.success("Etiqueta criada.");
+    setEditingTagOriginal(null);
+    toast.success(editingTagOriginal ? "Etiqueta atualizada." : "Etiqueta criada.");
+  };
+
+  const handleStartEditTag = (tag: string) => {
+    const [name, color] = tag.includes("|") ? tag.split("|") : [tag, "#CCA761"];
+    setEditingTagOriginal(tag);
+    setNewTagName(name);
+    setTagColor(color || "#CCA761");
+  };
+
+  const handleCancelTagEdit = () => {
+    setEditingTagOriginal(null);
+    setNewTagName("");
+    setTagColor("#CCA761");
   };
 
   const handeSaveTask = async () => {
@@ -621,31 +650,40 @@ export default function ProcessosTaskModal({
                         const [name, color] = tag.includes('|') ? tag.split('|') : [tag, '#CCA761'];
                         const isSelected = taskTags.includes(tag);
                         return (
-                          <button
-                            key={tag}
-                            type="button"
-                            onClick={() => {
-                              if (isSelected) {
-                                setTaskTags(taskTags.filter(t => t !== tag));
-                              } else {
-                                setTaskTags([...taskTags, tag]);
-                              }
-                            }}
-                            className={`flex items-center gap-1.5 px-2.5 py-1 text-[10px] uppercase tracking-wider font-bold rounded-md transition-all ${isSelected ? 'opacity-100 scale-100' : 'opacity-70 hover:opacity-100 scale-95 hover:scale-100'}`}
-                            style={isSelected ? {
-                              color: color,
-                              border: `1px solid ${color}`,
-                              backgroundColor: '#111',
-                              boxShadow: `0 0 8px ${color}30`
-                            } : {
-                              color: 'rgba(255, 255, 255, 0.6)',
-                              border: `1px solid rgba(255, 255, 255, 0.2)`,
-                              backgroundColor: 'transparent'
-                            }}
-                          >
-                            {name}
-                            {isSelected && <CheckCircle2 size={12} className="ml-0.5" />}
-                          </button>
+                          <div key={tag} className="flex items-center gap-1">
+                            <button
+                              type="button"
+                              onClick={() => {
+                                if (isSelected) {
+                                  setTaskTags(taskTags.filter(t => t !== tag));
+                                } else {
+                                  setTaskTags([...taskTags, tag]);
+                                }
+                              }}
+                              className={`flex items-center gap-1.5 px-2.5 py-1 text-[10px] uppercase tracking-wider font-bold rounded-md transition-all ${isSelected ? 'opacity-100 scale-100' : 'opacity-70 hover:opacity-100 scale-95 hover:scale-100'}`}
+                              style={isSelected ? {
+                                color: color,
+                                border: `1px solid ${color}`,
+                                backgroundColor: '#111',
+                                boxShadow: `0 0 8px ${color}30`
+                              } : {
+                                color: 'rgba(255, 255, 255, 0.6)',
+                                border: `1px solid rgba(255, 255, 255, 0.2)`,
+                                backgroundColor: 'transparent'
+                              }}
+                            >
+                              {name}
+                              {isSelected && <CheckCircle2 size={12} className="ml-0.5" />}
+                            </button>
+                            <button
+                              type="button"
+                              onClick={() => handleStartEditTag(tag)}
+                              className="w-6 h-6 rounded border border-[#CCA761]/30 text-[#CCA761] hover:bg-[#CCA761]/10 flex items-center justify-center"
+                              title="Editar etiqueta"
+                            >
+                              <Pencil size={11} />
+                            </button>
+                          </div>
                         );
                       })
                     ) : (
@@ -671,9 +709,18 @@ export default function ProcessosTaskModal({
                       onClick={handleCreateTag}
                       className="px-3 h-9 rounded-lg bg-[#CCA761]/15 border border-[#CCA761]/30 text-[#CCA761] text-[10px] font-black uppercase tracking-widest hover:bg-[#CCA761]/25"
                     >
-                      Criar
+                      {editingTagOriginal ? "Salvar" : "Criar"}
                     </button>
                   </div>
+                  {editingTagOriginal && (
+                    <button
+                      type="button"
+                      onClick={handleCancelTagEdit}
+                      className="w-full h-9 rounded-lg border border-white/15 text-gray-300 text-[10px] font-black uppercase tracking-widest hover:bg-white/5"
+                    >
+                      Cancelar edição da etiqueta
+                    </button>
+                  )}
                   <style jsx global>{`
                     /* ReactQuill Dark Mode Overrides */
                     .ql-editor {
