@@ -247,7 +247,7 @@ export function AdminSidebar() {
                       src="/mayus_logo.png"
                       alt="MAYUS Monograma"
                       fill
-                      className="object-contain scale-[0.94] drop-shadow-[0_14px_28px_rgba(0,0,0,0.34)]"
+                      className="object-contain scale-[1.02] drop-shadow-[0_14px_28px_rgba(0,0,0,0.34)]"
                       priority
                     />
                   </div>

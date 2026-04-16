@@ -10,11 +10,10 @@ import {
   ChevronRight, ArrowUpRight
 } from "lucide-react";
 import { useEffect, useState, useRef } from "react";
-import { AnimatePresence, motion, useScroll, useTransform } from "framer-motion";
+import { motion, useScroll, useTransform } from "framer-motion";
 import Spline from "@splinetool/react-spline";
 
 import { FounderCounter } from "@/components/landing/FounderCounter";
-import { NeuralPortal } from "@/components/landing/NeuralPortal";
 
 const cormorant = Cormorant_Garamond({ subsets: ["latin"], weight: ["300", "400", "500", "600", "700"], style: ["normal", "italic"] });
 const montserrat = Montserrat({ subsets: ["latin"], weight: ["200", "300", "400", "500", "600", "700", "800"] });
@@ -41,39 +40,22 @@ const Reveal = ({ children, width = "fit-content", delay = 0.2, className = "" }
 export default function LandingPage() {
   const [mounted, setMounted] = useState(false);
   const [scrolled, setScrolled] = useState(false);
-  const [showPortal, setShowPortal] = useState(true);
   const { scrollYProgress } = useScroll();
   const opacity = useTransform(scrollYProgress, [0, 0.05], [1, 0]);
   const scale = useTransform(scrollYProgress, [0, 0.05], [1, 0.95]);
 
   useEffect(() => {
     setMounted(true);
-    // Verificar se já passou pelo portal nesta sessão
-    const hasSeenPortal = sessionStorage.getItem("mayus_portal_seen");
-    if (hasSeenPortal) {
-      setShowPortal(false);
-    }
     const handleScroll = () => setScrolled(window.scrollY > 30);
     window.addEventListener("scroll", handleScroll);
     return () => window.removeEventListener("scroll", handleScroll);
   }, []);
 
-  const handlePortalEnter = () => {
-    setShowPortal(false);
-    sessionStorage.setItem("mayus_portal_seen", "true");
-  };
-
   if (!mounted) return <div className="min-h-screen bg-[#050505]" />;
 
   return (
     <div className={`min-h-screen bg-[#050505] text-[#e0e0e0] selection:bg-[#CCA761] selection:text-black overflow-x-hidden ${montserrat.className}`}>
-      
-      <AnimatePresence>
-        {showPortal && (
-          <NeuralPortal onEnter={handlePortalEnter} />
-        )}
-      </AnimatePresence>
-      
+
       {/* Background Cinematic Shimmer */}
       <div className="fixed inset-0 z-0 pointer-events-none">
          <div className="absolute top-[-10%] left-[-10%] w-[40%] h-[40%] rounded-full bg-[#CCA761]/5 blur-[120px] animate-pulse" />
@@ -84,13 +66,16 @@ export default function LandingPage() {
       {/* Header Elite */}
       <nav className={`fixed top-0 w-full z-50 transition-all duration-1000 px-6 lg:px-12 py-8 flex items-center justify-between ${scrolled ? 'bg-black/60 backdrop-blur-2xl border-b border-white/5 py-4' : ''}`}>
         <div className="flex items-center gap-4 group cursor-pointer">
-           <div className="relative w-12 h-12 lg:w-16 lg:h-16 transition-transform duration-700 group-hover:scale-105">
-              <Image 
-                src="/logo_premium.png" 
-                alt="MAYUS Logo" 
-                fill 
-                className="object-contain drop-shadow-[0_0_15px_rgba(204,167,97,0.3)]"
-              />
+           <div className="relative w-12 h-12 lg:w-16 lg:h-16 transition-transform duration-700 group-hover:scale-105 [perspective:1200px]">
+              <div className="absolute inset-0 rounded-full bg-[radial-gradient(circle,rgba(204,167,97,0.10)_0%,rgba(204,167,97,0)_72%)] blur-lg" aria-hidden="true" />
+              <div className="relative w-full h-full [transform-style:preserve-3d]" style={{ animation: 'mayusLandingPlateRotate 12s ease-in-out infinite' }}>
+                <Image 
+                  src="/mayus_logo.png" 
+                  alt="MAYUS Logo" 
+                  fill 
+                  className="object-contain scale-[1.02] drop-shadow-[0_12px_24px_rgba(0,0,0,0.32)]"
+                />
+              </div>
            </div>
            <div className="flex flex-col">
               <span className={`text-xl lg:text-3xl font-black tracking-[0.4em] text-white uppercase leading-none ${cormorant.className} italic`}>MAYUS</span>
@@ -228,6 +213,20 @@ export default function LandingPage() {
             <FounderCounter />
          </Reveal>
       </section>
+
+      <style jsx global>{`
+        @keyframes mayusLandingPlateRotate {
+          0% {
+            transform: rotateX(7deg) rotateY(0deg);
+          }
+          50% {
+            transform: rotateX(7deg) rotateY(180deg);
+          }
+          100% {
+            transform: rotateX(7deg) rotateY(360deg);
+          }
+        }
+      `}</style>
 
       {/* Concept Architecture: Orb -> Kernel -> Skills */}
       <section id="architecture" className="relative py-44 overflow-hidden border-y border-white/5 bg-black/20">

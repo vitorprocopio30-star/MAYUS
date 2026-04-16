@@ -646,7 +646,7 @@ export default function AgendaDiariaPage() {
       {/* Header da Página */}
       <div className="flex flex-col md:flex-row justify-between items-start md:items-end pb-4 border-b border-[#CCA761]/20 relative z-40 gap-6">
         <div className="flex items-start gap-4 md:gap-5 w-full">
-          <div className="relative shrink-0 mt-3 md:mt-6 mb-[-10px] md:mb-[-16px]">
+          <div className="relative shrink-0 mt-4 md:mt-7 mb-[-18px] md:mb-[-26px]">
             <div className="w-20 h-20 md:w-24 md:h-24 rounded-2xl border border-[#CCA761]/35 bg-gradient-to-br from-[#CCA761]/20 to-[#0a0a0a] p-[2px] shadow-[0_0_25px_rgba(204,167,97,0.2)]">
               <div className="w-full h-full rounded-[14px] overflow-hidden bg-[#0a0a0a] flex items-center justify-center">
                 {userAvatarUrl ? (
@@ -657,7 +657,7 @@ export default function AgendaDiariaPage() {
               </div>
             </div>
           </div>
-          <div className="pt-0.5">
+          <div className="pt-5 md:pt-6">
              <h1 className={`text-5xl lg:text-7xl text-[#CCA761] mb-1 font-bold tracking-tight ${cormorant.className} italic drop-shadow-[0_0_20px_rgba(204,167,97,0.3)]`}>
                Sua Agenda
              </h1>
@@ -701,7 +701,7 @@ export default function AgendaDiariaPage() {
           <div className="flex gap-2">
             <button
               onClick={openCreateTaskModal}
-              className="flex items-center gap-2 bg-[#111] border border-[#CCA761]/30 text-[#CCA761] font-black uppercase tracking-widest px-4 py-2.5 rounded-xl hover:bg-[#CCA761]/10 transition-colors text-xs"
+              className="flex items-center gap-2 whitespace-nowrap bg-[#111] border border-[#CCA761]/30 text-[#CCA761] font-black uppercase tracking-[0.14em] px-5 py-2.5 rounded-xl hover:bg-[#CCA761]/10 transition-colors text-xs"
             >
               <Plus size={14} /> Nova tarefa
             </button>
