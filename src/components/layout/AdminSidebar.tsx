@@ -234,24 +234,20 @@ export function AdminSidebar() {
           <div className="relative w-full h-full transition-all duration-500 flex items-center justify-center">
             {sidebarMode === "expanded" ? (
               <div className="flex h-full w-full flex-col items-center justify-center gap-2 pt-3">
-                <div className="relative h-[128px] w-[128px] transition-transform duration-500 hover:scale-[1.03]">
+                <div className="relative h-[128px] w-[128px] transition-transform duration-500 hover:scale-[1.03] [perspective:1200px]">
                   <div
                     className="absolute inset-0 rounded-full bg-[radial-gradient(circle,rgba(204,167,97,0.10)_0%,rgba(204,167,97,0)_72%)] blur-xl"
                     aria-hidden="true"
                   />
                   <div
-                    className="absolute inset-[10px] rounded-full border border-[#CCA761]/12"
-                    aria-hidden="true"
-                  />
-                  <div
-                    className="relative h-full w-full"
-                    style={{ animation: "mayusSpin 28s linear infinite" }}
+                    className="relative h-full w-full [transform-style:preserve-3d]"
+                    style={{ animation: "mayusPlateRotate 12s ease-in-out infinite" }}
                   >
                     <Image
                       src="/mayus_logo.png"
                       alt="MAYUS Monograma"
                       fill
-                      className="object-contain scale-[0.94] drop-shadow-[0_0_16px_rgba(204,167,97,0.18)]"
+                      className="object-contain scale-[0.94] drop-shadow-[0_14px_28px_rgba(0,0,0,0.34)]"
                       priority
                     />
                   </div>
@@ -368,12 +364,15 @@ export function AdminSidebar() {
       )}
 
       <style jsx global>{`
-        @keyframes mayusSpin {
-          from {
-            transform: rotate(0deg);
+        @keyframes mayusPlateRotate {
+          0% {
+            transform: rotateX(7deg) rotateY(0deg);
           }
-          to {
-            transform: rotate(360deg);
+          50% {
+            transform: rotateX(7deg) rotateY(180deg);
+          }
+          100% {
+            transform: rotateX(7deg) rotateY(360deg);
           }
         }
       `}</style>
