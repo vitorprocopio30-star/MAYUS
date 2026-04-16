@@ -208,7 +208,7 @@ function SignupForm() {
               {/* Logo MAYUS */}
               <div className="relative w-[20rem] h-[20rem] md:w-[28rem] md:h-[28rem] mb-[-30px] hover:scale-105 transition-transform duration-700">
                 <Image
-                  src="/logo.png"
+                  src="/mayus_logo.png"
                   alt="MAYUS Logo"
                   fill
                   className="object-contain"

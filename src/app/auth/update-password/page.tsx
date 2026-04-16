@@ -106,7 +106,7 @@ function UpdatePasswordForm() {
             {/* Logo pequena */}
             <div className="flex justify-center mb-6">
               <div className="relative w-24 h-24">
-                <Image src="/logo.png" alt="MAYUS Logo" fill className="object-contain" priority />
+                <Image src="/mayus_logo.png" alt="MAYUS Logo" fill className="object-contain" priority />
               </div>
             </div>
 

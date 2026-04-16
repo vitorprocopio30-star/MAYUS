@@ -97,7 +97,7 @@ export default function MockupPage() {
       {/* ── ICON SIDEBAR ─────────────────────────────── */}
       <aside className="relative z-10 w-14 flex flex-col items-center py-4 gap-1 border-r border-white/5 bg-[#0a0a0a] shrink-0">
         <div className="w-8 h-8 mb-4 relative">
-          <Image src="/logo.png" alt="MAYUS" fill className="object-contain" />
+          <Image src="/mayus_logo.png" alt="MAYUS" fill className="object-contain" />
         </div>
         {navIcons.map(({ icon: Icon, label, active }) => (
           <button

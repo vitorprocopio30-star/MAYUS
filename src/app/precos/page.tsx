@@ -116,7 +116,7 @@ export default function PrecosPage() {
       {/* ── NAV ─────────────────────────────────────────── */}
       <nav className="relative z-10 flex items-center justify-between px-8 md:px-16 py-6 border-b border-white/5 backdrop-blur-sm">
         <Link href="/dashboard">
-          <Image src="/logo.png" alt="MAYUS" width={110} height={40} className="object-contain" />
+          <Image src="/mayus_logo.png" alt="MAYUS" width={110} height={40} className="object-contain" />
         </Link>
         <div className={`hidden md:flex items-center gap-8 text-sm text-white/50 font-sans`}>
           <Link href="/dashboard" className="hover:text-[#CCA761] transition-colors">Dashboard</Link>
