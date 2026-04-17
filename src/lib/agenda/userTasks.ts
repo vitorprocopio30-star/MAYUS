@@ -31,6 +31,7 @@ export type AgendaTaskRecord = {
   client_name?: string | null;
   process_number?: string | null;
   responsible_notes?: string | null;
+  tags?: string[] | null;
   author_name?: string | null;
   visibility?: "private" | "global" | null;
   task_kind?: "task" | "mission" | null;
@@ -70,8 +71,8 @@ export function inferUrgencyFromDeadline(deadline?: string | null) {
   const due = new Date(deadline);
   const diffDays = Math.floor((due.getTime() - now.getTime()) / 86400000);
 
-  if (diffDays <= 0) return "URGENTE";
-  if (diffDays <= 2) return "ATENCAO";
+  if (diffDays <= 3) return "URGENTE";
+  if (diffDays <= 10) return "ATENCAO";
   return "ROTINA";
 }
 
@@ -141,6 +142,7 @@ export function toAgendaEvent(task: AgendaTaskRecord) {
     task_kind: task.task_kind || "task",
     reward_coins: task.reward_coins ?? (normalizeUrgencyLabel(task.urgency) === "URGENTE" ? 100 : normalizeUrgencyLabel(task.urgency) === "ATENCAO" ? 50 : 20),
     show_only_on_date: Boolean(task.show_only_on_date),
+    tags: Array.isArray(task.tags) ? task.tags : [],
   };
 }
 
@@ -174,6 +176,7 @@ function buildBasePayload(params: {
   showOnlyOnDate?: boolean;
   processNumber?: string | null;
   responsibleNotes?: string | null;
+  tags?: string[] | null;
 }) {
   const urgency = normalizeUrgencyLabel(params.urgency);
   const status = normalizeAgendaStatus(params.status);
@@ -224,6 +227,7 @@ function buildBasePayload(params: {
     client_name: params.clientName || null,
     process_number: params.processNumber || null,
     responsible_notes: params.responsibleNotes || null,
+    tags: Array.isArray(params.tags) ? params.tags : [],
   };
 }
 
@@ -262,11 +266,13 @@ export function buildAgendaPayloadFromProcessTask(params: {
   createdBy?: string | null;
   createdByAgent?: string | null;
 }) {
-  const urgency = params.task?.urgency
+  const manualUrgency = params.task?.urgency
     ? normalizeUrgencyLabel(params.task.urgency)
-    : params.task?.prazo_fatal
-      ? inferUrgencyFromDeadline(params.task.prazo_fatal)
-      : inferUrgencyFromText(params.task?.title, params.task?.description, params.task?.demanda);
+    : inferUrgencyFromText(params.task?.title, params.task?.description, params.task?.demanda);
+  const deadlineUrgency = params.task?.prazo_fatal ? inferUrgencyFromDeadline(params.task.prazo_fatal) : manualUrgency;
+  const urgency = (URGENCY_ORDER[deadlineUrgency] ?? 99) < (URGENCY_ORDER[manualUrgency] ?? 99)
+    ? deadlineUrgency
+    : manualUrgency;
 
   return buildBasePayload({
     tenantId: params.tenantId,
@@ -351,6 +357,7 @@ export function buildAgendaPayloadFromManualTask(params: {
   rewardCoins?: number;
   processNumber?: string | null;
   responsibleNotes?: string | null;
+  tags?: string[] | null;
 }) {
   const urgency = normalizeUrgencyLabel(params.urgency);
   return buildBasePayload({
@@ -373,6 +380,7 @@ export function buildAgendaPayloadFromManualTask(params: {
     rewardCoins: params.rewardCoins,
     processNumber: params.processNumber || null,
     responsibleNotes: params.responsibleNotes || null,
+    tags: Array.isArray(params.tags) ? params.tags : [],
   });
 }
 

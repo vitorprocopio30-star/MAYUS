@@ -54,6 +54,7 @@ function getFatalDeadlineMeta(dateValue?: string | null) {
 
   if (diffDays <= 3) {
     return {
+      diffDays,
       borderClass: "border-red-500/40",
       badgeClass: "border-red-500/40 bg-red-500/10 text-red-400",
       stripeClass: "bg-red-500/80",
@@ -62,6 +63,7 @@ function getFatalDeadlineMeta(dateValue?: string | null) {
 
   if (diffDays <= 10) {
     return {
+      diffDays,
       borderClass: "border-amber-500/40",
       badgeClass: "border-amber-500/40 bg-amber-500/10 text-amber-300",
       stripeClass: "bg-amber-500/80",
@@ -69,10 +71,19 @@ function getFatalDeadlineMeta(dateValue?: string | null) {
   }
 
   return {
+    diffDays,
     borderClass: "border-emerald-500/40",
     badgeClass: "border-emerald-500/40 bg-emerald-500/10 text-emerald-300",
     stripeClass: "bg-emerald-500/80",
   };
+}
+
+function formatDeadlineDays(diffDays?: number | null) {
+  if (typeof diffDays !== "number") return "";
+  if (diffDays < 0) return `${Math.abs(diffDays)}d atrasado`;
+  if (diffDays === 0) return "hoje";
+  if (diffDays === 1) return "1 dia";
+  return `${diffDays} dias`;
 }
 
 export default function PipelinePage() {
@@ -504,28 +515,6 @@ const [pendingMove, setPendingMove] = useState<{
                                         </div>
                                       )}
 
-                                      {task.description && (
-                                        <div className="mb-2.5">
-                                          <div className="flex items-center justify-between gap-2 mb-1">
-                                            <span className="text-[9px] uppercase tracking-widest text-zinc-500 font-black">Resumo</span>
-                                            <button
-                                              type="button"
-                                              onClick={(event) => {
-                                                event.stopPropagation();
-                                                copyText(`summary-${task.id}`, task.description?.replace(/(<([^>]+)>)/gi, " ").trim() || "");
-                                              }}
-                                              className="w-5 h-5 rounded border border-[#CCA761]/30 text-[#CCA761] hover:bg-[#CCA761]/10 flex items-center justify-center"
-                                              title="Copiar resumo"
-                                            >
-                                              {copiedTextKey === `summary-${task.id}` ? <Check size={10} /> : <Copy size={10} />}
-                                            </button>
-                                          </div>
-                                          <div className="text-zinc-400 text-[12px] line-clamp-1 leading-relaxed">
-                                            {task.description.replace(/(<([^>]+)>)/gi, "")}
-                                          </div>
-                                        </div>
-                                      )}
-
                                       {task.responsible_notes && (
                                         <div className="mb-2.5">
                                           <div className="flex items-center justify-between gap-2 mb-1">
@@ -550,7 +539,7 @@ const [pendingMove, setPendingMove] = useState<{
 
                                       {task.prazo_fatal && (
                                         <div className={`mb-2.5 inline-flex items-center gap-1.5 text-[10px] font-black uppercase tracking-widest px-2 py-1 rounded border ${fatalMeta?.badgeClass || 'border-red-500/40 bg-red-500/10 text-red-400'}`}>
-                                          <AlertTriangle size={10} /> Fatal: {new Date(task.prazo_fatal).toLocaleDateString('pt-BR')}
+                                          <AlertTriangle size={10} /> Fatal: {new Date(task.prazo_fatal).toLocaleDateString('pt-BR')} • {formatDeadlineDays(fatalMeta?.diffDays)}
                                         </div>
                                       )}
                                        
@@ -656,7 +645,7 @@ const [pendingMove, setPendingMove] = useState<{
                           )}
                           {task.prazo_fatal && (
                             <div className={`inline-flex items-center gap-1.5 mb-2 text-[10px] font-black uppercase tracking-widest px-2 py-1 rounded border ${fatalMeta?.badgeClass || 'border-red-500/40 bg-red-500/10 text-red-400'}`}>
-                              <AlertTriangle size={10} /> Fatal: {new Date(task.prazo_fatal).toLocaleDateString('pt-BR')}
+                              <AlertTriangle size={10} /> Fatal: {new Date(task.prazo_fatal).toLocaleDateString('pt-BR')} • {formatDeadlineDays(fatalMeta?.diffDays)}
                             </div>
                           )}
                           <div className="flex gap-1.5 flex-wrap">

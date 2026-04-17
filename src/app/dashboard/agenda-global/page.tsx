@@ -6,7 +6,9 @@ import { Clock, AlertCircle, Star, Wand2, Calendar, CheckCircle2, Trophy, Sword,
 import Link from "next/link";
 import { Montserrat, Cormorant_Garamond } from "next/font/google";
 import { useGamification } from "@/hooks/useGamification";
-import { formatDateKey, sortAgendaTasks, toAgendaEvent, toDayRange } from "@/lib/agenda/userTasks";
+import { formatDateKey, getUrgencyLabel, inferUrgencyFromDeadline, sortAgendaTasks, toAgendaEvent, toDayRange } from "@/lib/agenda/userTasks";
+
+const TASK_META_PREFIX = "__MAYUS_TASK_META__";
 
 const montserrat = Montserrat({ subsets: ["latin"], weight: ["300", "400", "500", "600", "700"] });
 const cormorant = Cormorant_Garamond({ subsets: ["latin"], weight: ["400", "600", "700"], style: ["normal", "italic"] });
@@ -44,6 +46,35 @@ export default function AgendaGlobalPage() {
     if (diffDays <= 3) return "border-red-500/40 bg-red-500/10 text-red-400";
     if (diffDays <= 10) return "border-amber-500/40 bg-amber-500/10 text-amber-300";
     return "border-emerald-500/40 bg-emerald-500/10 text-emerald-300";
+  };
+
+  const parseTaskMeta = (description?: string | null) => {
+    const raw = String(description || "");
+    if (!raw.startsWith(TASK_META_PREFIX)) return {} as { process_number?: string | null; responsible_notes?: string | null; tags?: string[] };
+    try {
+      const parsed = JSON.parse(raw.slice(TASK_META_PREFIX.length));
+      return {
+        process_number: parsed?.process_number || null,
+        responsible_notes: parsed?.responsible_notes || null,
+        tags: Array.isArray(parsed?.tags) ? parsed.tags.filter(Boolean).map((tag: string) => String(tag).trim()).filter(Boolean) : [],
+      };
+    } catch {
+      return {} as { process_number?: string | null; responsible_notes?: string | null; tags?: string[] };
+    }
+  };
+
+  const getDeadlineText = (dateValue?: string | null) => {
+    if (!dateValue) return "";
+    const due = new Date(dateValue);
+    if (Number.isNaN(due.getTime())) return "";
+    const now = new Date();
+    const nowStart = new Date(now.getFullYear(), now.getMonth(), now.getDate()).getTime();
+    const dueStart = new Date(due.getFullYear(), due.getMonth(), due.getDate()).getTime();
+    const diffDays = Math.floor((dueStart - nowStart) / (1000 * 60 * 60 * 24));
+    if (diffDays < 0) return `${Math.abs(diffDays)}d atrasado`;
+    if (diffDays === 0) return "hoje";
+    if (diffDays === 1) return "1 dia";
+    return `${diffDays} dias`;
   };
   
   // Mock do departamento real do profissional logado
@@ -124,7 +155,19 @@ export default function AgendaGlobalPage() {
       return scheduledAt >= startAt;
     });
 
-    const normalizedTasks = sortAgendaTasks(filteredByDate).map(toAgendaEvent).map((task: any) => {
+    const enrichedTasks = filteredByDate.map((task: any) => {
+      const legacyMeta = parseTaskMeta(task.description);
+      return {
+        ...task,
+        process_number: task.process_number || legacyMeta.process_number || null,
+        responsible_notes: task.responsible_notes || legacyMeta.responsible_notes || null,
+        tags: Array.isArray(task.tags) && task.tags.length > 0 ? task.tags : Array.isArray(legacyMeta.tags) ? legacyMeta.tags : [],
+        description: String(task.description || "").startsWith(TASK_META_PREFIX) ? null : task.description,
+        urgency: task.urgency || inferUrgencyFromDeadline(task.scheduled_for),
+      };
+    });
+
+    const normalizedTasks = sortAgendaTasks(enrichedTasks).map(toAgendaEvent).map((task: any) => {
       if (task.status === 'Concluído') return task;
       return { ...task, person: 'Equipe MAYUS' };
     });
@@ -211,6 +254,16 @@ export default function AgendaGlobalPage() {
     }
   };
 
+  const getReward = (task: any) => {
+    const normalized = String(task?.urgency || "")
+      .normalize("NFD")
+      .replace(/[\u0300-\u036f]/g, "")
+      .toUpperCase();
+    if (normalized === "URGENTE") return 100;
+    if (normalized === "ATENCAO") return 50;
+    return 20;
+  };
+
   const pendingEvents = useMemo(() => events.filter((e) => e.status !== 'Concluído'), [events]);
   const completedEvents = useMemo(() => {
     return events
@@ -244,7 +297,7 @@ export default function AgendaGlobalPage() {
       
       // Calcula moedas ganhas baseadas na categoria
       if (ev.status === 'Concluído' && ev.person) {
-        const reward = ev.category === 'URGENTE' ? 100 : ev.category === 'ATENÇÃO' ? 50 : 20;
+        const reward = getReward(ev);
         acc[ev.person] += reward;
       }
       return acc;
@@ -495,7 +548,8 @@ export default function AgendaGlobalPage() {
                   <div className="col-span-full text-center py-12 text-gray-500 text-sm">Todas as atividades pendentes foram concluídas.</div>
                 ) : pendingEvents.map((ev, i) => {
                   const active = ev.active || false;
-                  const bdgColor = ev.color || '#CCA761';
+                  const normalizedUrgency = String(ev.urgency || "").normalize("NFD").replace(/[\u0300-\u036f]/g, "").toUpperCase();
+                  const bdgColor = normalizedUrgency === "URGENTE" ? "#f87171" : normalizedUrgency === "ATENCAO" ? "#CCA761" : "#9ca3af";
                   const isUrgentTask = String(ev.urgency || '').toUpperCase() === 'URGENTE';
                   const deadlineClass = getDeadlineMeta(ev.scheduled_for);
 
@@ -544,12 +598,12 @@ export default function AgendaGlobalPage() {
                         <div className="flex flex-col relative z-10 pt-4 gap-2 flex-grow">
                            <div className="flex flex-col items-start gap-2">
                              <div className="flex items-center gap-1.5 flex-wrap">
-                               <span
-                                 className="text-[9px] font-black uppercase tracking-widest px-1.5 py-0.5 rounded shadow-sm backdrop-blur-sm shadow-[#0a0a0a]"
-                                 style={{ color: bdgColor, backgroundColor: `${bdgColor}20`, border: `1px solid ${bdgColor}40` }}
-                               >
-                                 {ev.category}
-                               </span>
+                                <span
+                                  className="text-[9px] font-black uppercase tracking-widest px-1.5 py-0.5 rounded shadow-sm backdrop-blur-sm shadow-[#0a0a0a]"
+                                  style={{ color: bdgColor, backgroundColor: `${bdgColor}20`, border: `1px solid ${bdgColor}40` }}
+                                >
+                                  {getUrgencyLabel(ev.urgency)}
+                                </span>
                                <span className={`text-[8px] font-bold uppercase tracking-widest text-[#a1a1aa]`}>• {ev.type}</span>
                                
                                {ev.stolen && (
@@ -561,25 +615,19 @@ export default function AgendaGlobalPage() {
                              {gamificationEnabled && (
                                <div className="flex">
                                  <span className={`text-[8px] font-black uppercase tracking-widest flex items-center gap-1 border rounded px-2 py-0.5 text-[#CCA761] border-[#CCA761]/30 bg-[#CCA761]/10 shadow-[0_0_10px_rgba(204,167,97,0.2)]`}>
-                                   +{ev.category === 'URGENTE' ? 100 : ev.category === 'ATENÇÃO' ? 50 : 20} <Coins size={8} className="text-[#FFD700]" />
+                                    +{getReward(ev)} <Coins size={8} className="text-[#FFD700]" />
                                  </span>
                                </div>
                              )}
                            </div>
                            <h4 className={`text-sm font-bold tracking-wide transition-colors duration-500 text-white line-clamp-3 leading-snug break-words pr-2 mt-1 ${ev.stolen ? 'text-[#ef4444]' : ''}`}>{ev.title}</h4>
-                           {ev.description && (
-                             <div className="mt-1.5 p-2 rounded border border-white/10 bg-black/20">
-                               <div className="flex items-center justify-between gap-2 mb-1">
-                                 <span className="text-[8px] uppercase tracking-widest text-zinc-500 font-black">Resumo</span>
-                                 <button
-                                   onClick={(event) => copyTaskText(event, `global-summary-${ev.id}`, String(ev.description || ''))}
-                                   className="inline-flex items-center justify-center w-5 h-5 rounded border border-[#CCA761]/30 text-[#CCA761] hover:bg-[#CCA761]/10"
-                                   title="Copiar resumo"
-                                 >
-                                   {copiedTextKey === `global-summary-${ev.id}` ? <Check size={10} /> : <Copy size={10} />}
-                                 </button>
-                               </div>
-                               <p className="text-[10px] text-zinc-400 line-clamp-2">{String(ev.description || '')}</p>
+                           {Array.isArray(ev.tags) && ev.tags.length > 0 && (
+                             <div className="mt-1.5 flex flex-wrap gap-1">
+                               {ev.tags.map((tag: string) => (
+                                 <span key={`${ev.id}-${tag}`} className="text-[8px] uppercase tracking-widest px-2 py-0.5 rounded border border-[#CCA761]/30 text-[#CCA761] bg-[#CCA761]/10">
+                                   {tag}
+                                 </span>
+                               ))}
                              </div>
                            )}
                            {ev.responsible_notes && (
@@ -599,7 +647,7 @@ export default function AgendaGlobalPage() {
                            )}
                            {deadlineClass && (
                              <div className={`mt-1.5 inline-flex items-center gap-1.5 text-[8px] font-black uppercase tracking-widest px-2 py-1 rounded border ${deadlineClass}`}>
-                               <Calendar size={10} /> Fatal: {new Date(ev.scheduled_for).toLocaleDateString('pt-BR')}
+                               <Calendar size={10} /> Fatal: {new Date(ev.scheduled_for).toLocaleDateString('pt-BR')} • {getDeadlineText(ev.scheduled_for)}
                              </div>
                            )}
                          </div>
@@ -643,7 +691,8 @@ export default function AgendaGlobalPage() {
                   <div className="space-y-3 pb-10">
                     {completedEvents.map((ev, i) => {
                       const active = ev.active || false;
-                      const bdgColor = ev.color || '#CCA761';
+                      const normalizedUrgency = String(ev.urgency || "").normalize("NFD").replace(/[\u0300-\u036f]/g, "").toUpperCase();
+                      const bdgColor = normalizedUrgency === "URGENTE" ? "#f87171" : normalizedUrgency === "ATENCAO" ? "#CCA761" : "#9ca3af";
                       const cardBgClass = 'border-[#4ade80]/30 bg-[#111] hover:bg-[#151515] shadow-[0_0_20px_rgba(74,222,128,0.05)]';
 
                       return (
@@ -658,7 +707,7 @@ export default function AgendaGlobalPage() {
                                 <div className="flex flex-col items-start gap-2 mb-2 w-full pr-16 sm:pr-24">
                                   <div className="flex items-center gap-2 flex-wrap">
                                     <span className="text-[10px] font-black uppercase tracking-widest px-2 py-0.5 rounded shadow-sm backdrop-blur-sm" style={{ color: bdgColor, backgroundColor: `${bdgColor}15`, border: `1px solid ${bdgColor}40`, textShadow: `0 0 8px ${bdgColor}80` }}>
-                                      {ev.category}
+                                      {getUrgencyLabel(ev.urgency)}
                                     </span>
                                     <span className="text-[9px] font-bold uppercase tracking-widest text-gray-500">• {ev.type}</span>
                                   </div>
@@ -667,7 +716,7 @@ export default function AgendaGlobalPage() {
                                   {gamificationEnabled && (
                                     <div className="flex">
                                       <span className="text-[9px] font-black uppercase tracking-widest flex items-center gap-1 border rounded px-2 py-0.5 text-gray-500 border-gray-600 bg-white/5 shadow-none">
-                                        +{ev.category === 'URGENTE' ? 100 : ev.category === 'ATENÇÃO' ? 50 : 20} <Coins size={10} />
+                                        +{getReward(ev)} <Coins size={10} />
                                       </span>
                                     </div>
                                   )}

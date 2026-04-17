@@ -3,10 +3,18 @@
 import { useEffect, useState, useMemo, useRef } from "react";
 import { createClient } from "@/lib/supabase/client";
 import confetti from "canvas-confetti";
-import { Clock, AlertCircle, Star, Wand2, Calendar, CheckCircle2, Trophy, Coins, Gift, Lock, Unlock, Copy, Check, Plus, Target, X, Pencil } from "lucide-react";
+import { Clock, AlertCircle, Star, Wand2, Calendar, CheckCircle2, Trophy, Coins, Gift, Lock, Unlock, Copy, Check, Plus, Target, X } from "lucide-react";
 import { Montserrat, Cormorant_Garamond } from "next/font/google";
 import { useGamification } from "@/hooks/useGamification";
-import { buildAgendaPayloadFromManualTask, formatDateKey, sortAgendaTasks, toAgendaEvent, toDayRange } from "@/lib/agenda/userTasks";
+import { buildAgendaPayloadFromManualTask, formatDateKey, getUrgencyLabel, inferUrgencyFromDeadline, sortAgendaTasks, toAgendaEvent, toDayRange } from "@/lib/agenda/userTasks";
+
+const TASK_META_PREFIX = "__MAYUS_TASK_META__";
+
+type LegacyTaskMeta = {
+  process_number?: string | null;
+  responsible_notes?: string | null;
+  tags?: string[];
+};
 
 const montserrat = Montserrat({ subsets: ["latin"], weight: ["300", "400", "500", "600", "700"] });
 const cormorant = Cormorant_Garamond({ subsets: ["latin"], weight: ["400", "600", "700"], style: ["normal", "italic"] });
@@ -48,6 +56,9 @@ export default function AgendaDiariaPage() {
   const [newTaskTitle, setNewTaskTitle] = useState("");
   const [newTaskResponsibleNotes, setNewTaskResponsibleNotes] = useState("");
   const [newTaskProcessNumber, setNewTaskProcessNumber] = useState("");
+  const [newTaskTags, setNewTaskTags] = useState<string[]>([]);
+  const [newTagDraft, setNewTagDraft] = useState("");
+  const [knownTags, setKnownTags] = useState<string[]>([]);
   const [newTaskUrgency, setNewTaskUrgency] = useState<"URGENTE" | "ATENCAO" | "ROTINA">("ROTINA");
   const [newTaskType, setNewTaskType] = useState<"Tarefa" | "Prazo" | "Processo" | "CRM">("Tarefa");
   const [newTaskVisibility, setNewTaskVisibility] = useState<"private" | "global">("private");
@@ -87,6 +98,44 @@ export default function AgendaDiariaPage() {
       diffDays,
       className: "border-emerald-500/40 bg-emerald-500/10 text-emerald-300",
     };
+  };
+
+  const getDeadlineText = (diffDays?: number | null) => {
+    if (typeof diffDays !== "number") return "";
+    if (diffDays < 0) return `${Math.abs(diffDays)}d atrasado`;
+    if (diffDays === 0) return "hoje";
+    if (diffDays === 1) return "1 dia";
+    return `${diffDays} dias`;
+  };
+
+  const parseTaskMeta = (description?: string | null): LegacyTaskMeta => {
+    const raw = String(description || "");
+    if (!raw.startsWith(TASK_META_PREFIX)) return {};
+    try {
+      const parsed = JSON.parse(raw.slice(TASK_META_PREFIX.length));
+      return {
+        process_number: parsed?.process_number || null,
+        responsible_notes: parsed?.responsible_notes || null,
+        tags: Array.isArray(parsed?.tags) ? parsed.tags.filter(Boolean).map((tag: string) => String(tag).trim()).filter(Boolean) : [],
+      };
+    } catch {
+      return {};
+    }
+  };
+
+  const buildTaskMetaDescription = (meta: LegacyTaskMeta) => {
+    return `${TASK_META_PREFIX}${JSON.stringify({
+      process_number: meta.process_number || null,
+      responsible_notes: meta.responsible_notes || null,
+      tags: Array.isArray(meta.tags) ? meta.tags : [],
+    })}`;
+  };
+
+  const mergeKnownTags = (items: string[]) => {
+    setKnownTags((prev) => {
+      const merged = new Set([...prev, ...items.map((tag) => String(tag || "").trim()).filter(Boolean)]);
+      return Array.from(merged).sort((a, b) => a.localeCompare(b, "pt-BR"));
+    });
   };
 
   const MOTIVATIONAL_QUOTES = [
@@ -269,10 +318,21 @@ export default function AgendaDiariaPage() {
     }
 
     const enrichedTasks = (scopedTasks || []).map((task: any) => {
+      const legacyMeta = parseTaskMeta(task.description);
+      const mergedTags = Array.isArray(task.tags) && task.tags.length > 0
+        ? task.tags
+        : Array.isArray(legacyMeta.tags)
+          ? legacyMeta.tags
+          : [];
       const avatarUrl = task.assigned_to ? avatarByProfileId.get(String(task.assigned_to)) || null : null;
       if (task.source_table !== "process_prazos") {
         return {
           ...task,
+          process_number: task.process_number || legacyMeta.process_number || null,
+          responsible_notes: task.responsible_notes || legacyMeta.responsible_notes || null,
+          description: String(task.description || "").startsWith(TASK_META_PREFIX) ? null : task.description,
+          tags: mergedTags,
+          urgency: task.urgency || inferUrgencyFromDeadline(task.scheduled_for),
           assigned_avatar_url: avatarUrl,
         };
       }
@@ -285,7 +345,11 @@ export default function AgendaDiariaPage() {
       }
       return {
         ...task,
-        process_number: ctx.process_number,
+        process_number: task.process_number || legacyMeta.process_number || ctx.process_number,
+        responsible_notes: task.responsible_notes || legacyMeta.responsible_notes || null,
+        description: String(task.description || "").startsWith(TASK_META_PREFIX) ? null : task.description,
+        tags: mergedTags,
+        urgency: task.urgency || inferUrgencyFromDeadline(task.scheduled_for),
         author_name: ctx.author_name,
         client_name: task.client_name || ctx.client_name,
         assigned_avatar_url: avatarUrl,
@@ -301,6 +365,10 @@ export default function AgendaDiariaPage() {
         return bTs - aTs;
       });
     const taskItems = normalizedTasks.filter((task: any) => task.task_kind !== "mission");
+
+    mergeKnownTags(
+      taskItems.flatMap((task: any) => (Array.isArray(task.tags) ? task.tags : []))
+    );
 
     setActiveMission(missions[0] || null);
     setEvents(taskItems.filter((task: any) => !task.is_critical));
@@ -343,7 +411,7 @@ export default function AgendaDiariaPage() {
     const sourceTable = String(task?.source_table || "");
     if (sourceTable === "manual_private") return 0;
     if (typeof task.reward_coins === "number") return task.reward_coins;
-    const normalized = String(task.category || task.urgency || "")
+    const normalized = String(task.urgency || "")
       .normalize("NFD")
       .replace(/[\u0300-\u036f]/g, "")
       .toUpperCase();
@@ -495,6 +563,29 @@ export default function AgendaDiariaPage() {
     }
   };
 
+  const addTaskTag = () => {
+    const value = newTagDraft.trim();
+    if (!value) return;
+    const next = Array.from(new Set([...newTaskTags, value]));
+    setNewTaskTags(next);
+    mergeKnownTags([value]);
+    setNewTagDraft("");
+  };
+
+  const toggleKnownTag = (tag: string) => {
+    const normalized = String(tag || "").trim();
+    if (!normalized) return;
+    if (newTaskTags.includes(normalized)) {
+      setNewTaskTags((prev) => prev.filter((item) => item !== normalized));
+      return;
+    }
+    setNewTaskTags((prev) => [...prev, normalized]);
+  };
+
+  const removeTaskTag = (tag: string) => {
+    setNewTaskTags((prev) => prev.filter((item) => item !== tag));
+  };
+
   const buildInsightText = useMemo(() => {
     const pending = events.filter((task) => task.status !== "Concluído").length;
     const urgent = events.filter((task) => String(task.urgency).toUpperCase() === "URGENTE" && task.status !== "Concluído").length;
@@ -548,6 +639,8 @@ export default function AgendaDiariaPage() {
     setNewTaskTitle("");
     setNewTaskResponsibleNotes("");
     setNewTaskProcessNumber("");
+    setNewTaskTags([]);
+    setNewTagDraft("");
     setNewTaskUrgency("ROTINA");
     setNewTaskType("Tarefa");
     setNewTaskVisibility("private");
@@ -560,13 +653,16 @@ export default function AgendaDiariaPage() {
   const openEditTaskModal = (event: React.MouseEvent, task: any) => {
     event.stopPropagation();
     if (!isTaskEditableByOwner(task)) {
-      alert("Esta tarefa foi atribuida por Auditoria/IA e nao pode ser editada na Agenda Diaria.");
+      setNotesOnlyTask(task);
+      setNotesOnlyValue(task.responsible_notes || "");
       return;
     }
     setEditingTaskId(task.id);
     setNewTaskTitle(task.title || "");
     setNewTaskResponsibleNotes(task.responsible_notes || "");
     setNewTaskProcessNumber(task.process_number || "");
+    setNewTaskTags(Array.isArray(task.tags) ? task.tags : []);
+    setNewTagDraft("");
     setNewTaskUrgency((task.urgency || "ROTINA") as any);
     setNewTaskType((task.type || "Tarefa") as any);
     setNewTaskVisibility((task.visibility || "private") as any);
@@ -576,21 +672,32 @@ export default function AgendaDiariaPage() {
     setShowCreateTaskModal(true);
   };
 
-  const openNotesOnlyModal = (event: React.MouseEvent, task: any) => {
-    event.stopPropagation();
-    setNotesOnlyTask(task);
-    setNotesOnlyValue(task.responsible_notes || "");
-  };
-
   const saveNotesOnly = async () => {
     if (!notesOnlyTask?.id || !currentUserId) return;
     setIsSavingNotesOnly(true);
     try {
-      const { error } = await supabase
+      const { error: primaryError } = await supabase
         .from("user_tasks")
         .update({ responsible_notes: notesOnlyValue.trim() || null })
         .eq("id", notesOnlyTask.id)
         .eq("assigned_to", currentUserId);
+
+      let error = primaryError;
+      if (error && String(error?.message || "").includes("responsible_notes")) {
+        const description = buildTaskMetaDescription({
+          process_number: notesOnlyTask.process_number || null,
+          responsible_notes: notesOnlyValue.trim() || null,
+          tags: Array.isArray(notesOnlyTask.tags) ? notesOnlyTask.tags : [],
+        });
+
+        const { error: fallbackError } = await supabase
+          .from("user_tasks")
+          .update({ description })
+          .eq("id", notesOnlyTask.id)
+          .eq("assigned_to", currentUserId);
+
+        error = fallbackError;
+      }
 
       if (error) throw error;
 
@@ -612,13 +719,15 @@ export default function AgendaDiariaPage() {
 
   const hasMissingTaskColumns = (error: any) => {
     const message = String(error?.message || "");
-    return message.includes("responsible_notes") || message.includes("process_number");
+    return message.includes("responsible_notes") || message.includes("process_number") || message.includes("tags");
   };
 
-  const withoutExtendedTaskColumns = (payload: Record<string, any>) => {
+  const withoutExtendedTaskColumns = (payload: Record<string, any>, meta: LegacyTaskMeta) => {
     const sanitized = { ...payload };
     delete sanitized.process_number;
     delete sanitized.responsible_notes;
+    delete sanitized.tags;
+    sanitized.description = buildTaskMetaDescription(meta);
     return sanitized;
   };
 
@@ -635,11 +744,13 @@ export default function AgendaDiariaPage() {
 
       let error: any = null;
       if (editingTaskId) {
+        const normalizedTags = Array.from(new Set(newTaskTags.map((tag) => String(tag || "").trim()).filter(Boolean)));
         const updatePayload = {
           title: newTaskTitle.trim(),
           description: null,
           responsible_notes: newTaskResponsibleNotes.trim() || null,
           process_number: newTaskProcessNumber.trim() || null,
+          tags: normalizedTags,
           urgency: newTaskUrgency,
           scheduled_for: scheduledFor,
           type: newTaskType,
@@ -661,9 +772,14 @@ export default function AgendaDiariaPage() {
         error = response.error;
 
         if (error && hasMissingTaskColumns(error)) {
+          const legacyMeta = {
+            process_number: newTaskProcessNumber.trim() || null,
+            responsible_notes: newTaskResponsibleNotes.trim() || null,
+            tags: normalizedTags,
+          };
           const legacyResponse = await supabase
             .from("user_tasks")
-            .update(withoutExtendedTaskColumns(updatePayload))
+            .update(withoutExtendedTaskColumns(updatePayload, legacyMeta))
             .eq("id", editingTaskId)
             .eq("assigned_to", currentUserId)
             .eq("source_table", "manual_private")
@@ -671,12 +787,14 @@ export default function AgendaDiariaPage() {
           error = legacyResponse.error;
         }
       } else {
+        const normalizedTags = Array.from(new Set(newTaskTags.map((tag) => String(tag || "").trim()).filter(Boolean)));
         const payload = buildAgendaPayloadFromManualTask({
           tenantId,
           title: newTaskTitle.trim(),
           description: null,
           responsibleNotes: newTaskResponsibleNotes.trim() || null,
           processNumber: newTaskProcessNumber.trim() || null,
+          tags: normalizedTags,
           assignedTo,
           assignedName,
           createdBy: currentUserId,
@@ -692,7 +810,13 @@ export default function AgendaDiariaPage() {
         error = response.error;
 
         if (error && hasMissingTaskColumns(error)) {
-          const legacyResponse = await supabase.from("user_tasks").insert(withoutExtendedTaskColumns(payload));
+          const legacyResponse = await supabase.from("user_tasks").insert(
+            withoutExtendedTaskColumns(payload, {
+              process_number: newTaskProcessNumber.trim() || null,
+              responsible_notes: newTaskResponsibleNotes.trim() || null,
+              tags: normalizedTags,
+            })
+          );
           error = legacyResponse.error;
         }
       }
@@ -702,6 +826,8 @@ export default function AgendaDiariaPage() {
       setNewTaskTitle("");
       setNewTaskResponsibleNotes("");
       setNewTaskProcessNumber("");
+      setNewTaskTags([]);
+      setNewTagDraft("");
       setNewTaskUrgency("ROTINA");
       setNewTaskType("Tarefa");
       setNewTaskVisibility("private");
@@ -1014,7 +1140,8 @@ export default function AgendaDiariaPage() {
                 ) : visibleEvents.map((ev, i) => {
                   const isDone = ev.status === 'Concluído';
                   const active = ev.active || false;
-                  const bdgColor = ev.color || '#CCA761';
+                  const normalizedUrgency = String(ev.urgency || "").normalize("NFD").replace(/[\u0300-\u036f]/g, "").toUpperCase();
+                  const bdgColor = normalizedUrgency === "URGENTE" ? "#f87171" : normalizedUrgency === "ATENCAO" ? "#CCA761" : "#9ca3af";
                   const isUrgentTask = String(ev.urgency || '').toUpperCase() === 'URGENTE';
                   const deadlineMeta = getDeadlineMeta(ev.scheduled_for);
 
@@ -1035,7 +1162,7 @@ export default function AgendaDiariaPage() {
                       </div>
 
                       <div
-                        onClick={() => toggleStatus(ev)}
+                        onClick={(event) => openEditTaskModal(event, ev)}
                         className={`flex-1 flex items-center justify-between p-4 rounded-xl border transition-all duration-500 cursor-pointer overflow-hidden relative ${cardBgClass}`}
                       >
                         <div className="flex items-center gap-4 relative z-10">
@@ -1050,7 +1177,7 @@ export default function AgendaDiariaPage() {
                                   className="text-[10px] font-black uppercase tracking-widest px-2 py-0.5 rounded shadow-sm backdrop-blur-sm"
                                   style={{ color: bdgColor, backgroundColor: `${bdgColor}15`, border: `1px solid ${bdgColor}40`, textShadow: `0 0 8px ${bdgColor}80` }}
                                 >
-                                  {ev.category}
+                                  {getUrgencyLabel(ev.urgency)}
                                 </span>
                                 <span className={`text-[9px] font-bold uppercase tracking-widest ${isDone ? 'text-gray-500' : 'text-gray-400'}`}>• {ev.type}</span>
                                 
@@ -1105,23 +1232,17 @@ export default function AgendaDiariaPage() {
 
                               {deadlineMeta && (
                                 <div className={`mt-2 inline-flex items-center gap-1.5 px-2 py-1 rounded border text-[9px] font-black uppercase tracking-widest ${deadlineMeta.className}`}>
-                                  <Calendar size={10} /> Fatal: {new Date(ev.scheduled_for).toLocaleDateString("pt-BR")}
+                                  <Calendar size={10} /> Fatal: {new Date(ev.scheduled_for).toLocaleDateString("pt-BR")} • {getDeadlineText(deadlineMeta.diffDays)}
                                 </div>
                               )}
 
-                              {ev.description && (
-                                <div className="mt-2 p-2 rounded border border-white/10 bg-black/20 max-w-lg">
-                                  <div className="flex items-center justify-between gap-2 mb-1">
-                                    <span className="text-[9px] uppercase tracking-widest text-zinc-500 font-black">Resumo</span>
-                                    <button
-                                      onClick={(event) => copyTaskText(event, `summary-${ev.id}`, String(ev.description || ""))}
-                                      className="inline-flex items-center justify-center w-5 h-5 rounded border border-[#CCA761]/30 text-[#CCA761] hover:bg-[#CCA761]/10"
-                                      title="Copiar resumo"
-                                    >
-                                      {copiedTextKey === `summary-${ev.id}` ? <Check size={10} /> : <Copy size={10} />}
-                                    </button>
-                                  </div>
-                                  <p className="text-[10px] text-zinc-400 line-clamp-2">{String(ev.description || "")}</p>
+                              {Array.isArray(ev.tags) && ev.tags.length > 0 && (
+                                <div className="mt-2 flex flex-wrap gap-1.5">
+                                  {ev.tags.map((tag: string) => (
+                                    <span key={`${ev.id}-${tag}`} className="text-[9px] uppercase tracking-widest px-2 py-0.5 rounded border border-[#CCA761]/30 text-[#CCA761] bg-[#CCA761]/10">
+                                      {tag}
+                                    </span>
+                                  ))}
                                 </div>
                               )}
 
@@ -1152,22 +1273,16 @@ export default function AgendaDiariaPage() {
                         </div>
 
                         <div className="absolute top-2 right-2 sm:static sm:top-auto sm:right-auto text-right flex flex-col items-end z-20">
-                          {isTaskEditableByOwner(ev) && ev.status !== 'Concluído' && (
+                          {ev.status !== 'Concluído' && (
                             <button
-                              onClick={(event) => openEditTaskModal(event, ev)}
+                              onClick={(event) => {
+                                event.stopPropagation();
+                                toggleStatus(ev);
+                              }}
                               className="mb-2 p-2 rounded-lg transition-colors border shadow-sm backdrop-blur-sm bg-[#111] text-[#CCA761] border-[#CCA761]/20 hover:bg-[#CCA761]/10"
-                              title="Editar tarefa"
+                              title="Concluir tarefa"
                             >
-                              <Pencil size={14} />
-                            </button>
-                          )}
-                          {!isTaskEditableByOwner(ev) && ev.status !== 'Concluído' && String(ev.assigned_to || "") === String(currentUserId || "") && (
-                            <button
-                              onClick={(event) => openNotesOnlyModal(event, ev)}
-                              className="mb-2 p-2 rounded-lg transition-colors border shadow-sm backdrop-blur-sm bg-[#111] text-[#CCA761] border-[#CCA761]/20 hover:bg-[#CCA761]/10"
-                              title="Editar somente anotações"
-                            >
-                              <Pencil size={14} />
+                              <Check size={14} />
                             </button>
                           )}
                           {gamificationEnabled && ev.status !== 'Concluído' && (
@@ -1273,6 +1388,64 @@ export default function AgendaDiariaPage() {
                 >
                   {copiedTextKey === "modal-process" ? <Check size={11} /> : <Copy size={11} />}
                 </button>
+              </div>
+              <div className="space-y-2">
+                <div className="grid grid-cols-[1fr_auto] gap-2">
+                  <input
+                    value={newTagDraft}
+                    onChange={(e) => setNewTagDraft(e.target.value)}
+                    onKeyDown={(event) => {
+                      if (event.key === "Enter") {
+                        event.preventDefault();
+                        addTaskTag();
+                      }
+                    }}
+                    placeholder="Criar etiqueta"
+                    className="bg-[#151515] border border-white/10 rounded-lg px-3 py-2 text-sm text-white"
+                  />
+                  <button
+                    type="button"
+                    onClick={addTaskTag}
+                    className="px-3 py-2 rounded-lg border border-[#CCA761]/30 text-[#CCA761] text-[10px] font-black uppercase tracking-widest hover:bg-[#CCA761]/10"
+                  >
+                    Criar
+                  </button>
+                </div>
+
+                {knownTags.length > 0 && (
+                  <div className="flex flex-wrap gap-1.5">
+                    {knownTags.map((tag) => {
+                      const selected = newTaskTags.includes(tag);
+                      return (
+                        <button
+                          key={`known-${tag}`}
+                          type="button"
+                          onClick={() => toggleKnownTag(tag)}
+                          className={`px-2 py-1 rounded text-[9px] uppercase tracking-widest border transition-colors ${selected ? "text-[#CCA761] border-[#CCA761]/40 bg-[#CCA761]/10" : "text-gray-400 border-white/10 hover:border-white/20"}`}
+                        >
+                          {tag}
+                        </button>
+                      );
+                    })}
+                  </div>
+                )}
+
+                {newTaskTags.length > 0 && (
+                  <div className="flex flex-wrap gap-1.5">
+                    {newTaskTags.map((tag) => (
+                      <button
+                        key={`selected-${tag}`}
+                        type="button"
+                        onClick={() => removeTaskTag(tag)}
+                        className="inline-flex items-center gap-1 px-2 py-1 rounded text-[9px] uppercase tracking-widest border border-[#CCA761]/40 text-[#CCA761] bg-[#CCA761]/10"
+                        title="Remover etiqueta"
+                      >
+                        {tag}
+                        <X size={10} />
+                      </button>
+                    ))}
+                  </div>
+                )}
               </div>
               <div className="grid grid-cols-1 sm:grid-cols-3 gap-3">
                 <select value={newTaskUrgency} onChange={(e) => setNewTaskUrgency(e.target.value as any)} className="bg-[#151515] border border-white/10 rounded-lg px-3 py-2 text-sm text-white">
