@@ -2,398 +2,537 @@
 
 import Link from "next/link";
 import Image from "next/image";
+import Script from "next/script";
+import { useEffect, useMemo, useState } from "react";
+import { motion } from "framer-motion";
+import { ArrowUpRight, Check, Cpu, Activity, Binary, Play, Plus } from "lucide-react";
 import { Cormorant_Garamond, Montserrat } from "next/font/google";
-import { 
-  Sparkles, ArrowRight, ShieldCheck, Zap, Globe, 
-  MessageSquare, Check, Cpu, Layers, Crown, 
-  Binary, Eye, Lock, Terminal, Activity, 
-  ChevronRight, ArrowUpRight
-} from "lucide-react";
-import { useEffect, useState, useRef } from "react";
-import { motion, useScroll, useTransform } from "framer-motion";
-import Spline from "@splinetool/react-spline";
 
-import { FounderCounter } from "@/components/landing/FounderCounter";
+declare global {
+  namespace JSX {
+    interface IntrinsicElements {
+      "spline-viewer": any;
+    }
+  }
+}
 
-const cormorant = Cormorant_Garamond({ subsets: ["latin"], weight: ["300", "400", "500", "600", "700"], style: ["normal", "italic"] });
-const montserrat = Montserrat({ subsets: ["latin"], weight: ["200", "300", "400", "500", "600", "700", "800"] });
+const cormorant = Cormorant_Garamond({
+  subsets: ["latin"],
+  weight: ["300", "400", "500", "600", "700"],
+  style: ["normal", "italic"],
+});
 
-const Reveal = ({ children, width = "fit-content", delay = 0.2, className = "" }: { children: JSX.Element; width?: string; delay?: number; className?: string }) => {
-  return (
-    <motion.div
-      variants={{
-        hidden: { opacity: 0, y: 30 },
-        visible: { opacity: 1, y: 0 },
-      }}
-      initial="hidden"
-      whileInView="visible"
-      viewport={{ once: true }}
-      transition={{ duration: 0.8, delay, ease: [0.22, 1, 0.36, 1] }}
-      style={{ width }}
-      className={className}
-    >
-      {children}
-    </motion.div>
-  );
-};
+const montserrat = Montserrat({
+  subsets: ["latin"],
+  weight: ["300", "400", "500", "600", "700", "800"],
+});
+
+const FAQS = [
+  {
+    q: "Qual a diferença entre agente e sistema agêntico?",
+    a: "Um agente responde quando chamado. Um sistema agêntico observa, planeja, executa e replaneja sozinho, em loop. O MAYUS opera no segundo modelo: ele não espera ser perguntado para agir.",
+  },
+  {
+    q: "Preciso trocar todo o meu sistema atual?",
+    a: "Não. O MAYUS pode operar em paralelo com sistemas existentes, importando dados via OAB e número de processo. A transição é gradual: você começa pelo monitoramento e expande.",
+  },
+  {
+    q: "O que é BYOK e por que isso importa?",
+    a: "BYOK (Bring Your Own Key) significa que você usa sua própria chave de IA. Você controla custo, modelo e política de uso com autonomia total da banca.",
+  },
+  {
+    q: "Quantos usuários posso adicionar?",
+    a: "Usuários são ilimitados em qualquer plano. Sócios, advogados, estagiários e operação entram sem custo por assento.",
+  },
+  {
+    q: "O preço fundador trava para sempre?",
+    a: "Sim, enquanto a assinatura permanecer ativa no formato anual. Cancelou e voltou depois, entra pelo preço vigente do momento.",
+  },
+  {
+    q: "Em quanto tempo estou operando?",
+    a: "O onboarding leva menos de 1 hora para começar a gerar valor. Em seguida, o sistema evolui continuamente com sua memória institucional.",
+  },
+];
+
+const MODULES = [
+  {
+    badge: "Controle",
+    title: "Monitoramento de Processos",
+    desc: "Integração nativa com tribunais e Diário Oficial. Cada movimentação capturada, classificada e transformada em tarefa.",
+    feats: ["Alertas em tempo real via WhatsApp", "Classificação automática de urgência", "Histórico com linha do tempo", "100 processos incluídos no plano"],
+  },
+  {
+    badge: "Gestão",
+    title: "Kanban Jurídico",
+    desc: "Pipeline visual com estágios da prática jurídica. Importação automática via OAB sem digitação manual.",
+    feats: ["Importação via número OAB", "Movimentação por drag-and-drop", "Responsáveis e prazos por card", "Integração com agenda"],
+  },
+  {
+    badge: "Urgência",
+    title: "Central de Prazos",
+    desc: "Visão consolidada de todos os prazos com priorização inteligente. Nunca mais um prazo passando em branco.",
+    feats: ["Contagem regressiva automática", "Filtro por responsável e área", "Notificações D-3, D-1 e D-0", "Exportação para agenda"],
+  },
+  {
+    badge: "Comunicação",
+    title: "Agente WhatsApp",
+    desc: "Assistente jurídico no WhatsApp que responde clientes, consulta processos e executa tarefas 24h.",
+    feats: ["Consulta por voz ou texto", "Triagem de mensagens", "Criação de monitoramentos", "Integração com Evolution API"],
+  },
+  {
+    badge: "Inteligência",
+    title: "MAYUSOrb — Voz Agêntica",
+    desc: "Interface por voz com personalidade jurídica. Consulte casos, dite tarefas e peça análises sem digitar.",
+    feats: ["Síntese de voz com ElevenLabs", "Compreensão de terminologia jurídica", "Execução de skills por comando", "Memória contextual da sessão"],
+  },
+  {
+    badge: "Engajamento",
+    title: "Mural & Gamificação",
+    desc: "Ambiente interno com mural de comunicados, pontuação e ranking. Equipes engajadas, cultura de performance.",
+    feats: ["Mural com avisos fixados", "XP e níveis por produtividade", "Ranking interno por equipe", "Celebração de conquistas"],
+  },
+];
+
+const Reveal = ({ children, delay = 0 }: { children: React.ReactNode; delay?: number }) => (
+  <motion.div
+    initial={{ opacity: 0, y: 24 }}
+    whileInView={{ opacity: 1, y: 0 }}
+    viewport={{ once: true, amount: 0.2 }}
+    transition={{ duration: 0.8, delay, ease: [0.22, 1, 0.36, 1] }}
+  >
+    {children}
+  </motion.div>
+);
 
 export default function LandingPage() {
-  const [mounted, setMounted] = useState(false);
   const [scrolled, setScrolled] = useState(false);
-  const { scrollYProgress } = useScroll();
-  const opacity = useTransform(scrollYProgress, [0, 0.05], [1, 0]);
-  const scale = useTransform(scrollYProgress, [0, 0.05], [1, 0.95]);
+  const [openFaq, setOpenFaq] = useState<number | null>(0);
+  const [showVideoPulse, setShowVideoPulse] = useState(false);
+
+  const modules = useMemo(
+    () => ["Mural", "Gamificação", "Agenda", "WhatsApp", "Monitoramento de Processo"],
+    []
+  );
 
   useEffect(() => {
-    setMounted(true);
-    const handleScroll = () => setScrolled(window.scrollY > 30);
-    window.addEventListener("scroll", handleScroll);
-    return () => window.removeEventListener("scroll", handleScroll);
+    const onScroll = () => setScrolled(window.scrollY > 60);
+    window.addEventListener("scroll", onScroll);
+    return () => window.removeEventListener("scroll", onScroll);
   }, []);
 
-  if (!mounted) return <div className="min-h-screen bg-[#050505]" />;
+  useEffect(() => {
+    const id = setInterval(() => {
+      setShowVideoPulse((s) => !s);
+    }, 1500);
+    return () => clearInterval(id);
+  }, []);
 
   return (
-    <div className={`min-h-screen bg-[#050505] text-[#e0e0e0] selection:bg-[#CCA761] selection:text-black overflow-x-hidden ${montserrat.className}`}>
+    <div className={`min-h-screen bg-[#06050A] text-[#F5F0E8] overflow-x-hidden ${montserrat.className}`}>
+      <Script
+        type="module"
+        src="https://unpkg.com/@splinetool/viewer@1.9.82/build/spline-viewer.js"
+        strategy="afterInteractive"
+      />
 
-      {/* Background Cinematic Shimmer */}
-      <div className="fixed inset-0 z-0 pointer-events-none">
-         <div className="absolute top-[-10%] left-[-10%] w-[40%] h-[40%] rounded-full bg-[#CCA761]/5 blur-[120px] animate-pulse" />
-         <div className="absolute bottom-[-10%] right-[-10%] w-[40%] h-[40%] rounded-full bg-[#CCA761]/5 blur-[120px] animate-pulse" style={{ animationDelay: '2s' }} />
-         <div className="absolute inset-0 bg-[url('https://grainy-gradients.vercel.app/noise.svg')] opacity-[0.03] mix-blend-overlay" />
+      <div className="fixed inset-0 pointer-events-none z-0">
+        <div className="absolute inset-0 bg-[#07060D]" />
+        <div className="absolute inset-0 opacity-[0.03] mix-blend-overlay bg-[url('https://grainy-gradients.vercel.app/noise.svg')]" />
+        <div className="absolute inset-0 bg-[radial-gradient(ellipse_65%_40%_at_78%_0%,rgba(180,175,210,0.07)_0%,transparent_65%),radial-gradient(ellipse_70%_55%_at_50%_45%,rgba(140,105,40,0.06)_0%,transparent_60%),radial-gradient(ellipse_50%_40%_at_10%_90%,rgba(180,90,20,0.08)_0%,transparent_60%)]" />
       </div>
 
-      {/* Header Elite */}
-      <nav className={`fixed top-0 w-full z-50 transition-all duration-1000 px-6 lg:px-12 py-8 flex items-center justify-between ${scrolled ? 'bg-black/60 backdrop-blur-2xl border-b border-white/5 py-4' : ''}`}>
-        <div className="flex items-center gap-4 group cursor-pointer">
-           <div className="relative w-12 h-12 lg:w-16 lg:h-16 transition-transform duration-700 group-hover:scale-105 [perspective:1200px]">
-              <div className="absolute inset-0 rounded-full bg-[radial-gradient(circle,rgba(204,167,97,0.10)_0%,rgba(204,167,97,0)_72%)] blur-lg" aria-hidden="true" />
-              <div className="relative w-full h-full [transform-style:preserve-3d]" style={{ animation: 'mayusLandingPlateRotate 12s ease-in-out infinite' }}>
-                <Image 
-                  src="/mayus_logo.png" 
-                  alt="MAYUS Logo" 
-                  fill 
-                  className="object-contain scale-[1.02] drop-shadow-[0_12px_24px_rgba(0,0,0,0.32)]"
-                />
-              </div>
-           </div>
-           <div className="flex flex-col">
-              <span className={`text-xl lg:text-3xl font-black tracking-[0.4em] text-white uppercase leading-none ${cormorant.className} italic`}>MAYUS</span>
-              <span className="text-[7px] lg:text-[9px] tracking-[0.6em] text-[#CCA761] font-bold uppercase mt-1">Soberania Digital</span>
+      <nav className={`fixed top-0 w-full z-50 transition-all duration-500 ${scrolled ? "bg-[#080808]/90 border-b border-[#C4A35A]/20 py-4" : "bg-gradient-to-b from-[#080808]/85 to-transparent py-6"}`}>
+        <div className="max-w-[1280px] mx-auto px-6 lg:px-12 flex items-center justify-between">
+          <div className="flex items-center gap-3">
+            <span className={`text-4xl leading-none text-[#C4A35A] ${cormorant.className}`}>M</span>
+            <div className="leading-none">
+              <p className={`text-lg tracking-[0.35em] ${cormorant.className}`}>MAYUS</p>
+              <p className="text-[9px] tracking-[0.3em] text-[#F5F0E8]/60 mt-1">SOBERANIA DIGITAL</p>
             </div>
-        </div>
+          </div>
 
-        <div className="hidden lg:flex items-center gap-12 text-[10px] font-black tracking-[0.4em] uppercase text-gray-500">
-          <a href="#vision" className="hover:text-[#CCA761] transition-colors relative group">
-             O Conceito
-             <span className="absolute -bottom-1 left-0 w-0 h-[1px] bg-[#CCA761] transition-all group-hover:w-full" />
-          </a>
-          <a href="#architecture" className="hover:text-[#CCA761] transition-colors relative group">
-             Arquitetura
-             <span className="absolute -bottom-1 left-0 w-0 h-[1px] bg-[#CCA761] transition-all group-hover:w-full" />
-          </a>
-          <a href="#founders" className="hover:text-[#CCA761] transition-colors relative group">
-             Círculo Fundador
-             <span className="absolute -bottom-1 left-0 w-0 h-[1px] bg-[#CCA761] transition-all group-hover:w-full" />
-          </a>
-        </div>
+          <div className="hidden lg:flex items-center gap-10 text-[10px] tracking-[0.2em] text-[#F5F0E8]/60">
+            <a href="#conceito" className="hover:text-[#C4A35A]">O CONCEITO</a>
+            <a href="#arquitetura" className="hover:text-[#C4A35A]">ARQUITETURA</a>
+            <a href="#circulo-fundador" className="hover:text-[#C4A35A]">CÍRCULO FUNDADOR</a>
+          </div>
 
-        <div className="flex items-center gap-6">
-           <Link href="/login" className="hidden md:block text-[10px] font-black tracking-[0.3em] uppercase text-gray-400 hover:text-white transition-colors">
-             Acesso Admin
-           </Link>
-           <Link href="/login" className="px-10 py-3.5 bg-gradient-to-r from-[#CCA761] to-[#8B7340] text-black rounded-lg text-[10px] font-black tracking-widest uppercase hover:brightness-110 transition-all shadow-[0_0_20px_rgba(204,167,97,0.2)]">
-             Reclamar Convite
-           </Link>
+          <div className="flex items-center gap-4">
+            <Link href="/login" className="hidden md:block text-[10px] tracking-[0.2em] text-[#F5F0E8]/60 hover:text-[#C4A35A]">
+              ACESSO ADMIN
+            </Link>
+            <a href="#cta" className="px-6 py-2.5 rounded-full text-[10px] tracking-[0.2em] text-black font-bold bg-gradient-to-r from-[#E2C97E] via-[#C4A35A] to-[#8B6E35] hover:brightness-110 transition">
+              RECLAMAR CONVITE
+            </a>
+          </div>
         </div>
       </nav>
 
-      {/* Hero: Sovereign Era */}
-      <section className="relative min-h-screen flex flex-col items-center justify-end w-full px-6 overflow-hidden bg-[#050505]">
-        
-        {/* Glow Effects */}
-        <motion.div style={{ opacity, scale }} className="absolute inset-0 z-0 pointer-events-none">
-           <div className="absolute top-1/2 left-1/2 -translate-x-1/2 -translate-y-1/2 w-full h-full bg-[radial-gradient(ellipse_at_center,rgba(204,167,97,0.12)_0%,transparent_60%)]" />
-        </motion.div>
+      <section className="relative min-h-screen flex flex-col justify-end pt-28 pb-14 z-10">
+        <div className="absolute inset-0 pointer-events-none z-0 bg-[radial-gradient(ellipse_at_center,rgba(196,163,90,0.12)_0%,transparent_60%)]" />
 
-        {/* Central 3D Spline (Z-10: Behind text) */}
-        <div className="absolute inset-0 z-10 w-full h-full flex justify-center items-center pointer-events-none select-none overflow-hidden">
-          <Reveal delay={0.3} width="100%" className="w-full h-full relative flex items-center justify-center">
-             <div className="relative w-[150vw] h-[120vh] transition-all duration-1000 ease-out flex items-center justify-center translate-x-[0%] translate-y-[10%]">
-                <Spline scene="https://prod.spline.design/antVG5gJ69HRFMFs/scene.splinecode" className="w-full h-full object-cover scale-[0.5] md:scale-[0.6] lg:scale-[0.7]" />
-              </div>
-          </Reveal>
+        <div className="hidden md:flex absolute top-36 left-0 right-0 px-10 lg:px-16 justify-between z-20 pointer-events-none">
+          <p className="text-[10px] tracking-[0.16em] text-[#F5F0E8]/55 uppercase leading-relaxed max-w-[230px]">• O SISTEMA MAYUS — A INTELIGÊNCIA ARTIFICIAL CONSTRUINDO ESTRUTURAS ROBUSTAS.</p>
+          <p className="text-[10px] tracking-[0.16em] text-[#F5F0E8]/55 uppercase leading-relaxed text-right max-w-[220px]">ARQUITETURA DE DADOS QUE FALA PELA SUA MARCA •</p>
         </div>
 
-        {/* Huge Background Typography (Z-20: In front of Spline) */}
-        <div className="absolute bottom-[8%] md:bottom-[12%] left-1/2 -translate-x-1/2 w-full text-center z-20 pointer-events-none flex flex-col items-center opacity-100">
-          <Reveal delay={0.1} width="100%">
-             <div className="flex flex-col items-center">
-                <h1 className="text-[8vw] md:text-[6.5vw] font-[900] text-transparent bg-clip-text bg-gradient-to-b from-[#FFF5D1] via-[#EAAA23] to-[#A66E14] uppercase tracking-[-0.04em] leading-[1] drop-shadow-[0_10px_40px_rgba(234,170,35,0.25)] whitespace-nowrap pb-2">
-                  PRIMEIRO MODELO<br/>AGÊNTICO DO DIREITO
-                </h1>
-             </div>
-          </Reveal>
+        <div className="absolute inset-0 z-10 flex items-center justify-center pointer-events-none">
+          <div className="w-[min(900px,92vw)] h-[min(900px,92vh)] translate-y-8 pointer-events-auto">
+            <spline-viewer
+              url="https://prod.spline.design/antVG5gJ69HRFMFs/scene.splinecode"
+              style={{ width: "100%", height: "100%", background: "transparent" }}
+            />
+          </div>
         </div>
 
-        {/* Bottom Fade Gradient for smooth transition */}
-        <div className="absolute inset-x-0 bottom-0 h-64 bg-gradient-to-t from-[#050505] via-[#050505]/40 to-transparent z-20 pointer-events-none"></div>
-
-        {/* Left Small Text Block */}
-        <div className="hidden md:block absolute left-12 top-[35%] z-30 text-left max-w-[280px] pointer-events-none">
-          <Reveal delay={0.4}>
-            <div className="text-[10px] font-black uppercase text-gray-300 tracking-[0.15em] leading-loose">
-              <span className="text-[#CCA761] mr-2">{"//"}</span> O SISTEMA MAYUS — A INTELIGÊNCIA ARTIFICIAL CONSTRUINDO ESTRUTURAS ROBUSTAS, TRANSFORMANDO BANCAS JURÍDICAS EM POTÊNCIAS DE ESCALA.
-            </div>
+        <div className="relative z-20 text-center px-4">
+          <Reveal>
+            <h1 className={`text-[clamp(42px,8vw,128px)] leading-[0.92] tracking-[-0.02em] bg-gradient-to-b from-[#FFF5D1] via-[#E2C97E] to-[#8B6E35] text-transparent bg-clip-text drop-shadow-[0_12px_50px_rgba(196,163,90,0.4)] ${cormorant.className}`}>
+              PRIMEIRO MODELO<br />AGÊNTICO DO DIREITO
+            </h1>
           </Reveal>
-        </div>
 
-        {/* Right Small Text Block */}
-        <div className="hidden md:block absolute right-12 top-[35%] z-30 text-right max-w-[220px] pointer-events-none">
-          <Reveal delay={0.5}>
-            <div className="text-[10px] font-black uppercase text-gray-300 tracking-[0.15em] leading-loose">
-              <span className="text-[#CCA761] mr-2">{"//"}</span> ARQUITETURA DE DADOS QUE FALA PELA SUA MARCA
-            </div>
-          </Reveal>
-        </div>
-
-        {/* Bottom Bar: App Modules (Restored Design) */}
-        <div className="absolute bottom-8 left-0 w-full px-6 md:px-12 z-40 flex flex-col md:flex-row items-center justify-center gap-6 pb-4">
-          <Reveal delay={0.6}>
-            <div className="flex flex-wrap justify-center md:items-center gap-8 md:gap-14 opacity-40 hover:opacity-100 transition-opacity duration-700 pointer-events-auto">
-              {[
-                { label: "MURAL" },
-                { label: "GAMIFICAÇÃO" },
-                { label: "AGENDA" },
-                { label: "WHATSAPP" },
-                { label: "MONITORAMENTO DE PROCESSO" },
-              ].map((item, i) => (
-                <span key={i} className={`text-xl md:text-2xl font-bold tracking-widest uppercase ${cormorant.className} italic text-white`}>
-                  {item.label}
-                </span>
+          <Reveal delay={0.2}>
+            <div className={`mt-10 flex flex-wrap justify-center gap-8 md:gap-14 text-[#C4A35A] text-xl md:text-3xl ${cormorant.className} italic`}>
+              {modules.map((item) => (
+                <span key={item} className="opacity-80 hover:opacity-100 transition">{item}</span>
               ))}
             </div>
           </Reveal>
         </div>
       </section>
 
-      <section id="founders" className="relative py-44 px-6 md:px-20 overflow-hidden">
-         {/* Top Header: Headline + Button aligned */}
-         <div className="relative z-20 flex flex-col md:flex-row justify-between items-start md:items-center mb-16 gap-10">
-           <Reveal delay={0.1}>
-              <h2 className={`text-3xl md:text-5xl text-[#CCA761] font-bold tracking-[0.2em] uppercase ${cormorant.className} italic`}>
-                O Círculo dos <span className={`text-white font-black not-italic ${montserrat.className}`}>100</span>
-              </h2>
-           </Reveal>
+      <div className="relative z-10 bg-[#C4A35A] overflow-hidden py-3">
+        <div className="inline-flex whitespace-nowrap animate-[ticker_32s_linear_infinite] text-black text-[10px] tracking-[0.2em] font-semibold">
+          {Array.from({ length: 2 }).map((_, pass) => (
+            <span key={pass} className="inline-flex">
+              {[
+                "PRIMEIRO MODELO AGÊNTICO DO DIREITO",
+                "✦",
+                "100 VAGAS FUNDADORAS",
+                "✦",
+                "SOBERANIA DIGITAL PARA BANCAS JURÍDICAS",
+                "✦",
+                "MONITORAMENTO · PRAZOS · KANBAN · WHATSAPP · VOZ",
+                "✦",
+              ].map((item, idx) => (
+                <span key={`${pass}-${idx}`} className="px-8">{item}</span>
+              ))}
+            </span>
+          ))}
+        </div>
+      </div>
 
-           <Reveal delay={0.2}>
-            <Link 
-              href="/login" 
-              className="group flex items-center gap-4 text-[11px] font-black tracking-[0.4em] text-white uppercase hover:text-[#CCA761] transition-colors pointer-events-auto"
-            >
-              <span className="hidden md:inline">{"//"} TORNAR-SE FUNDADOR</span>
-              <span className="md:hidden">FUNDADOR</span>
-              <div className="w-10 h-10 rounded-full border border-white/20 group-hover:border-[#CCA761] flex items-center justify-center transition-colors">
-                <ArrowUpRight size={16} className="text-white group-hover:text-[#CCA761]" />
-              </div>
-            </Link>
-           </Reveal>
-         </div>
-
-         <Reveal delay={0.3}>
-            <div className="max-w-4xl mx-auto mb-24">
-               <p className={`text-gray-400 text-lg md:text-2xl leading-loose italic ${cormorant.className} text-left`}>
-                 Não somos apenas software. Somos uma fundação. <br className="hidden md:block"/>
-                 Os primeiros 100 membros carimbam seu nome no código da MAYUS. Ao se tornar um fundador, você não está apenas adquirindo uma licença; você está reivindicando soberania sobre o seu ecossistema jurídico e garantindo seu lugar na arquitetura digital da próxima era.
-               </p>
+      <section className="relative z-10 py-28 px-6 bg-[radial-gradient(ellipse_80%_55%_at_50%_20%,rgba(196,163,90,0.08)_0%,transparent_60%),linear-gradient(180deg,#07070A_0%,#0B0A0E_100%)]">
+        <div className="max-w-[1180px] mx-auto">
+          <Reveal>
+            <div className="text-center mb-14">
+              <p className="text-[10px] tracking-[0.3em] text-[#C4A35A] uppercase">• Ver em operação</p>
+              <h2 className={`mt-4 text-5xl md:text-6xl leading-tight ${cormorant.className}`}>Veja o MAYUS <em className="italic text-[#E2C97E]">operando por dentro.</em></h2>
+              <p className="mt-5 max-w-2xl mx-auto text-[#F5F0E8]/60 text-sm leading-7">Seis minutos de uma banca real operando com inteligência agêntica. Processos se monitorando sozinhos, prazos se classificando, o advogado decidindo — a máquina executando.</p>
             </div>
-         </Reveal>
+          </Reveal>
 
-         <Reveal delay={0.4}>
-            <FounderCounter />
-         </Reveal>
-      </section>
+          <Reveal delay={0.15}>
+            <div className="relative aspect-video rounded-[26px] border border-[#C4A35A]/25 bg-gradient-to-br from-[#0E0C09] to-[#070605] overflow-hidden shadow-[0_35px_90px_rgba(0,0,0,0.55)]">
+              <div className="absolute inset-0 bg-[radial-gradient(ellipse_60%_35%_at_50%_50%,rgba(196,163,90,0.1)_0%,transparent_70%)]" />
+              <div className="absolute top-7 left-8 text-[9px] tracking-[0.25em] text-[#F5F0E8]/45 uppercase">• Demo · MAYUS 1.0</div>
+              <div className="absolute top-7 right-8 text-[9px] tracking-[0.25em] text-[#F5F0E8]/45 uppercase">06:42</div>
 
-      <style jsx global>{`
-        @keyframes mayusLandingPlateRotate {
-          0% {
-            transform: rotateX(7deg) rotateY(0deg);
-          }
-          50% {
-            transform: rotateX(7deg) rotateY(180deg);
-          }
-          100% {
-            transform: rotateX(7deg) rotateY(360deg);
-          }
-        }
-      `}</style>
+              <button
+                type="button"
+                className={`absolute left-1/2 top-1/2 -translate-x-1/2 -translate-y-1/2 w-24 h-24 rounded-full bg-gradient-to-br from-[#E2C97E] to-[#C4A35A] text-black flex items-center justify-center shadow-[0_0_40px_rgba(196,163,90,0.45)] transition-transform ${showVideoPulse ? "scale-105" : "scale-100"}`}
+                aria-label="Reproduzir vídeo"
+              >
+                <Play size={30} className="ml-1" fill="currentColor" />
+              </button>
 
-      {/* Concept Architecture: Orb -> Kernel -> Skills */}
-      <section id="architecture" className="relative py-44 overflow-hidden border-y border-white/5 bg-black/20">
-        <div className="absolute right-[-10%] top-0 w-[500px] h-[500px] bg-[#CCA761]/5 blur-[150px] pointer-events-none" />
-        
-        <div className="relative z-10 px-6 lg:px-40 flex flex-col lg:flex-row items-center gap-32">
-           <div className="lg:w-1/2">
-              <Reveal>
-                 <>
-                    <h2 className={`text-6xl text-white mb-10 ${cormorant.className} italic leading-tight`}>
-                       A <span className="text-[#CCA761]">Engenharia</span> <br/> da Soberania
-                    </h2>
-                    <p className="text-gray-400 font-light text-lg mb-16 leading-relaxed italic">
-                      O MAYUS orquestra a inteligência artificial através de uma arquitetura triádica projetada para durar décadas.
-                    </p>
-                 </>
-              </Reveal>
-
-              <div className="space-y-12">
-                 {[
-                   { icon: Activity, title: "MAYUS ORB", desc: "A interface neural. Ativa por voz (ElevenLabs) ou intenção digital. A face da inteligência no seu escritório." },
-                   { icon: Cpu, title: "KERNEL MULTI-LLM", desc: "Liberdade absoluta. Conecte suas próprias chaves (OpenAI, Claude, Llama). Controle de custos e performance total." },
-                   { icon: Binary, title: "SKILLS JURÍDICAS", desc: "Ações concretas. Gerar petições em Massa, monitorar processos no Escavador, auditar prazos em segundos." }
-                 ].map((item, i) => (
-                   <Reveal key={i} delay={0.2 + (i * 0.1)}>
-                      <div className="flex gap-8 group">
-                         <div className="w-16 h-16 rounded-2xl bg-white/[0.03] border border-white/5 flex items-center justify-center shrink-0 group-hover:border-[#CCA761]/40 transition-colors">
-                            <item.icon className="text-[#CCA761]" size={28} />
-                         </div>
-                         <div>
-                            <h4 className="text-white text-xs font-black tracking-widest uppercase mb-3">{item.title}</h4>
-                            <p className="text-gray-500 text-sm leading-relaxed font-light">{item.desc}</p>
-                         </div>
-                      </div>
-                   </Reveal>
-                 ))}
+              <div className="absolute bottom-8 left-8 flex items-center gap-3 text-[10px] tracking-[0.2em] text-[#C4A35A] uppercase">
+                <span className={`w-2 h-2 rounded-full bg-[#C4A35A] ${showVideoPulse ? "opacity-100" : "opacity-40"}`} />
+                Aguardando reprodução
               </div>
-           </div>
-           
-           <div className="lg:w-1/2 relative">
-              <Reveal delay={0.5}>
-                 <div className="relative w-full aspect-square max-w-[600px] mx-auto overflow-hidden rounded-[3rem] border border-white/5 bg-gradient-to-br from-white/[0.02] to-transparent shadow-2xl p-12">
-                    <div className="absolute inset-x-0 top-0 h-1 bg-gradient-to-r from-transparent via-[#CCA761]/30 to-transparent" />
-                    <div className="flex flex-col items-center justify-center h-full text-center space-y-8">
-                       <Crown size={80} className="text-[#CCA761]/20" />
-                       <div className="space-y-2">
-                          <p className={`text-4xl text-white ${cormorant.className} italic`}>&quot;O Moat Decisivo&quot;</p>
-                          <p className="text-[10px] text-[#CCA761] font-black tracking-[0.5em] uppercase">Memória Neural Coletiva</p>
-                       </div>
-                       <p className="text-gray-600 text-sm italic max-w-sm">
-                         Quanto mais seu escritório usa o MAYUS, mais inteligente o sistema se torna. Seus dados criam um diferencial impossível de ser copiado.
-                       </p>
-                    </div>
-                 </div>
-              </Reveal>
-           </div>
+            </div>
+          </Reveal>
         </div>
       </section>
 
-      {/* Membership Tiers: Founder Exclusive */}
-      <section id="plans" className="py-56 px-6 bg-[#050505] relative overflow-hidden">
-         <div className="absolute top-1/2 left-1/2 -translate-x-1/2 -translate-y-1/2 w-[800px] h-[800px] bg-[#CCA761]/10 blur-[200px] pointer-events-none opacity-30" />
-         
-         <div className="text-center mb-32 relative z-10">
+      <section className="relative z-10 py-28 px-6 bg-[linear-gradient(180deg,#0A090D_0%,#080808_100%)] border-y border-[#C4A35A]/15">
+        <div className="max-w-[1240px] mx-auto">
+          <Reveal>
+            <div className="text-center mb-14">
+              <p className="text-[10px] tracking-[0.3em] text-[#C4A35A] uppercase">• A distinção que muda tudo</p>
+              <h2 className={`mt-4 text-5xl md:text-6xl leading-tight ${cormorant.className}`}>Agente é uma coisa.<br /><em className="italic text-[#E2C97E]">Agêntico é outra.</em></h2>
+            </div>
+          </Reveal>
+
+          <div className="grid lg:grid-cols-[1fr_auto_1fr] gap-7 items-stretch">
             <Reveal>
-               <>
-                  <h2 className={`text-6xl lg:text-8xl text-white mb-8 ${cormorant.className} italic font-light tracking-tighter`}>Títulos de <span className="text-[#CCA761]">Membro</span></h2>
-                  <p className="text-gray-600 uppercase tracking-[0.7em] text-[10px] font-black">Uma decisão única para o futuro da sua banca</p>
-               </>
-            </Reveal>
-         </div>
-
-         <div className="max-w-7xl mx-auto grid grid-cols-1 md:grid-cols-3 gap-12 relative z-10 items-end">
-            
-            {/* Tier Prata */}
-            <Reveal delay={0.2}>
-               <div className="group relative p-1 pb-1 flex flex-col rounded-[2.5rem] bg-white/[0.03] border border-white/5 hover:border-[#CCA761]/20 transition-all transition-duration-700">
-                  <div className="p-12 h-full flex flex-col">
-                     <span className="text-[10px] font-black tracking-[0.4em] text-gray-500 uppercase mb-10">Silver Early Adopter</span>
-                     <div className="mb-12">
-                        <div className="text-5xl font-light text-white mb-2">R$ 547<span className="text-sm opacity-30 italic">/mês</span></div>
-                        <p className="text-[9px] text-[#CCA761] font-black uppercase tracking-widest leading-none">Benefício Fundador: 2 Anos de Licença</p>
-                     </div>
-                     <ul className="space-y-7 flex-1 mb-16 opacity-60">
-                        <li className="flex items-center gap-4 text-xs text-white font-light"><Check size={14} className="text-[#CCA761]"/> Todas as Skills Premium</li>
-                        <li className="flex items-center gap-4 text-xs text-white font-light"><Check size={14} className="text-[#CCA761]"/> Multi-LLM (BYOK)</li>
-                        <li className="flex items-center gap-4 text-xs text-white font-light"><Check size={14} className="text-[#CCA761]"/> Memória Privada RAG</li>
-                     </ul>
-                     <button className="w-full py-6 rounded-2xl border border-white/10 text-[9px] font-black tracking-[0.4em] uppercase group-hover:bg-[#CCA761] group-hover:text-black group-hover:border-transparent transition-all">Garantir Vaga</button>
-                  </div>
-               </div>
+              <article className="border border-[#C4A35A]/20 bg-[#0A0A0A]/70 p-8 rounded-2xl">
+                <p className="text-[10px] tracking-[0.28em] text-[#F5F0E8]/55 uppercase">● Modelo Reativo</p>
+                <h3 className={`${cormorant.className} text-5xl mt-4`}>Agente</h3>
+                <p className="italic text-[#C4A35A] mt-1">Responde quando chamado.</p>
+                <p className="text-sm text-[#F5F0E8]/65 leading-7 mt-6">Um agente de IA é reativo. Espera uma instrução, executa uma tarefa isolada e para. Se você não pedir, nada acontece.</p>
+              </article>
             </Reveal>
 
-            {/* Tier Cristal (Destaque) */}
-            <Reveal delay={0.4}>
-               <div className="relative group scale-110 z-20">
-                  <div className="absolute -inset-[2px] bg-gradient-to-b from-[#CCA761] to-[#6d5932] rounded-[3rem] blur-sm opacity-50 group-hover:opacity-100 transition-opacity duration-1000" />
-                  <div className="relative p-14 h-full flex flex-col items-center text-center rounded-[3rem] bg-[#0c0c0c] border border-[#CCA761]/20 shadow-[0_45px_100px_rgba(204,167,97,0.15)]">
-                     <div className="absolute top-0 -translate-y-1/2 left-1/2 -translate-x-1/2 px-6 py-2 bg-[#CCA761] text-black text-[9px] font-black uppercase tracking-[0.4em] rounded-full shadow-lg">Vagas 1 — 10</div>
-                     
-                     <Crown size={40} className="text-[#CCA761] mb-10 animate-pulse" />
-                     <h3 className={`text-4xl text-white mb-10 ${cormorant.className} italic font-bold tracking-wide`}>Crystal Founder</h3>
-                     
-                     <div className="mb-12">
-                        <div className="text-7xl font-[800] text-transparent bg-clip-text bg-gradient-to-b from-white to-gray-500 mb-2 whitespace-nowrap">VITALÍCIO</div>
-                        <p className="text-[10px] text-[#CCA761] font-black uppercase tracking-widest italic">A Glória Eterna do Código</p>
-                     </div>
-                     
-                     <ul className="space-y-7 flex-1 mb-16 w-full">
-                        <li className="flex items-center justify-center gap-4 text-xs text-white font-bold opacity-90"><ShieldCheck size={14} className="text-[#CCA761]"/> Taxa de Adesão Mista</li>
-                        <li className="flex items-center justify-center gap-4 text-xs text-white font-bold opacity-90"><ShieldCheck size={14} className="text-[#CCA761]"/> Suporte Head-to-Head</li>
-                        <li className="flex items-center justify-center gap-4 text-xs text-white font-bold opacity-90"><ShieldCheck size={14} className="text-[#CCA761]"/> Acesso Beta Eterno</li>
-                        <li className="flex items-center justify-center gap-4 text-xs text-white font-bold opacity-90"><ShieldCheck size={14} className="text-[#CCA761]"/> Mentoria de IA Jurídica</li>
-                     </ul>
-                     
-                     <button className="w-full py-7 bg-white text-black rounded-2xl text-[10px] font-black tracking-[0.5em] uppercase hover:shadow-[0_0_40px_rgba(255,255,255,0.3)] transition-all">Consagrar Soberania</button>
-                  </div>
-               </div>
-            </Reveal>
+            <div className="hidden lg:flex flex-col items-center justify-center px-4 text-[#C4A35A]/80 text-xs tracking-[0.3em] uppercase">
+              <div className="w-px h-16 bg-gradient-to-b from-transparent to-[#C4A35A]" />
+              VS
+              <div className="w-px h-16 bg-gradient-to-t from-transparent to-[#C4A35A]" />
+            </div>
 
-            {/* Tier Ouro */}
-            <Reveal delay={0.6}>
-               <div className="group relative p-1 pb-1 flex flex-col rounded-[2.5rem] bg-white/[0.03] border border-white/5 hover:border-[#CCA761]/20 transition-all transition-duration-700">
-                  <div className="p-12 h-full flex flex-col">
-                     <span className="text-[10px] font-black tracking-[0.4em] text-[#CCA761] uppercase mb-10">Gold Legacy</span>
-                     <div className="mb-12 text-left">
-                        <div className="text-5xl font-light text-white mb-2">R$ 497<span className="text-sm opacity-30 italic">/mês</span></div>
-                        <p className="text-[9px] text-gray-400 font-black uppercase tracking-widest leading-none italic">Benefício Fundador: 5 Anos de Licença</p>
-                     </div>
-                     <ul className="space-y-7 flex-1 mb-20 opacity-60">
-                        <li className="flex items-center gap-4 text-xs text-white font-light"><Check size={14} className="text-[#CCA761]"/> Onboarding VIP Concierge</li>
-                        <li className="flex items-center gap-4 text-xs text-white font-light"><Check size={14} className="text-[#CCA761]"/> Mural Coletivo Ativo</li>
-                        <li className="flex items-center gap-4 text-xs text-white font-light"><Check size={14} className="text-[#CCA761]"/> Backup Georedundante</li>
-                     </ul>
-                     <button className="w-full py-6 rounded-2xl border border-white/10 text-[9px] font-black tracking-[0.4em] uppercase group-hover:bg-[#CCA761] group-hover:text-black group-hover:border-transparent transition-all">Fazer História</button>
-                  </div>
-               </div>
+            <Reveal delay={0.1}>
+              <article className="border border-[#C4A35A]/50 bg-gradient-to-br from-[#19140A]/65 to-[#0A0804]/75 p-8 rounded-2xl shadow-[0_0_50px_rgba(196,163,90,0.15)]">
+                <p className="text-[10px] tracking-[0.28em] text-[#E2C97E] uppercase">● Modelo Autônomo</p>
+                <h3 className={`${cormorant.className} text-5xl mt-4 text-[#E2C97E]`}>Agêntico</h3>
+                <p className="italic text-[#E2C97E]/90 mt-1">Age sem precisar ser chamado.</p>
+                <p className="text-sm text-[#F5F0E8]/70 leading-7 mt-6">Um sistema agêntico observa continuamente, planeja, executa, observa o resultado e replaneja. Ele age antes de você perceber que precisava.</p>
+              </article>
             </Reveal>
-         </div>
+          </div>
+        </div>
       </section>
 
-      {/* Manifesto Footer */}
-      <footer className="py-44 px-6 border-t border-white/10 flex flex-col items-center text-center bg-black relative">
-         <Reveal>
-            <div className="relative w-32 h-32 mb-16 opacity-80 cursor-pointer hover:scale-110 transition-transform duration-1000">
-               <Image src="/logo_premium.png" alt="MAYUS Logo" fill className="object-contain grayscale hover:grayscale-0 transition-all" />
+      <section id="conceito" className="relative z-10 py-28 px-6 bg-[radial-gradient(ellipse_60%_40%_at_10%_90%,rgba(196,163,90,0.06)_0%,transparent_70%),linear-gradient(180deg,#07070A_0%,#050505_100%)]">
+        <div className="max-w-[1200px] mx-auto grid lg:grid-cols-2 gap-16">
+          <Reveal>
+            <div>
+              <p className="text-[10px] tracking-[0.3em] text-[#C4A35A] uppercase">• O diagnóstico</p>
+              <h2 className={`mt-4 text-5xl md:text-6xl leading-tight ${cormorant.className}`}>O escritório jurídico ainda vive no <em className="italic text-[#E2C97E]">século XX.</em></h2>
+              <p className="mt-6 text-sm leading-7 text-[#F5F0E8]/62">Enquanto o mundo automatiza, a maioria das bancas jurídicas ainda opera com planilhas, post-its e WhatsApp como sistema de gestão.</p>
             </div>
-         </Reveal>
-         
-         <Reveal delay={0.2}>
-            <p className={`text-4xl lg:text-6xl text-gray-400 italic ${cormorant.className} mb-16 max-w-4xl leading-snug`}>
-               &quot;A soberania não é um destino. <br/> É a ferramenta que separa os <br/> <span className="text-white">vencedores</span> dos apenas ocupados.&quot;
-            </p>
-         </Reveal>
+          </Reveal>
 
-         <Reveal delay={0.4}>
-            <div className="flex gap-12 text-[9px] font-black tracking-[0.5em] text-gray-700 uppercase mb-20">
-               <a href="#" className="hover:text-[#CCA761] transition-colors">Termos</a>
-               <a href="#" className="hover:text-[#CCA761] transition-colors">Privacidade</a>
-               <a href="#" className="hover:text-[#CCA761] transition-colors">Imprensa</a>
+          <div className="space-y-4">
+            {[
+              ["01", "PROCESSOS PERDIDOS NO RUÍDO", "Movimentações passam em branco. Prazos descobertos tarde."],
+              ["02", "DADOS QUE NÃO FALAM COM VOCÊ", "Sistemas isolados e nenhuma visão consolidada."],
+              ["03", "TEMPO MAL APLICADO", "Horas de resultado desperdiçadas em operação braçal."],
+              ["04", "IA GENÉRICA", "Ferramenta sem contexto jurídico real da sua banca."],
+            ].map((item, idx) => (
+              <Reveal key={item[0]} delay={idx * 0.08}>
+                <div className="border-t border-[#C4A35A]/20 pt-5 grid grid-cols-[44px_1fr] gap-4">
+                  <p className="text-3xl leading-none text-[#C4A35A]/60 mono">{item[0]}</p>
+                  <div>
+                    <h4 className="text-sm tracking-[0.06em] text-[#F5F0E8]">{item[1]}</h4>
+                    <p className="text-xs leading-6 text-[#F5F0E8]/58 mt-1">{item[2]}</p>
+                  </div>
+                </div>
+              </Reveal>
+            ))}
+          </div>
+        </div>
+      </section>
+
+      <section className="relative z-10 py-24 px-6 border-y border-[#C4A35A]/20 bg-[linear-gradient(180deg,rgba(196,163,90,0.05)_0%,transparent_100%)]">
+        <div className="max-w-[1100px] mx-auto text-center">
+          <Reveal>
+            <blockquote className={`${cormorant.className} italic text-3xl md:text-5xl leading-tight`}>
+              &quot;O escritório que não opera com inteligência agêntica em 2025<br />estará competindo com um <em className="not-italic text-[#E2C97E]">braço amarrado nas costas.</em>&quot;
+            </blockquote>
+          </Reveal>
+        </div>
+      </section>
+
+      <section className="relative z-10 py-28 px-6 bg-[linear-gradient(180deg,#07070A_0%,#0A0908_100%)]">
+        <div className="max-w-[1240px] mx-auto">
+          <Reveal>
+            <div className="text-center mb-16">
+              <p className="text-[10px] tracking-[0.3em] text-[#C4A35A] uppercase">• Módulos ativos</p>
+              <h2 className={`${cormorant.className} text-5xl md:text-6xl mt-4`}>Cada peça construída para <span className="text-[#E2C97E]">advogados brasileiros.</span></h2>
             </div>
-         </Reveal>
+          </Reveal>
 
-         <div className="text-[9px] tracking-[1em] font-black text-gray-900 uppercase opacity-40">
-            MAYUS NEURAL ARCHITECTURE • ESTREIA 2026 • BRASÍLIA / SÃO PAULO
-         </div>
+          <div className="grid md:grid-cols-2 lg:grid-cols-3 gap-5">
+            {MODULES.map((module, idx) => (
+              <Reveal key={module.title} delay={idx * 0.04}>
+                <article className="h-full bg-[#0A0A0A]/80 border border-[#C4A35A]/20 rounded-2xl p-7 hover:border-[#C4A35A]/45 hover:-translate-y-1 transition-all duration-300">
+                  <span className="inline-block text-[9px] tracking-[0.2em] uppercase text-[#C4A35A] border border-[#C4A35A]/35 px-3 py-1 rounded-full">{module.badge}</span>
+                  <h3 className={`${cormorant.className} text-3xl mt-4 text-[#F5F0E8]`}>{module.title}</h3>
+                  <p className="text-sm text-[#F5F0E8]/62 leading-7 mt-3">{module.desc}</p>
+                  <ul className="mt-5 space-y-2">
+                    {module.feats.map((feat) => (
+                      <li key={feat} className="text-xs text-[#F5F0E8]/62 flex items-start gap-2">
+                        <span className="text-[#C4A35A]">→</span>
+                        <span>{feat}</span>
+                      </li>
+                    ))}
+                  </ul>
+                </article>
+              </Reveal>
+            ))}
+          </div>
+        </div>
+      </section>
+
+      <section id="arquitetura" className="relative z-10 py-28 px-6 bg-[radial-gradient(ellipse_80%_60%_at_85%_30%,rgba(196,163,90,0.08)_0%,transparent_70%),linear-gradient(180deg,#060607_0%,#090806_100%)] border-y border-[#C4A35A]/15">
+        <div className="max-w-[1240px] mx-auto grid lg:grid-cols-[1fr_1.1fr] gap-12 items-center">
+          <Reveal>
+            <div>
+              <p className="text-[10px] tracking-[0.3em] text-[#C4A35A] uppercase">• Arquitetura</p>
+              <h2 className={`${cormorant.className} text-5xl md:text-6xl mt-4 leading-tight`}>Construído para <span className="text-[#E2C97E]">durar décadas.</span></h2>
+              <p className="mt-6 text-sm text-[#F5F0E8]/62 leading-7">Não é wrapper de IA genérica. É arquitetura multicamada com memória institucional privada, roteamento inteligente de LLMs e infraestrutura que escala com você.</p>
+              <div className="mt-8 grid grid-cols-2 gap-2">
+                {["100%", "BYOK", "07+", "∞"].map((n, idx) => (
+                  <div key={n} className="bg-[#0E0D0A]/75 border border-[#C4A35A]/18 p-5">
+                    <p className="text-4xl text-[#C4A35A] mono leading-none">{n}</p>
+                    <p className="text-[11px] text-[#F5F0E8]/55 mt-2 leading-5">{["Dados no Brasil", "Sua própria chave", "Skills agênticas", "Usuários incluídos"][idx]}</p>
+                  </div>
+                ))}
+              </div>
+            </div>
+          </Reveal>
+
+          <Reveal delay={0.12}>
+            <div className="bg-[#0D0C0A]/85 border border-[#C4A35A]/25 p-6 rounded-2xl space-y-2">
+              {[
+                ["CAMADA 01 — INTERFACE", "Chat · WhatsApp · MAYUSOrb (Voz)"],
+                ["CAMADA 02 — ORQUESTRAÇÃO", "Planner → Executor → Observer → Replanner"],
+                ["CAMADA 03 — SKILLS", "consultar_processo · monitorar · kanban_update"],
+                ["CAMADA 04 — MEMÓRIA", "pgvector RAG · Memória Institucional"],
+                ["CAMADA 05 — DADOS", "Supabase · Tribunais · ASAAS · ZapSign"],
+              ].map((layer, idx) => (
+                <div key={layer[0]} className={`border p-4 rounded-lg ${idx === 0 ? "border-[#C4A35A]/55 bg-[#C4A35A]/5" : "border-[#C4A35A]/20 bg-black/20"}`}>
+                  <p className="text-[9px] tracking-[0.18em] text-[#C4A35A]/80 uppercase">{layer[0]}</p>
+                  <p className="text-sm text-[#F5F0E8] mt-1">{layer[1]}</p>
+                </div>
+              ))}
+            </div>
+          </Reveal>
+        </div>
+      </section>
+
+      <section id="circulo-fundador" className="relative z-10 py-28 px-6 bg-[linear-gradient(180deg,#080707_0%,#0A0908_100%)]">
+        <div className="max-w-[1240px] mx-auto text-center">
+          <Reveal>
+            <p className="text-[10px] tracking-[0.3em] text-[#C4A35A] uppercase">• A oferta</p>
+            <h2 className={`${cormorant.className} text-5xl md:text-6xl mt-4`}>Entre agora. Pelo <span className="text-[#E2C97E]">preço de fundador.</span></h2>
+          </Reveal>
+
+          <div className="grid md:grid-cols-3 gap-5 mt-14 text-left">
+            <Reveal>
+              <article className="h-full border border-[#C4A35A]/20 bg-[#0C0A07]/75 rounded-2xl p-7">
+                <p className="text-[9px] tracking-[0.2em] text-[#C4A35A] uppercase">PLANO PADRÃO</p>
+                <h3 className={`${cormorant.className} text-4xl mt-3`}>Mensal</h3>
+                <p className="mt-2 text-sm text-[#F5F0E8]/60">Acesso completo sem fidelidade.</p>
+                <p className="mt-6 text-4xl text-[#F5F0E8] mono">R$ 647<span className="text-xs text-[#F5F0E8]/45">/mês</span></p>
+              </article>
+            </Reveal>
+
+            <Reveal delay={0.1}>
+              <article className="h-full border border-[#E2C97E]/65 bg-gradient-to-br from-[#221A0D]/80 to-[#100C06]/90 rounded-2xl p-7 shadow-[0_0_60px_rgba(196,163,90,0.2)]">
+                <p className="text-[9px] tracking-[0.2em] text-[#E2C97E] uppercase">CÍRCULO FUNDADOR</p>
+                <h3 className={`${cormorant.className} text-4xl mt-3 text-[#E2C97E]`}>Fundador</h3>
+                <p className="mt-2 text-sm text-[#F5F0E8]/68">Preço congelado para sempre.</p>
+                <p className="mt-6 text-4xl text-[#E2C97E] mono">R$ 397<span className="text-xs text-[#F5F0E8]/45">/mês</span></p>
+              </article>
+            </Reveal>
+
+            <Reveal delay={0.2}>
+              <article className="h-full border border-[#C4A35A]/20 bg-[#0C0A07]/75 rounded-2xl p-7">
+                <p className="text-[9px] tracking-[0.2em] text-[#C4A35A] uppercase">PLANO ANUAL</p>
+                <h3 className={`${cormorant.className} text-4xl mt-3`}>Anual</h3>
+                <p className="mt-2 text-sm text-[#F5F0E8]/60">Melhor custo-benefício sem ser fundador.</p>
+                <p className="mt-6 text-4xl text-[#F5F0E8] mono">R$ 497<span className="text-xs text-[#F5F0E8]/45">/mês</span></p>
+              </article>
+            </Reveal>
+          </div>
+
+          <Reveal delay={0.3}>
+            <div className="mt-10 border border-[#C4A35A]/22 bg-[#0D0C0A]/75 rounded-2xl p-7 text-left flex flex-col md:flex-row md:items-center md:justify-between gap-6">
+              <div>
+                <h4 className={`${cormorant.className} text-3xl`}>Vagas do Círculo Fundador</h4>
+                <p className="text-sm text-[#F5F0E8]/60 mt-2">Apenas 100 bancas terão acesso ao preço fundador de R$397/mês.</p>
+              </div>
+              <div className="w-full md:w-72">
+                <div className="flex justify-between text-[10px] tracking-[0.12em] text-[#F5F0E8]/65 uppercase mb-2">
+                  <span>8 de 100 preenchidas</span>
+                  <span>8%</span>
+                </div>
+                <div className="h-1.5 bg-white/10 rounded-full overflow-hidden">
+                  <div className="h-full w-[8%] bg-gradient-to-r from-[#8B6E35] to-[#E2C97E]" />
+                </div>
+              </div>
+            </div>
+          </Reveal>
+        </div>
+      </section>
+
+      <section className="relative z-10 py-24 px-6 border-y border-[#C4A35A]/18 bg-[linear-gradient(180deg,#0A0908_0%,#070707_100%)]">
+        <div className="max-w-[1180px] mx-auto grid lg:grid-cols-[1fr_1.5fr] gap-12">
+          <Reveal>
+            <div>
+              <p className="text-[10px] tracking-[0.3em] text-[#C4A35A] uppercase">• Dúvidas</p>
+              <h2 className={`${cormorant.className} text-5xl mt-4`}>Perguntas frequentes.</h2>
+            </div>
+          </Reveal>
+
+          <div>
+            {FAQS.map((faq, idx) => {
+              const open = openFaq === idx;
+              return (
+                <div key={faq.q} className="border-b border-[#C4A35A]/18 py-4">
+                  <button
+                    type="button"
+                    onClick={() => setOpenFaq((prev) => (prev === idx ? null : idx))}
+                    className="w-full text-left flex items-center justify-between gap-4"
+                  >
+                    <span className="text-sm text-[#F5F0E8]">{faq.q}</span>
+                    <Plus className={`text-[#C4A35A] transition-transform ${open ? "rotate-45" : "rotate-0"}`} size={18} />
+                  </button>
+                  {open && <p className="text-sm text-[#F5F0E8]/62 mt-3 leading-7 pr-10">{faq.a}</p>}
+                </div>
+              );
+            })}
+          </div>
+        </div>
+      </section>
+
+      <section id="cta" className="relative z-10 py-28 px-6 text-center bg-[radial-gradient(ellipse_60%_45%_at_50%_45%,rgba(196,163,90,0.1)_0%,transparent_70%),linear-gradient(180deg,#080706_0%,#050505_100%)]">
+        <Reveal>
+          <h2 className={`${cormorant.className} text-5xl md:text-7xl leading-[1.04]`}>
+            Sua banca vai operar com <span className="text-[#E2C97E]">soberania digital.</span>
+          </h2>
+        </Reveal>
+
+        <Reveal delay={0.1}>
+          <p className="mt-5 text-sm text-[#F5F0E8]/62 max-w-2xl mx-auto leading-7">As primeiras 100 bancas entram pelo preço fundador e travam para sempre. O convite é limitado. A inteligência, não.</p>
+        </Reveal>
+
+        <Reveal delay={0.2}>
+          <div className="mt-9 flex flex-wrap justify-center gap-4">
+            <a href="#" className="px-7 py-4 rounded-full text-[10px] tracking-[0.2em] text-black font-bold bg-gradient-to-r from-[#E2C97E] via-[#C4A35A] to-[#8B6E35] hover:brightness-110 transition">ENTRAR COMO FUNDADOR</a>
+            <a href="#" className="px-7 py-4 rounded-full text-[10px] tracking-[0.2em] border border-[#C4A35A]/45 text-[#F5F0E8]/80 hover:text-[#E2C97E] hover:bg-[#C4A35A]/10 transition">VER A PLATAFORMA</a>
+          </div>
+        </Reveal>
+      </section>
+
+      <footer className="relative z-10 py-14 px-6 border-t border-[#C4A35A]/15 bg-[#060606]">
+        <div className="max-w-[1240px] mx-auto flex flex-col md:flex-row items-start md:items-center justify-between gap-6">
+          <div>
+            <p className={`${cormorant.className} text-2xl tracking-[0.28em] text-[#C4A35A]`}>MAYUS</p>
+            <p className="text-[9px] tracking-[0.3em] text-[#F5F0E8]/45 mt-1">SOBERANIA DIGITAL</p>
+          </div>
+
+          <div className="flex flex-wrap gap-5 text-[10px] tracking-[0.15em] text-[#F5F0E8]/55 uppercase">
+            <a href="#conceito" className="hover:text-[#C4A35A]">O Conceito</a>
+            <a href="#arquitetura" className="hover:text-[#C4A35A]">Arquitetura</a>
+            <a href="#circulo-fundador" className="hover:text-[#C4A35A]">Círculo Fundador</a>
+          </div>
+        </div>
+
+        <div className="max-w-[1240px] mx-auto mt-8 pt-5 border-t border-white/10 text-[10px] tracking-[0.12em] text-[#F5F0E8]/28 uppercase flex flex-wrap gap-3 justify-between">
+          <span>© 2025 MAYUS TECNOLOGIA · BRASIL</span>
+          <span>TODOS OS DIREITOS RESERVADOS</span>
+        </div>
       </footer>
+
+      <style jsx global>{`
+        @keyframes ticker {
+          0% { transform: translateX(0); }
+          100% { transform: translateX(-50%); }
+        }
+      `}</style>
     </div>
   );
 }
