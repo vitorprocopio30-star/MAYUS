@@ -589,8 +589,7 @@ export default function AgendaDiariaPage() {
   };
 
   const visibleEvents = useMemo(() => {
-    const showEverything = statusFilter === "all" && typeFilter === "all";
-    const sourceEvents = showEverything
+    const sourceEvents = showFilters
       ? [...events]
       : events.filter((ev) => isTaskVisibleOnSelectedDate(ev, selectedDate));
 
@@ -616,7 +615,7 @@ export default function AgendaDiariaPage() {
       if (aDone !== bDone) return aDone ? 1 : -1;
       return 0;
     });
-  }, [events, isTaskVisibleOnSelectedDate, normalizeTaskStatus, selectedDate, statusFilter, typeFilter]);
+  }, [events, isTaskVisibleOnSelectedDate, normalizeTaskStatus, selectedDate, showFilters, statusFilter, typeFilter]);
 
   const totalTasks = visibleEvents.length;
   const completedTasks = useMemo(() => visibleEvents.filter(e => e.status === 'Concluído').length, [visibleEvents]);
