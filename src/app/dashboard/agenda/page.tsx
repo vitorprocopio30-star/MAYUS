@@ -123,6 +123,17 @@ export default function AgendaDiariaPage() {
     return Math.max(0, Math.floor(parsed));
   }, []);
 
+  const normalizeTaskStatus = useCallback((value?: string | null) => {
+    const normalized = String(value ?? "Pendente")
+      .normalize("NFD")
+      .replace(/[\u0300-\u036f]/g, "")
+      .toLowerCase();
+
+    if (normalized === "concluido") return "Concluído";
+    if (normalized === "em andamento") return "Em andamento";
+    return "Pendente";
+  }, []);
+
   const getTaskDateKey = useCallback((task: any) => {
     const raw = String(task.scheduled_for || task.created_at || "").trim();
     if (!raw) return "";
@@ -155,8 +166,20 @@ export default function AgendaDiariaPage() {
       return getReminderWindowKeys(task).includes(dateKey);
     }
 
-    return true;
-  }, [getReminderWindowKeys]);
+    const taskDateKey = getTaskDateKey(task);
+    if (!taskDateKey) return true;
+
+    if (dateKey < taskDateKey) {
+      return false;
+    }
+
+    if (dateKey === taskDateKey) {
+      return true;
+    }
+
+    return normalizeTaskStatus(task.status) === "Pendente";
+
+  }, [getReminderWindowKeys, getTaskDateKey, normalizeTaskStatus]);
 
   const parseTaskMeta = (description?: string | null): LegacyTaskMeta => {
     const raw = String(description || "");
