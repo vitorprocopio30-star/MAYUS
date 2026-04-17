@@ -513,6 +513,10 @@ export default function AgendaDiariaPage() {
     
     // Atualiza Visual Local para Feedback Imediato
     setEvents(prev => prev.map(e => e.id === task.id ? { ...e, ...updatePayload, status: newStatus, person: newStatus === 'Concluído' ? userName : e.assigned_name_snapshot || e.person } : e));
+
+    if (newStatus === 'Concluído' && statusFilter !== 'all') {
+      setStatusFilter('all');
+    }
   };
 
   const lockTask = (e: React.MouseEvent, task: any) => {
@@ -766,7 +770,7 @@ export default function AgendaDiariaPage() {
     setNewTaskVisibility((task.visibility || "private") as any);
     setNewTaskReminderOnly(Boolean(task.show_only_on_date));
     setNewTaskReminderDaysBefore(String(normalizeReminderDaysBefore(task.reminder_days_before)));
-    const dateKey = String(task.scheduled_for || "").slice(0, 10);
+    const dateKey = getTaskDateKey(task);
     setNewTaskScheduledFor(dateKey || toLocalDateKey(new Date()));
     setShowCreateTaskModal(true);
   };
@@ -821,13 +825,34 @@ export default function AgendaDiariaPage() {
     return message.includes("responsible_notes") || message.includes("process_number") || message.includes("tags") || message.includes("reminder_days_before");
   };
 
-  const withoutExtendedTaskColumns = (payload: Record<string, any>, meta: LegacyTaskMeta) => {
+  const withoutUnavailableTaskColumns = (payload: Record<string, any>, meta: LegacyTaskMeta, error: any) => {
+    const message = String(error?.message || "");
     const sanitized = { ...payload };
-    delete sanitized.process_number;
-    delete sanitized.responsible_notes;
-    delete sanitized.tags;
-    delete sanitized.reminder_days_before;
-    sanitized.description = buildTaskMetaDescription(meta);
+    let shouldEmbedLegacyMeta = false;
+
+    if (message.includes("process_number")) {
+      delete sanitized.process_number;
+      shouldEmbedLegacyMeta = true;
+    }
+
+    if (message.includes("responsible_notes")) {
+      delete sanitized.responsible_notes;
+      shouldEmbedLegacyMeta = true;
+    }
+
+    if (message.includes("tags")) {
+      delete sanitized.tags;
+      shouldEmbedLegacyMeta = true;
+    }
+
+    if (message.includes("reminder_days_before")) {
+      delete sanitized.reminder_days_before;
+    }
+
+    if (shouldEmbedLegacyMeta) {
+      sanitized.description = buildTaskMetaDescription(meta);
+    }
+
     return sanitized;
   };
 
@@ -881,7 +906,7 @@ export default function AgendaDiariaPage() {
           };
           const legacyResponse = await supabase
             .from("user_tasks")
-            .update(withoutExtendedTaskColumns(updatePayload, legacyMeta))
+            .update(withoutUnavailableTaskColumns(updatePayload, legacyMeta, error))
             .eq("id", editingTaskId)
             .eq("assigned_to", currentUserId)
             .eq("source_table", "manual_private")
@@ -914,11 +939,11 @@ export default function AgendaDiariaPage() {
 
         if (error && hasMissingTaskColumns(error)) {
           const legacyResponse = await supabase.from("user_tasks").insert(
-            withoutExtendedTaskColumns(payload, {
+            withoutUnavailableTaskColumns(payload, {
               process_number: newTaskProcessNumber.trim() || null,
               responsible_notes: newTaskResponsibleNotes.trim() || null,
               tags: normalizedTags,
-            })
+            }, error)
           );
           error = legacyResponse.error;
         }
