@@ -1,9 +1,9 @@
 "use client";
 
-import { useState, useEffect } from "react";
+import { useState, useEffect, useCallback, useMemo } from "react";
 import { Cormorant_Garamond, Montserrat } from "next/font/google";
 import { createClient } from "@/lib/supabase/client";
-import { QrCode, Smartphone, Zap, Bot, BrainCircuit, Plus, X, Eye, EyeOff, Save, Link2, Unlink, Settings, CheckCircle2, AlertCircle, Loader2 } from "lucide-react";
+import { QrCode, Smartphone, Zap, Bot, BrainCircuit, Plus, X, Eye, Settings, CheckCircle2, AlertCircle, Loader2, FolderOpen, ExternalLink } from "lucide-react";
 import { toast } from "sonner";
 import { useUserProfile } from "@/hooks/useUserProfile";
 import Image from "next/image";
@@ -19,6 +19,16 @@ interface Integration {
   instance_name: string | null;
 }
 
+interface GoogleDriveState {
+  available: boolean;
+  connected: boolean;
+  status: string;
+  connectedEmail: string | null;
+  rootFolderId: string | null;
+  rootFolderName: string | null;
+  rootFolderUrl: string | null;
+}
+
 export default function IntegracoesPage() {
   const [integrations, setIntegrations] = useState<Integration[]>([]);
   const [isLoading, setIsLoading] = useState(true);
@@ -28,8 +38,7 @@ export default function IntegracoesPage() {
   const [editingProvider, setEditingProvider] = useState<string | null>(null);
   const [tempApiKey, setTempApiKey] = useState("");
   const [tempModel, setTempModel] = useState("");
-  const [testingProvider, setTestingProvider] = useState<string | null>(null);
-  const supabase = createClient();
+  const supabase = useMemo(() => createClient(), []);
   const { profile } = useUserProfile();
 
   // NOVO: EVOLUTION STATE (Tido dentro do Card)
@@ -41,19 +50,47 @@ export default function IntegracoesPage() {
   const [evoLoading, setEvoLoading] = useState(false);
   const [evoError, setEvoError] = useState("");
   const [isEvoEditing, setIsEvoEditing] = useState(true);
+  const [googleDrive, setGoogleDrive] = useState<GoogleDriveState>({
+    available: true,
+    connected: false,
+    status: "disconnected",
+    connectedEmail: null,
+    rootFolderId: null,
+    rootFolderName: null,
+    rootFolderUrl: null,
+  });
+  const [googleDriveLoading, setGoogleDriveLoading] = useState(true);
+  const [googleDriveBusy, setGoogleDriveBusy] = useState<"save" | "disconnect" | null>(null);
+  const [googleDriveRootInput, setGoogleDriveRootInput] = useState("");
 
-  useEffect(() => {
-    if (profile?.tenant_id) {
-      loadIntegrations();
+  const loadGoogleDriveStatus = useCallback(async () => {
+    setGoogleDriveLoading(true);
+
+    try {
+      const response = await fetch("/api/integrations/google-drive", { cache: "no-store" });
+      const data = await response.json().catch(() => null);
+
+      if (!response.ok) {
+        throw new Error(data?.error || "Não foi possível carregar a integração do Google Drive.");
+      }
+
+      setGoogleDrive(data);
+      setGoogleDriveRootInput(data?.rootFolderUrl || data?.rootFolderId || "");
+    } catch (error: any) {
+      toast.error(error?.message || "Não foi possível carregar a integração do Google Drive.");
+    } finally {
+      setGoogleDriveLoading(false);
     }
-  }, [profile?.tenant_id]);
+  }, []);
 
-  const loadIntegrations = async () => {
+  const loadIntegrations = useCallback(async () => {
+    if (!profile?.tenant_id) return;
+
     setIsLoading(true);
     const { data, error } = await supabase
       .from("tenant_integrations")
       .select("*")
-      .eq("tenant_id", profile!.tenant_id);
+      .eq("tenant_id", profile.tenant_id);
       
     if (!error && data) {
       setIntegrations(data);
@@ -72,7 +109,36 @@ export default function IntegracoesPage() {
       }
     }
     setIsLoading(false);
-  };
+  }, [profile?.tenant_id, supabase]);
+
+  useEffect(() => {
+    if (profile?.tenant_id) {
+      loadIntegrations();
+      loadGoogleDriveStatus();
+    }
+  }, [profile?.tenant_id, loadGoogleDriveStatus, loadIntegrations]);
+
+  useEffect(() => {
+    if (typeof window === "undefined") return;
+
+    const currentUrl = new URL(window.location.href);
+    const googleDriveStatus = currentUrl.searchParams.get("googleDrive");
+    if (!googleDriveStatus) return;
+
+    const message = currentUrl.searchParams.get("message");
+    if (googleDriveStatus === "connected") {
+      toast.success("Google Drive conectado com sucesso.");
+    } else if (googleDriveStatus === "error") {
+      toast.error(message || "Não foi possível conectar o Google Drive.");
+    }
+
+    loadGoogleDriveStatus();
+
+    currentUrl.searchParams.delete("googleDrive");
+    currentUrl.searchParams.delete("message");
+    const nextUrl = `${currentUrl.pathname}${currentUrl.search}${currentUrl.hash}`;
+    window.history.replaceState({}, "", nextUrl);
+  }, [loadGoogleDriveStatus]);
 
   const getIntegration = (provider: string) => integrations.find(i => i.provider === provider);
 
@@ -182,9 +248,64 @@ export default function IntegracoesPage() {
     }
   };
 
-  const handleTestIntegration = async () => {
-     // ... LLMs test ...
-     toast.info("Em breve teste ping...");
+  const handleConnectGoogleDrive = () => {
+    window.location.assign("/api/integrations/google-drive/connect");
+  };
+
+  const handleSaveGoogleDriveRoot = async () => {
+    setGoogleDriveBusy("save");
+
+    try {
+      const response = await fetch("/api/integrations/google-drive", {
+        method: "PATCH",
+        headers: {
+          "Content-Type": "application/json",
+        },
+        body: JSON.stringify({ rootFolder: googleDriveRootInput }),
+      });
+
+      const data = await response.json().catch(() => null);
+      if (!response.ok) {
+        throw new Error(data?.error || "Não foi possível salvar a pasta raiz do Google Drive.");
+      }
+
+      setGoogleDrive(data);
+      setGoogleDriveRootInput(data?.rootFolderUrl || data?.rootFolderId || "");
+      toast.success(googleDriveRootInput.trim() ? "Pasta raiz do Drive salva." : "Pasta raiz do Drive removida.");
+    } catch (error: any) {
+      toast.error(error?.message || "Não foi possível salvar a pasta raiz do Google Drive.");
+    } finally {
+      setGoogleDriveBusy(null);
+    }
+  };
+
+  const handleDisconnectGoogleDrive = async () => {
+    if (!confirm("Desconectar o Google Drive deste escritório?")) return;
+
+    setGoogleDriveBusy("disconnect");
+
+    try {
+      const response = await fetch("/api/integrations/google-drive", {
+        method: "DELETE",
+      });
+
+      const data = await response.json().catch(() => null);
+      if (!response.ok) {
+        throw new Error(data?.error || "Não foi possível desconectar o Google Drive.");
+      }
+
+      setGoogleDrive((current) => ({
+        ...current,
+        connected: false,
+        status: "disconnected",
+        connectedEmail: null,
+      }));
+      toast.success("Google Drive desconectado.");
+    } catch (error: any) {
+      toast.error(error?.message || "Não foi possível desconectar o Google Drive.");
+    } finally {
+      setGoogleDriveBusy(null);
+    }
   };
 
   const providers = [
@@ -210,6 +331,9 @@ export default function IntegracoesPage() {
         <p className="text-gray-400 mt-2 max-w-2xl text-sm leading-relaxed">
           Para máxima privacidade e zero limites de escala, o seu escritório pode inserir suas próprias chaves de Inteligência Artificial e conectar máquinas autônomas e WhatsApp nativo.
         </p>
+        {(isLoading || googleDriveLoading) && (
+          <p className="text-[#CCA761] text-xs uppercase tracking-[0.25em] mt-4">Sincronizando integrações...</p>
+        )}
       </div>
 
       <div className="grid grid-cols-1 lg:grid-cols-2 gap-8">
@@ -363,8 +487,8 @@ export default function IntegracoesPage() {
                )}
 
                {/* 3. CONNECTED */}
-               {evoStep === "CONNECTED" && !isEvoEditing && (
-                  <div className="bg-[#141414] rounded-xl p-5 border border-[#25D366]/30 animate-in fade-in flex items-center justify-between">
+                {evoStep === "CONNECTED" && !isEvoEditing && (
+                   <div className="bg-[#141414] rounded-xl p-5 border border-[#25D366]/30 animate-in fade-in flex items-center justify-between">
                      <div className="flex items-center gap-4">
                         <div className="w-12 h-12 rounded-full border-2 border-[#25D366] bg-[#25D366]/10 flex items-center justify-center relative">
                            <CheckCircle2 size={24} className="text-[#25D366]" />
@@ -376,8 +500,124 @@ export default function IntegracoesPage() {
                         </div>
                      </div>
                      <div className="text-xs text-gray-400 font-mono opacity-50">API v2</div>
+                   </div>
+                )}
+             </div>
+
+            <div className={`relative flex flex-col justify-between p-6 border rounded-2xl transition-all duration-300 ${
+              googleDrive.connected ? 'bg-[#0b1220] border-[#4285F4]/40 shadow-[0_0_30px_rgba(66,133,244,0.12)]' : 'bg-[#0f0f0f] border-white/10 shadow-xl'
+            }`}>
+              <div className="flex justify-between items-start gap-4 mb-6">
+                <div>
+                  <div className={`w-12 h-12 rounded-xl flex items-center justify-center border mb-4 ${
+                    googleDrive.connected ? 'bg-[#4285F4]/15 border-[#4285F4]/40' : 'bg-white/5 border-white/10'
+                  }`}>
+                    <svg className="w-6 h-6 text-[#4285F4]" viewBox="0 0 24 24" fill="currentColor">
+                      <path d="M7 15l4.5-8h9L16 15H7zm-1.5-1l4.5-8L5.5 2 1 10l4.5 4zm6 1l-1.5 3h9l1.5-3h-9z" />
+                    </svg>
                   </div>
-               )}
+                  <h3 className="text-xl font-black text-white tracking-tight flex items-center gap-2">
+                    Google Drive
+                    <span className="text-[10px] bg-white/10 text-gray-300 px-2 py-0.5 rounded-full uppercase tracking-widest font-bold">Documentos</span>
+                  </h3>
+                  <p className="text-xs text-gray-400 mt-2 max-w-lg">
+                    Conecte o Drive do escritório para criar pastas por processo e preencher o link automaticamente dentro do card jurídico.
+                  </p>
+                </div>
+
+                <div className={`text-[10px] px-3 py-1 rounded-full uppercase tracking-widest font-black border ${
+                  googleDrive.connected
+                    ? 'bg-[#4285F4]/15 border-[#4285F4]/30 text-[#8ab4ff]'
+                    : googleDrive.available
+                      ? 'bg-white/5 border-white/10 text-gray-500'
+                      : 'bg-amber-500/10 border-amber-500/20 text-amber-300'
+                }`}>
+                  {googleDrive.connected ? 'Conectado' : googleDrive.available ? 'Pronto para conectar' : 'Configuração pendente'}
+                </div>
+              </div>
+
+              {googleDriveLoading ? (
+                <div className="bg-[#141414] rounded-xl p-5 border border-white/5 flex items-center gap-3 text-sm text-gray-400">
+                  <Loader2 size={16} className="animate-spin text-[#4285F4]" /> Carregando estado do Google Drive...
+                </div>
+              ) : !googleDrive.available ? (
+                <div className="bg-amber-500/10 border border-amber-500/20 rounded-xl p-5 text-sm text-amber-100 leading-relaxed">
+                  Configure `GOOGLE_DRIVE_CLIENT_ID` e `GOOGLE_DRIVE_CLIENT_SECRET` no servidor para habilitar a conexão oficial com o Google Drive.
+                </div>
+              ) : !googleDrive.connected ? (
+                <div className="space-y-4">
+                  <div className="bg-[#141414] rounded-xl p-5 border border-white/5 text-xs text-gray-400 leading-relaxed">
+                    A integração usa OAuth oficial do Google. Depois de conectada, qualquer processo pode gerar sua própria pasta com um clique.
+                  </div>
+                  <button
+                    type="button"
+                    onClick={handleConnectGoogleDrive}
+                    className="w-full py-3 bg-[#4285F4] hover:bg-[#5b95ff] text-white font-black uppercase text-[11px] tracking-widest rounded-lg flex items-center justify-center gap-2 transition-all"
+                  >
+                    <FolderOpen size={16} /> Conectar conta Google
+                  </button>
+                </div>
+              ) : (
+                <div className="space-y-4">
+                  <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                    <div className="bg-[#141414] rounded-xl p-4 border border-white/5">
+                      <p className="text-[10px] font-black uppercase tracking-widest text-gray-500 mb-2">Conta conectada</p>
+                      <p className="text-sm font-semibold text-white break-all">{googleDrive.connectedEmail || "Conta autenticada"}</p>
+                    </div>
+                    <div className="bg-[#141414] rounded-xl p-4 border border-white/5">
+                      <p className="text-[10px] font-black uppercase tracking-widest text-gray-500 mb-2">Destino padrão</p>
+                      <p className="text-sm font-semibold text-white">{googleDrive.rootFolderName || "Raiz do Drive"}</p>
+                    </div>
+                  </div>
+
+                  <div className="space-y-2">
+                    <label className="text-[10px] font-black uppercase tracking-widest text-[#8ab4ff] block">Pasta raiz padrão (opcional)</label>
+                    <div className="flex flex-col sm:flex-row gap-2">
+                      <input
+                        type="text"
+                        value={googleDriveRootInput}
+                        onChange={(event) => setGoogleDriveRootInput(event.target.value)}
+                        placeholder="Cole o link ou ID da pasta do escritório"
+                        className="flex-1 bg-[#111] border border-white/10 rounded-lg px-4 py-2.5 text-sm text-white focus:outline-none focus:border-[#4285F4]/50 placeholder:text-gray-600 transition-colors"
+                      />
+                      <button
+                        type="button"
+                        onClick={handleSaveGoogleDriveRoot}
+                        disabled={googleDriveBusy === "save"}
+                        className="px-4 py-2.5 bg-white/5 hover:bg-white/10 border border-white/10 rounded-lg text-xs font-black uppercase tracking-widest text-white disabled:opacity-60 flex items-center justify-center gap-2"
+                      >
+                        {googleDriveBusy === "save" ? <Loader2 size={14} className="animate-spin" /> : null}
+                        Salvar pasta
+                      </button>
+                    </div>
+                    <p className="text-[10px] text-gray-500 leading-relaxed">
+                      Quando definida, novas pastas de processos serão criadas dentro dessa estrutura automaticamente.
+                    </p>
+                  </div>
+
+                  <div className="flex flex-col sm:flex-row gap-2">
+                    {googleDrive.rootFolderUrl && (
+                      <a
+                        href={googleDrive.rootFolderUrl}
+                        target="_blank"
+                        rel="noopener noreferrer"
+                        className="flex-1 py-2.5 bg-white/5 hover:bg-white/10 border border-white/10 rounded-lg text-xs font-black uppercase tracking-widest text-white flex items-center justify-center gap-2 transition-colors"
+                      >
+                        <ExternalLink size={14} /> Abrir pasta raiz
+                      </a>
+                    )}
+                    <button
+                      type="button"
+                      onClick={handleDisconnectGoogleDrive}
+                      disabled={googleDriveBusy === "disconnect"}
+                      className="flex-1 py-2.5 bg-red-500/10 hover:bg-red-500/15 border border-red-500/20 rounded-lg text-xs font-black uppercase tracking-widest text-red-300 disabled:opacity-60 flex items-center justify-center gap-2 transition-colors"
+                    >
+                      {googleDriveBusy === "disconnect" ? <Loader2 size={14} className="animate-spin" /> : <X size={14} />}
+                      Desconectar
+                    </button>
+                  </div>
+                </div>
+              )}
             </div>
 
           </div>

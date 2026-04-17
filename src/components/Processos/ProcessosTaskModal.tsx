@@ -1,6 +1,6 @@
 import { useState, useEffect } from "react";
 import dynamic from "next/dynamic";
-import { User as UserIcon, AlignLeft, X, Trash2, Calendar, CheckCircle2, ArrowRight, MessageCircle, Tag as TagIcon, Plus, Copy, Check, Pencil } from "lucide-react";
+import { User as UserIcon, AlignLeft, X, Trash2, Calendar, CheckCircle2, ArrowRight, MessageCircle, Tag as TagIcon, Plus, Copy, Check, Pencil, FolderPlus, Loader2 } from "lucide-react";
 import { toast } from "sonner";
 import { createClient } from "@/lib/supabase/client";
 import {
@@ -34,6 +34,7 @@ export default function ProcessosTaskModal({
 }: ProcessosTaskModalProps) {
   const supabase = createClient();
   const [isSaving, setIsSaving] = useState(false);
+  const [isCreatingDriveFolder, setIsCreatingDriveFolder] = useState(false);
 
   // Task Form State
   const [taskTitle, setTaskTitle] = useState("");
@@ -145,6 +146,41 @@ export default function ProcessosTaskModal({
       }, 1200);
     } catch {
       // noop
+    }
+  };
+
+  const handleCreateDriveFolder = async () => {
+    if (!editingTask?.id) {
+      toast.error("Salve o processo antes de criar a pasta do Drive.");
+      return;
+    }
+
+    setIsCreatingDriveFolder(true);
+
+    try {
+      const response = await fetch("/api/integrations/google-drive/process-folder", {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json",
+        },
+        body: JSON.stringify({ taskId: editingTask.id }),
+      });
+
+      const data = await response.json().catch(() => null);
+      if (!response.ok) {
+        throw new Error(data?.error || "Não foi possível criar a pasta do Google Drive.");
+      }
+
+      if (data?.task?.drive_link) {
+        setTaskDriveLink(data.task.drive_link);
+        onSaveSuccess(data.task, false);
+      }
+
+      toast.success(data?.alreadyExists ? "Este processo já possui uma pasta no Drive." : "Pasta do Drive criada com sucesso.");
+    } catch (error: any) {
+      toast.error(error?.message || "Não foi possível criar a pasta do Google Drive.");
+    } finally {
+      setIsCreatingDriveFolder(false);
     }
   };
 
@@ -462,12 +498,28 @@ export default function ProcessosTaskModal({
                       <input type="text" value={taskDriveLink} onChange={e => setTaskDriveLink(e.target.value)}
                         className="flex-1 bg-[#1a1a1a] border border-[#2a2a2a] text-white rounded-lg px-4 py-3 text-sm focus:outline-none focus:border-[#4285F4]/50 placeholder-gray-700 transition-colors"
                         placeholder="Cole o link da pasta do Drive" />
+                      {editingTask?.id && !taskDriveLink && (
+                        <button
+                          type="button"
+                          onClick={handleCreateDriveFolder}
+                          disabled={isCreatingDriveFolder}
+                          className="flex items-center justify-center px-4 bg-[#111827] border border-[#1d4ed8]/30 hover:border-[#4285F4] hover:text-[#8ab4ff] text-[#4285F4] rounded-lg transition-colors disabled:opacity-60 disabled:cursor-not-allowed"
+                          title="Criar pasta automática no Google Drive"
+                        >
+                          {isCreatingDriveFolder ? <Loader2 className="w-5 h-5 animate-spin" /> : <FolderPlus className="w-5 h-5" />}
+                        </button>
+                      )}
                       {taskDriveLink && (
                         <a href={taskDriveLink} target="_blank" rel="noopener noreferrer" className="flex items-center justify-center px-4 bg-[#1a1a1a] border border-[#2a2a2a] hover:border-[#4285F4] hover:text-[#4285F4] text-gray-400 rounded-lg transition-colors" title="Abrir pasta no Drive">
                           <svg className="w-5 h-5" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M10 6H6a2 2 0 00-2 2v10a2 2 0 002 2h10a2 2 0 002-2v-4M14 4h6m0 0v6m0-6L10 14" /></svg>
                         </a>
                       )}
                     </div>
+                    <p className="text-[10px] text-gray-500 leading-relaxed">
+                      {editingTask?.id
+                        ? "Cole um link existente ou gere uma pasta automática com a integração do Google Drive do escritório."
+                        : "Você pode colar um link manualmente agora. Para gerar a pasta automática, salve o processo primeiro."}
+                    </p>
                   </div>
                 </div>
 
