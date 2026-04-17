@@ -162,11 +162,20 @@ export default function AgendaDiariaPage() {
   }, [getTaskDateKey, normalizeReminderDaysBefore, toLocalDateKey]);
 
   const isTaskVisibleOnSelectedDate = useCallback((task: any, dateKey: string) => {
+    const normalizedStatus = normalizeTaskStatus(task.status);
+    const taskDateKey = getTaskDateKey(task);
+
     if (Boolean(task.show_only_on_date)) {
-      return getReminderWindowKeys(task).includes(dateKey);
+      const reminderWindow = getReminderWindowKeys(task);
+      if (!reminderWindow.includes(dateKey)) return false;
+
+      if (normalizedStatus === "Concluído") {
+        return Boolean(taskDateKey) && taskDateKey === dateKey;
+      }
+
+      return true;
     }
 
-    const taskDateKey = getTaskDateKey(task);
     if (!taskDateKey) return true;
 
     if (dateKey < taskDateKey) {
@@ -177,7 +186,7 @@ export default function AgendaDiariaPage() {
       return true;
     }
 
-    return normalizeTaskStatus(task.status) === "Pendente";
+    return normalizedStatus === "Pendente";
 
   }, [getReminderWindowKeys, getTaskDateKey, normalizeTaskStatus]);
 
@@ -561,19 +570,15 @@ export default function AgendaDiariaPage() {
   };
 
   const visibleEvents = useMemo(() => {
-    const showEverything = statusFilter === "all" && typeFilter === "all";
+    const dateVisibleEvents = events.filter((ev) => isTaskVisibleOnSelectedDate(ev, selectedDate));
 
-    let filtered = events.filter((ev) => {
+    let filtered = dateVisibleEvents.filter((ev) => {
       if (statusFilter === "pending" && ev.status !== "Pendente") return false;
       if (statusFilter === "in_progress" && ev.status !== "Em andamento") return false;
       if (statusFilter === "done" && ev.status !== "Concluído") return false;
       if (typeFilter !== "all" && ev.type !== typeFilter) return false;
       return true;
     });
-
-    if (!showEverything) {
-      filtered = filtered.filter((ev) => isTaskVisibleOnSelectedDate(ev, selectedDate));
-    }
 
     return filtered.sort((a, b) => {
       const aDone = a.status === "Concluído";
