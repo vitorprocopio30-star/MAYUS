@@ -23,6 +23,7 @@ export default function AgendaAdminPage() {
   const [newType, setNewType] = useState("Tarefa");
   const [newVisibility, setNewVisibility] = useState<"private" | "global">("global");
   const [newReminderOnly, setNewReminderOnly] = useState(false);
+  const [newReminderDaysBefore, setNewReminderDaysBefore] = useState("0");
   const [newAssignedTo, setNewAssignedTo] = useState("");
   const [newDate, setNewDate] = useState(new Date().toISOString().slice(0, 10));
   const [newReward, setNewReward] = useState("1000");
@@ -119,6 +120,7 @@ export default function AgendaAdminPage() {
     setNewType("Tarefa");
     setNewVisibility("global");
     setNewReminderOnly(false);
+    setNewReminderDaysBefore("0");
     setNewAssignedTo("");
     setNewDate(new Date().toISOString().slice(0, 10));
     setNewReward("1000");
@@ -131,6 +133,7 @@ export default function AgendaAdminPage() {
       const assignedName = profiles.find((p) => p.id === newAssignedTo)?.full_name || null;
       const { data: authData } = await supabase.auth.getUser();
       const createdBy = authData.user?.id || null;
+      const reminderDaysBefore = newReminderOnly ? Math.max(0, Math.floor(Number(newReminderDaysBefore || "0") || 0)) : 0;
 
       const payload = kind === "mission"
         ? buildAgendaPayloadFromMission({
@@ -146,6 +149,7 @@ export default function AgendaAdminPage() {
             expiresAt: newDate ? `${newDate}T23:59:59.000Z` : null,
             visibility: newVisibility,
             showOnlyOnDate: newReminderOnly,
+            reminderDaysBefore,
           })
         : buildAgendaPayloadFromManualTask({
             tenantId,
@@ -160,6 +164,7 @@ export default function AgendaAdminPage() {
             type: newType,
             visibility: newVisibility,
             showOnlyOnDate: newReminderOnly,
+            reminderDaysBefore,
           });
 
       const { error } = await supabase.from("user_tasks").insert(payload);
@@ -351,6 +356,23 @@ export default function AgendaAdminPage() {
                   Mostrar somente na data marcada (lembrete)
                 </label>
               </div>
+              {newReminderOnly && (
+                <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+                  <label className="flex items-center gap-3 text-sm text-gray-300 bg-[#151515] border border-white/10 rounded-lg px-3 py-2">
+                    <span className="whitespace-nowrap">Aparecer antes por</span>
+                    <input
+                      type="number"
+                      min="0"
+                      step="1"
+                      inputMode="numeric"
+                      value={newReminderDaysBefore}
+                      onChange={(e) => setNewReminderDaysBefore(e.target.value)}
+                      className="w-20 bg-black/20 border border-white/10 rounded-lg px-2 py-1 text-sm text-white"
+                    />
+                    <span>dia(s)</span>
+                  </label>
+                </div>
+              )}
               {showCreateMission ? (
                 <input value={newReward} onChange={(e) => setNewReward(e.target.value)} placeholder="Recompensa em coins" className="w-full bg-[#151515] border border-white/10 rounded-lg px-3 py-2 text-sm text-white" />
               ) : (

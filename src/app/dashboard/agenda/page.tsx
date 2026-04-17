@@ -6,7 +6,7 @@ import confetti from "canvas-confetti";
 import { Clock, AlertCircle, Star, Wand2, Calendar, CheckCircle2, Trophy, Coins, Gift, Lock, Unlock, Copy, Check, Plus, Target, X, ChevronLeft, ChevronRight } from "lucide-react";
 import { Montserrat, Cormorant_Garamond } from "next/font/google";
 import { useGamification } from "@/hooks/useGamification";
-import { buildAgendaPayloadFromManualTask, formatDateKey, getUrgencyLabel, inferUrgencyFromDeadline, sortAgendaTasks, toAgendaEvent, toDayRange } from "@/lib/agenda/userTasks";
+import { buildAgendaPayloadFromManualTask, formatDateKey, getUrgencyLabel, inferUrgencyFromDeadline, sortAgendaTasks, toAgendaEvent } from "@/lib/agenda/userTasks";
 
 const TASK_META_PREFIX = "__MAYUS_TASK_META__";
 
@@ -64,6 +64,7 @@ export default function AgendaDiariaPage() {
   const [newTaskVisibility, setNewTaskVisibility] = useState<"private" | "global">("private");
   const [newTaskAssignedTo, setNewTaskAssignedTo] = useState<string>("");
   const [newTaskReminderOnly, setNewTaskReminderOnly] = useState(false);
+  const [newTaskReminderDaysBefore, setNewTaskReminderDaysBefore] = useState("0");
   const [newTaskScheduledFor, setNewTaskScheduledFor] = useState(formatDateKey(new Date()));
   const [isCreatingTask, setIsCreatingTask] = useState(false);
   const [copiedTextKey, setCopiedTextKey] = useState<string | null>(null);
@@ -107,6 +108,41 @@ export default function AgendaDiariaPage() {
     if (diffDays === 0) return "hoje";
     if (diffDays === 1) return "1 dia";
     return `${diffDays} dias`;
+  };
+
+  const normalizeReminderDaysBefore = (value?: string | number | null) => {
+    const parsed = Number(value ?? 0);
+    if (!Number.isFinite(parsed)) return 0;
+    return Math.max(0, Math.floor(parsed));
+  };
+
+  const getTaskDateKey = (task: any) => String(task.scheduled_for || task.created_at || "").slice(0, 10);
+
+  const getReminderWindowKeys = (task: any) => {
+    const taskDateKey = getTaskDateKey(task);
+    if (!taskDateKey) return [];
+
+    const targetDate = new Date(`${taskDateKey}T12:00:00`);
+    if (Number.isNaN(targetDate.getTime())) return [taskDateKey];
+
+    const daysBefore = normalizeReminderDaysBefore(task.reminder_days_before);
+    const keys: string[] = [];
+
+    for (let offset = daysBefore; offset >= 0; offset -= 1) {
+      const current = new Date(targetDate);
+      current.setDate(targetDate.getDate() - offset);
+      keys.push(formatDateKey(current));
+    }
+
+    return keys;
+  };
+
+  const isTaskVisibleOnSelectedDate = (task: any, dateKey: string) => {
+    if (Boolean(task.show_only_on_date)) {
+      return getReminderWindowKeys(task).includes(dateKey);
+    }
+
+    return true;
   };
 
   const parseTaskMeta = (description?: string | null): LegacyTaskMeta => {
@@ -248,7 +284,6 @@ export default function AgendaDiariaPage() {
       setNewTaskAssignedTo(user.id);
     }
 
-    const { startIso, endIso } = toDayRange(selectedDate);
     const { data: userTasks } = await supabase
       .from("user_tasks")
       .select("*")
@@ -270,30 +305,13 @@ export default function AgendaDiariaPage() {
       new Set(
         assigneeScopedTasks
           .filter((task: any) => Boolean(task.show_only_on_date) && String(task.status || "") !== "Concluído")
-          .map((task: any) => String(task.scheduled_for || task.created_at || "").slice(0, 10))
+          .flatMap((task: any) => getReminderWindowKeys(task))
           .filter(Boolean)
       )
     );
     setReminderDateKeys(reminderKeys);
 
-    const scopedTasks = assigneeScopedTasks.filter((task: any) => {
-      const scheduledAt = new Date(task.scheduled_for || task.created_at || 0).getTime();
-      const startAt = new Date(startIso).getTime();
-      const endAt = new Date(endIso).getTime();
-      const isReminder = Boolean(task.show_only_on_date);
-      const taskDateKey = String(task.scheduled_for || task.created_at || "").slice(0, 10);
-      const normalizedStatus = String(task.status || "")
-        .normalize("NFD")
-        .replace(/[\u0300-\u036f]/g, "")
-        .toLowerCase();
-      const isDone = normalizedStatus === "concluido";
-
-      if (Number.isNaN(scheduledAt)) return !isReminder;
-      if (isReminder) return taskDateKey === selectedDate;
-      if (taskDateKey === selectedDate) return true;
-      if (!isDone && scheduledAt < startAt) return true;
-      return false;
-    });
+    const scopedTasks = assigneeScopedTasks.filter((task: any) => isTaskVisibleOnSelectedDate(task, selectedDate));
 
     const assignedIds = Array.from(
       new Set(
@@ -730,6 +748,7 @@ export default function AgendaDiariaPage() {
     setNewTaskType((task.type || "Tarefa") as any);
     setNewTaskVisibility((task.visibility || "private") as any);
     setNewTaskReminderOnly(Boolean(task.show_only_on_date));
+    setNewTaskReminderDaysBefore(String(normalizeReminderDaysBefore(task.reminder_days_before)));
     const dateKey = String(task.scheduled_for || "").slice(0, 10);
     setNewTaskScheduledFor(dateKey || formatDateKey(new Date()));
     setShowCreateTaskModal(true);
@@ -782,7 +801,7 @@ export default function AgendaDiariaPage() {
 
   const hasMissingTaskColumns = (error: any) => {
     const message = String(error?.message || "");
-    return message.includes("responsible_notes") || message.includes("process_number") || message.includes("tags");
+    return message.includes("responsible_notes") || message.includes("process_number") || message.includes("tags") || message.includes("reminder_days_before");
   };
 
   const withoutExtendedTaskColumns = (payload: Record<string, any>, meta: LegacyTaskMeta) => {
@@ -790,6 +809,7 @@ export default function AgendaDiariaPage() {
     delete sanitized.process_number;
     delete sanitized.responsible_notes;
     delete sanitized.tags;
+    delete sanitized.reminder_days_before;
     sanitized.description = buildTaskMetaDescription(meta);
     return sanitized;
   };
@@ -804,6 +824,7 @@ export default function AgendaDiariaPage() {
       const selectedMember = teamMembers.find((member) => member.id === newTaskAssignedTo) || null;
       const assignedTo = isPrivateTask ? currentUserId : (selectedMember?.id || currentUserId);
       const assignedName = isPrivateTask ? userName : (selectedMember?.full_name || userName);
+      const reminderDaysBefore = newTaskReminderOnly ? normalizeReminderDaysBefore(newTaskReminderDaysBefore) : 0;
 
       let error: any = null;
       if (editingTaskId) {
@@ -819,6 +840,7 @@ export default function AgendaDiariaPage() {
           type: newTaskType,
           visibility: newTaskVisibility,
           show_only_on_date: newTaskReminderOnly,
+          reminder_days_before: reminderDaysBefore,
           reward_coins: 0,
           category: meta.category,
           color: meta.color,
@@ -867,6 +889,7 @@ export default function AgendaDiariaPage() {
           type: newTaskType,
           visibility: newTaskVisibility,
           showOnlyOnDate: newTaskReminderOnly,
+          reminderDaysBefore,
           rewardCoins: 0,
         });
         const response = await supabase.from("user_tasks").insert(payload);
@@ -896,6 +919,7 @@ export default function AgendaDiariaPage() {
       setNewTaskVisibility("private");
       setNewTaskAssignedTo(currentUserId || "");
       setNewTaskReminderOnly(false);
+      setNewTaskReminderDaysBefore("0");
       setNewTaskScheduledFor(formatDateKey(new Date()));
       setEditingTaskId(null);
       setShowCreateTaskModal(false);
@@ -1136,10 +1160,13 @@ export default function AgendaDiariaPage() {
                 </h3>
                 <div className="flex gap-2">
                   <button
-                    onClick={() => setIsRealtimeOn((prev) => !prev)}
-                    className={`text-[10px] font-bold uppercase tracking-widest px-3 py-1 rounded-lg border whitespace-nowrap transition-colors ${isRealtimeOn ? "text-[#4ade80] bg-[#4ade80]/10 border-[#4ade80]/30" : "text-gray-400 bg-white/5 border-white/5"}`}
+                    onClick={() => {
+                      setIsRealtimeOn(true);
+                      setSelectedDate(formatDateKey(new Date()));
+                    }}
+                    className="text-[10px] font-bold uppercase tracking-widest px-3 py-1 rounded-lg border whitespace-nowrap transition-colors text-[#4ade80] bg-[#4ade80]/10 border-[#4ade80]/30"
                   >
-                    Ao Vivo ({isRealtimeOn ? "Ligado" : "Pausado"})
+                    Ao Vivo (Ligado)
                   </button>
                   <button
                     onClick={() => setShowFilters((prev) => !prev)}
@@ -1574,6 +1601,21 @@ export default function AgendaDiariaPage() {
                   />
                   Mostrar somente na data marcada (lembrete)
                 </label>
+                {newTaskReminderOnly && (
+                  <label className="flex items-center gap-3 text-sm text-gray-300 bg-[#151515] border border-white/10 rounded-lg px-3 py-2">
+                    <span className="whitespace-nowrap">Aparecer antes por</span>
+                    <input
+                      type="number"
+                      min="0"
+                      step="1"
+                      inputMode="numeric"
+                      value={newTaskReminderDaysBefore}
+                      onChange={(e) => setNewTaskReminderDaysBefore(e.target.value)}
+                      className="w-20 bg-black/20 border border-white/10 rounded-lg px-2 py-1 text-sm text-white"
+                    />
+                    <span>dia(s)</span>
+                  </label>
+                )}
               </div>
 
               <p className="text-[11px] text-gray-500">

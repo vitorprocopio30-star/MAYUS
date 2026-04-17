@@ -6,7 +6,7 @@ import { Clock, AlertCircle, Star, Wand2, Calendar, CheckCircle2, Trophy, Sword,
 import Link from "next/link";
 import { Montserrat, Cormorant_Garamond } from "next/font/google";
 import { useGamification } from "@/hooks/useGamification";
-import { formatDateKey, getUrgencyLabel, inferUrgencyFromDeadline, sortAgendaTasks, toAgendaEvent, toDayRange } from "@/lib/agenda/userTasks";
+import { formatDateKey, getUrgencyLabel, inferUrgencyFromDeadline, sortAgendaTasks, toAgendaEvent } from "@/lib/agenda/userTasks";
 
 const TASK_META_PREFIX = "__MAYUS_TASK_META__";
 
@@ -32,6 +32,7 @@ export default function AgendaGlobalPage() {
   const [viewerName, setViewerName] = useState("Você");
   const [activeMission, setActiveMission] = useState<any | null>(null);
   const [copiedTextKey, setCopiedTextKey] = useState<string | null>(null);
+  const [reminderDateKeys, setReminderDateKeys] = useState<string[]>([]);
 
   const getDeadlineMeta = (dateValue?: string | null) => {
     if (!dateValue) return null;
@@ -75,6 +76,41 @@ export default function AgendaGlobalPage() {
     if (diffDays === 0) return "hoje";
     if (diffDays === 1) return "1 dia";
     return `${diffDays} dias`;
+  };
+
+  const normalizeReminderDaysBefore = (value?: string | number | null) => {
+    const parsed = Number(value ?? 0);
+    if (!Number.isFinite(parsed)) return 0;
+    return Math.max(0, Math.floor(parsed));
+  };
+
+  const getTaskDateKey = (task: any) => String(task.scheduled_for || task.created_at || "").slice(0, 10);
+
+  const getReminderWindowKeys = (task: any) => {
+    const taskDateKey = getTaskDateKey(task);
+    if (!taskDateKey) return [];
+
+    const targetDate = new Date(`${taskDateKey}T12:00:00`);
+    if (Number.isNaN(targetDate.getTime())) return [taskDateKey];
+
+    const daysBefore = normalizeReminderDaysBefore(task.reminder_days_before);
+    const keys: string[] = [];
+
+    for (let offset = daysBefore; offset >= 0; offset -= 1) {
+      const current = new Date(targetDate);
+      current.setDate(targetDate.getDate() - offset);
+      keys.push(formatDateKey(current));
+    }
+
+    return keys;
+  };
+
+  const isTaskVisibleOnSelectedDate = (task: any, dateKey: string) => {
+    if (Boolean(task.show_only_on_date)) {
+      return getReminderWindowKeys(task).includes(dateKey);
+    }
+
+    return true;
   };
   
   // Mock do departamento real do profissional logado
@@ -131,29 +167,23 @@ export default function AgendaGlobalPage() {
       return;
     }
 
-    const { startIso, endIso } = toDayRange(selectedDate);
     const { data: userTasks } = await supabase
       .from('user_tasks')
       .select('*')
       .eq('tenant_id', profile.tenant_id)
       .or('visibility.eq.global,visibility.is.null');
 
-    const filteredByDate = (userTasks || []).filter((task: any) => {
-      const scheduledAt = new Date(task.scheduled_for || task.created_at || 0).getTime();
-      const startAt = new Date(startIso).getTime();
-      const endAt = new Date(endIso).getTime();
-      const isReminder = Boolean(task.show_only_on_date);
-      const normalizedStatus = String(task.status || "")
-        .normalize("NFD")
-        .replace(/[\u0300-\u036f]/g, "")
-        .toLowerCase();
-      const isDone = normalizedStatus === "concluido";
+    const reminderKeys = Array.from(
+      new Set(
+        (userTasks || [])
+          .filter((task: any) => Boolean(task.show_only_on_date) && String(task.status || "") !== "Concluído")
+          .flatMap((task: any) => getReminderWindowKeys(task))
+          .filter(Boolean)
+      )
+    );
+    setReminderDateKeys(reminderKeys);
 
-      if (Number.isNaN(scheduledAt)) return !isReminder;
-      if (isReminder) return scheduledAt >= startAt && scheduledAt <= endAt;
-      if (!isDone && scheduledAt < startAt) return true;
-      return scheduledAt >= startAt;
-    });
+    const filteredByDate = (userTasks || []).filter((task: any) => isTaskVisibleOnSelectedDate(task, selectedDate));
 
     const enrichedTasks = filteredByDate.map((task: any) => {
       const legacyMeta = parseTaskMeta(task.description);
@@ -439,8 +469,9 @@ export default function AgendaGlobalPage() {
       <div className="space-y-8 animate-fade-in-up">
         {/* Seletor de Semana Premium */}
         <div className="flex justify-between items-center gap-2 p-1 bg-white/5 rounded-2xl border border-white/10 shadow-inner overflow-x-auto hide-scrollbar">
-          {WEEK_DAYS.map((d, i) => {
+           {WEEK_DAYS.map((d, i) => {
             const active = d.dateKey === selectedDate;
+            const hasReminder = reminderDateKeys.includes(d.dateKey);
             return (
               <button
                 key={i}
@@ -449,7 +480,13 @@ export default function AgendaGlobalPage() {
               >
                 <span className="text-[10px] font-black uppercase tracking-tighter mb-1">{d.day}</span>
                 <span className="text-xl font-black italic">{d.date}</span>
-                {active && <div className="w-1 h-1 bg-[#0a0a0a] rounded-full mt-2" />}
+                {active ? (
+                  <div className="w-1 h-1 bg-[#0a0a0a] rounded-full mt-2" />
+                ) : hasReminder ? (
+                  <div className="w-1.5 h-1.5 bg-[#CCA761] rounded-full mt-2 shadow-[0_0_8px_rgba(204,167,97,0.8)]" />
+                ) : (
+                  <div className="w-1.5 h-1.5 mt-2" />
+                )}
               </button>
             );
           })}
@@ -501,7 +538,12 @@ export default function AgendaGlobalPage() {
                   <Clock size={18} className="text-[#CCA761] drop-shadow-[0_0_8px_rgba(204,167,97,0.8)]" /> Compromisos do Dia
                 </h3>
                 <div className="flex gap-2">
-                  <button className="text-[10px] text-gray-400 font-bold uppercase tracking-widest bg-white/5 px-3 py-1 rounded-lg border border-white/5 whitespace-nowrap">Ao Vivo (Realtime)</button>
+                  <button
+                    onClick={() => setSelectedDate(formatDateKey(new Date()))}
+                    className="text-[10px] font-bold uppercase tracking-widest px-3 py-1 rounded-lg border whitespace-nowrap transition-colors text-[#4ade80] bg-[#4ade80]/10 border-[#4ade80]/30"
+                  >
+                    Ao Vivo (Ligado)
+                  </button>
                   <button className="text-[10px] text-[#CCA761] font-bold uppercase tracking-widest border border-[#CCA761]/30 hover:bg-[#CCA761]/10 transition-colors px-3 py-1 rounded-lg">Filtros</button>
                 </div>
               </div>

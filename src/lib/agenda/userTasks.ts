@@ -40,6 +40,7 @@ export type AgendaTaskRecord = {
   expires_at?: string | null;
   created_by_role?: string | null;
   show_only_on_date?: boolean | null;
+  reminder_days_before?: number | null;
   created_at?: string | null;
 };
 
@@ -142,6 +143,7 @@ export function toAgendaEvent(task: AgendaTaskRecord) {
     task_kind: task.task_kind || "task",
     reward_coins: task.reward_coins ?? (normalizeUrgencyLabel(task.urgency) === "URGENTE" ? 100 : normalizeUrgencyLabel(task.urgency) === "ATENCAO" ? 50 : 20),
     show_only_on_date: Boolean(task.show_only_on_date),
+    reminder_days_before: Math.max(0, Number(task.reminder_days_before ?? 0) || 0),
     tags: Array.isArray(task.tags) ? task.tags : [],
   };
 }
@@ -174,6 +176,7 @@ function buildBasePayload(params: {
   expiresAt?: string | null;
   createdByRole?: string | null;
   showOnlyOnDate?: boolean;
+  reminderDaysBefore?: number;
   processNumber?: string | null;
   responsibleNotes?: string | null;
   tags?: string[] | null;
@@ -220,6 +223,7 @@ function buildBasePayload(params: {
     expires_at: params.expiresAt || null,
     created_by_role: params.createdByRole || null,
     show_only_on_date: Boolean(params.showOnlyOnDate),
+    reminder_days_before: Math.max(0, Number(params.reminderDaysBefore ?? 0) || 0),
     is_critical: Boolean(params.isCritical || urgency === "URGENTE"),
     category: params.category || getUrgencyLabel(urgency),
     type: params.type || "Tarefa",
@@ -354,6 +358,7 @@ export function buildAgendaPayloadFromManualTask(params: {
   type?: string | null;
   visibility: "private" | "global";
   showOnlyOnDate?: boolean;
+  reminderDaysBefore?: number;
   rewardCoins?: number;
   processNumber?: string | null;
   responsibleNotes?: string | null;
@@ -377,6 +382,7 @@ export function buildAgendaPayloadFromManualTask(params: {
     visibility: params.visibility,
     taskKind: "task",
     showOnlyOnDate: Boolean(params.showOnlyOnDate),
+    reminderDaysBefore: Math.max(0, Number(params.reminderDaysBefore ?? 0) || 0),
     rewardCoins: params.rewardCoins,
     processNumber: params.processNumber || null,
     responsibleNotes: params.responsibleNotes || null,
@@ -398,6 +404,7 @@ export function buildAgendaPayloadFromMission(params: {
   missionType?: string | null;
   visibility?: "private" | "global";
   showOnlyOnDate?: boolean;
+  reminderDaysBefore?: number;
 }) {
   const urgency = normalizeUrgencyLabel(params.urgency);
   return buildBasePayload({
@@ -420,6 +427,7 @@ export function buildAgendaPayloadFromMission(params: {
     missionType: params.missionType || "especial",
     expiresAt: params.expiresAt || null,
     showOnlyOnDate: Boolean(params.showOnlyOnDate),
+    reminderDaysBefore: Math.max(0, Number(params.reminderDaysBefore ?? 0) || 0),
   });
 }
 
