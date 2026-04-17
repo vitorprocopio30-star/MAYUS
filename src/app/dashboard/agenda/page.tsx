@@ -134,13 +134,30 @@ export default function AgendaDiariaPage() {
     return "Pendente";
   }, []);
 
-  const getTaskDateKey = useCallback((task: any) => {
-    const raw = String(task.scheduled_for || task.created_at || "").trim();
+  const extractDateKey = useCallback((value?: string | null) => {
+    const raw = String(value || "").trim();
     if (!raw) return "";
+
+    const dateMatch = raw.match(/\d{4}-\d{2}-\d{2}/);
+    if (dateMatch?.[0]) return dateMatch[0];
+
     const parsed = new Date(raw);
     if (!Number.isNaN(parsed.getTime())) return toLocalDateKey(parsed);
-    return raw.slice(0, 10);
+    return "";
   }, [toLocalDateKey]);
+
+  const compareDateKeys = useCallback((left: string, right: string) => {
+    const leftTs = new Date(`${left}T12:00:00`).getTime();
+    const rightTs = new Date(`${right}T12:00:00`).getTime();
+    if (Number.isNaN(leftTs) || Number.isNaN(rightTs)) {
+      return left.localeCompare(right);
+    }
+    return leftTs - rightTs;
+  }, []);
+
+  const getTaskDateKey = useCallback((task: any) => {
+    return extractDateKey(task.scheduled_for) || extractDateKey(task.created_at);
+  }, [extractDateKey]);
 
   const getReminderWindowKeys = useCallback((task: any) => {
     const taskDateKey = getTaskDateKey(task);
@@ -178,17 +195,19 @@ export default function AgendaDiariaPage() {
 
     if (!taskDateKey) return true;
 
-    if (dateKey < taskDateKey) {
+    const dateComparison = compareDateKeys(dateKey, taskDateKey);
+
+    if (dateComparison < 0) {
       return false;
     }
 
-    if (dateKey === taskDateKey) {
+    if (dateComparison === 0) {
       return true;
     }
 
     return normalizedStatus === "Pendente";
 
-  }, [getReminderWindowKeys, getTaskDateKey, normalizeTaskStatus]);
+  }, [compareDateKeys, getReminderWindowKeys, getTaskDateKey, normalizeTaskStatus]);
 
   const parseTaskMeta = (description?: string | null): LegacyTaskMeta => {
     const raw = String(description || "");
@@ -349,7 +368,7 @@ export default function AgendaDiariaPage() {
     const reminderKeys = Array.from(
       new Set(
         assigneeScopedTasks
-          .filter((task: any) => Boolean(task.show_only_on_date) && String(task.status || "") !== "Concluído")
+          .filter((task: any) => Boolean(task.show_only_on_date) && normalizeTaskStatus(task.status) !== "Concluído")
           .flatMap((task: any) => getReminderWindowKeys(task))
           .filter(Boolean)
       )
@@ -573,9 +592,10 @@ export default function AgendaDiariaPage() {
     const dateVisibleEvents = events.filter((ev) => isTaskVisibleOnSelectedDate(ev, selectedDate));
 
     let filtered = dateVisibleEvents.filter((ev) => {
-      if (statusFilter === "pending" && ev.status !== "Pendente") return false;
-      if (statusFilter === "in_progress" && ev.status !== "Em andamento") return false;
-      if (statusFilter === "done" && ev.status !== "Concluído") return false;
+      const normalizedStatus = normalizeTaskStatus(ev.status);
+      if (statusFilter === "pending" && normalizedStatus !== "Pendente") return false;
+      if (statusFilter === "in_progress" && normalizedStatus !== "Em andamento") return false;
+      if (statusFilter === "done" && normalizedStatus !== "Concluído") return false;
       if (typeFilter !== "all" && ev.type !== typeFilter) return false;
       return true;
     });
@@ -593,7 +613,7 @@ export default function AgendaDiariaPage() {
       if (aDone !== bDone) return aDone ? 1 : -1;
       return 0;
     });
-  }, [events, isTaskVisibleOnSelectedDate, selectedDate, statusFilter, typeFilter]);
+  }, [events, isTaskVisibleOnSelectedDate, normalizeTaskStatus, selectedDate, statusFilter, typeFilter]);
 
   const totalTasks = visibleEvents.length;
   const completedTasks = useMemo(() => visibleEvents.filter(e => e.status === 'Concluído').length, [visibleEvents]);
