@@ -132,6 +132,12 @@ export async function POST(req: NextRequest) {
     .select('id')
     .single()
 
+  await adminSupabase
+    .from('process_movimentacoes_inbox')
+    .delete()
+    .eq('tenant_id', tenantId)
+    .eq('numero_cnj', numero_cnj)
+
   const resumoSolicitado = monitoramentoId
     ? await solicitarResumoProcesso(tenantId, integration.api_key, numero_cnj)
     : false

@@ -8,6 +8,14 @@ const adminSupabase = createClient(
   process.env.SUPABASE_SERVICE_ROLE_KEY!
 )
 
+function normalizeOabEstado(value: string) {
+  return String(value || '').trim().toUpperCase()
+}
+
+function normalizeOabNumero(value: string) {
+  return String(value || '').replace(/\D/g, '')
+}
+
 export async function POST(req: NextRequest) {
   const cookieStore = await cookies()
   const supabase = createServerClient(
@@ -28,9 +36,16 @@ export async function POST(req: NextRequest) {
   const { data: { user } } = await supabase.auth.getUser()
   if (!user) return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
 
-  const { oab_numero, oab_estado } = await req.json()
+  const { oab_numero, oab_estado, advogado_nome } = await req.json()
   if (!oab_numero || !oab_estado) {
     return NextResponse.json({ error: 'Parâmetros obrigatórios: oab_numero, oab_estado' }, { status: 400 })
+  }
+
+  const normalizedEstado = normalizeOabEstado(oab_estado)
+  const normalizedNumero = normalizeOabNumero(oab_numero)
+
+  if (!normalizedEstado || !normalizedNumero) {
+    return NextResponse.json({ error: 'OAB inválida' }, { status: 400 })
   }
 
   const { data: profile } = await adminSupabase
@@ -54,7 +69,7 @@ export async function POST(req: NextRequest) {
     return NextResponse.json({ error: 'Escavador não configurado' }, { status: 400 })
   }
 
-  const termoPrincipal = `OAB/${String(oab_estado).toUpperCase()} ${String(oab_numero).trim()}`
+  const termoPrincipal = `OAB/${normalizedEstado} ${normalizedNumero}`
 
   const res = await fetch('https://api.escavador.com/api/v2/monitoramentos/novos-processos', {
     method: 'POST',
@@ -67,8 +82,8 @@ export async function POST(req: NextRequest) {
     body: JSON.stringify({
       termo: termoPrincipal,
       variacoes: [
-        `OAB ${String(oab_estado).toUpperCase()} ${String(oab_numero).trim()}`,
-        `${String(oab_estado).toUpperCase()}${String(oab_numero).trim()}`
+        `OAB ${normalizedEstado} ${normalizedNumero}`,
+        `${normalizedEstado}${normalizedNumero}`
       ]
     })
   })
@@ -86,14 +101,27 @@ export async function POST(req: NextRequest) {
         ...(integ.metadata as Record<string, unknown> | null),
         monitoramento_oab_id: data?.id,
         monitoramento_oab_termo: termoPrincipal,
-        oab_numero,
-        oab_estado,
+        oab_numero: normalizedNumero,
+        oab_estado: normalizedEstado,
         criado_em: new Date().toISOString()
       }
     })
     .eq('tenant_id', tenant_id)
     .eq('provider', 'escavador')
 
-  console.log(`[monitoramento-oab] Monitoramento criado: ID ${data?.id} para OAB ${oab_estado}/${oab_numero}`)
+  await adminSupabase
+    .from('tenant_oab_monitoramentos')
+    .upsert({
+      tenant_id,
+      oab_estado: normalizedEstado,
+      oab_numero: normalizedNumero,
+      advogado_nome: String(advogado_nome || '').trim() || null,
+      monitoramento_oab_id: data?.id ? String(data.id) : null,
+      monitoramento_ativo: true,
+      ultima_sincronizacao: new Date().toISOString(),
+      updated_at: new Date().toISOString()
+    }, { onConflict: 'tenant_id,oab_estado,oab_numero' })
+
+  console.log(`[monitoramento-oab] Monitoramento criado: ID ${data?.id} para OAB ${normalizedEstado}/${normalizedNumero}`)
   return NextResponse.json({ success: true, monitoramento_id: data?.id })
 }

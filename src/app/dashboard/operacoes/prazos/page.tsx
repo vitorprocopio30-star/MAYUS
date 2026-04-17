@@ -1,6 +1,6 @@
 'use client'
 
-import { useEffect, useState, useMemo } from 'react'
+import { useEffect, useState, useMemo, useCallback } from 'react'
 import { createClient } from '@/lib/supabase/client'
 import { buildAgendaPayloadFromProcessPrazo, syncAgendaTaskBySource } from '@/lib/agenda/userTasks'
 import {
@@ -183,21 +183,36 @@ function normalizarDataISO(valor?: string | null): string {
   return `${ano}-${mes}-${dia}`
 }
 
+function obterTimestampMovimentacao(dataReferencia?: string | null, createdAt?: string | null): number {
+  const created = String(createdAt || '').trim()
+  if (created) {
+    const parsedCreated = new Date(created.replace(' ', 'T')).getTime()
+    if (!Number.isNaN(parsedCreated)) return parsedCreated
+  }
+
+  const dataISO = normalizarDataISO(dataReferencia)
+  if (!dataISO) return 0
+  return new Date(`${dataISO}T12:00:00`).getTime()
+}
+
 const supabase = createClient()
 
 export default function PrazosPage() {
   const [activeTab, setActiveTab] = useState<TabType>('prazos')
   const [items, setItems] = useState<any[]>([])
   const [movementRecords, setMovementRecords] = useState<any[]>([])
+  const [movementInboxRecords, setMovementInboxRecords] = useState<any[]>([])
   const [monitoredContexts, setMonitoredContexts] = useState<any[]>([])
   const [profiles, setProfiles] = useState<any[]>([])
   const [loading, setLoading] = useState(true)
   const [searchTerm, setSearchTerm] = useState('')
+  const [movementDateFilter, setMovementDateFilter] = useState('')
   const [filterResponsavel, setFilterResponsavel] = useState<string>('todos')
   const [filterTribunal, setFilterTribunal] = useState<string>('todos')
   const [currentUser, setCurrentUser] = useState<any>(null)
   const [copiedId, setCopiedId] = useState<string | null>(null)
   const [tenantId, setTenantId] = useState<string | null>(null)
+  const [monitoringProcessNumber, setMonitoringProcessNumber] = useState<string | null>(null)
   
   // Estados para o Drawer de Detalhes
   const [selectedItemId, setSelectedItemId] = useState<string | null>(null)
@@ -235,6 +250,108 @@ export default function PrazosPage() {
     )
   }
 
+  const loadData = useCallback(async (tenantIdValue: string, loggedUserId: string, teamProfiles: any[]) => {
+    setLoading(true)
+    const [prazosRes, movimentacoesRes, inboxRes, contextosRes] = await Promise.all([
+      supabase
+        .from('process_prazos')
+        .select(`
+          *,
+          monitored_processes(
+            numero_processo,
+            partes,
+            tribunal,
+            comarca,
+            vara,
+            assunto,
+            classe_processual,
+            tipo_acao,
+            fase_atual,
+            data_ultima_movimentacao,
+            ultima_movimentacao_texto,
+            resumo_curto,
+            cliente_nome,
+            escavador_monitoramento_id
+          ),
+          process_tasks:process_task_id(id, movimentacoes_timeline),
+          profiles:responsavel_id(id, full_name, avatar_url)
+        `)
+        .eq('tenant_id', tenantIdValue)
+        .in('tipo', ['sessao', 'pericia', 'audiencia', 'citacao', 'sentenca', 'recurso', 'prazo'])
+        .not('descricao', 'ilike', '%Despacho%')
+        .order('data_vencimento', { ascending: true }),
+      supabase
+        .from('process_movimentacoes')
+        .select('id, numero_cnj, data, conteudo, fonte, created_at')
+        .eq('tenant_id', tenantIdValue)
+        .order('data', { ascending: false })
+        .order('created_at', { ascending: false })
+        .limit(1000),
+      supabase
+        .from('process_movimentacoes_inbox')
+        .select('id, numero_cnj, oab_estado, oab_numero, latest_data, latest_conteudo, latest_fonte, latest_created_at, quantidade_eventos, movimentacoes, payload_ultimo_evento, monitorado')
+        .eq('tenant_id', tenantIdValue)
+        .order('latest_created_at', { ascending: false })
+        .limit(1000),
+      supabase
+        .from('monitored_processes')
+        .select('numero_processo, partes, tribunal, comarca, vara, assunto, classe_processual, tipo_acao, fase_atual, data_ultima_movimentacao, ultima_movimentacao_texto, resumo_curto, cliente_nome, escavador_monitoramento_id')
+        .eq('tenant_id', tenantIdValue)
+    ])
+
+    if (prazosRes.error) {
+      console.error('Erro ao buscar prazos:', prazosRes.error)
+    } else {
+      const dedupedItems = deduplicarPrazos(prazosRes.data || [])
+      setItems(dedupedItems)
+
+      const userProfile = (teamProfiles || []).find((profile) => profile.id === loggedUserId)
+      for (const prazoItem of dedupedItems) {
+        try {
+          const assignedProfile = prazoItem?.responsavel_id
+            ? (teamProfiles || []).find((profile) => profile.id === prazoItem.responsavel_id)
+            : null
+
+          await syncAgendaTaskBySource(
+            supabase,
+            buildAgendaPayloadFromProcessPrazo({
+              tenantId: tenantIdValue,
+              prazo: prazoItem,
+              assignedName: assignedProfile?.full_name || null,
+              createdBy: loggedUserId,
+              completedBy: String(prazoItem.status ?? '').toLowerCase() === 'concluido' ? loggedUserId : null,
+              completedByName: String(prazoItem.status ?? '').toLowerCase() === 'concluido'
+                ? userProfile?.full_name || assignedProfile?.full_name || null
+                : null,
+            })
+          )
+        } catch (error) {
+          console.error('[Prazos] Falha ao sincronizar agenda para prazo:', prazoItem?.id, error)
+        }
+      }
+    }
+
+    if (movimentacoesRes.error) {
+      console.error('Erro ao buscar movimentações:', movimentacoesRes.error)
+    } else {
+      setMovementRecords(movimentacoesRes.data || [])
+    }
+
+    if (inboxRes.error) {
+      console.error('Erro ao buscar inbox de movimentações:', inboxRes.error)
+    } else {
+      setMovementInboxRecords(inboxRes.data || [])
+    }
+
+    if (contextosRes.error) {
+      console.error('Erro ao buscar contexto de processos:', contextosRes.error)
+    } else {
+      setMonitoredContexts(contextosRes.data || [])
+    }
+
+    setLoading(false)
+  }, [])
+
   useEffect(() => {
     async function init() {
       const { data: { user } } = await supabase.auth.getUser()
@@ -255,104 +372,15 @@ export default function PrazosPage() {
         .select('id, full_name, avatar_url, role')
         .eq('tenant_id', profile.tenant_id)
         .eq('is_active', true)
-      
-      console.log("[Prazos] Perfis carregados:", team);
+
+      console.log('[Prazos] Perfis carregados:', team)
       setProfiles(team || [])
 
-      fetchData(profile.tenant_id, user.id, team || [])
-    }
-
-    async function fetchData(tenantId: string, loggedUserId: string, teamProfiles: any[]) {
-      setLoading(true)
-      const [prazosRes, movimentacoesRes, contextosRes] = await Promise.all([
-        supabase
-          .from('process_prazos')
-          .select(`
-            *,
-            monitored_processes(
-              numero_processo, 
-              partes, 
-              tribunal, 
-              comarca, 
-              vara, 
-              assunto,
-              classe_processual,
-              tipo_acao,
-              fase_atual,
-              data_ultima_movimentacao,
-              ultima_movimentacao_texto, 
-              resumo_curto, 
-              cliente_nome,
-              escavador_monitoramento_id
-            ),
-            process_tasks:process_task_id(id, movimentacoes_timeline),
-            profiles:responsavel_id(id, full_name, avatar_url)
-          `)
-          .eq('tenant_id', tenantId)
-          .in('tipo', ['sessao', 'pericia', 'audiencia', 'citacao', 'sentenca', 'recurso', 'prazo'])
-          .not('descricao', 'ilike', '%Despacho%')
-          .order('data_vencimento', { ascending: true }),
-        supabase
-          .from('process_movimentacoes')
-          .select('id, numero_cnj, data, conteudo, fonte, created_at')
-          .eq('tenant_id', tenantId)
-          .order('data', { ascending: false })
-          .order('created_at', { ascending: false })
-          .limit(1000),
-        supabase
-          .from('monitored_processes')
-          .select('numero_processo, partes, tribunal, comarca, vara, assunto, classe_processual, tipo_acao, fase_atual, data_ultima_movimentacao, ultima_movimentacao_texto, resumo_curto, cliente_nome, escavador_monitoramento_id')
-          .eq('tenant_id', tenantId)
-      ])
-
-      if (prazosRes.error) {
-        console.error('Erro ao buscar prazos:', prazosRes.error)
-      } else {
-        const dedupedItems = deduplicarPrazos(prazosRes.data || [])
-        setItems(dedupedItems)
-
-        const userProfile = (teamProfiles || []).find((profile) => profile.id === loggedUserId)
-        for (const prazoItem of dedupedItems) {
-          try {
-            const assignedProfile = prazoItem?.responsavel_id
-              ? (teamProfiles || []).find((profile) => profile.id === prazoItem.responsavel_id)
-              : null
-
-            await syncAgendaTaskBySource(
-              supabase,
-              buildAgendaPayloadFromProcessPrazo({
-                tenantId,
-                prazo: prazoItem,
-                assignedName: assignedProfile?.full_name || null,
-                createdBy: loggedUserId,
-                completedBy: String(prazoItem.status ?? '').toLowerCase() === 'concluido' ? loggedUserId : null,
-                completedByName: String(prazoItem.status ?? '').toLowerCase() === 'concluido'
-                  ? userProfile?.full_name || assignedProfile?.full_name || null
-                  : null,
-              })
-            )
-          } catch (error) {
-            console.error('[Prazos] Falha ao sincronizar agenda para prazo:', prazoItem?.id, error)
-          }
-        }
-      }
-
-      if (movimentacoesRes.error) {
-        console.error('Erro ao buscar movimentações:', movimentacoesRes.error)
-      } else {
-        setMovementRecords(movimentacoesRes.data || [])
-      }
-
-      if (contextosRes.error) {
-        console.error('Erro ao buscar contexto de processos:', contextosRes.error)
-      } else {
-        setMonitoredContexts(contextosRes.data || [])
-      }
-      setLoading(false);
+      await loadData(profile.tenant_id, user.id, team || [])
     }
 
     init()
-  }, [])
+  }, [loadData])
 
   const filteredItems = useMemo(() => {
     return items.filter(item => {
@@ -397,6 +425,7 @@ export default function PrazosPage() {
 
   const movimentacoesFiltradas = useMemo(() => {
     const busca = searchTerm.trim().toLowerCase()
+    const dataFiltro = normalizarDataISO(movementDateFilter)
     const dedupe = new Set<string>()
     const lista: any[] = []
 
@@ -418,6 +447,18 @@ export default function PrazosPage() {
       if (numero && !contextoByNumero.has(numero)) {
         contextoByNumero.set(numero, item.monitored_processes)
       }
+    })
+
+    const processosComHistoricoPersistido = new Set<string>()
+    movementRecords.forEach((registro: any) => {
+      const numeroProcesso = String(registro?.numero_cnj ?? '').trim()
+      if (numeroProcesso) processosComHistoricoPersistido.add(numeroProcesso)
+    })
+
+    const processosComInbox = new Set<string>()
+    movementInboxRecords.forEach((registro: any) => {
+      const numeroProcesso = String(registro?.numero_cnj ?? '').trim()
+      if (numeroProcesso) processosComInbox.add(numeroProcesso)
     })
 
     function buildFallbackItem(numeroProcesso: string, contexto: any, dataReferencia: string | null) {
@@ -447,6 +488,28 @@ export default function PrazosPage() {
       }
     }
 
+    function pushMovimentacao(rawEvent: any) {
+      const numeroProcesso = String(rawEvent?.numeroProcesso ?? '').trim()
+      const dataISO = normalizarDataISO(rawEvent?.dataReferencia || rawEvent?.createdAt || null)
+      const conteudo = String(rawEvent?.conteudo ?? '').trim()
+
+      if (!numeroProcesso) return
+      if (dataFiltro && dataISO !== dataFiltro) return
+
+      const baseBusca = `${conteudo} ${numeroProcesso} ${rawEvent?.cliente ?? ''} ${rawEvent?.tribunal ?? ''} ${rawEvent?.assunto ?? ''} ${rawEvent?.classeProcessual ?? ''} ${rawEvent?.tipoAcao ?? ''} ${rawEvent?.faseAtual ?? ''} ${rawEvent?.poloAtivo ?? ''} ${rawEvent?.poloPassivo ?? ''}`.toLowerCase()
+      if (busca && !baseBusca.includes(busca)) return
+
+      const dedupeKey = String(rawEvent?.dedupeKey || `${numeroProcesso}-${dataISO}-${conteudo.toLowerCase().replace(/\s+/g, ' ').slice(0, 220)}`)
+      if (dedupe.has(dedupeKey)) return
+      dedupe.add(dedupeKey)
+
+      lista.push({
+        ...rawEvent,
+        dataISO,
+        conteudo: conteudo || 'Movimentação sem descrição',
+      })
+    }
+
     movementRecords.forEach((registro: any, index: number) => {
       const numeroProcesso = String(registro?.numero_cnj ?? '').trim()
       if (!numeroProcesso) return
@@ -454,8 +517,6 @@ export default function PrazosPage() {
       const contexto = contextoByNumero.get(numeroProcesso)
       const item = itemByNumero.get(numeroProcesso) || buildFallbackItem(numeroProcesso, contexto, registro?.data || registro?.created_at || null)
       const dataReferencia = registro?.data || registro?.created_at || contexto?.data_ultima_movimentacao || null
-      const dataISO = normalizarDataISO(dataReferencia)
-
       const conteudo = String(registro?.conteudo ?? contexto?.ultima_movimentacao_texto ?? '').trim()
       const cliente = String(contexto?.cliente_nome ?? item?.monitored_processes?.cliente_nome ?? '')
       const tribunal = String(contexto?.tribunal ?? item?.monitored_processes?.tribunal ?? '')
@@ -469,20 +530,13 @@ export default function PrazosPage() {
       const poloPassivo = String(contexto?.partes?.polo_passivo ?? '')
       const resumoCurto = String(contexto?.resumo_curto ?? '')
 
-      const baseBusca = `${conteudo} ${numeroProcesso} ${cliente} ${tribunal} ${assunto} ${classeProcessual} ${tipoAcao} ${faseAtual} ${poloAtivo} ${poloPassivo}`.toLowerCase()
-      if (busca && !baseBusca.includes(busca)) return
-
-      const dedupeKey = registro?.id ? `pm-${registro.id}` : `pm-${numeroProcesso}-${dataISO}-${index}`
-      if (dedupe.has(dedupeKey)) return
-      dedupe.add(dedupeKey)
-
-      lista.push({
-        id: dedupeKey,
+      pushMovimentacao({
+        id: registro?.id ? `pm-${registro.id}` : `pm-${numeroProcesso}-${index}`,
+        dedupeKey: registro?.id ? `pm-${registro.id}` : `pm-${numeroProcesso}-${index}`,
         item,
         conteudo: conteudo || 'Movimentação sem descrição',
         dataReferencia,
         createdAt: registro?.created_at || null,
-        dataISO,
         tipoEvento: String(registro?.fonte ?? 'movimentacao'),
         numeroProcesso,
         cliente,
@@ -495,7 +549,67 @@ export default function PrazosPage() {
         faseAtual,
         poloAtivo,
         poloPassivo,
-        resumoCurto
+        resumoCurto,
+        monitorado: Boolean(item?.monitored_processes?.escavador_monitoramento_id),
+      })
+    })
+
+    movementInboxRecords.forEach((registro: any) => {
+      const numeroProcesso = String(registro?.numero_cnj ?? '').trim()
+      if (!numeroProcesso) return
+      if (processosComHistoricoPersistido.has(numeroProcesso)) return
+
+      const contexto = contextoByNumero.get(numeroProcesso)
+      const item = itemByNumero.get(numeroProcesso) || buildFallbackItem(numeroProcesso, contexto, registro?.latest_data || registro?.latest_created_at || null)
+      const historico = Array.isArray(registro?.movimentacoes) && registro.movimentacoes.length > 0
+        ? registro.movimentacoes
+        : [{
+            id: `inbox-${registro.id}`,
+            data: registro?.latest_data,
+            conteudo: registro?.latest_conteudo,
+            criado_em: registro?.latest_created_at,
+            fonte: registro?.latest_fonte,
+          }]
+
+      historico.forEach((mov: any, index: number) => {
+        const conteudo = String(mov?.conteudo ?? registro?.latest_conteudo ?? '').trim()
+        const cliente = String(contexto?.cliente_nome ?? item?.monitored_processes?.cliente_nome ?? '')
+        const tribunal = String(contexto?.tribunal ?? item?.monitored_processes?.tribunal ?? '')
+        const assunto = String(contexto?.assunto ?? item?.descricao ?? '')
+        const classeProcessual = String(contexto?.classe_processual ?? '')
+        const tipoAcao = String(contexto?.tipo_acao ?? '')
+        const faseAtual = String(contexto?.fase_atual ?? '')
+        const comarca = String(contexto?.comarca ?? '')
+        const vara = String(contexto?.vara ?? '')
+        const poloAtivo = String(contexto?.partes?.polo_ativo ?? '')
+        const poloPassivo = String(contexto?.partes?.polo_passivo ?? '')
+        const resumoCurto = String(contexto?.resumo_curto ?? '')
+
+        pushMovimentacao({
+          id: mov?.id ? `inbox-${registro.id}-${mov.id}` : `inbox-${registro.id}-${index}`,
+          dedupeKey: mov?.id ? `inbox-${registro.id}-${mov.id}` : `inbox-${registro.id}-${index}`,
+          item,
+          conteudo,
+          dataReferencia: mov?.data || registro?.latest_data || registro?.latest_created_at || null,
+          createdAt: mov?.criado_em || registro?.latest_created_at || null,
+          tipoEvento: String(mov?.fonte ?? registro?.latest_fonte ?? 'movimentacao'),
+          numeroProcesso,
+          cliente,
+          tribunal,
+          comarca,
+          vara,
+          assunto,
+          classeProcessual,
+          tipoAcao,
+          faseAtual,
+          poloAtivo,
+          poloPassivo,
+          resumoCurto,
+          monitorado: false,
+          inboxId: registro.id,
+          oabEstado: registro.oab_estado,
+          oabNumero: registro.oab_numero,
+        })
       })
     })
 
@@ -503,12 +617,15 @@ export default function PrazosPage() {
       const timeline = item.process_tasks?.movimentacoes_timeline
       if (!Array.isArray(timeline)) continue
 
+      const numeroProcesso = String(item.monitored_processes?.numero_processo ?? '')
+      if (numeroProcesso && (processosComHistoricoPersistido.has(numeroProcesso) || processosComInbox.has(numeroProcesso))) {
+        continue
+      }
+
       timeline.forEach((mov: any, index: number) => {
         const dataReferencia = mov?.criado_em || mov?.data || item.monitored_processes?.data_ultima_movimentacao || null
-        const dataISO = normalizarDataISO(dataReferencia)
 
         const conteudo = String(mov?.conteudo ?? '').trim()
-        const numeroProcesso = String(item.monitored_processes?.numero_processo ?? '')
         const cliente = String(item.monitored_processes?.cliente_nome ?? '')
         const descricao = String(item.descricao ?? '')
         const tipoEvento = String(mov?.tipo_evento ?? item.tipo ?? 'movimentacao')
@@ -523,23 +640,17 @@ export default function PrazosPage() {
         const poloPassivo = String(item.monitored_processes?.partes?.polo_passivo ?? '')
         const resumoCurto = String(item.monitored_processes?.resumo_curto ?? '')
 
-        const baseBusca = `${conteudo} ${numeroProcesso} ${cliente} ${descricao} ${tribunal} ${assunto} ${classeProcessual} ${tipoAcao} ${faseAtual} ${poloAtivo} ${poloPassivo}`.toLowerCase()
-        if (busca && !baseBusca.includes(busca)) return
-
-        const dedupeKey = mov?.escavador_movimentacao_id
-          ? `esc-${mov.escavador_movimentacao_id}`
-          : `${item.id}-${dataISO}-${conteudo}-${index}`
-
-        if (dedupe.has(dedupeKey)) return
-        dedupe.add(dedupeKey)
-
-        lista.push({
-          id: dedupeKey,
+        pushMovimentacao({
+          id: mov?.escavador_movimentacao_id
+            ? `esc-${mov.escavador_movimentacao_id}`
+            : `${item.id}-${index}`,
+          dedupeKey: mov?.escavador_movimentacao_id
+            ? `esc-${mov.escavador_movimentacao_id}`
+            : `${item.id}-${index}`,
           item,
           conteudo: conteudo || 'Movimentação sem descrição',
           dataReferencia,
           createdAt: mov?.criado_em || mov?.created_at || null,
-          dataISO,
           tipoEvento,
           numeroProcesso,
           cliente,
@@ -552,19 +663,132 @@ export default function PrazosPage() {
           faseAtual,
           poloAtivo,
           poloPassivo,
-          resumoCurto
+          resumoCurto,
+          monitorado: Boolean(item?.monitored_processes?.escavador_monitoramento_id),
         })
       })
     }
 
-    return lista
-      .map((mov) => ({ ...mov, quantidadeMovimentacoes: 1 }))
+    const agrupadoPorProcesso = new Map<string, any>()
+
+    lista.forEach((mov) => {
+      const chave = mov.numeroProcesso || mov.id
+      const atual = agrupadoPorProcesso.get(chave)
+
+      if (!atual) {
+        agrupadoPorProcesso.set(chave, {
+          ...mov,
+          historico: [mov],
+          quantidadeMovimentacoes: 1,
+        })
+        return
+      }
+
+      agrupadoPorProcesso.set(chave, {
+        ...atual,
+        historico: [...atual.historico, mov],
+        quantidadeMovimentacoes: atual.quantidadeMovimentacoes + 1,
+      })
+    })
+
+    return Array.from(agrupadoPorProcesso.values())
+      .map((mov) => {
+        const historico = [...mov.historico].sort((a: any, b: any) => {
+          return obterTimestampMovimentacao(b.dataISO || b.dataReferencia, b.createdAt) - obterTimestampMovimentacao(a.dataISO || a.dataReferencia, a.createdAt)
+        })
+
+        const principal = historico[0]
+        return {
+          ...mov,
+          ...principal,
+          item: principal.item,
+          historico,
+          quantidadeMovimentacoes: historico.length,
+        }
+      })
       .sort((a, b) => {
-        const ta = new Date(a.createdAt || a.dataReferencia || 0).getTime()
-        const tb = new Date(b.createdAt || b.dataReferencia || 0).getTime()
+        const ta = obterTimestampMovimentacao(a.dataISO || a.dataReferencia, a.createdAt)
+        const tb = obterTimestampMovimentacao(b.dataISO || b.dataReferencia, b.createdAt)
         return tb - ta
       })
-  }, [items, monitoredContexts, movementRecords, searchTerm])
+  }, [items, monitoredContexts, movementDateFilter, movementInboxRecords, movementRecords, searchTerm])
+
+  const buildMonitoramentoPayload = useCallback((entry: any) => {
+    const numeroProcesso = String(entry?.numeroProcesso ?? entry?.monitored_processes?.numero_processo ?? '').trim()
+    return {
+      numero_processo: numeroProcesso,
+      tribunal: entry?.tribunal ?? entry?.monitored_processes?.tribunal ?? null,
+      comarca: entry?.comarca ?? entry?.monitored_processes?.comarca ?? null,
+      vara: entry?.vara ?? entry?.monitored_processes?.vara ?? null,
+      assunto: entry?.assunto ?? entry?.descricao ?? entry?.item?.descricao ?? null,
+      classe_processual: entry?.classeProcessual ?? entry?.monitored_processes?.classe_processual ?? null,
+      tipo_acao: entry?.tipoAcao ?? entry?.monitored_processes?.tipo_acao ?? null,
+      fase_atual: entry?.faseAtual ?? entry?.monitored_processes?.fase_atual ?? null,
+      polo_ativo: entry?.poloAtivo ?? entry?.monitored_processes?.partes?.polo_ativo ?? null,
+      polo_passivo: entry?.poloPassivo ?? entry?.monitored_processes?.partes?.polo_passivo ?? null,
+      ultima_movimentacao_texto: entry?.conteudo ?? entry?.monitored_processes?.ultima_movimentacao_texto ?? null,
+      data_ultima_movimentacao: entry?.dataReferencia ?? entry?.monitored_processes?.data_ultima_movimentacao ?? null,
+      status: 'ATIVO',
+    }
+  }, [])
+
+  const handleMonitorProcess = useCallback(async (event: React.MouseEvent, entry: any) => {
+    event.stopPropagation()
+
+    const payload = buildMonitoramentoPayload(entry)
+    if (!payload.numero_processo || !tenantId || !currentUser?.id) return
+
+    const executarMonitoramento = async (confirmarCusto: boolean) => {
+      const response = await fetch('/api/monitoramento/importar-lote', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ processos: [payload], confirmar_custo: confirmarCusto })
+      })
+
+      const data = await response.json().catch(() => null)
+      if (!response.ok) {
+        throw new Error(data?.error || 'Falha ao monitorar processo')
+      }
+
+      return data
+    }
+
+    setMonitoringProcessNumber(payload.numero_processo)
+    try {
+      let result = await executarMonitoramento(false)
+
+      if (result?.requer_confirmacao) {
+        const shouldProceed = typeof window !== 'undefined'
+          ? window.confirm(result?.mensagem || 'Este monitoramento ultrapassa o limite gratuito. Deseja prosseguir?')
+          : false
+
+        if (!shouldProceed) return
+        result = await executarMonitoramento(true)
+      }
+
+      const jaMonitorados = Array.isArray(result?.ja_monitorados_numeros) ? result.ja_monitorados_numeros : []
+      const monitoradoComSucesso = Number(result?.importados || 0) > 0 || jaMonitorados.includes(payload.numero_processo)
+
+      if (!monitoradoComSucesso) {
+        throw new Error(result?.mensagem || 'Nenhum monitoramento foi criado para este processo.')
+      }
+
+      await supabase
+        .from('process_movimentacoes_inbox')
+        .delete()
+        .eq('tenant_id', tenantId)
+        .eq('numero_cnj', payload.numero_processo)
+
+      await loadData(tenantId, currentUser.id, profiles)
+    } catch (error: any) {
+      console.error('[Prazos] Falha ao monitorar processo:', error)
+      if (typeof window !== 'undefined') {
+        window.alert(error?.message || 'Falha ao monitorar processo.')
+      }
+    } finally {
+      setMonitoringProcessNumber(null)
+    }
+  }, [buildMonitoramentoPayload, currentUser?.id, loadData, profiles, tenantId])
 
   async function updateStatus(id: string, newStatus: string) {
     const { error } = await supabase
@@ -736,10 +960,24 @@ export default function PrazosPage() {
 
           {activeTab === 'movimentacoes' ? (
             <div className="flex items-center gap-3 flex-wrap">
-              <div className="flex items-center gap-2 bg-white/5 border border-white/10 rounded-xl px-4 py-2 min-h-[44px] text-white/70 text-sm">
+              <div className="flex items-center gap-2 bg-white/5 border border-white/10 rounded-xl px-3 py-2 min-h-[44px]">
                 <Calendar size={16} className="text-[#CCA761]" />
-                Mostrando todas as movimentações (mais recentes primeiro)
+                <input
+                  type="date"
+                  value={movementDateFilter}
+                  onChange={(e) => setMovementDateFilter(e.target.value)}
+                  className="bg-transparent text-sm focus:outline-none text-white [color-scheme:dark]"
+                  title="Filtrar movimentações por data"
+                />
               </div>
+              {movementDateFilter && (
+                <button
+                  onClick={() => setMovementDateFilter('')}
+                  className="h-[44px] px-4 rounded-xl bg-white/5 hover:bg-white/10 text-white/70 hover:text-white text-sm border border-white/10 transition-all"
+                >
+                  Limpar data
+                </button>
+              )}
             </div>
           ) : (
             <div className="flex items-center gap-4 flex-wrap">
@@ -809,6 +1047,20 @@ export default function PrazosPage() {
                       <span className="px-2.5 py-1 rounded-full text-[10px] font-bold border border-[#CCA761]/30 text-[#CCA761]/90 bg-[#CCA761]/10">
                         {mov.quantidadeMovimentacoes || 1} evento(s)
                       </span>
+                      {mov.monitorado ? (
+                        <span className="flex items-center gap-1 text-[10px] text-green-400 font-bold bg-green-400/5 px-2 py-0.5 rounded border border-green-400/20">
+                          <span className="w-1.5 h-1.5 bg-green-400 rounded-full animate-pulse" />
+                          Monitorado
+                        </span>
+                      ) : (
+                        <button
+                          onClick={(e) => handleMonitorProcess(e, mov)}
+                          disabled={monitoringProcessNumber === mov.numeroProcesso}
+                          className="text-[10px] text-[#CCA761] font-bold border border-[#CCA761]/30 px-2 py-0.5 rounded hover:bg-[#CCA761]/10 transition-colors disabled:opacity-60 disabled:cursor-not-allowed"
+                        >
+                          {monitoringProcessNumber === mov.numeroProcesso ? 'Monitorando...' : '+ Monitorar'}
+                        </button>
+                      )}
                     </div>
                     <span className="px-3 py-1 rounded-full text-[11px] font-bold border border-white/10 text-white/60 bg-white/5">
                       {formatarData(mov.dataISO || mov.dataReferencia)}
@@ -932,13 +1184,11 @@ export default function PrazosPage() {
                     </span>
                   ) : (
                     <button 
-                      onClick={(e) => {
-                        e.stopPropagation();
-                        console.log("Solicitar monitoramento para:", item.monitored_processes?.numero_processo);
-                      }}
-                      className="text-[10px] text-[#CCA761] font-bold border border-[#CCA761]/30 px-2 py-0.5 rounded hover:bg-[#CCA761]/10 transition-colors"
+                      onClick={(e) => handleMonitorProcess(e, item)}
+                      disabled={monitoringProcessNumber === item.monitored_processes?.numero_processo}
+                      className="text-[10px] text-[#CCA761] font-bold border border-[#CCA761]/30 px-2 py-0.5 rounded hover:bg-[#CCA761]/10 transition-colors disabled:opacity-60 disabled:cursor-not-allowed"
                     >
-                      + Monitorar
+                      {monitoringProcessNumber === item.monitored_processes?.numero_processo ? 'Monitorando...' : '+ Monitorar'}
                     </button>
                   )}
                 </div>

@@ -146,17 +146,12 @@ export default function AgendaDiariaPage() {
     return "";
   }, [toLocalDateKey]);
 
-  const compareDateKeys = useCallback((left: string, right: string) => {
-    const leftTs = new Date(`${left}T12:00:00`).getTime();
-    const rightTs = new Date(`${right}T12:00:00`).getTime();
-    if (Number.isNaN(leftTs) || Number.isNaN(rightTs)) {
-      return left.localeCompare(right);
-    }
-    return leftTs - rightTs;
-  }, []);
-
   const getTaskDateKey = useCallback((task: any) => {
     return extractDateKey(task.scheduled_for) || extractDateKey(task.created_at);
+  }, [extractDateKey]);
+
+  const getTaskCompletedDateKey = useCallback((task: any) => {
+    return extractDateKey(task.completed_at);
   }, [extractDateKey]);
 
   const getReminderWindowKeys = useCallback((task: any) => {
@@ -181,33 +176,27 @@ export default function AgendaDiariaPage() {
   const isTaskVisibleOnSelectedDate = useCallback((task: any, dateKey: string) => {
     const normalizedStatus = normalizeTaskStatus(task.status);
     const taskDateKey = getTaskDateKey(task);
+    const completedDateKey = getTaskCompletedDateKey(task);
 
     if (Boolean(task.show_only_on_date)) {
       const reminderWindow = getReminderWindowKeys(task);
       if (!reminderWindow.includes(dateKey)) return false;
 
       if (normalizedStatus === "Concluído") {
-        return Boolean(taskDateKey) && taskDateKey === dateKey;
+        return Boolean(completedDateKey || taskDateKey) && (completedDateKey || taskDateKey) === dateKey;
       }
 
       return true;
     }
 
-    if (!taskDateKey) return true;
-
-    const dateComparison = compareDateKeys(dateKey, taskDateKey);
-
-    if (dateComparison < 0) {
-      return false;
+    if (normalizedStatus === "Concluído") {
+      if (completedDateKey) return completedDateKey === dateKey;
+      if (taskDateKey) return taskDateKey === dateKey;
     }
 
-    if (dateComparison === 0) {
-      return true;
-    }
+    return true;
 
-    return normalizedStatus === "Pendente";
-
-  }, [compareDateKeys, getReminderWindowKeys, getTaskDateKey, normalizeTaskStatus]);
+  }, [getReminderWindowKeys, getTaskCompletedDateKey, getTaskDateKey, normalizeTaskStatus]);
 
   const parseTaskMeta = (description?: string | null): LegacyTaskMeta => {
     const raw = String(description || "");

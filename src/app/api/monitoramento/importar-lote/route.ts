@@ -202,6 +202,19 @@ export async function POST(req: NextRequest) {
   const importados = rows.length
   await adminSupabase.rpc('increment_processos_monitorados', { p_tenant_id: tenantId, p_quantidade: importados })
 
+  const numerosParaLimparInbox = Array.from(new Set([
+    ...rows.map((r) => String(r.numero_processo ?? '')).filter(Boolean),
+    ...processosJaMonitorados.map((p: Record<string, string>) => String(p.numero_processo ?? '')).filter(Boolean)
+  ]))
+
+  if (numerosParaLimparInbox.length > 0) {
+    await adminSupabase
+      .from('process_movimentacoes_inbox')
+      .delete()
+      .eq('tenant_id', tenantId)
+      .in('numero_cnj', numerosParaLimparInbox)
+  }
+
   const resultadosResumo = await Promise.allSettled(
     rows.map((r) => solicitarResumoProcesso(tenantId, integration.api_key, String(r.numero_processo)))
   )

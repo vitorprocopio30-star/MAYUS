@@ -26,7 +26,70 @@ async function resolverTenantPorApiKey(req: NextRequest) {
   return integ?.tenant_id ?? null
 }
 
-async function resolverTenantPorMonitoramentoOab(monitoramentoId: string | null) {
+function normalizeOabEstado(value?: string | null) {
+  return String(value || '').trim().toUpperCase()
+}
+
+function normalizeOabNumero(value?: string | null) {
+  return String(value || '').replace(/\D/g, '')
+}
+
+function normalizarDataEvento(value?: string | null) {
+  const raw = String(value || '').trim()
+  if (!raw) return null
+
+  if (/^\d{4}-\d{2}-\d{2}$/.test(raw)) return raw
+
+  if (/^\d{2}\/\d{2}\/\d{4}/.test(raw)) {
+    const [dia, mes, ano] = raw.split(' ')[0].split('/')
+    return `${ano}-${mes}-${dia}`
+  }
+
+  if (raw.includes('-')) {
+    const datePart = raw.replace(' ', 'T').split('T')[0]
+    if (/^\d{4}-\d{2}-\d{2}$/.test(datePart)) return datePart
+  }
+
+  const parsed = new Date(raw)
+  if (Number.isNaN(parsed.getTime())) return null
+  const ano = parsed.getFullYear()
+  const mes = String(parsed.getMonth() + 1).padStart(2, '0')
+  const dia = String(parsed.getDate()).padStart(2, '0')
+  return `${ano}-${mes}-${dia}`
+}
+
+function extrairOabDeTexto(value?: string | null) {
+  const raw = String(value || '').trim().toUpperCase()
+  if (!raw) return null
+
+  const match = raw.match(/OAB\s*\/?\s*([A-Z]{2})\s*([0-9.\-/]+)/)
+  if (!match) return null
+
+  const oabEstado = normalizeOabEstado(match[1])
+  const oabNumero = normalizeOabNumero(match[2])
+
+  if (!oabEstado || !oabNumero) return null
+  return { oabEstado, oabNumero }
+}
+
+function extrairOabDoMonitoramento(mon: any) {
+  const candidates = [
+    mon?.termo,
+    mon?.valor,
+    mon?.descricao,
+    mon?.label,
+    mon?.processo?.advogado,
+  ]
+
+  for (const value of candidates) {
+    const parsed = extrairOabDeTexto(value)
+    if (parsed) return parsed
+  }
+
+  return null
+}
+
+async function resolverTenantPorMonitoramentoOabLegacy(monitoramentoId: string | null) {
   if (!monitoramentoId) return null
 
   const { data: integracoes } = await adminSupabase
@@ -40,6 +103,51 @@ async function resolverTenantPorMonitoramentoOab(monitoramentoId: string | null)
   })
 
   return match?.tenant_id ?? null
+}
+
+async function resolverContextoMonitoramentoOab(monitoramentoId: string | null, oab?: { oabEstado: string; oabNumero: string } | null) {
+  if (monitoramentoId) {
+    const { data: monitoramento } = await adminSupabase
+      .from('tenant_oab_monitoramentos')
+      .select('tenant_id, oab_estado, oab_numero')
+      .eq('monitoramento_oab_id', monitoramentoId)
+      .maybeSingle()
+
+    if (monitoramento?.tenant_id) {
+      return {
+        tenantId: monitoramento.tenant_id,
+        oabEstado: monitoramento.oab_estado,
+        oabNumero: monitoramento.oab_numero,
+      }
+    }
+  }
+
+  if (oab?.oabEstado && oab?.oabNumero) {
+    const { data: monitoramentos } = await adminSupabase
+      .from('tenant_oab_monitoramentos')
+      .select('tenant_id, oab_estado, oab_numero')
+      .eq('oab_estado', oab.oabEstado)
+      .eq('oab_numero', oab.oabNumero)
+      .limit(2)
+
+    if ((monitoramentos ?? []).length === 1) {
+      const match = monitoramentos?.[0]
+      return {
+        tenantId: match.tenant_id,
+        oabEstado: match.oab_estado,
+        oabNumero: match.oab_numero,
+      }
+    }
+  }
+
+  const tenantLegacy = await resolverTenantPorMonitoramentoOabLegacy(monitoramentoId)
+  if (!tenantLegacy) return null
+
+  return {
+    tenantId: tenantLegacy,
+    oabEstado: oab?.oabEstado ?? null,
+    oabNumero: oab?.oabNumero ?? null,
+  }
 }
 
 
@@ -66,9 +174,13 @@ export async function POST(req: NextRequest) {
       body?.numero_processo
 
     const monitoramentoIdOab = String(body?.monitoramento?.id ?? body?.monitoramentos?.[0]?.id ?? '') || null
+    const contextoOab = await resolverContextoMonitoramentoOab(
+      monitoramentoIdOab,
+      extrairOabDoMonitoramento(body?.monitoramento ?? body?.monitoramentos?.[0] ?? null)
+    )
     const tenantId =
       body?.tenant_id ??
-      (await resolverTenantPorMonitoramentoOab(monitoramentoIdOab)) ??
+      contextoOab?.tenantId ??
       (await resolverTenantPorApiKey(req))
 
     if (!numeroCnj || !tenantId) {
@@ -168,10 +280,10 @@ export async function POST(req: NextRequest) {
     const monitoramentos = Array.isArray(rawMon) ? rawMon : [rawMon]
     
     const movimentacao = body.movimentacao ?? {}
-    const movimentacaoId = String(movimentacao.id ?? '').trim() || null
-    const resumoSolicitadoNoEvento = new Set<string>()
+      const movimentacaoId = String(movimentacao.id ?? '').trim() || null
+      const resumoSolicitadoNoEvento = new Set<string>()
 
-    for (const mon of monitoramentos) {
+      for (const mon of monitoramentos) {
       // Extração robusta do número do processo (inclui mon.numero aprovado pelo user)
       const numero_cnj = mon.numero ?? mon.termo ?? mon.valor ?? mon.processo?.numero_novo ?? mon.processo?.numero
       if (!numero_cnj) {
@@ -187,8 +299,10 @@ export async function POST(req: NextRequest) {
         status: 'PENDENTE'
       })
 
+      const monitoramentoIdEscavador = String(mon.id ?? '').trim() || null
+      const contextoOab = await resolverContextoMonitoramentoOab(monitoramentoIdEscavador, extrairOabDoMonitoramento(mon))
+
       // DUAL LOOKUP: tenta por escavador_monitoramento_id primeiro
-      const monitoramentoIdEscavador = String(mon.id ?? '')
       let { data: processos } = await adminSupabase
         .from('monitored_processes')
         .select('id, tenant_id, movimentacoes, advogado_responsavel_id, escavador_monitoramento_id, resumo_solicitado_em')
@@ -225,6 +339,50 @@ export async function POST(req: NextRequest) {
         criado_em: new Date().toISOString()
       }
 
+      if (!processos || processos.length === 0) {
+        if (!contextoOab?.tenantId) {
+          console.warn(`[ESCAVADOR_WEBHOOK] Sem tenant para inbox de ${numero_cnj}`)
+          continue
+        }
+
+        const { data: inboxAtual } = await adminSupabase
+          .from('process_movimentacoes_inbox')
+          .select('id, movimentacoes, quantidade_eventos')
+          .eq('tenant_id', contextoOab.tenantId)
+          .eq('numero_cnj', numero_cnj)
+          .maybeSingle()
+
+        const historicoAtual = Array.isArray(inboxAtual?.movimentacoes) ? inboxAtual.movimentacoes : []
+        const jaTemMovimentacao = movimentacaoId
+          ? historicoAtual.some((mov: any) => String(mov?.id ?? '').trim() === movimentacaoId)
+          : false
+
+        if (jaTemMovimentacao) {
+          continue
+        }
+
+        const movimentacoesInbox = [novaMovimentacao, ...historicoAtual].slice(0, 50)
+        await adminSupabase
+          .from('process_movimentacoes_inbox')
+          .upsert({
+            tenant_id: contextoOab.tenantId,
+            numero_cnj,
+            oab_estado: contextoOab.oabEstado,
+            oab_numero: contextoOab.oabNumero,
+            latest_data: normalizarDataEvento(novaMovimentacao.data),
+            latest_conteudo: novaMovimentacao.conteudo,
+            latest_fonte: 'diario_oficial',
+            latest_created_at: novaMovimentacao.criado_em,
+            quantidade_eventos: movimentacoesInbox.length,
+            movimentacoes: movimentacoesInbox,
+            payload_ultimo_evento: body,
+            monitorado: false,
+            updated_at: new Date().toISOString(),
+          }, { onConflict: 'tenant_id,numero_cnj' })
+
+        continue
+      }
+
       for (const processo of processos ?? []) {
         const historicoAtual = Array.isArray(processo.movimentacoes) ? processo.movimentacoes : []
         const jaTemMovimentacao = movimentacaoId
@@ -256,10 +414,16 @@ export async function POST(req: NextRequest) {
         await adminSupabase.from('process_movimentacoes').insert({
           tenant_id: processo.tenant_id,
           numero_cnj,
-          data: novaMovimentacao.data,
+          data: normalizarDataEvento(novaMovimentacao.data),
           conteudo: novaMovimentacao.conteudo,
           fonte: 'diario_oficial'
         })
+
+        await adminSupabase
+          .from('process_movimentacoes_inbox')
+          .delete()
+          .eq('tenant_id', processo.tenant_id)
+          .eq('numero_cnj', numero_cnj)
 
         // Dispara analisador jurídico (cria tarefas automáticas) - Aguardado para não morrer na Vercel
         const { analisarMovimentacao } = await import('@/lib/juridico/analisador')

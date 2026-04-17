@@ -256,6 +256,16 @@ export async function POST(req: NextRequest) {
         advogado: advogadoNome, total_processos: totalAdvogado,
         ultima_busca: new Date().toISOString(),
       }, { onConflict: 'tenant_id,oab_estado,oab_numero' })
+
+      await adminSupabase.from('tenant_oab_monitoramentos').upsert({
+        tenant_id: tenantId,
+        oab_estado: String(oab_estado).toUpperCase(),
+        oab_numero: String(oab_numero).replace(/\D/g, ''),
+        advogado_nome: advogadoNome,
+        monitoramento_ativo: false,
+        ultima_sincronizacao: new Date().toISOString(),
+        updated_at: new Date().toISOString(),
+      }, { onConflict: 'tenant_id,oab_estado,oab_numero' })
     }
 
     // 5. Verificar monitorados (para marcar no UI o que já está no banco)
