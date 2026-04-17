@@ -260,6 +260,7 @@ export default function AgendaDiariaPage() {
       const startAt = new Date(startIso).getTime();
       const endAt = new Date(endIso).getTime();
       const isReminder = Boolean(task.show_only_on_date);
+      const taskDateKey = String(task.scheduled_for || task.created_at || "").slice(0, 10);
       const normalizedStatus = String(task.status || "")
         .normalize("NFD")
         .replace(/[\u0300-\u036f]/g, "")
@@ -267,7 +268,7 @@ export default function AgendaDiariaPage() {
       const isDone = normalizedStatus === "concluido";
 
       if (Number.isNaN(scheduledAt)) return !isReminder;
-      if (isReminder) return scheduledAt >= startAt && scheduledAt <= endAt;
+      if (isReminder) return taskDateKey === selectedDate;
       if (!isDone && scheduledAt < startAt) return true;
       return scheduledAt >= startAt;
     });
@@ -933,7 +934,7 @@ export default function AgendaDiariaPage() {
       {/* Header da Página */}
       <div className="flex flex-col md:flex-row justify-between items-start md:items-end pb-4 border-b border-[#CCA761]/20 relative z-40 gap-6">
         <div className="flex items-start gap-4 md:gap-5 w-full">
-          <div className="relative shrink-0 mt-8 md:mt-11 mb-[-8px] md:mb-[-14px]">
+          <div className="relative shrink-0 mt-11 md:mt-16 mb-0">
             <div className="w-20 h-20 md:w-24 md:h-24 rounded-2xl border border-[#CCA761]/35 bg-gradient-to-br from-[#CCA761]/20 to-[#0a0a0a] p-[2px] shadow-[0_0_25px_rgba(204,167,97,0.2)]">
               <div className="w-full h-full rounded-[14px] overflow-hidden bg-[#0a0a0a] flex items-center justify-center">
                 {userAvatarUrl ? (
@@ -1296,7 +1297,7 @@ export default function AgendaDiariaPage() {
                           </div>
                         </div>
 
-                        <div className="absolute top-2 right-2 sm:static sm:top-auto sm:right-auto text-right flex flex-col items-end z-20">
+                        <div className="absolute bottom-3 right-3 text-right flex flex-col items-end z-20">
                           <button
                             onClick={(event) => {
                               event.stopPropagation();

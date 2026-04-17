@@ -208,6 +208,19 @@ export default function ProcessosTaskModal({
     setTagColor("#CCA761");
   };
 
+  const isMissingExtendedProcessTaskColumns = (error: any) => {
+    const message = String(error?.message || "");
+    return message.includes("process_number") || message.includes("responsible_notes") || message.includes("urgency");
+  };
+
+  const withoutExtendedProcessTaskColumns = (payload: Record<string, any>) => {
+    const sanitized = { ...payload };
+    delete sanitized.process_number;
+    delete sanitized.responsible_notes;
+    delete sanitized.urgency;
+    return sanitized;
+  };
+
   const handeSaveTask = async () => {
     if (!taskTitle.trim()) { toast.error("Título é obrigatório."); return; }
     if (!taskStageId) return;
@@ -215,7 +228,7 @@ export default function ProcessosTaskModal({
     setIsSaving(true);
     try {
       if (editingTask) {
-        const { data, error } = await supabase.from("process_tasks").update({
+        const payload = {
           title: taskTitle,
           process_number: taskProcessNumber || null,
           description: taskDesc,
@@ -240,7 +253,21 @@ export default function ProcessosTaskModal({
           liminar_deferida: taskLiminarDeferida,
           client_name: taskClientName || null,
           drive_link: taskDriveLink || null
-        }).eq("id", editingTask.id).select().single();
+        };
+
+        let { data, error } = await supabase.from("process_tasks").update(payload).eq("id", editingTask.id).select().single();
+
+        if (error && isMissingExtendedProcessTaskColumns(error)) {
+          const legacyResponse = await supabase
+            .from("process_tasks")
+            .update(withoutExtendedProcessTaskColumns(payload))
+            .eq("id", editingTask.id)
+            .select()
+            .single();
+          data = legacyResponse.data;
+          error = legacyResponse.error;
+        }
+
         if (error) throw error;
 
         await syncAgendaTaskBySource(
@@ -259,7 +286,7 @@ export default function ProcessosTaskModal({
         // Need to calculate maxPos differently, but we don't have all tasks here.
         // We can pass maxPos or just default to 0 and let backend sort it out, or let page do it.
         // For simplicity, passing 0, we can refine this later if needed.
-        const { data, error } = await supabase.from("process_tasks").insert({
+        const payload = {
           tenant_id: profile!.tenant_id,
           pipeline_id: pipeline!.id,
           stage_id: taskStageId,
@@ -287,7 +314,20 @@ export default function ProcessosTaskModal({
           liminar_deferida: taskLiminarDeferida,
           client_name: taskClientName || null,
           drive_link: taskDriveLink || null
-        }).select().single();
+        };
+
+        let { data, error } = await supabase.from("process_tasks").insert(payload).select().single();
+
+        if (error && isMissingExtendedProcessTaskColumns(error)) {
+          const legacyResponse = await supabase
+            .from("process_tasks")
+            .insert(withoutExtendedProcessTaskColumns(payload))
+            .select()
+            .single();
+          data = legacyResponse.data;
+          error = legacyResponse.error;
+        }
+
         if (error) throw error;
 
         await syncAgendaTaskBySource(
