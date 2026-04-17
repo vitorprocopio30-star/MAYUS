@@ -290,8 +290,9 @@ export default function AgendaDiariaPage() {
 
       if (Number.isNaN(scheduledAt)) return !isReminder;
       if (isReminder) return taskDateKey === selectedDate;
+      if (taskDateKey === selectedDate) return true;
       if (!isDone && scheduledAt < startAt) return true;
-      return scheduledAt >= startAt;
+      return false;
     });
 
     const assignedIds = Array.from(
