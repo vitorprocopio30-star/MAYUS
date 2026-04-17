@@ -3,7 +3,7 @@
 import { useEffect, useState, useMemo, useRef } from "react";
 import { createClient } from "@/lib/supabase/client";
 import confetti from "canvas-confetti";
-import { Clock, AlertCircle, Star, Wand2, Calendar, CheckCircle2, Trophy, Coins, Gift, Lock, Unlock, Copy, Check, Plus, Target, X } from "lucide-react";
+import { Clock, AlertCircle, Star, Wand2, Calendar, CheckCircle2, Trophy, Coins, Gift, Lock, Unlock, Copy, Check, Plus, Target, X, ChevronLeft, ChevronRight } from "lucide-react";
 import { Montserrat, Cormorant_Garamond } from "next/font/google";
 import { useGamification } from "@/hooks/useGamification";
 import { buildAgendaPayloadFromManualTask, formatDateKey, getUrgencyLabel, inferUrgencyFromDeadline, sortAgendaTasks, toAgendaEvent, toDayRange } from "@/lib/agenda/userTasks";
@@ -70,6 +70,7 @@ export default function AgendaDiariaPage() {
   const [notesOnlyTask, setNotesOnlyTask] = useState<any | null>(null);
   const [notesOnlyValue, setNotesOnlyValue] = useState("");
   const [isSavingNotesOnly, setIsSavingNotesOnly] = useState(false);
+  const [reminderDateKeys, setReminderDateKeys] = useState<string[]>([]);
   const supabase = createClient();
 
   const getDeadlineMeta = (dateValue?: string | null) => {
@@ -171,10 +172,10 @@ export default function AgendaDiariaPage() {
 
   const WEEK_DAYS = useMemo(() => {
     const list = [];
-    const today = new Date();
-    const currentDay = today.getDay() || 7; // 1=Segunda, 7=Domingo
-    const startOfWeek = new Date(today);
-    startOfWeek.setDate(today.getDate() - currentDay + 1); // Vai para Segunda
+    const anchorDate = new Date(`${selectedDate}T12:00:00`);
+    const currentDay = anchorDate.getDay() || 7; // 1=Segunda, 7=Domingo
+    const startOfWeek = new Date(anchorDate);
+    startOfWeek.setDate(anchorDate.getDate() - currentDay + 1); // Vai para Segunda
     
     const weekMap = ["Dom", "Seg", "Ter", "Qua", "Qui", "Sex", "Sáb"];
     for (let i = 0; i < 7; i++) {
@@ -188,7 +189,13 @@ export default function AgendaDiariaPage() {
         });
      }
      return list;
-  }, []);
+  }, [selectedDate]);
+
+  const shiftSelectedDateByDays = (days: number) => {
+    const base = new Date(`${selectedDate}T12:00:00`);
+    base.setDate(base.getDate() + days);
+    setSelectedDate(formatDateKey(base));
+  };
 
   const fetchTasks = async () => {
     setIsLoading(true);
@@ -196,6 +203,7 @@ export default function AgendaDiariaPage() {
     if (!user) {
       setEvents([]);
       setCriticalDeadlines([]);
+      setReminderDateKeys([]);
       setIsLoading(false);
       return;
     }
@@ -217,6 +225,7 @@ export default function AgendaDiariaPage() {
       setEvents([]);
       setCriticalDeadlines([]);
       setTeamMembers([]);
+      setReminderDateKeys([]);
       setIsLoading(false);
       return;
     }
@@ -250,12 +259,24 @@ export default function AgendaDiariaPage() {
       ? new URLSearchParams(window.location.search).get("assignee")
       : null;
     const visibleAssignee = assigneeParam || user.id;
-    const scopedTasks = (userTasks || []).filter((task: any) => {
+    const assigneeScopedTasks = (userTasks || []).filter((task: any) => {
       const visibility = task.visibility || "global";
       const isMine = task.assigned_to === visibleAssignee && (visibility === "private" || visibility === "global");
       const isClaimableMission = task.task_kind === "mission" && visibility === "global" && !task.assigned_to;
-      if (!isMine && !isClaimableMission) return false;
+      return isMine || isClaimableMission;
+    });
 
+    const reminderKeys = Array.from(
+      new Set(
+        assigneeScopedTasks
+          .filter((task: any) => Boolean(task.show_only_on_date) && String(task.status || "") !== "Concluído")
+          .map((task: any) => String(task.scheduled_for || task.created_at || "").slice(0, 10))
+          .filter(Boolean)
+      )
+    );
+    setReminderDateKeys(reminderKeys);
+
+    const scopedTasks = assigneeScopedTasks.filter((task: any) => {
       const scheduledAt = new Date(task.scheduled_for || task.created_at || 0).getTime();
       const startAt = new Date(startIso).getTime();
       const endAt = new Date(endIso).getTime();
@@ -275,7 +296,7 @@ export default function AgendaDiariaPage() {
 
     const assignedIds = Array.from(
       new Set(
-        (scopedTasks || [])
+        scopedTasks
           .map((task: any) => String(task.assigned_to || "").trim())
           .filter(Boolean)
       )
@@ -295,7 +316,7 @@ export default function AgendaDiariaPage() {
       );
     }
 
-    const processPrazoIds = (scopedTasks || [])
+    const processPrazoIds = scopedTasks
       .filter((task: any) => task.source_table === "process_prazos" && task.source_id)
       .map((task: any) => String(task.source_id));
 
@@ -1023,21 +1044,48 @@ export default function AgendaDiariaPage() {
 
       <div className="space-y-8 animate-fade-in-up">
         {/* Seletor de Semana Premium */}
-        <div className="flex justify-between items-center gap-2 p-1 bg-white/5 rounded-2xl border border-white/10 shadow-inner overflow-x-auto hide-scrollbar">
-          {WEEK_DAYS.map((d, i) => {
-            const active = d.dateKey === selectedDate;
-            return (
-              <button
-                key={i}
-                onClick={() => setSelectedDate(d.dateKey)}
-                className={`min-w-[70px] flex-1 flex flex-col items-center py-4 rounded-xl transition-all ${active ? 'bg-[#CCA761] text-[#0a0a0a] shadow-[0_0_20px_rgba(204,167,97,0.3)]' : 'hover:bg-white/5 text-gray-500 hover:text-white'}`}
-              >
-                <span className="text-[10px] font-black uppercase tracking-tighter mb-1">{d.day}</span>
-                <span className="text-xl font-black italic">{d.date}</span>
-                {active && <div className="w-1 h-1 bg-[#0a0a0a] rounded-full mt-2" />}
-              </button>
-            );
-          })}
+        <div className="flex items-center gap-2">
+          <button
+            type="button"
+            onClick={() => shiftSelectedDateByDays(-7)}
+            className="shrink-0 w-10 h-10 rounded-xl border border-white/10 bg-white/5 text-gray-300 hover:text-white hover:bg-white/10 transition-colors inline-flex items-center justify-center"
+            title="Semana anterior"
+          >
+            <ChevronLeft size={18} />
+          </button>
+
+          <div className="flex-1 flex justify-between items-center gap-2 p-1 bg-white/5 rounded-2xl border border-white/10 shadow-inner overflow-x-auto hide-scrollbar">
+            {WEEK_DAYS.map((d, i) => {
+              const active = d.dateKey === selectedDate;
+              const hasReminder = reminderDateKeys.includes(d.dateKey);
+              return (
+                <button
+                  key={i}
+                  onClick={() => setSelectedDate(d.dateKey)}
+                  className={`min-w-[70px] flex-1 flex flex-col items-center py-4 rounded-xl transition-all ${active ? 'bg-[#CCA761] text-[#0a0a0a] shadow-[0_0_20px_rgba(204,167,97,0.3)]' : 'hover:bg-white/5 text-gray-500 hover:text-white'}`}
+                >
+                  <span className="text-[10px] font-black uppercase tracking-tighter mb-1">{d.day}</span>
+                  <span className="text-xl font-black italic">{d.date}</span>
+                  {active ? (
+                    <div className="w-1 h-1 bg-[#0a0a0a] rounded-full mt-2" />
+                  ) : hasReminder ? (
+                    <div className="w-1.5 h-1.5 bg-[#CCA761] rounded-full mt-2 shadow-[0_0_8px_rgba(204,167,97,0.8)]" />
+                  ) : (
+                    <div className="w-1.5 h-1.5 mt-2" />
+                  )}
+                </button>
+              );
+            })}
+          </div>
+
+          <button
+            type="button"
+            onClick={() => shiftSelectedDateByDays(7)}
+            className="shrink-0 w-10 h-10 rounded-xl border border-white/10 bg-white/5 text-gray-300 hover:text-white hover:bg-white/10 transition-colors inline-flex items-center justify-center"
+            title="Próxima semana"
+          >
+            <ChevronRight size={18} />
+          </button>
         </div>
 
         {isLoading ? (
