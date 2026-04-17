@@ -371,7 +371,7 @@ export default function AgendaDiariaPage() {
     );
 
     setActiveMission(missions[0] || null);
-    setEvents(taskItems.filter((task: any) => !task.is_critical));
+    setEvents(taskItems);
     setCriticalDeadlines(taskItems.filter((task: any) => task.is_critical));
     setIsLoading(false);
   };
@@ -584,6 +584,46 @@ export default function AgendaDiariaPage() {
 
   const removeTaskTag = (tag: string) => {
     setNewTaskTags((prev) => prev.filter((item) => item !== tag));
+  };
+
+  const handleDeleteKnownTag = async (tag: string) => {
+    const normalized = String(tag || "").trim();
+    if (!normalized) return;
+    if (!window.confirm(`Excluir a etiqueta "${normalized}" de todas as tarefas carregadas?`)) return;
+
+    const sourceTasks = [...events, ...criticalDeadlines];
+    const uniqueTasks = Array.from(new Map(sourceTasks.map((task: any) => [String(task.id), task])).values());
+    const affectedTasks = uniqueTasks.filter((task: any) => Array.isArray(task.tags) && task.tags.includes(normalized));
+
+    setKnownTags((prev) => prev.filter((item) => item !== normalized));
+    setNewTaskTags((prev) => prev.filter((item) => item !== normalized));
+    setEvents((prev) => prev.map((task) => ({ ...task, tags: Array.isArray(task.tags) ? task.tags.filter((item: string) => item !== normalized) : [] })));
+    setCriticalDeadlines((prev) => prev.map((task) => ({ ...task, tags: Array.isArray(task.tags) ? task.tags.filter((item: string) => item !== normalized) : [] })));
+
+    for (const task of affectedTasks) {
+      const nextTags = Array.isArray(task.tags) ? task.tags.filter((item: string) => item !== normalized) : [];
+      const { error: tagError } = await supabase
+        .from("user_tasks")
+        .update({ tags: nextTags })
+        .eq("id", task.id);
+
+      if (tagError && hasMissingTaskColumns(tagError)) {
+        const { error: metaError } = await supabase
+          .from("user_tasks")
+          .update({
+            description: buildTaskMetaDescription({
+              process_number: task.process_number || null,
+              responsible_notes: task.responsible_notes || null,
+              tags: nextTags,
+            }),
+          })
+          .eq("id", task.id);
+
+        if (metaError) {
+          console.error("Falha ao excluir etiqueta da tarefa", task.id, metaError);
+        }
+      }
+    }
   };
 
   const buildInsightText = useMemo(() => {
@@ -893,7 +933,7 @@ export default function AgendaDiariaPage() {
       {/* Header da Página */}
       <div className="flex flex-col md:flex-row justify-between items-start md:items-end pb-4 border-b border-[#CCA761]/20 relative z-40 gap-6">
         <div className="flex items-start gap-4 md:gap-5 w-full">
-          <div className="relative shrink-0 mt-4 md:mt-7 mb-[-18px] md:mb-[-26px]">
+          <div className="relative shrink-0 mt-8 md:mt-11 mb-[-8px] md:mb-[-14px]">
             <div className="w-20 h-20 md:w-24 md:h-24 rounded-2xl border border-[#CCA761]/35 bg-gradient-to-br from-[#CCA761]/20 to-[#0a0a0a] p-[2px] shadow-[0_0_25px_rgba(204,167,97,0.2)]">
               <div className="w-full h-full rounded-[14px] overflow-hidden bg-[#0a0a0a] flex items-center justify-center">
                 {userAvatarUrl ? (
@@ -1246,23 +1286,7 @@ export default function AgendaDiariaPage() {
                                 </div>
                               )}
 
-                              {ev.responsible_notes && (
-                                <div className="mt-2 p-2 rounded border border-white/10 bg-black/20 max-w-lg">
-                                  <div className="flex items-center justify-between gap-2 mb-1">
-                                    <span className="text-[9px] uppercase tracking-widest text-zinc-500 font-black">Anotações</span>
-                                    <button
-                                      onClick={(event) => copyTaskText(event, `notes-${ev.id}`, String(ev.responsible_notes || ""))}
-                                      className="inline-flex items-center justify-center w-5 h-5 rounded border border-[#CCA761]/30 text-[#CCA761] hover:bg-[#CCA761]/10"
-                                      title="Copiar anotações"
-                                    >
-                                      {copiedTextKey === `notes-${ev.id}` ? <Check size={10} /> : <Copy size={10} />}
-                                    </button>
-                                  </div>
-                                  <p className="text-[10px] text-zinc-400 line-clamp-2">{String(ev.responsible_notes || "")}</p>
-                                </div>
-                              )}
-                              
-                             {/* CADEADO VISUAL (Trancada) */}
+                              {/* CADEADO VISUAL (Trancada) */}
                              {gamificationEnabled && ev.status === 'Em andamento' && (
                                <div className="flex items-center gap-1.5 mt-2 text-[#CCA761] bg-[#CCA761]/10 px-2 py-1 rounded w-max border border-[#CCA761]/30">
                                  <Lock size={10} className="drop-shadow-md" />
@@ -1273,18 +1297,16 @@ export default function AgendaDiariaPage() {
                         </div>
 
                         <div className="absolute top-2 right-2 sm:static sm:top-auto sm:right-auto text-right flex flex-col items-end z-20">
-                          {ev.status !== 'Concluído' && (
-                            <button
-                              onClick={(event) => {
-                                event.stopPropagation();
-                                toggleStatus(ev);
-                              }}
-                              className="mb-2 p-2 rounded-lg transition-colors border shadow-sm backdrop-blur-sm bg-[#111] text-[#CCA761] border-[#CCA761]/20 hover:bg-[#CCA761]/10"
-                              title="Concluir tarefa"
-                            >
-                              <Check size={14} />
-                            </button>
-                          )}
+                          <button
+                            onClick={(event) => {
+                              event.stopPropagation();
+                              toggleStatus(ev);
+                            }}
+                            className={`mb-2 p-2 rounded-lg transition-colors border shadow-sm backdrop-blur-sm ${ev.status === 'Concluído' ? 'bg-[#4ade80]/20 text-[#4ade80] border-[#4ade80]/40 hover:bg-[#4ade80]/30' : 'bg-[#111] text-[#CCA761] border-[#CCA761]/20 hover:bg-[#CCA761]/10'}`}
+                            title={ev.status === 'Concluído' ? 'Desmarcar tarefa' : 'Concluir tarefa'}
+                          >
+                            <Check size={14} />
+                          </button>
                           {gamificationEnabled && ev.status !== 'Concluído' && (
                             <button 
                               onClick={(e) => lockTask(e, ev)}
@@ -1417,14 +1439,23 @@ export default function AgendaDiariaPage() {
                     {knownTags.map((tag) => {
                       const selected = newTaskTags.includes(tag);
                       return (
-                        <button
-                          key={`known-${tag}`}
-                          type="button"
-                          onClick={() => toggleKnownTag(tag)}
-                          className={`px-2 py-1 rounded text-[9px] uppercase tracking-widest border transition-colors ${selected ? "text-[#CCA761] border-[#CCA761]/40 bg-[#CCA761]/10" : "text-gray-400 border-white/10 hover:border-white/20"}`}
-                        >
-                          {tag}
-                        </button>
+                        <div key={`known-${tag}`} className="inline-flex items-center gap-1">
+                          <button
+                            type="button"
+                            onClick={() => toggleKnownTag(tag)}
+                            className={`px-2 py-1 rounded text-[9px] uppercase tracking-widest border transition-colors ${selected ? "text-[#CCA761] border-[#CCA761]/40 bg-[#CCA761]/10" : "text-gray-400 border-white/10 hover:border-white/20"}`}
+                          >
+                            {tag}
+                          </button>
+                          <button
+                            type="button"
+                            onClick={() => handleDeleteKnownTag(tag)}
+                            className="w-5 h-5 inline-flex items-center justify-center rounded border border-red-500/30 text-red-400 hover:bg-red-500/10"
+                            title="Excluir etiqueta"
+                          >
+                            <X size={10} />
+                          </button>
+                        </div>
                       );
                     })}
                   </div>
