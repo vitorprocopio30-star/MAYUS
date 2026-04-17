@@ -589,9 +589,12 @@ export default function AgendaDiariaPage() {
   };
 
   const visibleEvents = useMemo(() => {
-    const dateVisibleEvents = events.filter((ev) => isTaskVisibleOnSelectedDate(ev, selectedDate));
+    const showEverything = statusFilter === "all" && typeFilter === "all";
+    const sourceEvents = showEverything
+      ? [...events]
+      : events.filter((ev) => isTaskVisibleOnSelectedDate(ev, selectedDate));
 
-    let filtered = dateVisibleEvents.filter((ev) => {
+    let filtered = sourceEvents.filter((ev) => {
       const normalizedStatus = normalizeTaskStatus(ev.status);
       if (statusFilter === "pending" && normalizedStatus !== "Pendente") return false;
       if (statusFilter === "in_progress" && normalizedStatus !== "Em andamento") return false;
@@ -1506,8 +1509,8 @@ export default function AgendaDiariaPage() {
                 </h4>
                 <div className="grid grid-cols-2 gap-3">
                   <div className="p-4 bg-black/40 rounded-xl border border-white/5">
-                    <p className="text-[10px] uppercase tracking-widest text-gray-500 font-black">Prazos do dia</p>
-                    <p className="mt-1 text-2xl font-black text-white">{deadlineStats.total}</p>
+                    <p className="text-[10px] uppercase tracking-widest text-gray-500 font-black">Compromissos exibidos</p>
+                    <p className="mt-1 text-2xl font-black text-white">{visibleEvents.length}</p>
                   </div>
                   <div className="p-4 bg-black/40 rounded-xl border border-[#f87171]/30">
                     <p className="text-[10px] uppercase tracking-widest text-[#f87171] font-black">Críticos abertos</p>

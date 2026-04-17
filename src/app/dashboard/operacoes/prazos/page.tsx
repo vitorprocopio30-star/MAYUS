@@ -1,6 +1,6 @@
 'use client'
 
-import { useEffect, useState, useMemo, useCallback } from 'react'
+import { useEffect, useState, useMemo } from 'react'
 import { createClient } from '@/lib/supabase/client'
 import { buildAgendaPayloadFromProcessPrazo, syncAgendaTaskBySource } from '@/lib/agenda/userTasks'
 import {
@@ -14,8 +14,7 @@ import {
   User,
   Copy,
   Check,
-  X,
-  RefreshCw
+  X
 } from 'lucide-react'
 import { Montserrat, Cormorant_Garamond } from "next/font/google"
 
@@ -24,12 +23,23 @@ const cormorant = Cormorant_Garamond({ subsets: ["latin"], weight: ["400", "600"
 
 function formatarData(v: string | null): string {
   if (!v) return '—'
-  const d = new Date(v)
-  if (isNaN(d.getTime())) return '—'
-  return d.toLocaleDateString('pt-BR', {
-    day: '2-digit', month: '2-digit', year: 'numeric',
-    timeZone: 'America/Sao_Paulo'
-  })
+  const valor = String(v).trim()
+
+  if (valor.includes('/')) {
+    const part = valor.split(' ')[0]
+    if (part.split('/').length === 3) return part
+  }
+
+  if (valor.includes('-')) {
+    const normalized = valor.includes(' ') && valor.includes('-') ? valor.replace(' ', 'T') : valor
+    const semTime = normalized.split('T')[0]
+    const [a, m, d] = semTime.split('-').map(Number)
+    if (Number.isFinite(a) && Number.isFinite(m) && Number.isFinite(d)) {
+      return `${String(d).padStart(2, '0')}/${String(m).padStart(2, '0')}/${a}`
+    }
+  }
+
+  return '—'
 }
 
 function diasRestantes(data: string): number {
@@ -159,15 +169,17 @@ function normalizarDataISO(valor?: string | null): string {
     return `${ano}-${mes}-${dia}`
   }
 
-  const data = new Date(valor)
-  if (Number.isNaN(data.getTime())) return ''
-  return data.toISOString().slice(0, 10)
-}
+  const normalized = String(valor).trim()
+  if (normalized.includes('-')) {
+    const datePart = normalized.split('T')[0].split(' ')[0]
+    if (/^\d{4}-\d{2}-\d{2}$/.test(datePart)) return datePart
+  }
 
-function dataLocalISO(base = new Date()): string {
-  const ano = base.getFullYear()
-  const mes = String(base.getMonth() + 1).padStart(2, '0')
-  const dia = String(base.getDate()).padStart(2, '0')
+  const data = new Date(normalized)
+  if (Number.isNaN(data.getTime())) return ''
+  const ano = data.getFullYear()
+  const mes = String(data.getMonth() + 1).padStart(2, '0')
+  const dia = String(data.getDate()).padStart(2, '0')
   return `${ano}-${mes}-${dia}`
 }
 
@@ -181,9 +193,6 @@ export default function PrazosPage() {
   const [profiles, setProfiles] = useState<any[]>([])
   const [loading, setLoading] = useState(true)
   const [searchTerm, setSearchTerm] = useState('')
-  const [movementDateMode, setMovementDateMode] = useState<'today' | 'all' | 'custom'>('all')
-  const [movementDateFilter, setMovementDateFilter] = useState('')
-  const [refreshingMovements, setRefreshingMovements] = useState(false)
   const [filterResponsavel, setFilterResponsavel] = useState<string>('todos')
   const [filterTribunal, setFilterTribunal] = useState<string>('todos')
   const [currentUser, setCurrentUser] = useState<any>(null)
@@ -226,7 +235,34 @@ export default function PrazosPage() {
     )
   }
 
-  const fetchData = useCallback(async (tenantId: string, loggedUserId: string, teamProfiles: any[]) => {
+  useEffect(() => {
+    async function init() {
+      const { data: { user } } = await supabase.auth.getUser()
+      setCurrentUser(user)
+      if (!user) return
+
+      const { data: profile } = await supabase
+        .from('profiles')
+        .select('tenant_id')
+        .eq('id', user.id)
+        .single()
+      if (!profile) return
+
+      setTenantId(profile.tenant_id)
+
+      const { data: team } = await supabase
+        .from('profiles')
+        .select('id, full_name, avatar_url, role')
+        .eq('tenant_id', profile.tenant_id)
+        .eq('is_active', true)
+      
+      console.log("[Prazos] Perfis carregados:", team);
+      setProfiles(team || [])
+
+      fetchData(profile.tenant_id, user.id, team || [])
+    }
+
+    async function fetchData(tenantId: string, loggedUserId: string, teamProfiles: any[]) {
       setLoading(true)
       const [prazosRes, movimentacoesRes, contextosRes] = await Promise.all([
         supabase
@@ -313,55 +349,10 @@ export default function PrazosPage() {
         setMonitoredContexts(contextosRes.data || [])
       }
       setLoading(false);
-    }, [])
-
-  useEffect(() => {
-    async function init() {
-      const { data: { user } } = await supabase.auth.getUser()
-      setCurrentUser(user)
-      if (!user) return
-
-      const { data: profile } = await supabase
-        .from('profiles')
-        .select('tenant_id')
-        .eq('id', user.id)
-        .single()
-      if (!profile) return
-
-      setTenantId(profile.tenant_id)
-
-      // Carregar perfis do time para o dropdown de atribuição
-      const { data: team } = await supabase
-        .from('profiles')
-        .select('id, full_name, avatar_url, role')
-        .eq('tenant_id', profile.tenant_id)
-        .eq('is_active', true)
-      
-      console.log("[Prazos] Perfis carregados:", team);
-      setProfiles(team || [])
-
-      fetchData(profile.tenant_id, user.id, team || [])
     }
 
     init()
-  }, [fetchData])
-
-  const handleRefreshMovements = useCallback(async () => {
-    if (!tenantId || !currentUser?.id) return
-
-    setRefreshingMovements(true)
-    try {
-      await fetchData(tenantId, currentUser.id, profiles)
-    } finally {
-      setRefreshingMovements(false)
-    }
-  }, [currentUser?.id, fetchData, profiles, tenantId])
-
-  const effectiveMovementDateFilter = useMemo(() => {
-    if (movementDateMode === 'all') return ''
-    if (movementDateMode === 'today') return dataLocalISO(new Date())
-    return normalizarDataISO(movementDateFilter)
-  }, [movementDateFilter, movementDateMode])
+  }, [])
 
   const filteredItems = useMemo(() => {
     return items.filter(item => {
@@ -407,7 +398,6 @@ export default function PrazosPage() {
   const movimentacoesFiltradas = useMemo(() => {
     const busca = searchTerm.trim().toLowerCase()
     const dedupe = new Set<string>()
-    const assinaturaEvento = new Set<string>()
     const lista: any[] = []
 
     const itemByNumero = new Map<string, any>()
@@ -465,7 +455,6 @@ export default function PrazosPage() {
       const item = itemByNumero.get(numeroProcesso) || buildFallbackItem(numeroProcesso, contexto, registro?.data || registro?.created_at || null)
       const dataReferencia = registro?.data || registro?.created_at || contexto?.data_ultima_movimentacao || null
       const dataISO = normalizarDataISO(dataReferencia)
-      if (effectiveMovementDateFilter && dataISO !== effectiveMovementDateFilter) return
 
       const conteudo = String(registro?.conteudo ?? contexto?.ultima_movimentacao_texto ?? '').trim()
       const cliente = String(contexto?.cliente_nome ?? item?.monitored_processes?.cliente_nome ?? '')
@@ -487,15 +476,12 @@ export default function PrazosPage() {
       if (dedupe.has(dedupeKey)) return
       dedupe.add(dedupeKey)
 
-      const assinatura = `${numeroProcesso}-${dataISO}-${conteudo.toLowerCase().replace(/\s+/g, ' ').slice(0, 220)}`
-      if (assinaturaEvento.has(assinatura)) return
-      assinaturaEvento.add(assinatura)
-
       lista.push({
         id: dedupeKey,
         item,
         conteudo: conteudo || 'Movimentação sem descrição',
         dataReferencia,
+        createdAt: registro?.created_at || null,
         dataISO,
         tipoEvento: String(registro?.fonte ?? 'movimentacao'),
         numeroProcesso,
@@ -520,8 +506,6 @@ export default function PrazosPage() {
       timeline.forEach((mov: any, index: number) => {
         const dataReferencia = mov?.criado_em || mov?.data || item.monitored_processes?.data_ultima_movimentacao || null
         const dataISO = normalizarDataISO(dataReferencia)
-
-        if (effectiveMovementDateFilter && dataISO !== effectiveMovementDateFilter) return
 
         const conteudo = String(mov?.conteudo ?? '').trim()
         const numeroProcesso = String(item.monitored_processes?.numero_processo ?? '')
@@ -549,15 +533,12 @@ export default function PrazosPage() {
         if (dedupe.has(dedupeKey)) return
         dedupe.add(dedupeKey)
 
-        const assinatura = `${numeroProcesso}-${dataISO}-${conteudo.toLowerCase().replace(/\s+/g, ' ').slice(0, 220)}`
-        if (assinaturaEvento.has(assinatura)) return
-        assinaturaEvento.add(assinatura)
-
         lista.push({
           id: dedupeKey,
           item,
           conteudo: conteudo || 'Movimentação sem descrição',
           dataReferencia,
+          createdAt: mov?.criado_em || mov?.created_at || null,
           dataISO,
           tipoEvento,
           numeroProcesso,
@@ -576,50 +557,14 @@ export default function PrazosPage() {
       })
     }
 
-    const agrupadoPorProcesso = new Map<string, any>()
-
-    lista.forEach((mov) => {
-      const numero = mov.numeroProcesso || 'sem-processo'
-      const dataAtual = new Date(mov.dataReferencia || 0).getTime()
-
-      if (!agrupadoPorProcesso.has(numero)) {
-        agrupadoPorProcesso.set(numero, {
-          ...mov,
-          historico: [mov],
-          quantidadeMovimentacoes: 1,
-        })
-        return
-      }
-
-      const atual = agrupadoPorProcesso.get(numero)
-      const dataPrincipal = new Date(atual.dataReferencia || 0).getTime()
-      const historico = [...(atual.historico || []), mov].sort((a: any, b: any) => {
-        const ta = new Date(a.dataReferencia || 0).getTime()
-        const tb = new Date(b.dataReferencia || 0).getTime()
+    return lista
+      .map((mov) => ({ ...mov, quantidadeMovimentacoes: 1 }))
+      .sort((a, b) => {
+        const ta = new Date(a.createdAt || a.dataReferencia || 0).getTime()
+        const tb = new Date(b.createdAt || b.dataReferencia || 0).getTime()
         return tb - ta
       })
-
-      if (dataAtual > dataPrincipal) {
-        agrupadoPorProcesso.set(numero, {
-          ...mov,
-          historico,
-          quantidadeMovimentacoes: historico.length,
-        })
-      } else {
-        agrupadoPorProcesso.set(numero, {
-          ...atual,
-          historico,
-          quantidadeMovimentacoes: historico.length,
-        })
-      }
-    })
-
-    return Array.from(agrupadoPorProcesso.values()).sort((a, b) => {
-      const ta = new Date(a.dataReferencia || 0).getTime()
-      const tb = new Date(b.dataReferencia || 0).getTime()
-      return tb - ta
-    })
-  }, [effectiveMovementDateFilter, items, monitoredContexts, movementRecords, searchTerm])
+  }, [items, monitoredContexts, movementRecords, searchTerm])
 
   async function updateStatus(id: string, newStatus: string) {
     const { error } = await supabase
@@ -791,53 +736,10 @@ export default function PrazosPage() {
 
           {activeTab === 'movimentacoes' ? (
             <div className="flex items-center gap-3 flex-wrap">
-              <div className="grid grid-cols-3 gap-1 bg-white/5 border border-white/10 rounded-xl p-1 min-h-[44px]">
-                <button
-                  onClick={() => {
-                    setMovementDateMode('today')
-                    setMovementDateFilter(dataLocalISO(new Date()))
-                  }}
-                  className={`px-3 py-1.5 rounded-lg text-xs font-semibold transition-all ${movementDateMode === 'today' ? 'bg-[#CCA761] text-black' : 'text-white/70 hover:text-white hover:bg-white/10'}`}
-                >
-                  Hoje
-                </button>
-                <button
-                  onClick={() => setMovementDateMode('all')}
-                  className={`px-3 py-1.5 rounded-lg text-xs font-semibold transition-all ${movementDateMode === 'all' ? 'bg-[#CCA761] text-black' : 'text-white/70 hover:text-white hover:bg-white/10'}`}
-                >
-                  Todos
-                </button>
-                <button
-                  onClick={() => {
-                    setMovementDateMode('custom')
-                    if (!movementDateFilter) setMovementDateFilter(dataLocalISO(new Date()))
-                  }}
-                  className={`px-3 py-1.5 rounded-lg text-xs font-semibold transition-all ${movementDateMode === 'custom' ? 'bg-[#CCA761] text-black' : 'text-white/70 hover:text-white hover:bg-white/10'}`}
-                >
-                  Data
-                </button>
-              </div>
-              <div className="flex items-center gap-2 bg-white/5 border border-white/10 rounded-xl px-3 py-2 min-h-[44px]">
+              <div className="flex items-center gap-2 bg-white/5 border border-white/10 rounded-xl px-4 py-2 min-h-[44px] text-white/70 text-sm">
                 <Calendar size={16} className="text-[#CCA761]" />
-                <input
-                  type="date"
-                  value={movementDateFilter}
-                  onChange={(e) => {
-                    setMovementDateMode('custom')
-                    setMovementDateFilter(e.target.value)
-                  }}
-                  className="bg-transparent text-sm focus:outline-none text-white [color-scheme:dark]"
-                  title="Filtrar movimentações por data"
-                />
+                Mostrando todas as movimentações (mais recentes primeiro)
               </div>
-              <button
-                onClick={handleRefreshMovements}
-                disabled={refreshingMovements}
-                className="h-[44px] px-4 rounded-xl bg-white/5 hover:bg-white/10 text-white/70 hover:text-white text-sm border border-white/10 transition-all disabled:opacity-60 disabled:cursor-not-allowed flex items-center gap-2"
-              >
-                <RefreshCw size={14} className={refreshingMovements ? 'animate-spin' : ''} />
-                Atualizar
-              </button>
             </div>
           ) : (
             <div className="flex items-center gap-4 flex-wrap">
@@ -887,11 +789,7 @@ export default function PrazosPage() {
             <Calendar size={64} className="mx-auto mb-6 text-white/10" />
             <h3 className="text-xl text-white/60 mb-2">Nenhuma movimentação encontrada</h3>
             <p className="text-white/30 max-w-md mx-auto">
-              {movementDateMode === 'all'
-                ? 'Não há movimentações registradas para os filtros atuais.'
-                : effectiveMovementDateFilter
-                  ? `Não há movimentações registradas na data ${formatarData(effectiveMovementDateFilter)}.`
-                  : 'Não há movimentações para este filtro de data.'}
+              Não há movimentações registradas para os filtros atuais.
             </p>
           </div>
         ) : (
