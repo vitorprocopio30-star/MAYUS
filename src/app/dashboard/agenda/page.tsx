@@ -1,12 +1,12 @@
 "use client";
 
-import { useEffect, useState, useMemo, useRef } from "react";
+import { useEffect, useState, useMemo, useRef, useCallback } from "react";
 import { createClient } from "@/lib/supabase/client";
 import confetti from "canvas-confetti";
 import { Clock, AlertCircle, Star, Wand2, Calendar, CheckCircle2, Trophy, Coins, Gift, Lock, Unlock, Copy, Check, Plus, Target, X, ChevronLeft, ChevronRight } from "lucide-react";
 import { Montserrat, Cormorant_Garamond } from "next/font/google";
 import { useGamification } from "@/hooks/useGamification";
-import { buildAgendaPayloadFromManualTask, formatDateKey, getUrgencyLabel, inferUrgencyFromDeadline, sortAgendaTasks, toAgendaEvent } from "@/lib/agenda/userTasks";
+import { buildAgendaPayloadFromManualTask, getUrgencyLabel, inferUrgencyFromDeadline, sortAgendaTasks, toAgendaEvent } from "@/lib/agenda/userTasks";
 
 const TASK_META_PREFIX = "__MAYUS_TASK_META__";
 
@@ -65,7 +65,14 @@ export default function AgendaDiariaPage() {
   const [newTaskAssignedTo, setNewTaskAssignedTo] = useState<string>("");
   const [newTaskReminderOnly, setNewTaskReminderOnly] = useState(false);
   const [newTaskReminderDaysBefore, setNewTaskReminderDaysBefore] = useState("0");
-  const [newTaskScheduledFor, setNewTaskScheduledFor] = useState(formatDateKey(new Date()));
+  const toLocalDateKey = useCallback((date: Date) => {
+    const year = date.getFullYear();
+    const month = String(date.getMonth() + 1).padStart(2, "0");
+    const day = String(date.getDate()).padStart(2, "0");
+    return `${year}-${month}-${day}`;
+  }, []);
+
+  const [newTaskScheduledFor, setNewTaskScheduledFor] = useState(toLocalDateKey(new Date()));
   const [isCreatingTask, setIsCreatingTask] = useState(false);
   const [copiedTextKey, setCopiedTextKey] = useState<string | null>(null);
   const [notesOnlyTask, setNotesOnlyTask] = useState<any | null>(null);
@@ -110,15 +117,21 @@ export default function AgendaDiariaPage() {
     return `${diffDays} dias`;
   };
 
-  const normalizeReminderDaysBefore = (value?: string | number | null) => {
+  const normalizeReminderDaysBefore = useCallback((value?: string | number | null) => {
     const parsed = Number(value ?? 0);
     if (!Number.isFinite(parsed)) return 0;
     return Math.max(0, Math.floor(parsed));
-  };
+  }, []);
 
-  const getTaskDateKey = (task: any) => String(task.scheduled_for || task.created_at || "").slice(0, 10);
+  const getTaskDateKey = useCallback((task: any) => {
+    const raw = String(task.scheduled_for || task.created_at || "").trim();
+    if (!raw) return "";
+    const parsed = new Date(raw);
+    if (!Number.isNaN(parsed.getTime())) return toLocalDateKey(parsed);
+    return raw.slice(0, 10);
+  }, [toLocalDateKey]);
 
-  const getReminderWindowKeys = (task: any) => {
+  const getReminderWindowKeys = useCallback((task: any) => {
     const taskDateKey = getTaskDateKey(task);
     if (!taskDateKey) return [];
 
@@ -131,19 +144,19 @@ export default function AgendaDiariaPage() {
     for (let offset = daysBefore; offset >= 0; offset -= 1) {
       const current = new Date(targetDate);
       current.setDate(targetDate.getDate() - offset);
-      keys.push(formatDateKey(current));
+      keys.push(toLocalDateKey(current));
     }
 
     return keys;
-  };
+  }, [getTaskDateKey, normalizeReminderDaysBefore, toLocalDateKey]);
 
-  const isTaskVisibleOnSelectedDate = (task: any, dateKey: string) => {
+  const isTaskVisibleOnSelectedDate = useCallback((task: any, dateKey: string) => {
     if (Boolean(task.show_only_on_date)) {
       return getReminderWindowKeys(task).includes(dateKey);
     }
 
     return true;
-  };
+  }, [getReminderWindowKeys]);
 
   const parseTaskMeta = (description?: string | null): LegacyTaskMeta => {
     const raw = String(description || "");
@@ -192,7 +205,7 @@ export default function AgendaDiariaPage() {
   const hour = new Date().getHours();
   const greeting = hour < 12 ? 'Bom dia' : hour < 18 ? 'Boa tarde' : 'Boa noite';
 
-  const [selectedDate, setSelectedDate] = useState<string>(formatDateKey(new Date()));
+  const [selectedDate, setSelectedDate] = useState<string>(toLocalDateKey(new Date()));
   const calendarRef1 = useRef<HTMLInputElement>(null);
 
   const openCalendar1 = () => {
@@ -221,16 +234,16 @@ export default function AgendaDiariaPage() {
           day: weekMap[d.getDay()],
           date: d.getDate().toString(),
           fullDate: d,
-          dateKey: formatDateKey(d),
+          dateKey: toLocalDateKey(d),
         });
      }
      return list;
-  }, [selectedDate]);
+  }, [selectedDate, toLocalDateKey]);
 
   const shiftSelectedDateByDays = (days: number) => {
     const base = new Date(`${selectedDate}T12:00:00`);
     base.setDate(base.getDate() + days);
-    setSelectedDate(formatDateKey(base));
+    setSelectedDate(toLocalDateKey(base));
   };
 
   const fetchTasks = async () => {
@@ -311,11 +324,9 @@ export default function AgendaDiariaPage() {
     );
     setReminderDateKeys(reminderKeys);
 
-    const scopedTasks = assigneeScopedTasks.filter((task: any) => isTaskVisibleOnSelectedDate(task, selectedDate));
-
     const assignedIds = Array.from(
       new Set(
-        scopedTasks
+        assigneeScopedTasks
           .map((task: any) => String(task.assigned_to || "").trim())
           .filter(Boolean)
       )
@@ -335,7 +346,7 @@ export default function AgendaDiariaPage() {
       );
     }
 
-    const processPrazoIds = scopedTasks
+    const processPrazoIds = assigneeScopedTasks
       .filter((task: any) => task.source_table === "process_prazos" && task.source_id)
       .map((task: any) => String(task.source_id));
 
@@ -358,7 +369,7 @@ export default function AgendaDiariaPage() {
       );
     }
 
-    const enrichedTasks = (scopedTasks || []).map((task: any) => {
+    const enrichedTasks = (assigneeScopedTasks || []).map((task: any) => {
       const legacyMeta = parseTaskMeta(task.description);
       const mergedTags = Array.isArray(task.tags) && task.tags.length > 0
         ? task.tags
@@ -523,13 +534,19 @@ export default function AgendaDiariaPage() {
   };
 
   const visibleEvents = useMemo(() => {
-    const filtered = events.filter((ev) => {
+    const showEverything = statusFilter === "all" && typeFilter === "all";
+
+    let filtered = events.filter((ev) => {
       if (statusFilter === "pending" && ev.status !== "Pendente") return false;
       if (statusFilter === "in_progress" && ev.status !== "Em andamento") return false;
       if (statusFilter === "done" && ev.status !== "Concluído") return false;
       if (typeFilter !== "all" && ev.type !== typeFilter) return false;
       return true;
     });
+
+    if (!showEverything) {
+      filtered = filtered.filter((ev) => isTaskVisibleOnSelectedDate(ev, selectedDate));
+    }
 
     return filtered.sort((a, b) => {
       const aDone = a.status === "Concluído";
@@ -544,7 +561,7 @@ export default function AgendaDiariaPage() {
       if (aDone !== bDone) return aDone ? 1 : -1;
       return 0;
     });
-  }, [events, statusFilter, typeFilter]);
+  }, [events, isTaskVisibleOnSelectedDate, selectedDate, statusFilter, typeFilter]);
 
   const totalTasks = visibleEvents.length;
   const completedTasks = useMemo(() => visibleEvents.filter(e => e.status === 'Concluído').length, [visibleEvents]);
@@ -727,7 +744,7 @@ export default function AgendaDiariaPage() {
     setNewTaskVisibility("private");
     setNewTaskAssignedTo(currentUserId || "");
     setNewTaskReminderOnly(false);
-    setNewTaskScheduledFor(formatDateKey(new Date()));
+    setNewTaskScheduledFor(toLocalDateKey(new Date()));
     setShowCreateTaskModal(true);
   };
 
@@ -750,7 +767,7 @@ export default function AgendaDiariaPage() {
     setNewTaskReminderOnly(Boolean(task.show_only_on_date));
     setNewTaskReminderDaysBefore(String(normalizeReminderDaysBefore(task.reminder_days_before)));
     const dateKey = String(task.scheduled_for || "").slice(0, 10);
-    setNewTaskScheduledFor(dateKey || formatDateKey(new Date()));
+    setNewTaskScheduledFor(dateKey || toLocalDateKey(new Date()));
     setShowCreateTaskModal(true);
   };
 
@@ -920,7 +937,7 @@ export default function AgendaDiariaPage() {
       setNewTaskAssignedTo(currentUserId || "");
       setNewTaskReminderOnly(false);
       setNewTaskReminderDaysBefore("0");
-      setNewTaskScheduledFor(formatDateKey(new Date()));
+      setNewTaskScheduledFor(toLocalDateKey(new Date()));
       setEditingTaskId(null);
       setShowCreateTaskModal(false);
       fetchTasks();
@@ -1162,7 +1179,7 @@ export default function AgendaDiariaPage() {
                   <button
                     onClick={() => {
                       setIsRealtimeOn(true);
-                      setSelectedDate(formatDateKey(new Date()));
+                      setSelectedDate(toLocalDateKey(new Date()));
                     }}
                     className="text-[10px] font-bold uppercase tracking-widest px-3 py-1 rounded-lg border whitespace-nowrap transition-colors text-[#4ade80] bg-[#4ade80]/10 border-[#4ade80]/30"
                   >
@@ -1602,8 +1619,8 @@ export default function AgendaDiariaPage() {
                   Mostrar somente na data marcada (lembrete)
                 </label>
                 {newTaskReminderOnly && (
-                  <label className="flex items-center gap-3 text-sm text-gray-300 bg-[#151515] border border-white/10 rounded-lg px-3 py-2">
-                    <span className="whitespace-nowrap">Aparecer antes por</span>
+                  <label className="flex items-center gap-2 text-sm text-gray-300 bg-[#151515] border border-white/10 rounded-lg px-3 py-2 min-w-0">
+                    <span className="text-xs sm:text-sm whitespace-nowrap">Aparecer antes por</span>
                     <input
                       type="number"
                       min="0"
@@ -1611,9 +1628,9 @@ export default function AgendaDiariaPage() {
                       inputMode="numeric"
                       value={newTaskReminderDaysBefore}
                       onChange={(e) => setNewTaskReminderDaysBefore(e.target.value)}
-                      className="w-20 bg-black/20 border border-white/10 rounded-lg px-2 py-1 text-sm text-white"
+                      className="w-12 shrink-0 text-center bg-black/20 border border-white/10 rounded-lg px-1.5 py-1 text-sm text-white"
                     />
-                    <span>dia(s)</span>
+                    <span className="text-xs sm:text-sm whitespace-nowrap">dia(s)</span>
                   </label>
                 )}
               </div>
