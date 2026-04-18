@@ -328,7 +328,7 @@ export default function DocumentosPage() {
 
   return (
     <div className={`flex-1 min-h-screen bg-[#050505] text-white p-6 sm:p-10 ${montserrat.className}`}>
-      <div className="max-w-7xl mx-auto space-y-8">
+      <div className="max-w-[1340px] mx-auto space-y-8">
         <div className="flex flex-col lg:flex-row lg:items-end lg:justify-between gap-6">
           <div className="space-y-3">
             <p className="text-[#CCA761] text-xs uppercase tracking-[0.35em] font-black">Operação Jurídica</p>
@@ -368,15 +368,15 @@ export default function DocumentosPage() {
         </div>
 
         <div className="grid grid-cols-1 xl:grid-cols-3 gap-4">
-          <div className="bg-[#0f0f0f] border border-white/5 rounded-2xl p-5">
+          <div className="bg-[#0f0f0f] border border-[#CCA761]/10 rounded-2xl p-5 shadow-[0_0_24px_rgba(204,167,97,0.04)]">
             <p className="text-[10px] uppercase tracking-[0.3em] text-gray-500 font-black mb-2">Processos monitorados</p>
             <p className="text-3xl font-black text-white">{cards.length}</p>
           </div>
-          <div className="bg-[#0f0f0f] border border-white/5 rounded-2xl p-5">
+          <div className="bg-[#0f0f0f] border border-[#CCA761]/10 rounded-2xl p-5 shadow-[0_0_24px_rgba(204,167,97,0.04)]">
             <p className="text-[10px] uppercase tracking-[0.3em] text-gray-500 font-black mb-2">Estrutura criada</p>
             <p className="text-3xl font-black text-white">{cards.filter((card) => card.drive_structure_ready).length}</p>
           </div>
-          <div className="bg-[#0f0f0f] border border-white/5 rounded-2xl p-5">
+          <div className="bg-[#0f0f0f] border border-[#CCA761]/10 rounded-2xl p-5 shadow-[0_0_24px_rgba(204,167,97,0.04)]">
             <p className="text-[10px] uppercase tracking-[0.3em] text-gray-500 font-black mb-2">Documentos sincronizados</p>
             <p className="text-3xl font-black text-white">{cards.reduce((acc, card) => acc + card.documentCount, 0)}</p>
           </div>
@@ -395,13 +395,13 @@ export default function DocumentosPage() {
             </p>
           </div>
         ) : (
-          <div className="grid grid-cols-1 xl:grid-cols-2 gap-5">
+          <div className="grid grid-cols-1 2xl:grid-cols-2 gap-5">
             {filteredCards.map((card) => {
               const isBusy = busyTaskId === card.id;
               const hasStructure = Boolean(card.drive_structure_ready && card.drive_folder_id && card.drive_link);
 
               return (
-                <div key={card.id} className="bg-[#0f0f0f] border border-white/5 rounded-3xl p-6 shadow-[0_0_35px_rgba(0,0,0,0.22)]">
+                <div key={card.id} className="bg-[#0f0f0f] border border-[#CCA761]/12 rounded-3xl p-6 shadow-[0_0_35px_rgba(0,0,0,0.22),0_0_0_1px_rgba(204,167,97,0.05)]">
                   <div className="flex items-start justify-between gap-4 mb-5">
                     <div>
                       <p className="text-[10px] uppercase tracking-[0.28em] text-gray-500 font-black mb-2">
@@ -424,21 +424,21 @@ export default function DocumentosPage() {
                   </div>
 
                   <div className="grid grid-cols-1 sm:grid-cols-3 gap-3 mb-5">
-                    <div className="bg-[#141414] border border-white/5 rounded-2xl p-4">
+                    <div className="bg-[#141414] border border-[#CCA761]/8 rounded-2xl p-4">
                       <p className="text-[10px] uppercase tracking-[0.25em] text-gray-500 font-black mb-2">Documentos</p>
                       <p className="text-2xl font-black text-white">{card.documentCount}</p>
                     </div>
-                    <div className="bg-[#141414] border border-white/5 rounded-2xl p-4">
+                    <div className="bg-[#141414] border border-[#CCA761]/8 rounded-2xl p-4">
                       <p className="text-[10px] uppercase tracking-[0.25em] text-gray-500 font-black mb-2">Status</p>
                       <p className="text-sm font-semibold text-white capitalize">{card.syncStatus}</p>
                     </div>
-                    <div className="bg-[#141414] border border-white/5 rounded-2xl p-4">
+                    <div className="bg-[#141414] border border-[#CCA761]/8 rounded-2xl p-4">
                       <p className="text-[10px] uppercase tracking-[0.25em] text-gray-500 font-black mb-2">Última sync</p>
                       <p className="text-sm font-semibold text-white">{formatDateTime(card.lastSyncedAt)}</p>
                     </div>
                   </div>
 
-                  <div className="bg-[#111] border border-white/5 rounded-2xl p-4 space-y-3 mb-5">
+                  <div className="bg-[#111] border border-[#CCA761]/8 rounded-2xl p-4 space-y-3 mb-5">
                     <div className="flex items-center gap-2 text-[#CCA761] text-[10px] uppercase tracking-[0.25em] font-black">
                       <Sparkles size={12} /> Memória mínima do caso
                     </div>
@@ -453,7 +453,7 @@ export default function DocumentosPage() {
                     )}
                   </div>
 
-                  <div className="bg-[#111] border border-white/5 rounded-2xl p-4 space-y-4 mb-5">
+                  <div className="bg-[#111] border border-[#CCA761]/8 rounded-2xl p-5 space-y-4 mb-5">
                     <div className="flex items-center justify-between gap-3">
                       <div className="flex items-center gap-2 text-[#8ab4ff] text-[10px] uppercase tracking-[0.25em] font-black">
                         <FileIcon size={12} /> Acervo do processo
@@ -468,9 +468,9 @@ export default function DocumentosPage() {
                         Nenhum arquivo indexado ainda. Envie um documento abaixo ou sincronize a pasta do Drive para alimentar o cérebro documental do processo.
                       </div>
                     ) : (
-                      <div className="space-y-2">
+                      <div className="space-y-3">
                         {card.documents.map((document, index) => (
-                          <div key={`${document.name}-${index}`} className="flex flex-col xl:flex-row xl:items-center xl:justify-between gap-3 bg-[#141414] border border-white/5 rounded-xl px-4 py-3">
+                          <div key={`${document.name}-${index}`} className="flex flex-col xl:flex-row xl:items-center xl:justify-between gap-4 bg-[#141414] border border-white/5 rounded-xl px-4 py-3.5">
                             <div className="min-w-0 space-y-2">
                               <p className="text-sm text-white font-semibold truncate">{document.name}</p>
                               <div className="flex flex-wrap items-center gap-2 text-[11px] text-gray-500">
@@ -484,7 +484,7 @@ export default function DocumentosPage() {
                               </div>
                             </div>
                             <div className="flex items-center gap-2 shrink-0">
-                              <span className={`px-2 py-1 rounded-full text-[10px] uppercase tracking-widest font-black border ${getExtractionBadge(document.extraction_status).className}`}>
+                              <span className={`px-2.5 py-1 rounded-full text-[10px] uppercase tracking-widest font-black border ${getExtractionBadge(document.extraction_status).className}`}>
                                 {getExtractionBadge(document.extraction_status).label}
                               </span>
                               {document.web_view_link && (
@@ -504,19 +504,19 @@ export default function DocumentosPage() {
                     )}
 
                     {hasStructure && (
-                      <div className="rounded-2xl border border-[#4285F4]/12 bg-[#0b1220]/50 p-4 space-y-4">
-                        <div className="flex items-center gap-2 text-[#8ab4ff] text-[10px] uppercase tracking-[0.25em] font-black">
+                      <div className="rounded-2xl border border-[#CCA761]/30 bg-[linear-gradient(180deg,rgba(204,167,97,0.07),rgba(11,18,32,0.52))] p-5 space-y-4 shadow-[0_0_28px_rgba(204,167,97,0.06)]">
+                        <div className="flex items-center gap-2 text-[#CCA761] text-[10px] uppercase tracking-[0.25em] font-black">
                           <Upload size={12} /> Enviar novo documento
                         </div>
                         <p className="text-xs text-gray-400 leading-relaxed">
                           Selecione a subpasta correta e envie o arquivo direto pelo MAYUS. O sistema joga no Google Drive, indexa no repositório e tenta ler o conteúdo automaticamente.
                         </p>
 
-                        <div className="grid grid-cols-1 lg:grid-cols-[1fr_1fr_auto] gap-3">
+                        <div className="grid grid-cols-1 xl:grid-cols-[minmax(240px,0.85fr)_minmax(340px,1.35fr)_170px] gap-3 items-stretch">
                           <select
                             value={uploadFolderByTask[card.id] || "01-Documentos do Cliente"}
                             onChange={(event) => setUploadFolderByTask((current) => ({ ...current, [card.id]: event.target.value }))}
-                            className="bg-[#141414] border border-white/10 rounded-xl px-3 py-3 text-sm text-white focus:outline-none focus:border-[#4285F4]/40"
+                            className="w-full bg-[#141414] border border-white/10 rounded-xl px-4 py-3 text-sm text-white focus:outline-none focus:border-[#CCA761]/45"
                           >
                             {DOCUMENT_FOLDER_OPTIONS.map((folderLabel) => (
                               <option key={folderLabel} value={folderLabel}>{folderLabel}</option>
@@ -536,7 +536,7 @@ export default function DocumentosPage() {
                             />
                             <label
                               htmlFor={`upload-input-${card.id}`}
-                              className="h-full min-h-[52px] bg-[#141414] border border-white/10 rounded-xl px-3 py-3 text-sm text-white flex items-center justify-between gap-3 cursor-pointer hover:border-[#4285F4]/35 transition-colors"
+                              className="w-full h-full min-h-[54px] bg-[#141414] border border-white/10 rounded-xl px-4 py-3 text-sm text-white flex items-center justify-between gap-3 cursor-pointer hover:border-[#CCA761]/35 transition-colors"
                             >
                               <div className="min-w-0">
                                 <p className="text-[10px] uppercase tracking-[0.22em] text-gray-500 font-black mb-1">Arquivo</p>
@@ -544,7 +544,7 @@ export default function DocumentosPage() {
                                   {uploadFilesByTask[card.id]?.name || "Selecionar documento do processo"}
                                 </p>
                               </div>
-                              <span className="shrink-0 px-3 py-2 rounded-lg bg-[#0b1220] border border-[#4285F4]/20 text-[#8ab4ff] text-[11px] font-black uppercase tracking-widest">
+                              <span className="shrink-0 px-3 py-2 rounded-lg bg-[#111827] border border-[#CCA761]/18 text-[#CCA761] text-[11px] font-black uppercase tracking-widest">
                                 Escolher
                               </span>
                             </label>
@@ -554,7 +554,7 @@ export default function DocumentosPage() {
                             type="button"
                             onClick={() => handleUploadDocument(card.id)}
                             disabled={isBusy}
-                            className="px-4 py-3 rounded-xl border border-[#4285F4]/25 bg-[#0b1220] hover:bg-[#12203c] text-xs font-black uppercase tracking-widest text-[#8ab4ff] flex items-center justify-center gap-2 disabled:opacity-60"
+                            className="w-full px-4 py-3 rounded-xl border border-[#CCA761]/28 bg-[#15120b] hover:bg-[#201a0f] text-xs font-black uppercase tracking-widest text-[#CCA761] flex items-center justify-center gap-2 disabled:opacity-60"
                           >
                             {isBusy ? <Loader2 size={14} className="animate-spin" /> : <Upload size={14} />}
                             Enviar
@@ -570,7 +570,7 @@ export default function DocumentosPage() {
                         href={card.drive_link || undefined}
                         target="_blank"
                         rel="noopener noreferrer"
-                        className="flex-1 py-3 rounded-xl border border-white/10 bg-white/5 hover:bg-white/10 text-xs font-black uppercase tracking-widest text-white flex items-center justify-center gap-2"
+                        className="flex-1 py-3 rounded-xl border border-[#CCA761]/12 bg-white/5 hover:bg-white/10 text-xs font-black uppercase tracking-widest text-white flex items-center justify-center gap-2"
                       >
                         <ExternalLink size={14} /> Abrir pasta
                       </a>
@@ -587,18 +587,18 @@ export default function DocumentosPage() {
                     )}
 
                     <button
-                      type="button"
-                      onClick={() => handleSync(card.id)}
-                      disabled={isBusy || !hasStructure}
-                      className="flex-1 py-3 rounded-xl border border-white/10 bg-white/5 hover:bg-white/10 text-xs font-black uppercase tracking-widest text-white flex items-center justify-center gap-2 disabled:opacity-50"
-                    >
-                      {isBusy ? <Loader2 size={14} className="animate-spin" /> : <RefreshCw size={14} />}
-                      Sincronizar
+                        type="button"
+                        onClick={() => handleSync(card.id)}
+                        disabled={isBusy || !hasStructure}
+                        className="flex-1 py-3 rounded-xl border border-[#CCA761]/12 bg-white/5 hover:bg-white/10 text-xs font-black uppercase tracking-widest text-white flex items-center justify-center gap-2 disabled:opacity-50"
+                      >
+                        {isBusy ? <Loader2 size={14} className="animate-spin" /> : <RefreshCw size={14} />}
+                        Sincronizar
                     </button>
 
                     <Link
                       href={`/dashboard/processos/${card.pipeline_id}`}
-                      className="flex-1 py-3 rounded-xl border border-white/10 bg-white/5 hover:bg-white/10 text-xs font-black uppercase tracking-widest text-white flex items-center justify-center gap-2"
+                      className="flex-1 py-3 rounded-xl border border-[#CCA761]/12 bg-white/5 hover:bg-white/10 text-xs font-black uppercase tracking-widest text-white flex items-center justify-center gap-2"
                     >
                       <FileText size={14} /> Abrir board
                     </Link>
