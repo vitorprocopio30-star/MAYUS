@@ -30,6 +30,8 @@ export type Task = {
   data_ultima_movimentacao?: string;
   client_name?: string | null;
   drive_link?: string | null;
+  drive_folder_id?: string | null;
+  drive_structure_ready?: boolean | null;
   urgency?: "URGENTE" | "ATENCAO" | "ROTINA" | null;
   process_number?: string | null;
   responsible_notes?: string | null;

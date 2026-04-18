@@ -2,6 +2,17 @@ import { resolvePublicAppUrl } from "@/lib/url/resolve-public-app-url";
 
 export const GOOGLE_DRIVE_PROVIDER = "google_drive";
 export const GOOGLE_DRIVE_STATE_COOKIE = "google_drive_oauth_state";
+export const DEFAULT_PROCESS_DOCUMENT_FOLDERS = [
+  "01-Documentos do Cliente",
+  "02-Inicial",
+  "03-Contestacao",
+  "04-Manifestacoes",
+  "05-Decisoes e Sentencas",
+  "06-Provas",
+  "07-Prazos e Audiencias",
+  "08-Recursos",
+  "09-Pecas Finais",
+] as const;
 const GOOGLE_DRIVE_SCOPE = "https://www.googleapis.com/auth/drive";
 const GOOGLE_OAUTH_AUTHORIZE_URL = "https://accounts.google.com/o/oauth2/v2/auth";
 const GOOGLE_OAUTH_TOKEN_URL = "https://oauth2.googleapis.com/token";
@@ -50,7 +61,11 @@ type GoogleDriveFileRecord = {
   mimeType?: string;
   name?: string;
   webViewLink?: string;
+  modifiedTime?: string;
+  parents?: string[];
 };
+
+export type GoogleDriveFolderStructure = Record<string, { id: string; name: string; webViewLink: string }>;
 
 type GoogleDriveIntegrationRecord = {
   api_key?: string | null;
@@ -317,6 +332,76 @@ export async function createGoogleDriveFolder(accessToken: string, params: { nam
     name: data.name || params.name,
     webViewLink: data.webViewLink || buildGoogleDriveFolderUrl(data.id),
   };
+}
+
+export async function createGoogleDriveFolderStructure(
+  accessToken: string,
+  parentFolderId: string,
+  folderNames: readonly string[] = DEFAULT_PROCESS_DOCUMENT_FOLDERS
+): Promise<GoogleDriveFolderStructure> {
+  const existingChildren = await listGoogleDriveChildren(accessToken, parentFolderId);
+  const existingFolders = new Map(
+    existingChildren
+      .filter((file) => isGoogleDriveFolder(file) && file.name)
+      .map((file) => [file.name as string, {
+        id: file.id,
+        name: file.name as string,
+        webViewLink: file.webViewLink || buildGoogleDriveFolderUrl(file.id),
+      }])
+  );
+
+  const structure: GoogleDriveFolderStructure = {};
+
+  for (const folderName of folderNames) {
+    const folder = existingFolders.get(folderName)
+      || await createGoogleDriveFolder(accessToken, {
+        name: folderName,
+        parentFolderId,
+      });
+
+    structure[folderName] = folder;
+  }
+
+  return structure;
+}
+
+export async function listGoogleDriveChildren(accessToken: string, folderId: string): Promise<GoogleDriveFileRecord[]> {
+  const items: GoogleDriveFileRecord[] = [];
+  let pageToken: string | null = null;
+
+  do {
+    const url = new URL(`${GOOGLE_DRIVE_API_BASE_URL}/files`);
+    url.searchParams.set("q", `'${folderId}' in parents and trashed = false`);
+    url.searchParams.set("fields", "nextPageToken,files(id,name,mimeType,webViewLink,modifiedTime,parents)");
+    url.searchParams.set("orderBy", "modifiedTime desc");
+    url.searchParams.set("pageSize", "200");
+    url.searchParams.set("supportsAllDrives", "true");
+    url.searchParams.set("includeItemsFromAllDrives", "true");
+    if (pageToken) {
+      url.searchParams.set("pageToken", pageToken);
+    }
+
+    const response = await fetch(url.toString(), {
+      headers: {
+        Authorization: `Bearer ${accessToken}`,
+      },
+    });
+
+    const data = (await response.json().catch(() => null)) as { files?: GoogleDriveFileRecord[]; nextPageToken?: string } | null;
+
+    if (!response.ok) {
+      throw new Error(getGoogleTokenErrorMessage(data, "Não foi possível listar os arquivos do Google Drive."));
+    }
+
+    items.push(...(data?.files || []));
+    pageToken = data?.nextPageToken || null;
+  } while (pageToken);
+
+  return items;
+}
+
+export function isGoogleDriveFolder(file: Pick<GoogleDriveFileRecord, "mimeType">): boolean {
+  return file.mimeType === GOOGLE_DRIVE_FOLDER_MIME_TYPE;
 }
 
 export function buildProcessGoogleDriveFolderName(task: {

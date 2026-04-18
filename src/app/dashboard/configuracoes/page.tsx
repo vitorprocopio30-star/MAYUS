@@ -10,7 +10,7 @@ import {
 } from "lucide-react";
 import { useGamification } from "@/hooks/useGamification";
 import Link from "next/link";
-import { useSearchParams } from "next/navigation";
+import { useRouter, useSearchParams } from "next/navigation";
 import { toast } from "sonner";
 import { createClient } from "@/lib/supabase/client";
 import { useUserProfile } from "@/hooks/useUserProfile";
@@ -267,6 +267,7 @@ function IntegrationCard({
 // ─── Componente Principal ─────────────────────────────────────────────────────
 
 function ConfiguracoesContent() {
+  const router = useRouter();
   const { tenantId } = useUserProfile();
   const supabase = createClient();
   const { enabled, toggleGamification } = useGamification();
@@ -313,6 +314,12 @@ function ConfiguracoesContent() {
       setApiKeys(newKeys);
     }
   }, [tenantId, supabase, apiKeys]);
+
+  useEffect(() => {
+    if (activeTab === 'integrations') {
+      router.replace('/dashboard/configuracoes/integracoes');
+    }
+  }, [activeTab, router]);
 
   useEffect(() => {
     setDraftGamification(enabled);

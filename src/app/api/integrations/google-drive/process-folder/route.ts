@@ -4,22 +4,35 @@ import { supabaseAdmin } from "@/lib/supabase/admin";
 import {
   buildProcessGoogleDriveFolderName,
   createGoogleDriveFolder,
-  getGoogleDriveIntegrationMetadata,
-  GOOGLE_DRIVE_PROVIDER,
+  createGoogleDriveFolderStructure,
+  DEFAULT_PROCESS_DOCUMENT_FOLDERS,
+  extractGoogleDriveFolderId,
   isGoogleDriveConfigured,
-  mergeGoogleDriveMetadata,
-  needsGoogleDriveTokenRefresh,
-  refreshGoogleDriveAccessToken,
 } from "@/lib/services/google-drive";
+import { getTenantGoogleDriveContext } from "@/lib/services/google-drive-tenant";
 
 type ProcessTaskRecord = {
   id: string;
   tenant_id: string;
+  stage_id?: string | null;
   title: string;
   client_name?: string | null;
   process_number?: string | null;
   drive_link?: string | null;
+  drive_folder_id?: string | null;
+  drive_structure_ready?: boolean | null;
 };
+
+function buildInitialSummary(task: ProcessTaskRecord) {
+  return [
+    task.client_name ? `Cliente: ${task.client_name}` : null,
+    task.process_number ? `Processo: ${task.process_number}` : null,
+    task.title ? `Caso: ${task.title}` : null,
+    "Estrutura documental do processo pronta no Google Drive para ingestão e resumos do MAYUS.",
+  ]
+    .filter(Boolean)
+    .join("\n");
+}
 
 export async function POST(request: NextRequest) {
   try {
@@ -36,27 +49,9 @@ export async function POST(request: NextRequest) {
       return NextResponse.json({ error: "Processo inválido para criação de pasta." }, { status: 400 });
     }
 
-    const { data: integration, error: integrationError } = await supabaseAdmin
-      .from("tenant_integrations")
-      .select("id, api_key, status, metadata")
-      .eq("tenant_id", tenantId)
-      .eq("provider", GOOGLE_DRIVE_PROVIDER)
-      .maybeSingle();
-
-    if (integrationError) {
-      throw integrationError;
-    }
-
-    if (!integration?.id || !integration.api_key || integration.status !== "connected") {
-      return NextResponse.json(
-        { error: "Conecte o Google Drive em Configurações > Integrações para gerar a pasta automaticamente." },
-        { status: 400 }
-      );
-    }
-
     const { data: task, error: taskError } = await supabaseAdmin
       .from("process_tasks")
-      .select("id, tenant_id, title, client_name, process_number, drive_link")
+      .select("id, tenant_id, stage_id, title, client_name, process_number, drive_link, drive_folder_id, drive_structure_ready")
       .eq("id", taskId)
       .eq("tenant_id", tenantId)
       .maybeSingle<ProcessTaskRecord>();
@@ -69,42 +64,47 @@ export async function POST(request: NextRequest) {
       return NextResponse.json({ error: "Processo não encontrado." }, { status: 404 });
     }
 
-    if (task.drive_link) {
-      return NextResponse.json({ success: true, alreadyExists: true, task });
+    let driveContext;
+    try {
+      driveContext = await getTenantGoogleDriveContext(request, tenantId);
+    } catch (error: any) {
+      if (error?.message === "GoogleDriveDisconnected" || error?.message === "GoogleDriveNotConfigured") {
+        return NextResponse.json(
+          { error: "Conecte o Google Drive em Configurações > Integrações para gerar a pasta automaticamente." },
+          { status: 400 }
+        );
+      }
+      throw error;
     }
 
-    let metadata = getGoogleDriveIntegrationMetadata(integration);
-    let accessToken = metadata.access_token || "";
+    let folderId = task.drive_folder_id || extractGoogleDriveFolderId(task.drive_link || "");
+    let folderUrl = task.drive_link || null;
+    let folderName = buildProcessGoogleDriveFolderName(task);
 
-    if (!accessToken || needsGoogleDriveTokenRefresh(metadata.expires_at)) {
-      const refreshed = await refreshGoogleDriveAccessToken(request, integration.api_key);
-      metadata = mergeGoogleDriveMetadata(metadata, {
-        access_token: refreshed.accessToken,
-        expires_at: refreshed.expiresAt,
-        scope: refreshed.scope || metadata.scope || null,
-        token_type: refreshed.tokenType || metadata.token_type || null,
+    if (!folderId) {
+      const folder = await createGoogleDriveFolder(driveContext.accessToken, {
+        name: folderName,
+        parentFolderId: driveContext.metadata.drive_root_folder_id || null,
       });
 
-      const { error: tokenUpdateError } = await supabaseAdmin
-        .from("tenant_integrations")
-        .update({ metadata })
-        .eq("id", integration.id);
-
-      if (tokenUpdateError) {
-        throw tokenUpdateError;
-      }
-
-      accessToken = refreshed.accessToken;
+      folderId = folder.id;
+      folderUrl = folder.webViewLink;
+      folderName = folder.name;
     }
 
-    const folder = await createGoogleDriveFolder(accessToken, {
-      name: buildProcessGoogleDriveFolderName(task),
-      parentFolderId: metadata.drive_root_folder_id || null,
-    });
+    const folderStructure = await createGoogleDriveFolderStructure(
+      driveContext.accessToken,
+      folderId,
+      DEFAULT_PROCESS_DOCUMENT_FOLDERS
+    );
 
     const { data: updatedTask, error: updateTaskError } = await supabaseAdmin
       .from("process_tasks")
-      .update({ drive_link: folder.webViewLink })
+      .update({
+        drive_link: folderUrl,
+        drive_folder_id: folderId,
+        drive_structure_ready: true,
+      })
       .eq("id", task.id)
       .eq("tenant_id", tenantId)
       .select()
@@ -114,7 +114,43 @@ export async function POST(request: NextRequest) {
       throw updateTaskError;
     }
 
-    return NextResponse.json({ success: true, folder, task: updatedTask });
+    const { error: memoryError } = await supabaseAdmin
+      .from("process_document_memory")
+      .upsert(
+        {
+          tenant_id: tenantId,
+          process_task_id: task.id,
+          drive_folder_id: folderId,
+          drive_folder_url: folderUrl,
+          drive_folder_name: folderName,
+          folder_structure: folderStructure,
+          sync_status: "structured",
+          current_phase: task.stage_id || null,
+          summary_master: buildInitialSummary(task),
+          key_facts: [
+            task.client_name ? { label: "cliente", value: task.client_name } : null,
+            task.process_number ? { label: "processo", value: task.process_number } : null,
+          ].filter(Boolean),
+          missing_documents: ["Documentos do Cliente", "Inicial", "Peças processuais relevantes"],
+        },
+        { onConflict: "process_task_id" }
+      );
+
+    if (memoryError) {
+      throw memoryError;
+    }
+
+    return NextResponse.json({
+      success: true,
+      alreadyExists: Boolean(task.drive_link && task.drive_structure_ready),
+      folder: {
+        id: folderId,
+        name: folderName,
+        webViewLink: folderUrl,
+      },
+      folderStructure,
+      task: updatedTask,
+    });
   } catch (error: any) {
     if (error.message === "Unauthorized") {
       return NextResponse.json({ error: "Não autenticado." }, { status: 401 });

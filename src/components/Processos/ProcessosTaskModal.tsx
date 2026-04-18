@@ -3,6 +3,7 @@ import dynamic from "next/dynamic";
 import { User as UserIcon, AlignLeft, X, Trash2, Calendar, CheckCircle2, ArrowRight, MessageCircle, Tag as TagIcon, Plus, Copy, Check, Pencil, FolderPlus, Loader2 } from "lucide-react";
 import { toast } from "sonner";
 import { createClient } from "@/lib/supabase/client";
+import { GoogleDriveLogo } from "@/components/branding/GoogleDriveLogo";
 import {
   buildAgendaPayloadFromProcessTask,
   deleteAgendaTaskBySource,
@@ -184,6 +185,49 @@ export default function ProcessosTaskModal({
     }
   };
 
+  const syncAgendaAfterSave = async (task: Task) => {
+    try {
+      await syncAgendaTaskBySource(
+        supabase,
+        buildAgendaPayloadFromProcessTask({
+          tenantId: profile!.tenant_id,
+          task,
+          assignedName: getAssignedAgentName(task.assigned_to),
+          createdBy: profile?.id || null,
+        })
+      );
+    } catch (error) {
+      console.error("[processos][agenda-sync]", error);
+      toast.warning("Processo salvo, mas a sincronização com a agenda falhou.");
+    }
+  };
+
+  const maybeAutoCreateDriveFolder = async (task: Task): Promise<Task> => {
+    if (!task?.id || task.drive_link) {
+      return task;
+    }
+
+    try {
+      const response = await fetch("/api/integrations/google-drive/process-folder", {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json",
+        },
+        body: JSON.stringify({ taskId: task.id }),
+      });
+
+      const data = await response.json().catch(() => null);
+      if (!response.ok || !data?.task) {
+        return task;
+      }
+
+      return data.task;
+    } catch (error) {
+      console.error("[processos][drive-structure]", error);
+      return task;
+    }
+  };
+
   const handleCreateTag = async () => {
     const tagName = newTagName.trim();
     if (!tagName || !pipeline?.id) return;
@@ -306,16 +350,8 @@ export default function ProcessosTaskModal({
 
         if (error) throw error;
 
-        await syncAgendaTaskBySource(
-          supabase,
-          buildAgendaPayloadFromProcessTask({
-            tenantId: profile!.tenant_id,
-            task: data,
-            assignedName: getAssignedAgentName(data.assigned_to),
-            createdBy: profile?.id || null,
-          })
-        );
-        
+        await syncAgendaAfterSave(data);
+         
         onSaveSuccess(data, false);
         toast.success("Processo atualizado.");
       } else {
@@ -366,22 +402,16 @@ export default function ProcessosTaskModal({
 
         if (error) throw error;
 
-        await syncAgendaTaskBySource(
-          supabase,
-          buildAgendaPayloadFromProcessTask({
-            tenantId: profile!.tenant_id,
-            task: data,
-            assignedName: getAssignedAgentName(data.assigned_to),
-            createdBy: profile?.id || null,
-          })
-        );
-        
-        onSaveSuccess(data, true);
-        toast.success("Processo criado.");
+        const taskWithDrive = await maybeAutoCreateDriveFolder(data);
+        await syncAgendaAfterSave(taskWithDrive);
+         
+        onSaveSuccess(taskWithDrive, true);
+        toast.success(taskWithDrive.drive_link ? "Processo criado e repositório documental iniciado." : "Processo criado.");
       }
       onClose();
-    } catch (err) {
-      toast.error("Erro ao salvar tarefa.");
+    } catch (err: any) {
+      console.error("[processos][save-task]", err);
+      toast.error(err?.message || "Erro ao salvar tarefa.");
     } finally {
       setIsSaving(false);
     }
@@ -489,9 +519,7 @@ export default function ProcessosTaskModal({
                   </div>
                   <div className="space-y-1.5">
                     <label className="text-xs font-bold text-gray-400 uppercase tracking-widest flex items-center gap-2">
-                      <svg className="w-3.5 h-3.5 text-[#4285F4]" viewBox="0 0 24 24" fill="currentColor">
-                        <path d="M7 15l4.5-8h9L16 15H7zm-1.5-1l4.5-8L5.5 2 1 10l4.5 4zm6 1l-1.5 3h9l1.5-3h-9z" />
-                      </svg>
+                      <GoogleDriveLogo size={14} className="h-3.5 w-3.5" />
                       Google Drive
                     </label>
                     <div className="flex gap-2">
@@ -518,7 +546,7 @@ export default function ProcessosTaskModal({
                     <p className="text-[10px] text-gray-500 leading-relaxed">
                       {editingTask?.id
                         ? "Cole um link existente ou gere uma pasta automática com a integração do Google Drive do escritório."
-                        : "Você pode colar um link manualmente agora. Para gerar a pasta automática, salve o processo primeiro."}
+                        : "Você pode colar um link manualmente agora. Se o escritório estiver conectado ao Google Drive, o MAYUS inicia a estrutura documental logo após salvar o processo."}
                     </p>
                   </div>
                 </div>

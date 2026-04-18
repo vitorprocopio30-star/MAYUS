@@ -7,6 +7,7 @@ import { QrCode, Smartphone, Zap, Bot, BrainCircuit, Plus, X, Eye, Settings, Che
 import { toast } from "sonner";
 import { useUserProfile } from "@/hooks/useUserProfile";
 import Image from "next/image";
+import { GoogleDriveLogo } from "@/components/branding/GoogleDriveLogo";
 
 const cormorant = Cormorant_Garamond({ subsets: ["latin"], weight: ["400", "500", "600", "700"], style: ["normal", "italic"] });
 const montserrat = Montserrat({ subsets: ["latin"], weight: ["300", "400", "500", "600", "700"] });
@@ -512,9 +513,7 @@ export default function IntegracoesPage() {
                   <div className={`w-12 h-12 rounded-xl flex items-center justify-center border mb-4 ${
                     googleDrive.connected ? 'bg-[#4285F4]/15 border-[#4285F4]/40' : 'bg-white/5 border-white/10'
                   }`}>
-                    <svg className="w-6 h-6 text-[#4285F4]" viewBox="0 0 24 24" fill="currentColor">
-                      <path d="M7 15l4.5-8h9L16 15H7zm-1.5-1l4.5-8L5.5 2 1 10l4.5 4zm6 1l-1.5 3h9l1.5-3h-9z" />
-                    </svg>
+                    <GoogleDriveLogo size={24} className="h-6 w-6" />
                   </div>
                   <h3 className="text-xl font-black text-white tracking-tight flex items-center gap-2">
                     Google Drive

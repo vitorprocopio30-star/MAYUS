@@ -159,7 +159,7 @@ export function AdminSidebar() {
         { name: "Configurações Globais", icon: Settings, href: "/dashboard/configuracoes" },
         { name: "Departamentos", icon: Building2, href: "/dashboard/configuracoes/departamentos" },
         { name: "Comercial & Metas", icon: Target, href: "/dashboard/configuracoes/comercial" },
-        { name: "Integrações & APIs", icon: Wand2, href: "/dashboard/configuracoes?tab=integrations" },
+        { name: "Integrações & APIs", icon: Wand2, href: "/dashboard/configuracoes/integracoes" },
         { name: "Usuários e Permissões", icon: ShieldCheck, href: "/dashboard/configuracoes/usuarios" },
         { name: "Agente / Skills", icon: Bot, href: "/dashboard/configuracoes/agente" },
         { name: "Memória Institucional", icon: Brain, href: "/dashboard/configuracoes/memoria" },
