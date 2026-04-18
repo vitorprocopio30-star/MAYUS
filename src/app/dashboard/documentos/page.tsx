@@ -15,6 +15,8 @@ import {
   Sparkles,
   FileText,
   AlertTriangle,
+  Upload,
+  File as FileIcon,
 } from "lucide-react";
 import { toast } from "sonner";
 
@@ -45,6 +47,16 @@ type ProcessDocumentMemory = {
   missing_documents?: string[] | null;
 };
 
+type ProcessDocumentItem = {
+  process_task_id: string;
+  name: string;
+  document_type?: string | null;
+  extraction_status?: string | null;
+  folder_label?: string | null;
+  web_view_link?: string | null;
+  modified_at?: string | null;
+};
+
 type ProcessDocumentCard = ProcessTaskListItem & {
   stageName: string | null;
   pipelineName: string | null;
@@ -53,7 +65,20 @@ type ProcessDocumentCard = ProcessTaskListItem & {
   lastSyncedAt: string | null;
   summaryMaster: string | null;
   missingDocuments: string[];
+  documents: ProcessDocumentItem[];
 };
+
+const DOCUMENT_FOLDER_OPTIONS = [
+  "01-Documentos do Cliente",
+  "02-Inicial",
+  "03-Contestacao",
+  "04-Manifestacoes",
+  "05-Decisoes e Sentencas",
+  "06-Provas",
+  "07-Prazos e Audiencias",
+  "08-Recursos",
+  "09-Pecas Finais",
+] as const;
 
 function formatDateTime(value?: string | null) {
   if (!value) return "Nunca sincronizado";
@@ -69,6 +94,8 @@ export default function DocumentosPage() {
   const [isLoading, setIsLoading] = useState(true);
   const [busyTaskId, setBusyTaskId] = useState<string | null>(null);
   const [cards, setCards] = useState<ProcessDocumentCard[]>([]);
+  const [uploadFolderByTask, setUploadFolderByTask] = useState<Record<string, string>>({});
+  const [uploadFilesByTask, setUploadFilesByTask] = useState<Record<string, globalThis.File | null>>({});
 
   const loadRepository = useCallback(async () => {
     if (!tenantId) return;
@@ -76,7 +103,7 @@ export default function DocumentosPage() {
     setIsLoading(true);
 
     try {
-      const [tasksRes, stagesRes, pipelinesRes, memoryRes] = await Promise.all([
+      const [tasksRes, stagesRes, pipelinesRes, memoryRes, documentsRes] = await Promise.all([
         supabase
           .from("process_tasks")
           .select("id, pipeline_id, stage_id, title, client_name, process_number, drive_link, drive_folder_id, drive_structure_ready, created_at")
@@ -88,16 +115,29 @@ export default function DocumentosPage() {
           .from("process_document_memory")
           .select("process_task_id, document_count, sync_status, last_synced_at, summary_master, missing_documents")
           .eq("tenant_id", tenantId),
+        supabase
+          .from("process_documents")
+          .select("process_task_id, name, document_type, extraction_status, folder_label, web_view_link, modified_at")
+          .eq("tenant_id", tenantId)
+          .order("modified_at", { ascending: false }),
       ]);
 
       if (tasksRes.error) throw tasksRes.error;
       if (stagesRes.error) throw stagesRes.error;
       if (pipelinesRes.error) throw pipelinesRes.error;
       if (memoryRes.error) throw memoryRes.error;
+      if (documentsRes.error) throw documentsRes.error;
 
       const stagesMap = new Map((stagesRes.data || []).map((stage: ProcessStage) => [stage.id, stage.name]));
       const pipelinesMap = new Map((pipelinesRes.data || []).map((pipeline: ProcessPipeline) => [pipeline.id, pipeline.name]));
       const memoryMap = new Map((memoryRes.data || []).map((memory: ProcessDocumentMemory) => [memory.process_task_id, memory]));
+      const docsByTask = new Map<string, ProcessDocumentItem[]>();
+
+      (documentsRes.data || []).forEach((document: ProcessDocumentItem) => {
+        const current = docsByTask.get(document.process_task_id) || [];
+        current.push(document);
+        docsByTask.set(document.process_task_id, current);
+      });
 
       const nextCards = (tasksRes.data || []).map((task: ProcessTaskListItem) => {
         const memory = memoryMap.get(task.id);
@@ -110,10 +150,20 @@ export default function DocumentosPage() {
           lastSyncedAt: memory?.last_synced_at || null,
           summaryMaster: memory?.summary_master || null,
           missingDocuments: Array.isArray(memory?.missing_documents) ? memory!.missing_documents! : [],
+          documents: (docsByTask.get(task.id) || []).slice(0, 5),
         } satisfies ProcessDocumentCard;
       });
 
       setCards(nextCards);
+      setUploadFolderByTask((current) => {
+        const next = { ...current };
+        nextCards.forEach((card) => {
+          if (!next[card.id]) {
+            next[card.id] = "01-Documentos do Cliente";
+          }
+        });
+        return next;
+      });
     } catch (error: any) {
       console.error("[documentos][load]", error);
       toast.error(error?.message || "Não foi possível carregar o repositório documental.");
@@ -178,6 +228,39 @@ export default function DocumentosPage() {
       await loadRepository();
     } catch (error: any) {
       toast.error(error?.message || "Não foi possível sincronizar os documentos.");
+    } finally {
+      setBusyTaskId(null);
+    }
+  };
+
+  const handleUploadDocument = async (taskId: string) => {
+    const file = uploadFilesByTask[taskId];
+    if (!file) {
+      toast.error("Selecione um arquivo antes de enviar.");
+      return;
+    }
+
+    setBusyTaskId(taskId);
+    try {
+      const formData = new FormData();
+      formData.append("file", file);
+      formData.append("folderLabel", uploadFolderByTask[taskId] || "01-Documentos do Cliente");
+
+      const response = await fetch(`/api/documentos/processos/${taskId}/upload`, {
+        method: "POST",
+        body: formData,
+      });
+
+      const data = await response.json().catch(() => null);
+      if (!response.ok) {
+        throw new Error(data?.error || "Não foi possível enviar o documento.");
+      }
+
+      toast.success("Documento enviado e sincronizado com sucesso.");
+      setUploadFilesByTask((current) => ({ ...current, [taskId]: null }));
+      await loadRepository();
+    } catch (error: any) {
+      toast.error(error?.message || "Não foi possível enviar o documento.");
     } finally {
       setBusyTaskId(null);
     }
@@ -306,6 +389,85 @@ export default function DocumentosPage() {
                       <div className="flex items-start gap-2 text-xs text-amber-200 bg-amber-500/10 border border-amber-500/20 rounded-xl px-3 py-2">
                         <AlertTriangle size={14} className="mt-0.5 shrink-0" />
                         Pendências detectadas: {card.missingDocuments.join(", ")}
+                      </div>
+                    )}
+                  </div>
+
+                  <div className="bg-[#111] border border-white/5 rounded-2xl p-4 space-y-3 mb-5">
+                    <div className="flex items-center gap-2 text-[#8ab4ff] text-[10px] uppercase tracking-[0.25em] font-black">
+                      <FileIcon size={12} /> Arquivos do processo
+                    </div>
+
+                    {card.documents.length === 0 ? (
+                      <p className="text-sm text-gray-500">Nenhum arquivo indexado ainda.</p>
+                    ) : (
+                      <div className="space-y-2">
+                        {card.documents.map((document, index) => (
+                          <div key={`${document.name}-${index}`} className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-2 bg-[#141414] border border-white/5 rounded-xl px-3 py-2">
+                            <div className="min-w-0">
+                              <p className="text-sm text-white font-medium truncate">{document.name}</p>
+                              <p className="text-[11px] text-gray-500 truncate">
+                                {document.folder_label || "Sem pasta"}
+                                {document.document_type ? ` • ${document.document_type}` : ""}
+                                {document.modified_at ? ` • ${formatDateTime(document.modified_at)}` : ""}
+                              </p>
+                            </div>
+                            <div className="flex items-center gap-2 shrink-0">
+                              <span className={`px-2 py-1 rounded-full text-[10px] uppercase tracking-widest font-black border ${
+                                document.extraction_status === "extracted"
+                                  ? 'bg-emerald-500/10 border-emerald-500/20 text-emerald-300'
+                                  : document.extraction_status === "error"
+                                    ? 'bg-red-500/10 border-red-500/20 text-red-300'
+                                    : 'bg-white/5 border-white/10 text-gray-400'
+                              }`}>
+                                {document.extraction_status || "pending"}
+                              </span>
+                              {document.web_view_link && (
+                                <a
+                                  href={document.web_view_link}
+                                  target="_blank"
+                                  rel="noopener noreferrer"
+                                  className="text-xs font-black uppercase tracking-widest text-[#8ab4ff] hover:text-white"
+                                >
+                                  Abrir
+                                </a>
+                              )}
+                            </div>
+                          </div>
+                        ))}
+                      </div>
+                    )}
+
+                    {hasStructure && (
+                      <div className="grid grid-cols-1 lg:grid-cols-[1fr_1fr_auto] gap-3 pt-2">
+                        <select
+                          value={uploadFolderByTask[card.id] || "01-Documentos do Cliente"}
+                          onChange={(event) => setUploadFolderByTask((current) => ({ ...current, [card.id]: event.target.value }))}
+                          className="bg-[#141414] border border-white/10 rounded-xl px-3 py-3 text-sm text-white focus:outline-none focus:border-[#4285F4]/40"
+                        >
+                          {DOCUMENT_FOLDER_OPTIONS.map((folderLabel) => (
+                            <option key={folderLabel} value={folderLabel}>{folderLabel}</option>
+                          ))}
+                        </select>
+
+                        <input
+                          type="file"
+                          onChange={(event) => {
+                            const nextFile = event.target.files?.[0] || null;
+                            setUploadFilesByTask((current) => ({ ...current, [card.id]: nextFile }));
+                          }}
+                          className="bg-[#141414] border border-white/10 rounded-xl px-3 py-3 text-sm text-white file:mr-3 file:border-0 file:bg-[#0b1220] file:px-3 file:py-2 file:rounded-lg file:text-[#8ab4ff]"
+                        />
+
+                        <button
+                          type="button"
+                          onClick={() => handleUploadDocument(card.id)}
+                          disabled={isBusy}
+                          className="px-4 py-3 rounded-xl border border-[#4285F4]/25 bg-[#0b1220] hover:bg-[#12203c] text-xs font-black uppercase tracking-widest text-[#8ab4ff] flex items-center justify-center gap-2 disabled:opacity-60"
+                        >
+                          {isBusy ? <Loader2 size={14} className="animate-spin" /> : <Upload size={14} />}
+                          Enviar
+                        </button>
                       </div>
                     )}
                   </div>

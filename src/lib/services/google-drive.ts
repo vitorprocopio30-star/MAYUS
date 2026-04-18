@@ -63,6 +63,7 @@ type GoogleDriveFileRecord = {
   webViewLink?: string;
   modifiedTime?: string;
   parents?: string[];
+  size?: string;
 };
 
 export type GoogleDriveFolderStructure = Record<string, { id: string; name: string; webViewLink: string }>;
@@ -372,7 +373,7 @@ export async function listGoogleDriveChildren(accessToken: string, folderId: str
   do {
     const url = new URL(`${GOOGLE_DRIVE_API_BASE_URL}/files`);
     url.searchParams.set("q", `'${folderId}' in parents and trashed = false`);
-    url.searchParams.set("fields", "nextPageToken,files(id,name,mimeType,webViewLink,modifiedTime,parents)");
+    url.searchParams.set("fields", "nextPageToken,files(id,name,mimeType,webViewLink,modifiedTime,parents,size)");
     url.searchParams.set("orderBy", "modifiedTime desc");
     url.searchParams.set("pageSize", "200");
     url.searchParams.set("supportsAllDrives", "true");
@@ -402,6 +403,66 @@ export async function listGoogleDriveChildren(accessToken: string, folderId: str
 
 export function isGoogleDriveFolder(file: Pick<GoogleDriveFileRecord, "mimeType">): boolean {
   return file.mimeType === GOOGLE_DRIVE_FOLDER_MIME_TYPE;
+}
+
+export async function uploadGoogleDriveFile(
+  accessToken: string,
+  params: {
+    name: string;
+    mimeType: string;
+    bytes: ArrayBuffer;
+    parentFolderId?: string | null;
+  }
+) {
+  const boundary = `mayus-${Date.now().toString(36)}`;
+  const metadata = {
+    name: params.name,
+    ...(params.parentFolderId ? { parents: [params.parentFolderId] } : {}),
+  };
+
+  const prefix = Buffer.from(
+    `--${boundary}\r\nContent-Type: application/json; charset=UTF-8\r\n\r\n${JSON.stringify(metadata)}\r\n--${boundary}\r\nContent-Type: ${params.mimeType}\r\n\r\n`
+  );
+  const suffix = Buffer.from(`\r\n--${boundary}--`);
+  const body = Buffer.concat([prefix, Buffer.from(params.bytes), suffix]);
+
+  const response = await fetch(
+    `https://www.googleapis.com/upload/drive/v3/files?uploadType=multipart&fields=id,name,mimeType,webViewLink,modifiedTime,parents,size&supportsAllDrives=true`,
+    {
+      method: "POST",
+      headers: {
+        Authorization: `Bearer ${accessToken}`,
+        "Content-Type": `multipart/related; boundary=${boundary}`,
+      },
+      body,
+    }
+  );
+
+  const data = (await response.json().catch(() => null)) as GoogleDriveFileRecord | null;
+
+  if (!response.ok || !data?.id) {
+    throw new Error(getGoogleTokenErrorMessage(data, "Não foi possível enviar o arquivo para o Google Drive."));
+  }
+
+  return data;
+}
+
+export async function downloadGoogleDriveFile(accessToken: string, fileId: string): Promise<Uint8Array> {
+  const response = await fetch(
+    `${GOOGLE_DRIVE_API_BASE_URL}/files/${fileId}?alt=media&supportsAllDrives=true`,
+    {
+      headers: {
+        Authorization: `Bearer ${accessToken}`,
+      },
+    }
+  );
+
+  if (!response.ok) {
+    const data = await response.json().catch(() => null);
+    throw new Error(getGoogleTokenErrorMessage(data, "Não foi possível baixar o arquivo do Google Drive."));
+  }
+
+  return new Uint8Array(await response.arrayBuffer());
 }
 
 export function buildProcessGoogleDriveFolderName(task: {
