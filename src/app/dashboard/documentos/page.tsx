@@ -474,116 +474,98 @@ export default function DocumentosPage() {
             </p>
           </div>
         ) : (
-          <div className="grid grid-cols-1 2xl:grid-cols-2 gap-6">
+          <div className="grid grid-cols-1 md:grid-cols-2 xl:grid-cols-3 gap-5">
             {filteredCards.map((card) => {
               const isBusy = busyTaskId === card.id;
               const hasStructure = Boolean(card.drive_structure_ready && card.drive_folder_id && card.drive_link);
 
               return (
-                <div key={card.id} className="group/card bg-[#0a0a0a] border border-white/5 hover:border-[#CCA761]/20 rounded-[28px] p-7 transition-all duration-500 hover:shadow-[0_10px_40px_rgba(0,0,0,0.5),0_0_0_1px_rgba(204,167,97,0.1)] relative overflow-hidden flex flex-col">
+                <div key={card.id} className="group/card bg-[#0a0a0a] border border-white/5 hover:border-[#CCA761]/20 rounded-[22px] p-5 transition-all duration-500 hover:shadow-[0_10px_40px_rgba(0,0,0,0.5),0_0_0_1px_rgba(204,167,97,0.1)] relative overflow-hidden flex flex-col">
                   {/* Subtle top gradient line */}
                   <div className="absolute top-0 left-0 right-0 h-[2px] bg-gradient-to-r from-transparent via-[#CCA761]/0 group-hover/card:via-[#CCA761]/40 to-transparent transition-all duration-700" />
                   
-                  <div className="flex items-start justify-between gap-4 mb-6">
-                    <div className="space-y-1">
-                      <p className="text-[10px] uppercase tracking-[0.3em] text-[#CCA761] font-black flex items-center gap-2">
-                        {card.pipelineName || "Pipeline não mapeado"}
+                  <div className="flex items-start justify-between gap-3 mb-4">
+                    <div className="space-y-0.5">
+                      <p className="text-[9px] uppercase tracking-[0.25em] text-[#CCA761] font-black flex items-center gap-1.5">
+                        {card.pipelineName || "Pipeline"}
                         {card.stageName ? <><span className="w-1 h-1 rounded-full bg-[#CCA761]/50" /> {card.stageName}</> : ""}
                       </p>
-                      <h2 className={`text-2xl font-bold text-white leading-tight ${cormorant.className} tracking-wide`}>{card.title}</h2>
-                      <p className="text-xs text-gray-400 font-medium tracking-wide">
-                        {card.client_name || "Cliente não informado"}
+                      <h2 className={`text-lg font-bold text-white leading-tight ${cormorant.className} tracking-wide`}>{card.title}</h2>
+                      <p className="text-[11px] text-gray-400 font-medium tracking-wide truncate max-w-[200px]">
+                        {card.client_name || "Sem cliente"}
                         {card.process_number ? ` • ${card.process_number}` : ""}
                       </p>
                     </div>
-                    <div className={`px-3.5 py-1.5 rounded-full text-[10px] uppercase tracking-widest font-black border flex items-center gap-1.5 ${
+                    <div className={`px-2.5 py-1 rounded-full text-[9px] uppercase tracking-widest font-black border flex items-center gap-1.5 shrink-0 ${
                       hasStructure
-                        ? 'bg-[#4285F4]/10 border-[#4285F4]/30 text-[#8ab4ff] shadow-[0_0_15px_rgba(66,133,244,0.1)]'
+                        ? 'bg-[#4285F4]/10 border-[#4285F4]/30 text-[#8ab4ff] shadow-[0_0_10px_rgba(66,133,244,0.1)]'
                         : 'bg-amber-500/10 border-amber-500/20 text-amber-400'
                     }`}>
-                      {hasStructure && <div className="w-1.5 h-1.5 rounded-full bg-[#4285F4] animate-pulse" />}
-                      {hasStructure ? 'Estrutura Ativa' : 'Pendente'}
+                      {hasStructure && <div className="w-1 h-1 rounded-full bg-[#4285F4] animate-pulse" />}
+                      {hasStructure ? 'Ativo' : 'Pendente'}
                     </div>
                   </div>
 
-                  <div className="grid grid-cols-3 gap-3 mb-6">
-                    <div className="bg-[#111] border border-white/5 rounded-2xl p-4 group-hover/card:border-white/10 transition-colors">
-                      <p className="text-[9px] uppercase tracking-[0.25em] text-gray-500 font-black mb-1.5">Documentos</p>
-                      <p className="text-2xl font-black text-white">{card.documentCount}</p>
+                  <div className="grid grid-cols-3 gap-2 mb-4">
+                    <div className="bg-[#111] border border-white/5 rounded-xl p-3 group-hover/card:border-white/10 transition-colors">
+                      <p className="text-[8px] uppercase tracking-[0.2em] text-gray-500 font-black mb-1">Docs</p>
+                      <p className="text-xl font-black text-white">{card.documentCount}</p>
                     </div>
-                    <div className="bg-[#111] border border-white/5 rounded-2xl p-4 group-hover/card:border-white/10 transition-colors">
-                      <p className="text-[9px] uppercase tracking-[0.25em] text-gray-500 font-black mb-1.5">Rede Neural</p>
-                      <p className="text-sm font-bold text-[#CCA761] capitalize">{card.syncStatus}</p>
+                    <div className="bg-[#111] border border-white/5 rounded-xl p-3 group-hover/card:border-white/10 transition-colors">
+                      <p className="text-[8px] uppercase tracking-[0.2em] text-gray-500 font-black mb-1">Status</p>
+                      <p className="text-[10px] font-bold text-[#CCA761] capitalize truncate">{card.syncStatus}</p>
                     </div>
-                    <div className="bg-[#111] border border-white/5 rounded-2xl p-4 group-hover/card:border-white/10 transition-colors">
-                      <p className="text-[9px] uppercase tracking-[0.25em] text-gray-500 font-black mb-1.5">Última Sync</p>
-                      <p className="text-xs font-semibold text-gray-300 mt-1 uppercase tracking-wider">{formatDateTime(card.lastSyncedAt)}</p>
+                    <div className="bg-[#111] border border-white/5 rounded-xl p-3 group-hover/card:border-white/10 transition-colors">
+                      <p className="text-[8px] uppercase tracking-[0.2em] text-gray-500 font-black mb-1">Sync</p>
+                      <p className="text-[9px] font-semibold text-gray-300 mt-0.5 truncate uppercase tracking-tighter">{formatDateTime(card.lastSyncedAt).split(',')[0]}</p>
                     </div>
                   </div>
 
-                  <div className="bg-gradient-to-br from-[#111] to-[#0a0a0a] border border-white/5 rounded-2xl p-5 mb-6 relative overflow-hidden group-hover/card:border-[#CCA761]/10 transition-colors">
-                    <div className="absolute top-0 right-0 w-24 h-24 bg-[#CCA761]/5 blur-3xl rounded-full" />
-                    <div className="flex items-center gap-2 text-[#CCA761] text-[10px] uppercase tracking-[0.3em] font-black mb-3">
-                      <Sparkles size={14} /> Memória Base do Processo
+                  <div className="bg-gradient-to-br from-[#111] to-[#0a0a0a] border border-white/5 rounded-xl p-4 mb-4 relative overflow-hidden group-hover/card:border-[#CCA761]/10 transition-colors">
+                    <div className="absolute top-0 right-0 w-20 h-20 bg-[#CCA761]/5 blur-2xl rounded-full" />
+                    <div className="flex items-center gap-2 text-[#CCA761] text-[9px] uppercase tracking-[0.25em] font-black mb-2">
+                      <Sparkles size={12} /> Memória Base
                     </div>
-                    <p className="text-sm text-gray-300 leading-relaxed font-medium relative z-10">
-                      {card.summaryMaster || "Estrutura documental aguardando orquestração inicial. Sincronize o Drive para processar a taxonomia deste caso."}
+                    <p className="text-[11px] text-gray-400 leading-relaxed font-medium relative z-10 line-clamp-3">
+                      {card.summaryMaster || "Estrutura documental aguardando orquestração inicial. Sincronize o Drive para processar a taxonomia."}
                     </p>
                     {card.missingDocuments.length > 0 && (
-                      <div className="mt-4 flex items-start gap-2.5 text-xs text-amber-200 bg-amber-500/10 border border-amber-500/20 rounded-xl px-4 py-3 relative z-10">
-                        <AlertTriangle size={14} className="shrink-0 mt-0.5 text-amber-400" />
-                        <div>
-                          <strong className="block text-amber-400 font-bold mb-1 uppercase tracking-wider text-[10px]">Análise da IA: Documentos Faltantes</strong>
-                          {card.missingDocuments.join(", ")}
-                        </div>
+                      <div className="mt-3 flex items-start gap-2 text-[10px] text-amber-200 bg-amber-500/10 border border-amber-500/20 rounded-lg px-3 py-2 relative z-10">
+                        <AlertTriangle size={12} className="shrink-0 mt-0.5 text-amber-400" />
+                        <span className="truncate">Pendências: {card.missingDocuments.join(", ")}</span>
                       </div>
                     )}
                   </div>
 
                   {/* Flexible spacer to push buttons to bottom if needed */}
                   <div className="flex-1">
-                    <div className="bg-[#0f0f0f] border border-white/5 rounded-2xl p-5 space-y-4 mb-6">
+                    <div className="bg-[#0f0f0f] border border-white/5 rounded-xl p-4 space-y-3 mb-4">
                       <div className="flex items-center justify-between gap-3">
-                        <div className="flex items-center gap-2 text-white text-[10px] uppercase tracking-[0.3em] font-black">
-                          <FileIcon size={12} className="text-[#8ab4ff]" /> Arquivos Processados
+                        <div className="flex items-center gap-2 text-white text-[9px] uppercase tracking-[0.25em] font-black">
+                          <FileIcon size={12} className="text-[#8ab4ff]" /> Arquivos
                         </div>
-                        <span className="text-[10px] uppercase tracking-[0.25em] text-gray-500 font-bold bg-[#141414] px-2 py-1 rounded-md">
-                          Últimos {card.documents.length}
-                        </span>
                       </div>
 
                       {card.documents.length === 0 ? (
-                        <div className="rounded-xl border border-dashed border-white/10 bg-[#111] px-5 py-6 text-xs text-center text-gray-500 uppercase tracking-widest font-medium">
-                          Repositório Vazio • Aguardando Indexação
+                        <div className="rounded-lg border border-dashed border-white/10 bg-[#111] px-4 py-4 text-[9px] text-center text-gray-500 uppercase tracking-widest font-medium">
+                          Vazio
                         </div>
                       ) : (
                         <div className="space-y-2">
-                          {card.documents.map((document, index) => (
-                            <div key={`${document.name}-${index}`} className="flex flex-col xl:flex-row xl:items-center xl:justify-between gap-3 bg-[#141414] border border-white/5 hover:border-white/10 rounded-xl px-4 py-3 transition-colors">
-                              <div className="min-w-0 space-y-1.5 flex-1 pr-4">
-                                <p className="text-sm text-gray-200 font-bold truncate">{document.name}</p>
-                                <div className="flex flex-wrap items-center gap-2 text-[10px] uppercase tracking-wider font-bold">
-                                  <span className="text-gray-500">
-                                    {document.folder_label || "Sem pasta"}
-                                  </span>
-                                  <span className="w-1 h-1 rounded-full bg-white/10" />
-                                  <span className="text-[#CCA761]">
-                                    {getDocumentTypeLabel(document.document_type)}
-                                  </span>
-                                </div>
+                          {card.documents.slice(0, 3).map((document, index) => (
+                            <div key={`${document.name}-${index}`} className="flex items-center justify-between gap-2 bg-[#141414] border border-white/5 hover:border-white/10 rounded-lg px-3 py-2 transition-colors">
+                              <div className="min-w-0 flex-1">
+                                <p className="text-[11px] text-gray-200 font-bold truncate">{document.name}</p>
                               </div>
-                              <div className="flex items-center gap-2 shrink-0">
-                                <span className={`px-2.5 py-1 rounded-md text-[9px] uppercase tracking-[0.2em] font-black border ${getExtractionBadge(document.extraction_status).className}`}>
-                                  {getExtractionBadge(document.extraction_status).label}
-                                </span>
+                              <div className="flex items-center gap-1.5 shrink-0">
                                 {document.web_view_link && (
                                   <a
                                     href={document.web_view_link}
                                     target="_blank"
                                     rel="noopener noreferrer"
-                                    className="text-[10px] font-black uppercase tracking-[0.2em] text-[#8ab4ff] hover:text-white border border-[#4285F4]/20 rounded-md px-3 py-1.5 bg-[#4285F4]/5 hover:bg-[#4285F4]/10 transition-colors"
+                                    className="text-[9px] font-black uppercase tracking-[0.1em] text-[#8ab4ff] hover:text-white border border-[#4285F4]/20 rounded-md px-2 py-1 bg-[#4285F4]/5 hover:bg-[#4285F4]/10 transition-colors"
                                   >
-                                    Abrir
+                                    Ver
                                   </a>
                                 )}
                               </div>
@@ -593,80 +575,81 @@ export default function DocumentosPage() {
                       )}
 
                       {hasStructure && (
-                        <div className="mt-4 rounded-xl border border-[#CCA761]/20 bg-gradient-to-b from-[#CCA761]/[0.05] to-transparent p-5 space-y-4">
-                          <div className="flex items-center gap-2 text-[#CCA761] text-[10px] uppercase tracking-[0.3em] font-black">
-                            <Upload size={14} /> Upload via Plataforma
+                        <div className="mt-4 rounded-lg border border-[#CCA761]/20 bg-gradient-to-b from-[#CCA761]/[0.05] to-transparent p-3.5 space-y-3">
+                          <div className="flex items-center gap-2 text-[#CCA761] text-[9px] uppercase tracking-[0.25em] font-black">
+                            <Upload size={12} /> Upload Rápido
                           </div>
 
-                          <div className="grid grid-cols-1 md:grid-cols-[1fr_1.5fr_auto] gap-3 items-stretch">
+                          <div className="flex flex-col gap-2">
                             <select
                               value={uploadFolderByTask[card.id] || "01-Documentos do Cliente"}
                               onChange={(event) => setUploadFolderByTask((current) => ({ ...current, [card.id]: event.target.value }))}
-                              className="w-full bg-[#0a0a0a] border border-[#CCA761]/20 rounded-xl px-4 py-3 text-xs text-white focus:outline-none focus:border-[#CCA761]/60 font-medium tracking-wide appearance-none"
+                              className="w-full bg-[#0a0a0a] border border-[#CCA761]/20 rounded-lg px-3 py-2 text-[10px] text-white focus:outline-none focus:border-[#CCA761]/60 font-medium tracking-wide appearance-none"
                             >
                               {DOCUMENT_FOLDER_OPTIONS.map((folderLabel) => (
                                 <option key={folderLabel} value={folderLabel}>{folderLabel.replace(/^\d{2}-/, '')}</option>
                               ))}
                             </select>
 
-                            <div className="relative">
-                              <input
-                                key={`${card.id}-${uploadInputVersionByTask[card.id] || 0}`}
-                                id={`upload-input-${card.id}`}
-                                type="file"
-                                onChange={(event) => {
-                                  const nextFile = event.target.files?.[0] || null;
-                                  setUploadFilesByTask((current) => ({ ...current, [card.id]: nextFile }));
-                                }}
-                                className="hidden"
-                              />
-                              <label
-                                htmlFor={`upload-input-${card.id}`}
-                                className="w-full h-full min-h-[46px] bg-[#0a0a0a] border border-[#CCA761]/20 rounded-xl pl-4 pr-2 py-1.5 text-xs text-white flex items-center justify-between gap-3 cursor-pointer hover:border-[#CCA761]/50 transition-colors group/upload"
-                              >
-                                <span className="truncate text-gray-400 group-hover/upload:text-gray-200 font-medium">
-                                  {uploadFilesByTask[card.id]?.name || "Selecione o arquivo..."}
-                                </span>
-                                <span className="shrink-0 px-3 py-2 rounded-lg bg-[#111] border border-[#CCA761]/30 text-[#CCA761] text-[9px] font-black uppercase tracking-widest">
-                                  Procurar
-                                </span>
-                              </label>
-                            </div>
+                            <div className="flex gap-2">
+                              <div className="relative flex-1">
+                                <input
+                                  key={`${card.id}-${uploadInputVersionByTask[card.id] || 0}`}
+                                  id={`upload-input-${card.id}`}
+                                  type="file"
+                                  onChange={(event) => {
+                                    const nextFile = event.target.files?.[0] || null;
+                                    setUploadFilesByTask((current) => ({ ...current, [card.id]: nextFile }));
+                                  }}
+                                  className="hidden"
+                                />
+                                <label
+                                  htmlFor={`upload-input-${card.id}`}
+                                  className="w-full h-full min-h-[36px] bg-[#0a0a0a] border border-[#CCA761]/20 rounded-lg pl-3 pr-2 py-1 text-[10px] text-white flex items-center justify-between gap-2 cursor-pointer hover:border-[#CCA761]/50 transition-colors group/upload"
+                                >
+                                  <span className="truncate text-gray-500 group-hover/upload:text-gray-200 font-medium">
+                                    {uploadFilesByTask[card.id]?.name || "Arquivo..."}
+                                  </span>
+                                  <span className="shrink-0 px-2 py-1 rounded-md bg-[#111] border border-[#CCA761]/30 text-[#CCA761] text-[8px] font-black uppercase tracking-widest">
+                                    Busca
+                                  </span>
+                                </label>
+                              </div>
 
-                            <button
-                              type="button"
-                              onClick={() => handleUploadDocument(card.id)}
-                              disabled={isBusy}
-                              className="px-6 rounded-xl border border-[#CCA761]/40 bg-[#CCA761]/10 hover:bg-[#CCA761]/20 text-[10px] font-black uppercase tracking-[0.2em] text-[#CCA761] flex items-center justify-center gap-2 disabled:opacity-50 transition-all hover:shadow-[0_0_15px_rgba(204,167,97,0.2)]"
-                            >
-                              {isBusy ? <Loader2 size={14} className="animate-spin" /> : <Upload size={14} />}
-                              Enviar
-                            </button>
+                              <button
+                                type="button"
+                                onClick={() => handleUploadDocument(card.id)}
+                                disabled={isBusy}
+                                className="px-3 rounded-lg border border-[#CCA761]/40 bg-[#CCA761]/10 hover:bg-[#CCA761]/20 text-[9px] font-black uppercase tracking-[0.1em] text-[#CCA761] flex items-center justify-center gap-1.5 disabled:opacity-50 transition-all hover:shadow-[0_0_10px_rgba(204,167,97,0.2)]"
+                              >
+                                {isBusy ? <Loader2 size={12} className="animate-spin" /> : <Upload size={12} />}
+                                OK
+                              </button>
+                            </div>
                           </div>
                         </div>
                       )}
                     </div>
                   </div>
 
-                  <div className="grid grid-cols-1 sm:grid-cols-3 gap-3 shrink-0">
+                  <div className="grid grid-cols-3 gap-2 shrink-0">
                     {hasStructure ? (
                       <a
                         href={card.drive_link || undefined}
                         target="_blank"
                         rel="noopener noreferrer"
-                        className="w-full py-3.5 rounded-xl border border-[#4285F4]/30 bg-[#4285F4]/10 hover:bg-[#4285F4]/20 text-[10px] font-black uppercase tracking-[0.2em] text-[#8ab4ff] flex items-center justify-center gap-2 transition-colors"
+                        className="w-full py-2.5 rounded-lg border border-[#4285F4]/30 bg-[#4285F4]/10 hover:bg-[#4285F4]/20 text-[9px] font-black uppercase tracking-[0.15em] text-[#8ab4ff] flex items-center justify-center gap-1.5 transition-colors"
                       >
-                        <ExternalLink size={14} /> Drive do Caso
+                        <ExternalLink size={12} /> Drive
                       </a>
                     ) : (
                       <button
                         type="button"
                         onClick={() => handleCreateStructure(card.id)}
                         disabled={isBusy}
-                        className="w-full py-3.5 rounded-xl border border-[#4285F4]/40 bg-[#4285F4]/15 hover:bg-[#4285F4]/25 text-[10px] font-black uppercase tracking-[0.2em] text-[#8ab4ff] flex items-center justify-center gap-2 disabled:opacity-50 transition-all hover:shadow-[0_0_20px_rgba(66,133,244,0.2)]"
+                        className="w-full py-2.5 rounded-lg border border-[#4285F4]/40 bg-[#4285F4]/15 hover:bg-[#4285F4]/25 text-[9px] font-black uppercase tracking-[0.15em] text-[#8ab4ff] flex items-center justify-center gap-1.5 disabled:opacity-50 transition-all"
                       >
-                        {isBusy ? <Loader2 size={14} className="animate-spin" /> : <FolderTree size={14} />}
-                        Criar Estrutura
+                        <FolderTree size={12} /> Criar
                       </button>
                     )}
 
@@ -674,17 +657,17 @@ export default function DocumentosPage() {
                         type="button"
                         onClick={() => handleSync(card.id)}
                         disabled={isBusy || !hasStructure}
-                        className="w-full py-3.5 rounded-xl border border-white/10 bg-white/5 hover:bg-white/10 text-[10px] font-black uppercase tracking-[0.2em] text-white flex items-center justify-center gap-2 disabled:opacity-50 transition-colors"
+                        className="w-full py-2.5 rounded-lg border border-white/10 bg-white/5 hover:bg-white/10 text-[9px] font-black uppercase tracking-[0.15em] text-white flex items-center justify-center gap-1.5 disabled:opacity-50 transition-colors"
                       >
-                        {isBusy ? <Loader2 size={14} className="animate-spin" /> : <RefreshCw size={14} />}
-                        Sincronizar IA
+                        {isBusy ? <Loader2 size={12} className="animate-spin" /> : <RefreshCw size={12} />}
+                        Sync
                     </button>
 
                     <Link
                       href={`/dashboard/processos/${card.pipeline_id}`}
-                      className="w-full py-3.5 rounded-xl border border-[#CCA761]/30 bg-[#CCA761]/10 hover:bg-[#CCA761]/20 text-[10px] font-black uppercase tracking-[0.2em] text-[#CCA761] flex items-center justify-center gap-2 transition-all hover:shadow-[0_0_20px_rgba(204,167,97,0.2)]"
+                      className="w-full py-2.5 rounded-lg border border-[#CCA761]/30 bg-[#CCA761]/10 hover:bg-[#CCA761]/20 text-[9px] font-black uppercase tracking-[0.15em] text-[#CCA761] flex items-center justify-center gap-1.5 transition-all"
                     >
-                      <FileText size={14} /> Processo Base
+                      <FileText size={12} /> Board
                     </Link>
                   </div>
                 </div>

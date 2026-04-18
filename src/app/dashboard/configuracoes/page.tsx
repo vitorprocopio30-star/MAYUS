@@ -440,7 +440,8 @@ function ConfiguracoesContent() {
 
   const configCards = [
     { title: "Estrutura e Setores", desc: "Gerencie departamentos e cores de identificação.", icon: Building2, href: "/dashboard/configuracoes/departamentos", stats: `${stats.depts} Setores ativos`, color: "#CCA761" },
-    { title: "Gestão de Equipe", desc: "Convide profissionais, cargos e planos de carreira.", icon: Users, href: "/dashboard/equipe", stats: `${stats.members} Membros registrados`, color: "#4F46E5" }
+    { title: "Gestão de Equipe", desc: "Convide profissionais, cargos e planos de carreira.", icon: Users, href: "/dashboard/equipe", stats: `${stats.members} Membros registrados`, color: "#4F46E5" },
+    { title: "Jurídico & Modelos", desc: "Fonte, espaçamento, assets institucionais e modelos por peça para cada escritório.", icon: FileCheck, href: "/dashboard/configuracoes/juridico", stats: "Perfil jurídico multi-tenant", color: "#CCA761" }
   ];
 
   const BASE_WEBHOOK_URL = typeof window !== "undefined" ? `${window.location.origin}/api/webhooks/gateway` : "";

@@ -82,9 +82,8 @@ CREATE TRIGGER tr_tenant_legal_assets_updated_at
   BEFORE UPDATE ON public.tenant_legal_assets
   FOR EACH ROW EXECUTE FUNCTION public.update_updated_at();
 
-CREATE UNIQUE INDEX IF NOT EXISTS idx_tenant_legal_assets_active_type
-  ON public.tenant_legal_assets (tenant_id, asset_type)
-  WHERE is_active = true;
+CREATE UNIQUE INDEX IF NOT EXISTS idx_tenant_legal_assets_type
+  ON public.tenant_legal_assets (tenant_id, asset_type);
 
 CREATE TABLE IF NOT EXISTS public.tenant_legal_templates (
   id uuid PRIMARY KEY DEFAULT gen_random_uuid(),
@@ -123,6 +122,5 @@ CREATE TRIGGER tr_tenant_legal_templates_updated_at
   BEFORE UPDATE ON public.tenant_legal_templates
   FOR EACH ROW EXECUTE FUNCTION public.update_updated_at();
 
-CREATE UNIQUE INDEX IF NOT EXISTS idx_tenant_legal_templates_active_piece
-  ON public.tenant_legal_templates (tenant_id, piece_type)
-  WHERE is_active = true;
+CREATE UNIQUE INDEX IF NOT EXISTS idx_tenant_legal_templates_piece
+  ON public.tenant_legal_templates (tenant_id, piece_type);

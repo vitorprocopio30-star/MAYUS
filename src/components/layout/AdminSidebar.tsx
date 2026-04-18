@@ -160,6 +160,7 @@ export function AdminSidebar() {
         { name: "Departamentos", icon: Building2, href: "/dashboard/configuracoes/departamentos" },
         { name: "Comercial & Metas", icon: Target, href: "/dashboard/configuracoes/comercial" },
         { name: "Integrações & APIs", icon: Wand2, href: "/dashboard/configuracoes/integracoes" },
+        { name: "Jurídico & Modelos", icon: FileText, href: "/dashboard/configuracoes/juridico" },
         { name: "Usuários e Permissões", icon: ShieldCheck, href: "/dashboard/configuracoes/usuarios" },
         { name: "Agente / Skills", icon: Bot, href: "/dashboard/configuracoes/agente" },
         { name: "Memória Institucional", icon: Brain, href: "/dashboard/configuracoes/memoria" },
@@ -274,10 +275,10 @@ export function AdminSidebar() {
               <Plus size={18} strokeWidth={2.5} className="relative z-10" />
               <span className="relative z-10">NOVA VENDA</span>
             </Link>
-            <button className="w-full flex items-center justify-center gap-2 bg-secondary border border-border hover:border-primary/50 hover:shadow-[0_0_15px_rgba(204,167,97,0.1)] text-primary font-bold py-3 px-4 rounded-lg transition-all duration-300 transform active:scale-95 text-sm shadow-md group">
+            <Link href="/dashboard/documentos/donna" className="w-full flex items-center justify-center gap-2 bg-secondary border border-border hover:border-primary/50 hover:shadow-[0_0_15px_rgba(204,167,97,0.1)] text-primary font-bold py-3 px-4 rounded-lg transition-all duration-300 transform active:scale-95 text-sm shadow-md group">
               <Wand2 size={18} className="text-primary group-hover:-rotate-12 transition-transform duration-300" />
               GERAR PEÇA COM IA
-            </button>
+            </Link>
           </div>
 
           <div className="space-y-6 pb-10">
