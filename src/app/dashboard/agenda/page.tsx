@@ -746,11 +746,19 @@ export default function AgendaDiariaPage() {
 
   const canAssignGlobalTask = currentUserRole === "Administrador" || currentUserRole === "mayus_admin" || currentUserRole === "admin" || currentUserRole === "socio" || currentUserRole === "Sócio";
 
+  const isOpenRedCriticalTask = (task: any) => {
+    if (task?.status === "Concluído") return false;
+    return String(task?.urgency || "")
+      .normalize("NFD")
+      .replace(/[\u0300-\u036f]/g, "")
+      .toUpperCase() === "URGENTE";
+  };
+
   const deadlineStats = useMemo(() => {
     const visibleDeadlines = visibleEvents.filter((task) => task.source_table === "process_prazos" || task.type === "Prazo");
     const openDeadlines = visibleDeadlines.filter((task) => task.status !== "Concluído");
     const myOpenDeadlines = openDeadlines.filter((task) => String(task.assigned_to || "") === String(currentUserId || ""));
-    const criticalOpen = criticalDeadlines.filter((task) => task.status !== "Concluído").length;
+    const criticalOpen = visibleEvents.filter(isOpenRedCriticalTask).length;
 
     return {
       total: visibleDeadlines.length,
@@ -758,7 +766,7 @@ export default function AgendaDiariaPage() {
       criticalOpen,
       mine: myOpenDeadlines.length,
     };
-  }, [visibleEvents, criticalDeadlines, currentUserId]);
+  }, [visibleEvents, currentUserId]);
 
   const urgencyToMeta = (urgency: "URGENTE" | "ATENCAO" | "ROTINA") => {
     if (urgency === "URGENTE") return { reward: 100, category: "URGENTE", color: "#f87171", isCritical: true };

@@ -327,262 +327,346 @@ export default function DocumentosPage() {
   };
 
   return (
-    <div className={`flex-1 min-h-screen bg-[#050505] text-white p-6 sm:p-10 ${montserrat.className}`}>
-      <div className="max-w-[1340px] mx-auto space-y-8">
-        <div className="flex flex-col lg:flex-row lg:items-end lg:justify-between gap-6">
-          <div className="space-y-3">
-            <p className="text-[#CCA761] text-xs uppercase tracking-[0.35em] font-black">Operação Jurídica</p>
-            <div className="flex items-center gap-4">
-              <div className="w-14 h-14 rounded-2xl border border-[#4285F4]/25 bg-[#0b1220] flex items-center justify-center shadow-[0_0_30px_rgba(66,133,244,0.08)]">
-                <GoogleDriveLogo size={30} className="h-[30px] w-[30px]" />
+    <div className={`flex-1 min-h-screen relative text-white p-6 sm:p-10 ${montserrat.className} overflow-hidden`}>
+      {/* Premium Background Effects */}
+      <div className="absolute inset-0 bg-[#050505] z-0" />
+      <div className="absolute top-0 left-1/2 -translate-x-1/2 w-[1000px] h-[500px] bg-[#CCA761]/[0.03] blur-[150px] rounded-full pointer-events-none z-0" />
+      <div className="absolute bottom-0 right-0 w-[800px] h-[400px] bg-[#4285F4]/[0.02] blur-[120px] rounded-full pointer-events-none z-0" />
+
+      <div className="max-w-[1400px] mx-auto space-y-10 relative z-10">
+        {/* Header Section */}
+        <div className="flex flex-col lg:flex-row lg:items-end lg:justify-between gap-8 mb-4">
+          <div className="space-y-4 relative">
+            <p className="text-[#CCA761] text-xs uppercase tracking-[0.4em] font-black flex items-center gap-2">
+              <span className="w-2 h-2 rounded-full bg-[#CCA761] shadow-[0_0_10px_rgba(204,167,97,0.6)] animate-pulse" />
+              Inteligência Operacional
+            </p>
+            <div className="flex items-center gap-6">
+              <div className="relative group">
+                <div className="absolute inset-0 bg-gradient-to-tr from-[#4285F4]/20 to-[#CCA761]/20 rounded-2xl blur-xl group-hover:opacity-100 opacity-60 transition-opacity duration-700" />
+                <div className="w-16 h-16 rounded-2xl border border-white/10 bg-[#0a0f1a]/80 backdrop-blur-xl flex items-center justify-center relative shadow-[0_0_30px_rgba(0,0,0,0.5)] overflow-hidden">
+                  <div className="absolute inset-0 bg-gradient-to-br from-white/5 to-transparent pointer-events-none" />
+                  <GoogleDriveLogo size={32} className="h-[32px] w-[32px] relative z-10 drop-shadow-[0_0_15px_rgba(66,133,244,0.3)]" />
+                </div>
               </div>
               <div>
-                <h1 className={`text-4xl text-white tracking-wide ${cormorant.className}`}>
-                  Repositório de <span className="text-[#CCA761]">Documentos</span>
+                <h1 className={`text-4xl md:text-5xl text-white tracking-widest ${cormorant.className} drop-shadow-xl font-bold`}>
+                  Repositório de <span className="text-transparent bg-clip-text bg-gradient-to-r from-[#CCA761] via-[#e2c78d] to-[#CCA761] animate-[pulse_4s_ease-in-out_infinite]">Documentos</span>
                 </h1>
-                <p className="text-gray-400 text-sm max-w-3xl leading-relaxed">
-                  Visualize a estrutura documental de cada processo, abra o Google Drive oficial do caso e sincronize a memória mínima que alimentará o cérebro jurídico do MAYUS.
+                <p className="text-gray-400 text-sm max-w-2xl leading-relaxed mt-2 font-medium">
+                  Visualize a estrutura documental de cada processo, orquestre o Google Drive oficial do caso e sincronize a memória mínima que alimenta o cérebro jurídico do <span className="text-white font-bold tracking-widest">MAYUS</span>.
                 </p>
               </div>
             </div>
           </div>
 
-          <div className="flex flex-col sm:flex-row gap-3">
-            <div className="relative min-w-[280px]">
-              <Search size={16} className="absolute left-4 top-1/2 -translate-y-1/2 text-gray-500" />
+          <div className="flex flex-col sm:flex-row gap-4">
+            <div className="relative min-w-[320px] group">
+              <div className="absolute inset-0 bg-gradient-to-r from-[#CCA761]/10 to-transparent blur-md opacity-0 group-focus-within:opacity-100 transition-opacity duration-500 rounded-xl" />
+              <Search size={16} className="absolute left-4 top-1/2 -translate-y-1/2 text-gray-500 group-focus-within:text-[#CCA761] transition-colors z-10" />
               <input
                 value={search}
                 onChange={(event) => setSearch(event.target.value)}
-                placeholder="Buscar por cliente, processo ou pipeline"
-                className="w-full bg-[#111] border border-white/10 rounded-xl pl-11 pr-4 py-3 text-sm text-white focus:outline-none focus:border-[#CCA761]/40 placeholder:text-gray-600"
+                placeholder="Buscar cliente, processo ou pipeline..."
+                className="relative w-full bg-[#0a0a0a]/80 backdrop-blur-md border border-white/10 hover:border-white/20 rounded-xl pl-12 pr-4 py-3.5 text-sm text-white focus:outline-none focus:border-[#CCA761]/40 focus:bg-[#111]/90 focus:shadow-[0_0_20px_rgba(204,167,97,0.08)] transition-all placeholder:text-gray-600 font-medium"
               />
             </div>
             <button
               type="button"
               onClick={loadRepository}
-              className="px-4 py-3 rounded-xl border border-white/10 bg-white/5 hover:bg-white/10 text-xs font-black uppercase tracking-widest text-white flex items-center justify-center gap-2"
+              className="relative overflow-hidden group px-6 py-3.5 rounded-xl border border-white/10 bg-[#0a0a0a]/80 backdrop-blur-md hover:bg-white/5 hover:border-[#CCA761]/30 text-xs font-black uppercase tracking-[0.2em] text-white flex items-center justify-center gap-3 transition-all duration-300"
             >
-              <RefreshCw size={14} /> Atualizar
+              <div className="absolute inset-0 bg-[#CCA761] opacity-0 group-hover:opacity-[0.03] transition-opacity duration-300" />
+              <RefreshCw size={14} className="group-hover:rotate-180 transition-transform duration-700 text-[#CCA761]" /> Atualizar
             </button>
           </div>
         </div>
 
-        <div className="grid grid-cols-1 xl:grid-cols-3 gap-4">
-          <div className="bg-[#0f0f0f] border border-[#CCA761]/10 rounded-2xl p-5 shadow-[0_0_24px_rgba(204,167,97,0.04)]">
-            <p className="text-[10px] uppercase tracking-[0.3em] text-gray-500 font-black mb-2">Processos monitorados</p>
-            <p className="text-3xl font-black text-white">{cards.length}</p>
+        {/* Dashboard Metrics */}
+        <div className="grid grid-cols-1 md:grid-cols-3 gap-5">
+          <div className="group relative overflow-hidden bg-gradient-to-b from-[#0f0f0f] to-[#080808] border border-white/5 hover:border-[#CCA761]/20 rounded-2xl p-6 transition-all duration-500 hover:shadow-[0_0_30px_rgba(204,167,97,0.05)]">
+            <div className="absolute top-0 right-0 w-32 h-32 bg-[#CCA761]/5 blur-[50px] rounded-full group-hover:bg-[#CCA761]/10 transition-colors duration-500" />
+            <div className="relative z-10">
+              <div className="flex items-center gap-3 mb-4">
+                <div className="w-8 h-8 rounded-lg bg-white/5 border border-white/10 flex items-center justify-center group-hover:border-[#CCA761]/30 transition-colors">
+                  <FolderTree size={14} className="text-[#CCA761]" />
+                </div>
+                <p className="text-[10px] uppercase tracking-[0.3em] text-gray-400 font-black">Processos</p>
+              </div>
+              <p className="text-4xl font-black text-white tracking-tight">{cards.length}</p>
+              <p className="text-xs text-gray-500 mt-2 font-medium">Monitorados no sistema</p>
+            </div>
           </div>
-          <div className="bg-[#0f0f0f] border border-[#CCA761]/10 rounded-2xl p-5 shadow-[0_0_24px_rgba(204,167,97,0.04)]">
-            <p className="text-[10px] uppercase tracking-[0.3em] text-gray-500 font-black mb-2">Estrutura criada</p>
-            <p className="text-3xl font-black text-white">{cards.filter((card) => card.drive_structure_ready).length}</p>
+
+          <div className="group relative overflow-hidden bg-gradient-to-b from-[#0f0f0f] to-[#080808] border border-white/5 hover:border-[#4285F4]/20 rounded-2xl p-6 transition-all duration-500 hover:shadow-[0_0_30px_rgba(66,133,244,0.05)]">
+            <div className="absolute top-0 right-0 w-32 h-32 bg-[#4285F4]/5 blur-[50px] rounded-full group-hover:bg-[#4285F4]/10 transition-colors duration-500" />
+            <div className="relative z-10">
+              <div className="flex items-center gap-3 mb-4">
+                <div className="w-8 h-8 rounded-lg bg-[#4285F4]/10 border border-[#4285F4]/20 flex items-center justify-center group-hover:border-[#4285F4]/40 transition-colors">
+                  <GoogleDriveLogo size={14} className="opacity-90" />
+                </div>
+                <p className="text-[10px] uppercase tracking-[0.3em] text-[#8ab4ff] font-black">Estruturas do Drive</p>
+              </div>
+              <p className="text-4xl font-black text-white tracking-tight">{cards.filter((card) => card.drive_structure_ready).length}</p>
+              <p className="text-xs text-gray-500 mt-2 font-medium">Prontas para sincronização</p>
+            </div>
           </div>
-          <div className="bg-[#0f0f0f] border border-[#CCA761]/10 rounded-2xl p-5 shadow-[0_0_24px_rgba(204,167,97,0.04)]">
-            <p className="text-[10px] uppercase tracking-[0.3em] text-gray-500 font-black mb-2">Documentos sincronizados</p>
-            <p className="text-3xl font-black text-white">{cards.reduce((acc, card) => acc + card.documentCount, 0)}</p>
+
+          <div className="group relative overflow-hidden bg-gradient-to-b from-[#0f0f0f] to-[#080808] border border-white/5 hover:border-[#CCA761]/20 rounded-2xl p-6 transition-all duration-500 hover:shadow-[0_0_30px_rgba(204,167,97,0.05)]">
+            <div className="absolute top-0 right-0 w-32 h-32 bg-[#CCA761]/5 blur-[50px] rounded-full group-hover:bg-[#CCA761]/10 transition-colors duration-500" />
+            <div className="relative z-10">
+              <div className="flex items-center gap-3 mb-4">
+                <div className="w-8 h-8 rounded-lg bg-[#CCA761]/10 border border-[#CCA761]/20 flex items-center justify-center group-hover:border-[#CCA761]/40 transition-colors">
+                  <FileIcon size={14} className="text-[#CCA761]" />
+                </div>
+                <p className="text-[10px] uppercase tracking-[0.3em] text-[#e2c78d] font-black">Documentos</p>
+              </div>
+              <p className="text-4xl font-black text-white tracking-tight">{cards.reduce((acc, card) => acc + card.documentCount, 0)}</p>
+              <p className="text-xs text-gray-500 mt-2 font-medium">Sincronizados com a IA</p>
+            </div>
           </div>
         </div>
 
+        {/* Donna Banner */}
+        <Link
+          href="/dashboard/documentos/donna"
+          className="relative block w-full rounded-2xl overflow-hidden p-[1px] group transition-all duration-500 hover:shadow-[0_0_40px_rgba(204,167,97,0.12)]"
+        >
+          <div className="absolute inset-0 bg-gradient-to-r from-[#CCA761]/0 via-[#CCA761]/40 to-[#CCA761]/0 opacity-30 group-hover:opacity-100 transition-opacity duration-1000 animate-[pulse_3s_ease-in-out_infinite] blur" />
+          <div className="relative bg-[#070707] rounded-[15px] p-8 flex flex-col md:flex-row items-center justify-between border border-[#CCA761]/20">
+            <div className="flex items-center gap-6 mb-6 md:mb-0">
+              <div className="relative">
+                <div className="absolute inset-0 bg-[#CCA761] blur-md opacity-20 group-hover:opacity-40 transition-opacity duration-500" />
+                <div className="w-16 h-16 rounded-full bg-[#0a0a0a] border border-[#CCA761]/40 flex items-center justify-center relative shadow-[0_0_20px_rgba(204,167,97,0.15)] group-hover:border-[#CCA761] transition-colors">
+                  <Sparkles size={24} className="text-[#CCA761]" />
+                </div>
+              </div>
+              <div>
+                <h3 className={`text-3xl text-white ${cormorant.className} flex items-center gap-3 font-bold`}>
+                  Acessar Acervo da <span className="text-transparent bg-clip-text bg-gradient-to-r from-[#CCA761] to-[#f4dca6] italic tracking-wider">Donna</span>
+                </h3>
+                <p className="text-sm text-[#CCA761]/70 mt-1 font-medium tracking-wide">Modelos processuais premium, base de conhecimento e diretrizes da IA Jurídica especializada.</p>
+              </div>
+            </div>
+            <div className="relative overflow-hidden group/btn px-8 py-4 bg-[#0a0a0a] border border-[#CCA761]/30 hover:border-[#CCA761] text-[#CCA761] text-xs font-black uppercase tracking-[0.25em] rounded-xl transition-all duration-300 hover:shadow-[0_0_20px_rgba(204,167,97,0.2)]">
+              <div className="absolute inset-0 bg-[#CCA761]/10 -translate-x-full group-hover/btn:translate-x-0 transition-transform duration-500 ease-out" />
+              <span className="relative z-10">Explorar Modelos</span>
+            </div>
+          </div>
+        </Link>
+
         {isLoading ? (
-          <div className="bg-[#0f0f0f] border border-white/5 rounded-3xl p-10 flex items-center justify-center gap-3 text-sm text-gray-400">
-            <Loader2 size={18} className="animate-spin text-[#CCA761]" /> Carregando repositório documental...
+          <div className="bg-[#0a0a0a]/80 backdrop-blur-md border border-white/5 rounded-3xl p-16 flex flex-col items-center justify-center gap-5">
+            <div className="relative">
+              <div className="absolute inset-0 bg-[#CCA761]/20 blur-xl rounded-full animate-pulse" />
+              <Loader2 size={32} className="animate-spin text-[#CCA761] relative z-10" />
+            </div>
+            <p className="text-sm text-[#CCA761] uppercase tracking-[0.3em] font-black animate-pulse">Carregando Acervo Operacional...</p>
           </div>
         ) : filteredCards.length === 0 ? (
-          <div className="bg-[#0f0f0f] border border-white/5 rounded-3xl p-10 text-center space-y-3">
-            <FolderTree size={28} className="mx-auto text-[#CCA761]" />
-            <h2 className={`text-2xl text-white ${cormorant.className}`}>Nenhum processo encontrado</h2>
-            <p className="text-sm text-gray-400 max-w-xl mx-auto">
-              Crie ou salve processos primeiro. Assim que o card existir, o MAYUS consegue iniciar a estrutura documental no Google Drive.
+          <div className="bg-[#0a0a0a]/80 backdrop-blur-md border border-white/5 rounded-3xl p-16 text-center space-y-5 shadow-inner">
+            <div className="w-20 h-20 mx-auto rounded-full bg-white/5 border border-white/10 flex items-center justify-center mb-4">
+              <FolderTree size={32} className="text-[#CCA761]/60" />
+            </div>
+            <h2 className={`text-3xl text-white ${cormorant.className} font-bold`}>Nenhum processo encontrado no repositório</h2>
+            <p className="text-sm text-gray-400 max-w-xl mx-auto leading-relaxed">
+              Crie ou salve processos no seu funil primeiro. Assim que o card existir, a plataforma <span className="text-[#CCA761] font-bold">MAYUS</span> poderá iniciar a gestão documental avançada no Google Drive.
             </p>
           </div>
         ) : (
-          <div className="grid grid-cols-1 2xl:grid-cols-2 gap-5">
+          <div className="grid grid-cols-1 2xl:grid-cols-2 gap-6">
             {filteredCards.map((card) => {
               const isBusy = busyTaskId === card.id;
               const hasStructure = Boolean(card.drive_structure_ready && card.drive_folder_id && card.drive_link);
 
               return (
-                <div key={card.id} className="bg-[#0f0f0f] border border-[#CCA761]/12 rounded-3xl p-6 shadow-[0_0_35px_rgba(0,0,0,0.22),0_0_0_1px_rgba(204,167,97,0.05)]">
-                  <div className="flex items-start justify-between gap-4 mb-5">
-                    <div>
-                      <p className="text-[10px] uppercase tracking-[0.28em] text-gray-500 font-black mb-2">
-                        {card.pipelineName || "Pipeline jurídico"}
-                        {card.stageName ? ` • ${card.stageName}` : ""}
+                <div key={card.id} className="group/card bg-[#0a0a0a] border border-white/5 hover:border-[#CCA761]/20 rounded-[28px] p-7 transition-all duration-500 hover:shadow-[0_10px_40px_rgba(0,0,0,0.5),0_0_0_1px_rgba(204,167,97,0.1)] relative overflow-hidden flex flex-col">
+                  {/* Subtle top gradient line */}
+                  <div className="absolute top-0 left-0 right-0 h-[2px] bg-gradient-to-r from-transparent via-[#CCA761]/0 group-hover/card:via-[#CCA761]/40 to-transparent transition-all duration-700" />
+                  
+                  <div className="flex items-start justify-between gap-4 mb-6">
+                    <div className="space-y-1">
+                      <p className="text-[10px] uppercase tracking-[0.3em] text-[#CCA761] font-black flex items-center gap-2">
+                        {card.pipelineName || "Pipeline não mapeado"}
+                        {card.stageName ? <><span className="w-1 h-1 rounded-full bg-[#CCA761]/50" /> {card.stageName}</> : ""}
                       </p>
-                      <h2 className="text-xl font-black text-white leading-tight">{card.title}</h2>
-                      <p className="text-sm text-gray-400 mt-2">
+                      <h2 className={`text-2xl font-bold text-white leading-tight ${cormorant.className} tracking-wide`}>{card.title}</h2>
+                      <p className="text-xs text-gray-400 font-medium tracking-wide">
                         {card.client_name || "Cliente não informado"}
                         {card.process_number ? ` • ${card.process_number}` : ""}
                       </p>
                     </div>
-                    <div className={`px-3 py-1 rounded-full text-[10px] uppercase tracking-widest font-black border ${
+                    <div className={`px-3.5 py-1.5 rounded-full text-[10px] uppercase tracking-widest font-black border flex items-center gap-1.5 ${
                       hasStructure
-                        ? 'bg-[#0b1220] border-[#4285F4]/30 text-[#8ab4ff]'
-                        : 'bg-amber-500/10 border-amber-500/20 text-amber-300'
+                        ? 'bg-[#4285F4]/10 border-[#4285F4]/30 text-[#8ab4ff] shadow-[0_0_15px_rgba(66,133,244,0.1)]'
+                        : 'bg-amber-500/10 border-amber-500/20 text-amber-400'
                     }`}>
-                      {hasStructure ? 'Drive estruturado' : 'Sem estrutura'}
+                      {hasStructure && <div className="w-1.5 h-1.5 rounded-full bg-[#4285F4] animate-pulse" />}
+                      {hasStructure ? 'Estrutura Ativa' : 'Pendente'}
                     </div>
                   </div>
 
-                  <div className="grid grid-cols-1 sm:grid-cols-3 gap-3 mb-5">
-                    <div className="bg-[#141414] border border-[#CCA761]/8 rounded-2xl p-4">
-                      <p className="text-[10px] uppercase tracking-[0.25em] text-gray-500 font-black mb-2">Documentos</p>
+                  <div className="grid grid-cols-3 gap-3 mb-6">
+                    <div className="bg-[#111] border border-white/5 rounded-2xl p-4 group-hover/card:border-white/10 transition-colors">
+                      <p className="text-[9px] uppercase tracking-[0.25em] text-gray-500 font-black mb-1.5">Documentos</p>
                       <p className="text-2xl font-black text-white">{card.documentCount}</p>
                     </div>
-                    <div className="bg-[#141414] border border-[#CCA761]/8 rounded-2xl p-4">
-                      <p className="text-[10px] uppercase tracking-[0.25em] text-gray-500 font-black mb-2">Status</p>
-                      <p className="text-sm font-semibold text-white capitalize">{card.syncStatus}</p>
+                    <div className="bg-[#111] border border-white/5 rounded-2xl p-4 group-hover/card:border-white/10 transition-colors">
+                      <p className="text-[9px] uppercase tracking-[0.25em] text-gray-500 font-black mb-1.5">Rede Neural</p>
+                      <p className="text-sm font-bold text-[#CCA761] capitalize">{card.syncStatus}</p>
                     </div>
-                    <div className="bg-[#141414] border border-[#CCA761]/8 rounded-2xl p-4">
-                      <p className="text-[10px] uppercase tracking-[0.25em] text-gray-500 font-black mb-2">Última sync</p>
-                      <p className="text-sm font-semibold text-white">{formatDateTime(card.lastSyncedAt)}</p>
+                    <div className="bg-[#111] border border-white/5 rounded-2xl p-4 group-hover/card:border-white/10 transition-colors">
+                      <p className="text-[9px] uppercase tracking-[0.25em] text-gray-500 font-black mb-1.5">Última Sync</p>
+                      <p className="text-xs font-semibold text-gray-300 mt-1 uppercase tracking-wider">{formatDateTime(card.lastSyncedAt)}</p>
                     </div>
                   </div>
 
-                  <div className="bg-[#111] border border-[#CCA761]/8 rounded-2xl p-4 space-y-3 mb-5">
-                    <div className="flex items-center gap-2 text-[#CCA761] text-[10px] uppercase tracking-[0.25em] font-black">
-                      <Sparkles size={12} /> Memória mínima do caso
+                  <div className="bg-gradient-to-br from-[#111] to-[#0a0a0a] border border-white/5 rounded-2xl p-5 mb-6 relative overflow-hidden group-hover/card:border-[#CCA761]/10 transition-colors">
+                    <div className="absolute top-0 right-0 w-24 h-24 bg-[#CCA761]/5 blur-3xl rounded-full" />
+                    <div className="flex items-center gap-2 text-[#CCA761] text-[10px] uppercase tracking-[0.3em] font-black mb-3">
+                      <Sparkles size={14} /> Memória Base do Processo
                     </div>
-                    <p className="text-sm text-gray-300 leading-relaxed">
-                      {card.summaryMaster || "Estrutura documental ainda não sincronizada. Crie a estrutura do Drive e sincronize para consolidar o contexto inicial do processo."}
+                    <p className="text-sm text-gray-300 leading-relaxed font-medium relative z-10">
+                      {card.summaryMaster || "Estrutura documental aguardando orquestração inicial. Sincronize o Drive para processar a taxonomia deste caso."}
                     </p>
                     {card.missingDocuments.length > 0 && (
-                      <div className="flex items-start gap-2 text-xs text-amber-200 bg-amber-500/10 border border-amber-500/20 rounded-xl px-3 py-2">
-                        <AlertTriangle size={14} className="mt-0.5 shrink-0" />
-                        Pendências detectadas: {card.missingDocuments.join(", ")}
+                      <div className="mt-4 flex items-start gap-2.5 text-xs text-amber-200 bg-amber-500/10 border border-amber-500/20 rounded-xl px-4 py-3 relative z-10">
+                        <AlertTriangle size={14} className="shrink-0 mt-0.5 text-amber-400" />
+                        <div>
+                          <strong className="block text-amber-400 font-bold mb-1 uppercase tracking-wider text-[10px]">Análise da IA: Documentos Faltantes</strong>
+                          {card.missingDocuments.join(", ")}
+                        </div>
                       </div>
                     )}
                   </div>
 
-                  <div className="bg-[#111] border border-[#CCA761]/8 rounded-2xl p-5 space-y-4 mb-5">
-                    <div className="flex items-center justify-between gap-3">
-                      <div className="flex items-center gap-2 text-[#8ab4ff] text-[10px] uppercase tracking-[0.25em] font-black">
-                        <FileIcon size={12} /> Acervo do processo
+                  {/* Flexible spacer to push buttons to bottom if needed */}
+                  <div className="flex-1">
+                    <div className="bg-[#0f0f0f] border border-white/5 rounded-2xl p-5 space-y-4 mb-6">
+                      <div className="flex items-center justify-between gap-3">
+                        <div className="flex items-center gap-2 text-white text-[10px] uppercase tracking-[0.3em] font-black">
+                          <FileIcon size={12} className="text-[#8ab4ff]" /> Arquivos Processados
+                        </div>
+                        <span className="text-[10px] uppercase tracking-[0.25em] text-gray-500 font-bold bg-[#141414] px-2 py-1 rounded-md">
+                          Últimos {card.documents.length}
+                        </span>
                       </div>
-                      <span className="text-[10px] uppercase tracking-[0.25em] text-gray-500 font-black">
-                        {card.documents.length} item(ns) recentes
-                      </span>
-                    </div>
 
-                    {card.documents.length === 0 ? (
-                      <div className="rounded-xl border border-dashed border-white/10 bg-[#141414] px-4 py-5 text-sm text-gray-500">
-                        Nenhum arquivo indexado ainda. Envie um documento abaixo ou sincronize a pasta do Drive para alimentar o cérebro documental do processo.
-                      </div>
-                    ) : (
-                      <div className="space-y-3">
-                        {card.documents.map((document, index) => (
-                          <div key={`${document.name}-${index}`} className="flex flex-col xl:flex-row xl:items-center xl:justify-between gap-4 bg-[#141414] border border-white/5 rounded-xl px-4 py-3.5">
-                            <div className="min-w-0 space-y-2">
-                              <p className="text-sm text-white font-semibold truncate">{document.name}</p>
-                              <div className="flex flex-wrap items-center gap-2 text-[11px] text-gray-500">
-                                <span className="px-2 py-1 rounded-full bg-white/5 border border-white/10 text-gray-300 font-semibold">
-                                  {document.folder_label || "Sem pasta"}
+                      {card.documents.length === 0 ? (
+                        <div className="rounded-xl border border-dashed border-white/10 bg-[#111] px-5 py-6 text-xs text-center text-gray-500 uppercase tracking-widest font-medium">
+                          Repositório Vazio • Aguardando Indexação
+                        </div>
+                      ) : (
+                        <div className="space-y-2">
+                          {card.documents.map((document, index) => (
+                            <div key={`${document.name}-${index}`} className="flex flex-col xl:flex-row xl:items-center xl:justify-between gap-3 bg-[#141414] border border-white/5 hover:border-white/10 rounded-xl px-4 py-3 transition-colors">
+                              <div className="min-w-0 space-y-1.5 flex-1 pr-4">
+                                <p className="text-sm text-gray-200 font-bold truncate">{document.name}</p>
+                                <div className="flex flex-wrap items-center gap-2 text-[10px] uppercase tracking-wider font-bold">
+                                  <span className="text-gray-500">
+                                    {document.folder_label || "Sem pasta"}
+                                  </span>
+                                  <span className="w-1 h-1 rounded-full bg-white/10" />
+                                  <span className="text-[#CCA761]">
+                                    {getDocumentTypeLabel(document.document_type)}
+                                  </span>
+                                </div>
+                              </div>
+                              <div className="flex items-center gap-2 shrink-0">
+                                <span className={`px-2.5 py-1 rounded-md text-[9px] uppercase tracking-[0.2em] font-black border ${getExtractionBadge(document.extraction_status).className}`}>
+                                  {getExtractionBadge(document.extraction_status).label}
                                 </span>
-                                <span className="px-2 py-1 rounded-full bg-[#0b1220] border border-[#4285F4]/15 text-[#8ab4ff] font-semibold">
-                                  {getDocumentTypeLabel(document.document_type)}
-                                </span>
-                                <span>{document.modified_at ? formatDateTime(document.modified_at) : "Data indisponível"}</span>
+                                {document.web_view_link && (
+                                  <a
+                                    href={document.web_view_link}
+                                    target="_blank"
+                                    rel="noopener noreferrer"
+                                    className="text-[10px] font-black uppercase tracking-[0.2em] text-[#8ab4ff] hover:text-white border border-[#4285F4]/20 rounded-md px-3 py-1.5 bg-[#4285F4]/5 hover:bg-[#4285F4]/10 transition-colors"
+                                  >
+                                    Abrir
+                                  </a>
+                                )}
                               </div>
                             </div>
-                            <div className="flex items-center gap-2 shrink-0">
-                              <span className={`px-2.5 py-1 rounded-full text-[10px] uppercase tracking-widest font-black border ${getExtractionBadge(document.extraction_status).className}`}>
-                                {getExtractionBadge(document.extraction_status).label}
-                              </span>
-                              {document.web_view_link && (
-                                <a
-                                  href={document.web_view_link}
-                                  target="_blank"
-                                  rel="noopener noreferrer"
-                                  className="text-xs font-black uppercase tracking-widest text-[#8ab4ff] hover:text-white border border-white/10 rounded-lg px-3 py-2 bg-white/5 hover:bg-white/10 transition-colors"
-                                >
-                                  Abrir
-                                </a>
-                              )}
-                            </div>
-                          </div>
-                        ))}
-                      </div>
-                    )}
-
-                    {hasStructure && (
-                      <div className="rounded-2xl border border-[#CCA761]/30 bg-[linear-gradient(180deg,rgba(204,167,97,0.07),rgba(11,18,32,0.52))] p-5 space-y-4 shadow-[0_0_28px_rgba(204,167,97,0.06)]">
-                        <div className="flex items-center gap-2 text-[#CCA761] text-[10px] uppercase tracking-[0.25em] font-black">
-                          <Upload size={12} /> Enviar novo documento
+                          ))}
                         </div>
-                        <p className="text-xs text-gray-400 leading-relaxed">
-                          Selecione a subpasta correta e envie o arquivo direto pelo MAYUS. O sistema joga no Google Drive, indexa no repositório e tenta ler o conteúdo automaticamente.
-                        </p>
+                      )}
 
-                        <div className="grid grid-cols-1 xl:grid-cols-[minmax(240px,0.85fr)_minmax(340px,1.35fr)_170px] gap-3 items-stretch">
-                          <select
-                            value={uploadFolderByTask[card.id] || "01-Documentos do Cliente"}
-                            onChange={(event) => setUploadFolderByTask((current) => ({ ...current, [card.id]: event.target.value }))}
-                            className="w-full bg-[#141414] border border-white/10 rounded-xl px-4 py-3 text-sm text-white focus:outline-none focus:border-[#CCA761]/45"
-                          >
-                            {DOCUMENT_FOLDER_OPTIONS.map((folderLabel) => (
-                              <option key={folderLabel} value={folderLabel}>{folderLabel}</option>
-                            ))}
-                          </select>
+                      {hasStructure && (
+                        <div className="mt-4 rounded-xl border border-[#CCA761]/20 bg-gradient-to-b from-[#CCA761]/[0.05] to-transparent p-5 space-y-4">
+                          <div className="flex items-center gap-2 text-[#CCA761] text-[10px] uppercase tracking-[0.3em] font-black">
+                            <Upload size={14} /> Upload via Plataforma
+                          </div>
 
-                          <div className="relative">
-                            <input
-                              key={`${card.id}-${uploadInputVersionByTask[card.id] || 0}`}
-                              id={`upload-input-${card.id}`}
-                              type="file"
-                              onChange={(event) => {
-                                const nextFile = event.target.files?.[0] || null;
-                                setUploadFilesByTask((current) => ({ ...current, [card.id]: nextFile }));
-                              }}
-                              className="hidden"
-                            />
-                            <label
-                              htmlFor={`upload-input-${card.id}`}
-                              className="w-full h-full min-h-[54px] bg-[#141414] border border-white/10 rounded-xl px-4 py-3 text-sm text-white flex items-center justify-between gap-3 cursor-pointer hover:border-[#CCA761]/35 transition-colors"
+                          <div className="grid grid-cols-1 md:grid-cols-[1fr_1.5fr_auto] gap-3 items-stretch">
+                            <select
+                              value={uploadFolderByTask[card.id] || "01-Documentos do Cliente"}
+                              onChange={(event) => setUploadFolderByTask((current) => ({ ...current, [card.id]: event.target.value }))}
+                              className="w-full bg-[#0a0a0a] border border-[#CCA761]/20 rounded-xl px-4 py-3 text-xs text-white focus:outline-none focus:border-[#CCA761]/60 font-medium tracking-wide appearance-none"
                             >
-                              <div className="min-w-0">
-                                <p className="text-[10px] uppercase tracking-[0.22em] text-gray-500 font-black mb-1">Arquivo</p>
-                                <p className="text-sm text-white truncate">
-                                  {uploadFilesByTask[card.id]?.name || "Selecionar documento do processo"}
-                                </p>
-                              </div>
-                              <span className="shrink-0 px-3 py-2 rounded-lg bg-[#111827] border border-[#CCA761]/18 text-[#CCA761] text-[11px] font-black uppercase tracking-widest">
-                                Escolher
-                              </span>
-                            </label>
-                          </div>
+                              {DOCUMENT_FOLDER_OPTIONS.map((folderLabel) => (
+                                <option key={folderLabel} value={folderLabel}>{folderLabel.replace(/^\d{2}-/, '')}</option>
+                              ))}
+                            </select>
 
-                          <button
-                            type="button"
-                            onClick={() => handleUploadDocument(card.id)}
-                            disabled={isBusy}
-                            className="w-full px-4 py-3 rounded-xl border border-[#CCA761]/28 bg-[#15120b] hover:bg-[#201a0f] text-xs font-black uppercase tracking-widest text-[#CCA761] flex items-center justify-center gap-2 disabled:opacity-60"
-                          >
-                            {isBusy ? <Loader2 size={14} className="animate-spin" /> : <Upload size={14} />}
-                            Enviar
-                          </button>
+                            <div className="relative">
+                              <input
+                                key={`${card.id}-${uploadInputVersionByTask[card.id] || 0}`}
+                                id={`upload-input-${card.id}`}
+                                type="file"
+                                onChange={(event) => {
+                                  const nextFile = event.target.files?.[0] || null;
+                                  setUploadFilesByTask((current) => ({ ...current, [card.id]: nextFile }));
+                                }}
+                                className="hidden"
+                              />
+                              <label
+                                htmlFor={`upload-input-${card.id}`}
+                                className="w-full h-full min-h-[46px] bg-[#0a0a0a] border border-[#CCA761]/20 rounded-xl pl-4 pr-2 py-1.5 text-xs text-white flex items-center justify-between gap-3 cursor-pointer hover:border-[#CCA761]/50 transition-colors group/upload"
+                              >
+                                <span className="truncate text-gray-400 group-hover/upload:text-gray-200 font-medium">
+                                  {uploadFilesByTask[card.id]?.name || "Selecione o arquivo..."}
+                                </span>
+                                <span className="shrink-0 px-3 py-2 rounded-lg bg-[#111] border border-[#CCA761]/30 text-[#CCA761] text-[9px] font-black uppercase tracking-widest">
+                                  Procurar
+                                </span>
+                              </label>
+                            </div>
+
+                            <button
+                              type="button"
+                              onClick={() => handleUploadDocument(card.id)}
+                              disabled={isBusy}
+                              className="px-6 rounded-xl border border-[#CCA761]/40 bg-[#CCA761]/10 hover:bg-[#CCA761]/20 text-[10px] font-black uppercase tracking-[0.2em] text-[#CCA761] flex items-center justify-center gap-2 disabled:opacity-50 transition-all hover:shadow-[0_0_15px_rgba(204,167,97,0.2)]"
+                            >
+                              {isBusy ? <Loader2 size={14} className="animate-spin" /> : <Upload size={14} />}
+                              Enviar
+                            </button>
+                          </div>
                         </div>
-                      </div>
-                    )}
+                      )}
+                    </div>
                   </div>
 
-                  <div className="flex flex-col sm:flex-row gap-3">
+                  <div className="grid grid-cols-1 sm:grid-cols-3 gap-3 shrink-0">
                     {hasStructure ? (
                       <a
                         href={card.drive_link || undefined}
                         target="_blank"
                         rel="noopener noreferrer"
-                        className="flex-1 py-3 rounded-xl border border-[#CCA761]/12 bg-white/5 hover:bg-white/10 text-xs font-black uppercase tracking-widest text-white flex items-center justify-center gap-2"
+                        className="w-full py-3.5 rounded-xl border border-[#4285F4]/30 bg-[#4285F4]/10 hover:bg-[#4285F4]/20 text-[10px] font-black uppercase tracking-[0.2em] text-[#8ab4ff] flex items-center justify-center gap-2 transition-colors"
                       >
-                        <ExternalLink size={14} /> Abrir pasta
+                        <ExternalLink size={14} /> Drive do Caso
                       </a>
                     ) : (
                       <button
                         type="button"
                         onClick={() => handleCreateStructure(card.id)}
                         disabled={isBusy}
-                        className="flex-1 py-3 rounded-xl border border-[#4285F4]/25 bg-[#0b1220] hover:bg-[#12203c] text-xs font-black uppercase tracking-widest text-[#8ab4ff] flex items-center justify-center gap-2 disabled:opacity-60"
+                        className="w-full py-3.5 rounded-xl border border-[#4285F4]/40 bg-[#4285F4]/15 hover:bg-[#4285F4]/25 text-[10px] font-black uppercase tracking-[0.2em] text-[#8ab4ff] flex items-center justify-center gap-2 disabled:opacity-50 transition-all hover:shadow-[0_0_20px_rgba(66,133,244,0.2)]"
                       >
                         {isBusy ? <Loader2 size={14} className="animate-spin" /> : <FolderTree size={14} />}
-                        Criar estrutura
+                        Criar Estrutura
                       </button>
                     )}
 
@@ -590,17 +674,17 @@ export default function DocumentosPage() {
                         type="button"
                         onClick={() => handleSync(card.id)}
                         disabled={isBusy || !hasStructure}
-                        className="flex-1 py-3 rounded-xl border border-[#CCA761]/12 bg-white/5 hover:bg-white/10 text-xs font-black uppercase tracking-widest text-white flex items-center justify-center gap-2 disabled:opacity-50"
+                        className="w-full py-3.5 rounded-xl border border-white/10 bg-white/5 hover:bg-white/10 text-[10px] font-black uppercase tracking-[0.2em] text-white flex items-center justify-center gap-2 disabled:opacity-50 transition-colors"
                       >
                         {isBusy ? <Loader2 size={14} className="animate-spin" /> : <RefreshCw size={14} />}
-                        Sincronizar
+                        Sincronizar IA
                     </button>
 
                     <Link
                       href={`/dashboard/processos/${card.pipeline_id}`}
-                      className="flex-1 py-3 rounded-xl border border-[#CCA761]/12 bg-white/5 hover:bg-white/10 text-xs font-black uppercase tracking-widest text-white flex items-center justify-center gap-2"
+                      className="w-full py-3.5 rounded-xl border border-[#CCA761]/30 bg-[#CCA761]/10 hover:bg-[#CCA761]/20 text-[10px] font-black uppercase tracking-[0.2em] text-[#CCA761] flex items-center justify-center gap-2 transition-all hover:shadow-[0_0_20px_rgba(204,167,97,0.2)]"
                     >
-                      <FileText size={14} /> Abrir board
+                      <FileText size={14} /> Processo Base
                     </Link>
                   </div>
                 </div>
