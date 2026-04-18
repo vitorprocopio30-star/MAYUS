@@ -17,8 +17,11 @@ import {
   AlertTriangle,
   Upload,
   File as FileIcon,
+  X,
+  ChevronRight,
 } from "lucide-react";
 import { toast } from "sonner";
+import { motion, AnimatePresence } from "framer-motion";
 
 const cormorant = Cormorant_Garamond({ subsets: ["latin"], weight: ["400", "500", "600", "700"], style: ["normal", "italic"] });
 const montserrat = Montserrat({ subsets: ["latin"], weight: ["400", "500", "600", "700"] });
@@ -138,10 +141,13 @@ export default function DocumentosPage() {
   const [search, setSearch] = useState("");
   const [isLoading, setIsLoading] = useState(true);
   const [busyTaskId, setBusyTaskId] = useState<string | null>(null);
+  const [selectedCardId, setSelectedCardId] = useState<string | null>(null);
   const [cards, setCards] = useState<ProcessDocumentCard[]>([]);
   const [uploadFolderByTask, setUploadFolderByTask] = useState<Record<string, string>>({});
   const [uploadFilesByTask, setUploadFilesByTask] = useState<Record<string, globalThis.File | null>>({});
   const [uploadInputVersionByTask, setUploadInputVersionByTask] = useState<Record<string, number>>({});
+
+  const selectedCard = useMemo(() => cards.find(c => c.id === selectedCardId), [cards, selectedCardId]);
 
   const loadRepository = useCallback(async () => {
     if (!tenantId) return;
@@ -442,8 +448,8 @@ export default function DocumentosPage() {
                 </div>
               </div>
               <div>
-                <h3 className={`text-3xl text-white ${cormorant.className} flex items-center gap-3 font-bold`}>
-                  Acessar Acervo da <span className="text-transparent bg-clip-text bg-gradient-to-r from-[#CCA761] to-[#f4dca6] italic tracking-wider">Donna</span>
+                <h3 className={`text-3xl text-white ${cormorant.className} flex items-center gap-3 font-bold tracking-wide`}>
+                  Acessar Acervo <span className="text-transparent bg-clip-text bg-gradient-to-r from-[#CCA761] to-[#f4dca6] font-black uppercase tracking-[0.2em] ml-1">MAYUS</span>
                 </h3>
                 <p className="text-sm text-[#CCA761]/70 mt-1 font-medium tracking-wide">Modelos processuais premium, base de conhecimento e diretrizes da IA Jurídica especializada.</p>
               </div>
@@ -474,208 +480,257 @@ export default function DocumentosPage() {
             </p>
           </div>
         ) : (
-          <div className="grid grid-cols-1 md:grid-cols-2 xl:grid-cols-3 gap-5">
+          <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-4">
             {filteredCards.map((card) => {
-              const isBusy = busyTaskId === card.id;
               const hasStructure = Boolean(card.drive_structure_ready && card.drive_folder_id && card.drive_link);
 
               return (
-                <div key={card.id} className="group/card bg-[#0a0a0a] border border-white/5 hover:border-[#CCA761]/20 rounded-[22px] p-5 transition-all duration-500 hover:shadow-[0_10px_40px_rgba(0,0,0,0.5),0_0_0_1px_rgba(204,167,97,0.1)] relative overflow-hidden flex flex-col">
-                  {/* Subtle top gradient line */}
-                  <div className="absolute top-0 left-0 right-0 h-[2px] bg-gradient-to-r from-transparent via-[#CCA761]/0 group-hover/card:via-[#CCA761]/40 to-transparent transition-all duration-700" />
-                  
-                  <div className="flex items-start justify-between gap-3 mb-4">
-                    <div className="space-y-0.5">
-                      <p className="text-[9px] uppercase tracking-[0.25em] text-[#CCA761] font-black flex items-center gap-1.5">
-                        {card.pipelineName || "Pipeline"}
-                        {card.stageName ? <><span className="w-1 h-1 rounded-full bg-[#CCA761]/50" /> {card.stageName}</> : ""}
-                      </p>
-                      <h2 className={`text-lg font-bold text-white leading-tight ${cormorant.className} tracking-wide`}>{card.title}</h2>
-                      <p className="text-[11px] text-gray-400 font-medium tracking-wide truncate max-w-[200px]">
-                        {card.client_name || "Sem cliente"}
-                        {card.process_number ? ` • ${card.process_number}` : ""}
-                      </p>
-                    </div>
-                    <div className={`px-2.5 py-1 rounded-full text-[9px] uppercase tracking-widest font-black border flex items-center gap-1.5 shrink-0 ${
-                      hasStructure
-                        ? 'bg-[#4285F4]/10 border-[#4285F4]/30 text-[#8ab4ff] shadow-[0_0_10px_rgba(66,133,244,0.1)]'
-                        : 'bg-amber-500/10 border-amber-500/20 text-amber-400'
-                    }`}>
-                      {hasStructure && <div className="w-1 h-1 rounded-full bg-[#4285F4] animate-pulse" />}
-                      {hasStructure ? 'Ativo' : 'Pendente'}
-                    </div>
-                  </div>
-
-                  <div className="grid grid-cols-3 gap-2 mb-4">
-                    <div className="bg-[#111] border border-white/5 rounded-xl p-3 group-hover/card:border-white/10 transition-colors">
-                      <p className="text-[8px] uppercase tracking-[0.2em] text-gray-500 font-black mb-1">Docs</p>
-                      <p className="text-xl font-black text-white">{card.documentCount}</p>
-                    </div>
-                    <div className="bg-[#111] border border-white/5 rounded-xl p-3 group-hover/card:border-white/10 transition-colors">
-                      <p className="text-[8px] uppercase tracking-[0.2em] text-gray-500 font-black mb-1">Status</p>
-                      <p className="text-[10px] font-bold text-[#CCA761] capitalize truncate">{card.syncStatus}</p>
-                    </div>
-                    <div className="bg-[#111] border border-white/5 rounded-xl p-3 group-hover/card:border-white/10 transition-colors">
-                      <p className="text-[8px] uppercase tracking-[0.2em] text-gray-500 font-black mb-1">Sync</p>
-                      <p className="text-[9px] font-semibold text-gray-300 mt-0.5 truncate uppercase tracking-tighter">{formatDateTime(card.lastSyncedAt).split(',')[0]}</p>
-                    </div>
-                  </div>
-
-                  <div className="bg-gradient-to-br from-[#111] to-[#0a0a0a] border border-white/5 rounded-xl p-4 mb-4 relative overflow-hidden group-hover/card:border-[#CCA761]/10 transition-colors">
-                    <div className="absolute top-0 right-0 w-20 h-20 bg-[#CCA761]/5 blur-2xl rounded-full" />
-                    <div className="flex items-center gap-2 text-[#CCA761] text-[9px] uppercase tracking-[0.25em] font-black mb-2">
-                      <Sparkles size={12} /> Memória Base
-                    </div>
-                    <p className="text-[11px] text-gray-400 leading-relaxed font-medium relative z-10 line-clamp-3">
-                      {card.summaryMaster || "Estrutura documental aguardando orquestração inicial. Sincronize o Drive para processar a taxonomia."}
+                <button
+                  key={card.id}
+                  onClick={() => setSelectedCardId(card.id)}
+                  className="group bg-[#0a0a0a] border border-white/5 hover:border-[#CCA761]/30 rounded-2xl p-4 transition-all duration-300 hover:shadow-[0_10px_30px_rgba(204,167,97,0.05)] relative flex flex-col text-left"
+                >
+                  <div className="flex items-center justify-between w-full mb-3">
+                    <p className="text-[9px] uppercase tracking-[0.2em] text-[#CCA761] font-black flex items-center gap-1.5 truncate">
+                      {card.pipelineName || "Pipeline"}
                     </p>
-                    {card.missingDocuments.length > 0 && (
-                      <div className="mt-3 flex items-start gap-2 text-[10px] text-amber-200 bg-amber-500/10 border border-amber-500/20 rounded-lg px-3 py-2 relative z-10">
-                        <AlertTriangle size={12} className="shrink-0 mt-0.5 text-amber-400" />
-                        <span className="truncate">Pendências: {card.missingDocuments.join(", ")}</span>
-                      </div>
-                    )}
+                    <div className={`w-2 h-2 rounded-full shrink-0 ${hasStructure ? 'bg-[#4285F4] shadow-[0_0_8px_rgba(66,133,244,0.6)]' : 'bg-amber-500'}`} />
                   </div>
+                  
+                  <h2 className={`text-base font-bold text-white leading-tight ${cormorant.className} tracking-wide truncate w-full mb-1 group-hover:text-[#CCA761] transition-colors`}>
+                    {card.title}
+                  </h2>
+                  <p className="text-[10px] text-gray-500 font-medium tracking-wide truncate w-full mb-4">
+                    {card.client_name || "Sem cliente"} {card.process_number ? `• ${card.process_number}` : ""}
+                  </p>
 
-                  {/* Flexible spacer to push buttons to bottom if needed */}
-                  <div className="flex-1">
-                    <div className="bg-[#0f0f0f] border border-white/5 rounded-xl p-4 space-y-3 mb-4">
-                      <div className="flex items-center justify-between gap-3">
-                        <div className="flex items-center gap-2 text-white text-[9px] uppercase tracking-[0.25em] font-black">
-                          <FileIcon size={12} className="text-[#8ab4ff]" /> Arquivos
-                        </div>
-                      </div>
-
-                      {card.documents.length === 0 ? (
-                        <div className="rounded-lg border border-dashed border-white/10 bg-[#111] px-4 py-4 text-[9px] text-center text-gray-500 uppercase tracking-widest font-medium">
-                          Vazio
-                        </div>
-                      ) : (
-                        <div className="space-y-2">
-                          {card.documents.slice(0, 3).map((document, index) => (
-                            <div key={`${document.name}-${index}`} className="flex items-center justify-between gap-2 bg-[#141414] border border-white/5 hover:border-white/10 rounded-lg px-3 py-2 transition-colors">
-                              <div className="min-w-0 flex-1">
-                                <p className="text-[11px] text-gray-200 font-bold truncate">{document.name}</p>
-                              </div>
-                              <div className="flex items-center gap-1.5 shrink-0">
-                                {document.web_view_link && (
-                                  <a
-                                    href={document.web_view_link}
-                                    target="_blank"
-                                    rel="noopener noreferrer"
-                                    className="text-[9px] font-black uppercase tracking-[0.1em] text-[#8ab4ff] hover:text-white border border-[#4285F4]/20 rounded-md px-2 py-1 bg-[#4285F4]/5 hover:bg-[#4285F4]/10 transition-colors"
-                                  >
-                                    Ver
-                                  </a>
-                                )}
-                              </div>
-                            </div>
-                          ))}
-                        </div>
-                      )}
-
-                      {hasStructure && (
-                        <div className="mt-4 rounded-lg border border-[#CCA761]/20 bg-gradient-to-b from-[#CCA761]/[0.05] to-transparent p-3.5 space-y-3">
-                          <div className="flex items-center gap-2 text-[#CCA761] text-[9px] uppercase tracking-[0.25em] font-black">
-                            <Upload size={12} /> Upload Rápido
-                          </div>
-
-                          <div className="flex flex-col gap-2">
-                            <select
-                              value={uploadFolderByTask[card.id] || "01-Documentos do Cliente"}
-                              onChange={(event) => setUploadFolderByTask((current) => ({ ...current, [card.id]: event.target.value }))}
-                              className="w-full bg-[#0a0a0a] border border-[#CCA761]/20 rounded-lg px-3 py-2 text-[10px] text-white focus:outline-none focus:border-[#CCA761]/60 font-medium tracking-wide appearance-none"
-                            >
-                              {DOCUMENT_FOLDER_OPTIONS.map((folderLabel) => (
-                                <option key={folderLabel} value={folderLabel}>{folderLabel.replace(/^\d{2}-/, '')}</option>
-                              ))}
-                            </select>
-
-                            <div className="flex gap-2">
-                              <div className="relative flex-1">
-                                <input
-                                  key={`${card.id}-${uploadInputVersionByTask[card.id] || 0}`}
-                                  id={`upload-input-${card.id}`}
-                                  type="file"
-                                  onChange={(event) => {
-                                    const nextFile = event.target.files?.[0] || null;
-                                    setUploadFilesByTask((current) => ({ ...current, [card.id]: nextFile }));
-                                  }}
-                                  className="hidden"
-                                />
-                                <label
-                                  htmlFor={`upload-input-${card.id}`}
-                                  className="w-full h-full min-h-[36px] bg-[#0a0a0a] border border-[#CCA761]/20 rounded-lg pl-3 pr-2 py-1 text-[10px] text-white flex items-center justify-between gap-2 cursor-pointer hover:border-[#CCA761]/50 transition-colors group/upload"
-                                >
-                                  <span className="truncate text-gray-500 group-hover/upload:text-gray-200 font-medium">
-                                    {uploadFilesByTask[card.id]?.name || "Arquivo..."}
-                                  </span>
-                                  <span className="shrink-0 px-2 py-1 rounded-md bg-[#111] border border-[#CCA761]/30 text-[#CCA761] text-[8px] font-black uppercase tracking-widest">
-                                    Busca
-                                  </span>
-                                </label>
-                              </div>
-
-                              <button
-                                type="button"
-                                onClick={() => handleUploadDocument(card.id)}
-                                disabled={isBusy}
-                                className="px-3 rounded-lg border border-[#CCA761]/40 bg-[#CCA761]/10 hover:bg-[#CCA761]/20 text-[9px] font-black uppercase tracking-[0.1em] text-[#CCA761] flex items-center justify-center gap-1.5 disabled:opacity-50 transition-all hover:shadow-[0_0_10px_rgba(204,167,97,0.2)]"
-                              >
-                                {isBusy ? <Loader2 size={12} className="animate-spin" /> : <Upload size={12} />}
-                                OK
-                              </button>
-                            </div>
-                          </div>
-                        </div>
-                      )}
+                  <div className="mt-auto flex items-center justify-between w-full pt-3 border-t border-white/5 group-hover:border-[#CCA761]/20 transition-colors">
+                    <div className="flex items-center gap-2">
+                       <p className="text-[10px] font-bold text-gray-300 bg-[#111] px-2 py-1 rounded-md border border-white/5">
+                         {card.documentCount} docs
+                       </p>
+                       <p className="text-[9px] font-bold text-[#CCA761] uppercase tracking-wider hidden sm:block">
+                         {card.syncStatus}
+                       </p>
                     </div>
+                    <ChevronRight size={14} className="text-gray-600 group-hover:text-[#CCA761] group-hover:translate-x-1 transition-all" />
                   </div>
-
-                  <div className="grid grid-cols-3 gap-2 shrink-0">
-                    {hasStructure ? (
-                      <a
-                        href={card.drive_link || undefined}
-                        target="_blank"
-                        rel="noopener noreferrer"
-                        className="w-full py-2.5 rounded-lg border border-[#4285F4]/30 bg-[#4285F4]/10 hover:bg-[#4285F4]/20 text-[9px] font-black uppercase tracking-[0.15em] text-[#8ab4ff] flex items-center justify-center gap-1.5 transition-colors"
-                      >
-                        <ExternalLink size={12} /> Drive
-                      </a>
-                    ) : (
-                      <button
-                        type="button"
-                        onClick={() => handleCreateStructure(card.id)}
-                        disabled={isBusy}
-                        className="w-full py-2.5 rounded-lg border border-[#4285F4]/40 bg-[#4285F4]/15 hover:bg-[#4285F4]/25 text-[9px] font-black uppercase tracking-[0.15em] text-[#8ab4ff] flex items-center justify-center gap-1.5 disabled:opacity-50 transition-all"
-                      >
-                        <FolderTree size={12} /> Criar
-                      </button>
-                    )}
-
-                    <button
-                        type="button"
-                        onClick={() => handleSync(card.id)}
-                        disabled={isBusy || !hasStructure}
-                        className="w-full py-2.5 rounded-lg border border-white/10 bg-white/5 hover:bg-white/10 text-[9px] font-black uppercase tracking-[0.15em] text-white flex items-center justify-center gap-1.5 disabled:opacity-50 transition-colors"
-                      >
-                        {isBusy ? <Loader2 size={12} className="animate-spin" /> : <RefreshCw size={12} />}
-                        Sync
-                    </button>
-
-                    <Link
-                      href={`/dashboard/processos/${card.pipeline_id}`}
-                      className="w-full py-2.5 rounded-lg border border-[#CCA761]/30 bg-[#CCA761]/10 hover:bg-[#CCA761]/20 text-[9px] font-black uppercase tracking-[0.15em] text-[#CCA761] flex items-center justify-center gap-1.5 transition-all"
-                    >
-                      <FileText size={12} /> Board
-                    </Link>
-                  </div>
-                </div>
+                </button>
               );
             })}
           </div>
         )}
       </div>
+
+      <AnimatePresence>
+        {selectedCard && (
+          <motion.div
+            key="modal-backdrop"
+            initial={{ opacity: 0 }}
+            animate={{ opacity: 1 }}
+            exit={{ opacity: 0 }}
+            onClick={() => setSelectedCardId(null)}
+            className="fixed inset-0 bg-black/60 backdrop-blur-sm z-[100] flex items-center justify-center p-4"
+          >
+            <motion.div
+              initial={{ opacity: 0, scale: 0.95, y: 20 }}
+              animate={{ opacity: 1, scale: 1, y: 0 }}
+              exit={{ opacity: 0, scale: 0.95, y: 20 }}
+              onClick={(e) => e.stopPropagation()}
+              className="w-full max-w-[500px] sm:max-w-[550px] max-h-[90vh] overflow-y-auto no-scrollbar z-[101] outline-none"
+            >
+              <div className="group/card bg-[#0a0a0a] border border-[#CCA761]/30 rounded-[28px] p-6 sm:p-8 relative flex flex-col shadow-[0_20px_50px_rgba(0,0,0,0.8),0_0_0_1px_rgba(204,167,97,0.15)] m-1 sm:m-4">
+                {/* Modal close button */}
+                <button
+                  onClick={() => setSelectedCardId(null)}
+                  className="absolute top-4 right-4 w-8 h-8 rounded-full bg-white/5 hover:bg-white/10 flex items-center justify-center text-gray-400 hover:text-white transition-colors z-20"
+                >
+                  <X size={16} />
+                </button>
+
+                {/* Subtle top gradient line */}
+                <div className="absolute top-0 left-0 right-0 h-[2px] bg-gradient-to-r from-transparent via-[#CCA761]/40 to-transparent" />
+                
+                <div className="flex items-start justify-between gap-3 mb-5 pr-8">
+                  <div className="space-y-1">
+                    <p className="text-[10px] uppercase tracking-[0.25em] text-[#CCA761] font-black flex items-center gap-1.5">
+                      {selectedCard.pipelineName || "Pipeline"}
+                      {selectedCard.stageName ? <><span className="w-1 h-1 rounded-full bg-[#CCA761]/50" /> {selectedCard.stageName}</> : ""}
+                    </p>
+                    <h2 className={`text-2xl font-bold text-white leading-tight ${cormorant.className} tracking-wide`}>{selectedCard.title}</h2>
+                    <p className="text-[12px] text-gray-400 font-medium tracking-wide">
+                      {selectedCard.client_name || "Sem cliente"}
+                      {selectedCard.process_number ? ` • ${selectedCard.process_number}` : ""}
+                    </p>
+                  </div>
+                </div>
+
+                <div className="grid grid-cols-3 gap-2 sm:gap-3 mb-5">
+                  <div className="bg-[#111] border border-white/5 rounded-xl p-3 sm:p-4">
+                    <p className="text-[9px] uppercase tracking-[0.2em] text-gray-500 font-black mb-1.5">Docs</p>
+                    <p className="text-xl sm:text-2xl font-black text-white">{selectedCard.documentCount}</p>
+                  </div>
+                  <div className="bg-[#111] border border-white/5 rounded-xl p-3 sm:p-4">
+                    <p className="text-[9px] uppercase tracking-[0.2em] text-gray-500 font-black mb-1.5">Status</p>
+                    <p className="text-[11px] font-bold text-[#CCA761] capitalize truncate mt-1">{selectedCard.syncStatus}</p>
+                  </div>
+                  <div className="bg-[#111] border border-white/5 rounded-xl p-3 sm:p-4">
+                    <p className="text-[9px] uppercase tracking-[0.2em] text-gray-500 font-black mb-1.5">Sync</p>
+                    <p className="text-[10px] font-semibold text-gray-300 mt-1 uppercase truncate">{formatDateTime(selectedCard.lastSyncedAt).split(',')[0]}</p>
+                  </div>
+                </div>
+
+                <div className="bg-gradient-to-br from-[#111] to-[#0a0a0a] border border-white/5 rounded-xl p-5 mb-5 relative overflow-hidden">
+                  <div className="absolute top-0 right-0 w-24 h-24 bg-[#CCA761]/10 blur-2xl rounded-full" />
+                  <div className="flex items-center gap-2 text-[#CCA761] text-[10px] uppercase tracking-[0.3em] font-black mb-3 pr-2">
+                    <Sparkles size={14} /> Memória Base
+                  </div>
+                  <p className="text-sm text-gray-300 leading-relaxed font-medium relative z-10">
+                    {selectedCard.summaryMaster || "Estrutura documental aguardando orquestração inicial. Sincronize o Drive para processar a taxonomia."}
+                  </p>
+                  {selectedCard.missingDocuments.length > 0 && (
+                    <div className="mt-4 flex items-start gap-2.5 text-xs text-amber-200 bg-amber-500/10 border border-amber-500/20 rounded-xl px-4 py-3 relative z-10">
+                      <AlertTriangle size={14} className="shrink-0 mt-0.5 text-amber-400" />
+                      <div>
+                        <strong className="block text-amber-400 font-bold mb-1 uppercase tracking-wider text-[10px]">Análise da IA: Documentos Faltantes</strong>
+                        {selectedCard.missingDocuments.join(", ")}
+                      </div>
+                    </div>
+                  )}
+                </div>
+
+                <div className="flex-1 flex flex-col min-h-0">
+                  <div className="bg-[#0f0f0f] border border-white/5 rounded-xl p-5 space-y-4 mb-5">
+                    <div className="flex items-center justify-between gap-3">
+                      <div className="flex items-center gap-2 text-white text-[10px] uppercase tracking-[0.3em] font-black">
+                        <FileIcon size={12} className="text-[#8ab4ff]" /> Arquivos
+                      </div>
+                    </div>
+
+                    {selectedCard.documents.length === 0 ? (
+                      <div className="rounded-xl border border-dashed border-white/10 bg-[#111] px-5 py-6 text-xs text-center text-gray-500 uppercase tracking-widest font-medium">
+                        Repositório Vazio
+                      </div>
+                    ) : (
+                      <div className="space-y-2">
+                        {selectedCard.documents.slice(0, 3).map((document, index) => (
+                          <div key={`${document.name}-${index}`} className="flex items-center justify-between gap-3 bg-[#141414] border border-white/5 hover:border-white/10 rounded-xl px-4 py-3 transition-colors">
+                            <div className="min-w-0 flex-1">
+                              <p className="text-xs text-gray-200 font-bold truncate">{document.name}</p>
+                            </div>
+                            <div className="flex items-center gap-2 shrink-0">
+                              {document.web_view_link && (
+                                <a
+                                  href={document.web_view_link}
+                                  target="_blank"
+                                  rel="noopener noreferrer"
+                                  className="text-[10px] font-black uppercase tracking-[0.2em] text-[#8ab4ff] hover:text-white border border-[#4285F4]/20 rounded-md px-3 py-1.5 bg-[#4285F4]/5 hover:bg-[#4285F4]/10 transition-colors"
+                                >
+                                  Ver Manual
+                                </a>
+                              )}
+                            </div>
+                          </div>
+                        ))}
+                      </div>
+                    )}
+
+                    {Boolean(selectedCard.drive_structure_ready && selectedCard.drive_folder_id && selectedCard.drive_link) && (
+                      <div className="mt-5 rounded-xl border border-[#CCA761]/20 bg-gradient-to-b from-[#CCA761]/[0.05] to-transparent p-5 space-y-4">
+                        <div className="flex items-center gap-2 text-[#CCA761] text-[10px] uppercase tracking-[0.3em] font-black">
+                          <Upload size={14} /> Upload via Plataforma
+                        </div>
+
+                        <div className="flex flex-col sm:flex-row gap-3">
+                          <select
+                            value={uploadFolderByTask[selectedCard.id] || "01-Documentos do Cliente"}
+                            onChange={(event) => setUploadFolderByTask((current) => ({ ...current, [selectedCard.id]: event.target.value }))}
+                            className="bg-[#0a0a0a] border border-[#CCA761]/20 rounded-xl px-4 py-3 text-xs text-white focus:outline-none focus:border-[#CCA761]/60 font-medium tracking-wide appearance-none sm:w-[50%]"
+                          >
+                            {DOCUMENT_FOLDER_OPTIONS.map((folderLabel) => (
+                              <option key={folderLabel} value={folderLabel}>{folderLabel.replace(/^\d{2}-/, '')}</option>
+                            ))}
+                          </select>
+
+                          <div className="relative flex-1">
+                            <input
+                              key={`${selectedCard.id}-${uploadInputVersionByTask[selectedCard.id] || 0}`}
+                              id={`modal-upload-input-${selectedCard.id}`}
+                              type="file"
+                              onChange={(event) => {
+                                const nextFile = event.target.files?.[0] || null;
+                                setUploadFilesByTask((current) => ({ ...current, [selectedCard.id]: nextFile }));
+                              }}
+                              className="hidden"
+                            />
+                            <label
+                              htmlFor={`modal-upload-input-${selectedCard.id}`}
+                              className="w-full h-full min-h-[44px] bg-[#0a0a0a] border border-[#CCA761]/20 rounded-xl pl-4 pr-3 py-1.5 text-xs text-white flex items-center justify-between gap-3 cursor-pointer hover:border-[#CCA761]/50 transition-colors group/upload"
+                            >
+                              <span className="truncate text-gray-400 group-hover/upload:text-gray-200 font-medium">
+                                {uploadFilesByTask[selectedCard.id]?.name || "Localizar..."}
+                              </span>
+                            </label>
+                          </div>
+                        </div>
+                        
+                        <button
+                          type="button"
+                          onClick={() => handleUploadDocument(selectedCard.id)}
+                          disabled={busyTaskId === selectedCard.id}
+                          className="w-full mt-2 px-6 py-3.5 rounded-xl border border-[#CCA761]/40 bg-[#CCA761]/10 hover:bg-[#CCA761]/20 text-xs font-black uppercase tracking-[0.2em] text-[#CCA761] flex items-center justify-center gap-2 disabled:opacity-50 transition-all hover:shadow-[0_0_15px_rgba(204,167,97,0.2)]"
+                        >
+                          {busyTaskId === selectedCard.id ? <Loader2 size={14} className="animate-spin" /> : <Upload size={14} />}
+                          Enviar
+                        </button>
+                      </div>
+                    )}
+                  </div>
+                </div>
+
+                <div className="grid grid-cols-2 lg:grid-cols-4 gap-3 shrink-0">
+                  {Boolean(selectedCard.drive_structure_ready && selectedCard.drive_folder_id && selectedCard.drive_link) ? (
+                    <a
+                      href={selectedCard.drive_link || undefined}
+                      target="_blank"
+                      rel="noopener noreferrer"
+                      className="w-full py-3 rounded-xl border border-[#4285F4]/30 bg-[#4285F4]/10 hover:bg-[#4285F4]/20 text-[9px] font-black uppercase tracking-[0.1em] text-[#8ab4ff] flex items-center justify-center gap-1.5 transition-colors text-center"
+                    >
+                      <ExternalLink size={12} className="shrink-0" /> <span className="truncate">Drive</span>
+                    </a>
+                  ) : (
+                    <button
+                      type="button"
+                      onClick={() => handleCreateStructure(selectedCard.id)}
+                      disabled={busyTaskId === selectedCard.id}
+                      className="w-full py-3 rounded-xl border border-[#4285F4]/40 bg-[#4285F4]/15 hover:bg-[#4285F4]/25 text-[9px] font-black uppercase tracking-[0.1em] text-[#8ab4ff] flex items-center justify-center gap-1.5 disabled:opacity-50 transition-all text-center"
+                    >
+                      <FolderTree size={12} className="shrink-0" /> <span className="truncate">Criar Estrutura</span>
+                    </button>
+                  )}
+
+                  <button
+                      type="button"
+                      onClick={() => handleSync(selectedCard.id)}
+                      disabled={busyTaskId === selectedCard.id || !Boolean(selectedCard.drive_structure_ready)}
+                      className="w-full py-3 rounded-xl border border-white/10 bg-white/5 hover:bg-white/10 text-[9px] font-black uppercase tracking-[0.1em] text-white flex items-center justify-center gap-1.5 disabled:opacity-50 transition-colors col-span-2 lg:col-span-2 text-center"
+                    >
+                      {busyTaskId === selectedCard.id ? <Loader2 size={12} className="animate-spin shrink-0" /> : <RefreshCw size={12} className="shrink-0" />}
+                      <span>Orquestrar Sincronização IA</span>
+                  </button>
+
+                  <Link
+                    href={`/dashboard/processos/${selectedCard.pipeline_id}`}
+                    className="w-full py-3 rounded-xl border border-[#CCA761]/30 bg-[#CCA761]/10 hover:bg-[#CCA761]/20 text-[9px] font-black uppercase tracking-[0.1em] text-[#CCA761] flex items-center justify-center gap-1.5 transition-all text-center"
+                  >
+                    <FileText size={12} className="shrink-0" /> <span className="truncate">Board</span>
+                  </Link>
+                </div>
+              </div>
+            </motion.div>
+          </motion.div>
+        )}
+      </AnimatePresence>
     </div>
   );
 }
