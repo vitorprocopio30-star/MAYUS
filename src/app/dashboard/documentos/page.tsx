@@ -80,6 +80,51 @@ const DOCUMENT_FOLDER_OPTIONS = [
   "09-Pecas Finais",
 ] as const;
 
+const DOCUMENT_TYPE_LABELS: Record<string, string> = {
+  documento_cliente: "Documento do Cliente",
+  inicial: "Inicial",
+  contestacao: "Contestação",
+  replica: "Réplica",
+  manifestacao: "Manifestação",
+  decisao: "Decisão",
+  sentenca: "Sentença",
+  decisao_sentenca: "Decisão / Sentença",
+  recurso: "Recurso",
+  prova: "Prova",
+  prazo_audiencia: "Prazo / Audiência",
+  peca_final: "Peça Final",
+  geral: "Geral",
+};
+
+function getExtractionBadge(status?: string | null) {
+  switch (status) {
+    case "extracted":
+      return {
+        label: "Lido",
+        className: "bg-emerald-500/10 border-emerald-500/20 text-emerald-300",
+      };
+    case "error":
+      return {
+        label: "Falha na leitura",
+        className: "bg-red-500/10 border-red-500/20 text-red-300",
+      };
+    case "skipped":
+      return {
+        label: "Indexado",
+        className: "bg-white/5 border-white/10 text-gray-300",
+      };
+    default:
+      return {
+        label: "Pendente",
+        className: "bg-white/5 border-white/10 text-gray-400",
+      };
+  }
+}
+
+function getDocumentTypeLabel(type?: string | null) {
+  return DOCUMENT_TYPE_LABELS[type || ""] || type || "Tipo não identificado";
+}
+
 function formatDateTime(value?: string | null) {
   if (!value) return "Nunca sincronizado";
   const date = new Date(value);
@@ -408,41 +453,46 @@ export default function DocumentosPage() {
                     )}
                   </div>
 
-                  <div className="bg-[#111] border border-white/5 rounded-2xl p-4 space-y-3 mb-5">
-                    <div className="flex items-center gap-2 text-[#8ab4ff] text-[10px] uppercase tracking-[0.25em] font-black">
-                      <FileIcon size={12} /> Arquivos do processo
+                  <div className="bg-[#111] border border-white/5 rounded-2xl p-4 space-y-4 mb-5">
+                    <div className="flex items-center justify-between gap-3">
+                      <div className="flex items-center gap-2 text-[#8ab4ff] text-[10px] uppercase tracking-[0.25em] font-black">
+                        <FileIcon size={12} /> Acervo do processo
+                      </div>
+                      <span className="text-[10px] uppercase tracking-[0.25em] text-gray-500 font-black">
+                        {card.documents.length} item(ns) recentes
+                      </span>
                     </div>
 
                     {card.documents.length === 0 ? (
-                      <p className="text-sm text-gray-500">Nenhum arquivo indexado ainda.</p>
+                      <div className="rounded-xl border border-dashed border-white/10 bg-[#141414] px-4 py-5 text-sm text-gray-500">
+                        Nenhum arquivo indexado ainda. Envie um documento abaixo ou sincronize a pasta do Drive para alimentar o cérebro documental do processo.
+                      </div>
                     ) : (
                       <div className="space-y-2">
                         {card.documents.map((document, index) => (
-                          <div key={`${document.name}-${index}`} className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-2 bg-[#141414] border border-white/5 rounded-xl px-3 py-2">
-                            <div className="min-w-0">
-                              <p className="text-sm text-white font-medium truncate">{document.name}</p>
-                              <p className="text-[11px] text-gray-500 truncate">
-                                {document.folder_label || "Sem pasta"}
-                                {document.document_type ? ` • ${document.document_type}` : ""}
-                                {document.modified_at ? ` • ${formatDateTime(document.modified_at)}` : ""}
-                              </p>
+                          <div key={`${document.name}-${index}`} className="flex flex-col xl:flex-row xl:items-center xl:justify-between gap-3 bg-[#141414] border border-white/5 rounded-xl px-4 py-3">
+                            <div className="min-w-0 space-y-2">
+                              <p className="text-sm text-white font-semibold truncate">{document.name}</p>
+                              <div className="flex flex-wrap items-center gap-2 text-[11px] text-gray-500">
+                                <span className="px-2 py-1 rounded-full bg-white/5 border border-white/10 text-gray-300 font-semibold">
+                                  {document.folder_label || "Sem pasta"}
+                                </span>
+                                <span className="px-2 py-1 rounded-full bg-[#0b1220] border border-[#4285F4]/15 text-[#8ab4ff] font-semibold">
+                                  {getDocumentTypeLabel(document.document_type)}
+                                </span>
+                                <span>{document.modified_at ? formatDateTime(document.modified_at) : "Data indisponível"}</span>
+                              </div>
                             </div>
                             <div className="flex items-center gap-2 shrink-0">
-                              <span className={`px-2 py-1 rounded-full text-[10px] uppercase tracking-widest font-black border ${
-                                document.extraction_status === "extracted"
-                                  ? 'bg-emerald-500/10 border-emerald-500/20 text-emerald-300'
-                                  : document.extraction_status === "error"
-                                    ? 'bg-red-500/10 border-red-500/20 text-red-300'
-                                    : 'bg-white/5 border-white/10 text-gray-400'
-                              }`}>
-                                {document.extraction_status || "pending"}
+                              <span className={`px-2 py-1 rounded-full text-[10px] uppercase tracking-widest font-black border ${getExtractionBadge(document.extraction_status).className}`}>
+                                {getExtractionBadge(document.extraction_status).label}
                               </span>
                               {document.web_view_link && (
                                 <a
                                   href={document.web_view_link}
                                   target="_blank"
                                   rel="noopener noreferrer"
-                                  className="text-xs font-black uppercase tracking-widest text-[#8ab4ff] hover:text-white"
+                                  className="text-xs font-black uppercase tracking-widest text-[#8ab4ff] hover:text-white border border-white/10 rounded-lg px-3 py-2 bg-white/5 hover:bg-white/10 transition-colors"
                                 >
                                   Abrir
                                 </a>
@@ -454,53 +504,62 @@ export default function DocumentosPage() {
                     )}
 
                     {hasStructure && (
-                      <div className="grid grid-cols-1 lg:grid-cols-[1fr_1fr_auto] gap-3 pt-2">
-                        <select
-                          value={uploadFolderByTask[card.id] || "01-Documentos do Cliente"}
-                          onChange={(event) => setUploadFolderByTask((current) => ({ ...current, [card.id]: event.target.value }))}
-                          className="bg-[#141414] border border-white/10 rounded-xl px-3 py-3 text-sm text-white focus:outline-none focus:border-[#4285F4]/40"
-                        >
-                          {DOCUMENT_FOLDER_OPTIONS.map((folderLabel) => (
-                            <option key={folderLabel} value={folderLabel}>{folderLabel}</option>
-                          ))}
-                        </select>
-
-                        <div className="relative">
-                          <input
-                            key={`${card.id}-${uploadInputVersionByTask[card.id] || 0}`}
-                            id={`upload-input-${card.id}`}
-                            type="file"
-                            onChange={(event) => {
-                              const nextFile = event.target.files?.[0] || null;
-                              setUploadFilesByTask((current) => ({ ...current, [card.id]: nextFile }));
-                            }}
-                            className="hidden"
-                          />
-                          <label
-                            htmlFor={`upload-input-${card.id}`}
-                            className="h-full min-h-[52px] bg-[#141414] border border-white/10 rounded-xl px-3 py-3 text-sm text-white flex items-center justify-between gap-3 cursor-pointer hover:border-[#4285F4]/35 transition-colors"
-                          >
-                            <div className="min-w-0">
-                              <p className="text-[10px] uppercase tracking-[0.22em] text-gray-500 font-black mb-1">Arquivo</p>
-                              <p className="text-sm text-white truncate">
-                                {uploadFilesByTask[card.id]?.name || "Selecionar documento do processo"}
-                              </p>
-                            </div>
-                            <span className="shrink-0 px-3 py-2 rounded-lg bg-[#0b1220] border border-[#4285F4]/20 text-[#8ab4ff] text-[11px] font-black uppercase tracking-widest">
-                              Escolher
-                            </span>
-                          </label>
+                      <div className="rounded-2xl border border-[#4285F4]/12 bg-[#0b1220]/50 p-4 space-y-4">
+                        <div className="flex items-center gap-2 text-[#8ab4ff] text-[10px] uppercase tracking-[0.25em] font-black">
+                          <Upload size={12} /> Enviar novo documento
                         </div>
+                        <p className="text-xs text-gray-400 leading-relaxed">
+                          Selecione a subpasta correta e envie o arquivo direto pelo MAYUS. O sistema joga no Google Drive, indexa no repositório e tenta ler o conteúdo automaticamente.
+                        </p>
 
-                        <button
-                          type="button"
-                          onClick={() => handleUploadDocument(card.id)}
-                          disabled={isBusy}
-                          className="px-4 py-3 rounded-xl border border-[#4285F4]/25 bg-[#0b1220] hover:bg-[#12203c] text-xs font-black uppercase tracking-widest text-[#8ab4ff] flex items-center justify-center gap-2 disabled:opacity-60"
-                        >
-                          {isBusy ? <Loader2 size={14} className="animate-spin" /> : <Upload size={14} />}
-                          Enviar
-                        </button>
+                        <div className="grid grid-cols-1 lg:grid-cols-[1fr_1fr_auto] gap-3">
+                          <select
+                            value={uploadFolderByTask[card.id] || "01-Documentos do Cliente"}
+                            onChange={(event) => setUploadFolderByTask((current) => ({ ...current, [card.id]: event.target.value }))}
+                            className="bg-[#141414] border border-white/10 rounded-xl px-3 py-3 text-sm text-white focus:outline-none focus:border-[#4285F4]/40"
+                          >
+                            {DOCUMENT_FOLDER_OPTIONS.map((folderLabel) => (
+                              <option key={folderLabel} value={folderLabel}>{folderLabel}</option>
+                            ))}
+                          </select>
+
+                          <div className="relative">
+                            <input
+                              key={`${card.id}-${uploadInputVersionByTask[card.id] || 0}`}
+                              id={`upload-input-${card.id}`}
+                              type="file"
+                              onChange={(event) => {
+                                const nextFile = event.target.files?.[0] || null;
+                                setUploadFilesByTask((current) => ({ ...current, [card.id]: nextFile }));
+                              }}
+                              className="hidden"
+                            />
+                            <label
+                              htmlFor={`upload-input-${card.id}`}
+                              className="h-full min-h-[52px] bg-[#141414] border border-white/10 rounded-xl px-3 py-3 text-sm text-white flex items-center justify-between gap-3 cursor-pointer hover:border-[#4285F4]/35 transition-colors"
+                            >
+                              <div className="min-w-0">
+                                <p className="text-[10px] uppercase tracking-[0.22em] text-gray-500 font-black mb-1">Arquivo</p>
+                                <p className="text-sm text-white truncate">
+                                  {uploadFilesByTask[card.id]?.name || "Selecionar documento do processo"}
+                                </p>
+                              </div>
+                              <span className="shrink-0 px-3 py-2 rounded-lg bg-[#0b1220] border border-[#4285F4]/20 text-[#8ab4ff] text-[11px] font-black uppercase tracking-widest">
+                                Escolher
+                              </span>
+                            </label>
+                          </div>
+
+                          <button
+                            type="button"
+                            onClick={() => handleUploadDocument(card.id)}
+                            disabled={isBusy}
+                            className="px-4 py-3 rounded-xl border border-[#4285F4]/25 bg-[#0b1220] hover:bg-[#12203c] text-xs font-black uppercase tracking-widest text-[#8ab4ff] flex items-center justify-center gap-2 disabled:opacity-60"
+                          >
+                            {isBusy ? <Loader2 size={14} className="animate-spin" /> : <Upload size={14} />}
+                            Enviar
+                          </button>
+                        </div>
                       </div>
                     )}
                   </div>

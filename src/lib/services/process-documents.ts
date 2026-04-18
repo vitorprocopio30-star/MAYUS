@@ -132,8 +132,8 @@ async function extractDocumentText(name: string, mimeType: string | null, bytes:
     }
 
     if ((mimeType || "") === "application/pdf" || extension === "pdf") {
-      const pdfParseModule = await import("pdf-parse");
-      const pdfParse = (pdfParseModule as any).default || pdfParseModule;
+      // pdf-parse v1.x is more stable in serverless runtimes than the newer canvas-based stack.
+      const pdfParse = require("pdf-parse") as (buffer: Buffer) => Promise<{ text?: string; numpages?: number }>;
       const parsed = await pdfParse(Buffer.from(bytes));
       const rawText = String(parsed?.text || "");
       const normalizedText = normalizeText(rawText);
