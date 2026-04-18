@@ -282,8 +282,8 @@ export default function ConfiguracoesJuridicoPage() {
       <div className="max-w-[1280px] mx-auto space-y-10">
         <div className="flex flex-col lg:flex-row lg:items-end lg:justify-between gap-6">
           <div className="space-y-3">
-            <Link href="/dashboard/configuracoes" className="text-[#CCA761] text-[10px] uppercase tracking-[0.3em] font-black flex items-center gap-2 hover:text-white transition-colors w-fit mb-4">
-              <ArrowLeft size={14} /> Voltar às Configurações
+            <Link href="/dashboard/documentos/acervo" className="text-[#CCA761] text-[10px] uppercase tracking-[0.3em] font-black flex items-center gap-2 hover:text-white transition-colors w-fit mb-4">
+              <ArrowLeft size={14} /> Voltar ao Acervo MAYUS
             </Link>
             <p className="text-[#CCA761] text-xs uppercase tracking-[0.35em] font-black">Motor Jurídico</p>
             <div className="flex items-center gap-4">
@@ -302,7 +302,7 @@ export default function ConfiguracoesJuridicoPage() {
           </div>
 
           <div className="flex flex-wrap gap-3">
-            <Link href="/dashboard/documentos/donna" className="px-4 py-3 rounded-xl border border-[#CCA761]/15 bg-white/5 hover:bg-white/10 text-xs font-black uppercase tracking-widest text-white flex items-center gap-2">
+            <Link href="/dashboard/documentos/acervo" className="px-4 py-3 rounded-xl border border-[#CCA761]/15 bg-white/5 hover:bg-white/10 text-xs font-black uppercase tracking-widest text-white flex items-center gap-2">
               <Wand2 size={14} /> Preview Jurídico
             </Link>
             <button
@@ -436,7 +436,7 @@ export default function ConfiguracoesJuridicoPage() {
             <section className="bg-[#0f0f0f] border border-[#CCA761]/12 rounded-3xl p-6 space-y-6">
               <div className="flex items-center justify-between gap-4">
                 <h2 className={cardTitleClass()}><Files size={18} /> Modelos por Tipo de Peça</h2>
-                <Link href="/dashboard/documentos/donna" className="text-[10px] uppercase tracking-[0.25em] font-black text-[#CCA761] hover:text-white transition-colors">
+                <Link href="/dashboard/documentos/acervo" className="text-[10px] uppercase tracking-[0.25em] font-black text-[#CCA761] hover:text-white transition-colors">
                   Abrir preview jurídico
                 </Link>
               </div>

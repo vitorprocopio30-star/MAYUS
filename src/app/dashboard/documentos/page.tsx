@@ -6,7 +6,9 @@ import { Cormorant_Garamond, Montserrat } from "next/font/google";
 import { createClient } from "@/lib/supabase/client";
 import { useUserProfile } from "@/hooks/useUserProfile";
 import { GoogleDriveLogo } from "@/components/branding/GoogleDriveLogo";
+import ReactMarkdown from "react-markdown";
 import {
+  Copy,
   ExternalLink,
   FolderTree,
   Loader2,
@@ -14,6 +16,7 @@ import {
   Search,
   Sparkles,
   FileText,
+  Download,
   AlertTriangle,
   Upload,
   File as FileIcon,
@@ -71,6 +74,35 @@ type ProcessDocumentCard = ProcessTaskListItem & {
   documents: ProcessDocumentItem[];
 };
 
+type LegalPieceType =
+  | "peticao_inicial"
+  | "contestacao"
+  | "replica"
+  | "tutela_urgencia"
+  | "apelacao"
+  | "notificacao_extrajudicial";
+
+type GeneratedPieceResult = {
+  pieceType: LegalPieceType;
+  pieceLabel: string;
+  outline: string[];
+  draftMarkdown: string;
+  usedDocuments: Array<{
+    id: string;
+    name: string;
+    documentType: string | null;
+    folderLabel: string | null;
+    webViewLink: string | null;
+    modifiedAt: string | null;
+  }>;
+  missingDocuments: string[];
+  warnings: string[];
+  confidenceNote: string;
+  requiresHumanReview: boolean;
+  model: string;
+  provider: string;
+};
+
 const DOCUMENT_FOLDER_OPTIONS = [
   "01-Documentos do Cliente",
   "02-Inicial",
@@ -82,6 +114,15 @@ const DOCUMENT_FOLDER_OPTIONS = [
   "08-Recursos",
   "09-Pecas Finais",
 ] as const;
+
+const LEGAL_PIECE_OPTIONS: Array<{ value: LegalPieceType; label: string }> = [
+  { value: "peticao_inicial", label: "Petição Inicial" },
+  { value: "contestacao", label: "Contestação" },
+  { value: "replica", label: "Réplica" },
+  { value: "tutela_urgencia", label: "Tutela de Urgência" },
+  { value: "apelacao", label: "Apelação" },
+  { value: "notificacao_extrajudicial", label: "Notificação" },
+];
 
 const DOCUMENT_TYPE_LABELS: Record<string, string> = {
   documento_cliente: "Documento do Cliente",
@@ -128,6 +169,10 @@ function getDocumentTypeLabel(type?: string | null) {
   return DOCUMENT_TYPE_LABELS[type || ""] || type || "Tipo não identificado";
 }
 
+function getPieceTypeLabel(type: LegalPieceType) {
+  return LEGAL_PIECE_OPTIONS.find((option) => option.value === type)?.label || type;
+}
+
 function formatDateTime(value?: string | null) {
   if (!value) return "Nunca sincronizado";
   const date = new Date(value);
@@ -141,11 +186,17 @@ export default function DocumentosPage() {
   const [search, setSearch] = useState("");
   const [isLoading, setIsLoading] = useState(true);
   const [busyTaskId, setBusyTaskId] = useState<string | null>(null);
+  const [pieceBusyTaskId, setPieceBusyTaskId] = useState<string | null>(null);
   const [selectedCardId, setSelectedCardId] = useState<string | null>(null);
   const [cards, setCards] = useState<ProcessDocumentCard[]>([]);
   const [uploadFolderByTask, setUploadFolderByTask] = useState<Record<string, string>>({});
   const [uploadFilesByTask, setUploadFilesByTask] = useState<Record<string, globalThis.File | null>>({});
   const [uploadInputVersionByTask, setUploadInputVersionByTask] = useState<Record<string, number>>({});
+  const [pieceTypeByTask, setPieceTypeByTask] = useState<Record<string, LegalPieceType>>({});
+  const [pieceObjectiveByTask, setPieceObjectiveByTask] = useState<Record<string, string>>({});
+  const [pieceInstructionsByTask, setPieceInstructionsByTask] = useState<Record<string, string>>({});
+  const [generatedPieceByTask, setGeneratedPieceByTask] = useState<Record<string, GeneratedPieceResult | null>>({});
+  const [downloadBusyTaskId, setDownloadBusyTaskId] = useState<string | null>(null);
 
   const selectedCard = useMemo(() => cards.find(c => c.id === selectedCardId), [cards, selectedCardId]);
 
@@ -212,6 +263,24 @@ export default function DocumentosPage() {
         nextCards.forEach((card) => {
           if (!next[card.id]) {
             next[card.id] = "01-Documentos do Cliente";
+          }
+        });
+        return next;
+      });
+      setPieceTypeByTask((current) => {
+        const next = { ...current };
+        nextCards.forEach((card) => {
+          if (!next[card.id]) {
+            next[card.id] = "contestacao";
+          }
+        });
+        return next;
+      });
+      setPieceObjectiveByTask((current) => {
+        const next = { ...current };
+        nextCards.forEach((card) => {
+          if (!next[card.id]) {
+            next[card.id] = "Gerar um rascunho técnico fiel aos documentos sincronizados, sem inventar fatos ou fundamentos.";
           }
         });
         return next;
@@ -332,6 +401,95 @@ export default function DocumentosPage() {
     }
   };
 
+  const handleGeneratePiece = async (taskId: string) => {
+    setPieceBusyTaskId(taskId);
+
+    try {
+      const response = await fetch(`/api/documentos/processos/${taskId}/gerar-peca`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          pieceType: pieceTypeByTask[taskId] || "contestacao",
+          objective: pieceObjectiveByTask[taskId] || "",
+          instructions: pieceInstructionsByTask[taskId] || "",
+        }),
+      });
+
+      const data = await response.json().catch(() => null);
+      if (!response.ok) {
+        throw new Error(data?.error || "Não foi possível gerar a peça com base no Drive.");
+      }
+
+      setGeneratedPieceByTask((current) => ({ ...current, [taskId]: data as GeneratedPieceResult }));
+      toast.success("Rascunho jurídico gerado com base no acervo documental.");
+    } catch (error: any) {
+      console.error("[documentos][gerar-peca]", error);
+      toast.error(error?.message || "Não foi possível gerar a peça com base no Drive.");
+    } finally {
+      setPieceBusyTaskId(null);
+    }
+  };
+
+  const handleCopyPiece = async (taskId: string) => {
+    const piece = generatedPieceByTask[taskId];
+    if (!piece?.draftMarkdown) {
+      toast.error("Não há rascunho gerado para copiar.");
+      return;
+    }
+
+    try {
+      await navigator.clipboard.writeText(piece.draftMarkdown);
+      toast.success("Rascunho copiado para a área de transferência.");
+    } catch {
+      toast.error("Não foi possível copiar o rascunho.");
+    }
+  };
+
+  const handleDownloadPiece = async (taskId: string) => {
+    const piece = generatedPieceByTask[taskId];
+    if (!piece?.draftMarkdown) {
+      toast.error("Não há rascunho gerado para exportar.");
+      return;
+    }
+
+    setDownloadBusyTaskId(taskId);
+
+    try {
+      const response = await fetch(`/api/documentos/processos/${taskId}/exportar-peca`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          pieceType: piece.pieceType,
+          pieceLabel: piece.pieceLabel,
+          draftMarkdown: piece.draftMarkdown,
+        }),
+      });
+
+      if (!response.ok) {
+        const data = await response.json().catch(() => null);
+        throw new Error(data?.error || "Não foi possível exportar a peça em Word.");
+      }
+
+      const blob = await response.blob();
+      const disposition = response.headers.get("Content-Disposition") || "";
+      const match = disposition.match(/filename="?([^\"]+)"?/i);
+      const fileName = match?.[1] || `${piece.pieceType}.docx`;
+      const objectUrl = URL.createObjectURL(blob);
+      const link = document.createElement("a");
+      link.href = objectUrl;
+      link.download = fileName;
+      document.body.appendChild(link);
+      link.click();
+      link.remove();
+      URL.revokeObjectURL(objectUrl);
+      toast.success("Arquivo Word baixado com sucesso.");
+    } catch (error: any) {
+      toast.error(error?.message || "Não foi possível exportar a peça em Word.");
+    } finally {
+      setDownloadBusyTaskId(null);
+    }
+  };
+
   return (
     <div className={`flex-1 min-h-screen relative text-white p-6 sm:p-10 ${montserrat.className} overflow-hidden`}>
       {/* Premium Background Effects */}
@@ -435,7 +593,7 @@ export default function DocumentosPage() {
 
         {/* Donna Banner */}
         <Link
-          href="/dashboard/documentos/donna"
+          href="/dashboard/documentos/acervo"
           className="relative block w-full rounded-2xl overflow-hidden p-[1px] group transition-all duration-500 hover:shadow-[0_0_40px_rgba(204,167,97,0.12)]"
         >
           <div className="absolute inset-0 bg-gradient-to-r from-[#CCA761]/0 via-[#CCA761]/40 to-[#CCA761]/0 opacity-30 group-hover:opacity-100 transition-opacity duration-1000 animate-[pulse_3s_ease-in-out_infinite] blur" />
@@ -537,7 +695,7 @@ export default function DocumentosPage() {
               animate={{ opacity: 1, scale: 1, y: 0 }}
               exit={{ opacity: 0, scale: 0.95, y: 20 }}
               onClick={(e) => e.stopPropagation()}
-              className="w-full max-w-[500px] sm:max-w-[550px] max-h-[90vh] overflow-y-auto no-scrollbar z-[101] outline-none"
+              className="w-full max-w-[1380px] max-h-[92vh] overflow-y-auto no-scrollbar z-[101] outline-none"
             >
               <div className="group/card bg-[#0a0a0a] border border-[#CCA761]/30 rounded-[28px] p-6 sm:p-8 relative flex flex-col shadow-[0_20px_50px_rgba(0,0,0,0.8),0_0_0_1px_rgba(204,167,97,0.15)] m-1 sm:m-4">
                 {/* Modal close button */}
@@ -580,115 +738,318 @@ export default function DocumentosPage() {
                   </div>
                 </div>
 
-                <div className="bg-gradient-to-br from-[#111] to-[#0a0a0a] border border-white/5 rounded-xl p-5 mb-5 relative overflow-hidden">
-                  <div className="absolute top-0 right-0 w-24 h-24 bg-[#CCA761]/10 blur-2xl rounded-full" />
-                  <div className="flex items-center gap-2 text-[#CCA761] text-[10px] uppercase tracking-[0.3em] font-black mb-3 pr-2">
-                    <Sparkles size={14} /> Memória Base
-                  </div>
-                  <p className="text-sm text-gray-300 leading-relaxed font-medium relative z-10">
-                    {selectedCard.summaryMaster || "Estrutura documental aguardando orquestração inicial. Sincronize o Drive para processar a taxonomia."}
-                  </p>
-                  {selectedCard.missingDocuments.length > 0 && (
-                    <div className="mt-4 flex items-start gap-2.5 text-xs text-amber-200 bg-amber-500/10 border border-amber-500/20 rounded-xl px-4 py-3 relative z-10">
-                      <AlertTriangle size={14} className="shrink-0 mt-0.5 text-amber-400" />
-                      <div>
-                        <strong className="block text-amber-400 font-bold mb-1 uppercase tracking-wider text-[10px]">Análise da IA: Documentos Faltantes</strong>
-                        {selectedCard.missingDocuments.join(", ")}
+                <div className="grid grid-cols-1 xl:grid-cols-[420px_minmax(0,1fr)] gap-5 items-start">
+                  <div className="space-y-5 xl:sticky xl:top-0">
+                    <div className="bg-gradient-to-br from-[#111] to-[#0a0a0a] border border-white/5 rounded-xl p-5 relative overflow-hidden">
+                      <div className="absolute top-0 right-0 w-24 h-24 bg-[#CCA761]/10 blur-2xl rounded-full" />
+                      <div className="flex items-center gap-2 text-[#CCA761] text-[10px] uppercase tracking-[0.3em] font-black mb-3 pr-2">
+                        <Sparkles size={14} /> Memória Base
                       </div>
-                    </div>
-                  )}
-                </div>
-
-                <div className="flex-1 flex flex-col min-h-0">
-                  <div className="bg-[#0f0f0f] border border-white/5 rounded-xl p-5 space-y-4 mb-5">
-                    <div className="flex items-center justify-between gap-3">
-                      <div className="flex items-center gap-2 text-white text-[10px] uppercase tracking-[0.3em] font-black">
-                        <FileIcon size={12} className="text-[#8ab4ff]" /> Arquivos
-                      </div>
+                      <p className="text-sm text-gray-300 leading-relaxed font-medium relative z-10">
+                        {selectedCard.summaryMaster || "Estrutura documental aguardando orquestração inicial. Sincronize o Drive para processar a taxonomia."}
+                      </p>
+                      {selectedCard.missingDocuments.length > 0 && (
+                        <div className="mt-4 flex items-start gap-2.5 text-xs text-amber-200 bg-amber-500/10 border border-amber-500/20 rounded-xl px-4 py-3 relative z-10">
+                          <AlertTriangle size={14} className="shrink-0 mt-0.5 text-amber-400" />
+                          <div>
+                            <strong className="block text-amber-400 font-bold mb-1 uppercase tracking-wider text-[10px]">Análise da IA: Documentos Faltantes</strong>
+                            {selectedCard.missingDocuments.join(", ")}
+                          </div>
+                        </div>
+                      )}
                     </div>
 
-                    {selectedCard.documents.length === 0 ? (
-                      <div className="rounded-xl border border-dashed border-white/10 bg-[#111] px-5 py-6 text-xs text-center text-gray-500 uppercase tracking-widest font-medium">
-                        Repositório Vazio
+                    <div className="bg-[#0f0f0f] border border-white/5 rounded-xl p-5 space-y-4">
+                      <div className="flex items-center justify-between gap-3">
+                        <div className="flex items-center gap-2 text-[#CCA761] text-[10px] uppercase tracking-[0.3em] font-black">
+                          <Sparkles size={12} /> Orquestrador de Peças
+                        </div>
+                        {generatedPieceByTask[selectedCard.id] && (
+                          <span className="text-[10px] uppercase tracking-[0.24em] text-gray-500 font-black text-right">
+                            {generatedPieceByTask[selectedCard.id]?.provider} • {generatedPieceByTask[selectedCard.id]?.model}
+                          </span>
+                        )}
                       </div>
-                    ) : (
-                      <div className="space-y-2">
-                        {selectedCard.documents.slice(0, 3).map((document, index) => (
-                          <div key={`${document.name}-${index}`} className="flex items-center justify-between gap-3 bg-[#141414] border border-white/5 hover:border-white/10 rounded-xl px-4 py-3 transition-colors">
-                            <div className="min-w-0 flex-1">
-                              <p className="text-xs text-gray-200 font-bold truncate">{document.name}</p>
+
+                      <div className="grid grid-cols-1 gap-3">
+                        <select
+                          value={pieceTypeByTask[selectedCard.id] || "contestacao"}
+                          onChange={(event) => setPieceTypeByTask((current) => ({ ...current, [selectedCard.id]: event.target.value as LegalPieceType }))}
+                          className="bg-[#111] border border-[#CCA761]/20 rounded-xl px-4 py-3 text-xs text-white focus:outline-none focus:border-[#CCA761]/60 font-medium tracking-wide appearance-none"
+                        >
+                          {LEGAL_PIECE_OPTIONS.map((option) => (
+                            <option key={option.value} value={option.value}>{option.label}</option>
+                          ))}
+                        </select>
+
+                        <input
+                          value={pieceObjectiveByTask[selectedCard.id] || ""}
+                          onChange={(event) => setPieceObjectiveByTask((current) => ({ ...current, [selectedCard.id]: event.target.value }))}
+                          placeholder="Objetivo do rascunho"
+                          className="w-full bg-[#111] border border-white/10 rounded-xl px-4 py-3 text-sm text-white placeholder:text-gray-500 focus:outline-none focus:border-[#CCA761]/40"
+                        />
+                      </div>
+
+                      <textarea
+                        value={pieceInstructionsByTask[selectedCard.id] || ""}
+                        onChange={(event) => setPieceInstructionsByTask((current) => ({ ...current, [selectedCard.id]: event.target.value }))}
+                        rows={3}
+                        placeholder="Instruções adicionais para o orquestrador jurídico (opcional)."
+                        className="w-full bg-[#111] border border-white/10 rounded-xl px-4 py-3 text-sm text-white placeholder:text-gray-500 focus:outline-none focus:border-[#CCA761]/40 resize-none"
+                      />
+
+                      <button
+                        type="button"
+                        onClick={() => handleGeneratePiece(selectedCard.id)}
+                        disabled={pieceBusyTaskId === selectedCard.id}
+                        className="w-full px-6 py-3.5 rounded-xl border border-[#CCA761]/40 bg-[#CCA761]/10 hover:bg-[#CCA761]/20 text-xs font-black uppercase tracking-[0.2em] text-[#CCA761] flex items-center justify-center gap-2 disabled:opacity-50 transition-all hover:shadow-[0_0_15px_rgba(204,167,97,0.2)]"
+                      >
+                        {pieceBusyTaskId === selectedCard.id ? <Loader2 size={14} className="animate-spin" /> : <FileText size={14} />}
+                        Gerar Rascunho com IA
+                      </button>
+                    </div>
+
+                    {generatedPieceByTask[selectedCard.id] && (
+                      <div className="space-y-4">
+                        <div className="rounded-2xl border border-[#CCA761]/20 bg-gradient-to-br from-[#0a0f0a] to-[#0a0a0a] p-5 shadow-[0_5px_20px_rgba(204,167,97,0.02)] relative overflow-hidden">
+                          <div className="absolute top-0 right-0 w-32 h-32 bg-[#CCA761]/5 blur-3xl rounded-full" />
+                          <div className="flex items-center justify-between border-b border-white/5 pb-4 mb-4 relative z-10">
+                            <div className="flex items-center gap-2">
+                              <Sparkles size={14} className="text-[#CCA761]" />
+                              <p className="text-[10px] uppercase tracking-[0.25em] text-[#CCA761] font-black">Inteligência Operacional</p>
                             </div>
-                            <div className="flex items-center gap-2 shrink-0">
-                              {document.web_view_link && (
-                                <a
-                                  href={document.web_view_link}
-                                  target="_blank"
-                                  rel="noopener noreferrer"
-                                  className="text-[10px] font-black uppercase tracking-[0.2em] text-[#8ab4ff] hover:text-white border border-[#4285F4]/20 rounded-md px-3 py-1.5 bg-[#4285F4]/5 hover:bg-[#4285F4]/10 transition-colors"
-                                >
-                                  Ver Manual
-                                </a>
+                            {generatedPieceByTask[selectedCard.id]!.requiresHumanReview && (
+                              <span className="shrink-0 flex items-center gap-1.5 px-2.5 py-1 rounded-md bg-amber-500/10 border border-amber-500/20 text-amber-300 text-[9px] uppercase tracking-widest font-black">
+                                <AlertTriangle size={10} /> Revisão Crítica
+                              </span>
+                            )}
+                          </div>
+                          
+                          <p className="text-[13px] text-gray-300 leading-relaxed italic mb-5 relative z-10">
+                            &ldquo;{generatedPieceByTask[selectedCard.id]!.confidenceNote}&rdquo;
+                          </p>
+
+                          {(generatedPieceByTask[selectedCard.id]!.missingDocuments.length > 0 || generatedPieceByTask[selectedCard.id]!.warnings.length > 0) && (
+                            <div className="flex flex-col mb-5 border border-white/5 rounded-xl overflow-hidden bg-[#111] relative z-10">
+                              {generatedPieceByTask[selectedCard.id]!.missingDocuments.length > 0 && (
+                                <div className="p-4 border-b border-white/5 bg-red-500/5 relative">
+                                  <div className="absolute left-0 top-0 bottom-0 w-1 bg-red-500/40" />
+                                  <p className="text-[10px] uppercase tracking-[0.24em] text-red-400 font-black mb-1.5 flex items-center gap-2"><AlertTriangle size={12}/> Docs Faltantes</p>
+                                  <p className="text-xs text-gray-300">{generatedPieceByTask[selectedCard.id]!.missingDocuments.join(", ")}</p>
+                                </div>
+                              )}
+                              {generatedPieceByTask[selectedCard.id]!.warnings.length > 0 && (
+                                <div className="p-4 relative">
+                                  <div className="absolute left-0 top-0 bottom-0 w-1 bg-amber-500/40" />
+                                  <p className="text-[10px] uppercase tracking-[0.24em] text-amber-500 font-black mb-1.5">Alertas da IA</p>
+                                  <p className="text-xs text-gray-400 leading-relaxed">{generatedPieceByTask[selectedCard.id]!.warnings.join(" ")}</p>
+                                </div>
                               )}
                             </div>
-                          </div>
-                        ))}
+                          )}
+
+                          {generatedPieceByTask[selectedCard.id]!.usedDocuments.length > 0 && (
+                            <div className="relative z-10">
+                              <p className="text-[10px] uppercase tracking-[0.24em] text-[#8ab4ff] font-black mb-3 flex items-center gap-2">
+                                <FolderTree size={12} /> Acervo Extraído
+                              </p>
+                              <div className="flex flex-col gap-2 max-h-[220px] overflow-y-auto no-scrollbar pr-1">
+                                {generatedPieceByTask[selectedCard.id]!.usedDocuments.map((document) => (
+                                  <a 
+                                    key={document.id}
+                                    href={document.webViewLink || undefined}
+                                    target="_blank"
+                                    rel="noopener noreferrer"
+                                    className="group flex flex-col gap-1.5 rounded-lg border border-white/5 bg-[#141414] hover:bg-white/5 p-3 transition-colors text-left relative overflow-hidden"
+                                  >
+                                    <div className="absolute left-0 top-0 bottom-0 w-0.5 bg-[#8ab4ff]/30 group-hover:bg-[#8ab4ff] transition-colors" />
+                                    <p className="text-xs text-white font-bold truncate group-hover:text-[#8ab4ff] transition-colors ml-1">{document.name}</p>
+                                    <div className="flex items-center gap-2 text-[10px] text-gray-500 ml-1">
+                                      <span className="bg-white/5 border border-white/5 px-1.5 py-0.5 rounded">{getDocumentTypeLabel(document.documentType)}</span>
+                                      {document.folderLabel && <span className="truncate">{document.folderLabel.replace(/^\d{2}-/, '')}</span>}
+                                    </div>
+                                  </a>
+                                ))}
+                              </div>
+                            </div>
+                          )}
+                        </div>
                       </div>
                     )}
 
-                    {Boolean(selectedCard.drive_structure_ready && selectedCard.drive_folder_id && selectedCard.drive_link) && (
-                      <div className="mt-5 rounded-xl border border-[#CCA761]/20 bg-gradient-to-b from-[#CCA761]/[0.05] to-transparent p-5 space-y-4">
-                        <div className="flex items-center gap-2 text-[#CCA761] text-[10px] uppercase tracking-[0.3em] font-black">
-                          <Upload size={14} /> Upload via Plataforma
+                    <div className="flex-1 flex flex-col min-h-0">
+                      <div className="bg-[#0f0f0f] border border-white/5 rounded-xl p-5 space-y-4">
+                        <div className="flex items-center justify-between gap-3">
+                          <div className="flex items-center gap-2 text-white text-[10px] uppercase tracking-[0.3em] font-black">
+                            <FileIcon size={12} className="text-[#8ab4ff]" /> Arquivos
+                          </div>
                         </div>
 
-                        <div className="flex flex-col sm:flex-row gap-3">
-                          <select
-                            value={uploadFolderByTask[selectedCard.id] || "01-Documentos do Cliente"}
-                            onChange={(event) => setUploadFolderByTask((current) => ({ ...current, [selectedCard.id]: event.target.value }))}
-                            className="bg-[#0a0a0a] border border-[#CCA761]/20 rounded-xl px-4 py-3 text-xs text-white focus:outline-none focus:border-[#CCA761]/60 font-medium tracking-wide appearance-none sm:w-[50%]"
-                          >
-                            {DOCUMENT_FOLDER_OPTIONS.map((folderLabel) => (
-                              <option key={folderLabel} value={folderLabel}>{folderLabel.replace(/^\d{2}-/, '')}</option>
+                        {selectedCard.documents.length === 0 ? (
+                          <div className="rounded-xl border border-dashed border-white/10 bg-[#111] px-5 py-6 text-xs text-center text-gray-500 uppercase tracking-widest font-medium">
+                            Repositório Vazio
+                          </div>
+                        ) : (
+                          <div className="space-y-2">
+                            {selectedCard.documents.slice(0, 3).map((document, index) => (
+                              <div key={`${document.name}-${index}`} className="flex items-center justify-between gap-3 bg-[#141414] border border-white/5 hover:border-white/10 rounded-xl px-4 py-3 transition-colors">
+                                <div className="min-w-0 flex-1">
+                                  <p className="text-xs text-gray-200 font-bold truncate">{document.name}</p>
+                                </div>
+                                <div className="flex items-center gap-2 shrink-0">
+                                  {document.web_view_link && (
+                                    <a
+                                      href={document.web_view_link}
+                                      target="_blank"
+                                      rel="noopener noreferrer"
+                                      className="text-[10px] font-black uppercase tracking-[0.2em] text-[#8ab4ff] hover:text-white border border-[#4285F4]/20 rounded-md px-3 py-1.5 bg-[#4285F4]/5 hover:bg-[#4285F4]/10 transition-colors"
+                                    >
+                                      Ver Manual
+                                    </a>
+                                  )}
+                                </div>
+                              </div>
                             ))}
-                          </select>
+                          </div>
+                        )}
 
-                          <div className="relative flex-1">
-                            <input
-                              key={`${selectedCard.id}-${uploadInputVersionByTask[selectedCard.id] || 0}`}
-                              id={`modal-upload-input-${selectedCard.id}`}
-                              type="file"
-                              onChange={(event) => {
-                                const nextFile = event.target.files?.[0] || null;
-                                setUploadFilesByTask((current) => ({ ...current, [selectedCard.id]: nextFile }));
-                              }}
-                              className="hidden"
-                            />
-                            <label
-                              htmlFor={`modal-upload-input-${selectedCard.id}`}
-                              className="w-full h-full min-h-[44px] bg-[#0a0a0a] border border-[#CCA761]/20 rounded-xl pl-4 pr-3 py-1.5 text-xs text-white flex items-center justify-between gap-3 cursor-pointer hover:border-[#CCA761]/50 transition-colors group/upload"
+                        {Boolean(selectedCard.drive_structure_ready && selectedCard.drive_folder_id && selectedCard.drive_link) && (
+                          <div className="mt-5 rounded-xl border border-[#CCA761]/20 bg-gradient-to-b from-[#CCA761]/[0.05] to-transparent p-5 space-y-4">
+                            <div className="flex items-center gap-2 text-[#CCA761] text-[10px] uppercase tracking-[0.3em] font-black">
+                              <Upload size={14} /> Upload via Plataforma
+                            </div>
+
+                            <div className="flex flex-col sm:flex-row gap-3">
+                              <select
+                                value={uploadFolderByTask[selectedCard.id] || "01-Documentos do Cliente"}
+                                onChange={(event) => setUploadFolderByTask((current) => ({ ...current, [selectedCard.id]: event.target.value }))}
+                                className="bg-[#0a0a0a] border border-[#CCA761]/20 rounded-xl px-4 py-3 text-xs text-white focus:outline-none focus:border-[#CCA761]/60 font-medium tracking-wide appearance-none sm:w-[50%]"
+                              >
+                                {DOCUMENT_FOLDER_OPTIONS.map((folderLabel) => (
+                                  <option key={folderLabel} value={folderLabel}>{folderLabel.replace(/^\d{2}-/, '')}</option>
+                                ))}
+                              </select>
+
+                              <div className="relative flex-1">
+                                <input
+                                  key={`${selectedCard.id}-${uploadInputVersionByTask[selectedCard.id] || 0}`}
+                                  id={`modal-upload-input-${selectedCard.id}`}
+                                  type="file"
+                                  onChange={(event) => {
+                                    const nextFile = event.target.files?.[0] || null;
+                                    setUploadFilesByTask((current) => ({ ...current, [selectedCard.id]: nextFile }));
+                                  }}
+                                  className="hidden"
+                                />
+                                <label
+                                  htmlFor={`modal-upload-input-${selectedCard.id}`}
+                                  className="w-full h-full min-h-[44px] bg-[#0a0a0a] border border-[#CCA761]/20 rounded-xl pl-4 pr-3 py-1.5 text-xs text-white flex items-center justify-between gap-3 cursor-pointer hover:border-[#CCA761]/50 transition-colors group/upload"
+                                >
+                                  <span className="truncate text-gray-400 group-hover/upload:text-gray-200 font-medium">
+                                    {uploadFilesByTask[selectedCard.id]?.name || "Localizar..."}
+                                  </span>
+                                </label>
+                              </div>
+                            </div>
+
+                            <button
+                              type="button"
+                              onClick={() => handleUploadDocument(selectedCard.id)}
+                              disabled={busyTaskId === selectedCard.id}
+                              className="w-full mt-2 px-6 py-3.5 rounded-xl border border-[#CCA761]/40 bg-[#CCA761]/10 hover:bg-[#CCA761]/20 text-xs font-black uppercase tracking-[0.2em] text-[#CCA761] flex items-center justify-center gap-2 disabled:opacity-50 transition-all hover:shadow-[0_0_15px_rgba(204,167,97,0.2)]"
                             >
-                              <span className="truncate text-gray-400 group-hover/upload:text-gray-200 font-medium">
-                                {uploadFilesByTask[selectedCard.id]?.name || "Localizar..."}
-                              </span>
-                            </label>
+                              {busyTaskId === selectedCard.id ? <Loader2 size={14} className="animate-spin" /> : <Upload size={14} />}
+                              Enviar
+                            </button>
+                          </div>
+                        )}
+                      </div>
+                    </div>
+                  </div>
+
+                  <div className="bg-[#0a0a0a] border border-[#CCA761]/10 rounded-2xl flex flex-col relative overflow-hidden shadow-[0_0_40px_rgba(204,167,97,0.02)] min-h-[760px] xl:h-[86vh]">
+                    <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4 px-6 py-5 border-b border-[#CCA761]/10 bg-[#0f0f0f] shrink-0 sticky top-0 z-20">
+                      <div className="flex items-center gap-3">
+                        <div className="w-10 h-10 rounded-full bg-[#CCA761]/10 border border-[#CCA761]/20 flex items-center justify-center">
+                          <FileText size={16} className="text-[#CCA761]" />
+                        </div>
+                        <div>
+                          <p className="text-[#CCA761] text-[10px] uppercase tracking-[0.3em] font-black">
+                            {generatedPieceByTask[selectedCard.id] ? getPieceTypeLabel(generatedPieceByTask[selectedCard.id]!.pieceType) : "Painel Editorial Jurídico"}
+                          </p>
+                          <p className="text-xs text-gray-500 font-medium tracking-wide mt-0.5">
+                            {generatedPieceByTask[selectedCard.id] ? "Ambiente premium de revisão e formatação" : "Pré-visualização do rascunho oficial"}
+                          </p>
+                        </div>
+                      </div>
+                      
+                      {generatedPieceByTask[selectedCard.id] && (
+                        <div className="flex items-center gap-2">
+                          <button
+                            type="button"
+                            onClick={() => handleCopyPiece(selectedCard.id)}
+                            className="px-4 py-2.5 rounded-xl border border-white/10 bg-[#111] hover:bg-white/10 text-[10px] font-black uppercase tracking-[0.2em] text-white flex items-center justify-center gap-2 transition-colors"
+                          >
+                            <Copy size={14} /> Copiar
+                          </button>
+                          <button
+                            type="button"
+                            onClick={() => handleDownloadPiece(selectedCard.id)}
+                            disabled={downloadBusyTaskId === selectedCard.id}
+                            className="px-4 py-2.5 rounded-xl border border-[#4285F4]/30 bg-[#4285F4]/10 hover:bg-[#4285F4]/20 text-[10px] font-black uppercase tracking-[0.2em] text-[#8ab4ff] flex items-center justify-center gap-2 disabled:opacity-50 transition-colors shadow-[0_0_15px_rgba(66,133,244,0.1)]"
+                          >
+                            {downloadBusyTaskId === selectedCard.id ? <Loader2 size={14} className="animate-spin" /> : <Download size={14} />}
+                            Exportar .DOCX
+                          </button>
+                        </div>
+                      )}
+                    </div>
+
+                    <div className="flex-1 overflow-y-auto no-scrollbar bg-[#030303] p-3 sm:p-6 lg:p-10 relative">
+                      {generatedPieceByTask[selectedCard.id] ? (
+                        <div className="max-w-[850px] mx-auto bg-[#0d0d0d] border border-white/5 shadow-2xl rounded-xl min-h-full flex flex-col relative overflow-hidden">
+                          <div className="absolute top-0 left-0 w-full h-[3px] bg-gradient-to-r from-transparent via-[#CCA761]/50 to-transparent opacity-70" />
+                          
+                          <div className="absolute top-10 right-10 opacity-[0.03] pointer-events-none">
+                            <Sparkles size={200} className="text-[#CCA761] mix-blend-screen" />
+                          </div>
+
+                          <div className="p-8 sm:p-12 md:p-16 relative z-10 flex-1">
+                            <article 
+                              className={`prose prose-invert max-w-none ${cormorant.className} 
+                                prose-headings:font-bold prose-headings:text-[#e2c78d] prose-headings:tracking-wide
+                                prose-h1:text-4xl prose-h1:text-center prose-h1:mb-10
+                                prose-h2:text-3xl prose-h2:mt-12 prose-h2:border-b prose-h2:border-white/5 prose-h2:pb-4
+                                prose-h3:text-2xl prose-h3:text-[#CCA761]
+                                prose-p:text-gray-200 prose-p:leading-[2] prose-p:text-justify prose-p:text-[22px] prose-p:tracking-wide
+                                prose-li:text-gray-200 prose-li:text-[22px] prose-li:leading-[1.9]
+                                prose-strong:text-white prose-strong:font-bold
+                                prose-blockquote:border-l-[3px] prose-blockquote:border-[#CCA761] prose-blockquote:bg-[#CCA761]/[0.03] prose-blockquote:py-4 prose-blockquote:px-6 prose-blockquote:text-gray-400 prose-blockquote:italic prose-blockquote:rounded-r-xl prose-blockquote:my-8 prose-blockquote:text-[20px]
+                                prose-hr:border-white/10 prose-hr:my-12
+                                marker:text-[#CCA761]
+                              `}
+                            >
+                              <ReactMarkdown>{generatedPieceByTask[selectedCard.id]!.draftMarkdown}</ReactMarkdown>
+                            </article>
                           </div>
                         </div>
-                        
-                        <button
-                          type="button"
-                          onClick={() => handleUploadDocument(selectedCard.id)}
-                          disabled={busyTaskId === selectedCard.id}
-                          className="w-full mt-2 px-6 py-3.5 rounded-xl border border-[#CCA761]/40 bg-[#CCA761]/10 hover:bg-[#CCA761]/20 text-xs font-black uppercase tracking-[0.2em] text-[#CCA761] flex items-center justify-center gap-2 disabled:opacity-50 transition-all hover:shadow-[0_0_15px_rgba(204,167,97,0.2)]"
-                        >
-                          {busyTaskId === selectedCard.id ? <Loader2 size={14} className="animate-spin" /> : <Upload size={14} />}
-                          Enviar
-                        </button>
-                      </div>
-                    )}
+                      ) : (
+                        <div className="h-full min-h-[500px] flex flex-col items-center justify-center text-center p-10 border-2 border-dashed border-[#CCA761]/10 rounded-2xl bg-[#0a0a0a]/50 m-4 lg:m-10">
+                          <div className="w-24 h-24 rounded-full bg-[#111] border border-white/5 flex items-center justify-center mb-6 relative group">
+                            <div className="absolute inset-0 bg-[#CCA761]/10 rounded-full blur-xl animate-pulse" />
+                            <FileText size={40} className="text-[#CCA761]/30 relative z-10" />
+                          </div>
+                          <p className="text-[#CCA761] text-[10px] uppercase tracking-[0.3em] font-black mb-4">Página em Branco</p>
+                          <p className="text-sm text-gray-500 max-w-sm leading-relaxed mx-auto">
+                            O rascunho oficial de alto nível será renderizado aqui com design editorial e legibilidade confortável para advogados.
+                          </p>
+                        </div>
+                      )}
+                    </div>
                   </div>
                 </div>
 
-                <div className="grid grid-cols-2 lg:grid-cols-4 gap-3 shrink-0">
+                <div className="mt-5 grid grid-cols-2 lg:grid-cols-4 gap-3 shrink-0">
                   {Boolean(selectedCard.drive_structure_ready && selectedCard.drive_folder_id && selectedCard.drive_link) ? (
                     <a
                       href={selectedCard.drive_link || undefined}

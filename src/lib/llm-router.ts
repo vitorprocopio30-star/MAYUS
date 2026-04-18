@@ -31,7 +31,7 @@ const MODELS: Record<LLMProvider, Record<LLMUseCase, string>> = {
     classificar_movimentacao: 'qwen/qwen3.6-plus',
     resumo_juridico:          'qwen/qwen3.6-plus',
     organizar_processo:       'qwen/qwen3.6-plus',
-    gerar_peca:               'qwen/qwen3.6-plus',
+    gerar_peca:               'anthropic/claude-sonnet-4.6',
     task_manager:             'qwen/qwen3.6-plus',
     sdr_whatsapp:             'qwen/qwen3.6-plus',
   },
@@ -113,13 +113,23 @@ export async function getLLMClient(
   // 1. Buscar todas as integrações de IA do tenant
   const { data: integrations } = await supabase
     .from('tenant_integrations')
-    .select('provider, api_key')
+    .select('provider, api_key, instance_name, status')
     .eq('tenant_id', tenantId)
     .in('provider', ['openrouter', 'anthropic', 'openai', 'google', 'groq'])
 
   const byProvider = Object.fromEntries(
-    (integrations ?? []).map(i => [i.provider as LLMProvider, i.api_key as string])
-  ) as Partial<Record<LLMProvider, string>>
+    (integrations ?? [])
+      .filter((integration) => {
+        const apiKey = String(integration.api_key || '').trim()
+        const status = String((integration as { status?: string | null }).status || '').trim().toLowerCase()
+        return Boolean(apiKey) && (!status || status === 'connected')
+      })
+      .map((integration) => {
+        const apiKey = String(integration.api_key || '').trim()
+        const modelOverride = String((integration as { instance_name?: string | null }).instance_name || '').trim() || null
+        return [integration.provider as LLMProvider, { apiKey, modelOverride }]
+      })
+  ) as Partial<Record<LLMProvider, { apiKey: string; modelOverride: string | null }>>
 
   // 2. Selecionar provedor por prioridade (banco → env vars)
   const priority: LLMProvider[] = ['openrouter', 'anthropic', 'openai', 'google', 'groq']
@@ -134,12 +144,14 @@ export async function getLLMClient(
 
   let selectedProvider: LLMProvider | null = null
   let selectedKey: string | null = null
+  let selectedModelOverride: string | null = null
 
   // Prioridade 1: chave do próprio tenant no banco
   for (const p of priority) {
-    if (byProvider[p]) {
+    if (byProvider[p]?.apiKey) {
       selectedProvider = p
-      selectedKey = byProvider[p]!
+      selectedKey = byProvider[p]!.apiKey
+      selectedModelOverride = byProvider[p]!.modelOverride
       break
     }
   }
@@ -170,7 +182,7 @@ export async function getLLMClient(
 
   return {
     provider:     selectedProvider,
-    model:        MODELS[selectedProvider][useCase],
+    model:        selectedModelOverride || MODELS[selectedProvider][useCase],
     apiKey:       selectedKey,
     endpoint:     ENDPOINTS[selectedProvider],
     extraHeaders,
