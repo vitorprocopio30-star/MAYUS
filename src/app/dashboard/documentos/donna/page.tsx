@@ -81,7 +81,7 @@ export default function DonnaRepositoryPage() {
                Diretrizes da <span className="text-luxury italic font-semibold">Donna</span>
              </motion.h1>
              <motion.p initial={{ opacity: 0, y: 10 }} animate={{ opacity: 1, y: 0 }} transition={{ delay: 0.2 }} className="text-gray-400 text-sm max-w-2xl leading-relaxed">
-               Cérebro comportamental, modelos base e protocolos de formatação. O repositório central utilizado pelas IA's do escritório Dutra Advocacia para elaboração de peças em conformidade visual, rigor técnico e excelência em direito bancário.
+               Cérebro comportamental, modelos base e protocolos de formatação. O repositório central utilizado pelas Inteligências Artificiais do escritório Dutra Advocacia para elaboração de peças em conformidade visual, rigor técnico e excelência em direito bancário.
              </motion.p>
           </div>
         </div>
@@ -101,7 +101,7 @@ export default function DonnaRepositoryPage() {
            <motion.div initial={{ opacity: 0, y: 20 }} whileInView={{ opacity: 1, y: 0 }} viewport={{ once: true }} transition={{ delay: 0.2 }} className="glass-card p-6 rounded-2xl group hover:border-[#CCA761]/40 transition-colors">
               <Sparkles size={24} className="text-[#CCA761] mb-4 group-hover:scale-110 transition-transform" />
               <h3 className={`text-2xl text-white mb-2 ${cormorant.className}`}>O Tom e Humanização</h3>
-              <p className="text-sm font-light text-gray-500 leading-relaxed">Advocacia é feita de vidas reais. A Donna elabora narrativas factuais vivas, pede "Provas em Imagens" ([X_IMAGEM]) nos locais chaves da peça.</p>
+              <p className="text-sm font-light text-gray-500 leading-relaxed">Advocacia é feita de vidas reais. A Donna elabora narrativas factuais vivas, pede provas em imagens ([X_IMAGEM]) nos locais chaves da peça.</p>
            </motion.div>
         </div>
 
