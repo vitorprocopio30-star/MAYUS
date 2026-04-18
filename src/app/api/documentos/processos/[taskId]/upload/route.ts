@@ -54,20 +54,42 @@ export async function POST(request: NextRequest, { params }: { params: { taskId:
     const targetFolderId = folderStructure[folderLabel]?.id || task.drive_folder_id;
 
     const bytes = await file.arrayBuffer();
-    await uploadGoogleDriveFile(driveContext.accessToken, {
+    const uploadedFile = await uploadGoogleDriveFile(driveContext.accessToken, {
       name: file.name,
       mimeType: file.type || "application/octet-stream",
       bytes,
       parentFolderId: targetFolderId,
     });
 
-    const result = await syncProcessDocuments({
-      tenantId,
-      accessToken: driveContext.accessToken,
-      task,
-    });
+    try {
+      const result = await syncProcessDocuments({
+        tenantId,
+        accessToken: driveContext.accessToken,
+        task,
+      });
 
-    return NextResponse.json({ success: true, ...result });
+      return NextResponse.json({
+        success: true,
+        uploaded: true,
+        indexed: true,
+        uploadedFile,
+        ...result,
+      });
+    } catch (syncError: any) {
+      return NextResponse.json({
+        success: true,
+        uploaded: true,
+        indexed: false,
+        uploadedFile,
+        warnings: [
+          {
+            stage: "index",
+            fileName: file.name,
+            message: syncError?.message || "Arquivo enviado ao Drive, mas a indexação no MAYUS falhou.",
+          },
+        ],
+      });
+    }
   } catch (error: any) {
     if (error.message === "Unauthorized") {
       return NextResponse.json({ error: "Não autenticado." }, { status: 401 });

@@ -1,4 +1,3 @@
-import mammoth from "mammoth";
 import { supabaseAdmin } from "@/lib/supabase/admin";
 import {
   buildGoogleDriveFolderUrl,
@@ -34,6 +33,18 @@ type ExtractedContent = {
   extractionError: string | null;
 };
 
+type ExistingProcessDocumentRecord = {
+  id: string;
+  drive_file_id: string;
+  extraction_status?: "extracted" | "skipped" | "error" | "pending" | null;
+};
+
+export type ProcessDocumentSyncWarning = {
+  stage: "download" | "extract" | "index";
+  fileName: string;
+  message: string;
+};
+
 export type SyncedProcessDocument = {
   driveFileId: string;
   driveFolderId: string | null;
@@ -49,6 +60,13 @@ export type SyncedProcessDocument = {
   excerpt: string | null;
 };
 
+export type SyncProcessDocumentsResult = {
+  memory: unknown;
+  documents: SyncedProcessDocument[];
+  structure: GoogleDriveFolderStructure;
+  warnings: ProcessDocumentSyncWarning[];
+};
+
 const FOLDER_DOCUMENT_TYPE_MAP: Record<string, string> = {
   "01-Documentos do Cliente": "documento_cliente",
   "02-Inicial": "inicial",
@@ -61,8 +79,6 @@ const FOLDER_DOCUMENT_TYPE_MAP: Record<string, string> = {
   "09-Pecas Finais": "peca_final",
   "Raiz do Processo": "geral",
 };
-
-const pdfParse = require("pdf-parse") as any;
 
 function normalizeFolderStructure(value: unknown): GoogleDriveFolderStructure {
   if (!value || typeof value !== "object") return {};
@@ -116,6 +132,8 @@ async function extractDocumentText(name: string, mimeType: string | null, bytes:
     }
 
     if ((mimeType || "") === "application/pdf" || extension === "pdf") {
+      const pdfParseModule = await import("pdf-parse");
+      const pdfParse = (pdfParseModule as any).default || pdfParseModule;
       const parsed = await pdfParse(Buffer.from(bytes));
       const rawText = String(parsed?.text || "");
       const normalizedText = normalizeText(rawText);
@@ -133,6 +151,8 @@ async function extractDocumentText(name: string, mimeType: string | null, bytes:
       (mimeType || "") === "application/vnd.openxmlformats-officedocument.wordprocessingml.document"
       || extension === "docx"
     ) {
+      const mammothModule = await import("mammoth");
+      const mammoth = (mammothModule as any).default || mammothModule;
       const parsed = await mammoth.extractRawText({ buffer: Buffer.from(bytes) });
       const rawText = String(parsed?.value || "");
       const normalizedText = normalizeText(rawText);
@@ -166,6 +186,59 @@ async function extractDocumentText(name: string, mimeType: string | null, bytes:
   }
 }
 
+function shouldAttemptExtraction(name: string, mimeType: string | null) {
+  const extension = getFileExtension(name);
+
+  if ((mimeType || "").startsWith("application/vnd.google-apps")) {
+    return false;
+  }
+
+  if ((mimeType || "").startsWith("text/")) {
+    return true;
+  }
+
+  if (
+    (mimeType || "") === "application/pdf"
+    || (mimeType || "") === "application/vnd.openxmlformats-officedocument.wordprocessingml.document"
+  ) {
+    return true;
+  }
+
+  return ["txt", "md", "csv", "pdf", "docx"].includes(extension);
+}
+
+async function tryExtractProcessDocument(params: {
+  accessToken: string;
+  driveFileId: string;
+  name: string;
+  mimeType: string | null;
+}): Promise<ExtractedContent> {
+  if (!shouldAttemptExtraction(params.name, params.mimeType)) {
+    return {
+      rawText: null,
+      normalizedText: null,
+      excerpt: null,
+      pageCount: null,
+      extractionStatus: "skipped",
+      extractionError: null,
+    };
+  }
+
+  try {
+    const bytes = await downloadGoogleDriveFile(params.accessToken, params.driveFileId);
+    return await extractDocumentText(params.name, params.mimeType, bytes);
+  } catch (error: any) {
+    return {
+      rawText: null,
+      normalizedText: null,
+      excerpt: null,
+      pageCount: null,
+      extractionStatus: "error",
+      extractionError: error?.message || "Falha ao baixar ou extrair o documento.",
+    };
+  }
+}
+
 function buildSummary(task: ProcessTaskDocumentContext, documents: SyncedProcessDocument[], missingDocuments: string[]) {
   const headline = [task.client_name, task.process_number, task.title].filter(Boolean).join(" | ");
   const latestDocument = documents[0]?.name ? `Último documento: ${documents[0].name}.` : "Nenhum documento sincronizado ainda.";
@@ -184,7 +257,7 @@ export async function syncProcessDocuments(params: {
   tenantId: string;
   accessToken: string;
   task: ProcessTaskDocumentContext;
-}) {
+}): Promise<SyncProcessDocumentsResult> {
   const { tenantId, accessToken, task } = params;
 
   if (!task.drive_folder_id) {
@@ -242,22 +315,30 @@ export async function syncProcessDocuments(params: {
     )).flat(),
   ];
 
+  const { data: existingDocuments, error: existingDocumentsError } = await supabaseAdmin
+    .from("process_documents")
+    .select("id, drive_file_id, extraction_status")
+    .eq("process_task_id", task.id);
+
+  if (existingDocumentsError) {
+    throw existingDocumentsError;
+  }
+
+  const existingDocumentsByDriveId = new Map(
+    ((existingDocuments || []) as ExistingProcessDocumentRecord[]).map((document) => [document.drive_file_id, document])
+  );
+
   const documents: SyncedProcessDocument[] = [];
+  const warnings: ProcessDocumentSyncWarning[] = [];
 
   for (const file of candidateFiles) {
-    let extracted = {
-      rawText: null,
-      normalizedText: null,
-      excerpt: null,
-      pageCount: null,
-      extractionStatus: "skipped",
-      extractionError: null,
-    } as ExtractedContent;
-
-    if (file.mimeType || ["pdf", "docx", "txt", "md", "csv"].includes(getFileExtension(file.name))) {
-      const bytes = await downloadGoogleDriveFile(accessToken, file.driveFileId);
-      extracted = await extractDocumentText(file.name, file.mimeType, bytes);
-    }
+    const existingDocument = existingDocumentsByDriveId.get(file.driveFileId);
+    const extracted = await tryExtractProcessDocument({
+      accessToken,
+      driveFileId: file.driveFileId,
+      name: file.name,
+      mimeType: file.mimeType,
+    });
 
     const documentType = inferDocumentType(file.folderLabel, file.name, extracted.normalizedText);
     const classificationStatus: SyncedProcessDocument["classificationStatus"] = FOLDER_DOCUMENT_TYPE_MAP[file.folderLabel]
@@ -265,6 +346,10 @@ export async function syncProcessDocuments(params: {
       : documentType !== "geral"
         ? "classified"
         : "pending";
+
+    const extractionStatus = extracted.extractionStatus === "skipped" && existingDocument?.extraction_status === "extracted"
+      ? "extracted"
+      : extracted.extractionStatus;
 
     const { data: upsertedDocument, error: documentError } = await supabaseAdmin
       .from("process_documents")
@@ -282,7 +367,7 @@ export async function syncProcessDocuments(params: {
           web_view_link: file.webViewLink,
           document_type: documentType,
           classification_status: classificationStatus,
-          extraction_status: extracted.extractionStatus,
+          extraction_status: extractionStatus,
         },
         { onConflict: "drive_file_id" }
       )
@@ -303,7 +388,7 @@ export async function syncProcessDocuments(params: {
           normalized_text: extracted.normalizedText,
           excerpt: extracted.excerpt,
           page_count: extracted.pageCount,
-          extraction_status: extracted.extractionStatus,
+          extraction_status: extractionStatus,
           extracted_at: extracted.extractionStatus === "extracted" ? new Date().toISOString() : null,
           extraction_error: extracted.extractionError,
         },
@@ -311,22 +396,29 @@ export async function syncProcessDocuments(params: {
       );
 
     if (contentError) {
-      throw contentError;
+      warnings.push({
+        stage: "index",
+        fileName: file.name,
+        message: contentError.message,
+      });
+    }
+
+    if (extracted.extractionStatus === "error" && extracted.extractionError) {
+      warnings.push({
+        stage: "extract",
+        fileName: file.name,
+        message: extracted.extractionError,
+      });
     }
 
     documents.push({
       ...file,
       documentType,
       classificationStatus,
-      extractionStatus: extracted.extractionStatus,
+      extractionStatus,
       excerpt: extracted.excerpt,
     });
   }
-
-  const { data: existingDocuments } = await supabaseAdmin
-    .from("process_documents")
-    .select("id, drive_file_id")
-    .eq("process_task_id", task.id);
 
   const currentDriveIds = new Set(documents.map((document) => document.driveFileId));
   const staleDocumentIds = (existingDocuments || [])
@@ -396,5 +488,6 @@ export async function syncProcessDocuments(params: {
     memory: updatedMemory,
     documents,
     structure,
+    warnings,
   };
 }

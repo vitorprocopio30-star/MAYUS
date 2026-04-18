@@ -96,6 +96,7 @@ export default function DocumentosPage() {
   const [cards, setCards] = useState<ProcessDocumentCard[]>([]);
   const [uploadFolderByTask, setUploadFolderByTask] = useState<Record<string, string>>({});
   const [uploadFilesByTask, setUploadFilesByTask] = useState<Record<string, globalThis.File | null>>({});
+  const [uploadInputVersionByTask, setUploadInputVersionByTask] = useState<Record<string, number>>({});
 
   const loadRepository = useCallback(async () => {
     if (!tenantId) return;
@@ -224,7 +225,12 @@ export default function DocumentosPage() {
         throw new Error(data?.error || "Não foi possível sincronizar os documentos.");
       }
 
-      toast.success(`Sincronização concluída com ${data?.memory?.document_count || 0} documento(s).`);
+      const warnings = Array.isArray(data?.warnings) ? data.warnings : [];
+      if (warnings.length > 0) {
+        toast.warning(`Sincronização concluída com ${data?.memory?.document_count || 0} documento(s), mas ${warnings.length} item(ns) tiveram leitura parcial.`);
+      } else {
+        toast.success(`Sincronização concluída com ${data?.memory?.document_count || 0} documento(s).`);
+      }
       await loadRepository();
     } catch (error: any) {
       toast.error(error?.message || "Não foi possível sincronizar os documentos.");
@@ -256,8 +262,17 @@ export default function DocumentosPage() {
         throw new Error(data?.error || "Não foi possível enviar o documento.");
       }
 
-      toast.success("Documento enviado e sincronizado com sucesso.");
+      const warnings = Array.isArray(data?.warnings) ? data.warnings : [];
+      if (data?.uploaded && data?.indexed === false) {
+        toast.warning("Documento enviado ao Drive, mas a indexação no MAYUS falhou. Tente sincronizar novamente.");
+      } else if (warnings.length > 0) {
+        toast.warning("Documento enviado. O MAYUS indexou o arquivo, mas a leitura do conteúdo ficou parcial.");
+      } else {
+        toast.success("Documento enviado e sincronizado com sucesso.");
+      }
+
       setUploadFilesByTask((current) => ({ ...current, [taskId]: null }));
+      setUploadInputVersionByTask((current) => ({ ...current, [taskId]: (current[taskId] || 0) + 1 }));
       await loadRepository();
     } catch (error: any) {
       toast.error(error?.message || "Não foi possível enviar o documento.");
@@ -450,14 +465,32 @@ export default function DocumentosPage() {
                           ))}
                         </select>
 
-                        <input
-                          type="file"
-                          onChange={(event) => {
-                            const nextFile = event.target.files?.[0] || null;
-                            setUploadFilesByTask((current) => ({ ...current, [card.id]: nextFile }));
-                          }}
-                          className="bg-[#141414] border border-white/10 rounded-xl px-3 py-3 text-sm text-white file:mr-3 file:border-0 file:bg-[#0b1220] file:px-3 file:py-2 file:rounded-lg file:text-[#8ab4ff]"
-                        />
+                        <div className="relative">
+                          <input
+                            key={`${card.id}-${uploadInputVersionByTask[card.id] || 0}`}
+                            id={`upload-input-${card.id}`}
+                            type="file"
+                            onChange={(event) => {
+                              const nextFile = event.target.files?.[0] || null;
+                              setUploadFilesByTask((current) => ({ ...current, [card.id]: nextFile }));
+                            }}
+                            className="hidden"
+                          />
+                          <label
+                            htmlFor={`upload-input-${card.id}`}
+                            className="h-full min-h-[52px] bg-[#141414] border border-white/10 rounded-xl px-3 py-3 text-sm text-white flex items-center justify-between gap-3 cursor-pointer hover:border-[#4285F4]/35 transition-colors"
+                          >
+                            <div className="min-w-0">
+                              <p className="text-[10px] uppercase tracking-[0.22em] text-gray-500 font-black mb-1">Arquivo</p>
+                              <p className="text-sm text-white truncate">
+                                {uploadFilesByTask[card.id]?.name || "Selecionar documento do processo"}
+                              </p>
+                            </div>
+                            <span className="shrink-0 px-3 py-2 rounded-lg bg-[#0b1220] border border-[#4285F4]/20 text-[#8ab4ff] text-[11px] font-black uppercase tracking-widest">
+                              Escolher
+                            </span>
+                          </label>
+                        </div>
 
                         <button
                           type="button"
