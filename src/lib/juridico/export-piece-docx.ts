@@ -1,6 +1,5 @@
 import {
   AlignmentType,
-  BorderStyle,
   Document,
   Footer,
   Header,
@@ -64,6 +63,18 @@ type EmbeddedAsset = {
   type: 'png' | 'jpg' | 'gif';
 };
 
+const DEFAULT_FONT = 'Arial Narrow';
+const DEFAULT_BODY_SIZE = 26;
+const DEFAULT_TITLE_SIZE = 26;
+const DEFAULT_CITATION_SIZE = 22;
+const DEFAULT_PARAGRAPH_SPACING = 120;
+const DEFAULT_LINE_SPACING = 360;
+const DEFAULT_FIRST_LINE_INDENT = 1418;
+const DEFAULT_CITATION_LEFT_INDENT = 2268;
+const DEFAULT_MARGIN = 1699;
+const DEFAULT_PAGE_HEIGHT = 16838;
+const DEFAULT_PAGE_WIDTH = 11906;
+
 function toTwip(value: number | null | undefined, fallback: number) {
   if (typeof value !== 'number' || Number.isNaN(value)) return fallback;
   return Math.max(0, Math.round(value));
@@ -118,11 +129,11 @@ function mapAlignment(alignment: string | null | undefined) {
 }
 
 function buildParagraphsFromMarkdown(markdown: string, profile: TenantLegalProfileDocx | null) {
-  const font = sanitizeText(profile?.default_font_family) || 'Arial';
-  const bodySize = Math.round((profile?.body_font_size || 11.5) * 2);
-  const titleSize = Math.round((profile?.title_font_size || 12) * 2);
-  const paragraphSpacing = Math.round((profile?.paragraph_spacing || 120));
-  const lineSpacing = Math.round((profile?.line_spacing || 1) * 240);
+  const font = sanitizeText(profile?.default_font_family) || DEFAULT_FONT;
+  const bodySize = Math.round((profile?.body_font_size || 13) * 2) || DEFAULT_BODY_SIZE;
+  const titleSize = Math.round((profile?.title_font_size || 13) * 2) || DEFAULT_TITLE_SIZE;
+  const paragraphSpacing = Math.round((profile?.paragraph_spacing || DEFAULT_PARAGRAPH_SPACING));
+  const lineSpacing = Math.round((profile?.line_spacing || 1.5) * 240) || DEFAULT_LINE_SPACING;
   const alignment = mapAlignment(profile?.text_alignment);
   const lines = markdown.replace(/\r/g, '').split('\n');
   const paragraphs: Paragraph[] = [];
@@ -149,9 +160,9 @@ function buildParagraphsFromMarkdown(markdown: string, profile: TenantLegalProfi
       paragraphs.push(
         new Paragraph({
           heading: [HeadingLevel.HEADING_1, HeadingLevel.HEADING_2, HeadingLevel.HEADING_3, HeadingLevel.HEADING_4][level - 1],
-          children: parseInlineRuns(stripMarkdown(headingMatch[2]), font, titleSize),
+          children: [new TextRun({ text: stripMarkdown(headingMatch[2]), font, size: titleSize, bold: true, underline: {} })],
           spacing: { before: paragraphSpacing, after: Math.round(paragraphSpacing * 0.75) },
-          alignment: AlignmentType.LEFT,
+          alignment: AlignmentType.JUSTIFIED,
         })
       );
       continue;
@@ -162,9 +173,9 @@ function buildParagraphsFromMarkdown(markdown: string, profile: TenantLegalProfi
       paragraphs.push(
         new Paragraph({
           heading: HeadingLevel.HEADING_2,
-          children: [new TextRun({ text: stripMarkdown(cleanLine), bold: true, font, size: titleSize })],
+          children: [new TextRun({ text: stripMarkdown(cleanLine), bold: true, underline: {}, font, size: titleSize })],
           spacing: { before: paragraphSpacing, after: Math.round(paragraphSpacing * 0.75) },
-          alignment: AlignmentType.LEFT,
+          alignment: AlignmentType.JUSTIFIED,
         })
       );
       continue;
@@ -178,6 +189,7 @@ function buildParagraphsFromMarkdown(markdown: string, profile: TenantLegalProfi
           numbering: { reference: 'legal-ordered', level: 0 },
           spacing: { after: paragraphSpacing, line: lineSpacing },
           alignment,
+          indent: { left: 720, hanging: 260 },
         })
       );
       orderedIndex += 1;
@@ -193,6 +205,7 @@ function buildParagraphsFromMarkdown(markdown: string, profile: TenantLegalProfi
           bullet: { level: 0 },
           spacing: { after: paragraphSpacing, line: lineSpacing },
           alignment,
+          indent: { left: 720, hanging: 260 },
         })
       );
       continue;
@@ -203,16 +216,9 @@ function buildParagraphsFromMarkdown(markdown: string, profile: TenantLegalProfi
       orderedIndex = 1;
       paragraphs.push(
         new Paragraph({
-          children: parseInlineRuns(stripMarkdown(quoteMatch[1]), font, bodySize),
+          children: [new TextRun({ text: stripMarkdown(quoteMatch[1]), font, size: DEFAULT_CITATION_SIZE, italics: true })],
           spacing: { before: Math.round(paragraphSpacing / 2), after: paragraphSpacing, line: lineSpacing },
-          indent: { left: 560, right: 280 },
-          border: {
-            left: {
-              style: BorderStyle.SINGLE,
-              color: 'B08A3C',
-              size: 8,
-            },
-          },
+          indent: { left: DEFAULT_CITATION_LEFT_INDENT },
           alignment,
         })
       );
@@ -221,20 +227,21 @@ function buildParagraphsFromMarkdown(markdown: string, profile: TenantLegalProfi
 
     orderedIndex = 1;
     paragraphs.push(
-      new Paragraph({
-        children: parseInlineRuns(stripMarkdown(cleanLine), font, bodySize),
-        spacing: { after: paragraphSpacing, line: lineSpacing },
-        alignment,
-      })
-    );
+        new Paragraph({
+          children: parseInlineRuns(stripMarkdown(cleanLine), font, bodySize),
+          spacing: { after: paragraphSpacing, line: lineSpacing },
+          alignment,
+          indent: { firstLine: DEFAULT_FIRST_LINE_INDENT },
+        })
+      );
   }
 
   return paragraphs;
 }
 
 function buildSignatureParagraphs(signatureBlock: string | null | undefined, profile: TenantLegalProfileDocx | null) {
-  const font = sanitizeText(profile?.default_font_family) || 'Arial';
-  const bodySize = Math.round((profile?.body_font_size || 11.5) * 2);
+  const font = sanitizeText(profile?.default_font_family) || DEFAULT_FONT;
+  const bodySize = Math.round((profile?.body_font_size || 13) * 2) || DEFAULT_BODY_SIZE;
   const lines = sanitizeText(signatureBlock).split('\n').map((line) => line.trim()).filter(Boolean);
   if (lines.length === 0) return [] as Paragraph[];
 
@@ -302,7 +309,7 @@ export async function exportLegalPieceToDocx(params: ExportLegalPieceParams) {
   const header = params.profile?.use_header
     ? new Header({
         children: [
-          buildAssetParagraph(headerAsset, officeName, AlignmentType.CENTER, 520, 64),
+          buildAssetParagraph(headerAsset, officeName, AlignmentType.CENTER, 320, 135),
         ],
       })
     : undefined;
@@ -310,16 +317,16 @@ export async function exportLegalPieceToDocx(params: ExportLegalPieceParams) {
   const footerChildren: Paragraph[] = [];
   if (params.profile?.use_footer) {
     footerChildren.push(
-      buildAssetParagraph(footerAsset, params.processTitle || params.pieceLabel, AlignmentType.CENTER, 480, 42)
+      buildAssetParagraph(footerAsset, params.processTitle || params.pieceLabel, AlignmentType.CENTER, 500, 93)
     );
   }
   if (params.profile?.use_page_numbers) {
     footerChildren.push(
       new Paragraph({
-        alignment: AlignmentType.CENTER,
+        alignment: AlignmentType.RIGHT,
         children: [
-          new TextRun({ text: 'Página ', size: 16 }),
-          new TextRun({ children: [PageNumber.CURRENT], size: 16 }),
+          new TextRun({ text: 'Pág. ', size: 16, font: DEFAULT_FONT, color: '8B6914' }),
+          new TextRun({ children: [PageNumber.CURRENT], size: 16, font: DEFAULT_FONT, color: '8B6914' }),
         ],
       })
     );
@@ -357,11 +364,15 @@ export async function exportLegalPieceToDocx(params: ExportLegalPieceParams) {
       {
         properties: {
           page: {
+            size: {
+              width: DEFAULT_PAGE_WIDTH,
+              height: DEFAULT_PAGE_HEIGHT,
+            },
             margin: {
-              top: toTwip(params.profile?.margin_top, 1699),
-              right: toTwip(params.profile?.margin_right, 1699),
-              bottom: toTwip(params.profile?.margin_bottom, 1281),
-              left: toTwip(params.profile?.margin_left, 1699),
+              top: toTwip(params.profile?.margin_top, DEFAULT_MARGIN),
+              right: toTwip(params.profile?.margin_right, DEFAULT_MARGIN),
+              bottom: toTwip(params.profile?.margin_bottom, DEFAULT_MARGIN),
+              left: toTwip(params.profile?.margin_left, DEFAULT_MARGIN),
             },
           },
         },
@@ -370,17 +381,17 @@ export async function exportLegalPieceToDocx(params: ExportLegalPieceParams) {
         children: [
           new Paragraph({
             heading: HeadingLevel.TITLE,
-            children: [new TextRun({ text: params.pieceLabel, bold: true, size: 28 })],
+            children: [new TextRun({ text: params.pieceLabel, bold: true, font: DEFAULT_FONT, size: DEFAULT_TITLE_SIZE })],
             alignment: AlignmentType.CENTER,
             spacing: { after: 200 },
           }),
           new Paragraph({
-            children: [new TextRun({ text: params.processTitle, bold: true, size: 22 })],
+            children: [new TextRun({ text: params.processTitle, bold: true, font: DEFAULT_FONT, size: DEFAULT_BODY_SIZE })],
             alignment: AlignmentType.CENTER,
             spacing: { after: 160 },
           }),
           ...introMeta.map((item) => new Paragraph({
-            children: [new TextRun({ text: item!, size: 18 })],
+            children: [new TextRun({ text: item!, size: 18, font: DEFAULT_FONT })],
             alignment: AlignmentType.CENTER,
             spacing: { after: 80 },
           })),

@@ -1,5 +1,6 @@
 import { buildHeaders, getLLMClient } from '@/lib/llm-router';
 import { loadDriveStyleReferencePacket } from '@/lib/juridico/drive-style-examples';
+import { MAYUS_LEGAL_SYSTEM_PROMPT } from '@/lib/juridico/mayus-legal-system-prompt';
 import {
   normalizeLegalPieceRequest,
   type NormalizedPieceRequest,
@@ -979,8 +980,20 @@ export async function generateLegalPiece(params: GenerateLegalPieceParams): Prom
   });
 
   const llm = await getLLMClient(supabaseAdmin, params.tenantId, 'gerar_peca');
-  const plannerSystemPrompt = 'Voce e um planner juridico brasileiro. Construa plano de peca robusto, em JSON puro, sem escrever a peca final.';
-  const writerSystemPrompt = 'Voce redige pecas juridicas brasileiras com voz de advogado experiente em contencioso. Nunca invente fonte, nunca escreva de forma generica ou escolar e sempre preserve aderencia documental.';
+  const plannerSystemPrompt = `${MAYUS_LEGAL_SYSTEM_PROMPT}
+
+MODO ATUAL: PLANNER JURIDICO
+- Sua funcao nesta chamada e apenas planejar a peca.
+- Entregue somente JSON puro.
+- Nao escreva a peca final nesta etapa.
+- Estruture um plano robusto, profissional e litigante.`;
+  const writerSystemPrompt = `${MAYUS_LEGAL_SYSTEM_PROMPT}
+
+MODO ATUAL: REDATOR JURIDICO
+- Sua funcao nesta chamada e redigir a peca completa.
+- Entregue somente markdown da minuta final.
+- Nao explique o que esta fazendo.
+- Escreva como advogado da Dutra Advocacia, com densidade, maturidade e aderencia documental.`;
 
   let planPayload: PiecePlannerResponsePayload | null = null;
   try {
