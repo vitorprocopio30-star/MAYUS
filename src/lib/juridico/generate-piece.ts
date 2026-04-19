@@ -1,13 +1,10 @@
 import { buildHeaders, getLLMClient } from '@/lib/llm-router';
+import { loadDriveStyleReferencePacket } from '@/lib/juridico/drive-style-examples';
+import {
+  normalizeLegalPieceRequest,
+  type NormalizedPieceRequest,
+} from '@/lib/juridico/piece-catalog';
 import { supabaseAdmin } from '@/lib/supabase/admin';
-
-export type LegalPieceType =
-  | 'peticao_inicial'
-  | 'contestacao'
-  | 'replica'
-  | 'tutela_urgencia'
-  | 'apelacao'
-  | 'notificacao_extrajudicial';
 
 type ProcessTaskRecord = {
   id: string;
@@ -79,24 +76,56 @@ type SelectedProcessDocument = ProcessDocumentRecord & {
   textSnippet: string | null;
 };
 
-type PieceRequirement = {
-  label: string;
-  acceptedDocumentTypes: string[];
+type PlannerOutlinePayload = {
+  title?: unknown;
+  purpose?: unknown;
+  must_cover?: unknown;
+  min_paragraphs?: unknown;
 };
 
-type PieceResponsePayload = {
+type PiecePlannerResponsePayload = {
+  piece_label?: unknown;
+  piece_family?: unknown;
+  practice_area?: unknown;
+  strategy_summary?: unknown;
   outline?: unknown;
-  draft_markdown?: unknown;
-  used_document_ids?: unknown;
+  recommended_document_ids?: unknown;
   missing_documents?: unknown;
   warnings?: unknown;
-  confidence_note?: unknown;
-  requires_human_review?: unknown;
+};
+
+type PlannedSection = {
+  title: string;
+  purpose: string;
+  mustCover: string[];
+  minParagraphs: number;
+};
+
+type PiecePlan = {
+  pieceLabel: string;
+  pieceFamily: string;
+  practiceArea: string | null;
+  strategySummary: string;
+  outline: PlannedSection[];
+  recommendedDocumentIds: string[];
+  missingDocuments: string[];
+  warnings: string[];
+  usedFallbackPlan: boolean;
+};
+
+type DraftMetrics = {
+  charCount: number;
+  wordCount: number;
+  paragraphCount: number;
+  sectionCount: number;
 };
 
 export type GeneratedLegalPiece = {
-  pieceType: LegalPieceType;
+  pieceType: string;
   pieceLabel: string;
+  pieceFamily: string;
+  pieceFamilyLabel: string;
+  practiceArea: string | null;
   outline: string[];
   draftMarkdown: string;
   usedDocuments: Array<{
@@ -113,139 +142,37 @@ export type GeneratedLegalPiece = {
   requiresHumanReview: boolean;
   model: string;
   provider: string;
+  expansionApplied: boolean;
+  qualityMetrics: DraftMetrics;
 };
 
 export type GenerateLegalPieceParams = {
   tenantId: string;
   processTaskId: string;
-  pieceType: LegalPieceType;
+  pieceType: string;
+  practiceArea?: string;
   objective?: string;
   instructions?: string;
   documentIds?: string[];
 };
 
-const PIECE_LABELS: Record<LegalPieceType, string> = {
-  peticao_inicial: 'Peticao Inicial',
-  contestacao: 'Contestacao',
-  replica: 'Replica',
-  tutela_urgencia: 'Tutela de Urgencia',
-  apelacao: 'Apelacao',
-  notificacao_extrajudicial: 'Notificacao Extrajudicial',
+type ChatCallParams = {
+  provider: string;
+  endpoint: string;
+  apiKey: string;
+  model: string;
+  extraHeaders: Record<string, string>;
+  systemPrompt: string;
+  userPrompt: string;
+  temperature: number;
+  maxTokens: number;
 };
 
-const PIECE_REQUIREMENTS: Record<LegalPieceType, PieceRequirement[]> = {
-  peticao_inicial: [
-    { label: 'Documentos do cliente', acceptedDocumentTypes: ['documento_cliente', 'prova'] },
-  ],
-  contestacao: [
-    { label: 'Peticao inicial', acceptedDocumentTypes: ['inicial'] },
-    { label: 'Documentos do cliente', acceptedDocumentTypes: ['documento_cliente', 'prova'] },
-  ],
-  replica: [
-    { label: 'Peticao inicial', acceptedDocumentTypes: ['inicial'] },
-    { label: 'Contestacao', acceptedDocumentTypes: ['contestacao'] },
-  ],
-  tutela_urgencia: [
-    { label: 'Documentos do cliente', acceptedDocumentTypes: ['documento_cliente', 'prova'] },
-    { label: 'Provas urgentes', acceptedDocumentTypes: ['prova', 'documento_cliente', 'decisao', 'sentenca'] },
-  ],
-  apelacao: [
-    { label: 'Sentenca ou decisao recorrida', acceptedDocumentTypes: ['sentenca', 'decisao', 'decisao_sentenca'] },
-  ],
-  notificacao_extrajudicial: [
-    { label: 'Documentos de suporte', acceptedDocumentTypes: ['documento_cliente', 'prova', 'geral'] },
-  ],
-};
-
-const DOCUMENT_PRIORITY: Record<LegalPieceType, Record<string, number>> = {
-  peticao_inicial: {
-    documento_cliente: 12,
-    prova: 10,
-    geral: 6,
-    manifestacao: 3,
-  },
-  contestacao: {
-    inicial: 14,
-    documento_cliente: 11,
-    prova: 10,
-    decisao: 7,
-    sentenca: 6,
-    manifestacao: 5,
-    geral: 4,
-  },
-  replica: {
-    contestacao: 15,
-    inicial: 12,
-    prova: 9,
-    documento_cliente: 8,
-    manifestacao: 6,
-    decisao: 5,
-  },
-  tutela_urgencia: {
-    prova: 12,
-    documento_cliente: 11,
-    decisao: 9,
-    sentenca: 7,
-    manifestacao: 6,
-    geral: 5,
-  },
-  apelacao: {
-    sentenca: 14,
-    decisao: 13,
-    decisao_sentenca: 13,
-    manifestacao: 8,
-    recurso: 7,
-    prova: 5,
-  },
-  notificacao_extrajudicial: {
-    documento_cliente: 11,
-    prova: 10,
-    geral: 7,
-    manifestacao: 5,
-  },
-};
-
-const DEFAULT_TEMPLATE_BY_TYPE: Record<LegalPieceType, Pick<TenantLegalTemplateRecord, 'template_name' | 'template_mode' | 'structure_markdown' | 'guidance_notes'>> = {
-  peticao_inicial: {
-    template_name: 'Modelo Base do Escritorio',
-    template_mode: 'visual_profile',
-    structure_markdown: 'I - DOS FATOS\nII - DO DIREITO\nIII - DA JURISPRUDENCIA\nIV - DOS PEDIDOS\nV - DO VALOR DA CAUSA\nVI - DAS PROVAS',
-    guidance_notes: 'Exigir documentos do cliente, cronologia clara e pedido final com valor da causa.',
-  },
-  contestacao: {
-    template_name: 'Contestacao Padrao',
-    template_mode: 'visual_profile',
-    structure_markdown: 'I - PRELIMINARES\nII - DO MERITO\nIII - DOS PEDIDOS',
-    guidance_notes: 'Sempre exigir a peticao inicial e espelhar os topicos da peca adversaria.',
-  },
-  replica: {
-    template_name: 'Replica Padrao',
-    template_mode: 'visual_profile',
-    structure_markdown: 'I - DA CONTESTACAO\nII - DA IMPUGNACAO ESPECIFICA\nIII - DOS PEDIDOS FINAIS',
-    guidance_notes: 'Exigir inicial e contestacao. Rebater topico por topico.',
-  },
-  tutela_urgencia: {
-    template_name: 'Tutela de Urgencia',
-    template_mode: 'visual_profile',
-    structure_markdown: 'I - DA PROBABILIDADE DO DIREITO\nII - DO PERIGO DE DANO\nIII - DO PEDIDO LIMINAR',
-    guidance_notes: 'Ressaltar fumus boni iuris e periculum in mora com objetividade e impacto.',
-  },
-  apelacao: {
-    template_name: 'Apelacao',
-    template_mode: 'visual_profile',
-    structure_markdown: 'I - SINTESE DO JULGADO\nII - DAS RAZOES RECURSAIS\nIII - DA JURISPRUDENCIA\nIV - DO PEDIDO',
-    guidance_notes: 'Exigir sentenca ou decisao recorrida e delimitar os pontos de reforma pretendida.',
-  },
-  notificacao_extrajudicial: {
-    template_name: 'Notificacao Extrajudicial',
-    template_mode: 'visual_profile',
-    structure_markdown: 'NOTIFICACAO EXTRAJUDICIAL\n\nExposicao objetiva da situacao\nProvidencia exigida\nPrazo\nConsequencia juridica',
-    guidance_notes: 'Texto objetivo, firme e com comando claro ao notificado.',
-  },
-};
-
-const MAX_SOURCE_DOCUMENTS = 6;
-const MAX_TEXT_SNIPPET_CHARS = 3500;
+const MAX_SOURCE_DOCUMENTS = 8;
+const MAX_TEXT_SNIPPET_CHARS = 4200;
+const MAX_WRITER_TOKENS = 6200;
+const MAX_EXPANDER_TOKENS = 3800;
+const MAX_PLANNER_TOKENS = 2200;
 
 const GLOBAL_LEGAL_STYLE_GUIDE = [
   'MODELO GLOBAL DE REDACAO FORENSE DO MAYUS:',
@@ -265,9 +192,7 @@ function normalizeFreeText(value: unknown) {
 
 function normalizeDocumentIds(value: unknown): string[] {
   if (!Array.isArray(value)) return [];
-  return value
-    .map((item) => String(item || '').trim())
-    .filter(Boolean);
+  return value.map((item) => normalizeFreeText(item)).filter(Boolean);
 }
 
 function sanitizeSnippet(text: string | null | undefined) {
@@ -283,17 +208,9 @@ function safeStringArray(value: unknown) {
   return value.map((item) => normalizeFreeText(item)).filter(Boolean);
 }
 
-function safeOutline(value: unknown) {
-  const items = safeStringArray(value);
-  return items.slice(0, 12);
-}
-
-function safeWarnings(value: unknown) {
-  return safeStringArray(value).slice(0, 12);
-}
-
-function safeUsedDocumentIds(value: unknown) {
-  return safeStringArray(value);
+function safeBoolean(value: unknown, fallback: boolean) {
+  if (typeof value === 'boolean') return value;
+  return fallback;
 }
 
 function extractKeyDocumentIds(value: unknown) {
@@ -315,7 +232,7 @@ function formatKeyFacts(value: unknown) {
       return label ? `${label}: ${factValue}` : factValue;
     })
     .filter(Boolean)
-    .slice(0, 12);
+    .slice(0, 14);
 }
 
 function buildProfileSummary(profile: TenantLegalProfileRecord | null) {
@@ -332,17 +249,18 @@ function buildProfileSummary(profile: TenantLegalProfileRecord | null) {
 }
 
 function buildDocumentScore(params: {
-  pieceType: LegalPieceType;
+  pieceRequest: NormalizedPieceRequest;
   document: ProcessDocumentRecord;
   textSnippet: string | null;
   selectedIds: Set<string>;
   keyDocumentIds: Set<string>;
 }) {
-  const { pieceType, document, textSnippet, selectedIds, keyDocumentIds } = params;
+  const { pieceRequest, document, textSnippet, selectedIds, keyDocumentIds } = params;
   const type = normalizeFreeText(document.document_type).toLowerCase();
   const name = normalizeFreeText(document.name).toLowerCase();
   const folder = normalizeFreeText(document.folder_label).toLowerCase();
-  let score = DOCUMENT_PRIORITY[pieceType][type] || 0;
+  const familyKey = pieceRequest.familyKey;
+  let score = pieceRequest.documentPriority[type] || 0;
 
   if (selectedIds.has(document.id)) score += 100;
   if (document.drive_file_id && keyDocumentIds.has(document.drive_file_id)) score += 12;
@@ -363,18 +281,22 @@ function buildDocumentScore(params: {
 
   if (textSnippet) score += 4;
 
-  if (pieceType === 'contestacao' && /(inicial|peticao inicial)/.test(`${name} ${folder}`)) score += 9;
-  if (pieceType === 'replica' && /(contestacao|contestacao)/.test(`${name} ${folder}`)) score += 9;
-  if (pieceType === 'apelacao' && /(sentenca|decisao|acordao)/.test(`${name} ${folder}`)) score += 9;
-  if (pieceType === 'tutela_urgencia' && /(liminar|urgencia|risco|perigo)/.test(`${name} ${folder}`)) score += 6;
-  if (pieceType === 'notificacao_extrajudicial' && /(contrato|inadimpl|comprovante|notificacao)/.test(`${name} ${folder}`)) score += 6;
+  if (familyKey === 'contestacao' && /(inicial|peticao inicial)/.test(`${name} ${folder}`)) score += 10;
+  if (familyKey === 'replica' && /(contestacao|defesa)/.test(`${name} ${folder}`)) score += 11;
+  if (familyKey === 'apelacao' && /(sentenca|decisao|acordao)/.test(`${name} ${folder}`)) score += 9;
+  if (familyKey === 'contrarrazoes' && /(apelacao|recurso|razoes)/.test(`${name} ${folder}`)) score += 10;
+  if (familyKey === 'tutela_urgencia' && /(liminar|urgencia|risco|perigo)/.test(`${name} ${folder}`)) score += 6;
+  if (familyKey === 'cumprimento_sentenca' && /(cumprimento|sentenca|calculo|execucao)/.test(`${name} ${folder}`)) score += 8;
+  if (familyKey === 'embargos_execucao' && /(execucao|titulo|penhora)/.test(`${name} ${folder}`)) score += 8;
+  if (familyKey === 'memoriais' && /(audiencia|memorial|alegac)/.test(`${name} ${folder}`)) score += 7;
+  if (familyKey === 'notificacao_extrajudicial' && /(contrato|inadimpl|comprovante|notificacao)/.test(`${name} ${folder}`)) score += 6;
 
   return score;
 }
 
-function buildMissingDocuments(pieceType: LegalPieceType, documents: ProcessDocumentRecord[], memoryMissing: string[]) {
+function buildMissingDocuments(pieceRequest: NormalizedPieceRequest, documents: ProcessDocumentRecord[], memoryMissing: string[]) {
   const missing = new Set<string>(memoryMissing.filter(Boolean));
-  const requirements = PIECE_REQUIREMENTS[pieceType] || [];
+  const requirements = pieceRequest.requirements || [];
 
   for (const requirement of requirements) {
     const hasAcceptedDocument = documents.some((document) =>
@@ -389,14 +311,22 @@ function buildMissingDocuments(pieceType: LegalPieceType, documents: ProcessDocu
   return Array.from(missing);
 }
 
+function parseJsonPayload<T>(rawText: string) {
+  const cleaned = rawText.replace(/```json|```/gi, '').trim();
+  const start = cleaned.indexOf('{');
+  const end = cleaned.lastIndexOf('}');
+  const jsonCandidate = start >= 0 && end > start ? cleaned.slice(start, end + 1) : cleaned;
+  return JSON.parse(jsonCandidate) as T;
+}
+
 function extractResponseText(data: any) {
   if (typeof data?.choices?.[0]?.message?.content === 'string') {
     return data.choices[0].message.content;
   }
 
-  const content = data?.choices?.[0]?.message?.content;
-  if (Array.isArray(content)) {
-    const text = content
+  const messageContent = data?.choices?.[0]?.message?.content;
+  if (Array.isArray(messageContent)) {
+    const text = messageContent
       .map((item) => (item && typeof item === 'object' ? normalizeFreeText((item as { text?: string }).text) : ''))
       .join('\n')
       .trim();
@@ -414,15 +344,63 @@ function extractResponseText(data: any) {
   return '';
 }
 
-function parseJsonPayload(rawText: string) {
-  const cleaned = rawText.replace(/```json|```/gi, '').trim();
-  const start = cleaned.indexOf('{');
-  const end = cleaned.lastIndexOf('}');
-  const jsonCandidate = start >= 0 && end > start ? cleaned.slice(start, end + 1) : cleaned;
-  return JSON.parse(jsonCandidate) as PieceResponsePayload;
+async function callTextModel(params: ChatCallParams) {
+  const { provider, endpoint, apiKey, model, extraHeaders, systemPrompt, userPrompt, temperature, maxTokens } = params;
+
+  if (provider === 'anthropic') {
+    const response = await fetch(endpoint, {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+        'x-api-key': apiKey,
+        'anthropic-version': '2023-06-01',
+      },
+      body: JSON.stringify({
+        model,
+        system: systemPrompt,
+        max_tokens: maxTokens,
+        temperature,
+        messages: [{ role: 'user', content: userPrompt }],
+      }),
+    });
+
+    if (!response.ok) {
+      const errorText = await response.text();
+      throw new Error(errorText || 'Falha ao chamar o provedor Anthropic.');
+    }
+
+    const data = await response.json();
+    const text = extractResponseText(data);
+    if (!text) throw new Error('A IA nao retornou conteudo textual.');
+    return text;
+  }
+
+  const response = await fetch(endpoint, {
+    method: 'POST',
+    headers: buildHeaders({ provider: provider as any, model, apiKey, endpoint, extraHeaders }),
+    body: JSON.stringify({
+      model,
+      temperature,
+      max_tokens: maxTokens,
+      messages: [
+        { role: 'system', content: systemPrompt },
+        { role: 'user', content: userPrompt },
+      ],
+    }),
+  });
+
+  if (!response.ok) {
+    const errorText = await response.text();
+    throw new Error(errorText || 'Falha ao chamar o provedor de IA.');
+  }
+
+  const data = await response.json();
+  const text = extractResponseText(data);
+  if (!text) throw new Error('A IA nao retornou conteudo textual.');
+  return text;
 }
 
-function buildWritingDirectives(pieceType: LegalPieceType, tone: string | null | undefined) {
+function buildWritingDirectives(pieceRequest: NormalizedPieceRequest, tone: string | null | undefined) {
   const toneText = normalizeFreeText(tone).toLowerCase();
   const base = [
     'Escreva como advogado contencioso brasileiro experiente, sem frases vagas, sem adjetivacao inflada e sem texto escolar.',
@@ -436,25 +414,27 @@ function buildWritingDirectives(pieceType: LegalPieceType, tone: string | null |
   if (toneText.includes('combativo')) {
     base.push('Adote tom firme, cirurgico e combativo, sem perder elegancia profissional.');
   } else if (toneText.includes('objetivo')) {
-    base.push('Adote tom tecnico, seco e direto, priorizando precisão e economia verbal.');
+    base.push('Adote tom tecnico, seco e direto, priorizando precisao e economia verbal.');
   } else if (toneText.includes('humanizado')) {
     base.push('Adote tom tecnico com sensibilidade narrativa, sem perder densidade juridica.');
   } else {
     base.push('Adote tom tecnico-persuasivo, com narrativa forense madura e segura.');
   }
 
-  switch (pieceType) {
+  switch (pieceRequest.familyKey) {
     case 'contestacao':
       base.push('Na contestacao, enfrente os fatos narrados na inicial ponto a ponto e destaque impugnacao especifica.');
       break;
     case 'replica':
-      base.push('Na replica, rebata objetivamente cada argumento relevante da contestacao e mostre por que a defesa nao afasta os fatos constitutivos do direito da parte autora.');
+      base.push('Na replica, rebata cada argumento relevante da contestacao e mostre por que a defesa nao afasta os fatos constitutivos da autora.');
       break;
     case 'apelacao':
-      base.push('Na apelacao, identifique com clareza os erros da decisao recorrida e estruture razoes recursais com pedido de reforma preciso.');
+    case 'contrarrazoes':
+    case 'recurso_generico':
+      base.push('Nos recursos, organize as teses em capitulos independentes, cada um com fundamentacao e pedido correspondente.');
       break;
     case 'tutela_urgencia':
-      base.push('Na tutela de urgencia, evidencie separadamente probabilidade do direito e perigo de dano com base concreta nos autos.');
+      base.push('Na tutela de urgencia, separe probabilidade do direito e perigo de dano com base concreta nos autos.');
       break;
     case 'peticao_inicial':
       base.push('Na peticao inicial, construa narrativa fática consistente, enquadramento juridico e pedidos determinados, evitando tese abstrata desconectada das provas.');
@@ -467,8 +447,8 @@ function buildWritingDirectives(pieceType: LegalPieceType, tone: string | null |
   return base.map((item) => `- ${item}`).join('\n');
 }
 
-function buildGlobalPieceReference(pieceType: LegalPieceType) {
-  switch (pieceType) {
+function buildGlobalPieceReference(pieceRequest: NormalizedPieceRequest) {
+  switch (pieceRequest.familyKey) {
     case 'replica':
       return [
         'REFERENCIA GLOBAL PARA REPLICA:',
@@ -482,7 +462,7 @@ function buildGlobalPieceReference(pieceType: LegalPieceType) {
         'REFERENCIA GLOBAL PARA CONTESTACAO:',
         '- Comecar pela sintese objetiva da inicial e, em seguida, delimitar os pontos efetivamente controvertidos.',
         '- Enfrentar os fatos essenciais da autora com impugnacao especifica e prova correspondente.',
-        '- Se houver preliminares, tratá-las com sobriedade e utilidade pratica, sem poluir a peca.',
+        '- Se houver preliminares, trata-las com sobriedade e utilidade pratica, sem poluir a peca.',
         '- Encerrar com pedidos defensivos claros, inclusive improcedencia e producao probatoria cabivel.',
       ].join('\n');
     case 'peticao_inicial':
@@ -493,10 +473,11 @@ function buildGlobalPieceReference(pieceType: LegalPieceType) {
         '- Formular pedidos de maneira determinada, com consequencias praticas e valor da causa quando cabivel.',
       ].join('\n');
     case 'apelacao':
+    case 'contrarrazoes':
       return [
-        'REFERENCIA GLOBAL PARA APELACAO:',
-        '- Identificar com clareza o erro material, juridico ou valorativo da decisao recorrida.',
-        '- Organizar as razoes recursais em capitulos independentes, cada um com tese e pedido de reforma correspondente.',
+        'REFERENCIA GLOBAL PARA PECA RECURSAL:',
+        '- Identificar com clareza o erro material, juridico ou valorativo da decisao recorrida ou do recurso adverso.',
+        '- Organizar as razoes recursais em capitulos independentes, cada um com tese e pedido de reforma ou desprovimento correspondente.',
       ].join('\n');
     case 'tutela_urgencia':
       return [
@@ -512,22 +493,80 @@ function buildGlobalPieceReference(pieceType: LegalPieceType) {
   }
 }
 
-function buildPrompt(params: {
+function outlineFallbackFromTemplate(pieceRequest: NormalizedPieceRequest, structureMarkdown: string) {
+  const sections = structureMarkdown
+    .split(/\n+/)
+    .map((line) => normalizeFreeText(line).replace(/^[-*]\s*/, ''))
+    .filter(Boolean)
+    .slice(0, 12)
+    .map((line) => ({
+      title: line,
+      purpose: 'Desenvolver o capitulo com base documental e articulacao juridica completa.',
+      mustCover: ['fatos relevantes', 'fundamentos aplicaveis', 'consequencia processual'],
+      minParagraphs: Math.max(2, Math.ceil(pieceRequest.qualityProfile.minParagraphs / Math.max(1, pieceRequest.qualityProfile.minSections))),
+    }));
+
+  return sections.length > 0 ? sections : [{
+    title: 'DOS FUNDAMENTOS E PEDIDOS',
+    purpose: 'Estruturar a tese principal e concluir com pedidos claros.',
+    mustCover: ['fatos', 'direito', 'pedido'],
+    minParagraphs: 3,
+  }];
+}
+
+function normalizePlannerOutline(value: unknown, pieceRequest: NormalizedPieceRequest, structureMarkdown: string) {
+  if (!Array.isArray(value)) {
+    return outlineFallbackFromTemplate(pieceRequest, structureMarkdown);
+  }
+
+  const normalized = value
+    .map((item) => {
+      if (typeof item === 'string') {
+        const title = normalizeFreeText(item);
+        if (!title) return null;
+        return {
+          title,
+          purpose: 'Desenvolver o capitulo com profundidade e aderencia documental.',
+          mustCover: ['fatos relevantes', 'fundamentos aplicaveis'],
+          minParagraphs: 2,
+        } satisfies PlannedSection;
+      }
+
+      if (!item || typeof item !== 'object') return null;
+      const payload = item as PlannerOutlinePayload;
+      const title = normalizeFreeText(payload.title);
+      if (!title) return null;
+      return {
+        title,
+        purpose: normalizeFreeText(payload.purpose) || 'Desenvolver o capitulo com profundidade e aderencia documental.',
+        mustCover: safeStringArray(payload.must_cover).slice(0, 6),
+        minParagraphs: Math.max(2, Number(payload.min_paragraphs || 2) || 2),
+      } satisfies PlannedSection;
+    })
+    .filter(Boolean) as PlannedSection[];
+
+  if (normalized.length === 0) {
+    return outlineFallbackFromTemplate(pieceRequest, structureMarkdown);
+  }
+
+  return normalized;
+}
+
+function buildPlanningPrompt(params: {
   task: ProcessTaskRecord;
-  pieceType: LegalPieceType;
+  pieceRequest: NormalizedPieceRequest;
+  practiceArea: string;
   memory: ProcessMemoryRecord | null;
   template: TenantLegalTemplateRecord;
   profile: TenantLegalProfileRecord | null;
   selectedDocuments: SelectedProcessDocument[];
+  styleReferencePacket: string;
   missingDocuments: string[];
   objective: string;
   instructions: string;
 }) {
-  const { task, pieceType, memory, template, profile, selectedDocuments, missingDocuments, objective, instructions } = params;
-  const pieceLabel = PIECE_LABELS[pieceType];
+  const { task, pieceRequest, practiceArea, memory, template, profile, selectedDocuments, styleReferencePacket, missingDocuments, objective, instructions } = params;
   const keyFacts = formatKeyFacts(memory?.key_facts);
-  const writingDirectives = buildWritingDirectives(pieceType, profile?.default_tone);
-  const globalPieceReference = buildGlobalPieceReference(pieceType);
   const sourceDocuments = selectedDocuments.length > 0
     ? selectedDocuments.map((document, index) => {
         const snippet = document.textSnippet || 'Sem texto extraido para este arquivo.';
@@ -537,20 +576,127 @@ function buildPrompt(params: {
           `nome: ${document.name}`,
           `tipo: ${document.document_type || 'nao classificado'}`,
           `pasta: ${document.folder_label || 'nao informada'}`,
-          `modificado_em: ${document.modified_at || 'nao informado'}`,
           `texto:\n${snippet}`,
         ].join('\n');
       }).join('\n\n')
-    : 'Nenhum documento com texto aproveitavel foi encontrado. Trabalhe apenas com a memoria consolidada e deixe placeholders claros para o advogado revisar.';
+    : 'Nenhum documento com texto aproveitavel foi encontrado. Trabalhe apenas com a memoria consolidada e deixe lacunas claras.';
 
-  return `Voce e o MAYUS, redator juridico de alta precisao do escritorio.
+  return `Voce e o planner juridico do MAYUS. Sua funcao e desenhar uma peca robusta, nao escrever a peca final.
 
 REGRAS ABSOLUTAS:
 - Use somente os fatos e documentos fornecidos.
 - Nunca invente documento, data, jurisprudencia, pedido, valor ou fato nao presente no contexto.
-- Quando faltar base documental, assuma postura conservadora e marque isso nas advertencias.
-- Redija em portugues juridico profissional do Brasil.
-- Entregue JSON puro, sem markdown fora do campo draft_markdown.
+- Modele a profundidade necessaria para uma minuta profissional, evitando outline raso.
+- Entregue JSON puro.
+
+PROCESSO:
+- titulo: ${task.title}
+- cliente: ${task.client_name || 'Nao informado'}
+- numero: ${task.process_number || 'Nao informado'}
+- fase atual: ${memory?.current_phase || task.stage_id || 'Nao informada'}
+- area do direito: ${practiceArea || 'Nao informada'}
+
+PECA SOLICITADA:
+- texto pedido pelo usuario: ${pieceRequest.input}
+- slug normalizado: ${pieceRequest.normalizedKey}
+- familia inferida: ${pieceRequest.familyLabel}
+
+MEMORIA CONSOLIDADA:
+${memory?.summary_master || 'Sem resumo mestre consolidado.'}
+
+FATOS-CHAVE:
+${keyFacts.length > 0 ? keyFacts.map((fact) => `- ${fact}`).join('\n') : '- Nenhum fato-chave consolidado.'}
+
+MODELO DO ESCRITORIO:
+- nome: ${template.template_name || pieceRequest.defaultTemplate.templateName}
+- estrutura base:\n${template.structure_markdown || pieceRequest.defaultTemplate.structureMarkdown}
+- notas de orientacao: ${template.guidance_notes || pieceRequest.defaultTemplate.guidanceNotes}
+
+MODELOS INSTITUCIONAIS DO DRIVE:
+${styleReferencePacket}
+
+PERFIL JURIDICO:
+${buildProfileSummary(profile)}
+
+OBJETIVO:
+${objective || 'Gerar uma minuta robusta, pronta para revisao humana.'}
+
+INSTRUCOES EXTRAS:
+${instructions || 'Sem instrucoes extras.'}
+
+PENDENCIAS DOCUMENTAIS:
+${missingDocuments.length > 0 ? missingDocuments.map((item) => `- ${item}`).join('\n') : '- Nenhuma pendencia critica detectada.'}
+
+DOCUMENTOS-FONTE:
+${sourceDocuments}
+
+QUALIDADE OBRIGATORIA DO PLANO:
+- No minimo ${pieceRequest.qualityProfile.minSections} secoes de merito/estrutura.
+- Outline robusto, com sequencia logica e enfrentamento especifico do problema processual.
+- Indique os documentos mais relevantes pelos ids recebidos.
+
+RETORNE EXATAMENTE ESTE JSON:
+{
+  "piece_label": "nome final da peca em pt-BR",
+  "piece_family": "familia inferida",
+  "practice_area": "area do direito",
+  "strategy_summary": "2-4 frases objetivas sobre a linha mestra da peca",
+  "outline": [
+    {
+      "title": "titulo da secao",
+      "purpose": "para que a secao serve",
+      "must_cover": ["ponto 1", "ponto 2"],
+      "min_paragraphs": 2
+    }
+  ],
+  "recommended_document_ids": ["uuid"],
+  "missing_documents": ["documento faltante"],
+  "warnings": ["alerta objetivo"]
+}`;
+}
+
+function buildWriterPrompt(params: {
+  task: ProcessTaskRecord;
+  pieceRequest: NormalizedPieceRequest;
+  practiceArea: string;
+  memory: ProcessMemoryRecord | null;
+  template: TenantLegalTemplateRecord;
+  profile: TenantLegalProfileRecord | null;
+  plan: PiecePlan;
+  selectedDocuments: SelectedProcessDocument[];
+  styleReferencePacket: string;
+  objective: string;
+  instructions: string;
+}) {
+  const { task, pieceRequest, practiceArea, memory, template, profile, plan, selectedDocuments, styleReferencePacket, objective, instructions } = params;
+  const writingDirectives = buildWritingDirectives(pieceRequest, profile?.default_tone);
+  const globalPieceReference = buildGlobalPieceReference(pieceRequest);
+  const sourceDocuments = selectedDocuments.length > 0
+    ? selectedDocuments.map((document, index) => {
+        const snippet = document.textSnippet || 'Sem texto extraido para este arquivo.';
+        return [
+          `DOCUMENTO ${index + 1}`,
+          `id: ${document.id}`,
+          `nome: ${document.name}`,
+          `tipo: ${document.document_type || 'nao classificado'}`,
+          `pasta: ${document.folder_label || 'nao informada'}`,
+          `texto:\n${snippet}`,
+        ].join('\n');
+      }).join('\n\n')
+    : 'Nenhum documento com texto aproveitavel foi encontrado. Trabalhe apenas com a memoria consolidada e deixe lacunas claras.';
+
+  const outlineText = plan.outline.map((section, index) => {
+    const mustCover = section.mustCover.length > 0 ? section.mustCover.join('; ') : 'desenvolvimento livre orientado ao objetivo processual';
+    return `${index + 1}. ${section.title}\n- finalidade: ${section.purpose}\n- cobrir: ${mustCover}\n- paragrafo minimo sugerido: ${section.minParagraphs}`;
+  }).join('\n\n');
+
+  return `Voce e o redator juridico senior do MAYUS. Sua tarefa e redigir a peca completa em markdown.
+
+REGRAS ABSOLUTAS:
+- Use somente os fatos e documentos fornecidos.
+- Nunca invente documento, data, jurisprudencia, pedido, valor ou fato nao presente no contexto.
+- Nao resuma. Nao entregue minuta curta. Desenvolva cada secao com densidade de advogado experiente.
+- Nao devolva explicacoes fora da peca. Retorne somente markdown da minuta.
 
 REGIME DE REDACAO FORENSE:
 ${writingDirectives}
@@ -561,75 +707,168 @@ ${GLOBAL_LEGAL_STYLE_GUIDE}
 REFERENCIA PADRAO DESTA PECA:
 ${globalPieceReference}
 
-TAREFA:
-Gerar uma ${pieceLabel} com base no processo abaixo.
-
 PROCESSO:
-- id: ${task.id}
 - titulo: ${task.title}
 - cliente: ${task.client_name || 'Nao informado'}
 - numero: ${task.process_number || 'Nao informado'}
 - fase atual: ${memory?.current_phase || task.stage_id || 'Nao informada'}
-- drive estruturado: ${task.drive_structure_ready ? 'sim' : 'nao'}
-- status sync: ${memory?.sync_status || 'nao sincronizado'}
-- ultima sync: ${memory?.last_synced_at || 'nao informada'}
-- quantidade de documentos: ${Number(memory?.document_count || selectedDocuments.length || 0)}
+- area do direito: ${practiceArea || 'Nao informada'}
 
-MEMORIA CONSOLIDADA:
-${memory?.summary_master || 'Sem resumo mestre consolidado.'}
-
-FATOS-CHAVE:
-${keyFacts.length > 0 ? keyFacts.map((fact) => `- ${fact}`).join('\n') : '- Nenhum fato-chave consolidado.'}
-
-DOCUMENTOS/PENDENCIAS FALTANTES:
-${missingDocuments.length > 0 ? missingDocuments.map((item) => `- ${item}`).join('\n') : '- Nenhuma pendencia critica detectada.'}
+PECA:
+- nome final: ${plan.pieceLabel}
+- texto pedido pelo usuario: ${pieceRequest.input}
+- familia: ${plan.pieceFamily}
 
 MODELO DO ESCRITORIO:
-- nome: ${template.template_name || DEFAULT_TEMPLATE_BY_TYPE[pieceType].template_name}
-- modo: ${template.template_mode || DEFAULT_TEMPLATE_BY_TYPE[pieceType].template_mode || 'visual_profile'}
-- estrutura base:\n${template.structure_markdown || DEFAULT_TEMPLATE_BY_TYPE[pieceType].structure_markdown || 'Sem estrutura definida.'}
-- notas de orientacao: ${template.guidance_notes || DEFAULT_TEMPLATE_BY_TYPE[pieceType].guidance_notes || 'Sem notas adicionais.'}
+- nome: ${template.template_name || pieceRequest.defaultTemplate.templateName}
+- estrutura base:\n${template.structure_markdown || pieceRequest.defaultTemplate.structureMarkdown}
+- notas de orientacao: ${template.guidance_notes || pieceRequest.defaultTemplate.guidanceNotes}
 
-REGRA DE PRIORIDADE DE ESTILO:
-- Se houver orientacao especifica do escritorio, siga-a primeiro.
-- Na falta de detalhe suficiente, siga o guia institucional global do MAYUS.
-- Nunca abandone a base documental do processo para imitar estilo de forma cega.
+MODELOS INSTITUCIONAIS DO DRIVE:
+${styleReferencePacket}
 
-PERFIL JURIDICO:
-${buildProfileSummary(profile)}
-
-OBJETIVO DO USUARIO:
-${objective || 'Gerar um rascunho tecnico consistente e pronto para revisao humana.'}
+OBJETIVO:
+${objective || 'Gerar minuta robusta, pronta para revisao profissional.'}
 
 INSTRUCOES EXTRAS:
 ${instructions || 'Sem instrucoes extras.'}
 
-DOCUMENTOS-FONTE PRIORIZADOS:
+ESTRATEGIA DA PECA:
+${plan.strategySummary}
+
+OUTLINE OBRIGATORIO:
+${outlineText}
+
+PENDENCIAS DOCUMENTAIS:
+${plan.missingDocuments.length > 0 ? plan.missingDocuments.map((item) => `- ${item}`).join('\n') : '- Nenhuma pendencia critica detectada.'}
+
+ALERTAS:
+${plan.warnings.length > 0 ? plan.warnings.map((item) => `- ${item}`).join('\n') : '- Nenhum alerta especifico adicional.'}
+
+MEMORIA CONSOLIDADA:
+${memory?.summary_master || 'Sem resumo mestre consolidado.'}
+
+DOCUMENTOS-FONTE PRIORITARIOS:
 ${sourceDocuments}
 
-QUALIDADE MINIMA DO TEXTO FINAL:
-- O texto final deve sair pronto para revisao de advogado, nao como brainstorm.
-- Use titulos forenses consistentes com a estrutura base do escritorio.
-- Desenvolva argumentos com densidade suficiente; evite paragrafo raso de 1 linha quando o tema exigir fundamentacao.
-- Se o processo permitir, feche a peca com pedidos objetivos e operacionalizaveis.
-- Se houver fragilidade documental, inclua isso em warnings, mas ainda entregue a melhor minuta tecnicamente sustentavel.
+PISO DE QUALIDADE OBRIGATORIO:
+- No minimo ${pieceRequest.qualityProfile.minSections} secoes relevantes.
+- No minimo ${pieceRequest.qualityProfile.minParagraphs} paragrafos de desenvolvimento no corpo da peca.
+- No minimo ${pieceRequest.qualityProfile.minChars} caracteres aproximados.
+- Cada secao deve sair madura, com conexao entre fatos, prova e consequencia juridica.
+- Se a peca for contestacao, replica, contrarrazoes ou outra resposta, enfrente a peca adversa ponto a ponto quando isso estiver no contexto.
+- Feche com requerimentos e pedidos finais operacionais.
+- Siga o nivel de densidade, hierarquia de titulos e cadencia argumentativa observados nos modelos institucionais do Drive, sem copiar fatos ou nomes deles.
 
-RETORNE EXATAMENTE ESTE JSON:
-{
-  "outline": ["topico 1", "topico 2"],
-  "draft_markdown": "texto completo da peca em markdown",
-  "used_document_ids": ["uuid"],
-  "missing_documents": ["documento faltante"],
-  "warnings": ["alerta objetivo para revisao humana"],
-  "confidence_note": "frase curta explicando o nivel de confianca do rascunho",
-  "requires_human_review": true
-}`;
+RETORNE SOMENTE O MARKDOWN FINAL DA PECA.`;
+}
+
+function buildExpansionPrompt(params: {
+  pieceRequest: NormalizedPieceRequest;
+  plan: PiecePlan;
+  draftMarkdown: string;
+  metrics: DraftMetrics;
+}) {
+  const { pieceRequest, plan, draftMarkdown, metrics } = params;
+  return `Voce recebeu uma peca juridica ainda curta ou superficial. Sua tarefa e expandi-la sem inventar fatos ou documentos.
+
+PECA:
+- nome: ${plan.pieceLabel}
+- familia: ${plan.pieceFamily}
+
+OUTLINE OBRIGATORIO:
+${plan.outline.map((section, index) => `${index + 1}. ${section.title} - ${section.purpose}`).join('\n')}
+
+METRICAS ATUAIS:
+- caracteres: ${metrics.charCount}
+- palavras: ${metrics.wordCount}
+- paragrafos: ${metrics.paragraphCount}
+- secoes: ${metrics.sectionCount}
+
+PISO DE QUALIDADE:
+- caracteres minimos: ${pieceRequest.qualityProfile.minChars}
+- paragrafos minimos: ${pieceRequest.qualityProfile.minParagraphs}
+- secoes minimas: ${pieceRequest.qualityProfile.minSections}
+
+INSTRUCOES:
+- Amplie as secoes que estiverem rasas.
+- Acrescente fundamentacao argumentativa e conexao com os documentos ja mencionados.
+- Mantenha o estilo forense profissional.
+- Nao devolva explicacoes. Retorne somente markdown.
+
+TEXTO ATUAL:\n${draftMarkdown}`;
+}
+
+function normalizePiecePlan(params: {
+  pieceRequest: NormalizedPieceRequest;
+  template: TenantLegalTemplateRecord;
+  plannerPayload: PiecePlannerResponsePayload | null;
+  practiceArea: string;
+  missingDocuments: string[];
+}) {
+  const { pieceRequest, template, plannerPayload, practiceArea, missingDocuments } = params;
+  const outline = normalizePlannerOutline(plannerPayload?.outline, pieceRequest, template.structure_markdown || pieceRequest.defaultTemplate.structureMarkdown);
+  const strategySummary = normalizeFreeText(plannerPayload?.strategy_summary)
+    || 'Organizar a peca com narrativa processual madura, enfrentamento especifico dos pontos controvertidos e pedidos finais tecnicamente operacionais.';
+
+  return {
+    pieceLabel: normalizeFreeText(plannerPayload?.piece_label) || pieceRequest.pieceLabel,
+    pieceFamily: normalizeFreeText(plannerPayload?.piece_family) || pieceRequest.familyLabel,
+    practiceArea: normalizeFreeText(plannerPayload?.practice_area) || normalizeFreeText(practiceArea) || null,
+    strategySummary,
+    outline,
+    recommendedDocumentIds: normalizeDocumentIds(plannerPayload?.recommended_document_ids),
+    missingDocuments: Array.from(new Set([...missingDocuments, ...safeStringArray(plannerPayload?.missing_documents)])),
+    warnings: safeStringArray(plannerPayload?.warnings),
+    usedFallbackPlan: !plannerPayload,
+  } satisfies PiecePlan;
+}
+
+function computeDraftMetrics(markdown: string): DraftMetrics {
+  const clean = normalizeFreeText(markdown);
+  const paragraphs = clean
+    .split(/\n\s*\n/)
+    .map((block) => block.trim())
+    .filter((block) => /[A-Za-zÀ-ÿ]/.test(block));
+  const sectionCount = clean
+    .split('\n')
+    .map((line) => line.trim())
+    .filter((line) => /^(#{1,6}\s+|[IVXLCDM]+\s*[-–—]|[A-Z][A-Z\s]{5,}$)/.test(line)).length;
+  const wordCount = clean.split(/\s+/).filter(Boolean).length;
+
+  return {
+    charCount: clean.length,
+    wordCount,
+    paragraphCount: paragraphs.length,
+    sectionCount,
+  };
+}
+
+function isDraftTooShallow(pieceRequest: NormalizedPieceRequest, metrics: DraftMetrics) {
+  return (
+    metrics.charCount < pieceRequest.qualityProfile.minChars
+    || metrics.paragraphCount < pieceRequest.qualityProfile.minParagraphs
+    || metrics.sectionCount < pieceRequest.qualityProfile.minSections
+  );
+}
+
+function buildUsedDocuments(selectedDocuments: SelectedProcessDocument[]) {
+  return selectedDocuments.map((document) => ({
+    id: document.id,
+    name: document.name,
+    documentType: document.document_type || null,
+    folderLabel: document.folder_label || null,
+    webViewLink: document.web_view_link || null,
+    modifiedAt: document.modified_at || null,
+  }));
 }
 
 export async function generateLegalPiece(params: GenerateLegalPieceParams): Promise<GeneratedLegalPiece> {
   const objective = normalizeFreeText(params.objective);
   const instructions = normalizeFreeText(params.instructions);
+  const practiceArea = normalizeFreeText(params.practiceArea);
   const selectedIds = new Set(normalizeDocumentIds(params.documentIds));
+  const pieceRequest = normalizeLegalPieceRequest(params.pieceType);
 
   const { data: task, error: taskError } = await supabaseAdmin
     .from('process_tasks')
@@ -656,9 +895,7 @@ export async function generateLegalPiece(params: GenerateLegalPieceParams): Prom
       .from('tenant_legal_templates')
       .select('piece_type, template_name, template_mode, structure_markdown, guidance_notes')
       .eq('tenant_id', params.tenantId)
-      .eq('piece_type', params.pieceType)
-      .eq('is_active', true)
-      .maybeSingle<TenantLegalTemplateRecord>(),
+      .in('piece_type', pieceRequest.templateLookupKeys),
     supabaseAdmin
       .from('tenant_legal_profiles')
       .select('office_display_name, default_tone, citation_style, signature_block')
@@ -673,10 +910,17 @@ export async function generateLegalPiece(params: GenerateLegalPieceParams): Prom
 
   const memory = memoryRes.data || null;
   const documents = (documentsRes.data || []) as ProcessDocumentRecord[];
+  const fetchedTemplates = (templateRes.data || []) as TenantLegalTemplateRecord[];
   const template = {
-    piece_type: params.pieceType,
-    ...DEFAULT_TEMPLATE_BY_TYPE[params.pieceType],
-    ...(templateRes.data || {}),
+    piece_type: pieceRequest.normalizedKey,
+    template_name: pieceRequest.defaultTemplate.templateName,
+    template_mode: 'visual_profile',
+    structure_markdown: pieceRequest.defaultTemplate.structureMarkdown,
+    guidance_notes: pieceRequest.defaultTemplate.guidanceNotes,
+    ...(fetchedTemplates.find((item) => item.piece_type === pieceRequest.normalizedKey)
+      || fetchedTemplates.find((item) => item.piece_type === pieceRequest.familyKey)
+      || fetchedTemplates[0]
+      || {}),
   } as TenantLegalTemplateRecord;
 
   const keyDocumentIds = extractKeyDocumentIds(memory?.key_documents);
@@ -700,7 +944,7 @@ export async function generateLegalPiece(params: GenerateLegalPieceParams): Prom
       const content = contentByDocumentId.get(document.id);
       const textSnippet = sanitizeSnippet(content?.normalized_text || content?.excerpt).slice(0, MAX_TEXT_SNIPPET_CHARS) || null;
       const score = buildDocumentScore({
-        pieceType: params.pieceType,
+        pieceRequest,
         document,
         textSnippet,
         selectedIds,
@@ -718,101 +962,146 @@ export async function generateLegalPiece(params: GenerateLegalPieceParams): Prom
       return new Date(right.modified_at || 0).getTime() - new Date(left.modified_at || 0).getTime();
     });
 
-  const selectedDocuments = scoredDocuments
+  const initiallySelectedDocuments = scoredDocuments
     .filter((document) => document.score > 0 || selectedIds.has(document.id))
     .slice(0, MAX_SOURCE_DOCUMENTS);
 
   const missingDocuments = buildMissingDocuments(
-    params.pieceType,
+    pieceRequest,
     documents,
-    Array.isArray(memory?.missing_documents) ? memory!.missing_documents! : []
+    Array.isArray(memory?.missing_documents) ? memory.missing_documents : []
   );
 
+  const styleReferencePacket = await loadDriveStyleReferencePacket({
+    tenantId: params.tenantId,
+    pieceInput: pieceRequest.input,
+    familyLabel: pieceRequest.familyLabel,
+  });
+
   const llm = await getLLMClient(supabaseAdmin, params.tenantId, 'gerar_peca');
-  const prompt = buildPrompt({
+  const plannerSystemPrompt = 'Voce e um planner juridico brasileiro. Construa plano de peca robusto, em JSON puro, sem escrever a peca final.';
+  const writerSystemPrompt = 'Voce redige pecas juridicas brasileiras com voz de advogado experiente em contencioso. Nunca invente fonte, nunca escreva de forma generica ou escolar e sempre preserve aderencia documental.';
+
+  let planPayload: PiecePlannerResponsePayload | null = null;
+  try {
+    const plannerRaw = await callTextModel({
+      provider: llm.provider,
+      endpoint: llm.endpoint,
+      apiKey: llm.apiKey,
+      model: llm.model,
+      extraHeaders: llm.extraHeaders,
+      systemPrompt: plannerSystemPrompt,
+      userPrompt: buildPlanningPrompt({
+        task,
+        pieceRequest,
+        practiceArea,
+        memory,
+        template,
+        profile: profileRes.data || null,
+        selectedDocuments: initiallySelectedDocuments,
+        styleReferencePacket: styleReferencePacket.packet,
+        missingDocuments,
+        objective,
+        instructions,
+      }),
+      temperature: 0.1,
+      maxTokens: MAX_PLANNER_TOKENS,
+    });
+    planPayload = parseJsonPayload<PiecePlannerResponsePayload>(plannerRaw);
+  } catch {
+    planPayload = null;
+  }
+
+  const plan = normalizePiecePlan({
+    pieceRequest,
+    template,
+    plannerPayload: planPayload,
+    practiceArea,
+    missingDocuments,
+  });
+
+  const selectedDocuments = (
+    plan.recommendedDocumentIds.length > 0
+      ? initiallySelectedDocuments.filter((document) => plan.recommendedDocumentIds.includes(document.id))
+      : initiallySelectedDocuments
+  );
+  const writerPrompt = buildWriterPrompt({
     task,
-    pieceType: params.pieceType,
+    pieceRequest,
+    practiceArea: plan.practiceArea || practiceArea,
     memory,
     template,
     profile: profileRes.data || null,
-    selectedDocuments,
-    missingDocuments,
+    plan,
+    selectedDocuments: selectedDocuments.length > 0 ? selectedDocuments : initiallySelectedDocuments,
+    styleReferencePacket: styleReferencePacket.packet,
     objective,
     instructions,
   });
 
-  const response = await fetch(llm.endpoint, {
-    method: 'POST',
-    headers: buildHeaders(llm),
-    body: JSON.stringify({
-      model: llm.model,
-      temperature: 0.2,
-      max_tokens: 4000,
-      messages: [
-        {
-          role: 'system',
-          content: 'Voce redige pecas juridicas brasileiras com voz de advogado experiente em contencioso. Nunca invente fonte, nunca escreva de forma generica ou escolar e sempre preserve alertas objetivos quando faltar documento essencial.',
-        },
-        { role: 'user', content: prompt },
-      ],
-    }),
-  });
+  let draftMarkdown = normalizeFreeText(await callTextModel({
+    provider: llm.provider,
+    endpoint: llm.endpoint,
+    apiKey: llm.apiKey,
+    model: llm.model,
+    extraHeaders: llm.extraHeaders,
+    systemPrompt: writerSystemPrompt,
+    userPrompt: writerPrompt,
+    temperature: 0.2,
+    maxTokens: MAX_WRITER_TOKENS,
+  }));
 
-  if (!response.ok) {
-    const errorText = await response.text();
-    throw new Error(errorText || 'Falha ao gerar a peca juridica.');
-  }
-
-  const data = await response.json();
-  const rawText = extractResponseText(data);
-  if (!rawText) {
-    throw new Error('A IA nao retornou conteudo para a geracao da peca.');
-  }
-
-  let parsed: PieceResponsePayload;
-  try {
-    parsed = parseJsonPayload(rawText);
-  } catch {
-    throw new Error('A IA retornou um payload invalido para a peca.');
-  }
-
-  const outline = safeOutline(parsed.outline);
-  const llmMissingDocuments = safeStringArray(parsed.missing_documents);
-  const warnings = Array.from(new Set([...safeWarnings(parsed.warnings), ...missingDocuments.map((item) => `Documento pendente: ${item}`)]));
-  const combinedMissingDocuments = Array.from(new Set([...missingDocuments, ...llmMissingDocuments]));
-  const usedDocumentIds = new Set(safeUsedDocumentIds(parsed.used_document_ids));
-
-  const usedDocuments = (usedDocumentIds.size > 0 ? selectedDocuments.filter((document) => usedDocumentIds.has(document.id)) : selectedDocuments)
-    .map((document) => ({
-      id: document.id,
-      name: document.name,
-      documentType: document.document_type || null,
-      folderLabel: document.folder_label || null,
-      webViewLink: document.web_view_link || null,
-      modifiedAt: document.modified_at || null,
-    }));
-
-  const confidenceNote = normalizeFreeText(parsed.confidence_note)
-    || (combinedMissingDocuments.length > 0
-      ? 'Rascunho parcial: faltam documentos essenciais e a revisao humana e obrigatoria.'
-      : 'Rascunho consistente com a memoria e os documentos selecionados; revisar antes de protocolar.');
-
-  const draftMarkdown = normalizeFreeText(parsed.draft_markdown);
   if (!draftMarkdown) {
     throw new Error('A IA nao retornou o texto final da peca.');
   }
 
+  let metrics = computeDraftMetrics(draftMarkdown);
+  let expansionApplied = false;
+  if (isDraftTooShallow(pieceRequest, metrics)) {
+    draftMarkdown = normalizeFreeText(await callTextModel({
+      provider: llm.provider,
+      endpoint: llm.endpoint,
+      apiKey: llm.apiKey,
+      model: llm.model,
+      extraHeaders: llm.extraHeaders,
+      systemPrompt: writerSystemPrompt,
+      userPrompt: buildExpansionPrompt({ pieceRequest, plan, draftMarkdown, metrics }),
+      temperature: 0.15,
+      maxTokens: MAX_EXPANDER_TOKENS,
+    }));
+    metrics = computeDraftMetrics(draftMarkdown);
+    expansionApplied = true;
+  }
+
+  const warnings = Array.from(new Set([
+    ...styleReferencePacket.warnings,
+    ...plan.warnings,
+    ...plan.missingDocuments.map((item) => `Documento pendente: ${item}`),
+    ...(plan.usedFallbackPlan ? ['Planner de peca caiu em fallback local; revisar a estrutura gerada.'] : []),
+    ...(isDraftTooShallow(pieceRequest, metrics) ? ['A minuta final ainda ficou abaixo do piso ideal de profundidade e precisa de revisao reforcada.'] : []),
+  ]));
+
+  const confidenceNote = plan.strategySummary
+    || (plan.missingDocuments.length > 0
+      ? 'Rascunho parcial: faltam documentos essenciais e a revisao humana e obrigatoria.'
+      : 'Rascunho consistente com a memoria e os documentos selecionados; revisar antes de protocolar.');
+
   return {
-    pieceType: params.pieceType,
-    pieceLabel: PIECE_LABELS[params.pieceType],
-    outline,
+    pieceType: pieceRequest.normalizedKey,
+    pieceLabel: plan.pieceLabel,
+    pieceFamily: pieceRequest.familyKey,
+    pieceFamilyLabel: pieceRequest.familyLabel,
+    practiceArea: plan.practiceArea || practiceArea || null,
+    outline: plan.outline.map((section) => section.title),
     draftMarkdown,
-    usedDocuments,
-    missingDocuments: combinedMissingDocuments,
+    usedDocuments: buildUsedDocuments(selectedDocuments.length > 0 ? selectedDocuments : initiallySelectedDocuments),
+    missingDocuments: plan.missingDocuments,
     warnings,
     confidenceNote,
-    requiresHumanReview: parsed.requires_human_review !== false,
+    requiresHumanReview: safeBoolean(true, true),
     model: llm.model,
     provider: llm.provider,
+    expansionApplied,
+    qualityMetrics: metrics,
   };
 }

@@ -6,6 +6,7 @@ import { Cormorant_Garamond, Montserrat } from "next/font/google";
 import { createClient } from "@/lib/supabase/client";
 import { useUserProfile } from "@/hooks/useUserProfile";
 import { GoogleDriveLogo } from "@/components/branding/GoogleDriveLogo";
+import { LEGAL_PIECE_SUGGESTIONS, PRACTICE_AREA_OPTIONS } from "@/lib/juridico/piece-catalog";
 import ReactMarkdown from "react-markdown";
 import {
   Copy,
@@ -74,17 +75,19 @@ type ProcessDocumentCard = ProcessTaskListItem & {
   documents: ProcessDocumentItem[];
 };
 
-type LegalPieceType =
-  | "peticao_inicial"
-  | "contestacao"
-  | "replica"
-  | "tutela_urgencia"
-  | "apelacao"
-  | "notificacao_extrajudicial";
+type PieceQualityMetrics = {
+  charCount: number;
+  wordCount: number;
+  paragraphCount: number;
+  sectionCount: number;
+};
 
 type GeneratedPieceResult = {
-  pieceType: LegalPieceType;
+  pieceType: string;
   pieceLabel: string;
+  pieceFamily: string;
+  pieceFamilyLabel: string;
+  practiceArea: string | null;
   outline: string[];
   draftMarkdown: string;
   usedDocuments: Array<{
@@ -101,6 +104,8 @@ type GeneratedPieceResult = {
   requiresHumanReview: boolean;
   model: string;
   provider: string;
+  expansionApplied: boolean;
+  qualityMetrics: PieceQualityMetrics;
 };
 
 const DOCUMENT_FOLDER_OPTIONS = [
@@ -114,15 +119,6 @@ const DOCUMENT_FOLDER_OPTIONS = [
   "08-Recursos",
   "09-Pecas Finais",
 ] as const;
-
-const LEGAL_PIECE_OPTIONS: Array<{ value: LegalPieceType; label: string }> = [
-  { value: "peticao_inicial", label: "Petição Inicial" },
-  { value: "contestacao", label: "Contestação" },
-  { value: "replica", label: "Réplica" },
-  { value: "tutela_urgencia", label: "Tutela de Urgência" },
-  { value: "apelacao", label: "Apelação" },
-  { value: "notificacao_extrajudicial", label: "Notificação" },
-];
 
 const DOCUMENT_TYPE_LABELS: Record<string, string> = {
   documento_cliente: "Documento do Cliente",
@@ -169,10 +165,6 @@ function getDocumentTypeLabel(type?: string | null) {
   return DOCUMENT_TYPE_LABELS[type || ""] || type || "Tipo não identificado";
 }
 
-function getPieceTypeLabel(type: LegalPieceType) {
-  return LEGAL_PIECE_OPTIONS.find((option) => option.value === type)?.label || type;
-}
-
 function formatDateTime(value?: string | null) {
   if (!value) return "Nunca sincronizado";
   const date = new Date(value);
@@ -192,7 +184,8 @@ export default function DocumentosPage() {
   const [uploadFolderByTask, setUploadFolderByTask] = useState<Record<string, string>>({});
   const [uploadFilesByTask, setUploadFilesByTask] = useState<Record<string, globalThis.File | null>>({});
   const [uploadInputVersionByTask, setUploadInputVersionByTask] = useState<Record<string, number>>({});
-  const [pieceTypeByTask, setPieceTypeByTask] = useState<Record<string, LegalPieceType>>({});
+  const [pieceTypeByTask, setPieceTypeByTask] = useState<Record<string, string>>({});
+  const [piecePracticeAreaByTask, setPiecePracticeAreaByTask] = useState<Record<string, string>>({});
   const [pieceObjectiveByTask, setPieceObjectiveByTask] = useState<Record<string, string>>({});
   const [pieceInstructionsByTask, setPieceInstructionsByTask] = useState<Record<string, string>>({});
   const [generatedPieceByTask, setGeneratedPieceByTask] = useState<Record<string, GeneratedPieceResult | null>>({});
@@ -271,7 +264,16 @@ export default function DocumentosPage() {
         const next = { ...current };
         nextCards.forEach((card) => {
           if (!next[card.id]) {
-            next[card.id] = "contestacao";
+            next[card.id] = "Contestacao";
+          }
+        });
+        return next;
+      });
+      setPiecePracticeAreaByTask((current) => {
+        const next = { ...current };
+        nextCards.forEach((card) => {
+          if (!next[card.id]) {
+            next[card.id] = "civel";
           }
         });
         return next;
@@ -402,6 +404,11 @@ export default function DocumentosPage() {
   };
 
   const handleGeneratePiece = async (taskId: string) => {
+    if (!String(pieceTypeByTask[taskId] || "").trim()) {
+      toast.error("Informe qual peça deseja gerar.");
+      return;
+    }
+
     setPieceBusyTaskId(taskId);
 
     try {
@@ -409,7 +416,8 @@ export default function DocumentosPage() {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
-          pieceType: pieceTypeByTask[taskId] || "contestacao",
+          pieceType: pieceTypeByTask[taskId] || "Contestacao",
+          practiceArea: piecePracticeAreaByTask[taskId] || "",
           objective: pieceObjectiveByTask[taskId] || "",
           instructions: pieceInstructionsByTask[taskId] || "",
         }),
@@ -491,7 +499,12 @@ export default function DocumentosPage() {
   };
 
   return (
-    <div className={`flex-1 min-h-screen relative text-white p-6 sm:p-10 ${montserrat.className} overflow-hidden`}>
+      <div className={`flex-1 min-h-screen relative text-white p-6 sm:p-10 ${montserrat.className} overflow-hidden`}>
+      <datalist id="legal-piece-suggestions">
+        {LEGAL_PIECE_SUGGESTIONS.map((option) => (
+          <option key={option.value} value={option.value} />
+        ))}
+      </datalist>
       {/* Premium Background Effects */}
       <div className="absolute inset-0 bg-[#050505] z-0" />
       <div className="absolute top-0 left-1/2 -translate-x-1/2 w-[1000px] h-[500px] bg-[#CCA761]/[0.03] blur-[150px] rounded-full pointer-events-none z-0" />
@@ -772,12 +785,21 @@ export default function DocumentosPage() {
                       </div>
 
                       <div className="grid grid-cols-1 gap-3">
+                        <input
+                          list="legal-piece-suggestions"
+                          value={pieceTypeByTask[selectedCard.id] || ""}
+                          onChange={(event) => setPieceTypeByTask((current) => ({ ...current, [selectedCard.id]: event.target.value }))}
+                          placeholder="Digite ou escolha a peca (ex: Replica, Embargos a Execucao, Memoriais)"
+                          className="w-full bg-[#111] border border-[#CCA761]/20 rounded-xl px-4 py-3 text-sm text-white placeholder:text-gray-500 focus:outline-none focus:border-[#CCA761]/60 font-medium tracking-wide"
+                        />
+
                         <select
-                          value={pieceTypeByTask[selectedCard.id] || "contestacao"}
-                          onChange={(event) => setPieceTypeByTask((current) => ({ ...current, [selectedCard.id]: event.target.value as LegalPieceType }))}
-                          className="bg-[#111] border border-[#CCA761]/20 rounded-xl px-4 py-3 text-xs text-white focus:outline-none focus:border-[#CCA761]/60 font-medium tracking-wide appearance-none"
+                          value={piecePracticeAreaByTask[selectedCard.id] || ""}
+                          onChange={(event) => setPiecePracticeAreaByTask((current) => ({ ...current, [selectedCard.id]: event.target.value }))}
+                          className="bg-[#111] border border-white/10 rounded-xl px-4 py-3 text-xs text-white focus:outline-none focus:border-[#CCA761]/40 font-medium tracking-wide appearance-none"
                         >
-                          {LEGAL_PIECE_OPTIONS.map((option) => (
+                          <option value="">Área do Direito (opcional)</option>
+                          {PRACTICE_AREA_OPTIONS.map((option) => (
                             <option key={option.value} value={option.value}>{option.label}</option>
                           ))}
                         </select>
@@ -828,6 +850,22 @@ export default function DocumentosPage() {
                           <p className="text-[13px] text-gray-300 leading-relaxed italic mb-5 relative z-10">
                             &ldquo;{generatedPieceByTask[selectedCard.id]!.confidenceNote}&rdquo;
                           </p>
+
+                          <div className="grid grid-cols-2 gap-3 mb-5 relative z-10">
+                            <div className="rounded-xl border border-white/5 bg-[#111] px-4 py-3">
+                              <p className="text-[10px] uppercase tracking-[0.2em] text-gray-500 font-black mb-1">Peça / Família</p>
+                              <p className="text-sm text-white font-semibold">{generatedPieceByTask[selectedCard.id]!.pieceLabel}</p>
+                              <p className="text-[11px] text-gray-500 mt-1">{generatedPieceByTask[selectedCard.id]!.pieceFamilyLabel}</p>
+                            </div>
+                            <div className="rounded-xl border border-white/5 bg-[#111] px-4 py-3">
+                              <p className="text-[10px] uppercase tracking-[0.2em] text-gray-500 font-black mb-1">Área / Robustez</p>
+                              <p className="text-sm text-white font-semibold">{generatedPieceByTask[selectedCard.id]!.practiceArea || "Nao informada"}</p>
+                              <p className="text-[11px] text-gray-500 mt-1">
+                                {generatedPieceByTask[selectedCard.id]!.qualityMetrics.sectionCount} seções • {generatedPieceByTask[selectedCard.id]!.qualityMetrics.paragraphCount} parágrafos
+                                {generatedPieceByTask[selectedCard.id]!.expansionApplied ? " • expansão aplicada" : ""}
+                              </p>
+                            </div>
+                          </div>
 
                           {(generatedPieceByTask[selectedCard.id]!.missingDocuments.length > 0 || generatedPieceByTask[selectedCard.id]!.warnings.length > 0) && (
                             <div className="flex flex-col mb-5 border border-white/5 rounded-xl overflow-hidden bg-[#111] relative z-10">
@@ -975,7 +1013,7 @@ export default function DocumentosPage() {
                         </div>
                         <div>
                           <p className="text-[#CCA761] text-[10px] uppercase tracking-[0.3em] font-black">
-                            {generatedPieceByTask[selectedCard.id] ? getPieceTypeLabel(generatedPieceByTask[selectedCard.id]!.pieceType) : "Painel Editorial Jurídico"}
+                            {generatedPieceByTask[selectedCard.id] ? generatedPieceByTask[selectedCard.id]!.pieceLabel : "Painel Editorial Jurídico"}
                           </p>
                           <p className="text-xs text-gray-500 font-medium tracking-wide mt-0.5">
                             {generatedPieceByTask[selectedCard.id] ? "Ambiente premium de revisão e formatação" : "Pré-visualização do rascunho oficial"}
