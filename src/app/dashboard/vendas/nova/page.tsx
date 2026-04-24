@@ -2,8 +2,9 @@
 
 import { useState, useEffect } from "react";
 import { Cormorant_Garamond, Montserrat } from "next/font/google";
-import { ArrowLeft, Save, Loader2, DollarSign, Camera, CalendarIcon, Briefcase, Landmark } from "lucide-react";
+import { ArrowLeft, Save, Loader2, DollarSign, Camera, CalendarIcon, Briefcase, Landmark, Target } from "lucide-react";
 import { useRouter } from "next/navigation";
+import Image from "next/image";
 import { toast } from "sonner";
 import { createClient } from "@/lib/supabase/client";
 import { useUserProfile } from "@/hooks/useUserProfile";
@@ -24,6 +25,23 @@ export default function NovaVendaPage() {
   const [clientName, setClientName] = useState("");
   const [professionalName, setProfessionalName] = useState("");
   const [careerPlan, setCareerPlan] = useState("");
+  const [leadPhone, setLeadPhone] = useState("");
+  const [leadEmail, setLeadEmail] = useState("");
+  const [leadOrigin, setLeadOrigin] = useState("");
+  const [leadChannel, setLeadChannel] = useState("");
+  const [leadLegalArea, setLeadLegalArea] = useState("");
+  const [leadCity, setLeadCity] = useState("");
+  const [leadState, setLeadState] = useState("");
+  const [leadUrgency, setLeadUrgency] = useState("medium");
+  const [leadPain, setLeadPain] = useState("");
+  const [leadNotes, setLeadNotes] = useState("");
+  const [leadAnalysis, setLeadAnalysis] = useState<{
+    score: number;
+    kind: string;
+    nextStep: string;
+    tags: string[];
+    needsHumanHandoff: boolean;
+  } | null>(null);
 
   const [team, setTeam] = useState<any[]>([]);
   const [plans, setPlans] = useState<any[]>([]);
@@ -112,6 +130,44 @@ export default function NovaVendaPage() {
 
   const handleSave = async () => {
     setIsLoading(true);
+
+    if (activeTab === "lead_intake") {
+      try {
+        const response = await fetch("/api/growth/lead-intake", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({
+            name: clientName,
+            phone: leadPhone,
+            email: leadEmail,
+            origin: leadOrigin,
+            channel: leadChannel,
+            legalArea: leadLegalArea,
+            city: leadCity,
+            state: leadState,
+            urgency: leadUrgency,
+            pain: leadPain,
+            notes: leadNotes,
+          }),
+        });
+
+        const data = await response.json().catch(() => null);
+        if (!response.ok) {
+          throw new Error(data?.error || "Nao foi possivel registrar o lead.");
+        }
+
+        setLeadAnalysis(data?.analysis || null);
+        toast.success("Lead registrado no CRM com score inicial.");
+        if (data?.task?.pipeline_id) {
+          setTimeout(() => router.push(`/dashboard/crm/${data.task.pipeline_id}`), 1200);
+        }
+      } catch (error: any) {
+        toast.error(error?.message || "Erro ao registrar lead.");
+      } finally {
+        setIsLoading(false);
+      }
+      return;
+    }
     
     // Convert to float
     const rawTicket = getRawTicket();
@@ -173,32 +229,39 @@ export default function NovaVendaPage() {
       {/* Header */}
       <div className="flex flex-col md:flex-row md:items-center justify-between gap-4">
         <div className="flex items-center gap-4">
-          <button onClick={() => router.back()} className="p-2 bg-[#111] hover:bg-white/5 border border-[#222] rounded-xl transition-colors">
+          <button onClick={() => router.back()} className="p-2 bg-gray-100 dark:bg-[#111] hover:bg-gray-100 dark:bg-white/5 border border-[#222] rounded-xl transition-colors">
             <ArrowLeft size={20} className="text-gray-400" />
           </button>
           <div>
-            <h1 className={"text-2xl md:text-3xl text-white italic font-bold " + cormorant.className}>
+            <h1 className={"text-2xl md:text-3xl text-gray-900 dark:text-white italic font-bold " + cormorant.className}>
               {activeTab === "nova_venda" ? "Nova " : "Novo " }
-              <span className="text-[#CCA761]">{activeTab === "nova_venda" ? "Venda" : "Agendamento"}</span>
+              <span className="text-[#CCA761]">{activeTab === "nova_venda" ? "Venda" : activeTab === "lead_intake" ? "Lead" : "Agendamento"}</span>
             </h1>
             <p className="text-gray-500 text-sm mt-1 uppercase tracking-widest font-bold">
-              {activeTab === "nova_venda" ? "Registre um novo contrato (Closer)" : "Registre um agendamento / Qualificação (SDR)"}
+              {activeTab === "nova_venda" ? "Registre um novo contrato (Closer)" : activeTab === "lead_intake" ? "Capture e qualifique uma oportunidade comercial" : "Registre um agendamento / Qualificação (SDR)"}
             </p>
           </div>
         </div>
       </div>
 
-      <div className="flex bg-[#111] border border-[#222] rounded-xl p-1 w-full max-w-md">
+      <div className="flex bg-gray-100 dark:bg-[#111] border border-[#222] rounded-xl p-1 w-full max-w-2xl">
+        <button 
+          onClick={() => { setActiveTab("lead_intake"); setStatus("Novo Lead"); }} 
+          className={"flex-1 py-3 text-[11px] uppercase tracking-widest font-bold rounded-lg transition-all flex items-center justify-center gap-2 " + (activeTab === "lead_intake" ? "bg-[#CCA761]/10 text-[#CCA761]" : "text-gray-500 hover:text-gray-700 dark:text-gray-300")}
+        >
+          {activeTab === "lead_intake" && <div className="w-1.5 h-1.5 rounded-full bg-[#CCA761] shadow-[0_0_8px_rgba(204,167,97,0.8)]" />}
+          Novo Lead
+        </button>
         <button 
           onClick={() => { setActiveTab("nova_venda"); setStatus("Fechado"); }} 
-          className={"flex-1 py-3 text-[11px] uppercase tracking-widest font-bold rounded-lg transition-all flex items-center justify-center gap-2 " + (activeTab === "nova_venda" ? "bg-[#CCA761]/10 text-[#CCA761]" : "text-gray-500 hover:text-gray-300")}
+          className={"flex-1 py-3 text-[11px] uppercase tracking-widest font-bold rounded-lg transition-all flex items-center justify-center gap-2 " + (activeTab === "nova_venda" ? "bg-[#CCA761]/10 text-[#CCA761]" : "text-gray-500 hover:text-gray-700 dark:text-gray-300")}
         >
           {activeTab === "nova_venda" && <div className="w-1.5 h-1.5 rounded-full bg-[#CCA761] shadow-[0_0_8px_rgba(204,167,97,0.8)]" />}
           Registrar Contrato
         </button>
         <button 
           onClick={() => { setActiveTab("agendamento"); setStatus("Agendado/Aprovado"); }} 
-          className={"flex-1 py-3 text-[11px] uppercase tracking-widest font-bold rounded-lg transition-all flex items-center justify-center gap-2 " + (activeTab === "agendamento" ? "bg-[#CCA761]/10 text-[#CCA761]" : "text-gray-500 hover:text-gray-300")}
+          className={"flex-1 py-3 text-[11px] uppercase tracking-widest font-bold rounded-lg transition-all flex items-center justify-center gap-2 " + (activeTab === "agendamento" ? "bg-[#CCA761]/10 text-[#CCA761]" : "text-gray-500 hover:text-gray-700 dark:text-gray-300")}
         >
           {activeTab === "agendamento" && <div className="w-1.5 h-1.5 rounded-full bg-[#CCA761] shadow-[0_0_8px_rgba(204,167,97,0.8)]" />}
           Agendamento SDR
@@ -210,21 +273,77 @@ export default function NovaVendaPage() {
         <div className="md:col-span-2 space-y-6">
           
           {/* Card: Dados Principais */}
-          <div className="bg-white/[0.02] border border-white/5 rounded-2xl p-6 backdrop-blur-sm">
-            <div className="flex items-center gap-2 mb-6 border-b border-white/5 pb-4">
-              <DollarSign size={18} className="text-[#CCA761]" />
-              <h2 className="text-lg font-semibold tracking-wide text-white">
-                {activeTab === "nova_venda" ? "Dados da Venda" : "Dados do Agendamento"}
+          <div className="bg-gray-50 dark:bg-white/[0.02] border border-gray-200 dark:border-white/5 rounded-2xl p-6 backdrop-blur-sm">
+              <div className="flex items-center gap-2 mb-6 border-b border-gray-200 dark:border-white/5 pb-4">
+              {activeTab === "lead_intake" ? <Target size={18} className="text-[#CCA761]" /> : <DollarSign size={18} className="text-[#CCA761]" />}
+              <h2 className="text-lg font-semibold tracking-wide text-gray-900 dark:text-white">
+                {activeTab === "nova_venda" ? "Dados da Venda" : activeTab === "lead_intake" ? "Dados do Lead" : "Dados do Agendamento"}
               </h2>
             </div>
 
+            {activeTab === "lead_intake" ? (
+              <div className="space-y-5">
+                <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                  <div className="space-y-1.5">
+                    <label className="text-[11px] font-semibold text-gray-400 uppercase tracking-wider">Nome do Lead</label>
+                    <input value={clientName} onChange={e => setClientName(e.target.value)} placeholder="Ex: Maria Silva" className="w-full bg-white dark:bg-[#0a0a0a] border border-[#2a2a2a] text-gray-900 dark:text-white rounded-lg px-4 py-3 text-sm focus:outline-none focus:border-[#CCA761]/50 transition-colors" />
+                  </div>
+                  <div className="space-y-1.5">
+                    <label className="text-[11px] font-semibold text-gray-400 uppercase tracking-wider">Telefone / WhatsApp</label>
+                    <input value={leadPhone} onChange={e => setLeadPhone(e.target.value)} placeholder="(21) 99999-0000" className="w-full bg-white dark:bg-[#0a0a0a] border border-[#2a2a2a] text-gray-900 dark:text-white rounded-lg px-4 py-3 text-sm focus:outline-none focus:border-[#CCA761]/50 transition-colors" />
+                  </div>
+                  <div className="space-y-1.5">
+                    <label className="text-[11px] font-semibold text-gray-400 uppercase tracking-wider">E-mail</label>
+                    <input type="email" value={leadEmail} onChange={e => setLeadEmail(e.target.value)} placeholder="lead@email.com" className="w-full bg-white dark:bg-[#0a0a0a] border border-[#2a2a2a] text-gray-900 dark:text-white rounded-lg px-4 py-3 text-sm focus:outline-none focus:border-[#CCA761]/50 transition-colors" />
+                  </div>
+                  <div className="space-y-1.5">
+                    <label className="text-[11px] font-semibold text-gray-400 uppercase tracking-wider">Origem</label>
+                    <input value={leadOrigin} onChange={e => setLeadOrigin(e.target.value)} placeholder="Instagram, Google Ads, indicação..." className="w-full bg-white dark:bg-[#0a0a0a] border border-[#2a2a2a] text-gray-900 dark:text-white rounded-lg px-4 py-3 text-sm focus:outline-none focus:border-[#CCA761]/50 transition-colors" />
+                  </div>
+                  <div className="space-y-1.5">
+                    <label className="text-[11px] font-semibold text-gray-400 uppercase tracking-wider">Canal</label>
+                    <input value={leadChannel} onChange={e => setLeadChannel(e.target.value)} placeholder="WhatsApp, formulário, telefone..." className="w-full bg-white dark:bg-[#0a0a0a] border border-[#2a2a2a] text-gray-900 dark:text-white rounded-lg px-4 py-3 text-sm focus:outline-none focus:border-[#CCA761]/50 transition-colors" />
+                  </div>
+                  <div className="space-y-1.5">
+                    <label className="text-[11px] font-semibold text-gray-400 uppercase tracking-wider">Área Jurídica</label>
+                    <input value={leadLegalArea} onChange={e => setLeadLegalArea(e.target.value)} placeholder="Trabalhista, Previdenciário, Família..." className="w-full bg-white dark:bg-[#0a0a0a] border border-[#2a2a2a] text-gray-900 dark:text-white rounded-lg px-4 py-3 text-sm focus:outline-none focus:border-[#CCA761]/50 transition-colors" />
+                  </div>
+                  <div className="grid grid-cols-3 gap-2">
+                    <div className="space-y-1.5 col-span-2">
+                      <label className="text-[11px] font-semibold text-gray-400 uppercase tracking-wider">Cidade</label>
+                      <input value={leadCity} onChange={e => setLeadCity(e.target.value)} placeholder="Rio de Janeiro" className="w-full bg-white dark:bg-[#0a0a0a] border border-[#2a2a2a] text-gray-900 dark:text-white rounded-lg px-4 py-3 text-sm focus:outline-none focus:border-[#CCA761]/50 transition-colors" />
+                    </div>
+                    <div className="space-y-1.5">
+                      <label className="text-[11px] font-semibold text-gray-400 uppercase tracking-wider">UF</label>
+                      <input value={leadState} onChange={e => setLeadState(e.target.value.toUpperCase())} maxLength={2} placeholder="RJ" className="w-full bg-white dark:bg-[#0a0a0a] border border-[#2a2a2a] text-gray-900 dark:text-white rounded-lg px-4 py-3 text-sm focus:outline-none focus:border-[#CCA761]/50 transition-colors" />
+                    </div>
+                  </div>
+                </div>
+                <div className="space-y-1.5">
+                  <label className="text-[11px] font-semibold text-gray-400 uppercase tracking-wider">Urgência</label>
+                  <select value={leadUrgency} onChange={e => setLeadUrgency(e.target.value)} className="w-full bg-white dark:bg-[#0a0a0a] border border-[#2a2a2a] text-gray-900 dark:text-white rounded-lg px-4 py-3 text-sm focus:outline-none focus:border-[#CCA761]/50 appearance-none">
+                    <option value="low">Baixa</option>
+                    <option value="medium">Média</option>
+                    <option value="high">Alta / urgente</option>
+                  </select>
+                </div>
+                <div className="space-y-1.5">
+                  <label className="text-[11px] font-semibold text-gray-400 uppercase tracking-wider">Dor principal</label>
+                  <textarea value={leadPain} onChange={e => setLeadPain(e.target.value)} rows={4} placeholder="Explique em linguagem simples o problema que trouxe este lead." className="w-full bg-white dark:bg-[#0a0a0a] border border-[#2a2a2a] text-gray-900 dark:text-white rounded-lg px-4 py-3 text-sm focus:outline-none focus:border-[#CCA761]/50 transition-colors" />
+                </div>
+                <div className="space-y-1.5">
+                  <label className="text-[11px] font-semibold text-gray-400 uppercase tracking-wider">Observações</label>
+                  <textarea value={leadNotes} onChange={e => setLeadNotes(e.target.value)} rows={3} placeholder="Documentos citados, objeções, disponibilidade, contexto comercial." className="w-full bg-white dark:bg-[#0a0a0a] border border-[#2a2a2a] text-gray-900 dark:text-white rounded-lg px-4 py-3 text-sm focus:outline-none focus:border-[#CCA761]/50 transition-colors" />
+                </div>
+              </div>
+            ) : (
             <div className="grid grid-cols-1 md:grid-cols-12 gap-5 items-start">
               
               <div className="col-span-12 md:col-span-3 flex flex-col items-center gap-2 pt-2">
-                 <div className="w-[80px] h-[80px] border-2 border-[#333] rounded-full flex flex-col items-center justify-center bg-[#0a0a0a] overflow-hidden">
-                    {selectedProfessional?.avatarUrl ? (
-                       <img src={selectedProfessional.avatarUrl} alt={selectedProfessional.name} className="w-full h-full object-cover" />
-                    ) : (
+                 <div className="w-[80px] h-[80px] border-2 border-[#333] rounded-full flex flex-col items-center justify-center bg-white dark:bg-[#0a0a0a] overflow-hidden">
+                     {selectedProfessional?.avatarUrl ? (
+                       <Image src={selectedProfessional.avatarUrl} alt={selectedProfessional.name} width={80} height={80} className="w-full h-full object-cover" />
+                     ) : (
                        <Camera size={24} className="text-gray-700" />
                     )}
                  </div>
@@ -241,7 +360,7 @@ export default function NovaVendaPage() {
                       value={clientName} 
                       onChange={e => setClientName(e.target.value)} 
                       placeholder="Ex: João Ferreira"
-                      className="w-full bg-[#0a0a0a] border border-[#2a2a2a] text-white rounded-lg px-4 py-3 text-sm focus:outline-none focus:border-[#CCA761]/50 transition-colors" 
+                      className="w-full bg-white dark:bg-[#0a0a0a] border border-[#2a2a2a] text-gray-900 dark:text-white rounded-lg px-4 py-3 text-sm focus:outline-none focus:border-[#CCA761]/50 transition-colors" 
                     />
                   </div>
                   
@@ -258,7 +377,7 @@ export default function NovaVendaPage() {
                                if (planMatch) setCareerPlan(planMatch.name);
                            }
                         }}
-                        className="w-full bg-[#0a0a0a] border border-[#2a2a2a] text-white rounded-lg px-4 py-3 text-sm focus:outline-none focus:border-[#CCA761]/50 transition-colors appearance-none cursor-pointer" 
+                        className="w-full bg-white dark:bg-[#0a0a0a] border border-[#2a2a2a] text-gray-900 dark:text-white rounded-lg px-4 py-3 text-sm focus:outline-none focus:border-[#CCA761]/50 transition-colors appearance-none cursor-pointer" 
                       >
                          <option value="">Selecione o profissional cadastrado...</option>
                          {team.filter(p => activeTab === 'nova_venda' ? p.role?.toLowerCase().includes('closer') : p.role?.toLowerCase().includes('sdr')).map(prof => (
@@ -274,7 +393,7 @@ export default function NovaVendaPage() {
                       <select 
                         value={careerPlan}
                         onChange={e => setCareerPlan(e.target.value)}
-                        className="w-full bg-[#0a0a0a] border border-[#2a2a2a] text-white rounded-lg px-4 py-3 text-sm focus:outline-none focus:border-[#CCA761]/50 appearance-none cursor-pointer"
+                        className="w-full bg-white dark:bg-[#0a0a0a] border border-[#2a2a2a] text-gray-900 dark:text-white rounded-lg px-4 py-3 text-sm focus:outline-none focus:border-[#CCA761]/50 appearance-none cursor-pointer"
                       >
                         <option value="">Selecione o plano/nível...</option>
                         {plans.map(p => (
@@ -292,19 +411,20 @@ export default function NovaVendaPage() {
                         min="1"
                         value={saleNumber}
                         onChange={e => setSaleNumber(e.target.value)}
-                        className="w-full bg-[#0a0a0a] border border-[#2a2a2a] text-[#4ade80] rounded-lg px-4 py-3 text-sm focus:outline-none focus:border-[#CCA761]/50 font-mono font-bold" 
+                        className="w-full bg-white dark:bg-[#0a0a0a] border border-[#2a2a2a] text-[#4ade80] rounded-lg px-4 py-3 text-sm focus:outline-none focus:border-[#CCA761]/50 font-mono font-bold" 
                       />
                     </div>
                   </div>
               </div>
             </div>
+            )}
           </div>
 
           {/* Card: Finanças */}
-          <div className="bg-white/[0.02] border border-white/5 rounded-2xl p-6 backdrop-blur-sm">
-             <div className="flex items-center gap-2 mb-6 border-b border-white/5 pb-4">
+          {activeTab !== "lead_intake" && <div className="bg-gray-50 dark:bg-white/[0.02] border border-gray-200 dark:border-white/5 rounded-2xl p-6 backdrop-blur-sm">
+             <div className="flex items-center gap-2 mb-6 border-b border-gray-200 dark:border-white/5 pb-4">
                <Landmark size={18} className="text-[#CCA761]" />
-               <h2 className="text-lg font-semibold tracking-wide text-white">Valores & Pagamento</h2>
+               <h2 className="text-lg font-semibold tracking-wide text-gray-900 dark:text-white">Valores & Pagamento</h2>
              </div>
 
              {activeTab === "nova_venda" && (
@@ -318,7 +438,7 @@ export default function NovaVendaPage() {
                         value={ticketTotal}
                         onChange={handleTicketChange}
                         placeholder="0,00"
-                        className="w-full bg-[#0a0a0a] border border-[#2a2a2a] text-white rounded-lg pl-12 pr-4 py-3 text-sm font-bold focus:outline-none focus:border-[#CCA761]/50 transition-colors" 
+                        className="w-full bg-white dark:bg-[#0a0a0a] border border-[#2a2a2a] text-gray-900 dark:text-white rounded-lg pl-12 pr-4 py-3 text-sm font-bold focus:outline-none focus:border-[#CCA761]/50 transition-colors" 
                       />
                     </div>
                   </div>
@@ -330,28 +450,28 @@ export default function NovaVendaPage() {
                       value={installments}
                       onChange={e => setInstallments(e.target.value)}
                       min="1"
-                      className="w-full bg-[#0a0a0a] border border-[#2a2a2a] text-white rounded-lg px-4 py-3 text-sm focus:outline-none focus:border-[#CCA761]/50 transition-colors" 
+                      className="w-full bg-white dark:bg-[#0a0a0a] border border-[#2a2a2a] text-gray-900 dark:text-white rounded-lg px-4 py-3 text-sm focus:outline-none focus:border-[#CCA761]/50 transition-colors" 
                     />
                   </div>
                 </div>
              )}
 
              {/* Dynamic calculation result layout */}
-             <div className={"pt-6 grid gap-4 " + (activeTab === "nova_venda" ? "border-t border-white/5 grid-cols-2 md:grid-cols-4" : "grid-cols-2 lg:grid-cols-4")}>
+             <div className={"pt-6 grid gap-4 " + (activeTab === "nova_venda" ? "border-t border-gray-200 dark:border-white/5 grid-cols-2 md:grid-cols-4" : "grid-cols-2 lg:grid-cols-4")}>
                 
                 {activeTab === "nova_venda" && (
-                  <div className="p-3 bg-white/5 rounded-lg border border-white/5">
+                  <div className="p-3 bg-gray-100 dark:bg-white/5 rounded-lg border border-gray-200 dark:border-white/5">
                     <p className="text-[9px] text-gray-500 uppercase tracking-widest font-bold mb-1">Parcela</p>
                     <p className="text-[#CCA761] font-bold text-lg">{calculateInstallmentValue()}</p>
                   </div>
                 )}
                 
-                <div className="p-3 bg-white/5 rounded-lg border border-white/5">
+                <div className="p-3 bg-gray-100 dark:bg-white/5 rounded-lg border border-gray-200 dark:border-white/5">
                   <p className="text-[9px] text-gray-500 uppercase tracking-widest font-bold mb-1">Comissão (Faixa)</p>
                   <p className="text-[#CCA761] font-bold text-lg">{activeTab === "nova_venda" ? calculateCommission() : "R$ 0,00/ctr"}</p>
                 </div>
                 
-                <div className="p-3 bg-white/5 rounded-lg border border-white/5">
+                <div className="p-3 bg-gray-100 dark:bg-white/5 rounded-lg border border-gray-200 dark:border-white/5">
                   <p className="text-[9px] text-gray-500 uppercase tracking-widest font-bold mb-1">Salário Fixo</p>
                   <p className="text-[#CCA761] font-bold text-lg">R$ 0,00</p>
                 </div>
@@ -362,13 +482,31 @@ export default function NovaVendaPage() {
                 </div>
 
                 {activeTab === "agendamento" && (
-                  <div className="p-3 bg-white/5 rounded-lg border border-white/5">
+                  <div className="p-3 bg-gray-100 dark:bg-white/5 rounded-lg border border-gray-200 dark:border-white/5">
                     <p className="text-[9px] text-gray-500 uppercase tracking-widest font-bold mb-1">Agend. Nº (Mês)</p>
                     <p className="text-[#eab308] font-black text-lg">1º</p>
                   </div>
                 )}
              </div>
-          </div>
+          </div>}
+
+          {activeTab === "lead_intake" && leadAnalysis && (
+            <div className="bg-gray-50 dark:bg-white/[0.02] border border-[#CCA761]/20 rounded-2xl p-6">
+              <div className="flex items-center justify-between gap-4 mb-4">
+                <div>
+                  <p className="text-[10px] text-[#CCA761] uppercase tracking-widest font-black">Qualificação inicial</p>
+                  <h3 className="text-xl font-black text-gray-900 dark:text-white">Score {leadAnalysis.score}/100</h3>
+                </div>
+                <span className="text-[10px] uppercase tracking-widest px-3 py-1 rounded-full border border-[#CCA761]/30 text-[#CCA761]">{leadAnalysis.kind}</span>
+              </div>
+              <p className="text-sm text-gray-600 dark:text-gray-300 leading-relaxed">{leadAnalysis.nextStep}</p>
+              <div className="flex flex-wrap gap-2 mt-4">
+                {leadAnalysis.tags.map((tag) => (
+                  <span key={tag} className="text-[10px] uppercase tracking-wider bg-[#CCA761]/10 text-[#CCA761] border border-[#CCA761]/20 rounded-full px-3 py-1">{tag}</span>
+                ))}
+              </div>
+            </div>
+          )}
         </div>
 
         {/* Coluna Sidebar */}
@@ -378,7 +516,7 @@ export default function NovaVendaPage() {
             <div className="absolute top-0 right-0 w-32 h-32 bg-[#CCA761]/5 rounded-bl-full pointer-events-none" />
             <div className="flex items-center gap-2 mb-6 border-b border-[#222] pb-4">
               <Briefcase size={18} className="text-[#CCA761]" />
-              <h2 className="text-lg font-semibold tracking-wide text-white">Status Operacional</h2>
+              <h2 className="text-lg font-semibold tracking-wide text-gray-900 dark:text-white">Status Operacional</h2>
             </div>
             
             <div className="space-y-5">
@@ -387,9 +525,15 @@ export default function NovaVendaPage() {
                 <select 
                   value={status} 
                   onChange={e => setStatus(e.target.value)} 
-                  className="w-full bg-[#0a0a0a] border border-[#2a2a2a] text-white rounded-lg px-4 py-3 text-sm focus:outline-none focus:border-[#CCA761]/50 appearance-none"
+                  className="w-full bg-white dark:bg-[#0a0a0a] border border-[#2a2a2a] text-gray-900 dark:text-white rounded-lg px-4 py-3 text-sm focus:outline-none focus:border-[#CCA761]/50 appearance-none"
                 >
-                  {activeTab === "nova_venda" ? (
+                  {activeTab === "lead_intake" ? (
+                    <>
+                      <option value="Novo Lead">Novo Lead</option>
+                      <option value="Qualificacao">Qualificação</option>
+                      <option value="Handoff Humano">Handoff Humano</option>
+                    </>
+                  ) : activeTab === "nova_venda" ? (
                     <>
                       <option value="Fechado">Fechado</option>
                       <option value="Pendente">Em Análise (Pendente)</option>
@@ -407,13 +551,13 @@ export default function NovaVendaPage() {
 
               <div className="space-y-1.5">
                 <label className="text-[11px] font-semibold text-gray-400 uppercase tracking-wider">
-                  {activeTab === "nova_venda" ? "Data do Contrato" : "Data do Agendamento"}
+                  {activeTab === "nova_venda" ? "Data do Contrato" : activeTab === "lead_intake" ? "Data de Entrada" : "Data do Agendamento"}
                 </label>
                 <input 
                   type="date" 
                   value={contractDate} 
                   onChange={e => setContractDate(e.target.value)} 
-                  className="w-full bg-[#0a0a0a] border border-[#2a2a2a] text-white rounded-lg px-4 py-3 text-sm focus:outline-none focus:border-[#CCA761]/50 transition-colors [color-scheme:dark]" 
+                  className="w-full bg-white dark:bg-[#0a0a0a] border border-[#2a2a2a] text-gray-900 dark:text-white rounded-lg px-4 py-3 text-sm focus:outline-none focus:border-[#CCA761]/50 transition-colors [color-scheme:dark]" 
                 />
               </div>
 
@@ -436,7 +580,7 @@ export default function NovaVendaPage() {
               className="mt-8 w-full relative flex items-center justify-center gap-2 bg-gradient-to-r from-[#CCA761] via-[#f1d58d] to-[#CCA761] hover:from-[#e3c27e] hover:via-[#ffe8ad] hover:to-[#e3c27e] text-[#111111] font-[800] py-3.5 px-8 rounded-lg transition-all duration-300 transform active:scale-95 text-sm shadow-none overflow-hidden hover:-translate-y-[1px] tracking-widest disabled:opacity-50"
             >
               {isLoading ? <Loader2 size={18} className="animate-spin" /> : <Save size={18} strokeWidth={2.5} />}
-              <span>{isLoading ? "SALVANDO..." : activeTab === "nova_venda" ? "REGISTRAR VENDA" : "REGISTRAR AGEND."}</span>
+              <span>{isLoading ? "SALVANDO..." : activeTab === "nova_venda" ? "REGISTRAR VENDA" : activeTab === "lead_intake" ? "REGISTRAR LEAD" : "REGISTRAR AGEND."}</span>
             </button>
           </div>
         </div>
