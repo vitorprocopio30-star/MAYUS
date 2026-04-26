@@ -1,95 +1,105 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { getTenantSession } from '@/lib/auth/get-tenant-session';
-import { supabaseAdmin } from '@/lib/supabase/admin';
-import { exportLegalPieceToDocx } from '@/lib/juridico/export-piece-docx';
+import { buildTenantGoogleDriveServiceRequest, getTenantGoogleDriveContext } from '@/lib/services/google-drive-tenant';
+import { exportLegalPieceBinary, publishLegalPiecePremium, type LegalPieceExportFormat } from '@/lib/juridico/publish-piece-premium';
+import { getProcessDraftVersionForTask } from '@/lib/lex/draft-versions';
 
 export const runtime = 'nodejs';
 
-function sanitizeFileName(value: string) {
-  return String(value || 'peca-juridica')
-    .normalize('NFD')
-    .replace(/[\u0300-\u036f]/g, '')
-    .replace(/[^a-zA-Z0-9-_]+/g, '-')
-    .replace(/-+/g, '-')
-    .replace(/^-|-$/g, '')
-    .toLowerCase() || 'peca-juridica';
-}
-
 export async function POST(request: NextRequest, { params }: { params: { taskId: string } }) {
   try {
-    const { tenantId } = await getTenantSession();
     const taskId = String(params?.taskId || '').trim();
     const body = await request.json().catch(() => null);
-    const draftMarkdown = String(body?.draftMarkdown || '').trim();
-    const pieceLabel = String(body?.pieceLabel || 'Peca Juridica').trim();
-    const pieceType = String(body?.pieceType || 'peca_juridica').trim();
 
     if (!taskId) {
       return NextResponse.json({ error: 'Processo invalido para exportacao.' }, { status: 400 });
+    }
+
+    const publishToDrive = body?.publishToDrive === true;
+    const { tenantId } = await getTenantSession({ requireFullAccess: publishToDrive });
+    const rawDraftMarkdown = typeof body?.draftMarkdown === 'string' ? body.draftMarkdown : '';
+    const pieceLabel = String(body?.pieceLabel || 'Peca Juridica').trim();
+    const pieceType = String(body?.pieceType || 'peca_juridica').trim();
+    const format = String(body?.format || 'docx').trim().toLowerCase() === 'pdf' ? 'pdf' : 'docx';
+    const versionId = String(body?.versionId || '').trim() || null;
+    const storedVersion = versionId
+      ? await getProcessDraftVersionForTask({
+          tenantId,
+          processTaskId: taskId,
+          versionId,
+        })
+      : null;
+    const draftMarkdown = storedVersion?.draft_markdown || rawDraftMarkdown;
+    const effectivePieceLabel = storedVersion?.piece_label || pieceLabel;
+    const effectivePieceType = storedVersion?.piece_type || pieceType;
+
+    if (versionId && !storedVersion) {
+      return NextResponse.json({ error: 'Versao da minuta nao encontrada para este processo.' }, { status: 404 });
     }
 
     if (!draftMarkdown) {
       return NextResponse.json({ error: 'Nao ha rascunho para exportar.' }, { status: 400 });
     }
 
-    const [taskRes, profileRes, templateRes, assetsRes] = await Promise.all([
-      supabaseAdmin
-        .from('process_tasks')
-        .select('id, title, client_name, process_number')
-        .eq('id', taskId)
-        .eq('tenant_id', tenantId)
-        .maybeSingle(),
-      supabaseAdmin
-        .from('tenant_legal_profiles')
-        .select('office_display_name, default_font_family, body_font_size, title_font_size, paragraph_spacing, line_spacing, text_alignment, margin_top, margin_right, margin_bottom, margin_left, signature_block, use_page_numbers, use_header, use_footer')
-        .eq('tenant_id', tenantId)
-        .maybeSingle(),
-      supabaseAdmin
-        .from('tenant_legal_templates')
-        .select('piece_type, template_name, template_mode, template_docx_url, structure_markdown, guidance_notes')
-        .eq('tenant_id', tenantId)
-        .eq('piece_type', pieceType)
-        .eq('is_active', true)
-        .maybeSingle(),
-      supabaseAdmin
-        .from('tenant_legal_assets')
-        .select('asset_type, file_url, file_name, mime_type')
-        .eq('tenant_id', tenantId)
-        .eq('is_active', true),
-    ]);
+    if (publishToDrive) {
+      if (!storedVersion) {
+        return NextResponse.json({ error: 'Informe uma versao formal salva antes de publicar o artifact premium.' }, { status: 400 });
+      }
 
-    if (taskRes.error) throw taskRes.error;
-    if (profileRes.error) throw profileRes.error;
-    if (templateRes.error) throw templateRes.error;
-    if (assetsRes.error) throw assetsRes.error;
-    if (!taskRes.data) {
-      return NextResponse.json({ error: 'Processo nao encontrado.' }, { status: 404 });
+      if (storedVersion.workflow_status !== 'published') {
+        return NextResponse.json({ error: 'A versao formal precisa estar publicada antes do artifact premium.' }, { status: 409 });
+      }
+
+      const driveContext = await getTenantGoogleDriveContext(buildTenantGoogleDriveServiceRequest(), tenantId);
+      const published = await publishLegalPiecePremium({
+        tenantId,
+        taskId,
+        accessToken: driveContext.accessToken,
+        pieceType: effectivePieceType,
+        pieceLabel: effectivePieceLabel,
+        draftMarkdown,
+        versionId,
+      });
+
+      return NextResponse.json({
+        success: true,
+        published: true,
+        publication: published.publication,
+        uploadedFile: published.uploadedFile,
+      });
     }
 
-    const buffer = await exportLegalPieceToDocx({
-      pieceLabel,
-      pieceType,
-      processTitle: String(taskRes.data.title || 'Processo sem titulo'),
-      processNumber: taskRes.data.process_number || null,
-      clientName: taskRes.data.client_name || null,
+    const exported = await exportLegalPieceBinary({
+      tenantId,
+      taskId,
+      pieceType: effectivePieceType,
+      pieceLabel: effectivePieceLabel,
       draftMarkdown,
-      profile: profileRes.data || null,
-      template: templateRes.data || null,
-      assets: assetsRes.data || [],
+      format: format as LegalPieceExportFormat,
     });
 
-    const fileName = `${sanitizeFileName(pieceType)}-${sanitizeFileName(taskRes.data.title || 'processo')}.docx`;
-
-    return new NextResponse(new Uint8Array(buffer), {
+    return new NextResponse(new Uint8Array(exported.buffer), {
       status: 200,
       headers: {
-        'Content-Type': 'application/vnd.openxmlformats-officedocument.wordprocessingml.document',
-        'Content-Disposition': `attachment; filename="${fileName}"`,
+        'Content-Type': exported.mimeType,
+        'Content-Disposition': `attachment; filename="${exported.fileName}"`,
       },
     });
   } catch (error: any) {
+    if (error?.message === 'Unauthorized') {
+      return NextResponse.json({ error: 'Nao autenticado.' }, { status: 401 });
+    }
+
+    if (error?.message === 'Forbidden') {
+      return NextResponse.json({ error: 'Apenas administradores ou socios podem publicar o artifact premium.' }, { status: 403 });
+    }
+
+    if (error?.message === 'GoogleDriveDisconnected' || error?.message === 'GoogleDriveNotConfigured') {
+      return NextResponse.json({ error: 'Google Drive não conectado para este escritório.' }, { status: 400 });
+    }
+
     return NextResponse.json(
-      { error: error?.message || 'Erro ao exportar a peca em Word.' },
+      { error: error?.message || 'Erro ao exportar ou publicar a peça premium.' },
       { status: 500 }
     );
   }

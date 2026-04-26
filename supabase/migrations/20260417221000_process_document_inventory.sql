@@ -82,6 +82,7 @@ CREATE INDEX IF NOT EXISTS idx_process_document_contents_document_id ON public.p
 CREATE OR REPLACE FUNCTION public.handle_process_documents_updated_at()
 RETURNS trigger
 LANGUAGE plpgsql
+SET search_path = public
 AS $$
 BEGIN
   NEW.updated_at = now();

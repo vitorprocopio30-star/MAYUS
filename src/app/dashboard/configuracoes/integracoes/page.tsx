@@ -1,24 +1,17 @@
 "use client";
 
-import { useState, useEffect, useCallback, useMemo } from "react";
+import { useState, useEffect, useCallback } from "react";
 import { Cormorant_Garamond, Montserrat } from "next/font/google";
-import { createClient } from "@/lib/supabase/client";
 import { QrCode, Smartphone, Zap, Bot, BrainCircuit, Plus, X, Eye, Settings, CheckCircle2, AlertCircle, Loader2, FolderOpen, ExternalLink } from "lucide-react";
 import { toast } from "sonner";
 import { useUserProfile } from "@/hooks/useUserProfile";
+import { fetchSafeIntegrations, type SafeTenantIntegration } from "@/lib/integrations/fetch-safe-integrations";
+import { saveTenantIntegration } from "@/lib/integrations/save-integration";
 import Image from "next/image";
 import { GoogleDriveLogo } from "@/components/branding/GoogleDriveLogo";
 
 const cormorant = Cormorant_Garamond({ subsets: ["latin"], weight: ["400", "500", "600", "700"], style: ["normal", "italic"] });
 const montserrat = Montserrat({ subsets: ["latin"], weight: ["300", "400", "500", "600", "700"] });
-
-interface Integration {
-  id: string;
-  provider: string;
-  api_key: string | null;
-  status: string;
-  instance_name: string | null;
-}
 
 interface GoogleDriveState {
   available: boolean;
@@ -31,7 +24,7 @@ interface GoogleDriveState {
 }
 
 export default function IntegracoesPage() {
-  const [integrations, setIntegrations] = useState<Integration[]>([]);
+  const [integrations, setIntegrations] = useState<SafeTenantIntegration[]>([]);
   const [isLoading, setIsLoading] = useState(true);
   const [showKey, setShowKey] = useState<Record<string, boolean>>({});
   
@@ -39,7 +32,6 @@ export default function IntegracoesPage() {
   const [editingProvider, setEditingProvider] = useState<string | null>(null);
   const [tempApiKey, setTempApiKey] = useState("");
   const [tempModel, setTempModel] = useState("");
-  const supabase = useMemo(() => createClient(), []);
   const { profile } = useUserProfile();
 
   // NOVO: EVOLUTION STATE (Tido dentro do Card)
@@ -88,29 +80,28 @@ export default function IntegracoesPage() {
     if (!profile?.tenant_id) return;
 
     setIsLoading(true);
-    const { data, error } = await supabase
-      .from("tenant_integrations")
-      .select("*")
-      .eq("tenant_id", profile.tenant_id);
-      
-    if (!error && data) {
+    try {
+      const data = await fetchSafeIntegrations();
       setIntegrations(data);
+
       // Auto-Load Evolution if exists
       const evol = data.find(i => i.provider === 'evolution');
-      if (evol && evol.api_key && evol.instance_name) {
+      if (evol?.instance_name) {
          const parts = evol.instance_name.split('|');
          setEvoUrl(parts[0] || "https://evolution.dutraprocopio.cloud");
          setEvoName(parts[1] || "MAYUS2");
-         setEvoKey(evol.api_key);
+         setEvoKey("");
          setIsEvoEditing(false);
-         // Opcional: auto check status if connected
-         if (evol.status === 'connected') {
-             checkEvoStatus(parts[0], parts[1], evol.api_key);
+         if (evol.status === 'connected' && evol.has_api_key) {
+           setEvoStep("CONNECTED");
          }
       }
+    } catch (error: any) {
+      toast.error(error?.message || "Nao foi possivel carregar as integracoes.");
+    } finally {
+      setIsLoading(false);
     }
-    setIsLoading(false);
-  }, [profile?.tenant_id, supabase]);
+  }, [profile?.tenant_id]);
 
   useEffect(() => {
     if (profile?.tenant_id) {
@@ -196,21 +187,14 @@ export default function IntegracoesPage() {
 
       // Salva no banco "Integrações"
       if (profile?.tenant_id) {
-         const existing = getIntegration('evolution');
-         const payload = {
-            tenant_id: profile.tenant_id,
-            provider: 'evolution',
-            api_key: evoKey,
-            instance_name: `${cleanUrl}|${evoName}`,
-            status: 'connected'
-         };
-         if (existing) {
-           await supabase.from("tenant_integrations").update(payload).eq("id", existing.id);
-         } else {
-           await supabase.from("tenant_integrations").insert([payload]);
-         }
-         loadIntegrations();
-      }
+         await saveTenantIntegration({
+           provider: 'evolution',
+           apiKey: evoKey,
+           instanceName: `${cleanUrl}|${evoName}`,
+           status: 'connected',
+         });
+         await loadIntegrations();
+       }
 
     } catch(e: any) {
       setEvoError(e.message);
@@ -223,23 +207,14 @@ export default function IntegracoesPage() {
     if (!profile?.tenant_id || !editingProvider) return;
 
     try {
-      const existing = getIntegration(editingProvider);
-      
       const payload = {
-        tenant_id: profile.tenant_id,
         provider: editingProvider,
-        api_key: tempApiKey,
-        instance_name: tempModel,
+        apiKey: tempApiKey,
+        instanceName: tempModel,
         status: tempApiKey ? 'connected' : 'disconnected'
       };
 
-      if (existing) {
-        const { error } = await supabase.from("tenant_integrations").update(payload).eq("id", existing.id);
-        if (error) throw error;
-      } else {
-        const { error } = await supabase.from("tenant_integrations").insert([payload]);
-        if (error) throw error;
-      }
+      await saveTenantIntegration(payload);
       
       toast.success("Integração salva com sucesso!");
       setEditingProvider(null);
@@ -326,7 +301,7 @@ export default function IntegracoesPage() {
       
       {/* HEADER */}
       <div>
-        <h1 className={"text-4xl font-black text-white italic tracking-wide " + cormorant.className}>
+        <h1 className={"text-4xl font-black text-gray-900 dark:text-white italic tracking-wide " + cormorant.className}>
           Integrações & <span className="text-[#CCA761]">APIs Customizadas</span>
         </h1>
         <p className="text-gray-400 mt-2 max-w-2xl text-sm leading-relaxed">
@@ -341,7 +316,7 @@ export default function IntegracoesPage() {
         
         {/* COLUNA ESQUERDA: MENSAJERIA (WHATAPP) */}
         <div className="space-y-6">
-          <h2 className="text-xl font-bold border-b border-white/10 pb-3 flex items-center gap-2">
+          <h2 className="text-xl font-bold border-b border-gray-200 dark:border-white/10 pb-3 flex items-center gap-2">
             <Smartphone className="text-[#CCA761]" size={22} />
             Motor Omnichannel
           </h2>
@@ -362,10 +337,10 @@ export default function IntegracoesPage() {
                   <div className="bg-[#CCA761]/10 w-12 h-12 rounded-xl flex items-center justify-center border border-[#CCA761]/30 mb-4 shadow-[inset_0_0_15px_rgba(204,167,97,0.3)]">
                      <svg viewBox="0 0 24 24" width="22" height="22" className="text-[#CCA761]" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M12 2v20M17 5H9.5a3.5 3.5 0 0 0 0 7h5a3.5 3.5 0 0 1 0 7H6"/></svg>
                   </div>
-                  <div className="flex justify-between items-start mb-2 text-white">
+                  <div className="flex justify-between items-start mb-2 text-gray-900 dark:text-white">
                     <h3 className="text-xl font-black tracking-tight italic">MAYUS Cloud API (Meta)</h3>
                     {getIntegration('meta_cloud')?.status === 'connected' && editingProvider !== 'meta_cloud' && (
-                       <button onClick={() => { setEditingProvider('meta_cloud'); setTempApiKey(getIntegration('meta_cloud')?.api_key || ""); setTempModel(getIntegration('meta_cloud')?.instance_name || ""); }} className="p-2 border border-white/10 rounded-lg text-gray-400 hover:text-white transition-colors">
+                       <button onClick={() => { setEditingProvider('meta_cloud'); setTempApiKey(""); setTempModel(getIntegration('meta_cloud')?.instance_name || ""); }} className="p-2 border border-gray-200 dark:border-white/10 rounded-lg text-gray-400 hover:text-gray-900 dark:text-white transition-colors">
                           <Settings size={18} />
                        </button>
                     )}
@@ -375,17 +350,17 @@ export default function IntegracoesPage() {
                   </p>
                   
                   {editingProvider === 'meta_cloud' ? (
-                    <div className="space-y-4 bg-black/40 p-5 rounded-xl border border-white/5 animate-in slide-in-from-top-2">
+                    <div className="space-y-4 bg-gray-200 dark:bg-black/40 p-5 rounded-xl border border-gray-200 dark:border-white/5 animate-in slide-in-from-top-2">
                        <div>
                           <label className="text-[10px] font-black uppercase tracking-widest text-[#CCA761] mb-1.5 block">Permanent Access Token</label>
-                          <input value={tempApiKey} onChange={e => setTempApiKey(e.target.value)} type="password" placeholder="EAAB..." className="w-full bg-[#111] border border-white/10 rounded-lg px-4 py-2 text-sm text-white focus:outline-none focus:border-[#CCA761]/50 font-mono" />
+                          <input value={tempApiKey} onChange={e => setTempApiKey(e.target.value)} type="password" placeholder="EAAB..." className="w-full bg-gray-100 dark:bg-[#111] border border-gray-200 dark:border-white/10 rounded-lg px-4 py-2 text-sm text-gray-900 dark:text-white focus:outline-none focus:border-[#CCA761]/50 font-mono" />
                        </div>
                        <div>
                           <label className="text-[10px] font-black uppercase tracking-widest text-[#CCA761] mb-1.5 block">Phone Number ID | WABA ID</label>
-                          <input value={tempModel} onChange={e => setTempModel(e.target.value)} type="text" placeholder="ID_DO_NUMERO|ID_DA_CONTA" className="w-full bg-[#111] border border-white/10 rounded-lg px-4 py-2 text-sm text-white focus:outline-none focus:border-[#CCA761]/50" />
+                          <input value={tempModel} onChange={e => setTempModel(e.target.value)} type="text" placeholder="ID_DO_NUMERO|ID_DA_CONTA" className="w-full bg-gray-100 dark:bg-[#111] border border-gray-200 dark:border-white/10 rounded-lg px-4 py-2 text-sm text-gray-900 dark:text-white focus:outline-none focus:border-[#CCA761]/50" />
                        </div>
                        <div className="flex gap-2 pt-2">
-                          <button onClick={() => setEditingProvider(null)} className="flex-1 py-2 text-[10px] font-black uppercase text-gray-500 hover:text-white">Cancelar</button>
+                          <button onClick={() => setEditingProvider(null)} className="flex-1 py-2 text-[10px] font-black uppercase text-gray-500 hover:text-gray-900 dark:text-white">Cancelar</button>
                           <button onClick={handleSaveIntegration} className="flex-1 py-2 bg-[#CCA761] text-black text-[10px] font-black uppercase rounded-lg hover:bg-white transition-all shadow-[0_0_15px_rgba(204,167,97,0.2)]">Salvar Config</button>
                        </div>
                     </div>
@@ -409,25 +384,25 @@ export default function IntegracoesPage() {
             
             {/* WHATSAPP (EVOLUTION) CARD INCORPORADO */}
             <div className={`relative flex flex-col justify-between p-6 border rounded-2xl transition-all duration-300 ${
-              evoStep === 'CONNECTED' ? 'bg-[#0f2e1a] border-[#25D366]/40 shadow-[0_0_30px_rgba(37,211,102,0.1)]' : 'bg-[#0f0f0f] border-white/10 shadow-xl'
+              evoStep === 'CONNECTED' ? 'bg-[#0f2e1a] border-[#25D366]/40 shadow-[0_0_30px_rgba(37,211,102,0.1)]' : 'bg-[#0f0f0f] border-gray-200 dark:border-white/10 shadow-xl'
             }`}>
                
                <div className="flex justify-between items-start mb-6">
                   <div>
                      <div className={`w-12 h-12 rounded-xl flex items-center justify-center border mb-4 ${
-                       evoStep === 'CONNECTED' ? 'bg-[#25D366]/20 border-[#25D366] text-[#25D366]' : 'bg-white/5 border-white/10 text-gray-400'
+                       evoStep === 'CONNECTED' ? 'bg-[#25D366]/20 border-[#25D366] text-[#25D366]' : 'bg-gray-100 dark:bg-white/5 border-gray-200 dark:border-white/10 text-gray-400'
                      }`}>
                         <QrCode size={22} />
                      </div>
-                     <h3 className="text-xl font-black text-white tracking-tight flex items-center gap-2">
+                     <h3 className="text-xl font-black text-gray-900 dark:text-white tracking-tight flex items-center gap-2">
                         WhatsApp API 
-                        <span className="text-[10px] bg-white/10 text-gray-300 px-2 py-0.5 rounded-full uppercase tracking-widest font-bold">Evolution</span>
+                        <span className="text-[10px] bg-gray-100 dark:bg-white/10 text-gray-700 dark:text-gray-300 px-2 py-0.5 rounded-full uppercase tracking-widest font-bold">Evolution</span>
                      </h3>
                      <p className="text-xs text-gray-400 mt-2">Sincronizador Oficial do Cérebro MAYUS com o seu servidor Baileys WhatsApp Web.</p>
                   </div>
                   
                   {evoStep === 'CONNECTED' && (
-                     <button onClick={() => { setIsEvoEditing(!isEvoEditing) }} className="p-2 bg-black/40 hover:bg-black/60 rounded-lg text-gray-400 hover:text-white border border-transparent hover:border-white/10 transition-colors">
+                     <button onClick={() => { setIsEvoEditing(!isEvoEditing) }} className="p-2 bg-gray-200 dark:bg-black/40 hover:bg-gray-200 dark:bg-black/60 rounded-lg text-gray-400 hover:text-gray-900 dark:text-white border border-transparent hover:border-gray-200 dark:border-white/10 transition-colors">
                         <Settings size={18} />
                      </button>
                   )}
@@ -437,7 +412,7 @@ export default function IntegracoesPage() {
                
                {/* 1. CONFIGURAÇÃO */}
                {(evoStep === "CONFIG" || isEvoEditing) && (
-                  <div className="bg-[#141414] rounded-xl p-5 border border-white/5 space-y-4 animate-in fade-in">
+                  <div className="bg-gray-50 dark:bg-[#141414] rounded-xl p-5 border border-gray-200 dark:border-white/5 space-y-4 animate-in fade-in">
                      {evoError && (
                         <div className="p-3 bg-red-500/10 border border-red-500/20 rounded-lg flex items-center gap-3">
                            <AlertCircle className="text-red-500 shrink-0" size={16} />
@@ -447,17 +422,17 @@ export default function IntegracoesPage() {
                      
                      <div>
                         <label className="text-[10px] font-black uppercase tracking-widest text-[#CCA761] mb-1.5 block">Nome da Instância</label>
-                        <input value={evoName} onChange={e => setEvoName(e.target.value)} type="text" placeholder="MAYUS2" className="w-full bg-[#111] border border-white/10 rounded-lg px-4 py-2.5 text-sm text-white focus:outline-none focus:border-[#CCA761]/50 placeholder:text-gray-600 transition-colors" />
+                        <input value={evoName} onChange={e => setEvoName(e.target.value)} type="text" placeholder="MAYUS2" className="w-full bg-gray-100 dark:bg-[#111] border border-gray-200 dark:border-white/10 rounded-lg px-4 py-2.5 text-sm text-gray-900 dark:text-white focus:outline-none focus:border-[#CCA761]/50 placeholder:text-gray-600 transition-colors" />
                      </div>
                      <div>
                         <label className="text-[10px] font-black uppercase tracking-widest text-[#CCA761] mb-1.5 block">URL Base (Apenas Raiz)</label>
-                        <input value={evoUrl} onChange={e => setEvoUrl(e.target.value)} type="text" placeholder="https://api..." className="w-full bg-[#111] border border-white/10 rounded-lg px-4 py-2.5 text-sm text-white focus:outline-none focus:border-[#CCA761]/50 placeholder:text-gray-600 transition-colors" />
+                        <input value={evoUrl} onChange={e => setEvoUrl(e.target.value)} type="text" placeholder="https://api..." className="w-full bg-gray-100 dark:bg-[#111] border border-gray-200 dark:border-white/10 rounded-lg px-4 py-2.5 text-sm text-gray-900 dark:text-white focus:outline-none focus:border-[#CCA761]/50 placeholder:text-gray-600 transition-colors" />
                      </div>
                      <div>
                         <label className="text-[10px] font-black uppercase tracking-widest text-[#CCA761] mb-1.5 block">Global API Key (A Senha)</label>
                         <div className="relative">
-                           <input type={showKey['evo'] ? "text" : "password"} value={evoKey} onChange={e => setEvoKey(e.target.value)} className="w-full bg-[#111] border border-white/10 rounded-lg pl-4 pr-10 py-2.5 text-sm text-white focus:outline-none focus:border-[#CCA761]/50 placeholder:text-gray-600 transition-colors font-mono" />
-                           <button onClick={() => toggleShow('evo')} className="absolute inset-y-0 right-0 pr-3 flex items-center text-gray-400 hover:text-white"><Eye size={16} /></button>
+                           <input type={showKey['evo'] ? "text" : "password"} value={evoKey} onChange={e => setEvoKey(e.target.value)} className="w-full bg-gray-100 dark:bg-[#111] border border-gray-200 dark:border-white/10 rounded-lg pl-4 pr-10 py-2.5 text-sm text-gray-900 dark:text-white focus:outline-none focus:border-[#CCA761]/50 placeholder:text-gray-600 transition-colors font-mono" />
+                           <button onClick={() => toggleShow('evo')} className="absolute inset-y-0 right-0 pr-3 flex items-center text-gray-400 hover:text-gray-900 dark:text-white"><Eye size={16} /></button>
                         </div>
                      </div>
                      
@@ -471,7 +446,7 @@ export default function IntegracoesPage() {
 
                {/* 2. QR CODE */}
                {evoStep === "QRCODE" && (
-                  <div className="flex flex-col items-center bg-[#141414] rounded-xl p-6 border border-white/10 text-center animate-in zoom-in-95 duration-500">
+                  <div className="flex flex-col items-center bg-gray-50 dark:bg-[#141414] rounded-xl p-6 border border-gray-200 dark:border-white/10 text-center animate-in zoom-in-95 duration-500">
                      <p className="text-xs text-gray-400 mb-4 tracking-wide">Abra o WhatsApp e aponte a câmera (Dispositivos Conectados)</p>
                      <div className="bg-white p-3 rounded-xl border-[4px] border-[#CCA761]/30 mb-5 shadow-[0_0_30px_rgba(204,167,97,0.15)] relative">
                         {evoQr ? (
@@ -481,7 +456,7 @@ export default function IntegracoesPage() {
                         )}
                         <div className="absolute inset-0 border-2 border-[#CCA761] rounded-xl mix-blend-overlay opacity-50" />
                      </div>
-                     <button onClick={() => checkEvoStatus(evoUrl, evoName, evoKey)} className="w-full py-2.5 bg-[#111] hover:bg-white/5 border border-white/10 text-white font-bold uppercase text-[10px] tracking-widest rounded-lg flex items-center justify-center gap-2 transition-colors">
+                     <button onClick={() => checkEvoStatus(evoUrl, evoName, evoKey)} className="w-full py-2.5 bg-gray-100 dark:bg-[#111] hover:bg-gray-100 dark:bg-white/5 border border-gray-200 dark:border-white/10 text-gray-900 dark:text-white font-bold uppercase text-[10px] tracking-widest rounded-lg flex items-center justify-center gap-2 transition-colors">
                         <Zap size={14} className="text-[#CCA761]" /> Verificar Status do Escaneamento
                      </button>
                   </div>
@@ -489,14 +464,14 @@ export default function IntegracoesPage() {
 
                {/* 3. CONNECTED */}
                 {evoStep === "CONNECTED" && !isEvoEditing && (
-                   <div className="bg-[#141414] rounded-xl p-5 border border-[#25D366]/30 animate-in fade-in flex items-center justify-between">
+                   <div className="bg-gray-50 dark:bg-[#141414] rounded-xl p-5 border border-[#25D366]/30 animate-in fade-in flex items-center justify-between">
                      <div className="flex items-center gap-4">
                         <div className="w-12 h-12 rounded-full border-2 border-[#25D366] bg-[#25D366]/10 flex items-center justify-center relative">
                            <CheckCircle2 size={24} className="text-[#25D366]" />
                            <div className="absolute -bottom-1 -right-1 w-4 h-4 bg-[#25D366] rounded-full border-[3px] border-[#0a0a0a]" />
                         </div>
                         <div>
-                           <p className="text-sm font-bold text-white mb-0.5">{evoName}</p>
+                           <p className="text-sm font-bold text-gray-900 dark:text-white mb-0.5">{evoName}</p>
                            <p className="text-[10px] text-[#25D366] uppercase tracking-widest font-black">Online & Espelhado Sincronicamente</p>
                         </div>
                      </div>
@@ -506,18 +481,18 @@ export default function IntegracoesPage() {
              </div>
 
             <div className={`relative flex flex-col justify-between p-6 border rounded-2xl transition-all duration-300 ${
-              googleDrive.connected ? 'bg-[#0b1220] border-[#4285F4]/40 shadow-[0_0_30px_rgba(66,133,244,0.12)]' : 'bg-[#0f0f0f] border-white/10 shadow-xl'
+              googleDrive.connected ? 'bg-[#0b1220] border-[#4285F4]/40 shadow-[0_0_30px_rgba(66,133,244,0.12)]' : 'bg-[#0f0f0f] border-gray-200 dark:border-white/10 shadow-xl'
             }`}>
               <div className="flex justify-between items-start gap-4 mb-6">
                 <div>
                   <div className={`w-12 h-12 rounded-xl flex items-center justify-center border mb-4 ${
-                    googleDrive.connected ? 'bg-[#4285F4]/15 border-[#4285F4]/40' : 'bg-white/5 border-white/10'
+                    googleDrive.connected ? 'bg-[#4285F4]/15 border-[#4285F4]/40' : 'bg-gray-100 dark:bg-white/5 border-gray-200 dark:border-white/10'
                   }`}>
                     <GoogleDriveLogo size={24} className="h-6 w-6" />
                   </div>
-                  <h3 className="text-xl font-black text-white tracking-tight flex items-center gap-2">
+                  <h3 className="text-xl font-black text-gray-900 dark:text-white tracking-tight flex items-center gap-2">
                     Google Drive
-                    <span className="text-[10px] bg-white/10 text-gray-300 px-2 py-0.5 rounded-full uppercase tracking-widest font-bold">Documentos</span>
+                    <span className="text-[10px] bg-gray-100 dark:bg-white/10 text-gray-700 dark:text-gray-300 px-2 py-0.5 rounded-full uppercase tracking-widest font-bold">Documentos</span>
                   </h3>
                   <p className="text-xs text-gray-400 mt-2 max-w-lg">
                     Conecte o Drive do escritório para criar pastas por processo e preencher o link automaticamente dentro do card jurídico.
@@ -528,7 +503,7 @@ export default function IntegracoesPage() {
                   googleDrive.connected
                     ? 'bg-[#4285F4]/15 border-[#4285F4]/30 text-[#8ab4ff]'
                     : googleDrive.available
-                      ? 'bg-white/5 border-white/10 text-gray-500'
+                      ? 'bg-gray-100 dark:bg-white/5 border-gray-200 dark:border-white/10 text-gray-500'
                       : 'bg-amber-500/10 border-amber-500/20 text-amber-300'
                 }`}>
                   {googleDrive.connected ? 'Conectado' : googleDrive.available ? 'Pronto para conectar' : 'Configuração pendente'}
@@ -536,7 +511,7 @@ export default function IntegracoesPage() {
               </div>
 
               {googleDriveLoading ? (
-                <div className="bg-[#141414] rounded-xl p-5 border border-white/5 flex items-center gap-3 text-sm text-gray-400">
+                <div className="bg-gray-50 dark:bg-[#141414] rounded-xl p-5 border border-gray-200 dark:border-white/5 flex items-center gap-3 text-sm text-gray-400">
                   <Loader2 size={16} className="animate-spin text-[#4285F4]" /> Carregando estado do Google Drive...
                 </div>
               ) : !googleDrive.available ? (
@@ -545,13 +520,13 @@ export default function IntegracoesPage() {
                 </div>
               ) : !googleDrive.connected ? (
                 <div className="space-y-4">
-                  <div className="bg-[#141414] rounded-xl p-5 border border-white/5 text-xs text-gray-400 leading-relaxed">
+                  <div className="bg-gray-50 dark:bg-[#141414] rounded-xl p-5 border border-gray-200 dark:border-white/5 text-xs text-gray-400 leading-relaxed">
                     A integração usa OAuth oficial do Google. Depois de conectada, qualquer processo pode gerar sua própria pasta com um clique.
                   </div>
                   <button
                     type="button"
                     onClick={handleConnectGoogleDrive}
-                    className="w-full py-3 bg-[#4285F4] hover:bg-[#5b95ff] text-white font-black uppercase text-[11px] tracking-widest rounded-lg flex items-center justify-center gap-2 transition-all"
+                    className="w-full py-3 bg-[#4285F4] hover:bg-[#5b95ff] text-gray-900 dark:text-white font-black uppercase text-[11px] tracking-widest rounded-lg flex items-center justify-center gap-2 transition-all"
                   >
                     <FolderOpen size={16} /> Conectar conta Google
                   </button>
@@ -559,13 +534,13 @@ export default function IntegracoesPage() {
               ) : (
                 <div className="space-y-4">
                   <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-                    <div className="bg-[#141414] rounded-xl p-4 border border-white/5">
+                    <div className="bg-gray-50 dark:bg-[#141414] rounded-xl p-4 border border-gray-200 dark:border-white/5">
                       <p className="text-[10px] font-black uppercase tracking-widest text-gray-500 mb-2">Conta conectada</p>
-                      <p className="text-sm font-semibold text-white break-all">{googleDrive.connectedEmail || "Conta autenticada"}</p>
+                      <p className="text-sm font-semibold text-gray-900 dark:text-white break-all">{googleDrive.connectedEmail || "Conta autenticada"}</p>
                     </div>
-                    <div className="bg-[#141414] rounded-xl p-4 border border-white/5">
+                    <div className="bg-gray-50 dark:bg-[#141414] rounded-xl p-4 border border-gray-200 dark:border-white/5">
                       <p className="text-[10px] font-black uppercase tracking-widest text-gray-500 mb-2">Destino padrão</p>
-                      <p className="text-sm font-semibold text-white">{googleDrive.rootFolderName || "Raiz do Drive"}</p>
+                      <p className="text-sm font-semibold text-gray-900 dark:text-white">{googleDrive.rootFolderName || "Raiz do Drive"}</p>
                     </div>
                   </div>
 
@@ -577,13 +552,13 @@ export default function IntegracoesPage() {
                         value={googleDriveRootInput}
                         onChange={(event) => setGoogleDriveRootInput(event.target.value)}
                         placeholder="Cole o link ou ID da pasta do escritório"
-                        className="flex-1 bg-[#111] border border-white/10 rounded-lg px-4 py-2.5 text-sm text-white focus:outline-none focus:border-[#4285F4]/50 placeholder:text-gray-600 transition-colors"
+                        className="flex-1 bg-gray-100 dark:bg-[#111] border border-gray-200 dark:border-white/10 rounded-lg px-4 py-2.5 text-sm text-gray-900 dark:text-white focus:outline-none focus:border-[#4285F4]/50 placeholder:text-gray-600 transition-colors"
                       />
                       <button
                         type="button"
                         onClick={handleSaveGoogleDriveRoot}
                         disabled={googleDriveBusy === "save"}
-                        className="px-4 py-2.5 bg-white/5 hover:bg-white/10 border border-white/10 rounded-lg text-xs font-black uppercase tracking-widest text-white disabled:opacity-60 flex items-center justify-center gap-2"
+                        className="px-4 py-2.5 bg-gray-100 dark:bg-white/5 hover:bg-gray-100 dark:bg-white/10 border border-gray-200 dark:border-white/10 rounded-lg text-xs font-black uppercase tracking-widest text-gray-900 dark:text-white disabled:opacity-60 flex items-center justify-center gap-2"
                       >
                         {googleDriveBusy === "save" ? <Loader2 size={14} className="animate-spin" /> : null}
                         Salvar pasta
@@ -600,7 +575,7 @@ export default function IntegracoesPage() {
                         href={googleDrive.rootFolderUrl}
                         target="_blank"
                         rel="noopener noreferrer"
-                        className="flex-1 py-2.5 bg-white/5 hover:bg-white/10 border border-white/10 rounded-lg text-xs font-black uppercase tracking-widest text-white flex items-center justify-center gap-2 transition-colors"
+                        className="flex-1 py-2.5 bg-gray-100 dark:bg-white/5 hover:bg-gray-100 dark:bg-white/10 border border-gray-200 dark:border-white/10 rounded-lg text-xs font-black uppercase tracking-widest text-gray-900 dark:text-white flex items-center justify-center gap-2 transition-colors"
                       >
                         <ExternalLink size={14} /> Abrir pasta raiz
                       </a>
@@ -625,7 +600,7 @@ export default function IntegracoesPage() {
 
         {/* COLUNA DIREITA: INTELLIGÊNCIA ARTIFICIAL (LLMs) */}
         <div className="space-y-6">
-          <h2 className="text-xl font-bold border-b border-white/10 pb-3 flex items-center gap-2">
+          <h2 className="text-xl font-bold border-b border-gray-200 dark:border-white/10 pb-3 flex items-center gap-2">
             <Bot className="text-[#CCA761]" size={22} />
             Mecanismos Virtuais (IAs)
           </h2>
@@ -633,14 +608,14 @@ export default function IntegracoesPage() {
           <div className="grid grid-cols-1 gap-4">
              {providers.map(p => {
                const saved = getIntegration(p.id);
-               const isConnected = saved?.status === 'connected' && saved?.api_key;
+               const isConnected = saved?.status === 'connected' && saved?.has_api_key;
                const isEditing = editingProvider === p.id;
                
                return (
-                 <div key={p.id} className={"bg-[#0f0f0f] border rounded-2xl p-5 transition-all duration-300 " + (isConnected ? "border-[#CCA761]/30" : "border-white/5 hover:border-white/10")}>
+                 <div key={p.id} className={"bg-[#0f0f0f] border rounded-2xl p-5 transition-all duration-300 " + (isConnected ? "border-[#CCA761]/30" : "border-gray-200 dark:border-white/5 hover:border-gray-200 dark:border-white/10")}>
                    <div className="flex justify-between items-start">
                      <div className="flex items-center gap-3">
-                       <div className={"w-12 h-12 rounded-xl flex items-center justify-center bg-white/5 border border-white/10 overflow-hidden " + p.color}>
+                       <div className={"w-12 h-12 rounded-xl flex items-center justify-center bg-gray-100 dark:bg-white/5 border border-gray-200 dark:border-white/10 overflow-hidden " + p.color}>
                          <p.icon size={24} />
                        </div>
                        <div>
@@ -652,32 +627,32 @@ export default function IntegracoesPage() {
                        </div>
                      </div>
                      {!isEditing && (
-                       <button onClick={() => { setEditingProvider(p.id); setTempApiKey(saved?.api_key || ""); setTempModel(saved?.instance_name || p.models?.[0] || ""); }} className="p-2 bg-white/5 hover:bg-white/10 rounded-lg text-gray-400 hover:text-white transition-colors">
+                        <button onClick={() => { setEditingProvider(p.id); setTempApiKey(""); setTempModel(saved?.instance_name || p.models?.[0] || ""); }} className="p-2 bg-gray-100 dark:bg-white/5 hover:bg-gray-100 dark:bg-white/10 rounded-lg text-gray-400 hover:text-gray-900 dark:text-white transition-colors">
                          {isConnected ? <Settings size={18} /> : <Plus size={18} />}
                        </button>
                      )}
                    </div>
 
                    {isEditing && (
-                     <div className="mt-6 animate-in fade-in border-t border-white/5 pt-6">
+                     <div className="mt-6 animate-in fade-in border-t border-gray-200 dark:border-white/5 pt-6">
                        <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
                          <div>
                            <label className="text-[10px] font-semibold text-gray-400 mb-2 block uppercase tracking-wider">Secret API Key</label>
                            <div className="relative">
-                             <input type={showKey[p.id] ? "text" : "password"} value={tempApiKey} onChange={(e) => setTempApiKey(e.target.value)} className="w-full bg-[#111] border border-white/10 rounded-lg pl-3 pr-10 py-2.5 text-sm focus:border-[#CCA761] outline-none font-mono text-gray-200" />
-                             <button onClick={() => toggleShow(p.id)} className="absolute inset-y-0 right-0 pr-3 flex items-center text-gray-500 hover:text-white"><Eye size={16} /></button>
+                             <input type={showKey[p.id] ? "text" : "password"} value={tempApiKey} onChange={(e) => setTempApiKey(e.target.value)} className="w-full bg-gray-100 dark:bg-[#111] border border-gray-200 dark:border-white/10 rounded-lg pl-3 pr-10 py-2.5 text-sm focus:border-[#CCA761] outline-none font-mono text-gray-800 dark:text-gray-200" />
+                             <button onClick={() => toggleShow(p.id)} className="absolute inset-y-0 right-0 pr-3 flex items-center text-gray-500 hover:text-gray-900 dark:text-white"><Eye size={16} /></button>
                            </div>
                          </div>
                          
                          <div>
                             <label className="text-[10px] font-semibold text-gray-400 mb-2 block uppercase tracking-wider">Modelo Específico</label>
-                             <input list={`models-${p.id}`} value={tempModel} onChange={(e) => setTempModel(e.target.value)} placeholder={p.models?.[0] || "Ex: gpt-4o"} className="w-full bg-[#111] border border-white/10 rounded-lg px-4 py-2.5 text-sm focus:border-[#CCA761] outline-none text-gray-200" />
+                             <input list={`models-${p.id}`} value={tempModel} onChange={(e) => setTempModel(e.target.value)} placeholder={p.models?.[0] || "Ex: gpt-4o"} className="w-full bg-gray-100 dark:bg-[#111] border border-gray-200 dark:border-white/10 rounded-lg px-4 py-2.5 text-sm focus:border-[#CCA761] outline-none text-gray-800 dark:text-gray-200" />
                              <datalist id={`models-${p.id}`}>{p.models?.map(m => <option key={m} value={m} />)}</datalist>
                           </div>
                        </div>
                        
                        <div className="flex justify-end gap-3 mt-6">
-                          <button onClick={() => setEditingProvider(null)} className="text-xs font-bold px-4 py-2 text-gray-400 hover:text-white">Cancelar</button>
+                          <button onClick={() => setEditingProvider(null)} className="text-xs font-bold px-4 py-2 text-gray-400 hover:text-gray-900 dark:text-white">Cancelar</button>
                           <button onClick={handleSaveIntegration} className="text-xs font-bold px-5 py-2 rounded-lg bg-[#CCA761] hover:bg-[#b89552] text-black">Salvar Chave</button>
                        </div>
                      </div>

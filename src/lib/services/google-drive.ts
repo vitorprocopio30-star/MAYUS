@@ -78,7 +78,9 @@ function getGoogleDriveConfig(): GoogleDriveConfig {
   const clientId = String(process.env.GOOGLE_DRIVE_CLIENT_ID || process.env.GOOGLE_CLIENT_ID || "").trim();
   const clientSecret = String(process.env.GOOGLE_DRIVE_CLIENT_SECRET || process.env.GOOGLE_CLIENT_SECRET || "").trim();
 
-  if (!clientId || !clientSecret) {
+  const hasValidClientIdShape = /^[0-9]+-[A-Za-z0-9_-]+\.apps\.googleusercontent\.com$/.test(clientId);
+
+  if (!clientId || !clientSecret || !hasValidClientIdShape) {
     throw new Error("GoogleDriveNotConfigured");
   }
 

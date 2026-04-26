@@ -90,6 +90,7 @@ CREATE INDEX IF NOT EXISTS idx_process_document_memory_task_id ON public.process
 CREATE OR REPLACE FUNCTION public.handle_process_document_memory_updated_at()
 RETURNS trigger
 LANGUAGE plpgsql
+SET search_path = public
 AS $$
 BEGIN
   NEW.updated_at = now();

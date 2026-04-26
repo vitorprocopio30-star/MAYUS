@@ -1,5 +1,6 @@
 import { NextRequest, NextResponse } from "next/server";
 import { getTenantSession } from "@/lib/auth/get-tenant-session";
+import { upsertTenantIntegrationSecure, getTenantIntegrationResolved } from "@/lib/integrations/server";
 import { supabaseAdmin } from "@/lib/supabase/admin";
 import {
   buildGoogleDriveFolderUrl,
@@ -31,16 +32,7 @@ export async function GET() {
       });
     }
 
-    const { data: integration, error } = await supabaseAdmin
-      .from("tenant_integrations")
-      .select("status, metadata, api_key")
-      .eq("tenant_id", tenantId)
-      .eq("provider", GOOGLE_DRIVE_PROVIDER)
-      .maybeSingle();
-
-    if (error) {
-      throw error;
-    }
+    const integration = await getTenantIntegrationResolved(tenantId, GOOGLE_DRIVE_PROVIDER);
 
     return NextResponse.json(sanitizeGoogleDriveState(integration));
   } catch (error: any) {
@@ -67,16 +59,7 @@ export async function PATCH(request: NextRequest) {
     const body = await request.json().catch(() => null);
     const rootFolder = String(body?.rootFolder || "").trim();
 
-    const { data: integration, error: integrationError } = await supabaseAdmin
-      .from("tenant_integrations")
-      .select("id, api_key, status, metadata")
-      .eq("tenant_id", tenantId)
-      .eq("provider", GOOGLE_DRIVE_PROVIDER)
-      .maybeSingle();
-
-    if (integrationError) {
-      throw integrationError;
-    }
+    const integration = await getTenantIntegrationResolved(tenantId, GOOGLE_DRIVE_PROVIDER);
 
     if (!integration?.id) {
       return NextResponse.json({ error: "Conecte o Google Drive antes de definir a pasta raiz." }, { status: 400 });
@@ -174,16 +157,7 @@ export async function DELETE() {
   try {
     const { tenantId } = await getTenantSession({ requireFullAccess: true });
 
-    const { data: integration, error: integrationError } = await supabaseAdmin
-      .from("tenant_integrations")
-      .select("id, api_key, metadata")
-      .eq("tenant_id", tenantId)
-      .eq("provider", GOOGLE_DRIVE_PROVIDER)
-      .maybeSingle();
-
-    if (integrationError) {
-      throw integrationError;
-    }
+    const integration = await getTenantIntegrationResolved(tenantId, GOOGLE_DRIVE_PROVIDER);
 
     if (!integration?.id) {
       return NextResponse.json({ success: true });
@@ -199,18 +173,13 @@ export async function DELETE() {
       token_type: null,
     });
 
-    const { error: updateError } = await supabaseAdmin
-      .from("tenant_integrations")
-      .update({
-        api_key: null,
-        status: "disconnected",
-        metadata,
-      })
-      .eq("id", integration.id);
-
-    if (updateError) {
-      throw updateError;
-    }
+    await upsertTenantIntegrationSecure({
+      tenantId,
+      provider: GOOGLE_DRIVE_PROVIDER,
+      status: "disconnected",
+      metadata,
+      clearApiKey: true,
+    });
 
     return NextResponse.json({ success: true });
   } catch (error: any) {

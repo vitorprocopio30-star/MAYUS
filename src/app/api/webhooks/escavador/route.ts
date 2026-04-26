@@ -1,6 +1,8 @@
 // Force Trigger Deploy: 2026-04-10T15:40
 import { NextRequest, NextResponse } from 'next/server'
 import { createClient } from '@supabase/supabase-js'
+import { timingSafeEqual } from 'crypto'
+import { requireTenantApiKey } from '@/lib/integrations/server'
 import { solicitarResumoIA, buscarESalvarResumo } from '@/lib/services/escavador-ia'
 
 const adminSupabase = createClient(
@@ -8,22 +10,20 @@ const adminSupabase = createClient(
   process.env.SUPABASE_SERVICE_ROLE_KEY!
 )
 
-async function resolverTenantPorApiKey(req: NextRequest) {
-  const authHeader = req.headers.get('authorization') ?? req.headers.get('Authorization') ?? ''
-  const bearer = authHeader.replace(/^Bearer\s+/i, '').trim()
-  const apiKeyHeader = req.headers.get('x-escavador-api-key')?.trim() ?? ''
-  const possivelApiKey = apiKeyHeader || bearer
+const MAX_ESCAVADOR_WEBHOOK_BODY_BYTES = 1024 * 1024
 
-  if (!possivelApiKey || possivelApiKey === process.env.ESCAVADOR_WEBHOOK_SECRET) return null
+function safeSecretEquals(expected: string, provided: string) {
+  const expectedBuffer = Buffer.from(expected)
+  const providedBuffer = Buffer.from(provided)
 
-  const { data: integ } = await adminSupabase
-    .from('tenant_integrations')
-    .select('tenant_id')
-    .eq('provider', 'escavador')
-    .eq('api_key', possivelApiKey)
-    .maybeSingle()
+  return expectedBuffer.length === providedBuffer.length && timingSafeEqual(expectedBuffer, providedBuffer)
+}
 
-  return integ?.tenant_id ?? null
+function isAuthorizedWebhook(req: NextRequest) {
+  const expected = String(process.env.ESCAVADOR_WEBHOOK_SECRET || '').trim()
+  const provided = String(req.headers.get('Authorization') || '').replace(/^Bearer\s+/i, '').trim()
+
+  return Boolean(expected && provided && safeSecretEquals(expected, provided))
 }
 
 function normalizeOabEstado(value?: string | null) {
@@ -56,6 +56,36 @@ function normalizarDataEvento(value?: string | null) {
   const mes = String(parsed.getMonth() + 1).padStart(2, '0')
   const dia = String(parsed.getDate()).padStart(2, '0')
   return `${ano}-${mes}-${dia}`
+}
+
+function normalizarTipoEventoWebhook(value: unknown) {
+  return String(value ?? '')
+    .trim()
+    .normalize('NFD')
+    .replace(/[\u0300-\u036f]/g, '')
+    .replace(/[\s-]+/g, '_')
+    .toLowerCase()
+}
+
+function extrairTipoEventoWebhook(body: any) {
+  return normalizarTipoEventoWebhook(
+    body?.event ??
+    body?.evento ??
+    body?.tipo_evento ??
+    body?.tipoEvento ??
+    body?.event_type ??
+    body?.type
+  )
+}
+
+function isEventoNovaMovimentacao(evento: string) {
+  return [
+    'nova_movimentacao',
+    'diario_movimentacao_nova',
+    'movimentacao_nova',
+    'nova_movimentacao_diario',
+    'nova_movimentacao_diario_oficial',
+  ].includes(evento)
 }
 
 function extrairOabDeTexto(value?: string | null) {
@@ -155,15 +185,33 @@ async function resolverContextoMonitoramentoOab(monitoramentoId: string | null, 
 
 export async function POST(req: NextRequest) {
   // 1. Valida token de segurança
-  const auth = req.headers.get('Authorization')?.replace('Bearer ', '')
-  if (auth !== process.env.ESCAVADOR_WEBHOOK_SECRET) {
+  if (!isAuthorizedWebhook(req)) {
     return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
   }
 
-  const body = await req.json()
-  console.log('[ESCAVADOR_WEBHOOK] Payload recebido:', JSON.stringify(body, null, 2))
+  const contentLength = Number(req.headers.get('content-length') || '0')
+  if (Number.isFinite(contentLength) && contentLength > MAX_ESCAVADOR_WEBHOOK_BODY_BYTES) {
+    return NextResponse.json({ error: 'Payload too large' }, { status: 413 })
+  }
 
-  const evento = body.event ?? body.evento ?? ''
+  const rawBody = await req.text()
+  if (rawBody.length > MAX_ESCAVADOR_WEBHOOK_BODY_BYTES) {
+    return NextResponse.json({ error: 'Payload too large' }, { status: 413 })
+  }
+
+  let body: any
+  try {
+    body = JSON.parse(rawBody)
+  } catch {
+    return NextResponse.json({ error: 'Invalid JSON' }, { status: 400 })
+  }
+
+  const evento = extrairTipoEventoWebhook(body)
+  console.log('[ESCAVADOR_WEBHOOK] Evento recebido:', {
+    evento,
+    hasProcesso: Boolean(body?.processo),
+    monitoramentos: Array.isArray(body?.monitoramentos) ? body.monitoramentos.length : body?.monitoramento ? 1 : 0,
+  })
 
   // Evento: processo novo detectado via monitoramento por OAB
   if (evento === 'novo_processo' || evento === 'processo_encontrado') {
@@ -180,8 +228,7 @@ export async function POST(req: NextRequest) {
     )
     const tenantId =
       body?.tenant_id ??
-      contextoOab?.tenantId ??
-      (await resolverTenantPorApiKey(req))
+      contextoOab?.tenantId
 
     if (!numeroCnj || !tenantId) {
       console.log('[webhook-escavador] novo_processo: sem numero_cnj ou tenant_id')
@@ -228,18 +275,13 @@ export async function POST(req: NextRequest) {
       return NextResponse.json({ ok: true })
     }
 
-    const { data: integ } = await adminSupabase
-      .from('tenant_integrations')
-      .select('api_key')
-      .eq('tenant_id', tenantId)
-      .eq('provider', 'escavador')
-      .single()
+    const { apiKey } = await requireTenantApiKey(tenantId, 'escavador')
 
-    if (integ?.api_key) {
+    if (apiKey) {
       const monRes = await fetch('https://api.escavador.com/api/v2/monitoramentos/processos', {
         method: 'POST',
         headers: {
-          Authorization: `Bearer ${integ.api_key}`,
+          Authorization: `Bearer ${apiKey}`,
           'Content-Type': 'application/json',
           Accept: 'application/json',
           'X-Requested-With': 'XMLHttpRequest'
@@ -274,7 +316,7 @@ export async function POST(req: NextRequest) {
   }
 
   // 2. Evento: nova movimentação no Diário Oficial
-  if (evento === 'nova_movimentacao' || evento === 'diario_movimentacao_nova') {
+  if (isEventoNovaMovimentacao(evento)) {
     // Normalização: suporta array em monitoramentos ou objeto em monitoramento
     const rawMon = body.monitoramentos ?? body.monitoramento ?? []
     const monitoramentos = Array.isArray(rawMon) ? rawMon : [rawMon]

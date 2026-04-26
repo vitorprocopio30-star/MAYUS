@@ -3,6 +3,9 @@ import { NextRequest, NextResponse } from "next/server";
 import { createClient } from "@supabase/supabase-js";
 import { createServerClient } from "@supabase/ssr";
 import { cookies } from "next/headers";
+import { getTenantIntegrationResolved } from "@/lib/integrations/server";
+
+export const dynamic = "force-dynamic";
 
 const adminSupabase = createClient(
   process.env.NEXT_PUBLIC_SUPABASE_URL!,
@@ -52,16 +55,11 @@ export async function GET(req: NextRequest) {
     }
 
     // 3. Busca Integração ElevenLabs do Tenant
-    const { data: integration, error: intError } = await adminSupabase
-      .from("tenant_integrations")
-      .select("api_key, metadata")
-      .eq("tenant_id", profile.tenant_id)
-      .eq("provider", "elevenlabs")
-      .maybeSingle();
+    const integration = await getTenantIntegrationResolved(profile.tenant_id, "elevenlabs");
 
-    if (intError || !integration?.api_key || !integration?.metadata?.agent_id) {
+    if (!integration?.api_key || !integration?.metadata?.agent_id) {
        return NextResponse.json({ error: "Configuração do Agente ElevenLabs não encontrada ou incompleta." }, { status: 400 });
-    }
+     }
 
     // 4. Solicita a Signed URL para a ElevenLabs (Xi-API-Key protegida no Header)
     // A chave NUNCA é enviada para o frontend.

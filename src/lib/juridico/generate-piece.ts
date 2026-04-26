@@ -979,7 +979,9 @@ export async function generateLegalPiece(params: GenerateLegalPieceParams): Prom
     familyLabel: pieceRequest.familyLabel,
   });
 
-  const llm = await getLLMClient(supabaseAdmin, params.tenantId, 'gerar_peca');
+  const llm = await getLLMClient(supabaseAdmin, params.tenantId, 'gerar_peca', {
+    allowNonOpenAICompatible: true,
+  });
   const plannerSystemPrompt = `${MAYUS_LEGAL_SYSTEM_PROMPT}
 
 MODO ATUAL: PLANNER JURIDICO

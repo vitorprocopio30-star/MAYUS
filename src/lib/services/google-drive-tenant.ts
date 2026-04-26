@@ -1,4 +1,5 @@
 import { supabaseAdmin } from "@/lib/supabase/admin";
+import { getTenantIntegrationResolved } from "@/lib/integrations/server";
 import {
   getGoogleDriveIntegrationMetadata,
   GOOGLE_DRIVE_PROVIDER,
@@ -23,6 +24,12 @@ export type TenantGoogleDriveContext = {
   metadata: GoogleDriveIntegrationMetadata;
 };
 
+export function buildTenantGoogleDriveServiceRequest(path = "/api/integrations/google-drive/callback") {
+  const fallbackBaseUrl = "https://mayus-premium-pro.vercel.app";
+  const baseUrl = String(process.env.NEXT_PUBLIC_SITE_URL || fallbackBaseUrl).trim() || fallbackBaseUrl;
+  return new Request(`${baseUrl.replace(/\/+$/, "")}${path.startsWith("/") ? path : `/${path}`}`);
+}
+
 export async function getTenantGoogleDriveContext(
   request: Request,
   tenantId: string
@@ -31,16 +38,7 @@ export async function getTenantGoogleDriveContext(
     throw new Error("GoogleDriveNotConfigured");
   }
 
-  const { data: integration, error } = await supabaseAdmin
-    .from("tenant_integrations")
-    .select("id, api_key, status, metadata")
-    .eq("tenant_id", tenantId)
-    .eq("provider", GOOGLE_DRIVE_PROVIDER)
-    .maybeSingle<TenantIntegrationRecord>();
-
-  if (error) {
-    throw error;
-  }
+  const integration = await getTenantIntegrationResolved(tenantId, GOOGLE_DRIVE_PROVIDER) as TenantIntegrationRecord | null;
 
   if (!integration?.id || !integration.api_key || integration.status !== "connected") {
     throw new Error("GoogleDriveDisconnected");

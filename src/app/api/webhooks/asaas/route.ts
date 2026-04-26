@@ -10,6 +10,7 @@
 
 import { NextRequest, NextResponse } from 'next/server'
 import { createClient } from '@supabase/supabase-js'
+import { openCaseFromConfirmedBilling } from '@/lib/agent/capabilities/revenue-to-case'
 
 const supabase = createClient(
   process.env.NEXT_PUBLIC_SUPABASE_URL!,
@@ -47,20 +48,76 @@ export async function POST(req: NextRequest) {
   try { body = await req.json() } catch { return NextResponse.json({ ok: true }) }
 
   const event      = body?.event
+  const paymentId  = body?.payment?.id ?? body?.subscription?.id ?? null
   const customerId = body?.payment?.customer ?? body?.subscription?.customer ?? null
+  const paymentValue = body?.payment?.value ?? null
   const newStatus  = statusFromEvent(event)
+  let revenueToCaseResult: Awaited<ReturnType<typeof openCaseFromConfirmedBilling>> | null = null
 
   // 3. Ignorar eventos não mapeados
   if (!event || !customerId || !newStatus) {
-    const { error: auditError } = await supabase.from('agent_audit_logs').insert({
-      action: 'asaas_webhook_ignored', status: 'ignored',
-      payload_executed: { event, customer_id: customerId },
+    const { error: auditError } = await supabase.from('system_event_logs').insert({
+      source: 'webhook',
+      provider: 'asaas',
+      event_name: 'asaas_webhook_ignored',
+      status: 'ignored',
+      payload: { event, customer_id: customerId },
       created_at: new Date().toISOString(),
     })
     if (auditError) {
       console.error('[WEBHOOK_ASAAS] Erro ao registrar audit log:', auditError.message)
     }
     return NextResponse.json({ ok: true })
+  }
+
+  if ((event === 'PAYMENT_CONFIRMED' || event === 'PAYMENT_RECEIVED') && paymentId) {
+    try {
+      revenueToCaseResult = await openCaseFromConfirmedBilling({
+        paymentId,
+        customerId,
+        paymentValue,
+      })
+
+      if (revenueToCaseResult.handled) {
+        const { error: auditError } = await supabase.from('system_event_logs').insert({
+          source: 'webhook',
+          provider: 'asaas',
+          event_name: 'asaas_revenue_to_case',
+          status: 'ok',
+          tenant_id: revenueToCaseResult.tenantId || null,
+          payload: revenueToCaseResult,
+          created_at: new Date().toISOString(),
+        })
+
+        if (auditError) {
+          console.error('[ASAAS_WEBHOOK] Erro ao registrar revenue-to-case:', auditError.message)
+        }
+
+        if (revenueToCaseResult.reason === 'case_opened') {
+          console.log(`[ASAAS_WEBHOOK] Pagamento ${paymentId} abriu o caso ${revenueToCaseResult.caseId} e o task ${revenueToCaseResult.processTaskId}`)
+        }
+      }
+    } catch (error: any) {
+      console.error('[ASAAS_WEBHOOK] Erro no revenue-to-case loop:', error)
+
+      const { error: auditError } = await supabase.from('system_event_logs').insert({
+        source: 'webhook',
+        provider: 'asaas',
+        event_name: 'asaas_revenue_to_case_error',
+        status: 'error',
+        payload: {
+          event,
+          payment_id: paymentId,
+          customer_id: customerId,
+          error: error?.message || 'Erro interno ao abrir caso automaticamente.',
+        },
+        created_at: new Date().toISOString(),
+      })
+
+      if (auditError) {
+        console.error('[ASAAS_WEBHOOK] Erro ao registrar falha do revenue-to-case:', auditError.message)
+      }
+    }
   }
 
   // 4. Buscar tenant
@@ -71,9 +128,16 @@ export async function POST(req: NextRequest) {
     .maybeSingle()
 
   if (error || !tenant) {
-    const { error: auditError } = await supabase.from('agent_audit_logs').insert({
-      action: 'asaas_webhook_no_tenant', status: 'error',
-      payload_executed: { event, customer_id: customerId, error: error?.message },
+    if (revenueToCaseResult && revenueToCaseResult.reason !== 'not_found' && revenueToCaseResult.reason !== 'tenant_billing') {
+      return NextResponse.json({ ok: true })
+    }
+
+    const { error: auditError } = await supabase.from('system_event_logs').insert({
+      source: 'webhook',
+      provider: 'asaas',
+      event_name: 'asaas_webhook_no_tenant',
+      status: 'error',
+      payload: { event, customer_id: customerId, error: error?.message },
       created_at: new Date().toISOString(),
     })
     if (auditError) {
@@ -98,10 +162,13 @@ export async function POST(req: NextRequest) {
 
   await supabase.from('tenants').update(update).eq('id', tenant.id)
 
-  const { error: auditError } = await supabase.from('agent_audit_logs').insert({
-    action: 'asaas_webhook', status: 'ok',
+  const { error: auditError } = await supabase.from('system_event_logs').insert({
+    source: 'webhook',
+    provider: 'asaas',
+    event_name: 'asaas_webhook',
+    status: 'ok',
     tenant_id: tenant.id,
-    payload_executed: { event, new_status: newStatus, prev_status: tenant.status },
+    payload: { event, new_status: newStatus, prev_status: tenant.status },
     created_at: new Date().toISOString(),
   })
   if (auditError) {

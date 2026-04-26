@@ -56,6 +56,9 @@ export type AsaasCobrancaResult = {
   invoiceUrl?: string
   bankSlipUrl?: string
   paymentLink?: string
+   clientId?: string
+   asaasCustomerId?: string
+   clientName?: string
   error?: string
 }
 
@@ -76,11 +79,13 @@ async function registrarAuditLog(params: {
   billingType: BillingType
   error?: string
 }) {
-  const { error } = await supabase.from('agent_audit_logs').insert({
-    action: 'asaas_cobrar',
+  const { error } = await supabase.from('system_event_logs').insert({
+    source: 'system',
+    provider: 'asaas',
+    event_name: 'asaas_cobrar',
     status: params.status,
     tenant_id: params.tenantId,
-    payload_executed: {
+    payload: {
       cobranca_id: params.cobrancaId ?? null,
       customer_id: params.customerId,
       valor: params.valor,
@@ -99,7 +104,7 @@ async function registrarAuditLog(params: {
 // ─── Resolução do customer ASAAS ─────────────────────────────────────────────
 
 type ResolveResult =
-  | { customerId: string; error?: never }
+  | { customerId: string; clientId?: string; clientName?: string; error?: never }
   | { customerId?: never; error: string }
 
 async function resolverCustomerId(
@@ -109,7 +114,19 @@ async function resolverCustomerId(
 
   // ── Cenário 1: customer_id direto ──────────────────────────────────────────
   if (params.customer_id?.trim()) {
-    return { customerId: params.customer_id.trim() }
+    const customerId = params.customer_id.trim()
+    const { data: existingClient } = await supabase
+      .from('clients')
+      .select('id, name')
+      .eq('tenant_id', tenantId)
+      .eq('asaas_customer_id', customerId)
+      .maybeSingle()
+
+    return {
+      customerId,
+      clientId: existingClient?.id,
+      clientName: existingClient?.name ?? params.nome_cliente?.trim(),
+    }
   }
 
   if (!params.nome_cliente && !params.cpf_cnpj && !params.customer_id) {
@@ -139,7 +156,11 @@ async function resolverCustomerId(
 
   // ── Cenário 2a: cliente existe e já tem asaas_customer_id ─────────────────
   if (client?.asaas_customer_id) {
-    return { customerId: client.asaas_customer_id }
+    return {
+      customerId: client.asaas_customer_id,
+      clientId: client.id,
+      clientName: client.name,
+    }
   }
 
   // ── Cenário 2b: cliente existe mas não tem asaas_customer_id ──────────────
@@ -177,7 +198,11 @@ async function resolverCustomerId(
       // Não aborta — já temos o ID para gerar a cobrança
     }
 
-    return { customerId: asaasCustomerId }
+    return {
+      customerId: asaasCustomerId,
+      clientId: client.id,
+      clientName: client.name,
+    }
   }
 
   // ── Cenário 3: cliente não existe no MAYUS ────────────────────────────────
@@ -230,7 +255,11 @@ async function resolverCustomerId(
     console.info(`[ASAAS_COBRAR] Novo cliente criado: ${newClient.id}`)
   }
 
-  return { customerId: asaasCustomerId }
+  return {
+    customerId: asaasCustomerId,
+    clientId: newClient?.id,
+    clientName: nome,
+  }
 }
 
 // ─── Handler Principal ────────────────────────────────────────────────────────
@@ -268,6 +297,8 @@ export async function executarCobranca(
   }
 
   const customerId = resolved.customerId
+  const resolvedClientId = 'clientId' in resolved ? resolved.clientId : undefined
+  const resolvedClientName = 'clientName' in resolved ? resolved.clientName : undefined
 
   try {
     // ── Lógica de Parcelamento ───────────────────────────────────────────────
@@ -304,6 +335,9 @@ export async function executarCobranca(
         invoiceUrl: cobranca.invoiceUrl,
         bankSlipUrl: cobranca.bankSlipUrl,
         paymentLink: cobranca.paymentLink,
+        clientId: resolvedClientId,
+        asaasCustomerId: customerId,
+        clientName: resolvedClientName,
       }
     }
 
@@ -340,6 +374,9 @@ export async function executarCobranca(
         cobrancaId: assinatura.id,
         invoiceUrl: checkoutUrl || undefined,
         paymentLink: checkoutUrl || undefined,
+        clientId: resolvedClientId,
+        asaasCustomerId: customerId,
+        clientName: resolvedClientName,
       }
     }
 
@@ -370,6 +407,9 @@ export async function executarCobranca(
       invoiceUrl: cobranca.invoiceUrl,
       bankSlipUrl: cobranca.bankSlipUrl,
       paymentLink: cobranca.paymentLink,
+      clientId: resolvedClientId,
+      asaasCustomerId: customerId,
+      clientName: resolvedClientName,
     }
 
   } catch (err: any) {

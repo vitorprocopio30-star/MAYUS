@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { createClient } from '@supabase/supabase-js'
 import { solicitarResumoIA, buscarESalvarResumo } from '@/lib/services/escavador-ia'
+import { requireTenantApiKey } from '@/lib/integrations/server'
 
 const adminSupabase = createClient(
   process.env.NEXT_PUBLIC_SUPABASE_URL!,
@@ -16,10 +17,8 @@ export async function POST(req: NextRequest) {
     return NextResponse.json({ error: 'Forbidden' }, { status: 403 })
   }
 
-  const { data: integration } = await adminSupabase
-    .from('tenant_integrations').select('api_key')
-    .eq('tenant_id', tenant_id).eq('provider', 'escavador').single()
-  if (!integration?.api_key) return NextResponse.json({ error: 'Escavador não configurado' }, { status: 400 })
+  const { apiKey } = await requireTenantApiKey(tenant_id, 'escavador')
+  if (!apiKey) return NextResponse.json({ error: 'Escavador não configurado' }, { status: 400 })
 
   // Busca todos os processos sem resumo
   const { data: processos } = await adminSupabase

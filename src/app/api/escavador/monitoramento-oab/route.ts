@@ -2,6 +2,7 @@ import { NextRequest, NextResponse } from 'next/server'
 import { createClient } from '@supabase/supabase-js'
 import { createServerClient } from '@supabase/ssr'
 import { cookies } from 'next/headers'
+import { getTenantIntegrationResolved } from '@/lib/integrations/server'
 
 const adminSupabase = createClient(
   process.env.NEXT_PUBLIC_SUPABASE_URL!,
@@ -58,12 +59,7 @@ export async function POST(req: NextRequest) {
 
   const tenant_id = profile.tenant_id
 
-  const { data: integ } = await adminSupabase
-    .from('tenant_integrations')
-    .select('api_key, metadata')
-    .eq('tenant_id', tenant_id)
-    .eq('provider', 'escavador')
-    .single()
+  const integ = await getTenantIntegrationResolved(tenant_id, 'escavador')
 
   if (!integ?.api_key) {
     return NextResponse.json({ error: 'Escavador não configurado' }, { status: 400 })

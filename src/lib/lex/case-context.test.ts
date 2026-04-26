@@ -1,0 +1,187 @@
+import { beforeEach, describe, expect, it, vi } from "vitest";
+
+const { supabaseFromMock } = vi.hoisted(() => ({
+  supabaseFromMock: vi.fn(),
+}));
+
+vi.mock("@/lib/supabase/admin", () => ({
+  supabaseAdmin: {
+    from: supabaseFromMock,
+  },
+}));
+
+import {
+  buildSupportCaseStatusContract,
+  buildSupportCaseStatusReply,
+  resolveLegalProcessTask,
+  type LegalCaseContextSnapshot,
+} from "./case-context";
+
+function makeProcessRow(overrides?: Record<string, unknown>) {
+  return {
+    id: "process-task-1",
+    pipeline_id: "pipeline-1",
+    stage_id: "stage-1",
+    title: "Caso Previdenciario Maria",
+    client_name: "Maria da Silva",
+    process_number: "1234567-89.2024.8.26.0100",
+    demanda: "Previdenciario",
+    description: "Caso com pedido de beneficio por incapacidade.",
+    created_at: "2026-04-22T00:00:00.000Z",
+    ...overrides,
+  };
+}
+
+function makeReferenceQuery(rows: Array<Record<string, unknown>>) {
+  const query: any = {
+    select: vi.fn(() => query),
+    eq: vi.fn(() => query),
+    or: vi.fn(() => query),
+    order: vi.fn(() => query),
+    limit: vi.fn(async () => ({ data: rows, error: null })),
+  };
+
+  return query;
+}
+
+function makeSnapshot(overrides?: Partial<LegalCaseContextSnapshot>): LegalCaseContextSnapshot {
+  return {
+    processTask: {
+      id: "process-task-1",
+      title: "Caso Previdenciario",
+      clientName: "Maria da Silva",
+      processNumber: "1234567-89.2024.8.26.0100",
+      legalArea: "Previdenciario",
+      description: "Caso com pedido de beneficio por incapacidade.",
+      pipelineName: "Pipeline Juridico",
+      stageName: "Contestacao",
+      createdAt: "2026-04-22T00:00:00.000Z",
+    },
+    caseBrain: {
+      taskId: "case-brain-1",
+      caseId: "case-1",
+      summaryMaster: "O caso segue em contestacao com contexto juridico consolidado.",
+      currentPhase: "Contestacao",
+      queriesCount: 2,
+      keyFactsCount: 3,
+      recommendedPieceInput: null,
+      recommendedPieceLabel: null,
+      firstActions: ["Aguardar a documentacao complementar do cliente."],
+      missingDocuments: ["Comprovante de residencia"],
+      validatedInternalSourcesCount: 1,
+      validatedLawReferencesCount: 1,
+      validatedCaseLawReferencesCount: 0,
+      externalValidationGapCount: 0,
+      pendingValidationCount: 0,
+      readyForFactCitations: true,
+      readyForLawCitations: true,
+      readyForCaseLawCitations: false,
+    },
+    documentMemory: {
+      documentCount: 4,
+      syncStatus: "synced",
+      lastSyncedAt: "2026-04-22T00:00:00.000Z",
+      summaryMaster: "Documentos do caso sincronizados.",
+      currentPhase: "Contestacao",
+      missingDocuments: ["Comprovante de residencia"],
+      freshness: "fresh",
+    },
+    firstDraft: {
+      status: "idle",
+      isStale: false,
+      artifactId: null,
+      taskId: null,
+      caseBrainTaskId: null,
+      summary: null,
+      error: null,
+      generatedAt: null,
+      pieceType: null,
+      pieceLabel: null,
+      recommendedPieceInput: null,
+      recommendedPieceLabel: null,
+      practiceArea: null,
+      requiresHumanReview: true,
+      warningCount: 0,
+    },
+    ...overrides,
+  };
+}
+
+describe("resolveLegalProcessTask", () => {
+  beforeEach(() => {
+    supabaseFromMock.mockReset();
+  });
+
+  it("resolve referencia textual quando existe apenas um processo compativel", async () => {
+    supabaseFromMock.mockReturnValue(makeReferenceQuery([makeProcessRow()]));
+
+    const result = await resolveLegalProcessTask({
+      tenantId: "tenant-1",
+      entities: { client_name: "Maria da Silva" },
+    });
+
+    expect(result.id).toBe("process-task-1");
+    expect(supabaseFromMock).toHaveBeenCalledWith("process_tasks");
+  });
+
+  it("bloqueia referencia textual ambigua sem escolher o processo mais recente", async () => {
+    supabaseFromMock.mockReturnValue(makeReferenceQuery([
+      makeProcessRow({ id: "process-task-1", process_number: "1111111-11.2024.8.26.0100" }),
+      makeProcessRow({ id: "process-task-2", process_number: "2222222-22.2024.8.26.0100" }),
+    ]));
+
+    await expect(resolveLegalProcessTask({
+      tenantId: "tenant-1",
+      entities: { client_name: "Maria da Silva" },
+    })).rejects.toThrow("mais de um processo juridico");
+  });
+});
+
+describe("support_case_status contract", () => {
+  it("responde quando ha base minima segura do caso", () => {
+    const contract = buildSupportCaseStatusContract(makeSnapshot());
+
+    expect(contract.responseMode).toBe("answer");
+    expect(contract.confidence).toBe("high");
+    expect(contract.currentPhase).toBe("Contestacao");
+    expect(contract.nextStep).toBe("Aguardar a documentacao complementar do cliente.");
+    expect(contract.pendingItems).toEqual(["Comprovante de residencia"]);
+
+    const reply = buildSupportCaseStatusReply(contract);
+    expect(reply).toContain("## Status do caso");
+    expect(reply).toContain("Fase atual: Contestacao");
+    expect(reply).toContain("Pendencias: Comprovante de residencia");
+  });
+
+  it("escala para handoff humano quando o caso nao esta suficientemente aterrado", () => {
+    const contract = buildSupportCaseStatusContract(makeSnapshot({
+      processTask: {
+        ...makeSnapshot().processTask,
+        description: null,
+        stageName: null,
+      },
+      caseBrain: {
+        ...makeSnapshot().caseBrain,
+        taskId: null,
+        summaryMaster: null,
+        currentPhase: null,
+        firstActions: [],
+        missingDocuments: [],
+      },
+      documentMemory: {
+        ...makeSnapshot().documentMemory,
+        summaryMaster: null,
+        currentPhase: null,
+        missingDocuments: [],
+        freshness: "missing",
+      },
+    }));
+
+    expect(contract.responseMode).toBe("handoff");
+    expect(contract.confidence).toBe("low");
+    expect(contract.handoffReason).toBe("insufficient_case_grounding");
+
+    const reply = buildSupportCaseStatusReply(contract);
+    expect(reply).toContain("handoff humano recomendado");
+  });
+});

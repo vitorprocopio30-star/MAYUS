@@ -1,5 +1,6 @@
 import { NextRequest, NextResponse } from "next/server";
 import { createClient } from "@supabase/supabase-js";
+import { listTenantIntegrationsResolved } from "@/lib/integrations/server";
 
 const PRIVATE_IP = /^(localhost|127\.|10\.|172\.(1[6-9]|2[0-9]|3[01])\.|192\.168\.|0\.0\.0\.0|::1)/;
 
@@ -30,11 +31,8 @@ export async function POST(req: NextRequest) {
     );
 
     // 1. Procurar Integração (Prioriza meta_cloud, depois evolution)
-    const { data: integrations, error: intErr } = await supabase
-      .from("tenant_integrations")
-      .select("*")
-      .eq("tenant_id", tenant_id)
-      .in("provider", ["meta_cloud", "evolution"]);
+    const integrations = await listTenantIntegrationsResolved(tenant_id, ["meta_cloud", "evolution"]);
+    const intErr = null;
 
     if (intErr || !integrations || integrations.length === 0) {
       return NextResponse.json({ error: "Nenhuma integração de WhatsApp encontrada" }, { status: 404 });

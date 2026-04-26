@@ -1,5 +1,6 @@
 import { createClient } from '@/lib/supabase/server'
 import { NextRequest, NextResponse } from 'next/server'
+import { requireTenantApiKey } from '@/lib/integrations/server'
 
 export async function POST(req: NextRequest) {
   const supabase = createClient()
@@ -41,15 +42,9 @@ export async function POST(req: NextRequest) {
   }
 
   // Buscar credenciais da integração Escavador do tenant
-  const { data: integration } = await supabase
-    .from('tenant_integrations')
-    .select('api_key')
-    .eq('tenant_id', proc.tenant_id)
-    .eq('provider', 'escavador')
-    .single()
-
   // Fallback para variável de ambiente global
-  const apiKey = integration?.api_key || process.env.ESCAVADOR_API_KEY
+  const { apiKey: integrationApiKey } = await requireTenantApiKey(proc.tenant_id, 'escavador')
+  const apiKey = integrationApiKey || process.env.ESCAVADOR_API_KEY
 
   if (!apiKey) {
     return NextResponse.json({ error: 'Integração Escavador não configurada' }, { status: 400 })

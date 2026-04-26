@@ -13,12 +13,18 @@ import { NextResponse } from "next/server";
 import { createClient, SupabaseClient } from "@supabase/supabase-js";
 import { createServerClient } from "@supabase/ssr";
 import { cookies } from "next/headers";
-import { getLLMClient, buildHeaders } from "@/lib/llm-router";
-import { ZapSignService } from "@/lib/services/zapsign";
-import { EscavadorService } from "@/lib/services/escavador";
-import { executarCobranca } from "@/lib/agent/skills/asaas-cobrar";
-import { executarCalculo } from "@/lib/agent/skills/calculadora";
-import { getContextoProcesso } from "@/lib/skills/consulta-processo-whatsapp";
+import {
+  getLLMClient,
+  buildHeaders,
+  isOpenAICompatibleProvider,
+  normalizeLLMProvider,
+} from "@/lib/llm-router";
+import {
+  canExecuteAgentSkill,
+  fetchTenantAgentSkills,
+  type AgentCapabilityRecord,
+} from "@/lib/agent/capabilities/registry";
+import { dispatchCapabilityExecution } from "@/lib/agent/capabilities/dispatcher";
 import {
   route,
   sanitizeText,
@@ -28,11 +34,17 @@ import {
 import { execute, type ExecutorContext } from "@/lib/agent/kernel/executor";
 import { handleFallback, type FallbackContext } from "@/lib/agent/kernel/fallback";
 
+export const dynamic = "force-dynamic";
+
 // ─── Constantes ───────────────────────────────────────────────────────────────
 
 const ALLOWED_PROVIDERS = [
-  "openai", "gemini", "openrouter", "n8n", "anthropic", "deepseek", "grok", "kimi",
-];
+  "openai", "openrouter", "anthropic", "google", "gemini", "groq", "grok", "n8n",
+] as const;
+
+const MAX_CHAT_BODY_BYTES = 512 * 1024;
+const MAX_CHAT_MESSAGE_CHARS = 20_000;
+const MAX_CHAT_HISTORY_ITEMS = 100;
 
 // ─── Clients Supabase ─────────────────────────────────────────────────────────
 
@@ -75,6 +87,12 @@ EXEMPLOS DE TOM:
 REGRAS DE EXECUÇÃO DE SKILLS:
 - Para gerar cobranças (asaas_cobrar): NUNCA solicite CPF, CNPJ ou e-mail ao usuário. Execute a skill imediatamente com o nome do cliente e valor. CPF/CNPJ são opcionais e só use se o usuário já forneceu espontaneamente.
 - Quando tiver todas as informações mínimas (nome + valor + vencimento), execute a skill diretamente sem fazer perguntas.
+- Para responder cliente sobre status do caso em linguagem curta, segura e com handoff humano quando faltar base suficiente, use a skill support_case_status.
+- Para consultar contexto juridico de um processo, status de minuta, pendencias documentais ou peca sugerida, use a skill legal_case_context.
+- Para sincronizar o repositorio documental do processo e atualizar a memoria documental, use a skill legal_document_memory_refresh.
+- Para gerar ou atualizar a primeira minuta juridica sugerida pelo Case Brain, use a skill legal_first_draft_generate.
+- Para montar um plano supervisionado de reforco da minuta por secao, use a skill legal_draft_revision_loop.
+- Para publicar o artifact premium final em PDF no Drive do processo, use a skill legal_artifact_publish_premium.
 
 REGRAS ABSOLUTAS:
 - Nunca quebre o personagem vibrante e entusiasta.
@@ -89,15 +107,30 @@ CÁLCULO DE DATAS E VENCIMENTO:
 
 // ─── Helpers ──────────────────────────────────────────────────────────────────
 
-interface AgentSkill {
-  id: string;
-  name: string;
-  description: string;
-  input_schema: any;
-  allowed_roles: string[];
-  is_active: boolean;
-  allowed_channels: string[];
-  handler_type: string | null;
+type AgentSkill = AgentCapabilityRecord;
+
+async function readJsonBodyWithLimit(req: Request) {
+  const contentLength = Number(req.headers.get("content-length") || "0");
+  if (Number.isFinite(contentLength) && contentLength > MAX_CHAT_BODY_BYTES) {
+    const error = new Error("Payload muito grande para o chat.") as Error & { status?: number };
+    error.status = 413;
+    throw error;
+  }
+
+  const rawBody = await req.text();
+  if (rawBody.length > MAX_CHAT_BODY_BYTES) {
+    const error = new Error("Payload muito grande para o chat.") as Error & { status?: number };
+    error.status = 413;
+    throw error;
+  }
+
+  try {
+    return JSON.parse(rawBody || "{}");
+  } catch {
+    const error = new Error("JSON invalido.") as Error & { status?: number };
+    error.status = 400;
+    throw error;
+  }
 }
 
 function skillToLLMTool(skill: AgentSkill) {
@@ -112,43 +145,27 @@ function skillToLLMTool(skill: AgentSkill) {
 }
 
 /** Busca skills autorizadas - Usa USER CLIENT para respeitar RLS */
-async function fetchAuthorizedSkills(supabase: SupabaseClient, tenantId: string, userRole: string): Promise<AgentSkill[]> {
-  const { data, error } = await supabase
-    .from("agent_skills")
-    .select("*")
-    .eq("tenant_id", tenantId)
-    .eq("is_active", true)
-    .contains("allowed_channels", ["chat"]);
-
-  if (error || !data) return [];
-
-  return data.filter((skill) => {
-    const roles: string[] = skill.allowed_roles ?? [];
-    return roles.length === 0 || roles.includes(userRole);
-  });
+async function fetchAuthorizedSkills(_supabase: SupabaseClient, tenantId: string, userRole: string): Promise<AgentSkill[]> {
+  const skills = await fetchTenantAgentSkills({ tenantId, channel: "chat", userRole, activeOnly: true });
+  return skills;
 }
 
 /** Pre-check leve - Usa USER CLIENT para respeitar RLS */
-async function precheckSkillPermission(supabase: SupabaseClient, params: {
+async function precheckSkillPermission(_supabase: SupabaseClient, params: {
   tenantId: string;
   userRole: string;
   intent: string;
 }): Promise<"allowed" | "permission_denied" | "not_found"> {
-  const { data: skill } = await supabase
-    .from("agent_skills")
-    .select("allowed_roles, is_active")
-    .eq("tenant_id", params.tenantId)
-    .eq("name", params.intent)
-    .eq("is_active", true)
-    .contains("allowed_channels", ["chat"])
-    .single();
+  const permission = await canExecuteAgentSkill({
+    tenantId: params.tenantId,
+    name: params.intent,
+    channel: "chat",
+    userRole: params.userRole,
+  });
 
-  if (!skill) return "not_found";
-
-  const allowedRoles: string[] = skill.allowed_roles ?? [];
-  const hasPermission = allowedRoles.length === 0 || allowedRoles.includes(params.userRole);
-
-  return hasPermission ? "allowed" : "permission_denied";
+  if (permission.status === "allowed") return "allowed";
+  if (permission.status === "permission_denied" || permission.status === "channel_not_allowed") return "permission_denied";
+  return "not_found";
 }
 
 // Cache em módulo para Memória Institucional
@@ -184,27 +201,6 @@ async function fetchInstitutionalMemory(supabase: SupabaseClient, tenantId: stri
   return result;
 }
 
-/**
- * Varre o histórico em ordem reversa procurando o nome_cliente numa mensagem
- * de usuário que tenha contexto de cobrança (cobrar, boleto, pix, fatura, etc.).
- * Retorna o primeiro match encontrado ou null.
- */
-function extrairNomeClienteDoHistorico(history: Array<{ role: string; content: string }>): string | null {
-  const COBRANCA_TRIGGER = /cobrar|cobrança|boleto|pix|fatura|emitir|gerar\s+pagamento/i;
-  // Captura sequências de palavras capitalizadas após indicadores de nome
-  const NOME_PATTERN = /(?:cobrar|para|cliente|nome)[:\s]+([A-ZÀÁÂÃÉÊÍÓÔÕÚÜ][a-zàáâãéêíóôõúü]+(?:\s+[A-ZÀÁÂÃÉÊÍÓÔÕÚÜ][a-zàáâãéêíóôõúü]+)+)/i;
-
-  for (let i = history.length - 1; i >= 0; i--) {
-    const msg = history[i];
-    if (msg.role !== 'user') continue;
-    if (!COBRANCA_TRIGGER.test(msg.content)) continue;
-
-    const match = msg.content.match(NOME_PATTERN);
-    if (match?.[1]) return match[1].trim();
-  }
-  return null;
-}
-
 function buildIntentFromToolCall(toolCallName: string, toolCallArguments: string, safeText: string): RouterIntent {
   let entities: Record<string, string> = {};
   try {
@@ -212,6 +208,132 @@ function buildIntentFromToolCall(toolCallName: string, toolCallArguments: string
     entities = Object.fromEntries(Object.entries(parsed).map(([k, v]) => [k, String(v)]));
   } catch { }
   return { intent: toolCallName, entities, confidence: 0.95, safeText, ambiguous: false };
+}
+
+async function assignBrainStepCapability(params: {
+  taskId?: string;
+  runId?: string;
+  stepId?: string;
+  toolName: string;
+  handlerType?: string | null;
+  toolArguments: string;
+}) {
+  if (!params.stepId) {
+    return;
+  }
+
+  let parsedArguments: Record<string, unknown> | string = params.toolArguments;
+  try {
+    parsedArguments = JSON.parse(params.toolArguments) as Record<string, unknown>;
+  } catch {
+    parsedArguments = params.toolArguments;
+  }
+
+  const { error } = await adminSupabase
+    .from("brain_steps")
+    .update({
+      title: `Executar ${params.toolName}`,
+      capability_name: params.toolName,
+      handler_type: params.handlerType || null,
+      step_type: "capability",
+      input_payload: {
+        tool_name: params.toolName,
+        tool_arguments: parsedArguments,
+        task_id: params.taskId || null,
+        run_id: params.runId || null,
+      },
+    })
+    .eq("id", params.stepId);
+
+  if (error) {
+    console.error("[ai/chat] Falha ao registrar capability no brain_step:", error.message);
+  }
+}
+
+async function executeToolInvocation(params: {
+  toolName: string;
+  toolArguments: string;
+  safeText: string;
+  executorContext: ExecutorContext;
+  fallbackBase: Omit<FallbackContext, "reason">;
+  authorizedSkills: AgentSkill[];
+  userId: string;
+  tenantId: string;
+  history: Array<{ role: string; content: string }>;
+  taskId?: string;
+  runId?: string;
+  stepId?: string;
+}): Promise<NextResponse> {
+  const toolIntent = buildIntentFromToolCall(params.toolName, params.toolArguments, params.safeText);
+  const execResult = await execute(toolIntent, params.executorContext);
+  const matchedSkill = params.authorizedSkills.find((skill) => skill.name === params.toolName);
+
+  await assignBrainStepCapability({
+    taskId: params.taskId,
+    runId: params.runId,
+    stepId: params.stepId,
+    toolName: params.toolName,
+    handlerType: matchedSkill?.handler_type ?? null,
+    toolArguments: params.toolArguments,
+  });
+
+  if (execResult.status === "awaiting_approval") {
+    return NextResponse.json({
+      reply: execResult.message,
+      kernel: {
+        status: "awaiting_approval",
+        auditLogId: execResult.auditLogId,
+        awaitingPayload: execResult.awaitingPayload,
+        capabilityName: matchedSkill?.name ?? params.toolName,
+        handlerType: matchedSkill?.handler_type ?? null,
+      },
+    });
+  }
+
+  if (execResult.status !== "success") {
+    const fb = await handleFallback({
+      ...params.fallbackBase,
+      reason: execResult.status,
+      originalIntent: params.toolName,
+      safeText: params.safeText,
+    });
+    return NextResponse.json({ reply: fb.message, kernel: { status: execResult.status } });
+  }
+
+  const dispatchResult = await dispatchCapabilityExecution({
+    handlerType: matchedSkill?.handler_type ?? null,
+    capabilityName: matchedSkill?.name ?? params.toolName,
+    tenantId: params.tenantId,
+    userId: params.userId,
+    entities: toolIntent.entities,
+    history: params.history,
+    auditLogId: execResult.auditLogId,
+    brainContext: {
+      taskId: params.taskId,
+      runId: params.runId,
+      stepId: params.stepId,
+      sourceModule: "mayus",
+    },
+  });
+
+  if (dispatchResult.status !== "unsupported") {
+    return NextResponse.json({
+      reply: dispatchResult.reply,
+      data: dispatchResult.data,
+      kernel: {
+        status: dispatchResult.status,
+        auditLogId: execResult.auditLogId,
+        capabilityName: matchedSkill?.name ?? params.toolName,
+        handlerType: matchedSkill?.handler_type ?? null,
+        outputPayload: dispatchResult.outputPayload || {},
+      },
+    });
+  }
+
+  return NextResponse.json({
+    reply: `Acao "${matchedSkill?.name ?? params.toolName}" autorizada e registrada. A execucao server-side desta capability ainda sera conectada ao novo runtime.`,
+    kernel: { status: "success", auditLogId: execResult.auditLogId },
+  });
 }
 
 // ─── Handler Principal ────────────────────────────────────────────────────────
@@ -232,64 +354,60 @@ export async function POST(req: Request) {
         },
       }
     );
-
-    /* Comentado temporariamente para teste local
     const { data: { user }, error: authError } = await authClient.auth.getUser();
     if (authError || !user) {
-      return NextResponse.json({ error: "Não autorizado." }, { status: 401 });
+      return NextResponse.json({ error: "Nao autorizado." }, { status: 401 });
     }
+
     const userId = user.id;
+    const userSupabase = authClient;
 
-    const { data: { session } } = await authClient.auth.getSession();
-    if (!session?.access_token) {
-      return NextResponse.json({ error: "Token de sessão inválido." }, { status: 401 });
-    }
-
-    const { data: profile } = await userSupabase
+    const { data: profile, error: profileError } = await adminSupabase
       .from("profiles")
       .select("role, tenant_id")
       .eq("id", userId)
-      .single();
+      .maybeSingle();
 
-    if (!profile || !profile.tenant_id) {
-      return NextResponse.json({ error: "Perfil ou Tenant não vinculados." }, { status: 403 });
+    if (profileError || !profile?.tenant_id) {
+      return NextResponse.json({ error: "Perfil ou tenant nao vinculados." }, { status: 403 });
     }
-    const tenantId = profile.tenant_id;
-    const userRole = profile.role;
-    */
 
-    // FORÇANDO DADOS PARA TESTE (Tenant Dutra Advocacia)
-    const userId = "00000000-0000-0000-0000-000000000000";
-    const tenantId = "a0000000-0000-0000-0000-000000000001";
-    const userRole = "admin";
-    const userSupabase = adminSupabase;
+    const tenantId = profile.tenant_id as string;
+    const userRole = String(profile.role || "user");
 
-    const { message, provider, model, history = [] } = await req.json();
+    const { message, provider, model, history = [], taskId, runId, stepId } = await readJsonBodyWithLimit(req);
+    const providerInput = String(provider || "").trim().toLowerCase();
 
     if (!message || !provider) {
-      return NextResponse.json({ error: "Faltando parâmetros obrigatórios." }, { status: 400 });
+      return NextResponse.json({ error: "Faltando parametros obrigatorios." }, { status: 400 });
     }
-    if (!ALLOWED_PROVIDERS.includes(provider)) {
-      return NextResponse.json({ error: "Provedor não suportado." }, { status: 400 });
+    if (typeof message !== "string" || message.length > MAX_CHAT_MESSAGE_CHARS) {
+      return NextResponse.json({ error: "Mensagem invalida ou grande demais." }, { status: 400 });
     }
-    if (!Array.isArray(history) || history.length > 200) {
+    if (!ALLOWED_PROVIDERS.includes(providerInput as (typeof ALLOWED_PROVIDERS)[number])) {
+      return NextResponse.json({ error: "Provedor nao suportado pelo runtime atual." }, { status: 400 });
+    }
+    if (!Array.isArray(history) || history.length > MAX_CHAT_HISTORY_ITEMS) {
       return NextResponse.json({ error: "Historico invalido." }, { status: 400 });
     }
 
-    // Provider blockers temporários
-    if (provider === "gemini") {
+    const requestedProvider = providerInput === "n8n" ? "n8n" : normalizeLLMProvider(providerInput);
+    if (providerInput !== "n8n" && !requestedProvider) {
       return NextResponse.json({
-        error: `Provider GEMINI temporariamente indisponível no modo kernel.`
+        error: "Provedor invalido para o kernel atual. Use OpenAI, OpenRouter, Anthropic, Google Gemini ou Groq.",
       }, { status: 400 });
     }
 
     // 5. Resolver cliente LLM via router BYOK
     let llm: Awaited<ReturnType<typeof getLLMClient>> | null = null;
-    if (provider !== "n8n") {
+    if (providerInput !== "n8n") {
       try {
-        llm = await getLLMClient(adminSupabase, tenantId, "chat_geral");
+        llm = await getLLMClient(adminSupabase, tenantId, "chat_geral", {
+          preferredProvider: requestedProvider,
+          allowNonOpenAICompatible: true,
+        });
       } catch {
-        return NextResponse.json({ error: "Integração não configurada." }, { status: 400 });
+        return NextResponse.json({ error: "Integracao nao configurada." }, { status: 400 });
       }
     }
 
@@ -320,8 +438,8 @@ export async function POST(req: Request) {
       }
     }
 
-    // 8. Provider: OpenAI / OpenRouter (API compatível)
-    if (provider === "openai" || provider === "openrouter") {
+    // 8. Provider: OpenAI-compatible APIs (OpenAI / OpenRouter / Google / Groq)
+    if (llm && isOpenAICompatibleProvider(llm.provider)) {
       const dynamicTools = authorizedSkills.map(skillToLLMTool);
       const messages = [
         { role: "system", content: dynamicSystemPrompt },
@@ -355,174 +473,103 @@ export async function POST(req: Request) {
 
       if (responseMessage.tool_calls?.length > 0) {
         for (const toolCall of responseMessage.tool_calls) {
-          const toolIntent = buildIntentFromToolCall(toolCall.function.name, toolCall.function.arguments, routerResult.safeText);
-          const execResult = await execute(toolIntent, executorContext); 
-
-          if (execResult.status === "awaiting_approval") {
-            return NextResponse.json({
-              reply: execResult.message,
-              kernel: { status: "awaiting_approval", auditLogId: execResult.auditLogId, awaitingPayload: execResult.awaitingPayload },
-            });
-          }
-
-          if (execResult.status !== "success") {
-            const fb = await handleFallback({ ...fallbackBase, reason: execResult.status, originalIntent: toolCall.function.name, safeText: routerResult.safeText });
-            return NextResponse.json({ reply: fb.message, kernel: { status: execResult.status } });
-          }
-
-          const matchedSkill = authorizedSkills.find(s => s.name === toolCall.function.name);
-          if (matchedSkill?.handler_type === "zapsign_contract") {
-            try {
-              const resData = JSON.parse(toolCall.function.arguments);
-              const { data: zapIntegration } = await adminSupabase
-                .from("tenant_integrations").select("api_key").eq("tenant_id", tenantId).eq("provider", "zapsign").single();
-
-              if (zapIntegration?.api_key) {
-                const zapsignResult = await ZapSignService.createDocument({
-                  apiToken: zapIntegration.api_key,
-                  docName: `Contrato - ${resData.signer_name}`,
-                  signers: [{ name: resData.signer_name, email: resData.signer_email }],
-                  lang: "pt-br"
-                });
-                return NextResponse.json({
-                  reply: `Contrato gerado: ${zapsignResult.signers?.[0]?.sign_url}`, kernel: { status: "success", auditLogId: execResult.auditLogId }
-                });
-              }
-            } catch (err) { console.error("ZapSign Error", err); }
-          } else if (["escavador_consulta", "escavador_oab", "escavador_cpf"].includes(matchedSkill?.handler_type ?? "")) {
-            try {
-              const resData = JSON.parse(toolCall.function.arguments);
-              const { data: escavadorIntegration } = await adminSupabase
-                .from("tenant_integrations").select("api_key").eq("tenant_id", tenantId).eq("provider", "escavador").single();
-
-              if (!escavadorIntegration?.api_key) {
-                return NextResponse.json({ reply: "A integração com o Escavador não está configurada no seu painel.", kernel: { status: "failed" } });
-              }
-
-              if (matchedSkill?.handler_type === "escavador_consulta") {
-                const resultado = await EscavadorService.consultarProcesso(escavadorIntegration.api_key, resData.numero_cnj);
-                if (!resultado) return NextResponse.json({ reply: "Processo não encontrado no Escavador.", kernel: { status: "executed" } });
-                const resumo = `**Processo ${resData.numero_cnj}**\nTribunal: ${resultado.tribunal || 'N/A'}\nStatus: Encontrado com sucesso.`;
-                return NextResponse.json({ reply: resumo, data: resultado, kernel: { status: "executed", auditLogId: execResult.auditLogId } });
-              } else if (matchedSkill?.handler_type === "escavador_oab") {
-                return NextResponse.json({
-                  reply: "Consulta de OAB via IA está temporariamente bloqueada por proteção de custos. Use o botão 'Atualizar Escavador' no painel de monitoramento.",
-                  kernel: { status: "blocked", auditLogId: execResult.auditLogId }
-                });
-              } else if (matchedSkill?.handler_type === "escavador_cpf") {
-                const processos = await EscavadorService.buscarPorCPFCNPJ(escavadorIntegration.api_key, resData.cpf_cnpj);
-                return NextResponse.json({ reply: `Foram encontrados registros para o documento informado. Resposta completa internamente.`, data: processos, kernel: { status: "executed", auditLogId: execResult.auditLogId } });
-              }
-            } catch (err: any) {
-              console.error("Escavador Error", err);
-              return NextResponse.json({ reply: err.message, kernel: { status: "failed" } });
-            }
-          } else if (matchedSkill?.handler_type === "asaas_cobrar") {
-            try {
-              const resData = JSON.parse(toolCall.function.arguments);
-              const nomeResolvido = resData.nome_cliente || extrairNomeClienteDoHistorico(history);
-              const cobrancaResult = await executarCobranca({
-                tenantId,
-                customer_id: resData.customer_id,
-                nome_cliente: nomeResolvido,
-                cpf_cnpj: resData.cpf_cnpj,
-                email: resData.email,
-                valor: resData.valor,
-                vencimento: resData.vencimento,
-                descricao: resData.descricao,
-                billing_type: resData.billing_type,
-              });
-
-              if (!cobrancaResult.success) {
-                return NextResponse.json({ reply: cobrancaResult.error ?? "Erro ao gerar cobrança.", kernel: { status: "failed" } });
-              }
-
-              const paymentUrl = cobrancaResult.invoiceUrl ?? cobrancaResult.bankSlipUrl ?? cobrancaResult.paymentLink;
-              const reply = paymentUrl
-                ? `Cobrança gerada com sucesso! [Clique aqui para pagar](${paymentUrl})`
-                : `Cobrança gerada com sucesso! ID: ${cobrancaResult.cobrancaId}`;
-
-              return NextResponse.json({ reply, kernel: { status: "executed", auditLogId: execResult.auditLogId } });
-            } catch (err: any) {
-              console.error("AsaasCobrar Error", err);
-              return NextResponse.json({ reply: err.message, kernel: { status: "failed" } });
-            }
-          } else if (matchedSkill?.handler_type === "kanban_update") {
-             try {
-               const resData = JSON.parse(toolCall.function.arguments);
-               
-               // Buscar o card pelo CNJ
-               const { data: card } = await adminSupabase
-                 .from('process_tasks')
-                 .select('id, stage_id')
-                 .eq('processo_1grau', resData.numero_cnj)
-                 .maybeSingle();
-
-               if (!card) {
-                 return NextResponse.json({ reply: "Processo não encontrado no Kanban.", kernel: { status: "failed" } });
-               }
-
-               // Montar update
-               const updateData: any = {
-                 andamento_1grau: resData.andamento,
-                 updated_at: new Date().toISOString()
-               };
-
-               // Se veio nova_etapa, buscar o stage_id correspondente
-               if (resData.nova_etapa) {
-                 const { data: stage } = await adminSupabase
-                   .from('process_stages')
-                   .select('id')
-                   .eq('pipeline_id', '7b4d39bb-785c-402a-826d-0088867d934c')
-                   .ilike('name', `%${resData.nova_etapa}%`)
-                   .maybeSingle();
-                 
-                 if (stage) updateData.stage_id = stage.id;
-               }
-
-               await adminSupabase.from('process_tasks').update(updateData).eq('id', card.id);
-
-               return NextResponse.json({
-                 reply: `Processo ${resData.numero_cnj} atualizado no Kanban com sucesso.`,
-                 kernel: { status: "executed", auditLogId: execResult.auditLogId }
-               });
-             } catch (err: any) {
-               console.error("Kanban Update Error", err);
-               return NextResponse.json({ reply: err.message, kernel: { status: "failed" } });
-             }
-          } else if (matchedSkill?.handler_type === 'calculator') {
-             try {
-               const resData = JSON.parse(toolCall.function.arguments);
-               const result = executarCalculo(resData);
-               
-               if (!result.success) {
-                 return NextResponse.json({ reply: `Erro no cálculo: ${result.error}`, kernel: { status: "failed" } });
-               }
-
-               return NextResponse.json({
-                 reply: `Cálculo realizado com precisão: ${result.formatado}`,
-                 kernel: { status: "executed" }
-               });
-             } catch (err: any) {
-               return NextResponse.json({ reply: err.message, kernel: { status: "failed" } });
-             }
-           } else if (matchedSkill?.handler_type === 'whatsapp_process_query') {
-              try {
-                const resData = JSON.parse(toolCall.function.arguments);
-                const contexto = await getContextoProcesso(tenantId, resData.q);
-                return NextResponse.json({ reply: contexto, kernel: { status: "executed" } });
-              } catch (err: any) {
-                return NextResponse.json({ reply: err.message, kernel: { status: "failed" } });
-              }
-            }
+          return executeToolInvocation({
+            toolName: toolCall.function.name,
+            toolArguments: toolCall.function.arguments,
+            safeText: routerResult.safeText,
+            executorContext,
+            fallbackBase,
+            authorizedSkills,
+            userId,
+            tenantId,
+            history,
+            taskId,
+            runId,
+            stepId,
+          });
         }
       }
 
       return NextResponse.json({ reply: responseMessage.content, kernel: { status: "success" } });
     }
 
+    if (llm?.provider === "anthropic") {
+      const anthropicTools = authorizedSkills.map((skill) => ({
+        name: skill.name,
+        description: skill.description,
+        input_schema: skill.input_schema ?? { type: "object", properties: {}, required: [] },
+      }));
+
+      const messages = [
+        ...history
+          .filter((msg: any) => msg.role === "user" || msg.role === "model")
+          .map((msg: any) => ({
+            role: msg.role === "model" ? "assistant" : "user",
+            content: msg.content?.slice(0, 10000) ?? "",
+          })),
+        { role: "user", content: message },
+      ];
+
+      const anthropicController = new AbortController();
+      const anthropicTimeout = setTimeout(() => anthropicController.abort(), 30000);
+
+      const response = await fetch(llm.endpoint, {
+        method: "POST",
+        headers: buildHeaders(llm),
+        body: JSON.stringify({
+          model: model || llm.model,
+          system: dynamicSystemPrompt,
+          max_tokens: 4096,
+          messages,
+          tools: anthropicTools.length > 0 ? anthropicTools : undefined,
+        }),
+        signal: anthropicController.signal,
+      });
+
+      clearTimeout(anthropicTimeout);
+
+      if (!response.ok) {
+        const errorText = await response.text();
+        throw new Error(errorText || "Erro na Anthropic ao processar a mensagem.");
+      }
+
+      const data = await response.json();
+      const toolUses = Array.isArray(data.content)
+        ? data.content.filter((item: any) => item?.type === "tool_use")
+        : [];
+
+      if (toolUses.length > 0) {
+        for (const toolUse of toolUses) {
+          return executeToolInvocation({
+            toolName: String(toolUse.name || ""),
+            toolArguments: JSON.stringify(toolUse.input ?? {}),
+            safeText: routerResult.safeText,
+            executorContext,
+            fallbackBase,
+            authorizedSkills,
+            userId,
+            tenantId,
+            history,
+            taskId,
+            runId,
+            stepId,
+          });
+        }
+      }
+
+      const reply = Array.isArray(data.content)
+        ? data.content
+            .filter((item: any) => item?.type === "text")
+            .map((item: any) => item?.text || "")
+            .join("\n\n")
+            .trim()
+        : "";
+
+      return NextResponse.json({ reply, kernel: { status: "success" } });
+    }
+
     // n8n
-    if (provider === "n8n") {
+    if (providerInput === "n8n") {
       const webhookUrl = process.env.N8N_WEBHOOK_URL;
       if (!webhookUrl) throw new Error("N8N_WEBHOOK_URL nao configurada.");
 
@@ -550,6 +597,9 @@ export async function POST(req: Request) {
     return NextResponse.json({ error: "Provedor não configurado com os novos padrões de segurança." }, { status: 400 });
 
   } catch (error: any) {
+    if (typeof error?.status === "number") {
+      return NextResponse.json({ error: error.message || "Requisicao invalida." }, { status: error.status });
+    }
     if (error.name === 'AbortError') {
       return NextResponse.json({ error: "Timeout: A inteligência artificial esgotou o tempo de resposta." }, { status: 504 });
     }

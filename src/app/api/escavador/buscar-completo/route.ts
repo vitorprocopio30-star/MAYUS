@@ -2,6 +2,8 @@ import { NextRequest, NextResponse } from 'next/server'
 import { createClient } from '@supabase/supabase-js'
 import { createServerClient } from '@supabase/ssr'
 import { cookies } from 'next/headers'
+import { requireTenantApiKey } from '@/lib/integrations/server'
+import { pickExplicitClientName } from '@/lib/juridico/process-card-context'
 
 interface MonitoramentoCapacity {
   total_monitorados: number
@@ -57,6 +59,7 @@ function mapearProcesso(p: Record<string, unknown>) {
     fase_atual: (fonte.status_predito ?? p.fase ?? capa.fase ?? 'CONHECIMENTO') as string,
     fontes_tribunais_estao_arquivadas: p.fontes_tribunais_estao_arquivadas === true,
     status_predito: String(fonte.status_predito ?? p.status ?? 'ATIVO'),
+    cliente_nome: pickExplicitClientName(p),
 
     // Partes (polo simples para colunas)
     polo_ativo: (p.titulo_polo_ativo ?? capa.polo_ativo ?? '—') as string,
@@ -135,14 +138,8 @@ export async function POST(req: NextRequest) {
   const { data: capacity } = await adminSupabase
     .rpc('check_monitoramento_capacity', { p_tenant_id: tenantId }).single() as { data: MonitoramentoCapacity | null; error: unknown }
 
-  const { data: integration } = await adminSupabase
-    .from('tenant_integrations')
-    .select('api_key')
-    .eq('tenant_id', tenantId)
-    .eq('provider', 'escavador')
-    .in('status', ['active', 'connected'])
-    .single()
-  if (!integration?.api_key) return NextResponse.json({ error: 'Escavador não configurado' }, { status: 400 })
+  const { apiKey } = await requireTenantApiKey(tenantId, 'escavador')
+  if (!apiKey) return NextResponse.json({ error: 'Escavador não configurado' }, { status: 400 })
 
   console.log(`[buscar-completo] Iniciando busca GET: OAB ${oab_numero}/${oab_estado} ${next_url ? 'COM NEXT_URL' : ''}`)
 
@@ -190,7 +187,7 @@ export async function POST(req: NextRequest) {
     let resp = await fetch(url, {
       method: 'GET',
       headers: {
-        'Authorization': `Bearer ${integration.api_key.trim()}`,
+        'Authorization': `Bearer ${apiKey.trim()}`,
         'Accept': 'application/json',
         'X-Requested-With': 'XMLHttpRequest'
       }
@@ -203,7 +200,7 @@ export async function POST(req: NextRequest) {
       const fallbackResp = await fetch(fallbackUrl, {
         method: 'GET',
         headers: {
-          'Authorization': `Bearer ${integration.api_key.trim()}`,
+          'Authorization': `Bearer ${apiKey.trim()}`,
           'Accept': 'application/json',
           'X-Requested-With': 'XMLHttpRequest'
         }
@@ -271,7 +268,7 @@ export async function POST(req: NextRequest) {
     // 5. Verificar monitorados (para marcar no UI o que já está no banco)
     const numeros = processos.map(p => p.numero_processo).filter(Boolean)
     const { data: jaMonitorados } = await adminSupabase
-      .from('monitored_processes').select('id, numero_processo, escavador_id, escavador_monitoramento_id, resumo_curto, urgencia_nivel, proxima_acao_sugerida')
+      .from('monitored_processes').select('id, numero_processo, escavador_id, escavador_monitoramento_id, resumo_curto, urgencia_nivel, proxima_acao_sugerida, cliente_nome')
       .eq('tenant_id', tenantId).in('numero_processo', numeros)
     const monitoradosMap = new Map((jaMonitorados ?? []).map(m => [m.numero_processo, m]))
 
@@ -283,6 +280,7 @@ export async function POST(req: NextRequest) {
         id: db?.id ?? undefined,
         escavador_id: db?.escavador_id || p.escavador_id,
         resumo_curto: db?.resumo_curto ?? undefined,
+        cliente_nome: db?.cliente_nome ?? p.cliente_nome ?? undefined,
         urgencia_nivel: db?.urgencia_nivel ?? undefined,
         proxima_acao_sugerida: db?.proxima_acao_sugerida ?? undefined,
       }

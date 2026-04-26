@@ -124,7 +124,7 @@ export default function DonnaRepositoryPage() {
   const hasFooter = Boolean(profile?.use_footer && assets.footer?.file_url);
 
   return (
-    <div className={`flex-1 min-h-screen bg-[#020202] text-white p-6 sm:p-10 ${montserrat.className} luxury-container overflow-hidden relative`}>
+    <div className={`flex-1 min-h-screen bg-[#020202] text-gray-900 dark:text-white p-6 sm:p-10 ${montserrat.className} luxury-container overflow-hidden relative`}>
       <div className="absolute top-[-10%] md:top-[-20%] left-[-10%] w-[500px] h-[500px] bg-[#CCA761]/10 rounded-full blur-[150px] pointer-events-none" />
       <div className="absolute top-[40%] right-[-10%] w-[600px] h-[600px] bg-[#8B7340]/5 rounded-full blur-[150px] pointer-events-none" />
       <div className="beam-light opacity-30" />
@@ -134,7 +134,7 @@ export default function DonnaRepositoryPage() {
           <Link href="/dashboard/documentos" className="flex items-center gap-2 text-gray-500 hover:text-[#CCA761] transition-colors text-xs uppercase tracking-widest font-black">
             <ArrowLeft size={16} /> Voltar aos Processos
           </Link>
-          <div className="px-4 py-1.5 rounded-full bg-[#111] border border-[#CCA761]/30 flex items-center gap-2">
+          <div className="px-4 py-1.5 rounded-full bg-gray-100 dark:bg-[#111] border border-[#CCA761]/30 flex items-center gap-2">
             <span className="relative flex h-2 w-2">
               <span className="animate-ping absolute inline-flex h-full w-full rounded-full bg-[#CCA761] opacity-75"></span>
               <span className="relative inline-flex rounded-full h-2 w-2 bg-[#CCA761]"></span>
@@ -145,7 +145,7 @@ export default function DonnaRepositoryPage() {
 
         <div className="flex flex-col lg:flex-row lg:items-center gap-10 lg:gap-16">
           <motion.div initial={{ scale: 0.9, opacity: 0 }} animate={{ scale: 1, opacity: 1 }} className="relative w-32 h-32 md:w-48 md:h-48 rounded-full border border-[#CCA761]/40 flex items-center justify-center overflow-hidden shrink-0 glow-border-fire glass-card">
-            <div className="absolute inset-2 bg-[#0a0a0a] rounded-full z-10 flex items-center justify-center">
+            <div className="absolute inset-2 bg-white dark:bg-[#0a0a0a] rounded-full z-10 flex items-center justify-center">
               <Bot size={60} className="text-[#CCA761] drop-shadow-[0_0_15px_rgba(204,167,97,0.8)]" />
             </div>
           </motion.div>
@@ -154,7 +154,7 @@ export default function DonnaRepositoryPage() {
             <motion.p initial={{ opacity: 0, y: 10 }} animate={{ opacity: 1, y: 0 }} className="text-[#CCA761] text-xs uppercase tracking-[0.4em] font-black">
               Núcleo Jurídico Configurável
             </motion.p>
-            <motion.h1 initial={{ opacity: 0, y: 10 }} animate={{ opacity: 1, y: 0 }} transition={{ delay: 0.1 }} className={`text-5xl md:text-7xl font-light tracking-wide text-white ${cormorant.className}`}>
+            <motion.h1 initial={{ opacity: 0, y: 10 }} animate={{ opacity: 1, y: 0 }} transition={{ delay: 0.1 }} className={`text-5xl md:text-7xl font-light tracking-wide text-gray-900 dark:text-white ${cormorant.className}`}>
               Diretrizes de <span className="text-luxury italic font-semibold">{officeName}</span>
             </motion.h1>
             <motion.p initial={{ opacity: 0, y: 10 }} animate={{ opacity: 1, y: 0 }} transition={{ delay: 0.2 }} className="text-gray-400 text-sm max-w-2xl leading-relaxed">
@@ -172,17 +172,17 @@ export default function DonnaRepositoryPage() {
             <div className="grid grid-cols-1 md:grid-cols-3 gap-6">
               <motion.div initial={{ opacity: 0, y: 20 }} whileInView={{ opacity: 1, y: 0 }} viewport={{ once: true }} className="glass-card p-6 rounded-2xl group hover:border-[#CCA761]/40 transition-colors">
                 <Scale size={24} className="text-[#CCA761] mb-4 group-hover:scale-110 transition-transform" />
-                <h3 className={`text-2xl text-white mb-2 ${cormorant.className}`}>Integridade Absoluta</h3>
+                <h3 className={`text-2xl text-gray-900 dark:text-white mb-2 ${cormorant.className}`}>Integridade Absoluta</h3>
                 <p className="text-sm font-light text-gray-500 leading-relaxed">O motor jurídico segue verificação real de jurisprudência e exige peças anteriores quando a lógica processual pede resposta estruturada.</p>
               </motion.div>
               <motion.div initial={{ opacity: 0, y: 20 }} whileInView={{ opacity: 1, y: 0 }} viewport={{ once: true }} transition={{ delay: 0.1 }} className="glass-card p-6 rounded-2xl group hover:border-[#CCA761]/40 transition-colors">
                 <Type size={24} className="text-[#CCA761] mb-4 group-hover:scale-110 transition-transform" />
-                <h3 className={`text-2xl text-white mb-2 ${cormorant.className}`}>Perfil Visual Ativo</h3>
+                <h3 className={`text-2xl text-gray-900 dark:text-white mb-2 ${cormorant.className}`}>Perfil Visual Ativo</h3>
                 <p className="text-sm font-light text-gray-500 leading-relaxed">Fonte {fontName}, corpo {bodyFont}pt, alinhamento {profile?.text_alignment || 'justified'} e tom {toneLabel(profile?.default_tone)}. O visual final pertence ao escritório, não à regra global do produto.</p>
               </motion.div>
               <motion.div initial={{ opacity: 0, y: 20 }} whileInView={{ opacity: 1, y: 0 }} viewport={{ once: true }} transition={{ delay: 0.2 }} className="glass-card p-6 rounded-2xl group hover:border-[#CCA761]/40 transition-colors">
                 <ImageIcon size={24} className="text-[#CCA761] mb-4 group-hover:scale-110 transition-transform" />
-                <h3 className={`text-2xl text-white mb-2 ${cormorant.className}`}>Assets & Assinatura</h3>
+                <h3 className={`text-2xl text-gray-900 dark:text-white mb-2 ${cormorant.className}`}>Assets & Assinatura</h3>
                 <p className="text-sm font-light text-gray-500 leading-relaxed">Cabeçalho {hasHeader ? 'configurado' : 'pendente'}, rodapé {hasFooter ? 'configurado' : 'pendente'} e paginação {profile?.use_page_numbers ? 'ativada' : 'desativada'}.</p>
               </motion.div>
             </div>
@@ -193,23 +193,23 @@ export default function DonnaRepositoryPage() {
               <div className="flex items-center justify-between gap-4">
                 <div className="flex items-center gap-4">
                   <FileArchive className="text-[#CCA761]" size={28} />
-                  <h2 className={`text-3xl text-white ${cormorant.className}`}>Modelos Institucionais Ativos</h2>
+                  <h2 className={`text-3xl text-gray-900 dark:text-white ${cormorant.className}`}>Modelos Institucionais Ativos</h2>
                 </div>
-                <Link href="/dashboard/configuracoes/juridico" className="text-[10px] uppercase tracking-[0.24em] font-black text-[#CCA761] hover:text-white transition-colors">
+                <Link href="/dashboard/configuracoes/juridico" className="text-[10px] uppercase tracking-[0.24em] font-black text-[#CCA761] hover:text-gray-900 dark:text-white transition-colors">
                   Editar perfil jurídico
                 </Link>
               </div>
 
               <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
                 {templates.map((model, i) => (
-                  <div key={`${model.piece_type}-${i}`} className="bg-[#111] border border-white/5 p-6 rounded-2xl hover:bg-[#151515] hover:border-[#CCA761]/20 transition-all group">
+                  <div key={`${model.piece_type}-${i}`} className="bg-gray-100 dark:bg-[#111] border border-gray-200 dark:border-white/5 p-6 rounded-2xl hover:bg-[#151515] hover:border-[#CCA761]/20 transition-all group">
                     <div className="flex items-center justify-between mb-4 gap-3">
                       <span className="px-3 py-1 rounded bg-[#CCA761]/10 text-[#CCA761] text-[10px] font-black uppercase tracking-widest">{pieceLabel(model.piece_type)}</span>
                       <span className="text-[10px] uppercase tracking-[0.2em] text-gray-500 font-black">{model.template_mode || 'visual_profile'}</span>
                     </div>
-                    <h4 className="text-lg font-semibold text-white mb-2 group-hover:text-[#CCA761] transition-colors">{model.template_name || pieceLabel(model.piece_type)}</h4>
+                    <h4 className="text-lg font-semibold text-gray-900 dark:text-white mb-2 group-hover:text-[#CCA761] transition-colors">{model.template_name || pieceLabel(model.piece_type)}</h4>
                     <p className="text-xs text-gray-500 leading-relaxed mb-4">{model.guidance_notes || 'Sem nota específica cadastrada. O MAYUS usará o perfil visual padrão do tenant.'}</p>
-                    <div className="rounded-xl border border-white/5 bg-black/30 p-3 min-h-[88px]">
+                    <div className="rounded-xl border border-gray-200 dark:border-white/5 bg-gray-200 dark:bg-black/30 p-3 min-h-[88px]">
                       <p className="text-[10px] uppercase tracking-[0.22em] text-gray-600 font-black mb-2">Estrutura base</p>
                       <p className="text-[11px] text-gray-400 whitespace-pre-wrap line-clamp-4">{model.structure_markdown || 'Estrutura não definida.'}</p>
                     </div>

@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from "next/server";
 import { createClient } from "@supabase/supabase-js";
 import { ZapSignService } from "@/lib/services/zapsign";
+import { requireTenantApiKey } from "@/lib/integrations/server";
 
 const supabase = createClient(
   process.env.NEXT_PUBLIC_SUPABASE_URL!,
@@ -20,14 +21,9 @@ export async function POST(req: NextRequest) {
     }
 
     // 1. Buscar API Key do ZapSign para o Tenant
-    const { data: ntegration, error: intErr } = await supabase
-      .from("tenant_integrations")
-      .select("api_key")
-      .eq("tenant_id", tenant_id)
-      .eq("provider", "zapsign")
-      .single();
+    const { apiKey } = await requireTenantApiKey(tenant_id, "zapsign");
 
-    if (intErr || !ntegration?.api_key) {
+    if (!apiKey) {
       return NextResponse.json({ error: "Integração ZapSign não configurada ou ativa." }, { status: 404 });
     }
 
@@ -51,7 +47,7 @@ export async function POST(req: NextRequest) {
 
     // 3. Chamar Serviço ZapSign
     const result = await ZapSignService.createFromTemplate({
-      apiToken: ntegration.api_key,
+      apiToken: apiKey,
       templateId: template_id,
       docName: doc_name || `Contrato - ${signerName}`,
       externalId: contact_id || undefined,

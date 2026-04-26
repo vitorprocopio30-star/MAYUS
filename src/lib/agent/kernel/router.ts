@@ -118,6 +118,32 @@ const INTENT_PATTERNS: IntentDefinition[] = [
     baseConfidence: 0.65, // Padrões genéricos — confidence conservadora
   },
   {
+    intent: 'support_case_status',
+    patterns: [
+      /status\s+do\s+(caso|processo)/i,
+      /como\s+(est[aá]|anda)\s+(o\s+)?(caso|processo)/i,
+      /andamento\s+do\s+(caso|processo)/i,
+      /atualiza[cç][aã]o\s+(do|sobre\s+o)\s+(caso|processo)/i,
+      /cliente.*(pergunt|quer\s+saber).*(caso|processo)/i,
+      /respon(d|da)\s+(o\s+)?cliente.*(caso|processo)/i,
+    ],
+    entityExtractors: [
+      {
+        key: 'process_number',
+        pattern: /(\d{7}-\d{2}\.\d{4}\.\d\.\d{2}\.\d{4})/i,
+      },
+      {
+        key: 'client_name',
+        pattern: /(?:cliente|caso\s+d[aoe]|processo\s+d[aoe]\s+cliente)\s*[:\-]?\s*([A-ZÀ-Ú][A-Za-zÀ-ú]+(?:\s+(?:d[aeo]s?|[A-ZÀ-Ú][A-Za-zÀ-ú]+)){1,5})(?=\s*(?:pergunt|quer|pediu|solicitou|[,.!?]|$))/i,
+      },
+      {
+        key: 'process_reference',
+        pattern: /(?:refer[eê]ncia|caso)\s*[:\-]\s*([^\n.;!?]{3,80})/i,
+      },
+    ],
+    baseConfidence: 0.88,
+  },
+  {
     intent: 'financial_report',
     patterns: [
       /faturamento/i,
@@ -127,6 +153,148 @@ const INTENT_PATTERNS: IntentDefinition[] = [
       /asaas/i,
     ],
     baseConfidence: 0.80,
+  },
+  {
+    intent: 'legal_case_context',
+    patterns: [
+      /contexto\s+juridic/i,
+      /case\s+brain/i,
+      /peca\s+sugerida/i,
+      /penden(cia|cias)\s+documenta/i,
+      /status\s+da\s+minuta/i,
+      /minuta\s+atual/i,
+    ],
+    entityExtractors: [
+      {
+        key: 'process_number',
+        pattern: /(\d{7}-\d{2}\.\d{4}\.\d\.\d{2}\.\d{4})/i,
+      },
+    ],
+    baseConfidence: 0.82,
+  },
+  {
+    intent: 'legal_first_draft_generate',
+    patterns: [
+      /gerar\s+(a\s+)?(primeira\s+)?minuta/i,
+      /atualizar\s+(a\s+)?(primeira\s+)?minuta/i,
+      /refazer\s+(a\s+)?minuta/i,
+      /draft\s+factory/i,
+      /criar\s+(a\s+)?primeira\s+peca/i,
+    ],
+    entityExtractors: [
+      {
+        key: 'process_number',
+        pattern: /(\d{7}-\d{2}\.\d{4}\.\d\.\d{2}\.\d{4})/i,
+      },
+    ],
+    baseConfidence: 0.86,
+  },
+  {
+    intent: 'legal_draft_workflow',
+    patterns: [
+      /aprovar\s+(a\s+)?(minuta|vers[aã]o)/i,
+      /aprove\s+(a\s+)?(minuta|vers[aã]o)/i,
+      /publicar\s+(a\s+)?(minuta|vers[aã]o)/i,
+      /publique\s+(a\s+)?(minuta|vers[aã]o)/i,
+      /(aprova[cç][aã]o|publica[cç][aã]o)\s+formal/i,
+    ],
+    entityExtractors: [
+      {
+        key: 'process_number',
+        pattern: /(\d{7}-\d{2}\.\d{4}\.\d\.\d{2}\.\d{4})/i,
+      },
+      {
+        key: 'workflow_action',
+        pattern: /(aprovar|aprove|aprova|publicar|publique|publica)/i,
+      },
+      {
+        key: 'version_number',
+        pattern: /(?:vers[aã]o\s*|v)(\d{1,2})\b/i,
+      },
+    ],
+    baseConfidence: 0.9,
+  },
+  {
+    intent: 'legal_draft_review_guidance',
+    patterns: [
+      /revis(ar|e)\s+(a\s+)?(minuta|vers[aã]o)/i,
+      /review\s+(da\s+)?(minuta|vers[aã]o)/i,
+      /checklist\s+(da\s+)?minuta/i,
+      /o\s+que\s+falta\s+na\s+minuta/i,
+      /criticar\s+(a\s+)?minuta/i,
+    ],
+    entityExtractors: [
+      {
+        key: 'process_number',
+        pattern: /(\d{7}-\d{2}\.\d{4}\.\d\.\d{2}\.\d{4})/i,
+      },
+      {
+        key: 'version_number',
+        pattern: /(?:vers[aã]o\s*|v)(\d{1,2})\b/i,
+      },
+    ],
+    baseConfidence: 0.88,
+  },
+  {
+    intent: 'legal_draft_revision_loop',
+    patterns: [
+      /melhor(e|ar)\s+(a\s+)?minuta\s+por\s+se[cç][aã]o/i,
+      /reforc(e|ar)\s+(a\s+)?argumenta[cç][aã]o/i,
+      /plano\s+de\s+revis[aã]o\s+da\s+minuta/i,
+      /o\s+que\s+voce\s+mudaria\s+na\s+minuta/i,
+      /prepare\s+uma\s+nova\s+vers[aã]o\s+da\s+minuta/i,
+      /revis[aã]o\s+por\s+se[cç][aã]o/i,
+    ],
+    entityExtractors: [
+      {
+        key: 'process_number',
+        pattern: /(\d{7}-\d{2}\.\d{4}\.\d\.\d{2}\.\d{4})/i,
+      },
+      {
+        key: 'version_number',
+        pattern: /(?:vers[aã]o\s*|v)(\d{1,2})\b/i,
+      },
+    ],
+    baseConfidence: 0.9,
+  },
+  {
+    intent: 'legal_artifact_publish_premium',
+    patterns: [
+      /publique\s+(o\s+)?artifact\s+premium/i,
+      /publicar\s+(o\s+)?pdf\s+final/i,
+      /enviar\s+(o\s+)?artifact\s+final\s+para\s+o\s+drive/i,
+      /suba\s+(o\s+)?pdf\s+da\s+minuta/i,
+      /publique\s+(a\s+)?peca\s+final\s+no\s+drive/i,
+    ],
+    entityExtractors: [
+      {
+        key: 'process_number',
+        pattern: /(\d{7}-\d{2}\.\d{4}\.\d\.\d{2}\.\d{4})/i,
+      },
+      {
+        key: 'version_number',
+        pattern: /(?:vers[aã]o\s*|v)(\d{1,2})\b/i,
+      },
+    ],
+    baseConfidence: 0.9,
+  },
+  {
+    intent: 'legal_document_memory_refresh',
+    patterns: [
+      /sincroniz(ar|e)\s+(os\s+)?documentos/i,
+      /atualiz(ar|e)\s+(a\s+)?mem[oó]ria\s+documental/i,
+      /relei(a|a\s+o)\s+(o\s+)?reposit[oó]rio/i,
+      /atualiz(ar|e)\s+(o\s+)?acervo/i,
+      /sincroniz(ar|e)\s+(a\s+)?pasta\s+do\s+processo/i,
+      /atualiz(ar|e)\s+os\s+documentos\s+desse\s+caso/i,
+    ],
+    entityExtractors: [
+      {
+        key: 'process_number',
+        pattern: /(\d{7}-\d{2}\.\d{4}\.\d\.\d{2}\.\d{4})/i,
+      },
+    ],
+    baseConfidence: 0.86,
   },
 ];
 

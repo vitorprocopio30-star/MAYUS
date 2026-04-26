@@ -1,5 +1,11 @@
 import { createClient } from '@supabase/supabase-js'
 import { getLLMClient, buildHeaders } from '@/lib/llm-router'
+import { prepareProactiveMovementDraft } from '@/lib/lex/proactive-movement-draft'
+import {
+  buildProcessCardClientName,
+  buildProcessCardDescription,
+  buildProcessCardTitle,
+} from '@/lib/juridico/process-card-context'
 
 const adminSupabase = createClient(
   process.env.NEXT_PUBLIC_SUPABASE_URL!,
@@ -538,7 +544,7 @@ export async function analisarMovimentacao(params: {
 
   const { data: cardsExistentes } = await adminSupabase
     .from('process_tasks')
-    .select('id, movimentacoes_timeline')
+    .select('id, title, description, client_name, movimentacoes_timeline')
     .eq('processo_1grau', params.numero_cnj)
     .eq('pipeline_id', '7b4d39bb-785c-402a-826d-0088867d934c')
     .order('updated_at', { ascending: false })
@@ -552,11 +558,22 @@ export async function analisarMovimentacao(params: {
       ? cardExistente.movimentacoes_timeline
       : []
     const timelineAtualizada = [...timelineAtual, movimentacaoEntry]
+    const cardClientName = buildProcessCardClientName(processo ?? {})
+    const cardDescription = buildProcessCardDescription({
+      processo: {
+        ...(processo ?? {}),
+        numero_processo: params.numero_cnj,
+      },
+      resumoCurto: processo?.resumo_curto,
+      proximaAcao: descricaoPrazo,
+    })
 
     await adminSupabase
       .from('process_tasks')
       .update({
         movimentacoes_timeline: timelineAtualizada,
+        client_name: cardExistente.client_name || cardClientName,
+        description: cardExistente.description || cardDescription,
         andamento_1grau: descricaoPrazo,
         prazo_fatal: vencimento.toISOString(),
         escavador_movimentacao_id: escavadorMovimentacaoId,
@@ -571,12 +588,26 @@ export async function analisarMovimentacao(params: {
       .select('*', { count: 'exact', head: true })
       .eq('stage_id', '5ecb8f05-042d-40e7-a093-e1f3ce8478da')
     const position_index = count ?? 0
+    const cardTitle = buildProcessCardTitle({
+      ...(processo ?? {}),
+      numero_processo: params.numero_cnj,
+    })
+    const cardClientName = buildProcessCardClientName(processo ?? {})
+    const cardDescription = buildProcessCardDescription({
+      processo: {
+        ...(processo ?? {}),
+        numero_processo: params.numero_cnj,
+      },
+      resumoCurto: processo?.resumo_curto,
+      proximaAcao: descricaoPrazo,
+    })
 
     const { data: novoCard } = await adminSupabase.from('process_tasks').insert({
       pipeline_id: '7b4d39bb-785c-402a-826d-0088867d934c',
       stage_id: '5ecb8f05-042d-40e7-a093-e1f3ce8478da',
-      title: processo?.cliente_nome ?? params.numero_cnj,
-      client_name: processo?.cliente_nome ?? '',
+      title: cardTitle,
+      description: cardDescription,
+      client_name: cardClientName,
       processo_1grau: params.numero_cnj,
       andamento_1grau: descricaoPrazo,
       prazo_fatal: vencimento.toISOString(),
@@ -620,6 +651,26 @@ export async function analisarMovimentacao(params: {
       ignoreDuplicates: true
     }
   )
+
+  const proactiveDraft = await prepareProactiveMovementDraft({
+    tenantId: params.tenant_id,
+    processTaskId: taskId,
+    processNumber: params.numero_cnj,
+    movementText: params.movimentacao.conteudo ?? '',
+    movementDate: params.movimentacao.data ?? null,
+    movementId: escavadorMovimentacaoId,
+    eventType: tipoEvento,
+    deadlineDescription: descricaoPrazo,
+    responsibleUserId: params.advogado_id ?? processo?.advogado_responsavel_id ?? null,
+  })
+
+  if (proactiveDraft.status === 'prepared') {
+    console.log(
+      `[ANALISADOR] Lex proativo preparou ${proactiveDraft.recommendedPieceLabel} para ${params.numero_cnj}.`
+    )
+  } else if (proactiveDraft.status === 'failed') {
+    console.error(`[ANALISADOR] Lex proativo falhou para ${params.numero_cnj}: ${proactiveDraft.reason}`)
+  }
 
   console.log(`[ANALISADOR] ✅ ${prazo.tipo_tarefa} criado para ${params.numero_cnj} — vence ${vencimento.toDateString()}`)
 }

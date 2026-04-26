@@ -2,7 +2,7 @@ import { NextResponse } from "next/server";
 import { createClient } from "@/lib/supabase/server";
 import { supabaseAdmin } from "@/lib/supabase/admin";
 import { resolvePublicAppUrl } from "@/lib/url/resolve-public-app-url";
-import { isFullAccessRole, isStandardAccessRole, normalizeAccessRole } from "@/lib/permissions";
+import { isFullAccessRole, isStandardAccessRole, toCanonicalAccessRole } from "@/lib/permissions";
 
 function sanitizePermissions(input: unknown): string[] {
   if (!Array.isArray(input)) return [];
@@ -67,7 +67,7 @@ export async function POST(req: Request) {
   try {
     const body = await req.json();
     const email = String(body.email || "").trim().toLowerCase();
-    const role = normalizeAccessRole(body.role);
+    const role = toCanonicalAccessRole(body.role);
     const department_id = body.department_id ? String(body.department_id) : null;
     const incomingPermissions = sanitizePermissions(body.permissions);
     const permissions = isFullAccessRole(role) ? ["ALL"] : incomingPermissions;
@@ -93,7 +93,7 @@ export async function POST(req: Request) {
 
     if (!isFullAccessRole(requesterRole) && !isSuperadmin) {
       console.warn("[Invite API] Acesso Negado: Role insuficiente:", requesterRole);
-      return NextResponse.json({ error: "Apenas Administradores podem convidar membros." }, { status: 403 });
+      return NextResponse.json({ error: "Apenas perfis executivos podem convidar membros." }, { status: 403 });
     }
 
     if (!tenantId) {

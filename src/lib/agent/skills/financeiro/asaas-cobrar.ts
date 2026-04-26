@@ -34,11 +34,13 @@ async function registrarAuditLog(params: {
   descricao: string
   error?: string
 }) {
-  const { error } = await supabase.from('agent_audit_logs').insert({
-    action: 'asaas_cobrar',
+  const { error } = await supabase.from('system_event_logs').insert({
+    source: 'system',
+    provider: 'asaas',
+    event_name: 'asaas_cobrar',
     status: params.status,
     tenant_id: params.tenantId,
-    payload_executed: {
+    payload: {
       cobranca_id: params.cobrancaId ?? null,
       valor: params.valor,
       vencimento: params.vencimento,

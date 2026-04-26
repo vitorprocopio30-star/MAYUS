@@ -13,17 +13,14 @@
 // - PII na UI do aprovador preservado (awaitingPayload usa rawEntities)
 // - idempotency_key gerado ANTES de qualquer chamada externa
 
-import { createClient } from '@supabase/supabase-js';
 import { sanitizeText, type RouterIntent } from './router';
 import crypto from 'crypto';
 import { checkTenantLimits } from './limits';
+import { fetchAgentSkillByName } from '@/lib/agent/capabilities/registry';
+import { toCanonicalAccessRole } from '@/lib/permissions';
+import { createAgentAuditLog } from '@/lib/agent/audit';
 
 // ─── Cliente Supabase (singleton no módulo) ───────────────────────────────────
-
-const supabase = createClient(
-  process.env.NEXT_PUBLIC_SUPABASE_URL!,
-  process.env.SUPABASE_SERVICE_ROLE_KEY!
-);
 
 // ─── Tipos ────────────────────────────────────────────────────────────────────
 
@@ -78,6 +75,19 @@ function sanitizeEntities(entities: Record<string, string>): Record<string, stri
   );
 }
 
+function isChannelAllowed(channel: string, allowedChannels: string[] | null | undefined): boolean {
+  const channels = allowedChannels ?? [];
+  return channels.length === 0 || channels.includes(channel);
+}
+
+function isRoleAllowed(userRole: string, allowedRoles: string[] | null | undefined): boolean {
+  const roles = allowedRoles ?? [];
+  if (roles.length === 0) return true;
+
+  const canonicalUserRole = toCanonicalAccessRole(userRole);
+  return roles.some((role) => toCanonicalAccessRole(role) === canonicalUserRole);
+}
+
 // ─── Audit Log ────────────────────────────────────────────────────────────────
 
 async function writeAuditLog(params: {
@@ -93,31 +103,13 @@ async function writeAuditLog(params: {
   pendingExecutionPayload?: object; // Payload real para execução pós-aprovação (rawEntities)
   idempotencyExpiresAt?: string;    // Expiry explícito — default do banco é now() + 24h
 }): Promise<string | undefined> {
-  const { data, error } = await supabase
-    .from('agent_audit_logs')
-    .insert({
-      tenant_id: params.tenantId,
-      user_id: params.userId,
-      skill_invoked: params.skillInvoked,
-      intention_raw: params.intentionRaw,
-      payload_executed: params.payloadExecuted ?? null,
-      status: params.status,
-      idempotency_key: params.idempotencyKey,
-      approval_status: params.approvalStatus ?? null,
-      approval_context: params.approvalContext ?? null,
-      pending_execution_payload: params.pendingExecutionPayload ?? null,
-      ...(params.idempotencyExpiresAt
-        ? { idempotency_expires_at: params.idempotencyExpiresAt }
-        : {}),
-    })
-    .select('id')
-    .single();
+  const { id, error } = await createAgentAuditLog(params);
 
   if (error) {
-    console.error('[Executor] Falha ao gravar audit log:', error.message);
+    console.error('[Executor] Falha ao gravar audit log:', error);
     return undefined;
   }
-  return data?.id;
+  return id;
 }
 
 // ─── Função Principal ─────────────────────────────────────────────────────────
@@ -152,15 +144,12 @@ export async function execute(
   }
 
   // 2. Busca a skill no banco — FONTE DE AUTORIDADE
-  const { data: skill, error: skillError } = await supabase
-    .from('agent_skills')
-    .select('*')
-    .eq('tenant_id', context.tenantId)
-    .eq('name', routerResult.intent)
-    .eq('is_active', true)
-    .single();
+  const skill = await fetchAgentSkillByName({
+    tenantId: context.tenantId,
+    name: routerResult.intent,
+  });
 
-  if (skillError || !skill) {
+  if (!skill || !skill.is_active) {
     return {
       status: 'skill_not_found',
       message: `A skill "${routerResult.intent}" nao esta disponivel para este escritorio.`,
@@ -168,8 +157,7 @@ export async function execute(
   }
 
   // 3. Valida canal permitido (com fallback defensivo para null)
-  const allowedChannels: string[] = skill.allowed_channels ?? [];
-  if (!allowedChannels.includes(context.channel)) {
+  if (!isChannelAllowed(context.channel, skill.allowed_channels)) {
     return {
       status: 'channel_not_allowed',
       message: `Esta acao nao pode ser realizada pelo canal "${context.channel}".`,
@@ -177,9 +165,7 @@ export async function execute(
   }
 
   // 4. Valida role do usuário contra allowed_roles (com fallback defensivo para null)
-  const allowedRoles: string[] = skill.allowed_roles ?? [];
-  const hasPermission = allowedRoles.length === 0 || allowedRoles.includes(context.userRole);
-  if (!hasPermission) {
+  if (!isRoleAllowed(context.userRole, skill.allowed_roles)) {
     return {
       status: 'permission_denied',
       message: `Perfil "${context.userRole}" nao tem permissao para executar "${skill.name}".`,

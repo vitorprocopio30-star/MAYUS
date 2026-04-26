@@ -2,6 +2,7 @@ import { NextRequest, NextResponse } from "next/server";
 import { createClient } from "@supabase/supabase-js";
 import { createServerClient } from "@supabase/ssr";
 import { cookies } from "next/headers";
+import { getTenantIntegrationResolved, upsertTenantIntegrationSecure } from "@/lib/integrations/server";
 
 const adminSupabase = createClient(
   process.env.NEXT_PUBLIC_SUPABASE_URL!,
@@ -106,31 +107,25 @@ export async function POST(req: NextRequest) {
 
     // 2. Atualizar ElevenLabs Integration
     // Buscamos se já existe para decidir entre insert ou update (ou usar um upsert direto se preferir)
-    const { data: existingIntegration } = await adminSupabase
-      .from("tenant_integrations")
-      .select("id, api_key, metadata")
-      .eq("tenant_id", tenantId)
-      .eq("provider", "elevenlabs")
-      .maybeSingle();
+    const existingIntegration = await getTenantIntegrationResolved(tenantId, "elevenlabs");
 
     const integrationPayload: any = {
-      tenant_id: tenantId,
       provider: "elevenlabs",
-      instance_name: elevenlabs_voice_id,
-      metadata: { 
-        ...(existingIntegration?.metadata || {}), 
-        agent_id: elevenlabs_agent_id 
+      instanceName: elevenlabs_voice_id,
+      metadata: {
+        ...(existingIntegration?.metadata || {}),
+        agent_id: elevenlabs_agent_id,
       },
-      status: "connected" // Default para quando tem os dados básicos
+      status: "connected"
     };
 
     // Apenas atualizamos a API Key se ela foi enviada e não é a máscara
     if (elevenlabs_api_key !== undefined && elevenlabs_api_key !== null && !elevenlabs_api_key.includes("****")) {
       if (elevenlabs_api_key.trim() === "") {
-        integrationPayload.api_key = null;
+        integrationPayload.clearApiKey = true;
         integrationPayload.status = "disconnected";
       } else {
-        integrationPayload.api_key = elevenlabs_api_key;
+        integrationPayload.apiKey = elevenlabs_api_key;
         integrationPayload.status = "connected";
       }
     } else {
@@ -140,16 +135,10 @@ export async function POST(req: NextRequest) {
       }
     }
 
-    if (existingIntegration) {
-      await adminSupabase
-        .from("tenant_integrations")
-        .update(integrationPayload)
-        .eq("id", existingIntegration.id);
-    } else {
-      await adminSupabase
-        .from("tenant_integrations")
-        .insert([integrationPayload]);
-    }
+    await upsertTenantIntegrationSecure({
+      tenantId,
+      ...integrationPayload,
+    });
 
     return NextResponse.json({ success: true });
   } catch (error: any) {
