@@ -6,6 +6,9 @@ Esta pasta centraliza toda a documentacao de produto, tecnica e operacao do MAYU
 
 - `docs/architecture/`: visao tecnica e desenho do sistema
   - `docs/architecture/system-overview.md`
+- `docs/brain/`: blueprint e execucao do runtime agentico
+  - `docs/brain/MAYUS_AGENTIC_EXECUTION_CHECKLIST.md`
+  - `docs/brain/MAYUS_MASTER_BLUEPRINT.md`
 - `docs/operations/`: processo de deploy, historico de sessoes e changelog
   - `docs/operations/deploy.md`
   - `docs/operations/sessions.md`
@@ -13,6 +16,14 @@ Esta pasta centraliza toda a documentacao de produto, tecnica e operacao do MAYU
 - `docs/tracking/`: acompanhamento de bugs, progresso e backlog
   - `docs/tracking/bugs.md`
   - `docs/tracking/progress.md`
+
+## Fonte atual de execucao agentica
+
+Para trabalho no modelo agentico, use primeiro:
+
+`docs/brain/MAYUS_AGENTIC_EXECUTION_CHECKLIST.md`
+
+Os planos menores em `docs/brain/IMPLEMENTATION-PLAN-*.md` ficam como historico e detalhe tecnico. O checklist consolidado e o arquivo que deve ser marcado a cada item concluido.
 
 ## Regra pratica para nao "sumir" com docs no git
 
