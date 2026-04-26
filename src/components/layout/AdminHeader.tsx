@@ -14,16 +14,16 @@ import Link from "next/link";
 
 const montserrat = Montserrat({ subsets: ["latin"], weight: ["400", "500", "600"] });
 
-// Mapa de labels amigÃ¡veis para cada perfil
+// Mapa de labels amigaveis para cada perfil
 const roleLabels: Record<string, string> = {
   Administrador: "Administrador",
   admin: "Administrador",
-  "SÃ³cio": "SÃ³cio",
-  socio: "SÃ³cio",
+  "Sócio": "Sócio",
+  socio: "Sócio",
   Advogado: "Advogado",
   SDR: "SDR",
   Financeiro: "Financeiro",
-  EstagiÃ¡rio: "EstagiÃ¡rio",
+  Estagiário: "Estagiário",
   mayus_admin: "Super Admin MAYUS",
 };
 
