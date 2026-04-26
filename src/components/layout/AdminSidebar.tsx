@@ -116,6 +116,7 @@ export function AdminSidebar() {
       title: "COMERCIAL",
       collapsible: true,
       items: [
+        { name: "Nova Venda", icon: Plus, href: "/dashboard/vendas/nova" },
         { name: "Painel CRM", icon: LayoutDashboard, href: "/dashboard/crm" },
         { name: "Gestão de Vendas", icon: DollarSign, href: "/dashboard/vendas" },
         { name: "Clientes Base", icon: Briefcase, href: "/dashboard/clientes" },
@@ -148,6 +149,7 @@ export function AdminSidebar() {
       items: [
         { name: "BI & Analytics", icon: LineChart, href: "/dashboard/bi" },
         { name: "MAYUS Inteligência", icon: BrainCircuit, href: "/dashboard/mayus" },
+        { name: "Inbox de Aprovações", icon: ShieldAlert, href: "/dashboard/aprovacoes" },
         { name: "Equipe Neural", icon: Bot, href: "/dashboard/equipe-ia" },
         { name: "Relatórios Executivos", icon: PieChart, href: "/dashboard/relatorios" },
       ]
@@ -186,6 +188,7 @@ export function AdminSidebar() {
         if (item.href === "/dashboard/configuracoes/agente") return role === "admin" || role === "socio" || role === "Sócio" || role === "Administrador";
         if (item.href === "/dashboard/configuracoes/memoria") return role === "admin" || role === "socio" || role === "Sócio" || role === "Administrador";
         if (item.href === "/dashboard/configuracoes/voz") return role === "admin" || role === "socio" || role === "Sócio" || role === "Administrador";
+        if (item.href === "/dashboard/aprovacoes") return role === "admin" || role === "socio" || role === "Sócio" || role === "Administrador" || role === "mayus_admin";
         if (item.href === "/dashboard/agenda-admin") return false;
         if (item.href === "/dashboard") return true;
         if (item.href === "/dashboard/equipe") return false;
@@ -208,7 +211,7 @@ export function AdminSidebar() {
 
       {isOpen && (
         <div
-          className="fixed inset-0 bg-black/60 z-40 md:hidden backdrop-blur-sm transition-opacity"
+          className="fixed inset-0 bg-gray-200 dark:bg-black/60 z-40 md:hidden backdrop-blur-sm transition-opacity"
           onClick={toggleSidebar}
         />
       )}
@@ -223,7 +226,7 @@ export function AdminSidebar() {
         {/* Toggle Button for Desktop */}
         <button 
           onClick={toggleSidebarMode}
-          className="hidden md:flex absolute top-6 -right-3 z-50 w-6 h-6 items-center justify-center bg-[#CCA761] text-black rounded-full shadow-lg border border-white/20 hover:scale-110 transition-transform"
+          className="hidden md:flex absolute top-6 -right-3 z-50 w-6 h-6 items-center justify-center bg-[#CCA761] text-black rounded-full shadow-lg border border-gray-300 dark:border-white/20 hover:scale-110 transition-transform"
           title="Alternar Modo de Exibição"
         >
           {sidebarMode === "mini" ? <ChevronRight size={14} /> : sidebarMode === "expanded" ? <ChevronLeft size={14} /> : <Plus size={14} />}
@@ -261,7 +264,7 @@ export function AdminSidebar() {
               </div>
             ) : (
               <div className="w-8 h-8 rounded-full bg-gradient-to-br from-[#CCA761] to-[#8B7340] flex items-center justify-center shadow-[0_0_10px_rgba(204,167,97,0.3)] hover:scale-110 transition-transform duration-300">
-                <span className="text-white text-xs font-bold">M</span>
+                <span className="text-gray-900 dark:text-white text-xs font-bold">M</span>
               </div>
             )}
           </div>
@@ -270,14 +273,10 @@ export function AdminSidebar() {
         <div className={`flex-1 overflow-y-auto no-scrollbar pt-2 ${sidebarMode === "mini" ? 'px-2' : 'px-5'} pb-20 ${montserrat.className}`}>
 
           <div className={`space-y-3 mb-8 ${sidebarMode === "mini" ? 'opacity-0 h-0 overflow-hidden' : 'opacity-100'}`}>
-            <Link href="/dashboard/vendas/nova" className="relative w-full flex items-center justify-center gap-2 bg-gradient-to-r from-[#CCA761] via-[#f1d58d] to-[#CCA761] hover:from-[#e3c27e] hover:via-[#ffe8ad] hover:to-[#e3c27e] text-[#111111] font-[800] py-3 px-4 rounded-lg transition-all duration-300 transform active:scale-95 text-sm shadow-none overflow-hidden hover:-translate-y-[1px] tracking-widest">
+            <Link href="/dashboard/mayus" className="relative w-full flex items-center justify-center gap-2 bg-gradient-to-r from-[#CCA761] via-[#f1d58d] to-[#CCA761] hover:from-[#e3c27e] hover:via-[#ffe8ad] hover:to-[#e3c27e] text-[#111111] font-[800] py-3 px-4 rounded-lg transition-all duration-300 transform active:scale-95 text-sm shadow-none overflow-hidden hover:-translate-y-[1px] tracking-widest">
               <div className="absolute inset-0 -translate-x-full animate-[shimmer_2.5s_infinite] bg-gradient-to-r from-transparent via-white/40 to-transparent skew-x-12" />
-              <Plus size={18} strokeWidth={2.5} className="relative z-10" />
-              <span className="relative z-10">NOVA VENDA</span>
-            </Link>
-            <Link href="/dashboard/documentos/donna" className="w-full flex items-center justify-center gap-2 bg-secondary border border-border hover:border-primary/50 hover:shadow-[0_0_15px_rgba(204,167,97,0.1)] text-primary font-bold py-3 px-4 rounded-lg transition-all duration-300 transform active:scale-95 text-sm shadow-md group">
-              <Wand2 size={18} className="text-primary group-hover:-rotate-12 transition-transform duration-300" />
-              GERAR PEÇA COM IA
+              <Bot size={18} strokeWidth={2.5} className="relative z-10" />
+              <span className="relative z-10">MAYUS AI</span>
             </Link>
           </div>
 
@@ -343,7 +342,7 @@ export function AdminSidebar() {
           {mounted && (
             <button
               onClick={() => setTheme(resolvedTheme === 'dark' ? 'light' : 'dark')}
-              className="p-2 rounded-md hover:bg-gray-200 dark:hover:bg-[#222] text-gray-500 dark:text-gray-400 transition-colors"
+              className="p-2 rounded-md hover:bg-gray-200 dark:hover:bg-gray-100 dark:bg-[#222] text-gray-500 dark:text-gray-400 transition-colors"
               title="Alternar Tema"
             >
               {resolvedTheme === 'dark' ? <Sun size={20} /> : <Moon size={20} />}

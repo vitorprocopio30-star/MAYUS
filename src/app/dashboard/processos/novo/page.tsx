@@ -105,14 +105,14 @@ export default function NovoProcessoPage() {
   };
 
   return (
-    <div className="flex-1 w-full flex flex-col min-h-screen bg-[#050505]">
+    <div className="flex-1 w-full flex flex-col min-h-screen bg-white dark:bg-[#050505]">
       {/* HEADER */}
-      <header className="flex-none bg-[#0a0a0a]/80 backdrop-blur-xl border-b border-white/5 sticky top-0 z-30">
+      <header className="flex-none bg-white dark:bg-[#0a0a0a]/80 backdrop-blur-xl border-b border-gray-200 dark:border-white/5 sticky top-0 z-30">
         <div className="px-6 py-4 flex items-center justify-between">
           <div className="flex items-center gap-4">
             <Link 
               href="/dashboard"
-              className="p-2 -ml-2 rounded-lg text-gray-400 hover:text-white hover:bg-white/5 transition-colors"
+              className="p-2 -ml-2 rounded-lg text-gray-400 hover:text-gray-900 dark:text-white hover:bg-gray-100 dark:bg-white/5 transition-colors"
             >
               <ArrowLeft size={20} />
             </Link>
@@ -127,7 +127,7 @@ export default function NovoProcessoPage() {
           <button
             onClick={handleSave}
             disabled={isLoading}
-            className="flex items-center gap-2 bg-[#3b82f6] hover:bg-[#2563eb] text-white px-5 py-2.5 rounded-lg text-sm font-semibold transition-all disabled:opacity-50 disabled:cursor-not-allowed shadow-[0_0_15px_rgba(59,130,246,0.3)]"
+            className="flex items-center gap-2 bg-[#3b82f6] hover:bg-[#2563eb] text-gray-900 dark:text-white px-5 py-2.5 rounded-lg text-sm font-semibold transition-all disabled:opacity-50 disabled:cursor-not-allowed shadow-[0_0_15px_rgba(59,130,246,0.3)]"
           >
             {isLoading ? (
               <div className="w-5 h-5 border-2 border-white/30 border-t-white rounded-full animate-spin" />
@@ -145,43 +145,43 @@ export default function NovoProcessoPage() {
           
           {/* SEC 1: Informações Básicas */}
           <section className="space-y-4">
-            <h2 className="text-lg font-bold text-white mb-6">Informações básicas</h2>
+            <h2 className="text-lg font-bold text-gray-900 dark:text-white mb-6">Informações básicas</h2>
             
             <div className="space-y-1.5">
-              <label className="text-sm font-medium text-gray-300">Nome do Processo</label>
+              <label className="text-sm font-medium text-gray-700 dark:text-gray-300">Nome do Processo</label>
               <input 
                 type="text" 
                 value={name}
                 onChange={e => setName(e.target.value)}
-                className="w-full bg-[#111] border border-white/10 text-white rounded-lg px-4 py-3 text-sm focus:outline-none focus:border-[#CCA761]/50 transition-colors"
+                className="w-full bg-gray-100 dark:bg-[#111] border border-gray-200 dark:border-white/10 text-gray-900 dark:text-white rounded-lg px-4 py-3 text-sm focus:outline-none focus:border-[#CCA761]/50 transition-colors"
                 placeholder="Ex: Comercial, Integração, etc."
               />
             </div>
 
             <div className="space-y-1.5">
-              <label className="text-sm font-medium text-gray-300">Descrição</label>
+              <label className="text-sm font-medium text-gray-700 dark:text-gray-300">Descrição</label>
               <textarea 
                 value={description}
                 onChange={e => setDescription(e.target.value)}
                 rows={4}
-                className="w-full bg-[#111] border border-white/10 text-white rounded-lg px-4 py-3 text-sm focus:outline-none focus:border-[#CCA761]/50 transition-colors resize-none"
+                className="w-full bg-gray-100 dark:bg-[#111] border border-gray-200 dark:border-white/10 text-gray-900 dark:text-white rounded-lg px-4 py-3 text-sm focus:outline-none focus:border-[#CCA761]/50 transition-colors resize-none"
                 placeholder="Descreva o propósito deste Processo..."
               />
             </div>
           </section>
 
           {/* SEC 2: Etapas / Passos */}
-          <section className="space-y-4 pt-6 mt-6 border-t border-white/5">
+          <section className="space-y-4 pt-6 mt-6 border-t border-gray-200 dark:border-white/5">
             <div className="flex items-center justify-between mb-6">
               <div className="flex items-center gap-3">
-                <h2 className="text-lg font-bold text-white">Passos</h2>
-                <div className="bg-white/10 text-white text-xs font-bold px-2 py-0.5 rounded-full">
+                <h2 className="text-lg font-bold text-gray-900 dark:text-white">Passos</h2>
+                <div className="bg-gray-100 dark:bg-white/10 text-gray-900 dark:text-white text-xs font-bold px-2 py-0.5 rounded-full">
                   {stages.length}
                 </div>
               </div>
               <button 
                 onClick={handleAddStage}
-                className="flex items-center gap-2 text-sm text-gray-400 hover:text-white transition-colors bg-white/5 hover:bg-white/10 px-3 py-1.5 rounded-md"
+                className="flex items-center gap-2 text-sm text-gray-400 hover:text-gray-900 dark:text-white transition-colors bg-gray-100 dark:bg-white/5 hover:bg-gray-100 dark:bg-white/10 px-3 py-1.5 rounded-md"
               >
                 <Plus size={16} /> Adicionar etapa
               </button>
@@ -191,7 +191,7 @@ export default function NovoProcessoPage() {
               {stages.map((stage, index) => (
                 <div 
                   key={stage.id}
-                  className="group flex flex-col md:flex-row items-start md:items-center gap-4 bg-[#111] border border-white/5 rounded-xl p-3 hover:border-white/10 transition-colors"
+                  className="group flex flex-col md:flex-row items-start md:items-center gap-4 bg-gray-100 dark:bg-[#111] border border-gray-200 dark:border-white/5 rounded-xl p-3 hover:border-gray-200 dark:border-white/10 transition-colors"
                 >
                   <div className="hidden md:flex text-gray-600 cursor-grab">
                     <GripVertical size={18} />
@@ -213,13 +213,13 @@ export default function NovoProcessoPage() {
                       type="text"
                       value={stage.name}
                       onChange={e => updateStage(stage.id, "name", e.target.value)}
-                      className="w-full bg-transparent border-b border-transparent hover:border-white/10 focus:border-[#CCA761]/50 focus:outline-none text-sm text-white py-1 px-2 font-medium transition-colors"
+                      className="w-full bg-transparent border-b border-transparent hover:border-gray-200 dark:border-white/10 focus:border-[#CCA761]/50 focus:outline-none text-sm text-gray-900 dark:text-white py-1 px-2 font-medium transition-colors"
                       placeholder="Nome da etapa"
                     />
                   </div>
 
                   {/* Ações */}
-                  <div className="flex items-center gap-4 w-full md:w-auto mt-2 md:mt-0 pt-2 md:pt-0 border-t border-white/5 md:border-t-0 pl-2">
+                  <div className="flex items-center gap-4 w-full md:w-auto mt-2 md:mt-0 pt-2 md:pt-0 border-t border-gray-200 dark:border-white/5 md:border-t-0 pl-2">
 
                     <button 
                       onClick={() => handleRemoveStage(stage.id)}
@@ -233,17 +233,17 @@ export default function NovoProcessoPage() {
               ))}
             </div>
             {stages.length === 0 && (
-              <div className="text-center py-8 bg-[#111] rounded-xl border border-dashed border-white/10 text-gray-500 text-sm">
+              <div className="text-center py-8 bg-gray-100 dark:bg-[#111] rounded-xl border border-dashed border-gray-200 dark:border-white/10 text-gray-500 text-sm">
                 Nenhuma etapa definida. Adicione pelo menos uma etapa.
               </div>
             )}
           </section>
 
           {/* SEC 3: Agentes e Equipe */}
-          <section className="space-y-4 pt-6 mt-6 border-t border-white/5">
-            <h2 className="text-lg font-bold text-white mb-4">Agentes & Equipe</h2>
+          <section className="space-y-4 pt-6 mt-6 border-t border-gray-200 dark:border-white/5">
+            <h2 className="text-lg font-bold text-gray-900 dark:text-white mb-4">Agentes & Equipe</h2>
             <div className="space-y-4">
-              <div className="bg-[#111] border border-white/5 rounded-xl p-4">
+              <div className="bg-gray-100 dark:bg-[#111] border border-gray-200 dark:border-white/5 rounded-xl p-4">
                 <p className="text-sm text-gray-400">Configure quais membros da sua equipe terão acesso a este novo Processo e as permissões de visibilidade.</p>
               </div>
             </div>

@@ -13,7 +13,7 @@ import "react-quill/dist/quill.snow.css";
 
 const ReactQuill = dynamic(() => import("react-quill"), { 
   ssr: false,
-  loading: () => <div className="h-[250px] w-full bg-white/5 animate-pulse rounded-lg" />
+  loading: () => <div className="h-[250px] w-full bg-gray-100 dark:bg-white/5 animate-pulse rounded-lg" />
 });
 
 interface CrmTaskModalProps {
@@ -186,24 +186,24 @@ export default function CrmTaskModal({
 
   return (
     <div className="fixed inset-0 z-50 flex items-center justify-center p-4">
-      <div className="absolute inset-0 bg-black/60 backdrop-blur-md" onClick={onClose} />
-      <div className="relative w-full max-w-4xl bg-[#0f0f0f] border border-white/10 rounded-2xl shadow-[0_0_50px_rgba(0,0,0,0.8)] overflow-hidden flex flex-col max-h-[95vh] animate-in fade-in zoom-in-95 duration-200">
-        <div className="flex items-center justify-between p-5 border-b border-white/5 bg-[#141414] relative">
+      <div className="absolute inset-0 bg-gray-200 dark:bg-black/60 backdrop-blur-md" onClick={onClose} />
+      <div className="relative w-full max-w-4xl bg-[#0f0f0f] border border-gray-200 dark:border-white/10 rounded-2xl shadow-[0_0_50px_rgba(0,0,0,0.8)] overflow-hidden flex flex-col max-h-[95vh] animate-in fade-in zoom-in-95 duration-200">
+        <div className="flex items-center justify-between p-5 border-b border-gray-200 dark:border-white/5 bg-gray-50 dark:bg-[#141414] relative">
            <div className="absolute top-0 left-0 w-full h-[2px] bg-gradient-to-r from-transparent via-[#CCA761] to-transparent opacity-50" />
-           <h2 className="text-lg font-bold text-white flex items-center gap-2">
+           <h2 className="text-lg font-bold text-gray-900 dark:text-white flex items-center gap-2">
              {editingTask ? "Editar Tarefa" : "Nova Tarefa"}
            </h2>
            <div className="flex items-center gap-2">
              {editingTask && (
                <button 
                  onClick={handleDeleteTask}
-                 className="text-gray-500 hover:text-red-400 p-2 rounded-lg hover:bg-white/5 transition-colors"
+                 className="text-gray-500 hover:text-red-400 p-2 rounded-lg hover:bg-gray-100 dark:bg-white/5 transition-colors"
                  title="Excluir Tarefa"
                >
                  <Trash2 size={20} />
                </button>
              )}
-             <button onClick={onClose} className="text-gray-500 hover:text-white bg-white/5 hover:bg-white/10 p-2 rounded-lg transition-colors">
+             <button onClick={onClose} className="text-gray-500 hover:text-gray-900 dark:text-white bg-gray-100 dark:bg-white/5 hover:bg-gray-100 dark:bg-white/10 p-2 rounded-lg transition-colors">
                <X size={20} />
              </button>
            </div>
@@ -216,7 +216,7 @@ export default function CrmTaskModal({
                   <input 
                     type="text" 
                     value={taskTitle} onChange={e => setTaskTitle(e.target.value)}
-                    className="w-full bg-[#1a1a1a] border border-[#2a2a2a] text-white rounded-lg px-4 py-3 text-lg font-semibold focus:outline-none focus:border-[#CCA761]/50 placeholder-gray-700 transition-colors"
+                    className="w-full bg-gray-100 dark:bg-[#1a1a1a] border border-[#2a2a2a] text-gray-900 dark:text-white rounded-lg px-4 py-3 text-lg font-semibold focus:outline-none focus:border-[#CCA761]/50 placeholder-gray-700 transition-colors"
                     placeholder="Ex: Empresa X - Implantação de Software"
                     autoFocus
                   />
@@ -230,14 +230,14 @@ export default function CrmTaskModal({
                     <input 
                       type="text" 
                       value={taskPhone} onChange={e => setTaskPhone(e.target.value)}
-                      className="flex-1 bg-[#1a1a1a] border border-[#2a2a2a] text-white rounded-lg px-4 py-3 text-sm focus:outline-none focus:border-[#CCA761]/50 placeholder-gray-700 transition-colors"
+                      className="flex-1 bg-gray-100 dark:bg-[#1a1a1a] border border-[#2a2a2a] text-gray-900 dark:text-white rounded-lg px-4 py-3 text-sm focus:outline-none focus:border-[#CCA761]/50 placeholder-gray-700 transition-colors"
                       placeholder="Ex: 11999999999"
                     />
                     {taskPhone && (
                       <a 
                         href={`https://wa.me/${taskPhone.replace(/\D/g, "")}`} 
                         target="_blank" rel="noopener noreferrer"
-                        className="bg-[#25D366] hover:bg-[#20bd5a] text-white p-3 rounded-lg transition-colors flex items-center justify-center shadow-[0_0_15px_rgba(37,211,102,0.3)] shrink-0"
+                        className="bg-[#25D366] hover:bg-[#20bd5a] text-gray-900 dark:text-white p-3 rounded-lg transition-colors flex items-center justify-center shadow-[0_0_15px_rgba(37,211,102,0.3)] shrink-0"
                         title="Abrir no WhatsApp"
                       >
                         <MessageCircle size={20} />
@@ -262,7 +262,7 @@ export default function CrmTaskModal({
                 </div>
               </div>
 
-              <div className="space-y-6 lg:border-l lg:border-white/5 lg:pl-6">
+              <div className="space-y-6 lg:border-l lg:border-gray-200 dark:border-white/5 lg:pl-6">
                  <div className="space-y-1.5">
                   <label className="text-xs font-bold text-gray-400 uppercase tracking-widest flex items-center gap-2">
                     <CheckCircle2 size={14} /> Etapa Atual
@@ -270,7 +270,7 @@ export default function CrmTaskModal({
                   <div className="relative">
                     <select 
                       value={taskStageId} onChange={e => setTaskStageId(e.target.value)}
-                      className="w-full bg-[#1a1a1a] border border-[#2a2a2a] text-white rounded-lg px-4 py-3 text-sm focus:outline-none focus:border-[#CCA761]/50 transition-colors appearance-none cursor-pointer"
+                      className="w-full bg-gray-100 dark:bg-[#1a1a1a] border border-[#2a2a2a] text-gray-900 dark:text-white rounded-lg px-4 py-3 text-sm focus:outline-none focus:border-[#CCA761]/50 transition-colors appearance-none cursor-pointer"
                     >
                       {stages.map(s => (
                         <option key={s.id} value={s.id}>{s.name}</option>
@@ -289,7 +289,7 @@ export default function CrmTaskModal({
                   <select 
                     value={taskAssignedTo || ""} 
                     onChange={e => setTaskAssignedTo(e.target.value || null)}
-                    className="w-full bg-[#1a1a1a] border border-[#2a2a2a] text-white rounded-lg px-4 py-3 text-sm focus:outline-none focus:border-[#CCA761]/50 transition-colors appearance-none cursor-pointer"
+                    className="w-full bg-gray-100 dark:bg-[#1a1a1a] border border-[#2a2a2a] text-gray-900 dark:text-white rounded-lg px-4 py-3 text-sm focus:outline-none focus:border-[#CCA761]/50 transition-colors appearance-none cursor-pointer"
                   >
                     <option value="">Não atribuído</option>
                     {agents.map(agent => (
@@ -298,14 +298,14 @@ export default function CrmTaskModal({
                   </select>
                 </div>
 
-                <div className="space-y-1.5 pt-2 border-t border-white/5">
+                <div className="space-y-1.5 pt-2 border-t border-gray-200 dark:border-white/5">
                   <label className="text-xs font-bold text-[#CCA761] uppercase tracking-widest flex items-center gap-2">
                     <Building2 size={14} /> Departamento
                   </label>
                   <select 
                     value={taskDepartmentId || ""} 
                     onChange={e => setTaskDepartmentId(e.target.value || null)}
-                    className="w-full bg-[#1a1a1a] border border-[#2a2a2a] text-white rounded-lg px-4 py-3 text-sm focus:outline-none focus:border-[#CCA761]/50 transition-colors appearance-none cursor-pointer"
+                    className="w-full bg-gray-100 dark:bg-[#1a1a1a] border border-[#2a2a2a] text-gray-900 dark:text-white rounded-lg px-4 py-3 text-sm focus:outline-none focus:border-[#CCA761]/50 transition-colors appearance-none cursor-pointer"
                   >
                     <option value="">Não atribuído</option>
                     {departments.map(dept => (
@@ -315,14 +315,14 @@ export default function CrmTaskModal({
                 </div>
 
                 {pipeline?.sectors && pipeline.sectors.length > 0 && (
-                  <div className="space-y-1.5 flex flex-col pt-2 border-t border-white/5">
+                  <div className="space-y-1.5 flex flex-col pt-2 border-t border-gray-200 dark:border-white/5">
                     <label className="text-xs font-bold text-blue-400 uppercase tracking-widest flex items-center gap-2">
                       <ArrowRight size={14} /> Atribuir a um Setor
                     </label>
                     <div className="relative">
                       <select 
                         value={taskSector} onChange={e => setTaskSector(e.target.value)}
-                        className="w-full bg-[#1a1a1a] border border-[#2a2a2a] text-white rounded-lg px-4 py-3 text-sm focus:outline-none focus:border-blue-500/50 transition-colors appearance-none cursor-pointer"
+                        className="w-full bg-gray-100 dark:bg-[#1a1a1a] border border-[#2a2a2a] text-gray-900 dark:text-white rounded-lg px-4 py-3 text-sm focus:outline-none focus:border-blue-500/50 transition-colors appearance-none cursor-pointer"
                       >
                         <option value="">Não atribuir (Padrão)</option>
                         {pipeline.sectors.map(s => {
@@ -337,7 +337,7 @@ export default function CrmTaskModal({
                   </div>
                 )}
 
-                <div className="space-y-1.5 flex flex-col pt-2 border-t border-white/5">
+                <div className="space-y-1.5 flex flex-col pt-2 border-t border-gray-200 dark:border-white/5">
                   <div className="flex flex-col gap-1 mb-1">
                     <label className="text-xs font-bold text-gray-400 uppercase tracking-widest flex items-center gap-2">
                       <TagIcon size={14} /> Etiquetas
@@ -345,7 +345,7 @@ export default function CrmTaskModal({
                   </div>
                   
                   {/* Selector de Etiquetas */}
-                  <div className="flex flex-wrap gap-2 mb-2 p-3 bg-[#1a1a1a] border border-[#2a2a2a] rounded-lg min-h-[50px]">
+                  <div className="flex flex-wrap gap-2 mb-2 p-3 bg-gray-100 dark:bg-[#1a1a1a] border border-[#2a2a2a] rounded-lg min-h-[50px]">
                     {pipeline?.tags && pipeline.tags.length > 0 ? (
                       pipeline.tags.map(tag => {
                         const [name, color] = tag.includes('|') ? tag.split('|') : [tag, '#CCA761'];
@@ -419,10 +419,10 @@ export default function CrmTaskModal({
             </div>
 
             
-        <div className="p-5 border-t border-white/5 bg-[#141414] flex items-center justify-end gap-3">
+        <div className="p-5 border-t border-gray-200 dark:border-white/5 bg-gray-50 dark:bg-[#141414] flex items-center justify-end gap-3">
           <button 
             onClick={onClose} 
-            className="text-sm font-semibold text-gray-400 hover:text-white px-5 py-2.5 hover:bg-white/5 rounded-lg transition-colors"
+            className="text-sm font-semibold text-gray-400 hover:text-gray-900 dark:text-white px-5 py-2.5 hover:bg-gray-100 dark:bg-white/5 rounded-lg transition-colors"
             disabled={isSaving}
           >
             Descartar

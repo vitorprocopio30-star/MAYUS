@@ -2,7 +2,8 @@
 
 import { useState, useEffect, useCallback } from "react";
 import { Cormorant_Garamond, Montserrat } from "next/font/google";
-import { createClient } from "@/lib/supabase/client";
+import { fetchSafeIntegrations } from "@/lib/integrations/fetch-safe-integrations";
+import { saveTenantIntegration } from "@/lib/integrations/save-integration";
 import { useUserProfile } from "@/hooks/useUserProfile";
 import { toast } from "sonner";
 import {
@@ -20,10 +21,13 @@ interface Integration {
   id?: string;
   tenant_id?: string;
   provider: string;
-  api_key: string | null;
-  webhook_secret: string | null;
   webhook_url?: string | null;
   status: "connected" | "disconnected" | "error" | null;
+  instance_name?: string | null;
+  display_name?: string | null;
+  updated_at?: string | null;
+  has_api_key: boolean;
+  has_webhook_secret: boolean;
 }
 
 interface IntegrationDef {
@@ -166,17 +170,11 @@ function StatusBadge({ status }: { status: string | null | undefined }) {
       </span>
     );
   return (
-    <span className="flex items-center gap-1.5 text-[10px] font-black uppercase tracking-widest text-gray-500 bg-white/5 border border-white/10 px-3 py-1 rounded-full">
+    <span className="flex items-center gap-1.5 text-[10px] font-black uppercase tracking-widest text-gray-500 bg-gray-100 dark:bg-white/5 border border-gray-200 dark:border-white/10 px-3 py-1 rounded-full">
       <span className="w-1.5 h-1.5 rounded-full bg-gray-600" />
       Desconectado
     </span>
   );
-}
-
-// ─── Máscara de Chave (Segurança) ─────────────────────────────────────────────
-function maskKey(key: string | null): string {
-  if (!key || key.length < 8) return "••••••••";
-  return key.substring(0, 6) + "••••••••" + key.slice(-4);
 }
 
 // ─── Card de Integração ───────────────────────────────────────────────────────
@@ -198,7 +196,7 @@ function IntegrationCard({
   const [isTesting, setIsTesting] = useState(false);
 
   const isConnected = integration?.status === "connected";
-  const hasKey = !!integration?.api_key;
+  const hasKey = !!integration?.has_api_key;
 
   const handleSave = async () => {
     if (!tempKey.trim()) return toast.error("Insira uma chave de API válida.");
@@ -210,7 +208,7 @@ function IntegrationCard({
   };
 
   const handleTest = async () => {
-    if (!integration?.api_key) return toast.error("Configure a integração primeiro.");
+    if (!integration?.has_api_key) return toast.error("Configure a integração primeiro.");
     setIsTesting(true);
     const toastId = toast.loading(`Testando conexão com ${def.label}...`);
     // Simula ping — em produção, chamar a API real
@@ -226,14 +224,14 @@ function IntegrationCard({
 
   if (def.badgeSoon) {
     return (
-      <div className="relative bg-[#0c0c0c] border border-white/5 p-6 rounded-2xl opacity-60">
+      <div className="relative bg-[#0c0c0c] border border-gray-200 dark:border-white/5 p-6 rounded-2xl opacity-60">
         <div className="flex items-center gap-4">
-          <div className={`w-12 h-12 ${def.iconBg} rounded-xl flex items-center justify-center border border-white/5`}>
+          <div className={`w-12 h-12 ${def.iconBg} rounded-xl flex items-center justify-center border border-gray-200 dark:border-white/5`}>
             <def.icon size={22} className={def.iconColor} />
           </div>
           <div className="flex-1">
             <div className="flex items-center gap-3 mb-1">
-              <h3 className="text-sm font-bold text-white">{def.label}</h3>
+              <h3 className="text-sm font-bold text-gray-900 dark:text-white">{def.label}</h3>
               <span className="text-[9px] font-black uppercase tracking-widest text-amber-400 bg-amber-500/10 border border-amber-500/20 px-2 py-0.5 rounded-full flex items-center gap-1">
                 <Clock size={9} /> Em breve
               </span>
@@ -250,7 +248,7 @@ function IntegrationCard({
       className={`relative bg-[#0c0c0c] border rounded-2xl transition-all duration-300 overflow-hidden ${
         isConnected
           ? "border-[#4ade80]/20 shadow-[0_0_30px_rgba(74,222,128,0.04)]"
-          : "border-white/5 hover:border-white/10"
+          : "border-gray-200 dark:border-white/5 hover:border-gray-200 dark:border-white/10"
       }`}
     >
       {/* Glow de fundo quando conectado */}
@@ -264,14 +262,14 @@ function IntegrationCard({
       {/* ─── Header do Card ─── */}
       <div className="flex items-center gap-4 p-6">
         <div
-          className={`w-12 h-12 ${def.iconBg} rounded-xl flex items-center justify-center border border-white/5 shrink-0`}
+          className={`w-12 h-12 ${def.iconBg} rounded-xl flex items-center justify-center border border-gray-200 dark:border-white/5 shrink-0`}
         >
           <def.icon size={22} className={def.iconColor} />
         </div>
 
         <div className="flex-1 min-w-0">
           <div className="flex items-center gap-3 mb-1">
-            <h3 className="text-sm font-bold text-white">{def.label}</h3>
+            <h3 className="text-sm font-bold text-gray-900 dark:text-white">{def.label}</h3>
             <StatusBadge status={integration?.status} />
           </div>
           <p className="text-xs text-gray-500 leading-relaxed">{def.tagline}</p>
@@ -281,7 +279,7 @@ function IntegrationCard({
           onClick={() => setIsExpanded((v) => !v)}
           className={`p-2 rounded-xl border transition-all shrink-0 ${
             isExpanded
-              ? "bg-white/5 border-white/10 text-white"
+              ? "bg-gray-100 dark:bg-white/5 border-gray-200 dark:border-white/10 text-gray-900 dark:text-white"
               : "bg-transparent border-transparent text-gray-600 hover:text-gray-400"
           }`}
         >
@@ -291,7 +289,7 @@ function IntegrationCard({
 
       {/* ─── Painel de Configuração Expandido ─── */}
       {isExpanded && (
-        <div className="border-t border-white/5 px-6 pb-6 pt-5 space-y-5 animate-in fade-in slide-in-from-top-2 duration-200">
+        <div className="border-t border-gray-200 dark:border-white/5 px-6 pb-6 pt-5 space-y-5 animate-in fade-in slide-in-from-top-2 duration-200">
 
           {/* Campo de API Key */}
           <div className="space-y-2">
@@ -300,13 +298,12 @@ function IntegrationCard({
             </label>
 
             {hasKey && !tempKey ? (
-              // Chave já salva — exibir mascarada com opção de trocar
-              <div className="flex items-center gap-3 bg-black/40 border border-white/5 rounded-xl px-4 py-3">
+              <div className="flex items-center gap-3 bg-gray-200 dark:bg-black/40 border border-gray-200 dark:border-white/5 rounded-xl px-4 py-3">
                 <ShieldCheck size={16} className="text-[#4ade80] shrink-0" />
-                <span className="font-mono text-sm text-gray-300 flex-1">{maskKey(integration?.api_key || "")}</span>
+                <span className="text-sm text-gray-700 dark:text-gray-300 flex-1">Chave protegida no backend do escritório. Informe uma nova apenas se quiser substituir.</span>
                 <button
                   onClick={() => setTempKey(" ")} // activa o modo edição
-                  className="text-[10px] font-black uppercase tracking-widest text-[#CCA761] hover:text-white transition-colors"
+                  className="text-[10px] font-black uppercase tracking-widest text-[#CCA761] hover:text-gray-900 dark:text-white transition-colors"
                 >
                   Trocar
                 </button>
@@ -320,11 +317,11 @@ function IntegrationCard({
                   onChange={(e) => setTempKey(e.target.value)}
                   placeholder={def.apiKeyPlaceholder}
                   autoComplete="off"
-                  className="w-full bg-black/40 border-2 border-white/10 rounded-xl px-4 py-3 pr-12 text-sm font-mono text-white placeholder:text-gray-700 focus:border-[#CCA761] outline-none transition-all"
+                  className="w-full bg-gray-200 dark:bg-black/40 border-2 border-gray-200 dark:border-white/10 rounded-xl px-4 py-3 pr-12 text-sm font-mono text-gray-900 dark:text-white placeholder:text-gray-700 focus:border-[#CCA761] outline-none transition-all"
                 />
                 <button
                   onClick={() => setShowKey((v) => !v)}
-                  className="absolute inset-y-0 right-4 flex items-center text-gray-600 hover:text-white transition-colors"
+                  className="absolute inset-y-0 right-4 flex items-center text-gray-600 hover:text-gray-900 dark:text-white transition-colors"
                 >
                   {showKey ? <EyeOff size={16} /> : <Eye size={16} />}
                 </button>
@@ -338,11 +335,11 @@ function IntegrationCard({
               <Webhook size={12} />
               URL do Webhook (cole no painel {def.label})
             </label>
-            <div className="flex items-center gap-3 bg-[#0a0a0a] border border-white/5 rounded-xl px-4 py-3">
+            <div className="flex items-center gap-3 bg-white dark:bg-[#0a0a0a] border border-gray-200 dark:border-white/5 rounded-xl px-4 py-3">
               <code className="text-xs text-[#CCA761] font-mono flex-1 truncate">{webhookUrl}</code>
               <button
                 onClick={copyWebhookUrl}
-                className="text-gray-600 hover:text-white transition-colors shrink-0"
+                className="text-gray-600 hover:text-gray-900 dark:text-white transition-colors shrink-0"
               >
                 <Copy size={14} />
               </button>
@@ -353,14 +350,14 @@ function IntegrationCard({
           </div>
 
           {/* Ações */}
-          <div className="flex items-center justify-between pt-2 border-t border-white/5">
+          <div className="flex items-center justify-between pt-2 border-t border-gray-200 dark:border-white/5">
             <button
               onClick={handleTest}
               disabled={isTesting || !isConnected}
               className={`flex items-center gap-2 text-[11px] font-bold px-4 py-2 rounded-xl border transition-all ${
                 isConnected
-                  ? "border-white/10 text-gray-300 hover:border-white/20 hover:text-white"
-                  : "border-white/5 text-gray-700 cursor-not-allowed"
+                  ? "border-gray-200 dark:border-white/10 text-gray-700 dark:text-gray-300 hover:border-gray-300 dark:border-white/20 hover:text-gray-900 dark:text-white"
+                  : "border-gray-200 dark:border-white/5 text-gray-700 cursor-not-allowed"
               }`}
             >
               <FlaskConical size={14} className={isTesting ? "animate-pulse" : ""} />
@@ -387,22 +384,22 @@ function IntegrationCard({
 // ─── Componente Webhook Interno ───────────────────────────────────────────────
 function WebhookCard({ title, desc, icon: Icon, url, onCopy }: any) {
   return (
-    <div className="bg-[#0c0c0c] border border-white/5 hover:border-white/10 transition-all p-6 rounded-2xl">
+    <div className="bg-[#0c0c0c] border border-gray-200 dark:border-white/5 hover:border-gray-200 dark:border-white/10 transition-all p-6 rounded-2xl">
       <div className="flex items-center gap-4">
         <div className="w-12 h-12 bg-[#CCA761]/10 rounded-xl flex items-center justify-center border border-[#CCA761]/20 shrink-0">
           <Icon size={20} className="text-[#CCA761]" />
         </div>
         <div className="flex-1 min-w-0">
           <div className="flex items-center justify-between mb-1">
-            <h3 className="text-sm font-bold text-white">{title}</h3>
-            <span className="text-[9px] font-black uppercase tracking-widest text-gray-500 bg-white/5 border border-white/5 px-2 py-0.5 rounded-full">
+            <h3 className="text-sm font-bold text-gray-900 dark:text-white">{title}</h3>
+            <span className="text-[9px] font-black uppercase tracking-widest text-gray-500 bg-gray-100 dark:bg-white/5 border border-gray-200 dark:border-white/5 px-2 py-0.5 rounded-full">
               Ativo
             </span>
           </div>
           <p className="text-xs text-gray-500 leading-relaxed mb-3">{desc}</p>
-          <div className="flex items-center gap-2 bg-black/40 border border-white/5 rounded-lg px-3 py-2">
+          <div className="flex items-center gap-2 bg-gray-200 dark:bg-black/40 border border-gray-200 dark:border-white/5 rounded-lg px-3 py-2">
             <code className="text-[11px] text-[#CCA761]/80 font-mono flex-1 truncate">{url}</code>
-            <button onClick={onCopy} className="text-gray-600 hover:text-white transition-colors shrink-0">
+            <button onClick={onCopy} className="text-gray-600 hover:text-gray-900 dark:text-white transition-colors shrink-0">
               <Copy size={13} />
             </button>
           </div>
@@ -415,9 +412,9 @@ function WebhookCard({ title, desc, icon: Icon, url, onCopy }: any) {
 // ─── Página Principal ──────────────────────────────────────────────────────────
 export default function IntegracoesPage() {
   const { profile } = useUserProfile();
-  const supabase = createClient();
   const [integrations, setIntegrations] = useState<Integration[]>([]);
   const [isLoading, setIsLoading] = useState(true);
+  const tenantId = profile?.tenant_id || "";
 
   // URL base do webhook
   const BASE_URL = typeof window !== "undefined" ? window.location.origin : "";
@@ -426,14 +423,15 @@ export default function IntegracoesPage() {
   const loadIntegrations = useCallback(async () => {
     if (!profile?.tenant_id) return;
     setIsLoading(true);
-    const { data, error } = await supabase
-      .from("tenant_integrations")
-      .select("id, provider, api_key, webhook_secret, status")
-      .eq("tenant_id", profile.tenant_id);
-
-    if (!error && data) setIntegrations(data as Integration[]);
-    setIsLoading(false);
-  }, [profile?.tenant_id, supabase]);
+    try {
+      const data = await fetchSafeIntegrations();
+      setIntegrations(data as Integration[]);
+    } catch (error: any) {
+      toast.error(error?.message || "Nao foi possivel carregar as integracoes.");
+    } finally {
+      setIsLoading(false);
+    }
+  }, [profile?.tenant_id]);
 
   useEffect(() => {
     loadIntegrations();
@@ -449,20 +447,13 @@ export default function IntegracoesPage() {
     const webhookSecret = crypto.randomUUID().replace(/-/g, "");
 
     try {
-      const { error } = await supabase.from("tenant_integrations").upsert(
-        {
-          tenant_id: profile.tenant_id,
-          provider,
-          api_key: apiKey,
-          webhook_secret: webhookSecret,
-          status: "connected",
-          display_name: CATALOG.find((c) => c.id === provider)?.label || provider,
-          updated_at: new Date().toISOString(),
-        },
-        { onConflict: "tenant_id,provider" }
-      );
-
-      if (error) throw error;
+      await saveTenantIntegration({
+        provider,
+        apiKey,
+        webhookSecret,
+        status: "connected",
+        displayName: CATALOG.find((c) => c.id === provider)?.label || provider,
+      });
       toast.success(`✅ ${provider} conectado com sucesso!`);
       await loadIntegrations();
     } catch (err: any) {
@@ -477,7 +468,7 @@ export default function IntegracoesPage() {
 
   return (
     <div
-      className={`flex-1 overflow-auto bg-[#050505] min-h-screen text-white p-6 sm:p-10 hide-scrollbar ${montserrat.className}`}
+      className={`flex-1 overflow-auto bg-white dark:bg-[#050505] min-h-screen text-gray-900 dark:text-white p-6 sm:p-10 hide-scrollbar ${montserrat.className}`}
     >
       <div className="max-w-4xl mx-auto space-y-12 animate-in fade-in slide-in-from-bottom-4 duration-500">
 
@@ -487,7 +478,7 @@ export default function IntegracoesPage() {
             <Plug size={28} className="text-[#CCA761]" />
           </div>
           <div>
-            <h1 className={`text-3xl font-bold tracking-wide text-white ${cormorant.className} italic`}>
+            <h1 className={`text-3xl font-bold tracking-wide text-gray-900 dark:text-white ${cormorant.className} italic`}>
               Integrações &{" "}
               <span className="text-[#CCA761]">Conexões Externas</span>
             </h1>
@@ -495,7 +486,7 @@ export default function IntegracoesPage() {
               Conecte suas ferramentas e transforme o MAYUS em um centro de comando autônomo.
               <br />
               <span className="text-[#4ade80] font-semibold text-[11px]">
-                🔒 Suas chaves de API são criptografadas e jamais expostas após salvas.
+                🔒 Suas chaves ficam protegidas no backend e não são exibidas após salvas.
               </span>
             </p>
           </div>
@@ -503,7 +494,7 @@ export default function IntegracoesPage() {
 
         {/* ─── SEÇÃO: INTELIGÊNCIA NEURAL ─── */}
         <section className="space-y-4">
-          <div className="flex items-center gap-3 pb-3 border-b border-white/5">
+          <div className="flex items-center gap-3 pb-3 border-b border-gray-200 dark:border-white/5">
             <div className="w-7 h-7 bg-[#00a67e]/10 rounded-lg flex items-center justify-center border border-[#00a67e]/20">
               <BrainCircuit size={14} className="text-[#00a67e]" />
             </div>
@@ -518,7 +509,7 @@ export default function IntegracoesPage() {
                 key={def.id}
                 def={def}
                 integration={getIntegration(def.id)}
-                webhookUrl={`${GATEWAY_URL}?provider=${def.id}`}
+                webhookUrl={`${GATEWAY_URL}?provider=${def.id}&tenant_id=${tenantId}`}
                 onSave={handleSave}
               />
             ))}
@@ -527,7 +518,7 @@ export default function IntegracoesPage() {
 
         {/* ─── SEÇÃO: COMUNICAÇÃO ─── */}
         <section className="space-y-4">
-          <div className="flex items-center gap-3 pb-3 border-b border-white/5">
+          <div className="flex items-center gap-3 pb-3 border-b border-gray-200 dark:border-white/5">
             <div className="w-7 h-7 bg-[#25d366]/10 rounded-lg flex items-center justify-center border border-[#25d366]/20">
               <MessageSquare size={14} className="text-[#25d366]" />
             </div>
@@ -542,7 +533,7 @@ export default function IntegracoesPage() {
                 key={def.id}
                 def={def}
                 integration={getIntegration(def.id)}
-                webhookUrl={`${GATEWAY_URL}?provider=${def.id}`}
+                webhookUrl={`${GATEWAY_URL}?provider=${def.id}&tenant_id=${tenantId}`}
                 onSave={handleSave}
               />
             ))}
@@ -551,7 +542,7 @@ export default function IntegracoesPage() {
 
         {/* ─── SEÇÃO: BI & GESTÃO ─── */}
         <section className="space-y-4">
-          <div className="flex items-center gap-3 pb-3 border-b border-white/5">
+          <div className="flex items-center gap-3 pb-3 border-b border-gray-200 dark:border-white/5">
             <div className="w-7 h-7 bg-[#CCA761]/10 rounded-lg flex items-center justify-center border border-[#CCA761]/20">
               <Zap size={14} className="text-[#CCA761]" />
             </div>
@@ -566,7 +557,7 @@ export default function IntegracoesPage() {
                 key={def.id}
                 def={def}
                 integration={getIntegration(def.id)}
-                webhookUrl={`${GATEWAY_URL}?provider=${def.id}`}
+                webhookUrl={`${GATEWAY_URL}?provider=${def.id}&tenant_id=${tenantId}`}
                 onSave={handleSave}
               />
             ))}
@@ -575,7 +566,7 @@ export default function IntegracoesPage() {
 
         {/* ─── SEÇÃO: WEBHOOKS INTERNOS ─── */}
         <section className="space-y-4">
-          <div className="flex items-center gap-3 pb-3 border-b border-white/5">
+          <div className="flex items-center gap-3 pb-3 border-b border-gray-200 dark:border-white/5">
             <div className="w-7 h-7 bg-[#818cf8]/10 rounded-lg flex items-center justify-center border border-[#818cf8]/20">
               <Webhook size={14} className="text-[#818cf8]" />
             </div>
@@ -589,9 +580,9 @@ export default function IntegracoesPage() {
               title="Financeiro (Asaas)"
               desc="Cole esta URL no painel do Asaas em Integrações > Webhooks."
               icon={CreditCard}
-              url={`${GATEWAY_URL}?provider=asaas`}
+              url={`${GATEWAY_URL}?provider=asaas&tenant_id=${tenantId}`}
               onCopy={() => {
-                navigator.clipboard.writeText(`${GATEWAY_URL}?provider=asaas`);
+                navigator.clipboard.writeText(`${GATEWAY_URL}?provider=asaas&tenant_id=${tenantId}`);
                 toast.success("URL copiada!");
               }}
             />
@@ -599,9 +590,9 @@ export default function IntegracoesPage() {
               title="Jurídico (ZapSign)"
               desc="Cole esta URL na ZapSign em Configurações > API > Webhooks."
               icon={FileCheck}
-              url={`${GATEWAY_URL}?provider=zapsign`}
+              url={`${GATEWAY_URL}?provider=zapsign&tenant_id=${tenantId}`}
               onCopy={() => {
-                navigator.clipboard.writeText(`${GATEWAY_URL}?provider=zapsign`);
+                navigator.clipboard.writeText(`${GATEWAY_URL}?provider=zapsign&tenant_id=${tenantId}`);
                 toast.success("URL copiada!");
               }}
             />
@@ -611,7 +602,7 @@ export default function IntegracoesPage() {
         {/* ─── SEÇÃO: EM BREVE ─── */}
         {soonIntegrations.length > 0 && (
           <section className="space-y-4">
-            <div className="flex items-center gap-3 pb-3 border-b border-white/5">
+            <div className="flex items-center gap-3 pb-3 border-b border-gray-200 dark:border-white/5">
               <div className="w-7 h-7 bg-amber-500/10 rounded-lg flex items-center justify-center border border-amber-500/20">
                 <Clock size={14} className="text-amber-500" />
               </div>

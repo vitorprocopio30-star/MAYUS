@@ -120,13 +120,13 @@ export default function SecuritySettingsPage() {
       </div>
 
       {/* Caixa Principal */}
-      <div className="bg-[#111111] border border-[#2a2a2a] rounded-xl p-6 md:p-8 shadow-2xl relative overflow-hidden">
+      <div className="bg-gray-100 dark:bg-[#111111] border border-[#2a2a2a] rounded-xl p-6 md:p-8 shadow-2xl relative overflow-hidden">
         {/* Glow de Fundo */}
         <div className="absolute top-0 right-0 p-32 bg-[#CCA761]/5 rounded-full blur-[100px] pointer-events-none" />
 
         <div className="relative z-10">
           <div className="flex items-center gap-4 mb-8 pb-6 border-b border-[#222]">
-            <div className={`p-4 rounded-full ${isFullyEnrolled ? 'bg-green-900/30 text-green-400' : 'bg-[#222] text-gray-400'}`}>
+            <div className={`p-4 rounded-full ${isFullyEnrolled ? 'bg-green-900/30 text-green-400' : 'bg-gray-100 dark:bg-[#222] text-gray-400'}`}>
               <Smartphone className="w-6 h-6" />
             </div>
             <div>
@@ -170,7 +170,7 @@ export default function SecuritySettingsPage() {
           {/* Estado 2: Botão para Iniciar as Configurações */}
           {!isFullyEnrolled && !qrCodeData && (
             <div className="space-y-6 flex flex-col items-start">
-               <p className="text-gray-300 text-sm max-w-2xl leading-relaxed">
+               <p className="text-gray-700 dark:text-gray-300 text-sm max-w-2xl leading-relaxed">
                  O 2FA exibe um código numérico aletório que expira a cada 30 segundos usando os aplicativos oficiais <strong>Google Authenticator</strong>, Authy ou Microsoft Authenticator. 
                </p>
 
@@ -207,7 +207,7 @@ export default function SecuritySettingsPage() {
                   <div className="flex gap-3">
                     <input
                       type="text"
-                      className="bg-[#0a0a0a] border border-[#333] rounded-lg px-4 py-3 text-white tracking-[0.4em] font-mono text-xl w-36 text-center focus:border-[#CCA761] focus:ring-1 focus:ring-[#CCA761] transition-all"
+                      className="bg-white dark:bg-[#0a0a0a] border border-[#333] rounded-lg px-4 py-3 text-gray-900 dark:text-white tracking-[0.4em] font-mono text-xl w-36 text-center focus:border-[#CCA761] focus:ring-1 focus:ring-[#CCA761] transition-all"
                       placeholder="000000"
                       maxLength={6}
                       value={verifyCode}
@@ -216,7 +216,7 @@ export default function SecuritySettingsPage() {
                     <button
                       onClick={handleVerifyEnrollment}
                       disabled={isLoading || verifyCode.length !== 6}
-                      className="bg-green-600 hover:bg-green-500 disabled:bg-[#333] disabled:text-gray-500 text-white font-medium px-6 py-3 rounded-lg transition-all"
+                      className="bg-green-600 hover:bg-green-500 disabled:bg-[#333] disabled:text-gray-500 text-gray-900 dark:text-white font-medium px-6 py-3 rounded-lg transition-all"
                     >
                       Verificar Par
                     </button>
@@ -225,7 +225,7 @@ export default function SecuritySettingsPage() {
 
                 <div className="mt-8 pt-4 border-t border-[#333]">
                   <p className="text-xs text-gray-500 mb-1">Chave Manual Secreta (Caso sua Câmera falhe)</p>
-                  <code className="text-[10px] text-[#CCA761] bg-[#111] px-2 py-1 rounded select-all tracking-wider font-mono">
+                  <code className="text-[10px] text-[#CCA761] bg-gray-100 dark:bg-[#111] px-2 py-1 rounded select-all tracking-wider font-mono">
                     {qrCodeData.secret}
                   </code>
 
@@ -235,7 +235,7 @@ export default function SecuritySettingsPage() {
                            setQrCodeData(null); 
                            setVerifyCode('');
                          }} 
-                         className="text-xs text-gray-400 hover:text-white underline-offset-4 hover:underline"
+                         className="text-xs text-gray-400 hover:text-gray-900 dark:text-white underline-offset-4 hover:underline"
                       >
                          Cancelar Cadastro
                       </button>

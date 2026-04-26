@@ -177,21 +177,21 @@ export default function PerfilPage() {
           <User className="text-[#CCA761]" size={24} />
         </div>
         <div>
-          <h1 className={`text-3xl font-bold ${cormorant.className} italic text-white`}>Meu Perfil</h1>
+          <h1 className={`text-3xl font-bold ${cormorant.className} italic text-gray-900 dark:text-white`}>Meu Perfil</h1>
           <p className="text-xs text-gray-500 uppercase tracking-widest font-black">Atualize sua foto e seus dados pessoais</p>
         </div>
       </div>
 
-      <div className="rounded-2xl border border-white/10 bg-[#0a0a0a] p-6 space-y-6">
+      <div className="rounded-2xl border border-gray-200 dark:border-white/10 bg-white dark:bg-[#0a0a0a] p-6 space-y-6">
         <div className="flex items-center gap-4">
-          <label className="w-24 h-24 rounded-2xl border border-white/10 bg-[#111] cursor-pointer overflow-hidden relative flex items-center justify-center">
+          <label className="w-24 h-24 rounded-2xl border border-gray-200 dark:border-white/10 bg-gray-100 dark:bg-[#111] cursor-pointer overflow-hidden relative flex items-center justify-center">
             {avatarUrl ? (
               <img src={avatarUrl} alt="Foto de perfil" className="w-full h-full object-cover" />
             ) : (
               <User size={24} className="text-gray-500" />
             )}
             {isUploading && (
-              <div className="absolute inset-0 bg-black/60 flex items-center justify-center">
+              <div className="absolute inset-0 bg-gray-200 dark:bg-black/60 flex items-center justify-center">
                 <Loader2 size={18} className="animate-spin text-[#CCA761]" />
               </div>
             )}
@@ -203,7 +203,7 @@ export default function PerfilPage() {
             />
           </label>
           <div>
-            <p className="text-sm text-white font-semibold">Foto do usuario</p>
+            <p className="text-sm text-gray-900 dark:text-white font-semibold">Foto do usuario</p>
             <p className="text-xs text-gray-500">Clique na foto para alterar.</p>
             <p className="text-[10px] text-gray-600 mt-1 uppercase tracking-wider">PNG, JPG ou WEBP ate 12MB</p>
           </div>
@@ -214,7 +214,7 @@ export default function PerfilPage() {
           <input
             value={fullName}
             onChange={(e) => setFullName(e.target.value)}
-            className="w-full bg-[#111] border border-white/10 rounded-lg px-4 py-3 text-sm text-white"
+            className="w-full bg-gray-100 dark:bg-[#111] border border-gray-200 dark:border-white/10 rounded-lg px-4 py-3 text-sm text-gray-900 dark:text-white"
             placeholder="Seu nome"
           />
         </div>

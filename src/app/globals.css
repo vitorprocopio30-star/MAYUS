@@ -4,25 +4,47 @@
 
 @layer base {
   :root {
-    --background: 240 10% 98%;
-    --foreground: 20 14.3% 4.1%;
-    --card: 0 0% 100%;
-    --card-foreground: 20 14.3% 4.1%;
-    --popover: 0 0% 100%;
-    --popover-foreground: 20 14.3% 4.1%;
-    --primary: 38 49% 58%;
-    --primary-foreground: 26 83.3% 14.1%;
-    --secondary: 40 10% 95%;
-    --secondary-foreground: 24 9.8% 10%;
-    --muted: 40 10% 95%;
-    --muted-foreground: 25 5.3% 44.7%;
-    --accent: 40 10% 95%;
-    --accent-foreground: 24 9.8% 10%;
-    --destructive: 0 84.2% 60.2%;
-    --destructive-foreground: 60 9.1% 97.8%;
-    --border: 38 49% 85%;
-    --input: 38 49% 85%;
-    --ring: 38 49% 58%;
+    /* ═══════════════════════════════════════════════════
+       PALETA "LUXURY LEGAL LIGHT" v2
+       Inspiração: Bottega Veneta, Aesop, Celine
+       Hierarquia: Marfim → Neve → Ouro Profundo
+       Regra: Contraste WCAG AAA em superfícies claras
+       ═══════════════════════════════════════════════════ */
+
+    /* SUPERFÍCIES — Fundo marfim sutil, cards quase brancos */
+    --background: 40 30% 96%;          /* Marfim Acetinado (#F5F0E8) */
+    --foreground: 25 30% 8%;           /* Ônix Quente (#1A1410) — quase preto */
+
+    --card: 40 25% 99%;                /* Neve Marfim (#FDFCF9) */
+    --card-foreground: 25 30% 8%;
+
+    --popover: 40 25% 99%;
+    --popover-foreground: 25 30% 8%;
+
+    /* DESTAQUE — Ouro Mayus vibrante e contrastante */
+    --primary: 38 65% 42%;             /* Ouro Profundo (#B18A22) */
+    --primary-foreground: 0 0% 100%;
+
+    /* SECUNDÁRIO — Areia com personalidade, diferente de muted */
+    --secondary: 35 22% 88%;           /* Areia Rosada (#E4DBCE) */
+    --secondary-foreground: 25 25% 14%;
+
+    /* MUTED — Para labels e textos discretos mas legíveis */
+    --muted: 40 12% 93%;               /* Névoa Fria (#EDE9E2) */
+    --muted-foreground: 25 15% 35%;    /* Grafite Legível */
+
+    /* ACCENT — Hover perceptível e elegante */
+    --accent: 38 25% 85%;              /* Champanhe Tostado (#DDD0BB) */
+    --accent-foreground: 25 30% 8%;
+
+    /* ALERTA */
+    --destructive: 0 72% 51%;
+    --destructive-foreground: 0 0% 100%;
+
+    /* BORDAS / INPUTS — Visíveis sem serem rústicas */
+    --border: 35 20% 78%;              /* Camurça Visível (#CFC2AD) */
+    --input: 35 22% 82%;               /* Camurça Input (#D8CCBA) */
+    --ring: 38 65% 42%;
     --radius: 1rem;
   }
 
@@ -53,12 +75,19 @@
   body {
     @apply bg-background text-foreground antialiased;
     font-feature-settings: "rlig" 1, "calt" 1;
-    background-color: #030303;
-    color: #f5f5f0;
+  }
+
+  /* Transição suave entre temas */
+  *, *::before, *::after {
+    transition: background-color 0.3s ease, border-color 0.3s ease, color 0.15s ease;
   }
 }
 
 @layer utilities {
+  .font-display {
+    font-family: var(--font-display), Georgia, "Times New Roman", serif;
+  }
+
   .no-scrollbar::-webkit-scrollbar {
     display: none;
   }
@@ -67,6 +96,175 @@
     scrollbar-width: none;
   }
 }
+
+/* ═══════════════════════════════════════════════════════
+   LIGHT MODE COLOR OVERRIDES — Luxury Contrast Fix v3
+   Corrige TODAS as cores que ficam ilegíveis no fundo
+   marfim claro. Modo escuro NÃO é afetado.
+   ═══════════════════════════════════════════════════════ */
+
+/* ━━━ OURO MAYUS — Dourado rico e luxuoso ━━━ */
+:root .text-\[\#CCA761\]  { color: #B8962A !important; }
+:root .text-\[\#eadd87\]  { color: #A68830 !important; }
+:root .text-\[\#CCA761\]\/90 { color: #B8962A !important; }
+:root .text-\[\#CCA761\]\/80 { color: #B8962A !important; }
+:root .text-\[\#CCA761\]\/70 { color: #C4A040 !important; }
+:root .text-\[\#CCA761\]\/60 { color: #C4A040 !important; }
+:root .text-\[\#CCA761\]\/40 { color: #B8962A !important; }
+.dark .text-\[\#CCA761\]  { color: #CCA761 !important; }
+.dark .text-\[\#eadd87\]  { color: #eadd87 !important; }
+.dark .text-\[\#CCA761\]\/90 { color: rgba(204,167,97,0.9) !important; }
+.dark .text-\[\#CCA761\]\/80 { color: rgba(204,167,97,0.8) !important; }
+.dark .text-\[\#CCA761\]\/70 { color: rgba(204,167,97,0.7) !important; }
+.dark .text-\[\#CCA761\]\/60 { color: rgba(204,167,97,0.6) !important; }
+.dark .text-\[\#CCA761\]\/40 { color: rgba(204,167,97,0.4) !important; }
+
+/* ━━━ VERDE: Todas variantes com opacidade ━━━ */
+:root .text-green-400  { color: #2E8B57 !important; }
+:root .text-green-300  { color: #3A9D6A !important; }
+:root .text-green-500  { color: #278050 !important; }
+:root .text-green-400\/90 { color: #2E8B57 !important; }
+:root .text-green-500\/80 { color: #278050 !important; }
+:root .text-green-500\/60 { color: #3A9D6A !important; }
+:root .text-\[\#4ade80\] { color: #2E8B57 !important; }
+
+/* ━━━ VERDE: Muito mais escuro no claro ━━━ */
+:root .text-green-400  { color: #2E8B57 !important; }
+:root .text-green-300  { color: #3A9D6A !important; }
+:root .text-green-500  { color: #278050 !important; }
+:root .text-\[\#4ade80\] { color: #2E8B57 !important; }
+.dark .text-green-400  { color: rgb(74 222 128) !important; }
+.dark .text-green-300  { color: rgb(134 239 172) !important; }
+.dark .text-green-500  { color: rgb(34 197 94) !important; }
+.dark .text-\[\#4ade80\] { color: #4ade80 !important; }
+
+/* ━━━ AMARELO / OURO TAILWIND: Muito mais profundo ━━━ */
+:root .text-yellow-500 { color: #B8962A !important; }
+:root .text-yellow-400 { color: #C4A040 !important; }
+:root .text-yellow-300 { color: #A68830 !important; }
+:root .text-yellow-600 { color: #9A7A1E !important; }
+.dark .text-yellow-500 { color: rgb(234 179 8) !important; }
+.dark .text-yellow-400 { color: rgb(250 204 21) !important; }
+.dark .text-yellow-300 { color: rgb(253 224 71) !important; }
+.dark .text-yellow-600 { color: rgb(202 138 4) !important; }
+
+/* ━━━ VERMELHO: Legível e sério no claro ━━━ */
+:root .text-red-400    { color: #C44545 !important; }
+:root .text-red-300    { color: #D05555 !important; }
+:root .text-red-500    { color: #B83535 !important; }
+.dark .text-red-400    { color: rgb(248 113 113) !important; }
+.dark .text-red-300    { color: rgb(252 165 165) !important; }
+.dark .text-red-500    { color: rgb(239 68 68) !important; }
+
+/* ━━━ AMBER (deadlines na Agenda) ━━━ */
+:root .text-amber-300  { color: #C49A30 !important; }
+:root .text-amber-400  { color: #B8902A !important; }
+:root .text-amber-500  { color: #A88020 !important; }
+:root .bg-amber-500\/10 { background-color: hsl(38 50% 88%) !important; }
+:root .border-amber-500\/40 { border-color: rgba(139,105,20,0.5) !important; }
+.dark .text-amber-300  { color: rgb(252 211 77) !important; }
+.dark .text-amber-400  { color: rgb(251 191 36) !important; }
+.dark .text-amber-500  { color: rgb(245 158 11) !important; }
+.dark .bg-amber-500\/10 { background-color: rgba(245,158,11,0.1) !important; }
+.dark .border-amber-500\/40 { border-color: rgba(245,158,11,0.4) !important; }
+
+/* ━━━ EMERALD (prazos seguros na Agenda) ━━━ */
+:root .text-emerald-300 { color: #3AA06E !important; }
+:root .text-emerald-400 { color: #2E8B57 !important; }
+:root .text-emerald-500 { color: #278050 !important; }
+:root .bg-emerald-500\/10 { background-color: hsl(152 45% 90%) !important; }
+:root .border-emerald-500\/40 { border-color: rgba(15,107,58,0.5) !important; }
+.dark .text-emerald-300 { color: rgb(110 231 183) !important; }
+.dark .text-emerald-400 { color: rgb(52 211 153) !important; }
+.dark .text-emerald-500 { color: rgb(16 185 129) !important; }
+.dark .bg-emerald-500\/10 { background-color: rgba(16,185,129,0.1) !important; }
+.dark .border-emerald-500\/40 { border-color: rgba(16,185,129,0.4) !important; }
+
+/* ━━━ GRAY (usado em labels, subtextos) ━━━ */
+:root .text-gray-400   { color: hsl(25 10% 40%) !important; }
+:root .text-gray-500   { color: hsl(25 12% 35%) !important; }
+:root .text-gray-600   { color: hsl(25 14% 30%) !important; }
+.dark .text-gray-400   { color: rgb(156 163 175) !important; }
+.dark .text-gray-500   { color: rgb(107 114 128) !important; }
+.dark .text-gray-600   { color: rgb(75 85 99) !important; }
+
+/* ━━━ ZINC LABELS: Quentes e legíveis no marfim ━━━ */
+:root .text-zinc-500   { color: hsl(25 10% 42%) !important; }
+:root .text-zinc-400   { color: hsl(25 8% 48%) !important; }
+:root .text-zinc-600   { color: hsl(25 12% 35%) !important; }
+:root .text-zinc-700   { color: hsl(25 10% 45%) !important; }
+:root .text-zinc-800   { color: hsl(25 12% 28%) !important; }
+.dark .text-zinc-500   { color: rgb(113 113 122) !important; }
+.dark .text-zinc-400   { color: rgb(161 161 170) !important; }
+.dark .text-zinc-600   { color: rgb(82 82 91) !important; }
+.dark .text-zinc-700   { color: rgb(63 63 70) !important; }
+.dark .text-zinc-800   { color: rgb(39 39 42) !important; }
+
+/* ━━━ BG ZINC: Fundos escuros → Design system no claro ━━━ */
+:root .bg-zinc-900     { background-color: hsl(var(--card)) !important; }
+:root .bg-zinc-950     { background-color: hsl(var(--muted)) !important; }
+:root .bg-zinc-800     { background-color: hsl(var(--secondary)) !important; }
+.dark .bg-zinc-900     { background-color: rgb(24 24 27) !important; }
+.dark .bg-zinc-950     { background-color: rgb(9 9 11) !important; }
+.dark .bg-zinc-800     { background-color: rgb(39 39 42) !important; }
+
+
+
+
+/* ━━━ BORDER ZINC: Bordas visíveis no claro ━━━ */
+:root .border-zinc-800 { border-color: hsl(var(--border)) !important; }
+:root .border-zinc-700 { border-color: hsl(35 18% 72%) !important; }
+:root .border-zinc-900 { border-color: hsl(var(--border)) !important; }
+.dark .border-zinc-800 { border-color: rgb(39 39 42) !important; }
+.dark .border-zinc-700 { border-color: rgb(63 63 70) !important; }
+.dark .border-zinc-900 { border-color: rgb(24 24 27) !important; }
+
+/* ━━━ BADGES COLORIDOS: Fundos mais opacos no claro ━━━ */
+:root .bg-green-500\/10  { background-color: hsl(152 45% 90%) !important; }
+:root .bg-green-500\/5   { background-color: hsl(152 40% 93%) !important; }
+:root .bg-green-400\/5   { background-color: hsl(152 35% 93%) !important; }
+:root .bg-yellow-500\/10 { background-color: hsl(38 55% 88%) !important; }
+:root .bg-red-500\/10    { background-color: hsl(0 50% 92%) !important; }
+:root .bg-red-500\/5     { background-color: hsl(0 45% 94%) !important; }
+:root .bg-red-400\/5     { background-color: hsl(0 40% 94%) !important; }
+:root .bg-\[\#CCA761\]\/10 { background-color: hsl(38 50% 88%) !important; }
+:root .bg-\[\#CCA761\]\/5  { background-color: hsl(38 45% 91%) !important; }
+:root .bg-\[\#CCA761\]\/20 { background-color: hsl(38 55% 85%) !important; }
+.dark .bg-green-500\/10  { background-color: rgba(34, 197, 94, 0.10) !important; }
+.dark .bg-green-500\/5   { background-color: rgba(34, 197, 94, 0.05) !important; }
+.dark .bg-green-400\/5   { background-color: rgba(74, 222, 128, 0.05) !important; }
+.dark .bg-yellow-500\/10 { background-color: rgba(234, 179, 8, 0.10) !important; }
+.dark .bg-red-500\/10    { background-color: rgba(239, 68, 68, 0.10) !important; }
+.dark .bg-red-500\/5     { background-color: rgba(239, 68, 68, 0.05) !important; }
+.dark .bg-red-400\/5     { background-color: rgba(248, 113, 113, 0.05) !important; }
+.dark .bg-\[\#CCA761\]\/10 { background-color: rgba(204,167,97,0.10) !important; }
+.dark .bg-\[\#CCA761\]\/5  { background-color: rgba(204,167,97,0.05) !important; }
+.dark .bg-\[\#CCA761\]\/20 { background-color: rgba(204,167,97,0.20) !important; }
+
+/* ━━━ BORDER #CCA761: Mais visível no claro ━━━ */
+:root .border-\[\#CCA761\]\/20 { border-color: rgba(139,105,20,0.35) !important; }
+:root .border-\[\#CCA761\]\/30 { border-color: rgba(139,105,20,0.45) !important; }
+:root .border-\[\#CCA761\]\/10 { border-color: rgba(139,105,20,0.20) !important; }
+.dark .border-\[\#CCA761\]\/20 { border-color: rgba(204,167,97,0.20) !important; }
+.dark .border-\[\#CCA761\]\/30 { border-color: rgba(204,167,97,0.30) !important; }
+.dark .border-\[\#CCA761\]\/10 { border-color: rgba(204,167,97,0.10) !important; }
+
+/* ━━━ DROP SHADOWS: Mais intensos no claro ━━━ */
+:root .drop-shadow-\[0_0_8px_rgba\(234\,179\,8\,0\.4\)\] {
+  filter: drop-shadow(0 0 6px rgba(139,105,20,0.6)) !important;
+}
+:root .drop-shadow-\[0_0_20px_rgba\(204\,167\,97\,0\.3\)\] {
+  filter: drop-shadow(0 0 12px rgba(139,105,20,0.5)) !important;
+}
+:root .shadow-\[0_0_15px_rgba\(204\,167\,97\,0\.2\)\] {
+  box-shadow: 0 0 12px rgba(139,105,20,0.25) !important;
+}
+
+/* ━━━ PLACEHOLDER: Legível no claro ━━━ */
+:root .placeholder-zinc-800::placeholder { color: hsl(25 12% 55%) !important; }
+.dark .placeholder-zinc-800::placeholder { color: rgb(39 39 42) !important; }
+
+
 
 /* =============================================
    ESTILOS DE LUXO MAYUS (DESIGN R$ 90 MIL)
@@ -86,11 +284,28 @@
   filter: drop-shadow(0 2px 4px rgba(0, 0, 0, 0.3));
 }
 
+/* ═══════════════════════════════════════════════
+   GLASS CARD — THEME-AWARE
+   Modo Claro: Vidro fosco marfim, borda champanhe
+   Modo Escuro: Vidro escuro translúcido original
+   ═══════════════════════════════════════════════ */
 .glass-card {
+  background: rgba(255, 253, 249, 0.82);
+  backdrop-filter: blur(20px) saturate(140%);
+  -webkit-backdrop-filter: blur(20px) saturate(140%);
+  border: 1px solid rgba(207, 194, 173, 0.4);
+  box-shadow:
+    0 1px 3px rgba(0, 0, 0, 0.04),
+    0 8px 32px rgba(0, 0, 0, 0.06),
+    0 0 0 1px rgba(204, 167, 97, 0.05);
+}
+
+.dark .glass-card {
   background: rgba(15, 15, 15, 0.4);
   backdrop-filter: blur(40px);
   -webkit-backdrop-filter: blur(40px);
   border: 1px solid rgba(255, 255, 255, 0.08);
+  box-shadow: none;
 }
 
 .beam-light {
@@ -146,4 +361,32 @@
 .reveal-up.active {
   opacity: 1;
   transform: translateY(0);
+}
+
+/* MAYUS cinematic robot hero component classes */
+.card-surface {
+  background: rgba(24, 24, 27, 0.55);
+  border: 1px solid rgba(255, 255, 255, 0.08);
+  border-radius: 20px;
+  backdrop-filter: blur(20px) saturate(140%);
+  -webkit-backdrop-filter: blur(20px) saturate(140%);
+  box-shadow:
+    0 1px 0 0 rgba(255, 255, 255, 0.04) inset,
+    0 20px 40px -20px rgba(0, 0, 0, 0.6);
+}
+
+.scroll-animation {
+  height: 400vh;
+}
+
+@media (max-width: 1024px) {
+  .scroll-animation {
+    height: 350vh;
+  }
+}
+
+@media (max-width: 768px) {
+  .scroll-animation {
+    height: 300vh;
+  }
 }

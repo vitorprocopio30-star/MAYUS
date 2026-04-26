@@ -478,6 +478,35 @@ export async function deleteAgendaTaskBySource(supabase: any, sourceTable: strin
   if (error) throw error;
 }
 
+export async function filterExistingProcessPrazoTasks(supabase: any, tasks: any[]) {
+  const processPrazoIds = Array.from(
+    new Set(
+      (tasks || [])
+        .filter((task: any) => task?.source_table === "process_prazos" && task?.source_id)
+        .map((task: any) => String(task.source_id))
+    )
+  );
+
+  if (processPrazoIds.length === 0) return tasks || [];
+
+  const { data, error } = await supabase
+    .from("process_prazos")
+    .select("id")
+    .in("id", processPrazoIds);
+
+  if (error) {
+    console.error("[Agenda] Falha ao validar prazos de origem:", error);
+    return tasks || [];
+  }
+
+  const existingPrazoIds = new Set((data || []).map((row: any) => String(row.id)));
+  return (tasks || []).filter((task: any) => (
+    task?.source_table !== "process_prazos" ||
+    !task?.source_id ||
+    existingPrazoIds.has(String(task.source_id))
+  ));
+}
+
 export function toDayRange(selectedDate: string) {
   const start = new Date(`${selectedDate}T00:00:00`);
   const end = new Date(`${selectedDate}T23:59:59.999`);

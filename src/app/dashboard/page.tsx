@@ -235,7 +235,7 @@ const ResumoView = ({ metrics, officeGoals = [] }: { metrics: any, officeGoals?:
               <p className="text-[10px] text-primary font-bold mt-1">Alvo: {TARGET_CONTRACTS}</p>
             </div>
           </div>
-          <div className="h-px w-full bg-gradient-to-r from-transparent via-white/10 to-transparent my-6" />
+          <div className="h-px w-full bg-gradient-to-r from-transparent via-gray-300 dark:via-white/10 to-transparent my-6" />
           <div className="flex justify-between items-center px-4">
             <ElegantGoalGauge value={revenueProgress} progress={revenueProgress} label="Alcançado" color="#CCA761" />
             <ElegantGoalGauge value={metrics.activeContracts} progress={contractsProgress} label="Contratos" color="#ffffff" valueSuffix="" />
@@ -299,7 +299,7 @@ const ResumoView = ({ metrics, officeGoals = [] }: { metrics: any, officeGoals?:
                   <p className="text-[10px] text-primary font-bold mt-1">Global</p>
                 </div>
               </div>
-              <div className="h-px w-full bg-gradient-to-r from-transparent via-white/10 to-transparent my-6" />
+              <div className="h-px w-full bg-gradient-to-r from-transparent via-gray-300 dark:via-white/10 to-transparent my-6" />
               <div className="flex justify-between items-center px-4">
                 <ElegantGoalGauge value={progress} progress={progress} label="Realizado" color={color} />
                 <ElegantGoalGauge value={targetValue} progress={100} label="Alvo" color="#ffffff" valueSuffix="" />
@@ -320,7 +320,7 @@ const ResumoView = ({ metrics, officeGoals = [] }: { metrics: any, officeGoals?:
             </div>
             <div className="flex flex-col">
               <span className="text-[10px] text-gray-400 font-black tracking-widest uppercase mb-1">ROI de Ads</span>
-              <span className="text-3xl font-black text-white"><AnimatedNumber value={4.8} floating />x</span>
+              <span className="text-3xl font-black text-gray-900 dark:text-white"><AnimatedNumber value={4.8} floating />x</span>
             </div>
           </div>
           <div className="text-right">
@@ -335,7 +335,7 @@ const ResumoView = ({ metrics, officeGoals = [] }: { metrics: any, officeGoals?:
             </div>
             <div className="flex flex-col">
               <span className="text-[10px] text-gray-400 font-black tracking-widest uppercase mb-1">ROI Closer</span>
-              <span className="text-3xl font-black text-white"><AnimatedNumber value={8.4} floating />x</span>
+              <span className="text-3xl font-black text-gray-900 dark:text-white"><AnimatedNumber value={8.4} floating />x</span>
             </div>
           </div>
           <div className="text-right">
@@ -345,12 +345,12 @@ const ResumoView = ({ metrics, officeGoals = [] }: { metrics: any, officeGoals?:
 
         <GlassCard className="flex items-center justify-between p-5 border border-border">
           <div className="flex items-center gap-4">
-            <div className="w-12 h-12 rounded-xl bg-white/5 flex items-center justify-center border border-white/10">
+            <div className="w-12 h-12 rounded-xl bg-gray-100 dark:bg-white/5 flex items-center justify-center border border-gray-200 dark:border-white/10">
               <Activity size={20} className="text-gray-400" />
             </div>
             <div className="flex flex-col">
               <span className="text-[10px] text-gray-500 font-black tracking-widest uppercase mb-1">Operação</span>
-              <span className="text-3xl font-black text-white">96%</span>
+              <span className="text-3xl font-black text-gray-900 dark:text-white">96%</span>
             </div>
           </div>
         </GlassCard>
@@ -365,7 +365,7 @@ const ResumoView = ({ metrics, officeGoals = [] }: { metrics: any, officeGoals?:
           <ElegantResumoChart />
         </GlassCard>
 
-        <GlassCard className="border border-white/5">
+        <GlassCard className="border border-gray-200 dark:border-white/5">
           <h4 className="text-[10px] text-gray-400 font-bold uppercase tracking-widest mb-6 flex items-center gap-2">
             <AlertCircle size={14} className="text-[#f87171]" /> Radar de Atenção
           </h4>
@@ -451,7 +451,7 @@ const ComercialView = ({ metrics, officeGoals = [] }: { metrics: any, officeGoal
           <h3 className="text-3xl font-bold text-[#4ade80] tracking-wide mt-2">
             R$ <AnimatedNumber value={metrics.totalRevenue} />
           </h3>
-          <div className="w-full bg-black h-1 mt-3 rounded-full overflow-hidden">
+          <div className="w-full bg-gray-200 dark:bg-black h-1 mt-3 rounded-full overflow-hidden">
             <div className="bg-[#4ade80] h-full" style={{ width: `${Math.min(100, (metrics.totalRevenue / targetVal) * 100)}%` }} />
           </div>
           <p className="text-[10px] text-gray-400 mt-2">{Math.floor(((metrics.totalRevenue / targetVal) * 100) || 0)}% de R$ {targetVal.toLocaleString('pt-BR')}</p>
@@ -491,23 +491,23 @@ const ComercialView = ({ metrics, officeGoals = [] }: { metrics: any, officeGoal
         </h4>
         <div className="flex flex-col items-center gap-1.5 w-full">
           <div className="w-[100%] bg-[#22d3ee]/20 border border-[#22d3ee]/50 text-center py-3 rounded-t-lg relative">
-            <span className="text-sm font-bold text-white relative z-10"><AnimatedNumber value={320} /> Leads</span>
+            <span className="text-sm font-bold text-gray-900 dark:text-white relative z-10"><AnimatedNumber value={320} /> Leads</span>
           </div>
           <div className="w-[85%] bg-[#b4a0f8]/20 border border-[#b4a0f8]/50 text-center py-3 rounded-sm relative">
-            <span className="text-sm font-bold text-white relative z-10"><AnimatedNumber value={155} /> Agendamentos</span>
-            <span className="absolute -right-2 top-1/2 -translate-y-1/2 translate-x-full text-[9px] text-gray-400 font-bold bg-black px-1 rounded">48%</span>
+            <span className="text-sm font-bold text-gray-900 dark:text-white relative z-10"><AnimatedNumber value={155} /> Agendamentos</span>
+            <span className="absolute -right-2 top-1/2 -translate-y-1/2 translate-x-full text-[9px] text-gray-400 font-bold bg-gray-200 dark:bg-black px-1 rounded">48%</span>
           </div>
           <div className="w-[70%] bg-[#CCA761]/20 border border-[#CCA761]/50 text-center py-3 rounded-sm relative shadow-[0_0_10px_rgba(204,167,97,0.2)]">
             <span className="text-sm font-bold text-[#f1d58d] relative z-10"><AnimatedNumber value={110} /> Realizadas</span>
-            <span className="absolute -right-2 top-1/2 -translate-y-1/2 translate-x-full text-[9px] text-[#CCA761] font-bold bg-black px-1 rounded border border-[#CCA761]/30">71%</span>
+            <span className="absolute -right-2 top-1/2 -translate-y-1/2 translate-x-full text-[9px] text-[#CCA761] font-bold bg-gray-200 dark:bg-black px-1 rounded border border-[#CCA761]/30">71%</span>
           </div>
           <div className="w-[50%] bg-[#4ade80]/20 border border-[#4ade80]/50 text-center py-3 rounded-b-lg relative">
-            <span className="text-sm font-bold text-white relative z-10"><AnimatedNumber value={metrics.activeContracts} /> Fechamentos</span>
-            <span className="absolute -right-2 top-1/2 -translate-y-1/2 translate-x-full text-[9px] text-[#4ade80] font-bold bg-black px-1 rounded">16%</span>
+            <span className="text-sm font-bold text-gray-900 dark:text-white relative z-10"><AnimatedNumber value={metrics.activeContracts} /> Fechamentos</span>
+            <span className="absolute -right-2 top-1/2 -translate-y-1/2 translate-x-full text-[9px] text-[#4ade80] font-bold bg-gray-200 dark:bg-black px-1 rounded">16%</span>
           </div>
         </div>
-        <div className="mt-8 pt-4 border-t border-white/5 flex flex-col justify-between text-xs gap-2">
-          <div className="flex justify-between items-center"><span className="text-gray-500">Ticket Médio:</span><span className="text-white font-bold">R$ {metrics.averageTicket.toLocaleString('pt-BR')}</span></div>
+        <div className="mt-8 pt-4 border-t border-gray-200 dark:border-white/5 flex flex-col justify-between text-xs gap-2">
+          <div className="flex justify-between items-center"><span className="text-gray-500">Ticket Médio:</span><span className="text-gray-900 dark:text-white font-bold">R$ {metrics.averageTicket.toLocaleString('pt-BR')}</span></div>
           <div className="flex justify-between items-center"><span className="text-gray-500">Taxa de No-Show:</span><span className="text-[#f87171] font-bold">29%</span></div>
         </div>
       </GlassCard>
@@ -520,7 +520,7 @@ const ComercialView = ({ metrics, officeGoals = [] }: { metrics: any, officeGoal
           <UserIcon size={14} className="text-[#CCA761]" /> ROI de Vendas por Executivo (Closer)
         </h4>
         <div className="w-full text-sm text-left overflow-x-auto">
-          <div className="grid grid-cols-6 min-w-[700px] text-[10px] text-gray-500 font-bold uppercase tracking-wider mb-2 pb-2 border-b border-white/5">
+          <div className="grid grid-cols-6 min-w-[700px] text-[10px] text-gray-500 font-bold uppercase tracking-wider mb-2 pb-2 border-b border-gray-200 dark:border-white/5">
             <span className="col-span-2">Closer (Executivo)</span>
             <span>Investimento (Custo/Mês)</span>
             <span>Receita Gerada</span>
@@ -529,27 +529,27 @@ const ComercialView = ({ metrics, officeGoals = [] }: { metrics: any, officeGoal
           </div>
 
           {/* Closer 1 */}
-          <div className="grid grid-cols-6 min-w-[700px] py-4 border-b border-white/5 items-center group hover:bg-white/5 transition-colors px-2 rounded-lg">
+          <div className="grid grid-cols-6 min-w-[700px] py-4 border-b border-gray-200 dark:border-white/5 items-center group hover:bg-gray-100 dark:bg-white/5 transition-colors px-2 rounded-lg">
             <div className="col-span-2 flex items-center gap-3">
               <div className="w-8 h-8 rounded border border-[#CCA761] flex items-center justify-center bg-[#CCA761]/10 text-[#CCA761] font-bold text-xs shadow-[0_0_10px_rgba(204,167,97,0.2)]">AS</div>
               <div>
-                <p className="text-gray-200 font-bold text-sm uppercase tracking-wide">Ana S. <span className="text-[9px] text-[#CCA761] font-normal border border-[#CCA761]/30 rounded px-1 ml-1 bg-[#CCA761]/10">SÊNIOR</span></p>
+                <p className="text-gray-800 dark:text-gray-200 font-bold text-sm uppercase tracking-wide">Ana S. <span className="text-[9px] text-[#CCA761] font-normal border border-[#CCA761]/30 rounded px-1 ml-1 bg-[#CCA761]/10">SÊNIOR</span></p>
                 <p className="text-[10px] text-gray-500 font-mono mt-0.5"><AnimatedNumber value={85} /> Leads trabalhados</p>
               </div>
             </div>
             <span className="text-[#f87171] font-mono text-xs">R$ 4.500,00</span>
             <span className="text-[#4ade80] font-mono font-bold text-sm">R$ 38.000,00</span>
             <div className="flex gap-2 items-center">
-              <span className="text-white text-xs font-bold">42%</span>
-              <div className="w-12 h-1.5 bg-[#111] rounded-full"><div className="bg-[#CCA761] h-full rounded-full" style={{ width: '42%' }}></div></div>
+              <span className="text-gray-900 dark:text-white text-xs font-bold">42%</span>
+              <div className="w-12 h-1.5 bg-gray-100 dark:bg-[#111] rounded-full"><div className="bg-[#CCA761] h-full rounded-full" style={{ width: '42%' }}></div></div>
             </div>
             <span className="text-[#CCA761] font-black italic text-2xl text-right drop-shadow-[0_0_15px_rgba(204,167,97,0.5)]"><AnimatedNumber value={8.4} floating />x</span>
           </div>
 
           {/* Closer 2 */}
-          <div className="grid grid-cols-6 min-w-[700px] py-4 border-b border-white/5 items-center group hover:bg-white/5 transition-colors px-2 rounded-lg">
+          <div className="grid grid-cols-6 min-w-[700px] py-4 border-b border-gray-200 dark:border-white/5 items-center group hover:bg-gray-100 dark:bg-white/5 transition-colors px-2 rounded-lg">
             <div className="col-span-2 flex items-center gap-3">
-              <div className="w-8 h-8 rounded border border-white/10 flex items-center justify-center bg-[#111] text-gray-500 font-bold text-xs">RV</div>
+              <div className="w-8 h-8 rounded border border-gray-200 dark:border-white/10 flex items-center justify-center bg-gray-100 dark:bg-[#111] text-gray-500 font-bold text-xs">RV</div>
               <div>
                 <p className="text-gray-400 font-bold text-sm uppercase tracking-wide">Roberto V.</p>
                 <p className="text-[10px] text-gray-500 font-mono mt-0.5"><AnimatedNumber value={62} /> Leads trabalhados</p>
@@ -559,9 +559,9 @@ const ComercialView = ({ metrics, officeGoals = [] }: { metrics: any, officeGoal
             <span className="text-[#4ade80] font-mono font-bold text-sm">R$ 15.200,00</span>
             <div className="flex gap-2 items-center">
               <span className="text-gray-400 text-xs font-bold">28%</span>
-              <div className="w-12 h-1.5 bg-[#111] rounded-full"><div className="bg-gray-500 h-full rounded-full" style={{ width: '28%' }}></div></div>
+              <div className="w-12 h-1.5 bg-gray-100 dark:bg-[#111] rounded-full"><div className="bg-gray-500 h-full rounded-full" style={{ width: '28%' }}></div></div>
             </div>
-            <span className="text-gray-300 font-bold text-xl text-right"><AnimatedNumber value={5.4} floating />x</span>
+            <span className="text-gray-700 dark:text-gray-300 font-bold text-xl text-right"><AnimatedNumber value={5.4} floating />x</span>
           </div>
 
         </div>
@@ -610,7 +610,7 @@ const FinanceiroView = ({ metrics }: { metrics: any }) => (
           <div>
             <p className="text-[10px] text-gray-500 uppercase tracking-widest mb-3 font-bold">Resumo de Caixa</p>
             <div className="flex justify-between items-center text-sm font-medium mb-2">
-              <span className="text-gray-300">Entradas (Parcelas Recebidas)</span>
+              <span className="text-gray-700 dark:text-gray-300">Entradas (Parcelas Recebidas)</span>
               <span className="text-[#4ade80]">R$ {metrics.revenueReceived.toLocaleString('pt-BR')}</span>
             </div>
           </div>
@@ -631,8 +631,8 @@ const FinanceiroView = ({ metrics }: { metrics: any }) => (
               </div>
             </div>
           </div>
-          <div className="pt-4 border-t border-white/5 flex justify-between items-center font-bold">
-            <span className="text-gray-300">Lucro Operacional Estimado</span>
+          <div className="pt-4 border-t border-gray-200 dark:border-white/5 flex justify-between items-center font-bold">
+            <span className="text-gray-700 dark:text-gray-300">Lucro Operacional Estimado</span>
             <span className="text-[#4ade80]">R$ {(metrics.revenueReceived - metrics.totalCommissions - 13500).toLocaleString('pt-BR')}</span>
           </div>
         </div>
@@ -644,13 +644,13 @@ const FinanceiroView = ({ metrics }: { metrics: any }) => (
           <Calendar size={14} className="text-[#CCA761]" /> Projeção de Caixa
         </h4>
         <div className="flex items-end gap-2 h-32 relative z-10">
-          <div className="flex-1 bg-[#1a1a1a] rounded-t-md relative group-hover:bg-[#22d3ee]/10 transition-colors h-[40%]" title="Mês Atual">
+          <div className="flex-1 bg-gray-100 dark:bg-[#1a1a1a] rounded-t-md relative group-hover:bg-[#22d3ee]/10 transition-colors h-[40%]" title="Mês Atual">
             <span className="absolute -top-6 left-1/2 -translate-x-1/2 text-[10px] text-gray-500">Hoje</span>
           </div>
-          <div className="flex-1 bg-[#1a1a1a] rounded-t-md relative group-hover:bg-[#22d3ee]/20 transition-colors h-[60%]" title="Mês +1">
+          <div className="flex-1 bg-gray-100 dark:bg-[#1a1a1a] rounded-t-md relative group-hover:bg-[#22d3ee]/20 transition-colors h-[60%]" title="Mês +1">
             <span className="absolute -top-6 left-1/2 -translate-x-1/2 text-[10px] text-gray-500">+30d</span>
           </div>
-          <div className="flex-1 bg-[#1a1a1a] rounded-t-md relative group-hover:bg-[#22d3ee]/30 transition-colors h-[75%]" title="Mês +2">
+          <div className="flex-1 bg-gray-100 dark:bg-[#1a1a1a] rounded-t-md relative group-hover:bg-[#22d3ee]/30 transition-colors h-[75%]" title="Mês +2">
             <span className="absolute -top-6 left-1/2 -translate-x-1/2 text-[10px] text-gray-500">+60d</span>
           </div>
           <div className="flex-1 bg-gradient-to-t from-[#CCA761]/20 to-[#CCA761]/80 rounded-t-md relative shadow-[0_0_20px_rgba(204,167,97,0.2)] h-[100%]" title="Mês +3">
@@ -703,19 +703,19 @@ const MarketingView = () => (
         <Target size={14} className="text-[#CCA761]" /> Origem dos Leads (Canais)
       </h4>
       <div className="flex gap-4 mb-4">
-        <div className="flex-1 bg-[#111] border border-white/5 rounded-lg p-4 flex flex-col items-center justify-center">
+        <div className="flex-1 bg-gray-100 dark:bg-[#111] border border-gray-200 dark:border-white/5 rounded-lg p-4 flex flex-col items-center justify-center">
           <Instagram size={24} className="text-pink-500 mb-2" />
-          <span className="text-2xl font-bold text-white"><AnimatedNumber value={420} /></span>
+          <span className="text-2xl font-bold text-gray-900 dark:text-white"><AnimatedNumber value={420} /></span>
           <span className="text-[10px] text-gray-500 uppercase mt-1">Instagram</span>
         </div>
-        <div className="flex-1 bg-[#111] border border-white/5 rounded-lg p-4 flex flex-col items-center justify-center">
+        <div className="flex-1 bg-gray-100 dark:bg-[#111] border border-gray-200 dark:border-white/5 rounded-lg p-4 flex flex-col items-center justify-center">
           <Globe size={24} className="text-blue-500 mb-2" />
-          <span className="text-2xl font-bold text-white"><AnimatedNumber value={280} /></span>
+          <span className="text-2xl font-bold text-gray-900 dark:text-white"><AnimatedNumber value={280} /></span>
           <span className="text-[10px] text-gray-500 uppercase mt-1">Google Search</span>
         </div>
-        <div className="flex-1 bg-[#111] border border-white/5 rounded-lg p-4 flex flex-col items-center justify-center">
+        <div className="flex-1 bg-gray-100 dark:bg-[#111] border border-gray-200 dark:border-white/5 rounded-lg p-4 flex flex-col items-center justify-center">
           <Users size={24} className="text-green-500 mb-2" />
-          <span className="text-2xl font-bold text-white"><AnimatedNumber value={140} /></span>
+          <span className="text-2xl font-bold text-gray-900 dark:text-white"><AnimatedNumber value={140} /></span>
           <span className="text-[10px] text-gray-500 uppercase mt-1">Indicação</span>
         </div>
       </div>
@@ -761,16 +761,16 @@ const ProcessosView = ({ metrics }: { metrics: any }) => (
         <h4 className="text-[10px] text-gray-400 font-bold uppercase tracking-widest mb-6">Distribuição por Tipo</h4>
         <div className="space-y-3">
           <div>
-            <div className="flex justify-between text-xs mb-1"><span className="text-gray-300">RMC / Cartões</span><span className="text-[#22d3ee] font-bold">55%</span></div>
-            <div className="w-full bg-[#111] h-2 rounded"><div className="bg-[#22d3ee] h-full w-[55%] rounded"></div></div>
+            <div className="flex justify-between text-xs mb-1"><span className="text-gray-700 dark:text-gray-300">RMC / Cartões</span><span className="text-[#22d3ee] font-bold">55%</span></div>
+            <div className="w-full bg-gray-100 dark:bg-[#111] h-2 rounded"><div className="bg-[#22d3ee] h-full w-[55%] rounded"></div></div>
           </div>
           <div>
-            <div className="flex justify-between text-xs mb-1"><span className="text-gray-300">GRAM</span><span className="text-[#CCA761] font-bold">30%</span></div>
-            <div className="w-full bg-[#111] h-2 rounded"><div className="bg-[#CCA761] h-full w-[30%] rounded"></div></div>
+            <div className="flex justify-between text-xs mb-1"><span className="text-gray-700 dark:text-gray-300">GRAM</span><span className="text-[#CCA761] font-bold">30%</span></div>
+            <div className="w-full bg-gray-100 dark:bg-[#111] h-2 rounded"><div className="bg-[#CCA761] h-full w-[30%] rounded"></div></div>
           </div>
           <div>
-            <div className="flex justify-between text-xs mb-1"><span className="text-gray-300">Inventários / Outros</span><span className="text-gray-400 font-bold">15%</span></div>
-            <div className="w-full bg-[#111] h-2 rounded"><div className="bg-gray-500 h-full w-[15%] rounded"></div></div>
+            <div className="flex justify-between text-xs mb-1"><span className="text-gray-700 dark:text-gray-300">Inventários / Outros</span><span className="text-gray-400 font-bold">15%</span></div>
+            <div className="w-full bg-gray-100 dark:bg-[#111] h-2 rounded"><div className="bg-gray-500 h-full w-[15%] rounded"></div></div>
           </div>
         </div>
       </GlassCard>
@@ -779,12 +779,12 @@ const ProcessosView = ({ metrics }: { metrics: any }) => (
         <h4 className="text-[10px] text-[#f87171] font-bold uppercase tracking-widest mb-6 flex items-center gap-2">
           <AlertCircle size={14} /> Backlog & Atrasos
         </h4>
-        <ul className="space-y-4 text-sm text-gray-300">
-          <li className="flex justify-between items-center pb-2 border-b border-white/5">
+        <ul className="space-y-4 text-sm text-gray-700 dark:text-gray-300">
+          <li className="flex justify-between items-center pb-2 border-b border-gray-200 dark:border-white/5">
             <span>Contratos pendentes de assinatura</span>
             <span className="bg-[#f87171]/20 text-[#f87171] px-2 py-0.5 rounded text-xs font-bold">12</span>
           </li>
-          <li className="flex justify-between items-center pb-2 border-b border-white/5">
+          <li className="flex justify-between items-center pb-2 border-b border-gray-200 dark:border-white/5">
             <span>Processos Sem Movimentação (+60d)</span>
             <span className="bg-[#CCA761]/20 text-[#CCA761] px-2 py-0.5 rounded text-xs font-bold">8</span>
           </li>
@@ -872,15 +872,15 @@ const AgendaView = () => {
     <div className="space-y-8 animate-fade-in-up">
 
       {/* Seletor de Semana Premium */}
-      <div className="flex justify-between items-center gap-2 p-1 bg-white/5 rounded-2xl border border-white/10 shadow-inner">
+      <div className="flex justify-between items-center gap-2 p-1 bg-gray-100 dark:bg-white/5 rounded-2xl border border-gray-200 dark:border-white/10 shadow-inner">
         {WEEK_DAYS.map((d, i) => (
           <button
             key={i}
-            className={`flex-1 flex flex-col items-center py-4 rounded-xl transition-all ${d.active ? 'bg-[#CCA761] text-[#0a0a0a] shadow-[0_0_20px_rgba(204,167,97,0.3)]' : 'hover:bg-white/5 text-gray-500 hover:text-white'}`}
+            className={`flex-1 flex flex-col items-center py-4 rounded-xl transition-all ${d.active ? 'bg-[#CCA761] text-[#0a0a0a] shadow-[0_0_20px_rgba(204,167,97,0.3)]' : 'hover:bg-gray-100 dark:bg-white/5 text-gray-500 hover:text-white'}`}
           >
             <span className="text-[10px] font-black uppercase tracking-tighter mb-1">{d.day}</span>
             <span className="text-xl font-black italic">{d.date}</span>
-            {d.active && <div className="w-1 h-1 bg-[#0a0a0a] rounded-full mt-2" />}
+            {d.active && <div className="w-1 h-1 bg-white dark:bg-[#0a0a0a] rounded-full mt-2" />}
           </button>
         ))}
       </div>
@@ -899,7 +899,7 @@ const AgendaView = () => {
                 <Clock size={18} className="text-[#CCA761] drop-shadow-[0_0_8px_rgba(204,167,97,0.8)]" /> Cronograma do Dia
               </h3>
               <div className="flex gap-2">
-                <button className="text-[10px] text-gray-400 font-bold uppercase tracking-widest bg-white/5 px-3 py-1 rounded-lg border border-white/5 whitespace-nowrap">Ao Vivo (Realtime)</button>
+                <button className="text-[10px] text-gray-400 font-bold uppercase tracking-widest bg-gray-100 dark:bg-white/5 px-3 py-1 rounded-lg border border-gray-200 dark:border-white/5 whitespace-nowrap">Ao Vivo (Realtime)</button>
                 <button className="text-[10px] text-[#CCA761] font-bold uppercase tracking-widest border border-[#CCA761]/30 hover:bg-[#CCA761]/10 transition-colors px-3 py-1 rounded-lg">Filtros</button>
               </div>
             </div>
@@ -922,7 +922,7 @@ const AgendaView = () => {
                       onClick={() => toggleStatus(ev)}
                       className={`flex-1 flex items-center justify-between p-5 rounded-2xl border transition-all duration-500 cursor-pointer overflow-hidden relative shadow-lg ${ev.active
                           ? 'border-[#CCA761]/60 bg-gradient-to-r from-[#CCA761]/10 to-[#111] shadow-[0_0_30px_rgba(204,167,97,0.15)] ring-1 ring-[#CCA761]/20'
-                          : 'border-white/5 bg-gradient-to-r from-[#111] to-[#0a0a0a] hover:border-white/20 hover:bg-[#151515]'
+                          : 'border-gray-200 dark:border-white/5 bg-gradient-to-r from-[#111] to-[#0a0a0a] hover:border-gray-300 dark:border-white/20 hover:bg-[#151515]'
                         } ${isDone ? 'opacity-60 grayscale' : 'opacity-100'}`}
                     >
                       {/* Borda de Destaque Colorida */}
@@ -942,7 +942,7 @@ const AgendaView = () => {
                             </span>
                             <span className="text-[9px] text-gray-500 font-bold uppercase tracking-widest">• {ev.type}</span>
                             {ev.created_by_agent && (
-                              <span className="text-[8px] bg-white/10 text-white font-bold px-2 py-0.5 rounded ml-2 flex items-center gap-1"><Wand2 size={10} /> Criada por {ev.created_by_agent}</span>
+                              <span className="text-[8px] bg-gray-100 dark:bg-white/10 text-gray-900 dark:text-white font-bold px-2 py-0.5 rounded ml-2 flex items-center gap-1"><Wand2 size={10} /> Criada por {ev.created_by_agent}</span>
                             )}
                           </div>
                           <h4 className={`text-base font-bold tracking-wide transition-colors ${isDone ? 'text-gray-600 line-through decoration-gray-700' : 'text-gray-100 group-hover:text-white'
@@ -950,8 +950,8 @@ const AgendaView = () => {
                         </div>
                       </div>
                       <div className="text-right hidden sm:block relative z-10 flex-col items-end">
-                        <p className="text-[10px] text-gray-500 font-bold uppercase tracking-widest mb-1 border-b border-white/5 pb-1 inline-block">Responsável</p>
-                        <p className={`text-sm font-semibold tracking-wide ${ev.active ? 'text-[#CCA761]' : 'text-gray-300'}`}>{ev.person}</p>
+                        <p className="text-[10px] text-gray-500 font-bold uppercase tracking-widest mb-1 border-b border-gray-200 dark:border-white/5 pb-1 inline-block">Responsável</p>
+                        <p className={`text-sm font-semibold tracking-wide ${ev.active ? 'text-[#CCA761]' : 'text-gray-700 dark:text-gray-300'}`}>{ev.person}</p>
                       </div>
                     </div>
 
@@ -971,14 +971,14 @@ const AgendaView = () => {
               </h4>
               <div className="space-y-4">
                 {criticalDeadlines.length === 0 ? (
-                  <div className="p-4 bg-black/40 rounded-xl border border-white/5 text-[11px] text-gray-500">
+                  <div className="p-4 bg-gray-200 dark:bg-black/40 rounded-xl border border-gray-200 dark:border-white/5 text-[11px] text-gray-500">
                     Nenhum prazo critico real encontrado para a selecao atual.
                   </div>
                 ) : (
                   criticalDeadlines.map((p, i) => (
-                    <div key={i} className="p-4 bg-black/40 rounded-xl border border-white/5 hover:border-white/10 transition-colors">
+                    <div key={i} className="p-4 bg-gray-200 dark:bg-black/40 rounded-xl border border-gray-200 dark:border-white/5 hover:border-gray-200 dark:border-white/10 transition-colors">
                       <div className="flex justify-between items-start mb-2">
-                        <span className="text-xs font-bold text-white">{p.title}</span>
+                        <span className="text-xs font-bold text-gray-900 dark:text-white">{p.title}</span>
                         <span className="text-[8px] font-black text-[#0a0a0a] px-2 py-0.5 rounded-sm uppercase" style={{ backgroundColor: p.color || '#f87171' }}>{p.time_text}</span>
                       </div>
                       <p className="text-[10px] text-gray-500 font-semibold tracking-wide">Cliente: {p.client_name || '-'}</p>
@@ -990,7 +990,7 @@ const AgendaView = () => {
 
             <div className="p-6 rounded-2xl border border-[#CCA761]/30 bg-gradient-to-br from-[#CCA761]/20 to-transparent">
               <Star className="text-[#CCA761] mb-4" size={24} />
-              <h5 className="text-sm font-bold text-white mb-2 tracking-wide">Insight da Inteligência (MAYUS)</h5>
+              <h5 className="text-sm font-bold text-gray-900 dark:text-white mb-2 tracking-wide">Insight da Inteligência (MAYUS)</h5>
               <p className="text-[11px] text-gray-400 leading-relaxed italic font-medium">&quot;Doutor, você tem 3 audiências seguidas na quarta-feira. Recomendo revisar os relatórios de pauta agora para evitar sobrecarga operativa.&quot;</p>
             </div>
           </div>
@@ -1002,9 +1002,9 @@ const AgendaView = () => {
 };
 
 const UniversalView = ({ title }: { title: string }) => (
-  <div className="flex flex-col items-center justify-center p-12 text-center animate-fade-in-up border border-white/5 rounded-2xl bg-[#0a0a0a] min-h-[400px]">
+  <div className="flex flex-col items-center justify-center p-12 text-center animate-fade-in-up border border-gray-200 dark:border-white/5 rounded-2xl bg-white dark:bg-[#0a0a0a] min-h-[400px]">
     <Activity size={48} className="text-[#CCA761] opacity-20 mb-4" />
-    <h2 className="text-xl text-white font-bold tracking-widest uppercase mb-2">Módulo em Integração</h2>
+    <h2 className="text-xl text-gray-900 dark:text-white font-bold tracking-widest uppercase mb-2">Módulo em Integração</h2>
     <p className="text-gray-500 max-w-sm text-sm">Os painéis analíticos do módulo <strong>{title}</strong> estão sendo conectados à nova estrutura DRE do seu banco de dados.</p>
   </div>
 );
@@ -1126,7 +1126,7 @@ export default function DashboardHomePage() {
           <div className="relative">
             <button
               onClick={() => setIsDropdownOpen(!isDropdownOpen)}
-              className="flex items-center justify-between gap-4 bg-[#0a0a0a] border border-[#CCA761]/40 hover:border-[#CCA761] text-white px-5 py-2.5 rounded-xl transition-all shadow-[0_0_20px_rgba(204,167,97,0.15)] group min-w-[240px]"
+              className="flex items-center justify-between gap-4 bg-white dark:bg-[#0a0a0a] border border-[#CCA761]/40 hover:border-[#CCA761] text-gray-900 dark:text-white px-5 py-2.5 rounded-xl transition-all shadow-[0_0_20px_rgba(204,167,97,0.15)] group min-w-[240px]"
             >
               <div className="flex flex-col items-start gap-1">
                 <span className="text-[9px] font-bold uppercase tracking-widest text-[#CCA761] leading-none">Módulo Ativo</span>
@@ -1136,12 +1136,12 @@ export default function DashboardHomePage() {
             </button>
 
             {isDropdownOpen && (
-              <div className="absolute top-14 right-0 w-[240px] bg-[#0a0a0a] border border-[#CCA761]/30 rounded-xl shadow-2xl py-2 flex flex-col overflow-hidden z-[100]">
+              <div className="absolute top-14 right-0 w-[240px] bg-white dark:bg-[#0a0a0a] border border-[#CCA761]/30 rounded-xl shadow-2xl py-2 flex flex-col overflow-hidden z-[100]">
                 {TABS.map((tab) => (
                   <button
                     key={tab.id}
                     onClick={() => { setActiveView(tab.id); setIsDropdownOpen(false); }}
-                    className={`text-right px-6 py-3.5 text-[11px] font-bold uppercase tracking-widest transition-all hover:bg-white/5 border-l-2 ${activeView === tab.id ? "text-[#0a0a0a] bg-[#CCA761] hover:bg-[#b58e46] border-transparent" : "text-gray-400 hover:text-[#CCA761] border-transparent"
+                    className={`text-right px-6 py-3.5 text-[11px] font-bold uppercase tracking-widest transition-all hover:bg-gray-100 dark:bg-white/5 border-l-2 ${activeView === tab.id ? "text-[#0a0a0a] bg-[#CCA761] hover:bg-[#b58e46] border-transparent" : "text-gray-400 hover:text-[#CCA761] border-transparent"
                       }`}
                   >
                     {tab.label}
@@ -1152,7 +1152,7 @@ export default function DashboardHomePage() {
           </div>
 
           {/* Selecionador de Mês Minimizado */}
-          <select className="bg-[#111] border border-white/10 text-[10px] px-3 py-1.5 rounded-lg text-gray-300 outline-none shadow-xl cursor-pointer hover:border-[#CCA761]/50 transition-all font-bold uppercase tracking-widest min-w-[140px] text-right">
+          <select className="bg-gray-100 dark:bg-[#111] border border-gray-200 dark:border-white/10 text-[10px] px-3 py-1.5 rounded-lg text-gray-700 dark:text-gray-300 outline-none shadow-xl cursor-pointer hover:border-[#CCA761]/50 transition-all font-bold uppercase tracking-widest min-w-[140px] text-right">
             <option>Todos os Meses</option>
             <option>Mês Atual</option>
             <option>Mês Passado</option>

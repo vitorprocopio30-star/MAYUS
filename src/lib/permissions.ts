@@ -21,16 +21,34 @@ export type AppModuleId = typeof APP_MODULES[number]["id"] | "ALL";
 export const FULL_ACCESS_ROLES = ["Administrador", "admin", "Sócio", "socio", "mayus_admin"] as const;
 export const STANDARD_ACCESS_ROLES = ["Administrador", "Sócio", "Advogado", "Estagiário", "Financeiro", "SDR", "mayus_admin"] as const;
 
-export function normalizeAccessRole(role: unknown): string {
-  const raw = String(role || "").trim();
-  const compact = raw
+const CANONICAL_FULL_ACCESS_ROLES = ["admin", "socio", "mayus_admin"] as const;
+const CANONICAL_STANDARD_ACCESS_ROLES = ["admin", "socio", "advogado", "estagiario", "financeiro", "sdr", "mayus_admin"] as const;
+
+export function toCanonicalAccessRole(role: unknown): string {
+  const compact = String(role || "")
+    .trim()
     .normalize("NFD")
     .replace(/[\u0300-\u036f]/g, "")
     .toLowerCase();
 
-  if (compact === "admin" || compact === "administrador") return "Administrador";
+  if (compact === "administrador" || compact === "admin") return "admin";
+  if (compact === "socio") return "socio";
+  if (compact === "advogado" || compact === "advogada") return "advogado";
+  if (compact === "estagiario") return "estagiario";
+  if (compact === "financeiro") return "financeiro";
+  if (compact === "sdr") return "sdr";
+  if (compact === "mayus_admin") return "mayus_admin";
+
+  return compact;
+}
+
+export function normalizeAccessRole(role: unknown): string {
+  const raw = String(role || "").trim();
+  const compact = toCanonicalAccessRole(raw);
+
+  if (compact === "admin") return "Administrador";
   if (compact === "socio") return "Sócio";
-  if (compact === "advogado" || compact === "advogada") return "Advogado";
+  if (compact === "advogado") return "Advogado";
   if (compact === "estagiario") return "Estagiário";
   if (compact === "financeiro") return "Financeiro";
   if (compact === "sdr") return "SDR";
@@ -41,12 +59,14 @@ export function normalizeAccessRole(role: unknown): string {
 
 export function isFullAccessRole(role?: string): boolean {
   if (!role) return false;
-  return FULL_ACCESS_ROLES.includes(role as (typeof FULL_ACCESS_ROLES)[number]);
+  const canonicalRole = toCanonicalAccessRole(role);
+  return CANONICAL_FULL_ACCESS_ROLES.includes(canonicalRole as (typeof CANONICAL_FULL_ACCESS_ROLES)[number]);
 }
 
 export function isStandardAccessRole(role?: string): boolean {
   if (!role) return false;
-  return STANDARD_ACCESS_ROLES.includes(role as (typeof STANDARD_ACCESS_ROLES)[number]);
+  const canonicalRole = toCanonicalAccessRole(role);
+  return CANONICAL_STANDARD_ACCESS_ROLES.includes(canonicalRole as (typeof CANONICAL_STANDARD_ACCESS_ROLES)[number]);
 }
 
 // Mapeamento de Rotas (pathname) para qual Módulo ela pertence

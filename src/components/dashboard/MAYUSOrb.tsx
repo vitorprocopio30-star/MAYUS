@@ -8,7 +8,7 @@ import { useConversation } from "@elevenlabs/react";
 import * as THREE from "three";
 
 export function MAYUSOrb() {
-  const { role } = useUserProfile();
+  const { role, profile } = useUserProfile();
   const [isExpanded, setIsExpanded] = useState(false);
   
   const mountRef = useRef<HTMLDivElement>(null);
@@ -16,13 +16,47 @@ export function MAYUSOrb() {
   const orbAuraRef = useRef<HTMLDivElement>(null);
   const coreWaveformRef = useRef<HTMLDivElement>(null);
 
+  const invokePrimaryBrain = useCallback(async (toolName: string, payload: unknown = {}) => {
+    const normalizedPayload = payload && typeof payload === "object" && !Array.isArray(payload)
+      ? (payload as Record<string, unknown>)
+      : { value: payload };
+
+    const response = await fetch("/api/agent/voice/brain-bridge", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({
+        toolName,
+        toolPayload: normalizedPayload,
+        prompt:
+          typeof normalizedPayload.prompt === "string"
+            ? normalizedPayload.prompt
+            : typeof normalizedPayload.message === "string"
+              ? normalizedPayload.message
+              : typeof normalizedPayload.instruction === "string"
+                ? normalizedPayload.instruction
+                : undefined,
+      }),
+    });
+
+    const data = await response.json().catch(() => ({}));
+
+    if (!response.ok) {
+      throw new Error(data?.error || "Falha ao consultar o cerebro principal.");
+    }
+
+    return data?.reply || "Missao registrada no cerebro principal do MAYUS.";
+  }, []);
+
   // --- CONFIGURAÇÃO ELEVENLABS ---
   const conversation = useConversation({
     clientTools: {
-      trocar_fundo_tema: async () => {},
-      abrir_agenda: async () => {},
-      criar_tarefa_n8n_master: async () => {},
-      memorizar_informacao_intima: async () => {},
+      consultar_cerebro_principal: async (payload) => invokePrimaryBrain("consultar_cerebro_principal", payload),
+      ask_mayus_brain: async (payload) => invokePrimaryBrain("ask_mayus_brain", payload),
+      executar_no_mayus: async (payload) => invokePrimaryBrain("executar_no_mayus", payload),
+      trocar_fundo_tema: async (payload) => invokePrimaryBrain("trocar_fundo_tema", payload),
+      abrir_agenda: async (payload) => invokePrimaryBrain("abrir_agenda", payload),
+      criar_tarefa_n8n_master: async (payload) => invokePrimaryBrain("criar_tarefa_n8n_master", payload),
+      memorizar_informacao_intima: async (payload) => invokePrimaryBrain("memorizar_informacao_intima", payload),
     },
     onConnect: () => {},
     onDisconnect: () => {
@@ -60,14 +94,16 @@ export function MAYUSOrb() {
         await conversation.startSession({ 
           signedUrl: signed_url,
           dynamicVariables: {
-            nome_usuario: "Doutor Vitor"
+            nome_usuario: profile?.full_name || "Doutor",
+            modo_operacao: "O ElevenLabs e apenas a camada de voz. Toda decisao, memoria e execucao devem ser solicitadas ao cerebro principal do MAYUS pelas clientTools disponiveis.",
           }
         });
       } catch (err: any) {
+        toast.error(err?.message || "Falha ao iniciar o shell de voz do MAYUS.");
         setIsExpanded(false);
       }
     }
-  }, [role, status, conversation]);
+  }, [role, status, conversation, profile?.full_name]);
 
   // --- EFEITO: AUDIO AMBIENT ---
   useEffect(() => {
@@ -85,6 +121,7 @@ export function MAYUSOrb() {
 
     let animationId: number;
     const clock = new THREE.Clock();
+    const mountNode = mountRef.current;
 
     // 1. Scene, Camera, Renderer
     const scene = new THREE.Scene();
@@ -96,7 +133,7 @@ export function MAYUSOrb() {
     const renderer = new THREE.WebGLRenderer({ antialias: true, alpha: true });
     renderer.setSize(window.innerWidth, window.innerHeight);
     renderer.setPixelRatio(Math.min(window.devicePixelRatio, 2));
-    mountRef.current.appendChild(renderer.domElement);
+    mountNode.appendChild(renderer.domElement);
 
     // ==================================================
     // STARFIELD (FUNDO COM PARTÍCULAS SIDERAIS DOURADAS)
@@ -283,7 +320,7 @@ export function MAYUSOrb() {
         starGeo.dispose();
         starMat.dispose();
         renderer.dispose();
-        mountRef.current?.removeChild(renderer.domElement);
+        mountNode.removeChild(renderer.domElement);
     };
   }, [isExpanded, status, isSpeaking]);
 
@@ -292,7 +329,7 @@ export function MAYUSOrb() {
       <audio ref={audioRef} src="https://ice1.somafm.com/dronezone-128-mp3" loop preload="none" className="hidden" />
 
       {/* MODO EXPANDIDO */}
-      <div className={`fixed inset-0 z-[100] flex items-center justify-center bg-black transition-all duration-[1000ms] ${isExpanded ? "opacity-100 pointer-events-auto" : "opacity-0 pointer-events-none"}`}>
+      <div className={`fixed inset-0 z-[100] flex items-center justify-center bg-gray-200 dark:bg-black transition-all duration-[1000ms] ${isExpanded ? "opacity-100 pointer-events-auto" : "opacity-0 pointer-events-none"}`}>
         
         {/* CONTAINER DO THREE.JS */}
         <div ref={mountRef} className="absolute inset-0 z-0 pointer-events-none" />
@@ -327,7 +364,7 @@ export function MAYUSOrb() {
             if (status === "connected") await conversation.endSession();
             setIsExpanded(false);
           }} 
-          className="absolute top-12 right-12 text-[#CCA761] hover:scale-110 hover:text-white transition-transform z-[110]"
+          className="absolute top-12 right-12 text-[#CCA761] hover:scale-110 hover:text-gray-900 dark:text-white transition-transform z-[110]"
         >
           <X size={32} />
         </button>
@@ -342,7 +379,7 @@ export function MAYUSOrb() {
         >
           <div className="absolute inset-0 rounded-full border-2 border-dashed border-[#CCA761]/30 animate-[spin_10s_linear_infinite]" />
           <div className="absolute inset-2 rounded-full border border-[#CCA761]/50 animate-[spin_6s_linear_infinite_reverse]" />
-          <div className="relative w-12 h-12 bg-[#0a0a0a] rounded-full border border-[#CCA761]/50 flex items-center justify-center transition-all duration-500 group-hover:scale-110 shadow-[inset_0_0_15px_rgba(204,167,97,0.2)]">
+          <div className="relative w-12 h-12 bg-white dark:bg-[#0a0a0a] rounded-full border border-[#CCA761]/50 flex items-center justify-center transition-all duration-500 group-hover:scale-110 shadow-[inset_0_0_15px_rgba(204,167,97,0.2)]">
             <Scale size={22} className="text-[#CCA761]" />
           </div>
         </button>

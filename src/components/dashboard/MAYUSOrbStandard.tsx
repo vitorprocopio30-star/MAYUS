@@ -3,9 +3,9 @@
 import { useState, useCallback, useEffect, useRef } from "react";
 import { Mic, Waves, Scale, Loader2, Volume2, WifiOff } from "lucide-react";
 import { useUserProfile } from "@/hooks/useUserProfile";
+import { fetchSafeIntegrations } from "@/lib/integrations/fetch-safe-integrations";
 import { toast } from "sonner";
 import { useRouter } from "next/navigation";
-import { createClient } from "@/lib/supabase/client";
 
 export function MAYUSOrbStandard() {
   const { profile } = useUserProfile();
@@ -13,7 +13,7 @@ export function MAYUSOrbStandard() {
   const [isListening, setIsListening] = useState(false);
   const [isProcessing, setIsProcessing] = useState(false);
   const [isSpeaking, setIsSpeaking] = useState(false);
-  const [apiKeyData, setApiKeyData] = useState<string | null>(null);
+  const [voiceProviderReady, setVoiceProviderReady] = useState(false);
   
   // Memória de Curto Prazo do MAYUS
   const [chatHistory, setChatHistory] = useState<{role: string, content: string}[]>([]);
@@ -22,27 +22,26 @@ export function MAYUSOrbStandard() {
   const audioContextRef = useRef<AudioContext | null>(null);
   const isAutoListeningRef = useRef<boolean>(true); // Controle de loop
   const router = useRouter();
-  const supabase = createClient();
 
-  // Load API Key do Supabase on mount
+  // Verifica se ha um provedor de voz configurado sem expor segredos no client.
   useEffect(() => {
     if (profile?.tenant_id) {
-      const loadApiKey = async () => {
-        const { data: integrations } = await supabase
-          .from("tenant_integrations")
-          .select("api_key")
-          .eq("tenant_id", profile.tenant_id)
-          .eq("provider", "openai")
-          .eq("status", "connected")
-          .single();
-
-        if (integrations?.api_key) {
-          setApiKeyData(integrations.api_key);
+      const loadVoiceProviders = async () => {
+        try {
+          const integrations = await fetchSafeIntegrations({ providers: ["openai", "elevenlabs"] });
+          const hasReadyProvider = integrations.some(
+            (integration) => integration.status === "connected" && integration.has_api_key
+          );
+          setVoiceProviderReady(hasReadyProvider);
+        } catch {
+          setVoiceProviderReady(false);
         }
       };
-      loadApiKey();
+      loadVoiceProviders();
+    } else {
+      setVoiceProviderReady(false);
     }
-  }, [profile?.tenant_id, supabase]);
+  }, [profile?.tenant_id]);
 
   const startListeningRef = useRef<() => void>();
 
@@ -62,7 +61,6 @@ export function MAYUSOrbStandard() {
         body: JSON.stringify({
           message: text,
           provider: "n8n",
-          apiKey: apiKeyData,
           model: "gpt-4o-mini", 
           history: chatHistory,
           tenantId: profile?.tenant_id,
@@ -104,7 +102,7 @@ export function MAYUSOrbStandard() {
       setTranscribedText(finalReplyText);
 
       setIsSpeaking(true);
-      const audioUrl = `/api/ai/tts?text=${encodeURIComponent(finalReplyText)}&apiKey=${apiKeyData}&voice=onyx`;
+      const audioUrl = `/api/ai/tts?text=${encodeURIComponent(finalReplyText)}&voice=onyx`;
       const audio = new Audio(audioUrl);
       
       audio.onplay = () => setIsSpeaking(true);
@@ -125,11 +123,11 @@ export function MAYUSOrbStandard() {
     } finally {
       setIsProcessing(false);
     }
-  }, [apiKeyData, chatHistory, profile?.id, profile?.tenant_id, router]);
+  }, [chatHistory, profile?.id, profile?.tenant_id, router]);
 
   const startListening = useCallback(() => {
-    if (!apiKeyData) {
-      toast.error("O MAYUS precisa que a Integração da OpenAI esteja conectada nas suas Configurações!");
+    if (!voiceProviderReady) {
+      toast.error("O MAYUS precisa de um provedor de voz conectado nas suas Configurações.");
       return;
     }
 
@@ -177,7 +175,7 @@ export function MAYUSOrbStandard() {
 
       recognitionRef.current.start();
     }
-  }, [apiKeyData, processVoiceInput]);
+  }, [processVoiceInput, voiceProviderReady]);
 
   useEffect(() => {
     startListeningRef.current = startListening;
@@ -220,7 +218,7 @@ export function MAYUSOrbStandard() {
         <div className={`absolute inset-0 rounded-full border-2 border-dashed transition-all duration-700 ${isListening ? "animate-[spin_4s_linear_infinite] border-green-500/40" : isSpeaking ? "animate-[spin_4s_linear_infinite] border-blue-500/40" : "animate-[spin_12s_linear_infinite] border-[#CCA761]/40"}`} />
         <div className={`absolute inset-2 rounded-full border border-t-transparent border-b-transparent transition-all duration-700 ${(isListening || isSpeaking || isProcessing) ? "animate-[spin_3s_linear_infinite_reverse] scale-110 border-[#f1d58d] shadow-[0_0_20px_rgba(204,167,97,0.5)]" : "animate-[spin_8s_linear_infinite_reverse] border-[#CCA761]/60"}`} />
         <div className={`absolute inset-4 rounded-full border transition-all duration-500 ${(isListening || isSpeaking) ? "animate-pulse scale-90 border-[#f1d58d]" : "border-[#cca761]/80"}`} />
-         <div className={`relative w-10 h-10 flex items-center justify-center rounded-full bg-[#0a0a0a] border border-[#CCA761]/50 transition-all duration-500 z-10 ${
+         <div className={`relative w-10 h-10 flex items-center justify-center rounded-full bg-white dark:bg-[#0a0a0a] border border-[#CCA761]/50 transition-all duration-500 z-10 ${
             (isListening || isSpeaking || isProcessing) ? "shadow-[0_0_25px_rgba(204,167,97,0.4)] border-[#CCA761] animate-pulse" : "shadow-[inset_0_0_15px_rgba(204,167,97,0.2)] group-hover:border-[#CCA761]/80"
          }`}>
             <div className={`absolute w-6 h-6 rounded-full border border-dashed border-[#CCA761] animate-[spin_2s_linear_infinite] ${(isListening || isSpeaking) ? "scale-125 opacity-100" : "opacity-30"}`} />

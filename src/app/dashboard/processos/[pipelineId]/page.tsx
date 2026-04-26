@@ -1,6 +1,6 @@
 "use client";
 
-import { useState, useEffect, useMemo } from "react";
+import { useCallback, useEffect, useMemo, useState } from "react";
 import { useParams, useRouter } from "next/navigation";
 import Link from "next/link";
 import dynamic from "next/dynamic";
@@ -10,7 +10,7 @@ import { DragDropContext, Droppable, Draggable, DropResult } from "@hello-pangea
 import { 
   Plus, Settings, LayoutTemplate, List,
   Tag as TagIcon, User as UserIcon, AlignLeft, X, Trash2,
-  Calendar, CheckCircle2, AlertTriangle, ArrowRight, Copy, Check
+  Calendar, CheckCircle2, AlertTriangle, ArrowRight, Copy, Check, Loader2, Sparkles
 } from "lucide-react";
 import { toast } from "sonner";
 import { TagsInput } from "react-tag-input-component";
@@ -23,10 +23,158 @@ import "react-quill/dist/quill.snow.css";
 import { Pipeline, Stage, Profile, Task } from "@/types/processos";
 import ProcessosTaskModal from "@/components/Processos/ProcessosTaskModal";
 
+type DraftFactoryStatus = "idle" | "queued" | "running" | "completed" | "failed";
+
+type ProcessDraftMemory = {
+  process_task_id: string;
+  case_brain_task_id?: string | null;
+  draft_plan_summary?: Record<string, unknown> | null;
+  first_draft_status?: string | null;
+  first_draft_error?: string | null;
+  first_draft_artifact_id?: string | null;
+  first_draft_case_brain_task_id?: string | null;
+};
+
+type DraftFactoryQuickAction = {
+  label: string;
+  href: string;
+  className: string;
+};
+
+type DraftFactoryFilter = "all" | "queued" | "running" | "completed" | "failed";
+
+const DRAFT_FACTORY_FILTER_OPTIONS: Array<{ value: DraftFactoryFilter; label: string }> = [
+  { value: "all", label: "Todas" },
+  { value: "queued", label: "Em fila" },
+  { value: "running", label: "Gerando" },
+  { value: "completed", label: "Prontas" },
+  { value: "failed", label: "Falhas" },
+];
+
+function isRecord(value: unknown): value is Record<string, unknown> {
+  return Boolean(value) && typeof value === "object" && !Array.isArray(value);
+}
+
+function getString(value: Record<string, unknown> | null | undefined, key: string) {
+  const item = value?.[key];
+  return typeof item === "string" && item.trim().length > 0 ? item.trim() : null;
+}
+
+function normalizeDraftFactoryStatus(value?: string | null): DraftFactoryStatus {
+  switch (value) {
+    case "queued":
+    case "running":
+    case "completed":
+    case "failed":
+      return value;
+    default:
+      return "idle";
+  }
+}
+
+function isDraftFactoryStale(memory?: ProcessDraftMemory | null) {
+  const artifactId = memory?.first_draft_artifact_id || null;
+  const currentCaseBrainTaskId = memory?.case_brain_task_id || null;
+  const sourceCaseBrainTaskId = memory?.first_draft_case_brain_task_id || null;
+
+  if (!artifactId || !currentCaseBrainTaskId) {
+    return false;
+  }
+
+  if (!sourceCaseBrainTaskId) {
+    return true;
+  }
+
+  return sourceCaseBrainTaskId !== currentCaseBrainTaskId;
+}
+
+function getDraftFactoryBadge(memory?: ProcessDraftMemory | null) {
+  if (!memory) return null;
+
+  const status = normalizeDraftFactoryStatus(memory.first_draft_status);
+  const stale = isDraftFactoryStale(memory);
+  const draftPlan = isRecord(memory.draft_plan_summary) ? memory.draft_plan_summary : null;
+  const pieceLabel = getString(draftPlan, "recommended_piece_label") || getString(draftPlan, "recommended_piece_input");
+
+  switch (status) {
+    case "queued":
+      return {
+        label: stale && memory.first_draft_artifact_id ? "Atualizando minuta" : "Minuta em fila",
+        detail: pieceLabel,
+        icon: ArrowRight,
+        className: "border-gray-200 dark:border-white/10 bg-gray-100 dark:bg-white/5 text-gray-700 dark:text-gray-300",
+      };
+    case "running":
+      return {
+        label: stale && memory.first_draft_artifact_id ? "Atualizando minuta" : "Minuta gerando",
+        detail: pieceLabel,
+        icon: Loader2,
+        className: "border-[#CCA761]/25 bg-[#CCA761]/10 text-[#CCA761]",
+      };
+    case "completed":
+      return {
+        label: stale ? "Minuta desatualizada" : "Minuta pronta",
+        detail: pieceLabel,
+        icon: CheckCircle2,
+        className: stale ? "border-amber-500/25 bg-amber-500/10 text-amber-300" : "border-emerald-500/25 bg-emerald-500/10 text-emerald-300",
+      };
+    case "failed":
+      return {
+        label: "Minuta falhou",
+        detail: memory.first_draft_error || pieceLabel,
+        icon: AlertTriangle,
+        className: "border-red-500/25 bg-red-500/10 text-red-300",
+      };
+    default:
+      return draftPlan
+        ? {
+            label: "Draft plan pronto",
+            detail: pieceLabel,
+            icon: Sparkles,
+            className: "border-[#CCA761]/20 bg-[#CCA761]/10 text-[#CCA761]",
+          }
+        : null;
+  }
+}
+
+function matchesDraftFactoryFilter(memory: ProcessDraftMemory | null | undefined, filter: DraftFactoryFilter) {
+  if (filter === "all") return true;
+  return normalizeDraftFactoryStatus(memory?.first_draft_status) === filter;
+}
+
+function getDocumentosHref(taskId: string) {
+  return `/dashboard/documentos?taskId=${encodeURIComponent(taskId)}`;
+}
+
+function getDraftFactoryQuickAction(taskId: string, memory?: ProcessDraftMemory | null): DraftFactoryQuickAction | null {
+  if (!memory) return null;
+
+  const status = normalizeDraftFactoryStatus(memory.first_draft_status);
+  const stale = isDraftFactoryStale(memory);
+
+  if (status === "failed") {
+    return {
+      label: stale && memory.first_draft_artifact_id ? "Atualizar em Documentos" : "Resolver em Documentos",
+      href: getDocumentosHref(taskId),
+      className: "border-red-500/20 bg-red-500/10 text-red-200 hover:bg-red-500/15",
+    };
+  }
+
+  if (status === "completed" && memory.first_draft_artifact_id) {
+    return {
+      label: stale ? "Atualizar em Documentos" : "Revisar / Exportar",
+      href: getDocumentosHref(taskId),
+      className: stale ? "border-amber-500/20 bg-amber-500/10 text-amber-200 hover:bg-amber-500/15" : "border-emerald-500/20 bg-emerald-500/10 text-emerald-200 hover:bg-emerald-500/15",
+    };
+  }
+
+  return null;
+}
+
 // Dynamic import for ReactQuill to avoid SSR issues
 const ReactQuill = dynamic(() => import("react-quill"), { 
   ssr: false,
-  loading: () => <div className="h-[250px] w-full bg-white/5 animate-pulse rounded-lg" />
+  loading: () => <div className="h-[250px] w-full bg-gray-100 dark:bg-white/5 animate-pulse rounded-lg" />
 });
 
 function normalizarNomeEtapa(nome?: string | null) {
@@ -86,10 +234,29 @@ function formatDeadlineDays(diffDays?: number | null) {
   return `${diffDays} dias`;
 }
 
+function dedupeTasksById(tasks: Task[]) {
+  const byId = new Map<string, Task>();
+
+  tasks.forEach((task) => {
+    if (task?.id) byId.set(task.id, task);
+  });
+
+  return Array.from(byId.values());
+}
+
+function upsertTaskById(tasks: Task[], task: Task) {
+  const exists = tasks.some((currentTask) => currentTask.id === task.id);
+  const nextTasks = exists
+    ? tasks.map((currentTask) => (currentTask.id === task.id ? task : currentTask))
+    : [...tasks, task];
+
+  return dedupeTasksById(nextTasks);
+}
+
 export default function PipelinePage() {
   const { pipelineId } = useParams() as { pipelineId: string };
   const router = useRouter();
-  const supabase = createClient();
+  const supabase = useMemo(() => createClient(), []);
   const { profile } = useUserProfile();
 
   const [pipeline, setPipeline] = useState<Pipeline | null>(null);
@@ -105,6 +272,8 @@ export default function PipelinePage() {
   const [isTaskModalOpen, setIsTaskModalOpen] = useState(false);
   const [editingTask, setEditingTask] = useState<Task | null>(null);
   const [copiedTextKey, setCopiedTextKey] = useState<string | null>(null);
+  const [draftMemoryByTask, setDraftMemoryByTask] = useState<Record<string, ProcessDraftMemory>>({});
+  const [draftFactoryFilter, setDraftFactoryFilter] = useState<DraftFactoryFilter>("all");
 
   
 const [pendingMove, setPendingMove] = useState<{ 
@@ -117,32 +286,63 @@ const [pendingMove, setPendingMove] = useState<{
     taskTitle: string;
   } | null>(null);
 
-  useEffect(() => {
-    async function fetchData() {
-      if (!profile?.tenant_id || !pipelineId) return;
-      
-      try {
-        const [pipeRes, stagesRes, tasksRes, agentsRes, allPipesRes] = await Promise.all([
-          supabase.from("process_pipelines").select("*").eq("id", pipelineId).single(),
-          supabase.from("process_stages").select("*").eq("pipeline_id", pipelineId).order("order_index"),
-          supabase.from("process_tasks").select("*").eq("pipeline_id", pipelineId).order("position_index"),
-          supabase.from("profiles").select("id, full_name, avatar_url").eq("tenant_id", profile.tenant_id).eq("is_active", true),
-          supabase.from("process_pipelines").select("*").eq("tenant_id", profile.tenant_id).order("created_at")
-        ]);
+  const loadPipelineData = useCallback(async () => {
+    if (!profile?.tenant_id || !pipelineId) return;
 
-        if (pipeRes.data) setPipeline(pipeRes.data);
-        if (stagesRes.data) setStages(stagesRes.data);
-        if (tasksRes.data) setTasks(tasksRes.data);
-        if (agentsRes.data) setAgents(agentsRes.data);
-        if (allPipesRes.data) setAllPipelines(allPipesRes.data);
-      } catch (err: any) {
-        toast.error("Erro ao carregar dados.");
-      } finally {
-        setIsLoading(false);
+    try {
+      const [pipeRes, stagesRes, tasksRes, agentsRes, allPipesRes] = await Promise.all([
+        supabase.from("process_pipelines").select("*").eq("id", pipelineId).single(),
+        supabase.from("process_stages").select("*").eq("pipeline_id", pipelineId).order("order_index"),
+        supabase.from("process_tasks").select("*").eq("pipeline_id", pipelineId).order("position_index"),
+        supabase.from("profiles").select("id, full_name, avatar_url").eq("tenant_id", profile.tenant_id).eq("is_active", true),
+        supabase.from("process_pipelines").select("*").eq("tenant_id", profile.tenant_id).order("created_at")
+      ]);
+
+      const taskIds = (tasksRes.data || []).map((task) => task.id).filter(Boolean);
+      const memoryRes = taskIds.length > 0
+        ? await supabase
+            .from("process_document_memory")
+            .select("process_task_id, case_brain_task_id, draft_plan_summary, first_draft_status, first_draft_error, first_draft_artifact_id, first_draft_case_brain_task_id")
+            .in("process_task_id", taskIds)
+        : { data: [], error: null };
+
+      if (memoryRes.error) {
+        throw memoryRes.error;
       }
+
+      if (pipeRes.data) setPipeline(pipeRes.data);
+      if (stagesRes.data) setStages(stagesRes.data);
+      if (tasksRes.data) setTasks(dedupeTasksById(tasksRes.data));
+      if (agentsRes.data) setAgents(agentsRes.data);
+      if (allPipesRes.data) setAllPipelines(allPipesRes.data);
+      setDraftMemoryByTask(Object.fromEntries((memoryRes.data || []).map((memory) => [memory.process_task_id, memory])));
+    } catch (err: any) {
+      toast.error("Erro ao carregar dados.");
+    } finally {
+      setIsLoading(false);
     }
-    fetchData();
   }, [pipelineId, profile?.tenant_id, supabase]);
+
+  useEffect(() => {
+    void loadPipelineData();
+  }, [loadPipelineData]);
+
+  useEffect(() => {
+    if (!profile?.tenant_id) return;
+
+    const hasActiveDrafts = Object.values(draftMemoryByTask).some((memory) => {
+      const status = normalizeDraftFactoryStatus(memory.first_draft_status);
+      return status === "queued" || status === "running";
+    });
+
+    if (!hasActiveDrafts) return;
+
+    const intervalId = window.setInterval(() => {
+      void loadPipelineData();
+    }, 20000);
+
+    return () => window.clearInterval(intervalId);
+  }, [draftMemoryByTask, loadPipelineData, profile?.tenant_id]);
 
   const copyText = async (key: string, text: string) => {
     if (!text || typeof navigator === "undefined" || !navigator.clipboard) return;
@@ -231,7 +431,7 @@ const [pendingMove, setPendingMove] = useState<{
       t.position_index = i;
     });
 
-    setTasks([...newTasks.filter(t => t.stage_id !== destination.droppableId), ...destColumnTasks]);
+    setTasks(dedupeTasksById([...newTasks.filter(t => t.stage_id !== destination.droppableId), ...destColumnTasks]));
 
     try {
       const nowIso = new Date().toISOString();
@@ -314,6 +514,32 @@ const [pendingMove, setPendingMove] = useState<{
     [stages]
   );
 
+  const filteredTasks = useMemo(
+    () => tasks.filter((task) => matchesDraftFactoryFilter(draftMemoryByTask[task.id], draftFactoryFilter)),
+    [draftFactoryFilter, draftMemoryByTask, tasks]
+  );
+
+  const draftFactoryFilterCounts = useMemo(() => {
+    const counts: Record<DraftFactoryFilter, number> = {
+      all: tasks.length,
+      queued: 0,
+      running: 0,
+      completed: 0,
+      failed: 0,
+    };
+
+    tasks.forEach((task) => {
+      const status = normalizeDraftFactoryStatus(draftMemoryByTask[task.id]?.first_draft_status);
+      if (status === "queued" || status === "running" || status === "completed" || status === "failed") {
+        counts[status] += 1;
+      }
+    });
+
+    return counts;
+  }, [draftMemoryByTask, tasks]);
+
+  const dragDisabled = draftFactoryFilter !== "all";
+
   const openNewTaskModal = (stageId?: string) => {
     setDefaultStageId(stageId || (visibleStages[0]?.id ?? stages[0]?.id ?? ""));
     setEditingTask(null);
@@ -329,14 +555,14 @@ const [pendingMove, setPendingMove] = useState<{
 
   if (isLoading && stages.length === 0) {
     return (
-      <div className="flex-1 flex items-center justify-center min-h-screen bg-[#050505]">
+      <div className="flex-1 flex items-center justify-center min-h-screen bg-white dark:bg-[#050505]">
         <div className="w-8 h-8 border-4 border-[#CCA761] border-t-transparent rounded-full animate-spin" />
       </div>
     );
   }
 
   return (
-    <div className="flex flex-col h-screen bg-[#050505] overflow-hidden">
+    <div className="flex flex-col h-screen bg-white dark:bg-[#050505] overflow-hidden">
       {/* Sempre monta a animação do Neon */}
       <style dangerouslySetInnerHTML={{ __html: `
         @keyframes neonBeam {
@@ -346,7 +572,7 @@ const [pendingMove, setPendingMove] = useState<{
       `}} />
       
       {/* HEADER */}
-      <header className="flex-none bg-[#0a0a0a]/90 backdrop-blur-xl border-b border-white/5 z-20">
+      <header className="flex-none bg-white dark:bg-[#0a0a0a]/90 backdrop-blur-xl border-b border-gray-200 dark:border-white/5 z-20">
         <div className="px-6 py-4 flex flex-col md:flex-row md:items-center justify-start gap-8">
           <div className="flex items-center gap-4">
             <div className="flex flex-col relative">
@@ -357,7 +583,7 @@ const [pendingMove, setPendingMove] = useState<{
                 <h1 className="text-2xl font-bold bg-gradient-to-r from-white to-gray-400 bg-clip-text text-transparent flex items-center gap-2 transition-opacity group-hover:opacity-80">
                   {pipeline?.name || "Carregando..."}
                   <svg className={`w-5 h-5 text-gray-400 transition-transform ${isDropdownOpen ? 'rotate-180' : ''}`} fill="none" viewBox="0 0 24 24" stroke="currentColor"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 9l-7 7-7-7" /></svg>
-                  <span className="text-xs bg-white/10 text-gray-300 px-2.5 py-1 rounded-full">{tasks.length}</span>
+                  <span className="text-xs bg-gray-100 dark:bg-white/10 text-gray-700 dark:text-gray-300 px-2.5 py-1 rounded-full">{tasks.length}</span>
                 </h1>
               </div>
 
@@ -365,8 +591,8 @@ const [pendingMove, setPendingMove] = useState<{
               {isDropdownOpen && (
                 <>
                   <div className="fixed inset-0 z-40" onClick={() => setIsDropdownOpen(false)}></div>
-                  <div className="absolute top-10 left-0 mt-2 w-64 bg-[#111] border border-white/10 rounded-xl shadow-2xl py-2 z-50">
-                    <div className="px-3 pb-2 mb-2 border-b border-white/5 text-xs font-bold text-gray-500 uppercase tracking-wider">
+                  <div className="absolute top-10 left-0 mt-2 w-64 bg-gray-100 dark:bg-[#111] border border-gray-200 dark:border-white/10 rounded-xl shadow-2xl py-2 z-50">
+                    <div className="px-3 pb-2 mb-2 border-b border-gray-200 dark:border-white/5 text-xs font-bold text-gray-500 uppercase tracking-wider">
                       Seus processos (Setores)
                     </div>
                     {allPipelines.map(p => (
@@ -376,13 +602,13 @@ const [pendingMove, setPendingMove] = useState<{
                           setIsDropdownOpen(false);
                           if (p.id !== pipelineId) router.push(`/dashboard/processos/${p.id}`);
                         }}
-                        className={`w-full text-left px-4 py-2 text-sm transition-colors flex items-center justify-between ${p.id === pipelineId ? 'bg-[#CCA761]/10 text-[#CCA761]' : 'text-gray-300 hover:bg-white/5 hover:text-white'}`}
+                        className={`w-full text-left px-4 py-2 text-sm transition-colors flex items-center justify-between ${p.id === pipelineId ? 'bg-[#CCA761]/10 text-[#CCA761]' : 'text-gray-700 dark:text-gray-300 hover:bg-gray-100 dark:bg-white/5 hover:text-white'}`}
                       >
                         {p.name}
                         {p.id === pipelineId && <CheckCircle2 size={14} />}
                       </button>
                     ))}
-                    <div className="px-3 pt-2 mt-2 border-t border-white/5">
+                    <div className="px-3 pt-2 mt-2 border-t border-gray-200 dark:border-white/5">
                       <button 
                         onClick={() => {
                           setIsDropdownOpen(false);
@@ -404,22 +630,22 @@ const [pendingMove, setPendingMove] = useState<{
           </div>
 
           <div className="flex items-center gap-3 flex-wrap md:justify-start">
-            <div className="flex items-center bg-[#111] border border-white/5 rounded-lg p-1">
+            <div className="flex items-center bg-gray-100 dark:bg-[#111] border border-gray-200 dark:border-white/5 rounded-lg p-1">
               <button 
                 onClick={() => setViewMode("board")}
-                className={`p-2 rounded-md flex items-center gap-2 transition-all ${viewMode === "board" ? "bg-white/10 text-white shadow-sm" : "text-gray-500 hover:text-white hover:bg-white/5"}`}
+                className={`p-2 rounded-md flex items-center gap-2 transition-all ${viewMode === "board" ? "bg-gray-100 dark:bg-white/10 text-gray-900 dark:text-white shadow-sm" : "text-gray-500 hover:text-gray-900 dark:text-white hover:bg-gray-100 dark:bg-white/5"}`}
               >
                 <LayoutTemplate size={16} /> <span className="text-xs font-bold uppercase hidden sm:inline">Board</span>
               </button>
               <button 
                 onClick={() => setViewMode("list")}
-                className={`p-2 rounded-md flex items-center gap-2 transition-all ${viewMode === "list" ? "bg-white/10 text-white shadow-sm" : "text-gray-500 hover:text-white hover:bg-white/5"}`}
+                className={`p-2 rounded-md flex items-center gap-2 transition-all ${viewMode === "list" ? "bg-gray-100 dark:bg-white/10 text-gray-900 dark:text-white shadow-sm" : "text-gray-500 hover:text-gray-900 dark:text-white hover:bg-gray-100 dark:bg-white/5"}`}
               >
                 <List size={16} /> <span className="text-xs font-bold uppercase hidden sm:inline">Lista</span>
               </button>
             </div>
 
-            <Link href={`/dashboard/processos/config/${pipelineId}`} className="flex items-center gap-2 p-2.5 bg-[#111] hover:bg-[#CCA761]/10 text-gray-400 hover:text-[#CCA761] border border-white/5 rounded-lg transition-colors" title="Configurações do Processo">
+            <Link href={`/dashboard/processos/config/${pipelineId}`} className="flex items-center gap-2 p-2.5 bg-gray-100 dark:bg-[#111] hover:bg-[#CCA761]/10 text-gray-400 hover:text-[#CCA761] border border-gray-200 dark:border-white/5 rounded-lg transition-colors" title="Configurações do Processo">
               <Settings size={18} /> <span className="text-xs font-bold hidden sm:inline">Configurar</span>
             </Link>
           </div>
@@ -427,14 +653,42 @@ const [pendingMove, setPendingMove] = useState<{
       </header>
 
       {/* MAIN CONTENT */}
-      <main className="flex-1 overflow-hidden relative">
+      <main className="flex-1 overflow-hidden relative flex flex-col">
+        <div className="px-6 pt-4 pb-3 border-b border-gray-200 dark:border-white/5 bg-[#090909]/90 backdrop-blur-md">
+          <div className="flex flex-wrap items-center gap-2">
+            <span className="text-[10px] uppercase tracking-[0.22em] text-gray-500 font-black mr-2">Filtro da Draft Factory</span>
+            {DRAFT_FACTORY_FILTER_OPTIONS.map((option) => {
+              const active = draftFactoryFilter === option.value;
+              return (
+                <button
+                  key={option.value}
+                  type="button"
+                  onClick={() => setDraftFactoryFilter(option.value)}
+                  className={`inline-flex items-center gap-2 rounded-lg border px-3 py-2 text-[10px] font-black uppercase tracking-[0.18em] transition-colors ${active ? "border-[#CCA761]/35 bg-[#CCA761]/10 text-[#CCA761]" : "border-gray-200 dark:border-white/10 bg-gray-100 dark:bg-[#111] text-gray-400 hover:text-gray-900 dark:text-white hover:bg-gray-100 dark:bg-white/5"}`}
+                >
+                  <span>{option.label}</span>
+                  <span className={`rounded-full px-1.5 py-0.5 text-[9px] ${active ? "bg-[#CCA761]/10 text-[#CCA761]" : "bg-gray-100 dark:bg-white/5 text-gray-500"}`}>
+                    {draftFactoryFilterCounts[option.value]}
+                  </span>
+                </button>
+              );
+            })}
+          </div>
+
+          {dragDisabled && viewMode === "board" && (
+            <p className="text-[11px] text-gray-500 mt-3 leading-relaxed">
+              Arraste temporariamente desativado enquanto um filtro de minuta estiver ativo, para preservar a ordenação real do pipeline.
+            </p>
+          )}
+        </div>
+
         {viewMode === "board" ? (
-          <div className="h-full w-full overflow-x-auto overflow-y-hidden p-6 pb-2 relative" style={{ scrollbarWidth: 'thin', scrollbarColor: '#3f3f4630 transparent' }}>
+          <div className="flex-1 w-full overflow-x-auto overflow-y-hidden p-6 pb-2 relative" style={{ scrollbarWidth: 'thin', scrollbarColor: '#3f3f4630 transparent' }}>
 
             <DragDropContext onDragEnd={onDragEnd}>
               <div className="flex items-start gap-4 h-full pb-6">
                 {visibleStages.map(stage => {
-                  const stageTasks = tasks.filter(t => t.stage_id === stage.id).sort((a,b) => a.position_index - b.position_index);
+                  const stageTasks = filteredTasks.filter(t => t.stage_id === stage.id).sort((a,b) => a.position_index - b.position_index);
                   
                   return (
                     <div key={stage.id} className="flex flex-col flex-none w-[340px] h-full max-h-full bg-[#090909] rounded-2xl border border-zinc-800 overflow-hidden">
@@ -442,15 +696,15 @@ const [pendingMove, setPendingMove] = useState<{
                         <div className="absolute inset-0 opacity-[0.09] rounded-t-2xl" style={{ backgroundColor: stage.color }} />
                         <div className="flex items-center gap-2 relative z-10 w-full justify-between">
                           <div className="flex items-center gap-3">
-                            <h3 className="font-black text-white text-[11px] tracking-widest uppercase">{stage.name}</h3>
+                            <h3 className="font-black text-gray-900 dark:text-white text-[11px] tracking-widest uppercase">{stage.name}</h3>
                             <div className="relative inline-flex items-center justify-center">
-                               <span className="text-[10px] font-bold px-2 py-0.5 rounded-lg border bg-black/30 relative z-10 text-white" style={{ borderColor: `${stage.color}88` }}>
+                               <span className="text-[10px] font-bold px-2 py-0.5 rounded-lg border bg-gray-200 dark:bg-black/30 relative z-10 text-gray-900 dark:text-white" style={{ borderColor: `${stage.color}88` }}>
                                  {stageTasks.length}
                                </span>
                                <div className="absolute inset-0 rounded-lg opacity-10" style={{ backgroundColor: stage.color }} />
                              </div>
                           </div>
-                          <button onClick={() => openNewTaskModal(stage.id)} className="text-gray-400 hover:text-white p-1 hover:bg-white/10 rounded-lg transition-colors"><Plus size={16} /></button>
+                          <button onClick={() => openNewTaskModal(stage.id)} className="text-gray-400 hover:text-gray-900 dark:text-white p-1 hover:bg-gray-100 dark:bg-white/10 rounded-lg transition-colors"><Plus size={16} /></button>
                         </div>
                       </div>
 
@@ -463,7 +717,10 @@ const [pendingMove, setPendingMove] = useState<{
                           >
                             {stageTasks.map((task, index) => {
                               const assignee = agents.find(a => a.id === task.assigned_to);
-                              
+                              const draftMemory = draftMemoryByTask[task.id];
+                              const draftBadge = getDraftFactoryBadge(draftMemory);
+                              const draftQuickAction = getDraftFactoryQuickAction(task.id, draftMemory);
+
                               // Check 48h Idleness
                               const timeSinceMove = new Date().getTime() - new Date(task.data_ultima_movimentacao || task.created_at).getTime();
                               const isIdle = timeSinceMove > (48 * 60 * 60 * 1000); // 48 horas em ms
@@ -475,14 +732,14 @@ const [pendingMove, setPendingMove] = useState<{
                               const fatalMeta = getFatalDeadlineMeta(task.prazo_fatal);
 
                               return (
-                                <Draggable key={task.id} draggableId={task.id} index={index}>
+                                <Draggable key={task.id} draggableId={task.id} index={index} isDragDisabled={dragDisabled}>
                                   {(provided, snapshot) => (
                                     <div
                                       ref={provided.innerRef}
                                       {...provided.draggableProps}
                                       {...provided.dragHandleProps}
                                       onClick={() => openEditTaskModal(task)}
-                                      className={`group relative overflow-hidden px-3.5 py-3 rounded-xl border bg-[#0c0c0c] hover:bg-[#111] cursor-grab active:cursor-grabbing transition-all duration-150 ${showIdleAlert || isUrgent ? 'border-red-500/40' : hasFatalDeadline && fatalMeta ? fatalMeta.borderClass : 'border-zinc-800'}`}
+                                      className={`group relative overflow-hidden px-3.5 py-3 rounded-xl border bg-[#0c0c0c] hover:bg-gray-100 dark:bg-[#111] transition-all duration-150 ${dragDisabled ? 'cursor-pointer' : 'cursor-grab active:cursor-grabbing'} ${showIdleAlert || isUrgent ? 'border-red-500/40' : hasFatalDeadline && fatalMeta ? fatalMeta.borderClass : 'border-zinc-800'}`}
                                       style={{ ...provided.draggableProps.style }}
                                     >
                                       {(isUrgent || hasFatalDeadline) && (
@@ -496,10 +753,33 @@ const [pendingMove, setPendingMove] = useState<{
                                       
                                        <div className="absolute top-3 bottom-3 left-0 w-[2px] opacity-70 rounded-r-full" style={{ backgroundColor: stage.color, color: stage.color }} />
                                        {task.client_name && <div className="text-[#CCA761] text-[10px] font-black uppercase tracking-widest mb-1 line-clamp-1 flex items-center gap-1"><UserIcon size={10} /> {task.client_name}</div>}
-                                       <h4 className="text-white text-[14px] font-bold tracking-wide mb-1.5 line-clamp-2 group-hover:text-[#CCA761] transition-colors">{task.title}</h4>
+                                       <h4 className="text-gray-900 dark:text-white text-[14px] font-bold tracking-wide mb-1.5 line-clamp-2 group-hover:text-[#CCA761] transition-colors">{task.title}</h4>
 
-                                      {task.process_number && (
-                                        <div className="flex items-center gap-1.5 mb-2">
+                                        {draftBadge && (
+                                          <div className="mb-2 flex flex-wrap items-center gap-2">
+                                            <span
+                                              className={`inline-flex items-center gap-1.5 rounded-md border px-2 py-1 text-[9px] font-black uppercase tracking-widest ${draftBadge.className}`}
+                                              title={draftBadge.detail || draftBadge.label}
+                                            >
+                                              <draftBadge.icon size={10} className={draftBadge.label === "Minuta gerando" ? "animate-spin" : undefined} />
+                                              {draftBadge.label}
+                                            </span>
+
+                                            {draftQuickAction && (
+                                              <Link
+                                                href={draftQuickAction.href}
+                                                onClick={(event) => event.stopPropagation()}
+                                                className={`inline-flex items-center gap-1.5 rounded-md border px-2 py-1 text-[9px] font-black uppercase tracking-widest transition-colors ${draftQuickAction.className}`}
+                                              >
+                                                <ArrowRight size={10} />
+                                                {draftQuickAction.label}
+                                              </Link>
+                                            )}
+                                          </div>
+                                        )}
+
+                                       {task.process_number && (
+                                         <div className="flex items-center gap-1.5 mb-2">
                                           <p className="text-[10px] font-mono text-zinc-400 truncate">Proc: {task.process_number}</p>
                                           <button
                                             type="button"
@@ -548,7 +828,7 @@ const [pendingMove, setPendingMove] = useState<{
                                           {(() => {
                                             const [name, color] = task.sector.includes('|') ? task.sector.split('|') : [task.sector, '#60a5fa'];
                                             return (
-                                              <span className="text-[9px] font-black uppercase tracking-widest px-2 py-1 rounded bg-[#111] border" style={{ color: color, borderColor: color }}>
+                                              <span className="text-[9px] font-black uppercase tracking-widest px-2 py-1 rounded bg-gray-100 dark:bg-[#111] border" style={{ color: color, borderColor: color }}>
                                                 {name}
                                               </span>
                                             );
@@ -568,7 +848,7 @@ const [pendingMove, setPendingMove] = useState<{
                                         </div>
                                         
                                         {assignee && (
-                                          <div className="flex items-center gap-1.5 bg-white/5 pl-2 pr-1 py-0.5 rounded-full border border-white/5">
+                                          <div className="flex items-center gap-1.5 bg-gray-100 dark:bg-white/5 pl-2 pr-1 py-0.5 rounded-full border border-gray-200 dark:border-white/5">
                                             <span className="max-w-[60px] truncate">{assignee.full_name.split(' ')[0]}</span>
                                             {assignee.avatar_url ? (
                                               <img src={assignee.avatar_url} alt="" className="w-4 h-4 rounded-full object-cover" />
@@ -597,10 +877,10 @@ const [pendingMove, setPendingMove] = useState<{
             </DragDropContext>
           </div>
         ) : (
-          <div className="h-full p-6 overflow-y-auto no-scrollbar">
-            <div className="max-w-6xl mx-auto bg-[#111] border border-white/5 rounded-xl overflow-hidden shadow-lg">
+          <div className="flex-1 p-6 overflow-y-auto no-scrollbar">
+            <div className="max-w-6xl mx-auto bg-gray-100 dark:bg-[#111] border border-gray-200 dark:border-white/5 rounded-xl overflow-hidden shadow-lg">
               <table className="w-full text-left border-collapse">
-                <thead className="bg-white/5 border-b border-white/5 text-xs uppercase tracking-wider text-gray-400 font-bold">
+                <thead className="bg-gray-100 dark:bg-white/5 border-b border-gray-200 dark:border-white/5 text-xs uppercase tracking-wider text-gray-400 font-bold">
                   <tr>
                     <th className="p-4">Processo</th>
                     <th className="p-4">Etapa</th>
@@ -608,18 +888,21 @@ const [pendingMove, setPendingMove] = useState<{
                     <th className="p-4">Criação</th>
                   </tr>
                 </thead>
-                <tbody className="divide-y divide-white/5 text-sm text-gray-300">
-                  {tasks.length === 0 ? (
+                <tbody className="divide-y divide-gray-200 dark:divide-white/5 text-sm text-gray-700 dark:text-gray-300">
+                  {filteredTasks.length === 0 ? (
                     <tr><td colSpan={4} className="p-8 text-center text-gray-500">Nenhuma tarefa encontrada.</td></tr>
-                  ) : tasks.map(task => {
+                  ) : filteredTasks.map(task => {
                     const stage = visibleStages.find(s => s.id === task.stage_id) || stages.find(s => s.id === task.stage_id);
                     const assignee = agents.find(a => a.id === task.assigned_to);
                     const fatalMeta = getFatalDeadlineMeta(task.prazo_fatal);
+                    const draftMemory = draftMemoryByTask[task.id];
+                    const draftBadge = getDraftFactoryBadge(draftMemory);
+                    const draftQuickAction = getDraftFactoryQuickAction(task.id, draftMemory);
                     return (
-                      <tr key={task.id} onClick={() => openEditTaskModal(task)} className="hover:bg-white/5 cursor-pointer transition-colors group">
+                      <tr key={task.id} onClick={() => openEditTaskModal(task)} className="hover:bg-gray-100 dark:bg-white/5 cursor-pointer transition-colors group">
                         <td className="p-4">
                           {task.client_name && <div className="text-[#CCA761] text-[10px] font-black uppercase tracking-widest mb-0.5">{task.client_name}</div>}
-                          <div className="font-semibold text-white mb-1 group-hover:text-[#CCA761] transition-colors flex items-center gap-2">
+                          <div className="font-semibold text-gray-900 dark:text-white mb-1 group-hover:text-[#CCA761] transition-colors flex items-center gap-2">
                              {task.title}
                              {task.drive_link && (
                                 <a href={task.drive_link} target="_blank" rel="noopener noreferrer" className="text-[#4285F4] hover:brightness-125 transition-all" title="Google Drive" onClick={e => e.stopPropagation()}>
@@ -648,12 +931,34 @@ const [pendingMove, setPendingMove] = useState<{
                               <AlertTriangle size={10} /> Fatal: {new Date(task.prazo_fatal).toLocaleDateString('pt-BR')} • {formatDeadlineDays(fatalMeta?.diffDays)}
                             </div>
                           )}
+                          {draftBadge && (
+                            <div className="mb-2 flex flex-wrap items-center gap-2">
+                              <span
+                                className={`inline-flex items-center gap-1.5 rounded-md border px-2 py-1 text-[9px] font-black uppercase tracking-widest ${draftBadge.className}`}
+                                title={draftBadge.detail || draftBadge.label}
+                              >
+                                <draftBadge.icon size={10} className={draftBadge.label === "Minuta gerando" ? "animate-spin" : undefined} />
+                                {draftBadge.label}
+                              </span>
+
+                              {draftQuickAction && (
+                                <Link
+                                  href={draftQuickAction.href}
+                                  onClick={(event) => event.stopPropagation()}
+                                  className={`inline-flex items-center gap-1.5 rounded-md border px-2 py-1 text-[9px] font-black uppercase tracking-widest transition-colors ${draftQuickAction.className}`}
+                                >
+                                  <ArrowRight size={10} />
+                                  {draftQuickAction.label}
+                                </Link>
+                              )}
+                            </div>
+                          )}
                           <div className="flex gap-1.5 flex-wrap">
                              {task.sector && (() => {
                                const [name, color] = task.sector.includes('|') ? task.sector.split('|') : [task.sector, '#60a5fa'];
                                return (
                                  <span 
-                                   className="text-[9px] font-black uppercase tracking-widest px-1.5 py-0.5 rounded bg-[#111] border shadow-sm"
+                                   className="text-[9px] font-black uppercase tracking-widest px-1.5 py-0.5 rounded bg-gray-100 dark:bg-[#111] border shadow-sm"
                                    style={{ color: color, borderColor: color, boxShadow: `0 0 4px ${color}30` }}
                                  >
                                    {name}
@@ -665,7 +970,7 @@ const [pendingMove, setPendingMove] = useState<{
                               return (
                                 <span 
                                   key={tag} 
-                                  className="text-[9px] font-black uppercase tracking-widest px-1.5 py-0.5 rounded bg-[#111] border shadow-sm"
+                                  className="text-[9px] font-black uppercase tracking-widest px-1.5 py-0.5 rounded bg-gray-100 dark:bg-[#111] border shadow-sm"
                                   style={{ color: color, borderColor: color, boxShadow: `0 0 4px ${color}30` }}
                                 >
                                   {name}
@@ -675,7 +980,7 @@ const [pendingMove, setPendingMove] = useState<{
                           </div>
                         </td>
                         <td className="p-4">
-                          <span className="inline-flex items-center gap-2 px-2.5 py-1 rounded-md text-xs font-bold bg-[#1a1a1a] border border-[#2a2a2a]">
+                          <span className="inline-flex items-center gap-2 px-2.5 py-1 rounded-md text-xs font-bold bg-gray-100 dark:bg-[#1a1a1a] border border-[#2a2a2a]">
                             <span className="w-2 h-2 rounded-full" style={{ backgroundColor: stage?.color || "#fff" }} />
                             {stage?.name}
                           </span>
@@ -717,18 +1022,14 @@ const [pendingMove, setPendingMove] = useState<{
         stages={stages}
         agents={agents}
         profile={profile}
-        onSaveSuccess={(updatedTask, isNew) => {
-          if (isNew) {
-            setTasks([...tasks, updatedTask]);
-          } else {
-            setTasks(tasks.map(t => t.id === updatedTask.id ? updatedTask : t));
-          }
+        onSaveSuccess={(updatedTask) => {
+          setTasks((currentTasks) => upsertTaskById(currentTasks, updatedTask));
           if (updatedTask.assigned_to) {
             router.push(`/dashboard/agenda?assignee=${updatedTask.assigned_to}`);
           }
         }}
         onDeleteSuccess={(taskId) => {
-          setTasks(tasks.filter(t => t.id !== taskId));
+          setTasks((currentTasks) => currentTasks.filter(t => t.id !== taskId));
           toast.success("Processo excluído.");
         }}
       />

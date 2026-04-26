@@ -5,7 +5,7 @@ import { Cormorant_Garamond, Montserrat } from "next/font/google";
 import { 
   Users, UserPlus, Shield, Search, MoreVertical,
   Check, X, ChevronDown, AlertTriangle, Loader2,
-  ArrowLeft
+  ArrowLeft, Camera
 } from "lucide-react";
 import { createClient } from "@/lib/supabase/client";
 import { useUserProfile } from "@/hooks/useUserProfile";
@@ -34,6 +34,67 @@ interface Department {
 }
 
 const ACCESS_ROLE_OPTIONS = STANDARD_ACCESS_ROLES;
+const MAX_AVATAR_FILE_BYTES = 12 * 1024 * 1024;
+const TARGET_AVATAR_MAX_BYTES = 900 * 1024;
+const MAX_AVATAR_DIMENSION = 1400;
+
+function loadImageElement(file: File): Promise<HTMLImageElement> {
+  return new Promise((resolve, reject) => {
+    const objectUrl = URL.createObjectURL(file);
+    const image = new Image();
+
+    image.onload = () => {
+      URL.revokeObjectURL(objectUrl);
+      resolve(image);
+    };
+
+    image.onerror = () => {
+      URL.revokeObjectURL(objectUrl);
+      reject(new Error("Nao foi possivel processar esta imagem."));
+    };
+
+    image.src = objectUrl;
+  });
+}
+
+async function optimizeAvatarForUpload(file: File): Promise<File> {
+  if (!file.type.startsWith("image/")) {
+    throw new Error("Selecione um arquivo de imagem valido.");
+  }
+
+  const image = await loadImageElement(file);
+  const largestSide = Math.max(image.width, image.height);
+  const scale = largestSide > MAX_AVATAR_DIMENSION ? MAX_AVATAR_DIMENSION / largestSide : 1;
+
+  const width = Math.max(1, Math.round(image.width * scale));
+  const height = Math.max(1, Math.round(image.height * scale));
+
+  const canvas = document.createElement("canvas");
+  canvas.width = width;
+  canvas.height = height;
+
+  const context = canvas.getContext("2d");
+  if (!context) {
+    throw new Error("Nao foi possivel preparar a imagem para upload.");
+  }
+
+  context.drawImage(image, 0, 0, width, height);
+
+  let quality = 0.9;
+  let blob = await new Promise<Blob | null>((resolve) => canvas.toBlob(resolve, "image/jpeg", quality));
+
+  while (blob && blob.size > TARGET_AVATAR_MAX_BYTES && quality > 0.45) {
+    quality -= 0.1;
+    blob = await new Promise<Blob | null>((resolve) => canvas.toBlob(resolve, "image/jpeg", quality));
+  }
+
+  if (!blob) {
+    throw new Error("Nao foi possivel finalizar a compressao da imagem.");
+  }
+
+  const baseName = file.name.replace(/\.[^.]+$/, "") || "avatar";
+  return new File([blob], `${baseName}.jpg`, { type: "image/jpeg" });
+}
 
 export default function UsuariosPermissoesPage() {
   const router = useRouter();
@@ -45,6 +106,7 @@ export default function UsuariosPermissoesPage() {
   const [searchTerm, setSearchTerm] = useState("");
   const [departments, setDepartments] = useState<Department[]>([]);
   const [brokenAvatars, setBrokenAvatars] = useState<Record<string, boolean>>({});
+  const [uploadingAvatarId, setUploadingAvatarId] = useState<string | null>(null);
 
   // Modal de Convite
   const [showInviteModal, setShowInviteModal] = useState(false);
@@ -166,6 +228,76 @@ export default function UsuariosPermissoesPage() {
     setOpenMenuId(null);
   };
 
+  const handleAvatarUpload = async (member: TeamMember, file: File | null) => {
+    if (!file) return;
+    if (!tenantId) {
+      toast.error("Tenant nao identificado para upload de avatar.");
+      return;
+    }
+
+    if (file.size > MAX_AVATAR_FILE_BYTES) {
+      toast.error("Imagem muito grande. Use um arquivo de ate 12 MB.");
+      return;
+    }
+
+    setUploadingAvatarId(member.id);
+    try {
+      const optimizedFile = await optimizeAvatarForUpload(file);
+      const filePath = `${tenantId}/${member.id}/avatar.jpg`;
+
+      const { error: uploadError } = await supabase
+        .storage
+        .from("avatars")
+        .upload(filePath, optimizedFile, { upsert: true, contentType: "image/jpeg" });
+
+      if (uploadError) throw uploadError;
+
+      const { data: publicData } = supabase.storage.from("avatars").getPublicUrl(filePath);
+      const publicUrl = publicData?.publicUrl ? `${publicData.publicUrl}?v=${Date.now()}` : null;
+
+      if (!publicUrl) {
+        throw new Error("URL publica nao retornada para avatar.");
+      }
+
+      const response = await fetch("/api/profiles/bulk-update", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          tenantId,
+          upserts: [{
+            id: member.id,
+            full_name: member.full_name,
+            role: member.role,
+            department_id: member.department_id,
+            avatar_url: publicUrl,
+            is_active: member.is_active,
+          }],
+          removedIds: [],
+        }),
+      });
+
+      const result = await response.json().catch(() => null);
+      if (!response.ok) {
+        throw new Error(result?.error || "Avatar enviado, mas nao foi possivel salvar no perfil.");
+      }
+
+      setMembers((prev) => prev.map((item) => item.id === member.id ? { ...item, avatar_url: publicUrl } : item));
+      setBrokenAvatars((prev) => ({ ...prev, [member.id]: false }));
+      toast.success("Avatar atualizado com sucesso.");
+    } catch (error: any) {
+      const message = String(error?.message || "");
+      if (message.toLowerCase().includes("maximum allowed size") || message.toLowerCase().includes("object exceeded")) {
+        toast.error("A imagem ainda ficou acima do limite permitido. Tente uma foto menor.");
+      } else if (message.toLowerCase().includes("bucket")) {
+        toast.error("Bucket de avatars indisponivel ou sem permissao de upload.");
+      } else {
+        toast.error(message || "Falha ao atualizar avatar.");
+      }
+    } finally {
+      setUploadingAvatarId(null);
+    }
+  };
+
   const togglePermission = (moduleId: string, currentList: string[], setList: (list: string[]) => void) => {
     if (currentList.includes(moduleId)) {
       setList(currentList.filter(m => m !== moduleId));
@@ -179,7 +311,7 @@ export default function UsuariosPermissoesPage() {
       <div className={`min-h-[60vh] flex items-center justify-center ${montserrat.className}`}>
         <div className="text-center">
           <AlertTriangle size={48} className="text-red-400 mx-auto mb-4" />
-          <h2 className={`text-2xl text-white mb-2 ${cormorant.className} italic font-bold`}>Acesso Restrito</h2>
+          <h2 className={`text-2xl text-gray-900 dark:text-white mb-2 ${cormorant.className} italic font-bold`}>Acesso Restrito</h2>
           <p className="text-gray-500 text-sm">Apenas Administradores podem gerenciar usuários.</p>
         </div>
       </div>
@@ -195,7 +327,7 @@ export default function UsuariosPermissoesPage() {
            <button onClick={() => router.back()} className="mb-4 flex items-center gap-2 text-gray-500 hover:text-[#CCA761] transition-colors text-[10px] font-bold uppercase tracking-widest group">
              <ArrowLeft size={14} className="group-hover:-translate-x-1 transition-transform" /> Voltar
            </button>
-          <h1 className={`text-3xl md:text-4xl text-white ${cormorant.className} italic font-bold`}>
+          <h1 className={`text-3xl md:text-4xl text-gray-900 dark:text-white ${cormorant.className} italic font-bold`}>
             Usuários e <span className="text-[#CCA761]">Permissões</span>
           </h1>
           <p className="text-gray-500 text-sm mt-1">Gerencie chaves de acesso e níveis de permissão dos membros do escritório.</p>
@@ -215,14 +347,14 @@ export default function UsuariosPermissoesPage() {
 
       <div className="space-y-8 animate-fade-in pb-20">
         {/* Busca */}
-        <div className="flex items-center gap-3 bg-[#111111] px-4 py-3 rounded-xl border border-[#222] focus-within:border-[#CCA761]/50 transition-colors max-w-md">
+        <div className="flex items-center gap-3 bg-gray-100 dark:bg-[#111111] px-4 py-3 rounded-xl border border-[#222] focus-within:border-[#CCA761]/50 transition-colors max-w-md">
           <Search size={18} className="text-gray-500" />
-          <input type="text" placeholder="Buscar por nome ou cargo..." value={searchTerm} onChange={(e) => setSearchTerm(e.target.value)} className="bg-transparent border-none outline-none text-sm w-full text-gray-200 placeholder:text-gray-600" />
+          <input type="text" placeholder="Buscar por nome ou cargo..." value={searchTerm} onChange={(e) => setSearchTerm(e.target.value)} className="bg-transparent border-none outline-none text-sm w-full text-gray-800 dark:text-gray-200 placeholder:text-gray-600" />
         </div>
 
         {/* Tabela de Membros */}
-        <div className="bg-white/[0.02] border border-white/5 rounded-2xl backdrop-blur-sm relative z-0">
-          <div className="hidden md:grid grid-cols-12 gap-4 px-6 py-4 border-b border-white/5 text-[11px] text-gray-500 uppercase tracking-[0.2em] font-bold">
+        <div className="bg-gray-50 dark:bg-white/[0.02] border border-gray-200 dark:border-white/5 rounded-2xl backdrop-blur-sm relative z-0">
+          <div className="hidden md:grid grid-cols-12 gap-4 px-6 py-4 border-b border-gray-200 dark:border-white/5 text-[11px] text-gray-500 uppercase tracking-[0.2em] font-bold">
             <div className="col-span-4">Membro / Usuário</div>
             <div className="col-span-3">Nível de Acesso</div>
             <div className="col-span-2">Módulos</div>
@@ -236,9 +368,19 @@ export default function UsuariosPermissoesPage() {
             <div className="text-center py-20 text-gray-500"><Users size={40} className="mx-auto mb-3 opacity-40" /><p className="text-sm">Nenhum membro encontrado.</p></div>
           ) : (
             filteredMembers.map((member) => (
-              <div key={member.id} className="grid grid-cols-1 md:grid-cols-12 gap-2 md:gap-4 px-6 py-5 border-b border-white/5 hover:bg-white/[0.02] transition-colors items-center">
+              <div key={member.id} className="grid grid-cols-1 md:grid-cols-12 gap-2 md:gap-4 px-6 py-5 border-b border-gray-200 dark:border-white/5 hover:bg-gray-50 dark:bg-white/[0.02] transition-colors items-center">
                 <div className="col-span-4 flex items-center gap-3">
-                  <div className={`w-10 h-10 rounded-full flex items-center justify-center text-xs font-bold shrink-0 overflow-hidden relative ${member.is_active ? "bg-gradient-to-tr from-[#CCA761] to-[#8B7340] text-black" : "bg-gray-800 text-gray-500"}`}>
+                  <label className={`w-10 h-10 rounded-full flex items-center justify-center text-xs font-bold shrink-0 overflow-hidden relative cursor-pointer group/avatar ${member.is_active ? "bg-gradient-to-tr from-[#CCA761] to-[#8B7340] text-black" : "bg-gray-800 text-gray-500"}`}>
+                    <input
+                      type="file"
+                      className="hidden"
+                      accept="image/*"
+                      disabled={uploadingAvatarId === member.id}
+                      onChange={(event) => {
+                        void handleAvatarUpload(member, event.target.files?.[0] || null);
+                        event.currentTarget.value = "";
+                      }}
+                    />
                     {member.avatar_url && !brokenAvatars[member.id] ? (
                       <img 
                         src={member.avatar_url} 
@@ -253,11 +395,19 @@ export default function UsuariosPermissoesPage() {
                         {member.full_name.split(" ").map(n => n[0]).join("").slice(0, 2).toUpperCase()}
                       </span>
                     )}
-                  </div>
-                  <div><p className={`text-white font-medium text-sm ${!member.is_active ? "line-through opacity-50" : ""}`}>{member.full_name}</p></div>
+                    <span className="absolute inset-0 hidden items-center justify-center bg-black/60 text-white group-hover/avatar:flex">
+                      {uploadingAvatarId === member.id ? <Loader2 size={14} className="animate-spin text-[#CCA761]" /> : <Camera size={14} />}
+                    </span>
+                    {uploadingAvatarId === member.id && (
+                      <span className="absolute inset-0 flex items-center justify-center bg-black/70">
+                        <Loader2 size={14} className="animate-spin text-[#CCA761]" />
+                      </span>
+                    )}
+                  </label>
+                  <div><p className={`text-gray-900 dark:text-white font-medium text-sm ${!member.is_active ? "line-through opacity-50" : ""}`}>{member.full_name}</p></div>
                 </div>
                 <div className="col-span-3">
-                  <span className="text-gray-300 text-xs px-3 py-1 bg-white/5 rounded-full border border-white/10 uppercase tracking-widest w-fit">{member.role}</span>
+                  <span className="text-gray-700 dark:text-gray-300 text-xs px-3 py-1 bg-gray-100 dark:bg-white/5 rounded-full border border-gray-200 dark:border-white/10 uppercase tracking-widest w-fit">{member.role}</span>
                 </div>
                 <div className="col-span-2 text-gray-500 text-xs">{(member.custom_permissions || []).length} ativos</div>
                 <div className="col-span-2 flex items-center gap-2">
@@ -265,10 +415,10 @@ export default function UsuariosPermissoesPage() {
                   <span className={`text-xs ${member.is_active ? "text-green-400" : "text-red-400"}`}>{member.is_active ? "Ativo" : "Suspenso"}</span>
                 </div>
                 <div className="col-span-1 flex justify-end relative">
-                  <button onClick={() => setOpenMenuId(openMenuId === member.id ? null : member.id)} className="p-2 rounded-lg hover:bg-white/5 transition-colors"><MoreVertical size={16} className="text-gray-500" /></button>
+                  <button onClick={() => setOpenMenuId(openMenuId === member.id ? null : member.id)} className="p-2 rounded-lg hover:bg-gray-100 dark:bg-white/5 transition-colors"><MoreVertical size={16} className="text-gray-500" /></button>
                   {openMenuId === member.id && (
-                    <div className="absolute right-0 top-10 w-48 bg-[#111] border border-[#222] rounded-xl shadow-2xl z-50 overflow-hidden animate-fade-in-up" style={{ animationDuration: "0.15s" }}>
-                      <button onClick={() => { setEditMember(member); setEditRole(member.role); setEditPermissions(member.custom_permissions || []); setEditDepartmentId(member.department_id || ""); setOpenMenuId(null); }} className="w-full text-left px-4 py-3 text-sm text-gray-300 hover:bg-white/5 hover:text-[#CCA761] flex items-center gap-2"><Shield size={14} className="opacity-50" /> Ajustar Permissões</button>
+                    <div className="absolute right-0 top-10 w-48 bg-gray-100 dark:bg-[#111] border border-[#222] rounded-xl shadow-2xl z-50 overflow-hidden animate-fade-in-up" style={{ animationDuration: "0.15s" }}>
+                      <button onClick={() => { setEditMember(member); setEditRole(member.role); setEditPermissions(member.custom_permissions || []); setEditDepartmentId(member.department_id || ""); setOpenMenuId(null); }} className="w-full text-left px-4 py-3 text-sm text-gray-700 dark:text-gray-300 hover:bg-gray-100 dark:bg-white/5 hover:text-[#CCA761] flex items-center gap-2"><Shield size={14} className="opacity-50" /> Ajustar Permissões</button>
                       <div className="border-t border-[#222]">
                         <button onClick={() => toggleMemberStatus(member.id, member.is_active)} className={`w-full text-left px-4 py-3 text-sm font-medium flex items-center gap-2 transition-colors ${member.is_active ? "text-red-400 hover:bg-red-900/10" : "text-green-400 hover:bg-green-900/10"}`}>
                           {member.is_active ? <X size={14} /> : <Check size={14} />} {member.is_active ? "Bloquear Acesso" : "Desbloquear Acesso"}
@@ -285,33 +435,33 @@ export default function UsuariosPermissoesPage() {
 
       {/* Modais (Invite & Edit) - Reutilizados da página de equipe original */}
       {(showInviteModal || editMember) && (
-        <div className="fixed inset-0 bg-black/70 backdrop-blur-sm z-50 flex items-center justify-center p-4">
+        <div className="fixed inset-0 bg-gray-200 dark:bg-black/70 backdrop-blur-sm z-50 flex items-center justify-center p-4">
           <div className="relative w-full max-w-xl max-h-[90vh] overflow-y-auto no-scrollbar rounded-2xl bg-[#0C0C0C] border border-[#222] p-8 animate-fade-in-up shadow-2xl" style={{ animationDuration: "0.2s" }}>
             <button
               onClick={() => { setShowInviteModal(false); setEditMember(null); }}
-              className="absolute top-4 right-4 text-white/40 hover:text-white transition-colors"
+              className="absolute top-4 right-4 text-gray-400 dark:text-white/40 hover:text-gray-900 dark:text-white transition-colors"
             >
               <X size={20} />
             </button>
             <div className="flex justify-center mb-6">
               <div className="w-16 h-16 rounded-2xl bg-[#CCA761]/10 border border-[#CCA761]/20 flex items-center justify-center"><Shield size={28} className="text-[#CCA761]" /></div>
             </div>
-            <h2 className={`text-2xl text-center text-white mb-1 ${cormorant.className} italic font-bold`}>{editMember ? "Ajustar Permissões" : <>Convidar <span className="text-[#CCA761]">Membro</span></>}</h2>
+            <h2 className={`text-2xl text-center text-gray-900 dark:text-white mb-1 ${cormorant.className} italic font-bold`}>{editMember ? "Ajustar Permissões" : <>Convidar <span className="text-[#CCA761]">Membro</span></>}</h2>
             <p className="text-gray-500 text-[10px] text-center mb-8 uppercase tracking-[0.2em] font-black">{editMember ? `USUÁRIO: ${editMember.full_name}` : "GERENCIAMENTO DE ACESSO CORPORATIVO"}</p>
 
             <div className="space-y-6">
               {!editMember && (
                 <div className="space-y-1.5">
-                  <label className="text-xs font-semibold text-gray-300 uppercase tracking-wider">E-mail Corporativo *</label>
-                  <input type="email" value={inviteEmail} onChange={(e) => setInviteEmail(e.target.value)} placeholder="advogado@escritorio.com" className="w-full bg-[#0a0a0a] border border-[#2a2a2a] text-white rounded-lg px-4 py-3 text-sm focus:outline-none focus:ring-1 focus:ring-[#CCA761] transition-all" />
+                  <label className="text-xs font-semibold text-gray-700 dark:text-gray-300 uppercase tracking-wider">E-mail Corporativo *</label>
+                  <input type="email" value={inviteEmail} onChange={(e) => setInviteEmail(e.target.value)} placeholder="advogado@escritorio.com" className="w-full bg-white dark:bg-[#0a0a0a] border border-[#2a2a2a] text-gray-900 dark:text-white rounded-lg px-4 py-3 text-sm focus:outline-none focus:ring-1 focus:ring-[#CCA761] transition-all" />
                 </div>
               )}
               <div className="space-y-1.5">
-                <label className="text-xs font-semibold text-gray-300 uppercase tracking-wider">Nível de Acesso *</label>
+                <label className="text-xs font-semibold text-gray-700 dark:text-gray-300 uppercase tracking-wider">Nível de Acesso *</label>
                 <select
                   value={editMember ? editRole : inviteRole}
                   onChange={(e) => editMember ? setEditRole(e.target.value) : setInviteRole(e.target.value)}
-                  className="w-full bg-[#0a0a0a] border border-[#2a2a2a] text-white rounded-lg px-4 py-3 text-sm focus:outline-none focus:ring-1 focus:ring-[#CCA761] transition-all appearance-none"
+                  className="w-full bg-white dark:bg-[#0a0a0a] border border-[#2a2a2a] text-gray-900 dark:text-white rounded-lg px-4 py-3 text-sm focus:outline-none focus:ring-1 focus:ring-[#CCA761] transition-all appearance-none"
                 >
                   <option value="">Selecione o nivel de acesso</option>
                   {ACCESS_ROLE_OPTIONS.map((accessRole) => (
@@ -324,11 +474,11 @@ export default function UsuariosPermissoesPage() {
               </div>
 
               <div className="space-y-1.5">
-                <label className="text-xs font-semibold text-gray-300 uppercase tracking-wider">Departamento / Unidade</label>
+                <label className="text-xs font-semibold text-gray-700 dark:text-gray-300 uppercase tracking-wider">Departamento / Unidade</label>
                 <select 
                   value={editMember ? editDepartmentId : inviteDepartmentId} 
                   onChange={(e) => editMember ? setEditDepartmentId(e.target.value) : setInviteDepartmentId(e.target.value)} 
-                  className="w-full bg-[#0a0a0a] border border-[#2a2a2a] text-white rounded-lg px-4 py-3 text-sm focus:outline-none focus:ring-1 focus:ring-[#CCA761] transition-all appearance-none"
+                  className="w-full bg-white dark:bg-[#0a0a0a] border border-[#2a2a2a] text-gray-900 dark:text-white rounded-lg px-4 py-3 text-sm focus:outline-none focus:ring-1 focus:ring-[#CCA761] transition-all appearance-none"
                 >
                   <option value="">Sem Unidade</option>
                   {departments.map(d => (
@@ -338,12 +488,12 @@ export default function UsuariosPermissoesPage() {
               </div>
 
               <div className="space-y-3 pt-4 border-t border-[#222]">
-                <label className="text-xs font-semibold text-gray-300 uppercase tracking-wider text-[#CCA761]">Módulos Habilitados</label>
+                <label className="text-xs font-semibold text-gray-700 dark:text-gray-300 uppercase tracking-wider text-[#CCA761]">Módulos Habilitados</label>
                 <div className="grid grid-cols-1 md:grid-cols-2 gap-3 max-h-[30vh] overflow-y-auto no-scrollbar pr-2">
                    {APP_MODULES.map(mod => {
                      const isChecked = editMember ? editPermissions.includes(mod.id) : invitePermissions.includes(mod.id);
                      return (
-                      <label key={mod.id} className={`flex items-center gap-3 p-3 rounded-lg border cursor-pointer transition-all ${isChecked ? "bg-[#CCA761]/10 border-[#CCA761]/40" : "bg-[#111] border-[#222] hover:border-white/10"}`}>
+                      <label key={mod.id} className={`flex items-center gap-3 p-3 rounded-lg border cursor-pointer transition-all ${isChecked ? "bg-[#CCA761]/10 border-[#CCA761]/40" : "bg-gray-100 dark:bg-[#111] border-[#222] hover:border-gray-200 dark:border-white/10"}`}>
                         <input type="checkbox" className="hidden" checked={isChecked} onChange={() => togglePermission(mod.id, editMember ? editPermissions : invitePermissions, editMember ? setEditPermissions : setInvitePermissions)} />
                         <div className={`w-5 h-5 flex items-center justify-center rounded border ${isChecked ? "bg-[#CCA761] border-[#CCA761]" : "border-[#444] bg-transparent"}`}>
                           {isChecked && <Check size={14} className="text-black" />}

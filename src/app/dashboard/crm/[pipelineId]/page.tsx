@@ -39,7 +39,7 @@ function etapaOcultaNoBoard(nome?: string | null) {
 // Dynamic import for ReactQuill to avoid SSR issues
 const ReactQuill = dynamic(() => import("react-quill"), { 
   ssr: false,
-  loading: () => <div className="h-[250px] w-full bg-white/5 animate-pulse rounded-lg" />
+  loading: () => <div className="h-[250px] w-full bg-gray-100 dark:bg-white/5 animate-pulse rounded-lg" />
 });
 
 export default function PipelinePage() {
@@ -272,14 +272,14 @@ export default function PipelinePage() {
 
   if (isLoading && stages.length === 0) {
     return (
-      <div className="flex-1 flex items-center justify-center min-h-screen bg-[#050505]">
+      <div className="flex-1 flex items-center justify-center min-h-screen bg-white dark:bg-[#050505]">
         <div className="w-8 h-8 border-4 border-[#CCA761] border-t-transparent rounded-full animate-spin" />
       </div>
     );
   }
 
   return (
-    <div className="flex flex-col h-screen bg-[#050505] overflow-hidden">
+    <div className="flex flex-col h-screen bg-white dark:bg-[#050505] overflow-hidden">
       {/* Sempre monta a animação do Neon */}
       <style dangerouslySetInnerHTML={{ __html: `
         @keyframes neonBeam {
@@ -289,7 +289,7 @@ export default function PipelinePage() {
       `}} />
       
       {/* HEADER */}
-      <header className="flex-none bg-[#0a0a0a]/90 backdrop-blur-xl border-b border-white/5 z-20">
+      <header className="flex-none bg-white dark:bg-[#0a0a0a]/90 backdrop-blur-xl border-b border-gray-200 dark:border-white/5 z-20">
         <div className="px-6 py-4 flex flex-col md:flex-row md:items-center justify-start gap-8">
           <div className="flex items-center gap-4">
             <div className="flex flex-col relative">
@@ -300,7 +300,7 @@ export default function PipelinePage() {
                 <h1 className="text-2xl font-bold bg-gradient-to-r from-white to-gray-400 bg-clip-text text-transparent flex items-center gap-2 transition-opacity group-hover:opacity-80">
                   {pipeline?.name || "Carregando..."}
                   <svg className={`w-5 h-5 text-gray-400 transition-transform ${isDropdownOpen ? 'rotate-180' : ''}`} fill="none" viewBox="0 0 24 24" stroke="currentColor"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 9l-7 7-7-7" /></svg>
-                  <span className="text-xs bg-white/10 text-gray-300 px-2.5 py-1 rounded-full">{tasks.length}</span>
+                  <span className="text-xs bg-gray-100 dark:bg-white/10 text-gray-700 dark:text-gray-300 px-2.5 py-1 rounded-full">{tasks.length}</span>
                 </h1>
               </div>
 
@@ -308,8 +308,8 @@ export default function PipelinePage() {
               {isDropdownOpen && (
                 <>
                   <div className="fixed inset-0 z-40" onClick={() => setIsDropdownOpen(false)}></div>
-                  <div className="absolute top-10 left-0 mt-2 w-64 bg-[#111] border border-white/10 rounded-xl shadow-2xl py-2 z-50">
-                    <div className="px-3 pb-2 mb-2 border-b border-white/5 text-xs font-bold text-gray-500 uppercase tracking-wider">
+                  <div className="absolute top-10 left-0 mt-2 w-64 bg-gray-100 dark:bg-[#111] border border-gray-200 dark:border-white/10 rounded-xl shadow-2xl py-2 z-50">
+                    <div className="px-3 pb-2 mb-2 border-b border-gray-200 dark:border-white/5 text-xs font-bold text-gray-500 uppercase tracking-wider">
                       Seus Funis (Setores)
                     </div>
                     {allPipelines.map(p => (
@@ -319,13 +319,13 @@ export default function PipelinePage() {
                           setIsDropdownOpen(false);
                           if (p.id !== pipelineId) router.push(`/dashboard/crm/${p.id}`);
                         }}
-                        className={`w-full text-left px-4 py-2 text-sm transition-colors flex items-center justify-between ${p.id === pipelineId ? 'bg-[#CCA761]/10 text-[#CCA761]' : 'text-gray-300 hover:bg-white/5 hover:text-white'}`}
+                        className={`w-full text-left px-4 py-2 text-sm transition-colors flex items-center justify-between ${p.id === pipelineId ? 'bg-[#CCA761]/10 text-[#CCA761]' : 'text-gray-700 dark:text-gray-300 hover:bg-gray-100 dark:bg-white/5 hover:text-white'}`}
                       >
                         {p.name}
                         {p.id === pipelineId && <CheckCircle2 size={14} />}
                       </button>
                     ))}
-                    <div className="px-3 pt-2 mt-2 border-t border-white/5">
+                    <div className="px-3 pt-2 mt-2 border-t border-gray-200 dark:border-white/5">
                       <button 
                         onClick={() => {
                           setIsDropdownOpen(false);
@@ -347,22 +347,22 @@ export default function PipelinePage() {
           </div>
 
           <div className="flex items-center gap-3 flex-wrap md:justify-start">
-            <div className="flex items-center bg-[#111] border border-white/5 rounded-lg p-1">
+            <div className="flex items-center bg-gray-100 dark:bg-[#111] border border-gray-200 dark:border-white/5 rounded-lg p-1">
               <button 
                 onClick={() => setViewMode("board")}
-                className={`p-2 rounded-md flex items-center gap-2 transition-all ${viewMode === "board" ? "bg-white/10 text-white shadow-sm" : "text-gray-500 hover:text-white hover:bg-white/5"}`}
+                className={`p-2 rounded-md flex items-center gap-2 transition-all ${viewMode === "board" ? "bg-gray-100 dark:bg-white/10 text-gray-900 dark:text-white shadow-sm" : "text-gray-500 hover:text-gray-900 dark:text-white hover:bg-gray-100 dark:bg-white/5"}`}
               >
                 <LayoutTemplate size={16} /> <span className="text-xs font-bold uppercase hidden sm:inline">Board</span>
               </button>
               <button 
                 onClick={() => setViewMode("list")}
-                className={`p-2 rounded-md flex items-center gap-2 transition-all ${viewMode === "list" ? "bg-white/10 text-white shadow-sm" : "text-gray-500 hover:text-white hover:bg-white/5"}`}
+                className={`p-2 rounded-md flex items-center gap-2 transition-all ${viewMode === "list" ? "bg-gray-100 dark:bg-white/10 text-gray-900 dark:text-white shadow-sm" : "text-gray-500 hover:text-gray-900 dark:text-white hover:bg-gray-100 dark:bg-white/5"}`}
               >
                 <List size={16} /> <span className="text-xs font-bold uppercase hidden sm:inline">Lista</span>
               </button>
             </div>
 
-            <Link href={`/dashboard/crm/config/${pipelineId}`} className="flex items-center gap-2 p-2.5 bg-[#111] hover:bg-[#CCA761]/10 text-gray-400 hover:text-[#CCA761] border border-white/5 rounded-lg transition-colors" title="Configurações do Funil">
+            <Link href={`/dashboard/crm/config/${pipelineId}`} className="flex items-center gap-2 p-2.5 bg-gray-100 dark:bg-[#111] hover:bg-[#CCA761]/10 text-gray-400 hover:text-[#CCA761] border border-gray-200 dark:border-white/5 rounded-lg transition-colors" title="Configurações do Funil">
               <Settings size={18} /> <span className="text-xs font-bold hidden sm:inline">Configurar</span>
             </Link>
           </div>
@@ -385,15 +385,15 @@ export default function PipelinePage() {
                         <div className="absolute inset-0 opacity-[0.09] rounded-t-2xl" style={{ backgroundColor: stage.color }} />
                         <div className="flex items-center gap-2 relative z-10 w-full justify-between">
                           <div className="flex items-center gap-3">
-                            <h3 className="font-black text-white text-[11px] tracking-widest uppercase">{stage.name}</h3>
+                            <h3 className="font-black text-gray-900 dark:text-white text-[11px] tracking-widest uppercase">{stage.name}</h3>
                             <div className="relative inline-flex items-center justify-center">
-                               <span className="text-[10px] font-bold px-2 py-0.5 rounded-lg border bg-black/30 relative z-10 text-white" style={{ borderColor: `${stage.color}88` }}>
+                               <span className="text-[10px] font-bold px-2 py-0.5 rounded-lg border bg-gray-200 dark:bg-black/30 relative z-10 text-gray-900 dark:text-white" style={{ borderColor: `${stage.color}88` }}>
                                  {stageTasks.length}
                                </span>
                                <div className="absolute inset-0 rounded-lg opacity-10" style={{ backgroundColor: stage.color }} />
                              </div>
                           </div>
-                          <button onClick={() => openNewTaskModal(stage.id)} className="text-gray-400 hover:text-white p-1 hover:bg-white/10 rounded-lg transition-colors"><Plus size={16} /></button>
+                          <button onClick={() => openNewTaskModal(stage.id)} className="text-gray-400 hover:text-gray-900 dark:text-white p-1 hover:bg-gray-100 dark:bg-white/10 rounded-lg transition-colors"><Plus size={16} /></button>
                         </div>
                       </div>
 
@@ -421,7 +421,7 @@ export default function PipelinePage() {
                                       {...provided.draggableProps}
                                       {...provided.dragHandleProps}
                                       onClick={() => openEditTaskModal(task)}
-                                      className={`group relative overflow-hidden px-3.5 py-3 rounded-xl border bg-[#0c0c0c] hover:bg-[#111] cursor-grab active:cursor-grabbing transition-all duration-150 ${showIdleAlert ? 'border-red-500/35' : 'border-zinc-800'}`}
+                                      className={`group relative overflow-hidden px-3.5 py-3 rounded-xl border bg-[#0c0c0c] hover:bg-gray-100 dark:bg-[#111] cursor-grab active:cursor-grabbing transition-all duration-150 ${showIdleAlert ? 'border-red-500/35' : 'border-zinc-800'}`}
                                       style={{ ...provided.draggableProps.style }}
                                     >
                                       {showIdleAlert && (
@@ -431,7 +431,7 @@ export default function PipelinePage() {
                                       )}
                                       
                                       <div className="absolute top-3 bottom-3 left-0 w-[2px] opacity-70 rounded-r-full" style={{ backgroundColor: stage.color, color: stage.color }} />
-                                      <h4 className="text-white text-[14px] font-bold tracking-wide mb-1.5 line-clamp-2 group-hover:text-[#CCA761] transition-colors">{task.title}</h4>
+                                      <h4 className="text-gray-900 dark:text-white text-[14px] font-bold tracking-wide mb-1.5 line-clamp-2 group-hover:text-[#CCA761] transition-colors">{task.title}</h4>
                                       
                                       {task.description && (
                                         <div className="text-zinc-400 text-[12px] mb-2.5 line-clamp-1 leading-relaxed">
@@ -444,7 +444,7 @@ export default function PipelinePage() {
                                           {(() => {
                                             const [name, color] = task.sector.includes('|') ? task.sector.split('|') : [task.sector, '#60a5fa'];
                                             return (
-                                              <span className="text-[9px] font-black uppercase tracking-widest px-2 py-1 rounded bg-[#111] border" style={{ color: color, borderColor: color }}>
+                                              <span className="text-[9px] font-black uppercase tracking-widest px-2 py-1 rounded bg-gray-100 dark:bg-[#111] border" style={{ color: color, borderColor: color }}>
                                                 {name}
                                               </span>
                                             );
@@ -459,7 +459,7 @@ export default function PipelinePage() {
                                         </div>
                                         
                                         {assignee && (
-                                          <div className="flex items-center gap-1.5 bg-white/5 pl-2 pr-1 py-0.5 rounded-full border border-white/5">
+                                          <div className="flex items-center gap-1.5 bg-gray-100 dark:bg-white/5 pl-2 pr-1 py-0.5 rounded-full border border-gray-200 dark:border-white/5">
                                             <span className="max-w-[60px] truncate">{assignee.full_name.split(' ')[0]}</span>
                                             {assignee.avatar_url ? (
                                               <img src={assignee.avatar_url} alt="" className="w-4 h-4 rounded-full object-cover" />
@@ -489,9 +489,9 @@ export default function PipelinePage() {
           </div>
         ) : (
           <div className="h-full p-6 overflow-y-auto no-scrollbar">
-            <div className="max-w-6xl mx-auto bg-[#111] border border-white/5 rounded-xl overflow-hidden shadow-lg">
+            <div className="max-w-6xl mx-auto bg-gray-100 dark:bg-[#111] border border-gray-200 dark:border-white/5 rounded-xl overflow-hidden shadow-lg">
               <table className="w-full text-left border-collapse">
-                <thead className="bg-white/5 border-b border-white/5 text-xs uppercase tracking-wider text-gray-400 font-bold">
+                <thead className="bg-gray-100 dark:bg-white/5 border-b border-gray-200 dark:border-white/5 text-xs uppercase tracking-wider text-gray-400 font-bold">
                   <tr>
                     <th className="p-4">Tarefa</th>
                     <th className="p-4">Etapa</th>
@@ -499,22 +499,22 @@ export default function PipelinePage() {
                     <th className="p-4">Criação</th>
                   </tr>
                 </thead>
-                <tbody className="divide-y divide-white/5 text-sm text-gray-300">
+                <tbody className="divide-y divide-gray-200 dark:divide-white/5 text-sm text-gray-700 dark:text-gray-300">
                   {tasks.length === 0 ? (
                     <tr><td colSpan={4} className="p-8 text-center text-gray-500">Nenhuma tarefa encontrada.</td></tr>
                   ) : tasks.map(task => {
                     const stage = visibleStages.find(s => s.id === task.stage_id) || stages.find(s => s.id === task.stage_id);
                     const assignee = agents.find(a => a.id === task.assigned_to);
                     return (
-                      <tr key={task.id} onClick={() => openEditTaskModal(task)} className="hover:bg-white/5 cursor-pointer transition-colors group">
+                      <tr key={task.id} onClick={() => openEditTaskModal(task)} className="hover:bg-gray-100 dark:bg-white/5 cursor-pointer transition-colors group">
                         <td className="p-4">
-                          <div className="font-semibold text-white mb-1 group-hover:text-[#CCA761] transition-colors">{task.title}</div>
+                          <div className="font-semibold text-gray-900 dark:text-white mb-1 group-hover:text-[#CCA761] transition-colors">{task.title}</div>
                           <div className="flex gap-1.5 flex-wrap">
                              {task.sector && (() => {
                                const [name, color] = task.sector.includes('|') ? task.sector.split('|') : [task.sector, '#60a5fa'];
                                return (
                                  <span 
-                                   className="text-[9px] font-black uppercase tracking-widest px-1.5 py-0.5 rounded bg-[#111] border shadow-sm"
+                                   className="text-[9px] font-black uppercase tracking-widest px-1.5 py-0.5 rounded bg-gray-100 dark:bg-[#111] border shadow-sm"
                                    style={{ color: color, borderColor: color, boxShadow: `0 0 4px ${color}30` }}
                                  >
                                    {name}
@@ -526,7 +526,7 @@ export default function PipelinePage() {
                               return (
                                 <span 
                                   key={tag} 
-                                  className="text-[9px] font-black uppercase tracking-widest px-1.5 py-0.5 rounded bg-[#111] border shadow-sm"
+                                  className="text-[9px] font-black uppercase tracking-widest px-1.5 py-0.5 rounded bg-gray-100 dark:bg-[#111] border shadow-sm"
                                   style={{ color: color, borderColor: color, boxShadow: `0 0 4px ${color}30` }}
                                 >
                                   {name}
@@ -536,7 +536,7 @@ export default function PipelinePage() {
                           </div>
                         </td>
                         <td className="p-4">
-                          <span className="inline-flex items-center gap-2 px-2.5 py-1 rounded-md text-xs font-bold bg-[#1a1a1a] border border-[#2a2a2a]">
+                          <span className="inline-flex items-center gap-2 px-2.5 py-1 rounded-md text-xs font-bold bg-gray-100 dark:bg-[#1a1a1a] border border-[#2a2a2a]">
                             <span className="w-2 h-2 rounded-full" style={{ backgroundColor: stage?.color || "#fff" }} />
                             {stage?.name}
                           </span>

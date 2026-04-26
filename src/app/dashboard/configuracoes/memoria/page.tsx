@@ -166,14 +166,14 @@ export default function MemoriaPage() {
           <div className="flex items-center gap-2 text-[#CCA761]/50 text-[10px] uppercase tracking-widest mb-3">
             <span>Configurações</span><ChevronRight size={10} /><span className="text-[#CCA761]">Memória</span>
           </div>
-          <h1 className={`text-3xl text-white mb-1 ${cormorant.className}`}>Memória Institucional</h1>
+          <h1 className={`text-3xl text-gray-900 dark:text-white mb-1 ${cormorant.className}`}>Memória Institucional</h1>
           <p className="text-gray-500 text-sm">Regras e contexto que o MAYUS consulta antes de responder.</p>
         </div>
         <div className="flex gap-2">
           <button
             onClick={fetchEntries}
             disabled={loading}
-            className="flex items-center gap-2 text-xs text-gray-500 hover:text-[#CCA761] border border-white/10 hover:border-[#CCA761]/30 rounded-xl px-3 py-2 transition-colors"
+            className="flex items-center gap-2 text-xs text-gray-500 hover:text-[#CCA761] border border-gray-200 dark:border-white/10 hover:border-[#CCA761]/30 rounded-xl px-3 py-2 transition-colors"
           >
             <RefreshCw size={13} className={loading ? "animate-spin" : ""} />
           </button>
@@ -193,8 +193,8 @@ export default function MemoriaPage() {
           { label: "Ativas",      value: enforcedCount },
           { label: "Categorias",  value: Object.keys(grouped).length },
         ].map(s => (
-          <div key={s.label} className="bg-[#0d0d0d] border border-white/5 rounded-xl p-4">
-            <p className="text-white font-bold text-xl">{s.value}</p>
+          <div key={s.label} className="bg-white dark:bg-[#0d0d0d] border border-gray-200 dark:border-white/5 rounded-xl p-4">
+            <p className="text-gray-900 dark:text-white font-bold text-xl">{s.value}</p>
             <p className="text-gray-600 text-[10px] uppercase tracking-widest mt-1">{s.label}</p>
           </div>
         ))}
@@ -202,7 +202,7 @@ export default function MemoriaPage() {
 
       {/* Formulário */}
       {showForm && (
-        <div className="bg-[#0d0d0d] border border-[#CCA761]/30 rounded-2xl p-5 mb-6 space-y-4">
+        <div className="bg-white dark:bg-[#0d0d0d] border border-[#CCA761]/30 rounded-2xl p-5 mb-6 space-y-4">
           <h2 className={`text-xl text-[#CCA761] ${cormorant.className}`}>
             {editId ? "Editar entrada" : "Nova entrada"}
           </h2>
@@ -214,7 +214,7 @@ export default function MemoriaPage() {
                 value={form.key}
                 onChange={e => setForm(p => ({ ...p, key: e.target.value }))}
                 placeholder="ex: honorario_minimo"
-                className="w-full bg-black/40 border border-white/10 rounded-xl px-4 py-2.5 text-sm text-gray-200 focus:outline-none focus:border-[#CCA761]/50"
+                className="w-full bg-gray-200 dark:bg-black/40 border border-gray-200 dark:border-white/10 rounded-xl px-4 py-2.5 text-sm text-gray-800 dark:text-gray-200 focus:outline-none focus:border-[#CCA761]/50"
               />
             </div>
             <div>
@@ -224,7 +224,7 @@ export default function MemoriaPage() {
                 onChange={e => setForm(p => ({ ...p, category: e.target.value }))}
                 placeholder="ex: honorarios"
                 list="category-suggestions"
-                className="w-full bg-black/40 border border-white/10 rounded-xl px-4 py-2.5 text-sm text-gray-200 focus:outline-none focus:border-[#CCA761]/50"
+                className="w-full bg-gray-200 dark:bg-black/40 border border-gray-200 dark:border-white/10 rounded-xl px-4 py-2.5 text-sm text-gray-800 dark:text-gray-200 focus:outline-none focus:border-[#CCA761]/50"
               />
               <datalist id="category-suggestions">
                 {CATEGORY_SUGGESTIONS.map(c => <option key={c} value={c} />)}
@@ -239,14 +239,14 @@ export default function MemoriaPage() {
               onChange={e => setForm(p => ({ ...p, value: e.target.value }))}
               placeholder='ex: "R$ 500,00 por hora. Nunca cobrar abaixo disso."'
               rows={3}
-              className="w-full bg-black/40 border border-white/10 rounded-xl px-4 py-2.5 text-sm text-gray-200 focus:outline-none focus:border-[#CCA761]/50 resize-none"
+              className="w-full bg-gray-200 dark:bg-black/40 border border-gray-200 dark:border-white/10 rounded-xl px-4 py-2.5 text-sm text-gray-800 dark:text-gray-200 focus:outline-none focus:border-[#CCA761]/50 resize-none"
             />
           </div>
 
           <div className="flex justify-end gap-2">
             <button
               onClick={cancelForm}
-              className="flex items-center gap-1.5 text-xs text-gray-500 hover:text-white border border-white/10 px-4 py-2 rounded-xl transition-colors"
+              className="flex items-center gap-1.5 text-xs text-gray-500 hover:text-gray-900 dark:text-white border border-gray-200 dark:border-white/10 px-4 py-2 rounded-xl transition-colors"
             >
               <X size={13} /> Cancelar
             </button>
@@ -273,7 +273,7 @@ export default function MemoriaPage() {
       {!loading && entries.length === 0 && !error && (
         <div className="text-center py-20 opacity-50">
           <Brain size={48} className="text-[#CCA761] mx-auto mb-4" />
-          <p className={`text-2xl text-white mb-2 ${cormorant.className}`}>Memória vazia</p>
+          <p className={`text-2xl text-gray-900 dark:text-white mb-2 ${cormorant.className}`}>Memória vazia</p>
           <p className="text-gray-500 text-sm">Adicione regras para que o MAYUS conheça o seu escritório.</p>
         </div>
       )}
@@ -288,8 +288,8 @@ export default function MemoriaPage() {
             {items.map(entry => (
               <div
                 key={entry.id}
-                className={`bg-[#0d0d0d] border rounded-xl px-4 py-3 flex items-start gap-3 transition-all ${
-                  entry.enforced ? "border-white/10" : "border-white/5 opacity-50"
+                className={`bg-white dark:bg-[#0d0d0d] border rounded-xl px-4 py-3 flex items-start gap-3 transition-all ${
+                  entry.enforced ? "border-gray-200 dark:border-white/10" : "border-gray-200 dark:border-white/5 opacity-50"
                 }`}
               >
                 {/* Toggle enforced */}
@@ -309,7 +309,7 @@ export default function MemoriaPage() {
 
                 {/* Content */}
                 <div className="flex-1 min-w-0">
-                  <p className="text-xs font-semibold text-gray-300 truncate">{entry.key}</p>
+                  <p className="text-xs font-semibold text-gray-700 dark:text-gray-300 truncate">{entry.key}</p>
                   <p className="text-xs text-gray-500 mt-0.5 line-clamp-2 leading-relaxed">{entry.value}</p>
                 </div>
 
@@ -317,7 +317,7 @@ export default function MemoriaPage() {
                 <div className="flex gap-1 shrink-0">
                   <button
                     onClick={() => startEdit(entry)}
-                    className="p-1.5 text-gray-600 hover:text-[#CCA761] transition-colors rounded-lg hover:bg-white/5"
+                    className="p-1.5 text-gray-600 hover:text-[#CCA761] transition-colors rounded-lg hover:bg-gray-100 dark:bg-white/5"
                   >
                     <Pencil size={13} />
                   </button>
@@ -325,17 +325,17 @@ export default function MemoriaPage() {
                   {confirmDeleteId === entry.id ? (
                     <div className="flex items-center gap-1 bg-red-500/10 border border-red-500/20 rounded-lg px-2">
                       <span className="text-[10px] text-red-500 uppercase tracking-widest font-bold px-1 select-none">Excluir?</span>
-                      <button onClick={() => handleDelete(entry.id)} disabled={deleting === entry.id} className="p-1.5 text-red-400 hover:text-white transition-colors" title="Confirmar">
+                      <button onClick={() => handleDelete(entry.id)} disabled={deleting === entry.id} className="p-1.5 text-red-400 hover:text-gray-900 dark:text-white transition-colors" title="Confirmar">
                         {deleting === entry.id ? <Loader2 size={13} className="animate-spin" /> : <Check size={13} />}
                       </button>
-                      <button onClick={() => setConfirmDeleteId(null)} disabled={deleting === entry.id} className="p-1.5 text-gray-500 hover:text-white transition-colors" title="Cancelar">
+                      <button onClick={() => setConfirmDeleteId(null)} disabled={deleting === entry.id} className="p-1.5 text-gray-500 hover:text-gray-900 dark:text-white transition-colors" title="Cancelar">
                         <X size={13} />
                       </button>
                     </div>
                   ) : (
                     <button
                       onClick={() => setConfirmDeleteId(entry.id)}
-                      className="p-1.5 text-gray-600 hover:text-red-400 transition-colors rounded-lg hover:bg-white/5"
+                      className="p-1.5 text-gray-600 hover:text-red-400 transition-colors rounded-lg hover:bg-gray-100 dark:bg-white/5"
                       title="Excluir entrada"
                     >
                       <Trash2 size={13} />

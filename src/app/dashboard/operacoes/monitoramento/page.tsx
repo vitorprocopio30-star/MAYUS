@@ -1,14 +1,14 @@
-// Force Trigger Deploy: 2026-04-10T15:40
+﻿// Force Trigger Deploy: 2026-04-10T15:40
 'use client'
 
 import { useState, useEffect, useCallback, useMemo, Suspense } from 'react'
-import { 
-  Search, 
-  RefreshCw, 
-  Shield, 
-  Zap, 
-  LayoutList, 
-  CheckCircle, 
+import {
+  Search,
+  RefreshCw,
+  Shield,
+  Zap,
+  LayoutList,
+  CheckCircle,
   AlertCircle,
   Filter,
   X,
@@ -27,7 +27,7 @@ import {
   Check
 } from 'lucide-react'
 
-// ─── Interfaces e Tipos ───
+// â”€â”€â”€ Interfaces e Tipos â”€â”€â”€
 
 interface Processo {
   numero_processo: string
@@ -97,7 +97,7 @@ const STATUS_COLOR: Record<string, string> = {
   'SUSPENSO': 'text-yellow-500 bg-yellow-500/10 border-yellow-500/20'
 }
 
-// ─── Funções Auxiliares ───
+// â”€â”€â”€ FunÃ§Ãµes Auxiliares â”€â”€â”€
 
 function parseDataBR(dataStr: string | null): number {
   if (!dataStr) return 0
@@ -153,20 +153,20 @@ function parseCalendarDayTs(dataStr: string | null): number {
 function formatarData(data: string | null) {
   if (!data) return '--/--/----'
   try {
-    // Se já estiver no formato BR, retorna apenas a parte de data
+    // Se jÃ¡ estiver no formato BR, retorna apenas a parte de data
     if (data.includes('/')) {
       const part = data.split(' ')[0]
       if (part.split('/').length === 3) return part
     }
-    
-    // Se for ISO ou timestamp com espaço (YYYY-MM-DD...)
+
+    // Se for ISO ou timestamp com espaÃ§o (YYYY-MM-DD...)
     if (data.includes('-')) {
       const normalized = data.includes(' ') && data.includes('-') ? data.replace(' ', 'T') : data
       const semTime = normalized.split('T')[0]
       const [a, m, d] = semTime.split('-').map(Number)
       return `${String(d).padStart(2, '0')}/${String(m).padStart(2, '0')}/${a}`
     }
-    
+
     return data
   } catch { return '--/--/----' }
 }
@@ -175,17 +175,17 @@ function diasDesde(data: string | null) {
   if (!data) return null
   const timestamp = parseCalendarDayTs(data)
   if (timestamp === 0) return null
-  
+
   const h = new Date()
   const m = new Date(timestamp)
-  
-  // Zera horas para comparação de dias de calendário (fuso local)
+
+  // Zera horas para comparaÃ§Ã£o de dias de calendÃ¡rio (fuso local)
   const hojeLocal = new Date(h.getFullYear(), h.getMonth(), h.getDate())
   const movLocal = new Date(m.getFullYear(), m.getMonth(), m.getDate())
-  
+
   const diff = hojeLocal.getTime() - movLocal.getTime()
   const dias = Math.floor(diff / 86400000)
-  
+
   return dias < 0 ? 0 : dias
 }
 
@@ -223,10 +223,10 @@ function getDataUltimaMovimentacao(p: Processo): string | null {
   return best
 }
 
-// ─── Sub-componentes ───
+// â”€â”€â”€ Sub-componentes â”€â”€â”€
 
 function StatusBadge({ status }: { status: string }) {
-  const color = STATUS_COLOR[status] || 'text-zinc-400 bg-zinc-900 border-zinc-800'
+  const color = STATUS_COLOR[status] || 'text-muted-foreground dark:text-zinc-400 bg-muted dark:bg-zinc-900 border-border dark:border-zinc-800'
   return (
     <span className={`px-2.5 py-1 rounded-md text-[9px] font-black uppercase tracking-widest border ${color}`}>
       {status}
@@ -246,16 +246,16 @@ function BillingBar({ billing }: { billing: Billing }) {
     : `Saldo atual: ${saldo}`
 
   return (
-    <div className="bg-zinc-900/50 border border-zinc-800 rounded-2xl p-6 flex flex-col md:flex-row items-center justify-between gap-6">
+    <div className="bg-card dark:bg-zinc-900/50 border border-border dark:border-zinc-800 rounded-2xl p-6 shadow-sm dark:shadow-none flex flex-col md:flex-row items-center justify-between gap-6">
       <div className="space-y-1 text-center md:text-left">
         <p className="text-[10px] text-zinc-500 uppercase font-black tracking-widest leading-none">Capacidade do Plano</p>
-        <p className="text-white font-black text-lg">{monitorados} <span className="text-zinc-600">/</span> {limitePlano} <span className="text-zinc-600 text-[10px] uppercase ml-2 tracking-tighter">Processos</span></p>
+        <p className="text-gray-900 dark:text-white font-black text-lg">{monitorados} <span className="text-zinc-600">/</span> {limitePlano} <span className="text-zinc-600 text-[10px] uppercase ml-2 tracking-tighter">Processos</span></p>
       </div>
-      <div className="flex-1 w-full max-w-md h-3 bg-zinc-950 rounded-full border border-zinc-800 p-0.5 overflow-hidden">
+      <div className="flex-1 w-full max-w-md h-3 bg-muted dark:bg-zinc-950 rounded-full border border-border dark:border-zinc-800 p-0.5 overflow-hidden">
         <div className="h-full bg-gradient-to-r from-yellow-600 to-yellow-400 rounded-full shadow-[0_0_12px_rgba(234,179,8,0.3)] transition-all duration-1000" style={{ width: `${percent}%` }} />
       </div>
       <div className="text-center md:text-right">
-        <p className="text-[10px] text-zinc-500 uppercase font-black tracking-widest leading-none">Status de Créditos</p>
+        <p className="text-[10px] text-zinc-500 uppercase font-black tracking-widest leading-none">Status de CrÃ©ditos</p>
         <p className={`font-bold text-xs uppercase tracking-widest mt-1 ${excedente > 0 ? 'text-yellow-500' : 'text-green-500'}`}>{statusCreditos}</p>
       </div>
     </div>
@@ -265,27 +265,27 @@ function BillingBar({ billing }: { billing: Billing }) {
 function ModalConfirmacaoCusto({ dados, onConfirmar, onCancelar, loading }: { dados: ConfirmacaoLote, onConfirmar: () => void, onCancelar: () => void, loading: boolean }) {
   const custo = Number(dados.custo_mensal ?? dados.custo_estimado ?? 0)
   return (
-    <div className="fixed inset-0 z-[100] flex items-center justify-center p-4 bg-black/80 backdrop-blur-md animate-in fade-in duration-300">
-      <div className="w-full max-w-md bg-zinc-900 border border-zinc-800 rounded-3xl p-8 shadow-2xl space-y-6">
+    <div className="fixed inset-0 z-[100] flex items-center justify-center p-4 bg-gray-200 dark:bg-black/80 backdrop-blur-md animate-in fade-in duration-300">
+      <div className="w-full max-w-md bg-card dark:bg-zinc-900 border border-border dark:border-zinc-800 rounded-3xl p-8 shadow-2xl space-y-6">
         <div className="w-16 h-16 bg-yellow-500/10 rounded-2xl flex items-center justify-center mx-auto text-yellow-500 mb-2">
           <Zap size={32} fill="currentColor" />
         </div>
         <div className="text-center space-y-2">
-           <h3 className="text-white font-black text-xl uppercase tracking-tighter">Investimento Requerido</h3>
-           <p className="text-zinc-500 text-xs leading-relaxed font-medium">A monitoração desses {dados.novos} novos processos requer o uso de créditos da busca externa.</p>
+           <h3 className="text-gray-900 dark:text-white font-black text-xl uppercase tracking-tighter">Investimento Requerido</h3>
+           <p className="text-zinc-500 text-xs leading-relaxed font-medium">A monitoraÃ§Ã£o desses {dados.novos} novos processos requer o uso de crÃ©ditos da busca externa.</p>
         </div>
-        <div className="bg-zinc-950 rounded-2xl p-6 border border-zinc-800 grid grid-cols-2 gap-4 divide-x divide-zinc-900">
+        <div className="bg-muted dark:bg-zinc-950 rounded-2xl p-6 border border-border dark:border-zinc-800 grid grid-cols-2 gap-4 divide-x divide-border dark:divide-zinc-900">
           <div className="text-center">
-             <p className="text-[9px] text-zinc-600 font-black uppercase mb-1">Processos</p>
-             <p className="text-white font-black text-lg">+{dados.novos}</p>
+             <p className="text-[9px] text-muted-foreground font-black uppercase mb-1">Processos</p>
+             <p className="text-gray-900 dark:text-white font-black text-lg">+{dados.novos}</p>
           </div>
           <div className="text-center pl-4">
-             <p className="text-[9px] text-zinc-600 font-black uppercase mb-1">Custo Estimado</p>
+             <p className="text-[9px] text-muted-foreground font-black uppercase mb-1">Custo Estimado</p>
              <p className="text-yellow-500 font-black text-lg">R$ {custo.toFixed(2)}</p>
            </div>
          </div>
         <div className="flex gap-3">
-          <button onClick={onCancelar} className="flex-1 py-4 rounded-xl text-[10px] font-black uppercase text-zinc-500 hover:text-white transition-all">Cancelar</button>
+          <button onClick={onCancelar} className="flex-1 py-4 rounded-xl text-[10px] font-black uppercase text-muted-foreground hover:text-foreground transition-all">Cancelar</button>
           <button onClick={onConfirmar} disabled={loading} className="flex-[2] py-4 bg-yellow-500 hover:bg-yellow-400 text-black text-[10px] font-black uppercase rounded-xl transition-all shadow-xl shadow-yellow-500/20 active:scale-95 border-b-4 border-yellow-700">
             {loading ? 'Confirmando...' : 'Autorizar Investimento'}
           </button>
@@ -313,17 +313,17 @@ function ProcessoCard({ p, onSelect, selecionado, onAction, onRemover, onArquiva
   }
 
   return (
-    <div className={`group relative bg-[#070707] border transition-all duration-700 rounded-3xl p-6 border-[#CCA761]/60 shadow-[0_0_25px_rgba(204,167,97,0.04)] bg-gradient-to-br from-[#CCA761]/5 via-transparent to-transparent ${selecionado ? 'ring-2 ring-[#CCA761] ring-offset-4 ring-offset-black' : ''}`}>
+    <div className={`group relative bg-card dark:bg-[#070707] border transition-all duration-700 rounded-3xl p-6 border-[#CCA761]/30 dark:border-[#CCA761]/60 shadow-[0_4px_20px_rgba(0,0,0,0.06)] dark:shadow-[0_0_25px_rgba(204,167,97,0.04)] bg-gradient-to-br from-[#CCA761]/5 via-transparent to-transparent ${selecionado ? 'ring-2 ring-[#CCA761] ring-offset-4 ring-offset-background dark:ring-offset-black' : ''}`}>
       <div className="flex flex-col lg:flex-row gap-8">
-        
+
         {/* Checkbox Lateral */}
         <div className="hidden lg:flex flex-col items-center pt-1 shrink-0">
-           <button onClick={onSelect} className={`w-6 h-6 rounded-lg border transition-all flex items-center justify-center ${selecionado ? 'bg-[#CCA761] border-[#CCA761]' : 'bg-transparent border-zinc-800 hover:border-zinc-700'}`}>
+           <button onClick={onSelect} className={`w-6 h-6 rounded-lg border transition-all flex items-center justify-center ${selecionado ? 'bg-[#CCA761] border-[#CCA761]' : 'bg-transparent border-border dark:border-zinc-800 hover:border-primary/30 dark:hover:border-zinc-700'}`}>
              {selecionado && <CheckCircle size={14} className="text-black" strokeWidth={3} />}
            </button>
         </div>
 
-        {/* Conteúdo Principal */}
+        {/* ConteÃºdo Principal */}
         <div className="flex-1 space-y-6">
           {/* Header do Card */}
           <div className="flex items-center justify-between gap-4">
@@ -332,7 +332,7 @@ function ProcessoCard({ p, onSelect, selecionado, onAction, onRemover, onArquiva
                  <h3 className="text-lg font-black text-[#CCA761] tracking-tight leading-none">{p.numero_processo}</h3>
                  <button
                    onClick={copyProcessNumber}
-                   title="Copiar número do processo"
+                   title="Copiar nÃºmero do processo"
                    className="inline-flex items-center justify-center w-7 h-7 rounded-lg border border-[#CCA761]/30 text-[#CCA761] hover:bg-[#CCA761]/10 transition-colors"
                  >
                    {copiedProcess ? <Check size={12} /> : <Copy size={12} />}
@@ -342,7 +342,7 @@ function ProcessoCard({ p, onSelect, selecionado, onAction, onRemover, onArquiva
                  <span className="px-2.5 py-1 rounded-full bg-[#CCA761]/10 border-[#CCA761]/20 text-[#CCA761]/90 text-[8px] font-black uppercase tracking-widest shadow-[0_0_5px_rgba(204,167,97,0.05)]">{p.tribunal}</span>
                  <StatusBadge status={p.status} />
                  {processoArquivado(p) && (
-                   <span className="px-2 py-0.5 rounded text-[8px] font-black uppercase bg-zinc-800 text-zinc-500 border border-zinc-700">
+                   <span className="px-2 py-0.5 rounded text-[8px] font-black uppercase bg-muted dark:bg-zinc-800 text-muted-foreground dark:text-zinc-500 border border-border dark:border-zinc-700">
                      ARQUIVADO
                    </span>
                  )}
@@ -351,7 +351,7 @@ function ProcessoCard({ p, onSelect, selecionado, onAction, onRemover, onArquiva
                  </span>
                  {d === 0 && (
                    <span className="px-2.5 py-1 rounded-full bg-yellow-500/10 border border-yellow-500/20 text-yellow-500 text-[8px] font-black uppercase tracking-widest flex items-center gap-1.5">
-                     <div className="w-1.5 h-1.5 rounded-full bg-yellow-500 animate-pulse shadow-[0_0_8px_rgba(234,179,8,1)]" /> ATENÇÃO
+                     <div className="w-1.5 h-1.5 rounded-full bg-yellow-500 animate-pulse shadow-[0_0_8px_rgba(234,179,8,1)]" /> ATENÃ‡ÃƒO
                    </span>
                  )}
                </div>
@@ -361,20 +361,20 @@ function ProcessoCard({ p, onSelect, selecionado, onAction, onRemover, onArquiva
           {/* Partes */}
           <div className="flex flex-col md:flex-row gap-8 items-start">
              <div className="flex-1 space-y-1.5">
-                <span className="text-[9px] text-zinc-600 font-black uppercase tracking-widest">Ativo</span>
-                <p className="text-white text-[13px] font-bold leading-none">{p.polo_ativo}</p>
+                <span className="text-[9px] text-muted-foreground font-black uppercase tracking-widest">Ativo</span>
+                <p className="text-gray-900 dark:text-white text-[13px] font-bold leading-none">{p.polo_ativo}</p>
              </div>
              <div className="flex-1 space-y-1.5">
-                <span className="text-[9px] text-zinc-600 font-black uppercase tracking-widest">Passivo</span>
-                <p className="text-white text-[13px] font-bold leading-none">{p.polo_passivo}</p>
+                <span className="text-[9px] text-muted-foreground font-black uppercase tracking-widest">Passivo</span>
+                <p className="text-gray-900 dark:text-white text-[13px] font-bold leading-none">{p.polo_passivo}</p>
              </div>
           </div>
 
-          {/* Área de Resumo Preview */}
+          {/* Ãrea de Resumo Preview */}
           {p.resumo_curto && (
             <div className="relative group/resumo cursor-pointer" onClick={() => onAbrirResumo(p.resumo_curto!)}>
-              <div className="bg-white/5 border border-white/10 rounded-2xl p-4 transition-all group-hover/resumo:bg-white/10">
-                 <p className="text-zinc-400 text-[11px] leading-relaxed italic line-clamp-3">
+              <div className="bg-gray-100 dark:bg-white/5 border border-gray-200 dark:border-white/10 rounded-2xl p-4 transition-all group-hover/resumo:bg-gray-100 dark:bg-white/10">
+                 <p className="text-muted-foreground dark:text-zinc-400 text-[11px] leading-relaxed italic line-clamp-3">
                     {p.resumo_curto}
                  </p>
                  <div className="mt-2 flex items-center gap-1.5 text-[#CCA761] text-[9px] font-black uppercase tracking-widest">
@@ -390,12 +390,12 @@ function ProcessoCard({ p, onSelect, selecionado, onAction, onRemover, onArquiva
                 Resumo em processamento
               </p>
               <p className="text-zinc-500 text-[11px] leading-relaxed">
-                O monitoramento foi criado e o resumo da IA foi solicitado. Aguarde a sincronização da fonte externa.
+                O monitoramento foi criado e o resumo da IA foi solicitado. Aguarde a sincronizaÃ§Ã£o da fonte externa.
               </p>
             </div>
           )}
 
-          {/* Rodapé Interno */}
+          {/* RodapÃ© Interno */}
           <div className="flex items-center gap-4">
              <div className="flex items-center gap-2 bg-green-500/5 border border-green-500/10 px-3 py-1.5 rounded-full">
                 <div className="w-2 h-2 rounded-full bg-green-500/60 shadow-[0_0_8px_rgba(34,197,94,0.4)]" />
@@ -403,26 +403,26 @@ function ProcessoCard({ p, onSelect, selecionado, onAction, onRemover, onArquiva
              </div>
              {d !== null && (
                 <div className={`px-3 py-1.5 rounded-full border text-[9px] font-black uppercase tracking-widest flex items-center gap-3 transition-all duration-700
-                  ${d === 0 
-                    ? 'bg-green-500/10 border-green-500/30 text-green-400/90 shadow-[0_0_12px_rgba(34,197,94,0.15)]' 
+                  ${d === 0
+                    ? 'bg-green-500/10 border-green-500/30 text-green-400/90 shadow-[0_0_12px_rgba(34,197,94,0.15)]'
                     : 'bg-[#CCA761]/5 border-[#CCA761]/10 text-[#CCA761]/70 shadow-[0_0_8px_rgba(204,167,97,0.08)]'
                   }`}
                 >
                    <span className="opacity-60">{formatarData(ultimaMov)}</span>
                    <div className="w-px h-3 bg-current opacity-20" />
                    {d === 0 && <div className="w-1.5 h-1.5 rounded-full bg-green-500 animate-pulse shadow-[0_0_5px_rgba(34,197,94,0.5)]" />}
-                   <span className="tracking-tighter">{d === 0 ? 'Atualizado Hoje' : `${d}d atrás`}</span>
+                   <span className="tracking-tighter">{d === 0 ? 'Atualizado Hoje' : `${d}d atrÃ¡s`}</span>
                 </div>
              )}
           </div>
         </div>
 
-        {/* Ações Laterais */}
+        {/* AÃ§Ãµes Laterais */}
         <div className="flex flex-col gap-2 shrink-0 justify-center min-w-[160px]">
            {!p.monitorado ? (
               <>
                 {!processoArquivado(p) && (
-                  <button onClick={onArquivar} disabled={isUpdating} className="h-11 bg-zinc-950 hover:bg-zinc-800/80 border border-zinc-900 hover:border-zinc-600 text-zinc-600 hover:text-zinc-200 text-[10px] font-black uppercase rounded-2xl transition-all flex items-center justify-center gap-2">
+                  <button onClick={onArquivar} disabled={isUpdating} className="h-11 bg-muted dark:bg-zinc-950 hover:bg-accent dark:hover:bg-zinc-800/80 border border-border dark:border-zinc-900 hover:border-primary/30 dark:hover:border-zinc-600 text-muted-foreground hover:text-foreground dark:hover:text-zinc-200 text-[10px] font-black uppercase rounded-2xl transition-all flex items-center justify-center gap-2">
                     <Archive size={14} /> Arquivar
                   </button>
                 )}
@@ -433,13 +433,13 @@ function ProcessoCard({ p, onSelect, selecionado, onAction, onRemover, onArquiva
               </>
             ) : (
               <>
-                <button onClick={onRemover} disabled={isUpdating} className="h-11 bg-zinc-950 hover:bg-red-500/5 border border-zinc-900 hover:border-red-500/20 text-zinc-700 hover:text-red-500 text-[10px] font-black uppercase rounded-2xl transition-all flex items-center justify-center gap-2">
+                <button onClick={onRemover} disabled={isUpdating} className="h-11 bg-muted dark:bg-zinc-950 hover:bg-red-500/5 border border-border dark:border-zinc-900 hover:border-red-500/20 text-muted-foreground dark:text-zinc-700 hover:text-red-500 text-[10px] font-black uppercase rounded-2xl transition-all flex items-center justify-center gap-2">
                   <X size={14} /> Desativar Vigilancia
                 </button>
-                <button 
+                <button
                  onClick={onOrganizar}
                 disabled={organizandoState === 'loading'}
-                className="h-11 bg-zinc-900 hover:bg-zinc-800 border border-zinc-800 text-zinc-400 hover:text-white text-[10px] font-black uppercase rounded-2xl transition-all flex items-center justify-center gap-2"
+                className="h-11 bg-secondary dark:bg-zinc-900 hover:bg-accent dark:hover:bg-zinc-800 border border-border dark:border-zinc-800 text-muted-foreground dark:text-zinc-400 hover:text-gray-900 dark:text-white text-[10px] font-black uppercase rounded-2xl transition-all flex items-center justify-center gap-2"
                >
                  <Sparkles size={14} /> Organizar IA
                </button>
@@ -459,13 +459,13 @@ function processoArquivado(p: Processo): boolean {
   )
 }
 
-// ─── Componente Principal ───
+// â”€â”€â”€ Componente Principal â”€â”€â”€
 
 function MonitoramentoContent() {
   const [pagina, setPagina] = useState(1)
   const [sincronizandoBase, setSincronizandoBase] = useState(false)
   const [baseSincronizada, setBaseSincronizada] = useState(false)
-  
+
   const [tab, setTab] = useState<'oab' | 'numero' | 'cpf'>('oab')
   const [importarAberto, setImportarAberto] = useState(false)
   const [oabEstado, setOabEstado] = useState('RJ')
@@ -485,7 +485,7 @@ function MonitoramentoContent() {
   const [loadingId, setLoadingId] = useState<string | null>(null)
   const [lastExternalSyncAt, setLastExternalSyncAt] = useState<string | null>(null)
 
-  // Estado para os botões "Organizar IA"
+  // Estado para os botÃµes "Organizar IA"
   const [organizando, setOrganizando] = useState<Record<string, 'idle' | 'loading' | 'done'>>({})
 
   // Estado para o Modo de Leitura (Documento)
@@ -546,7 +546,7 @@ function MonitoramentoContent() {
       localStorage.setItem('mayus_oab_numero', oabNumero.trim())
       localStorage.setItem('mayus_oab_estado', oabEstado)
       await carregarBaseOab(oabEstado, oabNumero.trim())
-      setFeedback('Base local carregada sem consumo de créditos da busca externa.')
+      setFeedback('Base local carregada sem consumo de crÃ©ditos da busca externa.')
     } finally {
       setLoading(false)
     }
@@ -605,13 +605,13 @@ function MonitoramentoContent() {
     const qtdArquivados = processos.length - ativos.length
 
     if (ativos.length === 0) {
-      setFeedback('Todos os processos selecionados estão arquivados — nenhum foi monitorado.')
+      setFeedback('Todos os processos selecionados estÃ£o arquivados â€” nenhum foi monitorado.')
       return
     }
 
     if (numeroAlvo) {
       setLoadingId(numeroAlvo)
-      setFeedback('Enviando solicitação de monitoramento...')
+      setFeedback('Enviando solicitaÃ§Ã£o de monitoramento...')
     }
 
     setImportandoLote(true)
@@ -627,7 +627,7 @@ function MonitoramentoContent() {
       }
       if (data.requer_confirmacao) {
         setConfirmacao({ ...data, processosParaImportar: ativos })
-        setFeedback('Confirmação de investimento necessária para concluir o monitoramento.')
+        setFeedback('ConfirmaÃ§Ã£o de investimento necessÃ¡ria para concluir o monitoramento.')
         return
       }
 
@@ -663,15 +663,15 @@ function MonitoramentoContent() {
 
       if (Number(data.importados || 0) === 0 && jaMonitorados.length > 0) {
         setError(null)
-        setFeedback(`✅ ${jaMonitorados.length} processo(s) já estavam monitorados na fonte externa e foram sincronizados no painel.`)
+        setFeedback(`âœ… ${jaMonitorados.length} processo(s) jÃ¡ estavam monitorados na fonte externa e foram sincronizados no painel.`)
         return
       }
 
       setFeedback(
-        `${qtdArquivados > 0 ? `⚠️ ${qtdArquivados} arquivados ignorados. ` : ''}` +
-        `✅ ${Number(data.importados || 0)} monitorados. ` +
-        `🧠 ${resumosSolicitados} resumo(s) solicitado(s).` +
-        `${falhasMonitoramento > 0 ? ` ❌ ${falhasMonitoramento} falha(s) de monitoramento.` : ''}`
+        `${qtdArquivados > 0 ? `âš ï¸ ${qtdArquivados} arquivados ignorados. ` : ''}` +
+        `âœ… ${Number(data.importados || 0)} monitorados. ` +
+        `ðŸ§  ${resumosSolicitados} resumo(s) solicitado(s).` +
+        `${falhasMonitoramento > 0 ? ` âŒ ${falhasMonitoramento} falha(s) de monitoramento.` : ''}`
       )
       if (monitoramentoIndividual && primeiraFalha?.motivo) setError(primeiraFalha.motivo)
     } catch (e: any) {
@@ -724,21 +724,21 @@ function MonitoramentoContent() {
         const primeiraFalha = Array.isArray(data.falhas_monitoramento) && data.falhas_monitoramento.length > 0
           ? data.falhas_monitoramento[0]
           : null
-        setError(data?.mensagem || primeiraFalha?.motivo || 'Nenhum monitoramento foi criado após confirmação.')
+        setError(data?.mensagem || primeiraFalha?.motivo || 'Nenhum monitoramento foi criado apÃ³s confirmaÃ§Ã£o.')
         setFeedback(null)
         return
       }
 
       if (Number(data.importados || 0) === 0 && jaMonitorados.length > 0) {
         setError(null)
-        setFeedback(`✅ ${jaMonitorados.length} processo(s) já estavam monitorados na fonte externa e foram sincronizados no painel.`)
+        setFeedback(`âœ… ${jaMonitorados.length} processo(s) jÃ¡ estavam monitorados na fonte externa e foram sincronizados no painel.`)
         return
       }
 
       setFeedback(
-        `✅ ${Number(data.importados || 0)} monitorados após confirmação de custo. ` +
-        `🧠 ${resumosSolicitados} resumo(s) solicitado(s).` +
-        `${falhasMonitoramento > 0 ? ` ❌ ${falhasMonitoramento} falha(s) de monitoramento.` : ''}`
+        `âœ… ${Number(data.importados || 0)} monitorados apÃ³s confirmaÃ§Ã£o de custo. ` +
+        `ðŸ§  ${resumosSolicitados} resumo(s) solicitado(s).` +
+        `${falhasMonitoramento > 0 ? ` âŒ ${falhasMonitoramento} falha(s) de monitoramento.` : ''}`
       )
       setSelecionados(new Set())
       setConfirmacao(null)
@@ -764,7 +764,7 @@ function MonitoramentoContent() {
         total_retornado: Math.max(0, (prev.total_retornado || 1) - 1),
         billing: { ...prev.billing, total_ja_monitorados: Math.max(0, prev.billing.total_ja_monitorados - 1) }
       } : prev)
-      setFeedback('✅ Vigilância desativada e processo ocultado')
+      setFeedback('âœ… VigilÃ¢ncia desativada e processo ocultado')
     } catch (e) {
       setError('Erro ao remover monitoramento')
     } finally {
@@ -791,7 +791,7 @@ function MonitoramentoContent() {
           ? { ...item, status: 'ARQUIVADO' }
           : item)
       } : prev)
-      setFeedback(`✅ Processo ${p.numero_processo} arquivado manualmente.`)
+      setFeedback(`âœ… Processo ${p.numero_processo} arquivado manualmente.`)
     } catch (e: any) {
       setError(e?.message || 'Erro ao arquivar processo')
     } finally {
@@ -814,14 +814,14 @@ function MonitoramentoContent() {
           ...prev,
           processos: prev.processos.map(p => p.id === processoId ? { ...p, ...data.processo_atualizado } : p)
         } : prev)
-        setFeedback('Organização concluída e card atualizado no fluxo jurídico.')
+        setFeedback('OrganizaÃ§Ã£o concluÃ­da e card atualizado no fluxo jurÃ­dico.')
       } else {
         setOrganizando(prev => ({ ...prev, [processoId]: 'idle' }))
-        setError(data?.error || 'Não foi possível organizar este processo com IA.')
+        setError(data?.error || 'NÃ£o foi possÃ­vel organizar este processo com IA.')
       }
     } catch {
       setOrganizando(prev => ({ ...prev, [processoId]: 'idle' }))
-      setError('Erro de comunicação ao organizar processo com IA.')
+      setError('Erro de comunicaÃ§Ã£o ao organizar processo com IA.')
     }
   }, [])
 
@@ -909,7 +909,7 @@ function MonitoramentoContent() {
     a.download = `monitoramento_processos_${new Date().toISOString().slice(0, 10)}.csv`
     a.click()
     URL.revokeObjectURL(url)
-    setFeedback(`✅ CSV exportado com ${rows.length} processo(s).`)
+    setFeedback(`âœ… CSV exportado com ${rows.length} processo(s).`)
   }
 
   const tribunaisUnicos = useMemo(() => {
@@ -965,33 +965,33 @@ function MonitoramentoContent() {
   const confirmarBuscaExterna = useCallback(() => {
     const bloqueioCurto = minutosDesdeUltimaSync !== null && minutosDesdeUltimaSync < 3
     if (bloqueioCurto) {
-      setFeedback(`Sincronização externa realizada há ${minutosDesdeUltimaSync} min. Aguarde ao menos 3 min para evitar nova cobrança imediata.`)
+      setFeedback(`SincronizaÃ§Ã£o externa realizada hÃ¡ ${minutosDesdeUltimaSync} min. Aguarde ao menos 3 min para evitar nova cobranÃ§a imediata.`)
       return
     }
 
     const aviso = jaTevePesquisaExterna
-      ? 'Esta OAB já teve pesquisa externa. Nova consulta pode gerar nova cobrança. Deseja continuar?'
-      : 'Pesquisar OAB na fonte externa pode gerar cobrança. Deseja continuar?'
+      ? 'Esta OAB jÃ¡ teve pesquisa externa. Nova consulta pode gerar nova cobranÃ§a. Deseja continuar?'
+      : 'Pesquisar OAB na fonte externa pode gerar cobranÃ§a. Deseja continuar?'
 
     if (window.confirm(aviso)) buscar()
   }, [buscar, jaTevePesquisaExterna, minutosDesdeUltimaSync])
 
   const renderPaginacao = () => (
-    <div className="flex items-center justify-between py-4 px-2 bg-zinc-900/20 rounded-2xl border border-zinc-800/50">
-      <span className="text-zinc-500 text-[10px] font-black uppercase tracking-widest px-2">{processosFiltrados.length} processos · pág {pagina}/{totalPages}</span>
+    <div className="flex items-center justify-between py-4 px-2 bg-card dark:bg-zinc-900/20 rounded-2xl border border-border dark:border-zinc-800/50">
+      <span className="text-zinc-500 text-[10px] font-black uppercase tracking-widest px-2">{processosFiltrados.length} processos Â· pÃ¡g {pagina}/{totalPages}</span>
       <div className="flex gap-1.5">
-        <button onClick={() => setPage(1)} disabled={pagina === 1} className="px-3 py-1.5 rounded-xl border border-zinc-800 bg-zinc-950 text-zinc-500 text-[9px] font-black uppercase disabled:opacity-20 hover:border-zinc-700 hover:text-zinc-300">« Primeira</button>
-        <button onClick={() => setPage(Math.max(1, pagina - 1))} disabled={pagina === 1} className="px-3 py-1.5 rounded-xl border border-zinc-800 bg-zinc-950 text-zinc-500 text-[9px] font-black uppercase disabled:opacity-20 hover:border-zinc-700 hover:text-zinc-300">Anterior</button>
+        <button onClick={() => setPage(1)} disabled={pagina === 1} className="px-3 py-1.5 rounded-xl border border-border dark:border-zinc-800 bg-muted dark:bg-zinc-950 text-muted-foreground text-[9px] font-black uppercase disabled:opacity-20 hover:border-primary/30 dark:hover:border-zinc-700 hover:text-foreground dark:hover:text-zinc-300">Â« Primeira</button>
+        <button onClick={() => setPage(Math.max(1, pagina - 1))} disabled={pagina === 1} className="px-3 py-1.5 rounded-xl border border-border dark:border-zinc-800 bg-muted dark:bg-zinc-950 text-muted-foreground text-[9px] font-black uppercase disabled:opacity-20 hover:border-primary/30 dark:hover:border-zinc-700 hover:text-foreground dark:hover:text-zinc-300">Anterior</button>
         {Array.from({ length: Math.min(5, totalPages) }, (_, i) => {
           const start = Math.max(1, Math.min(pagina - 2, totalPages - 4))
           const n = start + i
           if (n < 1 || n > totalPages) return null
           return (
-            <button key={n} onClick={() => setPage(n)} className={`w-7 h-7 rounded-lg text-[9px] font-black ${n === pagina ? 'bg-yellow-500 text-black' : 'border border-zinc-800 bg-zinc-950 text-zinc-600 uppercase'}`}>{n}</button>
+            <button key={n} onClick={() => setPage(n)} className={`w-7 h-7 rounded-lg text-[9px] font-black ${n === pagina ? 'bg-yellow-500 text-black' : 'border border-border dark:border-zinc-800 bg-muted dark:bg-zinc-950 text-muted-foreground uppercase'}`}>{n}</button>
           )
         })}
-        <button onClick={() => setPage(Math.min(totalPages, pagina + 1))} disabled={pagina === totalPages} className="px-3 py-1.5 rounded-xl border border-zinc-800 bg-zinc-950 text-zinc-500 text-[9px] font-black uppercase disabled:opacity-20 hover:border-zinc-700 hover:text-zinc-300">Próxima</button>
-        <button onClick={() => setPage(totalPages)} disabled={pagina === totalPages} className="px-3 py-1.5 rounded-xl border border-zinc-800 bg-zinc-950 text-zinc-500 text-[9px] font-black uppercase disabled:opacity-20 hover:border-zinc-700 hover:text-zinc-300">Última »</button>
+        <button onClick={() => setPage(Math.min(totalPages, pagina + 1))} disabled={pagina === totalPages} className="px-3 py-1.5 rounded-xl border border-border dark:border-zinc-800 bg-muted dark:bg-zinc-950 text-muted-foreground text-[9px] font-black uppercase disabled:opacity-20 hover:border-primary/30 dark:hover:border-zinc-700 hover:text-foreground dark:hover:text-zinc-300">PrÃ³xima</button>
+        <button onClick={() => setPage(totalPages)} disabled={pagina === totalPages} className="px-3 py-1.5 rounded-xl border border-border dark:border-zinc-800 bg-muted dark:bg-zinc-950 text-muted-foreground text-[9px] font-black uppercase disabled:opacity-20 hover:border-primary/30 dark:hover:border-zinc-700 hover:text-foreground dark:hover:text-zinc-300">Ãšltima Â»</button>
       </div>
     </div>
   )
@@ -1010,27 +1010,27 @@ function MonitoramentoContent() {
                 <Shield size={22} className="text-yellow-500" />
               </div>
               <div>
-                <h1 className="text-2xl font-bold text-white tracking-tight" style={{ fontFamily: 'Cormorant Garamond, serif' }}>Monitoramento Estratégico</h1>
+                <h1 className="text-2xl font-bold text-gray-900 dark:text-white tracking-tight" style={{ fontFamily: 'Cormorant Garamond, serif' }}>Monitoramento EstratÃ©gico</h1>
                 <p className="text-[10px] text-zinc-500 uppercase tracking-widest font-black opacity-60">Varredura Judicial em Tempo Real</p>
               </div>
            </div>
            {result?.advogado_nome && (
              <div className="flex flex-col items-end gap-2">
-               <div className="bg-zinc-900 px-5 py-2.5 rounded-2xl border border-zinc-800 flex items-center gap-4 shadow-inner">
-                  <div className="flex flex-col items-end border-r border-zinc-800 pr-4">
-                     <span className="text-[9px] text-zinc-500 uppercase font-black tracking-widest leading-none mb-1">Responsável</span>
+               <div className="bg-card dark:bg-zinc-900 px-5 py-2.5 rounded-2xl border border-border dark:border-zinc-800 flex items-center gap-4 shadow-sm dark:shadow-inner">
+                  <div className="flex flex-col items-end border-r border-border dark:border-zinc-800 pr-4">
+                     <span className="text-[9px] text-zinc-500 uppercase font-black tracking-widest leading-none mb-1">ResponsÃ¡vel</span>
                      <span className="text-yellow-500 font-bold uppercase tracking-wide drop-shadow-[0_0_8px_rgba(234,179,8,0.4)]">{result.advogado_nome}</span>
                   </div>
                   <div className="flex items-center gap-4">
-                    <div className="flex flex-col border-l border-zinc-800 pl-4">
+                    <div className="flex flex-col border-l border-border dark:border-zinc-800 pl-4">
                        <span className="text-[9px] text-zinc-500 uppercase font-black tracking-widest leading-none mb-1">Processos</span>
-                       <span className="text-white font-black text-sm leading-none">{totalProcessosBase}</span>
+                       <span className="text-gray-900 dark:text-white font-black text-sm leading-none">{totalProcessosBase}</span>
                     </div>
-                    <div className="flex flex-col border-l border-zinc-800 pl-4">
+                    <div className="flex flex-col border-l border-border dark:border-zinc-800 pl-4">
                        <span className="text-[9px] text-zinc-500 uppercase font-black tracking-widest leading-none mb-1">Ativos</span>
                        <span className="text-green-400 font-black text-sm leading-none">{totalAtivosPainel}</span>
                     </div>
-                    <div className="flex flex-col border-l border-zinc-800 pl-4">
+                    <div className="flex flex-col border-l border-border dark:border-zinc-800 pl-4">
                        <span className="text-[9px] text-zinc-500 uppercase font-black tracking-widest leading-none mb-1">Arquivados</span>
                        <span className="text-red-400 font-black text-sm leading-none">{totalArquivadosAmostra}</span>
                     </div>
@@ -1048,26 +1048,26 @@ function MonitoramentoContent() {
         {error && <div className="p-4 bg-red-500/5 border border-red-500/20 rounded-2xl flex items-center gap-3 text-red-500 text-xs font-bold animate-shake uppercase tracking-widest"><AlertCircle size={18} /> {error}</div>}
         {feedback && <div className="p-4 bg-green-500/5 border border-green-500/20 rounded-2xl flex items-center gap-3 text-green-400 text-xs font-bold animate-in slide-in-from-top-4 uppercase tracking-widest"><CheckCircle size={18} strokeWidth={3} /> {feedback}</div>}
 
-        <div className="bg-zinc-900/30 border border-zinc-800 rounded-2xl p-3 space-y-3">
+        <div className="bg-card dark:bg-zinc-900/30 border border-border dark:border-zinc-800 rounded-2xl p-3 space-y-3">
           <div className="flex items-center justify-between gap-3">
-            <span className="text-zinc-200 text-[11px] font-black uppercase tracking-[0.2em]">Pesquisar OAB</span>
+            <span className="text-foreground dark:text-zinc-200 text-[11px] font-black uppercase tracking-[0.2em]">Pesquisar OAB</span>
             <button
               onClick={() => setImportarAberto((prev) => !prev)}
-              className="text-[10px] font-black uppercase text-zinc-400 hover:text-white transition-colors"
+              className="text-[10px] font-black uppercase text-zinc-400 hover:text-gray-900 dark:text-white transition-colors"
             >
-              {importarAberto ? 'Ocultar opções' : 'Mais opções'}
+              {importarAberto ? 'Ocultar opÃ§Ãµes' : 'Mais opÃ§Ãµes'}
             </button>
           </div>
 
-          <div className="bg-zinc-900 border border-zinc-800 rounded-2xl p-2 flex flex-col md:flex-row gap-2 shadow-2xl">
-            <select value={oabEstado} onChange={e => setOabEstado(e.target.value)} className="bg-zinc-950 border border-zinc-800 rounded-xl px-4 text-xs font-bold text-zinc-400 focus:border-yellow-500/50 outline-none hover:bg-zinc-900 transition-colors">
+          <div className="bg-muted dark:bg-zinc-900 border border-border dark:border-zinc-800 rounded-2xl p-2 flex flex-col md:flex-row gap-2 shadow-lg dark:shadow-2xl">
+            <select value={oabEstado} onChange={e => setOabEstado(e.target.value)} className="bg-background dark:bg-zinc-950 border border-border dark:border-zinc-800 rounded-xl px-4 text-xs font-bold text-muted-foreground dark:text-zinc-400 focus:border-primary/50 outline-none hover:bg-muted dark:hover:bg-zinc-900 transition-colors">
               {['AC','AL','AP','AM','BA','CE','DF','ES','GO','MA','MT','MS','MG','PA','PB','PR','PE','PI','RJ','RN','RS','RO','RR','SC','SP','SE','TO'].map(e => <option key={e} value={e}>{e}</option>)}
             </select>
             <div className="flex-1 relative">
               <Search size={14} className="absolute left-4 top-1/2 -translate-y-1/2 text-zinc-700" />
-              <input value={oabNumero} onChange={e => setOabNumero(e.target.value)} onKeyDown={e => e.key === 'Enter' && carregarBaseSalva()} placeholder="Digite o número OAB..." className="w-full h-12 bg-zinc-950 border border-zinc-900 rounded-xl pl-11 pr-4 text-xs text-white placeholder-zinc-800 outline-none focus:border-yellow-500/50 font-medium" />
+              <input value={oabNumero} onChange={e => setOabNumero(e.target.value)} onKeyDown={e => e.key === 'Enter' && carregarBaseSalva()} placeholder="Digite o nÃºmero OAB..." className="w-full h-12 bg-background dark:bg-zinc-950 border border-border dark:border-zinc-900 rounded-xl pl-11 pr-4 text-xs text-foreground placeholder-muted-foreground/50 dark:placeholder-zinc-800 outline-none focus:border-primary/50 font-medium" />
             </div>
-            <button onClick={carregarBaseSalva} disabled={loading} className="px-6 h-12 bg-zinc-800 hover:bg-zinc-700 text-white text-[11px] font-black rounded-xl transition-all disabled:opacity-50 flex items-center justify-center gap-2 shadow-xl shadow-black/30 active:scale-95 border border-zinc-700 shrink-0 uppercase tracking-widest">
+            <button onClick={carregarBaseSalva} disabled={loading} className="px-6 h-12 bg-secondary dark:bg-zinc-800 hover:bg-accent dark:hover:bg-zinc-700 text-foreground text-[11px] font-black rounded-xl transition-all disabled:opacity-50 flex items-center justify-center gap-2 shadow-lg dark:shadow-xl dark:shadow-black/30 active:scale-95 border border-border dark:border-zinc-700 shrink-0 uppercase tracking-widest">
               {loading ? <RefreshCw size={14} className="animate-spin" /> : <Zap size={14} fill="currentColor" />}
               BASE GRAVADA
             </button>
@@ -1082,19 +1082,19 @@ function MonitoramentoContent() {
           </div>
           <p className={`px-1 text-[10px] uppercase tracking-widest ${jaTevePesquisaExterna ? 'text-yellow-500/80' : 'text-zinc-500'}`}>
             {jaTevePesquisaExterna
-              ? 'Esta OAB já teve pesquisa externa. Nova consulta pode gerar cobrança adicional.'
-              : 'Pesquisar OAB na fonte externa pode gerar cobrança.'}
+              ? 'Esta OAB jÃ¡ teve pesquisa externa. Nova consulta pode gerar cobranÃ§a adicional.'
+              : 'Pesquisar OAB na fonte externa pode gerar cobranÃ§a.'}
           </p>
         </div>
 
         {result && (
           <div className="space-y-6 animate-in fade-in duration-500">
-            <div className="flex flex-col lg:flex-row lg:items-center justify-between gap-4 p-4 bg-zinc-900/60 border border-zinc-800 rounded-2xl shadow-xl">
+            <div className="flex flex-col lg:flex-row lg:items-center justify-between gap-4 p-4 bg-card dark:bg-zinc-900/60 border border-border dark:border-zinc-800 rounded-2xl shadow-md dark:shadow-xl">
                <div className="flex items-center gap-3 flex-wrap">
-                  <div className="flex items-center gap-1 bg-zinc-950 p-1 rounded-xl border border-zinc-800">
+                  <div className="flex items-center gap-1 bg-muted dark:bg-zinc-950 p-1 rounded-xl border border-border dark:border-zinc-800">
                      {(['distribuicao', 'urgencia', 'tribunal'] as SortOrder[]).map(o => (
-                       <button key={o} onClick={() => setOrdenacao(o)} className={`px-4 py-1.5 rounded-lg text-[10px] font-black uppercase transition-all ${ordenacao === o ? 'bg-zinc-800 text-yellow-500 border border-zinc-700 shadow-inner' : 'text-zinc-600 hover:text-zinc-400'}`}>
-                          {o === 'distribuicao' ? 'Por Data' : o === 'urgencia' ? 'Por Urgência' : 'Por Tribunal'}
+                       <button key={o} onClick={() => setOrdenacao(o)} className={`px-4 py-1.5 rounded-lg text-[10px] font-black uppercase transition-all ${ordenacao === o ? 'bg-accent dark:bg-zinc-800 text-primary dark:text-yellow-500 border border-border dark:border-zinc-700 shadow-inner' : 'text-muted-foreground dark:text-zinc-600 hover:text-foreground dark:hover:text-zinc-400'}`}>
+                          {o === 'distribuicao' ? 'Por Data' : o === 'urgencia' ? 'Por UrgÃªncia' : 'Por Tribunal'}
                        </button>
                      ))}
                   </div>
@@ -1131,7 +1131,7 @@ function MonitoramentoContent() {
                   )}
                   <button
                     onClick={exportarCsv}
-                    className="flex items-center gap-2 px-4 py-2 rounded-xl bg-zinc-900 border border-zinc-800 text-zinc-300 text-xs font-bold uppercase hover:border-zinc-700 hover:text-white transition-all"
+                    className="flex items-center gap-2 px-4 py-2 rounded-xl bg-card dark:bg-zinc-900 border border-border dark:border-zinc-800 text-foreground dark:text-zinc-300 text-xs font-bold uppercase hover:border-primary/30 dark:hover:border-zinc-700 hover:text-foreground transition-all"
                   >
                     <Download size={14} /> Exportar CSV
                   </button>
@@ -1140,11 +1140,11 @@ function MonitoramentoContent() {
 
             <div className="flex items-center gap-2 overflow-x-auto pb-2 scrollbar-hide">
                 <Filter size={14} className="text-zinc-700 mx-2" />
-                <button onClick={() => setFiltroTribunal(null)} className={`px-4 py-1.5 rounded-full text-[9px] font-black uppercase transition-all whitespace-nowrap border ${!filtroTribunal ? 'bg-white text-black border-white' : 'bg-transparent text-zinc-600 border-zinc-800 hover:text-zinc-400'}`}>
-                   TODAS AS JURISDIÇÕES
+                <button onClick={() => setFiltroTribunal(null)} className={`px-4 py-1.5 rounded-full text-[9px] font-black uppercase transition-all whitespace-nowrap border ${!filtroTribunal ? 'bg-foreground text-background border-foreground' : 'bg-transparent text-muted-foreground border-border hover:text-foreground'}`}>
+                   TODAS AS JURISDIÃ‡Ã•ES
                 </button>
                 {tribunaisUnicos.map(t => (
-                  <button key={t} onClick={() => setFiltroTribunal(t)} className={`px-4 py-1.5 rounded-full text-[9px] font-black uppercase transition-all whitespace-nowrap border ${filtroTribunal === t ? 'bg-yellow-500/10 text-yellow-500 border-yellow-500/20 shadow-lg shadow-yellow-500/5' : 'bg-zinc-900/50 text-zinc-600 border-zinc-800 hover:text-zinc-500'}`}>
+                  <button key={t} onClick={() => setFiltroTribunal(t)} className={`px-4 py-1.5 rounded-full text-[9px] font-black uppercase transition-all whitespace-nowrap border ${filtroTribunal === t ? 'bg-primary/10 text-primary border-primary/20 shadow-lg shadow-primary/5' : 'bg-muted dark:bg-zinc-900/50 text-muted-foreground border-border dark:border-zinc-800 hover:text-foreground'}`}>
                     {t}
                   </button>
                 ))}
@@ -1153,14 +1153,14 @@ function MonitoramentoContent() {
             <div className="flex flex-col md:flex-row md:items-center justify-between gap-4">
                <div className="flex gap-2 overflow-x-auto pb-1 scrollbar-hide">
                  {(['TODOS', 'ATIVO', 'ARQUIVADO', 'monitorado', 'nao_monitorado'] as FilterStatus[]).map(f => (
-                    <button key={f} onClick={() => handleFiltroStatusChange(f)} className={`px-4 py-2 rounded-xl text-[10px] font-black uppercase transition-all whitespace-nowrap border ${filtroStatus === f ? 'bg-[#CCA761] text-black border-[#CCA761] shadow-[0_0_15px_rgba(204,167,97,0.2)]' : 'text-zinc-600 bg-zinc-900 border-zinc-800 hover:border-zinc-700'}`}>
+                    <button key={f} onClick={() => handleFiltroStatusChange(f)} className={`px-4 py-2 rounded-xl text-[10px] font-black uppercase transition-all whitespace-nowrap border ${filtroStatus === f ? 'bg-[#CCA761] text-black border-[#CCA761] shadow-[0_0_15px_rgba(204,167,97,0.2)]' : 'text-muted-foreground dark:text-zinc-600 bg-muted dark:bg-zinc-900 border-border dark:border-zinc-800 hover:border-primary/30 dark:hover:border-zinc-700'}`}>
                       {f === 'nao_monitorado' ? 'PENDENTES' : f === 'monitorado' ? 'MONITORADOS' : f}
                     </button>
                  ))}
                </div>
                <div className="relative w-full md:w-72">
                   <Search size={14} className="absolute left-4 top-1/2 -translate-y-1/2 text-zinc-700" />
-                  <input value={search} onChange={e => handleSearchChange(e.target.value)} placeholder="Identificar na lista..." className="w-full bg-zinc-950 border border-zinc-800 rounded-xl pl-11 pr-4 py-2 text-[11px] font-black uppercase text-zinc-500 outline-none focus:border-zinc-700 placeholder:opacity-30" />
+                  <input value={search} onChange={e => handleSearchChange(e.target.value)} placeholder="Identificar na lista..." className="w-full bg-background dark:bg-zinc-950 border border-border dark:border-zinc-800 rounded-xl pl-11 pr-4 py-2 text-[11px] font-black uppercase text-foreground dark:text-zinc-500 outline-none focus:border-primary/30 dark:focus:border-zinc-700 placeholder:opacity-30" />
                </div>
             </div>
 
@@ -1174,8 +1174,8 @@ function MonitoramentoContent() {
                 ))}
               </div>
               {processosFiltrados.length === 0 && (
-                <div className="py-32 text-center space-y-4 bg-zinc-900/10 border border-dashed border-zinc-800 rounded-3xl">
-                   <div className="w-16 h-16 rounded-3xl bg-zinc-900 flex items-center justify-center mx-auto text-zinc-800"><LayoutList size={28} /></div>
+                <div className="py-32 text-center space-y-4 bg-muted/50 dark:bg-zinc-900/10 border border-dashed border-border dark:border-zinc-800 rounded-3xl">
+                   <div className="w-16 h-16 rounded-3xl bg-muted dark:bg-zinc-900 flex items-center justify-center mx-auto text-muted-foreground dark:text-zinc-800"><LayoutList size={28} /></div>
                    <p className="text-zinc-500 text-xs font-black uppercase tracking-[0.3em]">Nenhum Alvo Identificado</p>
                 </div>
               )}
@@ -1188,9 +1188,9 @@ function MonitoramentoContent() {
 
         {!result && !loading && (
           <div className="text-center py-32 space-y-8 animate-in fade-in zoom-in-95 duration-700">
-             <div className="relative w-24 h-24 bg-zinc-950 border border-yellow-500/10 rounded-3xl flex items-center justify-center mx-auto shadow-2xl"><Shield size={40} className="text-yellow-500/30" /></div>
+             <div className="relative w-24 h-24 bg-muted dark:bg-zinc-950 border border-primary/10 dark:border-yellow-500/10 rounded-3xl flex items-center justify-center mx-auto shadow-lg dark:shadow-2xl"><Shield size={40} className="text-yellow-500/30" /></div>
              <div className="space-y-3">
-                <h3 className="text-white font-black text-2xl" style={{ fontFamily: 'Cormorant Garamond, serif' }}>Inicie a Varredura Jurídica</h3>
+                <h3 className="text-gray-900 dark:text-white font-black text-2xl" style={{ fontFamily: 'Cormorant Garamond, serif' }}>Inicie a Varredura JurÃ­dica</h3>
                 <p className="text-zinc-600 text-xs max-w-sm mx-auto font-black uppercase tracking-tighter">Insira os credenciais acima para conectar-se aos tribunais.</p>
              </div>
           </div>
@@ -1202,16 +1202,16 @@ function MonitoramentoContent() {
                <div className="absolute inset-0 border-2 border-yellow-500 border-t-transparent border-l-transparent rounded-3xl animate-spin" />
                <div className="absolute inset-6 border border-zinc-800 rounded-2xl flex items-center justify-center"><RefreshCw size={24} className="text-yellow-500/40 animate-spin" /></div>
             </div>
-            <p className="text-white font-black text-xs uppercase tracking-[0.4em] animate-pulse">Sincronizando Canais Oficiais</p>
+            <p className="text-gray-900 dark:text-white font-black text-xs uppercase tracking-[0.4em] animate-pulse">Sincronizando Canais Oficiais</p>
           </div>
         )}
 
-        <div className="hidden mt-4 bg-zinc-900/30 border border-zinc-800 rounded-2xl p-3">
+        <div className="hidden mt-4 bg-card dark:bg-zinc-900/30 border border-border dark:border-zinc-800 rounded-2xl p-3">
           <button
             onClick={() => setImportarAberto((prev) => !prev)}
-            className="w-full flex items-center justify-between px-3 py-3 rounded-xl bg-zinc-950 border border-zinc-800 hover:border-zinc-700 transition-all"
+            className="w-full flex items-center justify-between px-3 py-3 rounded-xl bg-muted dark:bg-zinc-950 border border-border dark:border-zinc-800 hover:border-primary/30 dark:hover:border-zinc-700 transition-all"
           >
-            <span className="text-zinc-200 text-[11px] font-black uppercase tracking-[0.2em]">
+            <span className="text-foreground dark:text-zinc-200 text-[11px] font-black uppercase tracking-[0.2em]">
               + Importar Processos por OAB
             </span>
             {importarAberto ? <ChevronUp size={14} className="text-zinc-400" /> : <ChevronDown size={14} className="text-zinc-400" />}
@@ -1219,22 +1219,22 @@ function MonitoramentoContent() {
 
           {importarAberto && (
             <div className="mt-4 space-y-4">
-              <div className="bg-zinc-900 border border-zinc-800 rounded-2xl p-2 flex flex-col md:flex-row gap-2 shadow-2xl">
-                <div className="flex bg-zinc-950 rounded-xl p-1 border border-zinc-800 shrink-0">
-                  {([['oab', 'OAB'], ['numero', 'Nº CNJ'], ['cpf', 'DOCS']] as const).map(([k, l]) => (
-                    <button key={k} onClick={() => setTab(k)} className={`px-5 py-2 rounded-lg text-xs font-black transition-all ${tab === k ? 'bg-yellow-500 text-black shadow-lg shadow-yellow-500/20' : 'text-zinc-600 hover:text-zinc-300'}`}>{l}</button>
+              <div className="bg-muted dark:bg-zinc-900 border border-border dark:border-zinc-800 rounded-2xl p-2 flex flex-col md:flex-row gap-2 shadow-lg dark:shadow-2xl">
+                <div className="flex bg-muted dark:bg-zinc-950 rounded-xl p-1 border border-border dark:border-zinc-800 shrink-0">
+                  {([['oab', 'OAB'], ['numero', 'NÂº CNJ'], ['cpf', 'DOCS']] as const).map(([k, l]) => (
+                    <button key={k} onClick={() => setTab(k)} className={`px-5 py-2 rounded-lg text-xs font-black transition-all ${tab === k ? 'bg-yellow-500 text-black shadow-lg shadow-yellow-500/20' : 'text-muted-foreground dark:text-zinc-600 hover:text-foreground dark:hover:text-zinc-300'}`}>{l}</button>
                   ))}
                 </div>
                 {tab === 'oab' && (
-                  <select value={oabEstado} onChange={e => setOabEstado(e.target.value)} className="bg-zinc-950 border border-zinc-800 rounded-xl px-4 text-xs font-bold text-zinc-400 focus:border-yellow-500/50 outline-none hover:bg-zinc-900 transition-colors">
+                  <select value={oabEstado} onChange={e => setOabEstado(e.target.value)} className="bg-background dark:bg-zinc-950 border border-border dark:border-zinc-800 rounded-xl px-4 text-xs font-bold text-muted-foreground dark:text-zinc-400 focus:border-primary/50 outline-none hover:bg-muted dark:hover:bg-zinc-900 transition-colors">
                     {['AC','AL','AP','AM','BA','CE','DF','ES','GO','MA','MT','MS','MG','PA','PB','PR','PE','PI','RJ','RN','RS','RO','RR','SC','SP','SE','TO'].map(e => <option key={e} value={e}>{e}</option>)}
                   </select>
                 )}
                 <div className="flex-1 relative">
                   <Search size={14} className="absolute left-4 top-1/2 -translate-y-1/2 text-zinc-700" />
-                  <input value={oabNumero} onChange={e => setOabNumero(e.target.value)} onKeyDown={e => e.key === 'Enter' && carregarBaseSalva()} placeholder="Digite os dados para busca..." className="w-full h-full bg-zinc-950 border border-zinc-900 rounded-xl pl-11 pr-4 text-xs text-white placeholder-zinc-800 outline-none focus:border-yellow-500/50 font-medium" />
+                  <input value={oabNumero} onChange={e => setOabNumero(e.target.value)} onKeyDown={e => e.key === 'Enter' && carregarBaseSalva()} placeholder="Digite os dados para busca..." className="w-full h-full bg-background dark:bg-zinc-950 border border-border dark:border-zinc-900 rounded-xl pl-11 pr-4 text-xs text-foreground placeholder-muted-foreground/50 dark:placeholder-zinc-800 outline-none focus:border-primary/50 font-medium" />
                 </div>
-                <button onClick={carregarBaseSalva} disabled={loading} className="px-6 h-12 bg-zinc-800 hover:bg-zinc-700 text-white text-[11px] font-black rounded-xl transition-all disabled:opacity-50 flex items-center justify-center gap-2 shadow-xl shadow-black/30 active:scale-95 border border-zinc-700 shrink-0 uppercase tracking-widest">
+                <button onClick={carregarBaseSalva} disabled={loading} className="px-6 h-12 bg-secondary dark:bg-zinc-800 hover:bg-accent dark:hover:bg-zinc-700 text-foreground text-[11px] font-black rounded-xl transition-all disabled:opacity-50 flex items-center justify-center gap-2 shadow-lg dark:shadow-xl dark:shadow-black/30 active:scale-95 border border-border dark:border-zinc-700 shrink-0 uppercase tracking-widest">
                   {loading ? <RefreshCw size={14} className="animate-spin" /> : <Zap size={14} fill="currentColor" />}
                   CARREGAR BASE GRAVADA
                 </button>
@@ -1248,11 +1248,11 @@ function MonitoramentoContent() {
                 </button>
               </div>
               <p className="text-[10px] text-zinc-500 uppercase tracking-widest px-1">
-                Carregar base usa dados salvos. Atualizar fonte externa pode cobrar por requisição.
+                Carregar base usa dados salvos. Atualizar fonte externa pode cobrar por requisiÃ§Ã£o.
               </p>
               {result?.ultima_sincronizacao && (
                 <p className="text-[10px] text-zinc-600 px-1">
-                  Última sincronização externa: {formatarData(result.ultima_sincronizacao)}{result?.paginas_buscadas ? ` · ${result.paginas_buscadas} página(s)` : ''}
+                  Ãšltima sincronizaÃ§Ã£o externa: {formatarData(result.ultima_sincronizacao)}{result?.paginas_buscadas ? ` Â· ${result.paginas_buscadas} pÃ¡gina(s)` : ''}
                 </p>
               )}
             </div>
@@ -1262,60 +1262,60 @@ function MonitoramentoContent() {
 
       {resumoModal && (
         <div className="fixed inset-0 z-50 flex items-center justify-center p-4 md:p-8">
-          <div 
-            className="absolute inset-0 bg-black/90 backdrop-blur-xl animate-in fade-in duration-500"
+          <div
+            className="absolute inset-0 bg-gray-200 dark:bg-black/90 backdrop-blur-xl animate-in fade-in duration-500"
             onClick={() => setResumoModal(null)}
           />
-          <div className="relative bg-[#0a0a0a] border border-[#CCA761]/30 rounded-3xl w-full max-w-4xl z-10 max-h-[90vh] overflow-hidden flex flex-col shadow-[0_0_100px_rgba(204,167,97,0.1)] animate-in zoom-in-95 duration-500">
-            {/* Cabeçalho do Documento */}
-            <div className="p-6 border-b border-zinc-900 bg-zinc-950/50 flex items-center justify-between">
+          <div className="relative bg-white dark:bg-[#0a0a0a] border border-[#CCA761]/30 rounded-3xl w-full max-w-4xl z-10 max-h-[90vh] overflow-hidden flex flex-col shadow-[0_0_100px_rgba(204,167,97,0.1)] animate-in zoom-in-95 duration-500">
+            {/* CabeÃ§alho do Documento */}
+            <div className="p-6 border-b border-border dark:border-zinc-900 bg-muted dark:bg-zinc-950/50 flex items-center justify-between">
               <div className="flex items-center gap-4">
                 <div className="w-10 h-10 rounded-xl bg-[#CCA761]/10 flex items-center justify-center border border-[#CCA761]/20">
                   <Shield size={20} className="text-[#CCA761]" />
                 </div>
                 <div>
-                  <h2 className="text-white font-black text-sm uppercase tracking-widest">Análise Estratégica MAYUS</h2>
-                  <p className="text-[#CCA761] text-[10px] font-bold uppercase tracking-tighter opacity-60">Relatório Consolidado de Inteligência</p>
+                  <h2 className="text-gray-900 dark:text-white font-black text-sm uppercase tracking-widest">AnÃ¡lise EstratÃ©gica MAYUS</h2>
+                  <p className="text-[#CCA761] text-[10px] font-bold uppercase tracking-tighter opacity-60">RelatÃ³rio Consolidado de InteligÃªncia</p>
                 </div>
               </div>
-              <button 
+              <button
                 onClick={() => setResumoModal(null)}
-                className="w-10 h-10 rounded-full bg-zinc-900 flex items-center justify-center text-zinc-500 hover:text-white transition-all hover:rotate-90"
+                className="w-10 h-10 rounded-full bg-muted dark:bg-zinc-900 flex items-center justify-center text-muted-foreground dark:text-zinc-500 hover:text-foreground transition-all hover:rotate-90"
               >
                 <X size={20} />
               </button>
             </div>
 
             {/* Corpo do "Documento" */}
-            <div className="flex-1 overflow-y-auto p-12 bg-zinc-900/10">
+            <div className="flex-1 overflow-y-auto p-12 bg-muted/30 dark:bg-zinc-900/10">
               <div className="max-w-2xl mx-auto space-y-12">
                  <div className="space-y-4">
                     <div className="w-12 h-1 bg-[#CCA761]/30 rounded-full" />
                     <p className="text-zinc-500 text-[10px] font-black uppercase tracking-[0.3em]">Resumo do Alvo</p>
                  </div>
-                 
+
                  <div className="relative">
                     <Quote size={40} className="absolute -top-6 -left-8 text-[#CCA761]/5" />
-                    <p 
-                      className="text-white/90 text-xl leading-relaxed font-medium" 
+                    <p
+                      className="text-gray-900 dark:text-white/90 text-xl leading-relaxed font-medium"
                       style={{ fontFamily: 'Cormorant Garamond, serif' }}
                     >
                       {resumoModal}
                     </p>
                  </div>
 
-                 <div className="pt-12 border-t border-zinc-900 flex items-center justify-between">
+                 <div className="pt-12 border-t border-border dark:border-zinc-900 flex items-center justify-between">
                     <div className="flex items-center gap-2">
                        <CheckCircle size={14} className="text-green-500" />
                        <span className="text-zinc-600 text-[9px] font-black uppercase tracking-widest">Autenticado por MAYUS IA</span>
                     </div>
-                    <p className="text-zinc-800 text-[8px] font-black uppercase tracking-[0.4em]">PROPRIEDADE ESTRATÉGICA</p>
+                    <p className="text-zinc-800 text-[8px] font-black uppercase tracking-[0.4em]">PROPRIEDADE ESTRATÃ‰GICA</p>
                  </div>
               </div>
             </div>
 
-            {/* Rodapé Lateral */}
-            <div className="p-4 bg-zinc-950 border-t border-zinc-900 flex justify-end">
+            {/* RodapÃ© Lateral */}
+            <div className="p-4 bg-muted dark:bg-zinc-950 border-t border-border dark:border-zinc-900 flex justify-end">
                <button onClick={() => setResumoModal(null)} className="px-8 py-3 bg-[#CCA761] hover:bg-[#b89554] text-black text-[10px] font-black uppercase rounded-xl transition-all shadow-lg shadow-[#CCA761]/10">
                  CONCLUIR LEITURA
                </button>
@@ -1329,7 +1329,7 @@ function MonitoramentoContent() {
 
 export default function MonitoramentoPage() {
   return (
-    <Suspense fallback={<div className="flex h-screen items-center justify-center bg-black font-black text-yellow-500 tracking-[1em] text-[10px]">MAYUS INITIALIZING...</div>}>
+    <Suspense fallback={<div className="flex h-screen items-center justify-center bg-gray-200 dark:bg-black font-black text-yellow-500 tracking-[1em] text-[10px]">MAYUS INITIALIZING...</div>}>
       <MonitoramentoContent />
     </Suspense>
   )

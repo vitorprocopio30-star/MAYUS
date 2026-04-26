@@ -1,6 +1,6 @@
-"use client";
+﻿"use client";
 
-import { useState, useEffect } from "react";
+import { useState, useEffect, useCallback } from "react";
 import { Cormorant_Garamond, Montserrat } from "next/font/google";
 import { Send, EyeOff, Eye, Sparkles, MessageSquare, AlertTriangle, User, Loader2, Quote, ThumbsUp, ThumbsDown, Pin, Smile } from "lucide-react";
 import { createClient } from "@/lib/supabase/client";
@@ -29,21 +29,71 @@ export default function MuralFeedbacksPage() {
   const [isLoading, setIsLoading] = useState(false);
   const [isFetching, setIsFetching] = useState(true);
   const [showEmojiPicker, setShowEmojiPicker] = useState(false);
-  
-  const [apiKeyData, setApiKeyData] = useState<{ provider: string, key: string, model: string } | null>(null);
+
+  const [apiKeyData, setApiKeyData] = useState<{ provider: string, model: string } | null>(null);
 
   const supabase = createClient();
   const { profile, user, isLoading: profileLoading } = useUserProfile();
 
+  const loadBrainStatus = useCallback(async () => {
+    try {
+      const response = await fetch("/api/brain/status", { cache: "no-store" });
+      const data = await response.json().catch(() => ({}));
+
+      if (!response.ok) {
+        throw new Error(data?.error || "Erro ao carregar status do cerebro.");
+      }
+
+      if (data?.configured && data?.default_provider && data?.default_model) {
+        setApiKeyData({
+          provider: String(data.default_provider),
+          model: String(data.default_model),
+        });
+      } else {
+        setApiKeyData(null);
+      }
+    } catch (error) {
+      console.error(error);
+      setApiKeyData(null);
+    }
+  }, []);
+
+  const loadFeedbacks = useCallback(async () => {
+    try {
+      const yesterday = new Date();
+      yesterday.setDate(yesterday.getDate() - 1);
+
+      const { data: fbData, error } = await supabase
+        .from("mural_feedbacks")
+        .select("*")
+        .gte("created_at", yesterday.toISOString())
+        .order("created_at", { ascending: false });
+
+      if (error) {
+        console.error("Erro ao buscar feedbacks:", error);
+        return;
+      }
+
+      if (fbData) {
+        setFeedbacks(fbData as any[]);
+      }
+    } catch (err) {
+      console.error(err);
+    } finally {
+      setIsFetching(false);
+    }
+  }, [supabase]);
+
   useEffect(() => {
     if (!profileLoading) {
       if (profile?.tenant_id) {
-        loadKeysAndFeedbacks();
+        void loadBrainStatus();
+        void loadFeedbacks();
       } else {
         setIsFetching(false);
       }
     }
-  }, [profile?.tenant_id, profileLoading]);
+  }, [profile?.tenant_id, profileLoading, loadBrainStatus, loadFeedbacks]);
 
   useEffect(() => {
     // Realtime channel
@@ -53,7 +103,7 @@ export default function MuralFeedbacksPage() {
         'postgres_changes',
         { event: '*', schema: 'public', table: 'mural_feedbacks' },
         () => {
-          loadKeysAndFeedbacks();
+          void loadFeedbacks();
         }
       )
       .subscribe();
@@ -61,60 +111,19 @@ export default function MuralFeedbacksPage() {
     return () => {
       supabase.removeChannel(channel);
     };
-  }, []);
-
-  const loadKeysAndFeedbacks = async () => {
-    // Busca chaves de IA
-    const { data: integrations } = await supabase
-      .from("tenant_integrations")
-      .select("provider, api_key, instance_name")
-      .eq("tenant_id", profile!.tenant_id)
-      .eq("status", "connected");
-
-    if (integrations && integrations.length > 0) {
-       const openai = integrations.find(i => i.provider === 'openai');
-       const gemini = integrations.find(i => i.provider === 'gemini');
-       // Preferimos OpenAI porque o JSON Mode é mais estável
-       if (openai && openai.api_key) setApiKeyData({ provider: 'openai', key: openai.api_key, model: openai.instance_name || "gpt-4o-mini" });
-       else if (gemini && gemini.api_key) setApiKeyData({ provider: 'gemini', key: gemini.api_key, model: gemini.instance_name || "gemini-1.5-flash" });
-    }
-
-    try {
-      // Busca feedbacks das últimas 24h
-      const yesterday = new Date();
-      yesterday.setDate(yesterday.getDate() - 1);
-      
-      const { data: fbData, error } = await supabase
-        .from("mural_feedbacks")
-        .select("*")
-        .gte("created_at", yesterday.toISOString())
-        .order("created_at", { ascending: false });
-
-      if (error) {
-        console.error("Erro ao buscar feedbacks:", error);
-      }
-
-      if (!error && fbData) {
-        setFeedbacks(fbData as any[]);
-      }
-    } catch (err) {
-      console.error(err);
-    } finally {
-      setIsFetching(false);
-    }
-  };
+  }, [loadFeedbacks, supabase]);
 
   const calculateTimeLeft = (createdAt: string) => {
     const expiresAt = new Date(createdAt);
     expiresAt.setDate(expiresAt.getDate() + 1);
     const now = new Date();
     const diff = expiresAt.getTime() - now.getTime();
-    
+
     if (diff <= 0) return "Expirado";
-    
+
     const hours = Math.floor(diff / (1000 * 60 * 60));
     const mins = Math.floor((diff % (1000 * 60 * 60)) / (1000 * 60));
-    
+
     if (hours > 0) return `${hours}h restantes`;
     return `${mins}m restantes`;
   };
@@ -122,7 +131,7 @@ export default function MuralFeedbacksPage() {
   const handlePost = async () => {
     if (!input.trim()) return;
     if (!profile?.tenant_id || !user?.id) {
-        toast.error("Sua sessão não está ativa.");
+        toast.error("Sua sessÃ£o nÃ£o estÃ¡ ativa.");
         return;
     }
 
@@ -132,26 +141,25 @@ export default function MuralFeedbacksPage() {
       let isApproved = true;
       let sentiment = "neutral";
 
-      // Fase 1: Moderação da IA
+      // Fase 1: ModeraÃ§Ã£o da IA
       if (apiKeyData) {
-         toast.info("A IA Guardiã está revisando seu texto...");
+         toast.info("A IA GuardiÃ£ estÃ¡ revisando seu texto...");
          const res = await fetch("/api/ai/mural-moderator", {
            method: "POST",
            headers: { "Content-Type": "application/json" },
            body: JSON.stringify({
              content: input,
              provider: apiKeyData.provider,
-             apiKey: apiKeyData.key,
              model: apiKeyData.model
-           })
-         });
+            })
+          });
 
          if (res.ok) {
            const modData = await res.json();
            isApproved = modData.isApproved;
            sentiment = modData.sentiment;
            if (!isApproved) {
-             toast.error(`Bloqueado pela IA: ${modData.reason || "Conteúdo impróprio para o ambiente de trabalho."}`, {
+             toast.error(`Bloqueado pela IA: ${modData.reason || "ConteÃºdo imprÃ³prio para o ambiente de trabalho."}`, {
                 duration: 6000,
              });
              setIsLoading(false);
@@ -159,10 +167,10 @@ export default function MuralFeedbacksPage() {
            }
          }
       } else {
-         toast.warning("Nenhuma inteligência conectada para moderar. Postando diretamente (Risco de ambiente).");
+         toast.warning("Nenhuma inteligÃªncia conectada para moderar. Postando diretamente (Risco de ambiente).");
       }
 
-      // Fase 2: Inserção no Banco
+      // Fase 2: InserÃ§Ã£o no Banco
       const { error } = await supabase
         .from("mural_feedbacks")
         .insert({
@@ -174,11 +182,11 @@ export default function MuralFeedbacksPage() {
         });
 
       if (error) throw error;
-      
-      toast.success("Feedback postado no Mural!");
-      setInput("");
-      setIsAnonymous(false);
-      loadKeysAndFeedbacks();
+
+       toast.success("Feedback postado no Mural!");
+       setInput("");
+       setIsAnonymous(false);
+       void loadFeedbacks();
 
     } catch (err: any) {
       toast.error(err.message || "Erro ao postar.");
@@ -189,7 +197,7 @@ export default function MuralFeedbacksPage() {
 
   const handleVote = async (feedbackId: string, type: 'like' | 'dislike') => {
     if (!user) return;
-    
+
     const feedback = feedbacks.find(f => f.id === feedbackId);
     if (!feedback) return;
 
@@ -219,7 +227,7 @@ export default function MuralFeedbacksPage() {
 
   return (
     <div className={`w-full max-w-6xl mx-auto space-y-8 pb-24 px-4 ${montserrat.className}`}>
-      
+
       {/* Header Premium */}
       <div className="flex flex-col xl:flex-row justify-between items-start xl:items-end pb-8 border-b border-[#CCA761]/20 relative z-40 gap-8">
         <div>
@@ -229,7 +237,7 @@ export default function MuralFeedbacksPage() {
           <div className="mt-6 relative bg-gradient-to-r from-[#CCA761]/15 via-transparent to-transparent pl-6 py-4 border-l-[4px] border-[#CCA761] max-w-3xl overflow-hidden group rounded-r-2xl">
              <div className="absolute inset-0 bg-white/20 translate-x-[-100%] group-hover:opacity-100 transition-opacity duration-1000 pointer-events-none" />
              <p className={`text-[#eadd87] text-xl lg:text-3xl font-semibold tracking-wide ${cormorant.className} italic drop-shadow-md leading-relaxed`}>
-                &ldquo;Tudo que é escrito aqui se autodestrói em 24 horas. Seja transparente. Seja ético.&rdquo;
+                &ldquo;Tudo que Ã© escrito aqui se autodestrÃ³i em 24 horas. Seja transparente. Seja Ã©tico.&rdquo;
              </p>
           </div>
         </div>
@@ -237,17 +245,17 @@ export default function MuralFeedbacksPage() {
         <div className="flex flex-col items-center xl:items-end w-full xl:w-auto mt-6 xl:mt-0 gap-4">
            {!apiKeyData ? (
              <div className="flex items-center gap-2 bg-red-500/10 border border-red-500/30 text-red-400 px-4 py-2 rounded-lg text-xs font-bold tracking-widest uppercase">
-                <AlertTriangle size={14} /> IA Guardiã Inativa
+                <AlertTriangle size={14} /> IA GuardiÃ£ Inativa
              </div>
            ) : (
              <div className="flex items-center gap-2 bg-[#CCA761]/10 border border-[#CCA761]/30 text-[#CCA761] px-4 py-2 rounded-lg text-xs font-bold tracking-widest uppercase shadow-[0_0_15px_rgba(204,167,97,0.2)]">
-                <Sparkles size={14} className="animate-pulse" /> IA Guardiã Ativa
+                <Sparkles size={14} className="animate-pulse" /> IA GuardiÃ£ Ativa
              </div>
            )}
         </div>
       </div>
 
-      {/* Caixa de Criação */}
+      {/* Caixa de CriaÃ§Ã£o */}
       <div className="glass-card-premium rounded-2xl p-6 relative z-50 group/box">
         {/* Camada isolada para os efeitos de fundo sem cortar o Dropdown de Emojis */}
         <div className="absolute inset-0 rounded-2xl overflow-hidden pointer-events-none -z-10">
@@ -258,17 +266,17 @@ export default function MuralFeedbacksPage() {
              <textarea
                value={input}
                onChange={(e) => setInput(e.target.value)}
-               placeholder="Escreva seu elogio, crítica ou sugestão para o time. Lembre-se, o Agente MAYUS irá analisar seu texto..."
+               placeholder="Escreva seu elogio, crÃ­tica ou sugestÃ£o para o time. Lembre-se, o Agente MAYUS irÃ¡ analisar seu texto..."
                className="w-full bg-background border border-border rounded-xl p-4 min-h-[120px] focus:outline-none focus:border-primary focus:shadow-[0_0_20px_rgba(204,167,97,0.3)] text-sm text-foreground resize-none transition-all duration-300 placeholder:text-muted-foreground relative z-10"
                disabled={isLoading}
              />
-             
-             {/* Botão de abrir Emoji Picker Customizado */}
+
+             {/* BotÃ£o de abrir Emoji Picker Customizado */}
              <div className="flex flex-wrap items-center gap-2 mt-3 px-2 relative">
                 <button
                   type="button"
                   onClick={() => setShowEmojiPicker(!showEmojiPicker)}
-                  className="text-gray-400 hover:text-[#CCA761] transition-colors duration-200 cursor-pointer flex items-center justify-center p-2 rounded-full hover:bg-white/5"
+                  className="text-gray-400 hover:text-[#CCA761] transition-colors duration-200 cursor-pointer flex items-center justify-center p-2 rounded-full hover:bg-gray-100 dark:bg-white/5"
                   title="Inserir Emoji"
                 >
                   <Smile size={24} />
@@ -277,7 +285,7 @@ export default function MuralFeedbacksPage() {
                 {showEmojiPicker && (
                   <div className="absolute top-12 left-0 z-50 bg-card/95 backdrop-blur-xl border border-border rounded-2xl p-4 shadow-2xl w-[280px]">
                     <div className="grid grid-cols-6 gap-3">
-                      {["🔥","🚀","💡","👏","🎯","🤝","🤐","⚠️","🤖","⭐","🎉","🏆","💯","💎","🤯","👀","❤️","✅","🚨","💼","📌","📈","💪","😎"].map((emoji) => (
+                      {["ðŸ”¥","ðŸš€","ðŸ’¡","ðŸ‘","ðŸŽ¯","ðŸ¤","ðŸ¤","âš ï¸","ðŸ¤–","â­","ðŸŽ‰","ðŸ†","ðŸ’¯","ðŸ’Ž","ðŸ¤¯","ðŸ‘€","â¤ï¸","âœ…","ðŸš¨","ðŸ’¼","ðŸ“Œ","ðŸ“ˆ","ðŸ’ª","ðŸ˜Ž"].map((emoji) => (
                         <button
                           key={emoji}
                           type="button"
@@ -296,20 +304,20 @@ export default function MuralFeedbacksPage() {
                 )}
              </div>
            </div>
-           
+
            <div className="flex flex-col sm:flex-row justify-between items-center gap-4 mt-2">
               <button
                 type="button"
                 onClick={() => setIsAnonymous(!isAnonymous)}
                 className={`flex items-center gap-2 px-4 py-2 rounded-lg text-xs font-bold tracking-widest uppercase transition-all border ${
-                  isAnonymous 
-                    ? 'bg-white/10 text-white border-white/20' 
-                    : 'bg-transparent text-gray-500 border-transparent hover:bg-white/5'
+                  isAnonymous
+                    ? 'bg-gray-100 dark:bg-white/10 text-gray-900 dark:text-white border-gray-300 dark:border-white/20'
+                    : 'bg-transparent text-gray-500 border-transparent hover:bg-gray-100 dark:bg-white/5'
                 }`}
                 disabled={isLoading}
               >
                 {isAnonymous ? <EyeOff size={16} /> : <Eye size={16} />}
-                {isAnonymous ? "Modo Anônimo Ligado" : "Postar de forma anônima?"}
+                {isAnonymous ? "Modo AnÃ´nimo Ligado" : "Postar de forma anÃ´nima?"}
               </button>
 
               <button
@@ -317,7 +325,7 @@ export default function MuralFeedbacksPage() {
                 disabled={isLoading}
                 className={`relative w-full sm:w-auto flex items-center justify-center gap-2 bg-gradient-to-r from-[#CCA761] via-[#f1d58d] to-[#CCA761] hover:from-[#e3c27e] hover:via-[#ffe8ad] hover:to-[#e3c27e] text-[#111111] font-[900] py-3 px-8 rounded-xl transition-all duration-300 transform active:scale-95 text-xs shadow-[0_0_20px_rgba(204,167,97,0.6)] overflow-hidden hover:-translate-y-[1px] tracking-widest uppercase ${!input.trim() ? 'opacity-90' : 'opacity-100'}`}
               >
-                <div className="absolute inset-0 -translate-x-full animate-[shimmer_2.5s_infinite] bg-gradient-to-r from-transparent via-white/50 to-transparent skew-x-12 pointer-events-none" />
+                <div className="absolute inset-0 -translate-x-full animate-[shimmer_2.5s_infinite] bg-gradient-to-r from-transparent via-gray-200 dark:via-white/50 to-transparent skew-x-12 pointer-events-none" />
                 <div className="relative z-10 flex items-center gap-2">
                    {isLoading ? <Loader2 size={16} className="animate-spin" /> : <Send size={16} strokeWidth={2.5} />}
                    <span>{isLoading ? "Enviando..." : "Publicar no Mural"}</span>
@@ -327,7 +335,7 @@ export default function MuralFeedbacksPage() {
         </div>
       </div>
 
-      {/* Exibição do Mural (Vitrine de Post-Its Vidro) */}
+      {/* ExibiÃ§Ã£o do Mural (Vitrine de Post-Its Vidro) */}
       <div className="pt-8">
         {isFetching ? (
            <div className="flex justify-center py-20">
@@ -336,7 +344,7 @@ export default function MuralFeedbacksPage() {
         ) : feedbacks.length === 0 ? (
            <div className="flex flex-col items-center justify-center py-20 opacity-50">
              <MessageSquare size={48} className="text-gray-600 mb-4" />
-             <p className="text-gray-400 font-medium text-sm">O Mural está completamente em branco nas últimas 24 horas.</p>
+             <p className="text-gray-400 font-medium text-sm">O Mural estÃ¡ completamente em branco nas Ãºltimas 24 horas.</p>
            </div>
         ) : (
            <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
@@ -354,9 +362,9 @@ export default function MuralFeedbacksPage() {
                const currentPinColor = pinColors[idx % pinColors.length];
 
                return (
-                 <div 
-                   key={fb.id} 
-                   className={`relative p-6 rounded-2xl flex flex-col bg-gradient-to-br from-[#111111]/90 to-[#050505]/90 border border-white/5 shadow-[0_5px_15px_rgba(0,0,0,0.5)] hover:shadow-[0_10px_30px_rgba(204,167,97,0.15)] transition-all duration-500 group hover:-translate-y-2`}
+                 <div
+                   key={fb.id}
+                   className={`relative p-6 rounded-2xl flex flex-col bg-gradient-to-br from-white/90 dark:from-[#111111]/90 to-gray-50/90 dark:to-[#050505]/90 border border-gray-200 dark:border-white/5 shadow-[0_5px_15px_rgba(0,0,0,0.5)] hover:shadow-[0_10px_30px_rgba(204,167,97,0.15)] transition-all duration-500 group hover:-translate-y-2`}
                  >
                    {/* Alfinete Colorido */}
                    <div className="absolute -top-3 left-1/2 -translate-x-1/2 z-20 drop-shadow-[0_4px_4px_rgba(0,0,0,0.6)]">
@@ -364,21 +372,21 @@ export default function MuralFeedbacksPage() {
                    </div>
 
                    <Quote size={44} className="absolute top-4 right-4 text-[#CCA761]/40 group-hover:text-[#CCA761] group-hover:scale-110 transition-all duration-500 drop-shadow-[0_0_10px_rgba(204,167,97,0.3)] group-hover:drop-shadow-[0_0_20px_rgba(204,167,97,0.8)] z-0" />
-                   
-                   {/* Corpo do Feedback com Padding Right (pr-12) para não atropelar as aspas */}
-                   <div className="text-gray-300 text-sm leading-relaxed whitespace-pre-wrap pt-4 pb-6 pr-12 min-h-[80px] relative z-10 font-medium">
+
+                   {/* Corpo do Feedback com Padding Right (pr-12) para nÃ£o atropelar as aspas */}
+                   <div className="text-gray-700 dark:text-gray-300 text-sm leading-relaxed whitespace-pre-wrap pt-4 pb-6 pr-12 min-h-[80px] relative z-10 font-medium">
                      {fb.content}
                    </div>
 
-                 {/* Rodapé do Post-It */}
-                 <div className="mt-auto pt-4 border-t border-white/5 flex items-end justify-between">
+                 {/* RodapÃ© do Post-It */}
+                 <div className="mt-auto pt-4 border-t border-gray-200 dark:border-white/5 flex items-end justify-between">
                     <div className="flex items-center gap-3">
-                      <div className={`w-8 h-8 rounded-full flex items-center justify-center ${fb.is_anonymous ? 'bg-white/5 text-gray-500' : 'bg-[#CCA761]/20 text-[#CCA761] border border-[#CCA761]/30'}`}>
+                      <div className={`w-8 h-8 rounded-full flex items-center justify-center ${fb.is_anonymous ? 'bg-gray-100 dark:bg-white/5 text-gray-500' : 'bg-[#CCA761]/20 text-[#CCA761] border border-[#CCA761]/30'}`}>
                          {fb.is_anonymous ? <EyeOff size={14} /> : <User size={14} />}
                       </div>
                       <div className="flex flex-col">
                         <span className={`text-[10px] font-black uppercase tracking-widest ${fb.is_anonymous ? 'text-gray-500' : 'text-[#CCA761]'}`}>
-                          {fb.is_anonymous ? 'Colaborador Anônimo' : (fb.profiles?.full_name || 'Membro do Time')}
+                          {fb.is_anonymous ? 'Colaborador AnÃ´nimo' : (fb.profiles?.full_name || 'Membro do Time')}
                         </span>
                         <span className="text-[9px] font-bold text-gray-600 uppercase tracking-widest mt-0.5">
                           {calculateTimeLeft(fb.created_at)}
@@ -386,15 +394,15 @@ export default function MuralFeedbacksPage() {
                       </div>
                     </div>
 
-                    {/* Votação: Curtir / Não Curtir */}
+                    {/* VotaÃ§Ã£o: Curtir / NÃ£o Curtir */}
                     <div className="flex items-center gap-3">
-                      <button 
+                      <button
                         onClick={() => handleVote(fb.id, 'like')}
                         className={`flex items-center gap-1.5 text-[10px] font-black tracking-widest uppercase transition-colors ${(fb.liked_by || []).includes(user?.id || '') ? 'text-[#4ade80]' : 'text-gray-500 hover:text-[#4ade80]'}`}
                       >
                          <ThumbsUp size={14} /> {(fb.liked_by || []).length > 0 && (fb.liked_by || []).length}
                       </button>
-                      <button 
+                      <button
                         onClick={() => handleVote(fb.id, 'dislike')}
                         className={`flex items-center gap-1.5 text-[10px] font-black tracking-widest uppercase transition-colors ${(fb.disliked_by || []).includes(user?.id || '') ? 'text-red-500' : 'text-gray-500 hover:text-red-500'}`}
                       >
@@ -407,7 +415,7 @@ export default function MuralFeedbacksPage() {
                       <span className="w-2 h-2 rounded-full bg-green-500/50 shadow-[0_0_8px_rgba(34,197,94,0.5)]" title="Sentimento Positivo" />
                     )}
                     {fb.sentiment === 'negative' && (
-                      <span className="w-2 h-2 rounded-full bg-red-500/50 shadow-[0_0_8px_rgba(239,68,68,0.5)]" title="Crítica/Ponto de Atenção" />
+                      <span className="w-2 h-2 rounded-full bg-red-500/50 shadow-[0_0_8px_rgba(239,68,68,0.5)]" title="CrÃ­tica/Ponto de AtenÃ§Ã£o" />
                     )}
                  </div>
                </div>

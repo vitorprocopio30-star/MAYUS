@@ -44,7 +44,7 @@ export default function AcessoNegadoPage() {
             </div>
 
             {/* Headline */}
-            <h1 className={`text-3xl md:text-4xl text-white mb-3 ${cormorant.className} italic font-bold`}>
+            <h1 className={`text-3xl md:text-4xl text-gray-900 dark:text-white mb-3 ${cormorant.className} italic font-bold`}>
               Acesso <span className="text-red-400">Negado</span>
             </h1>
             

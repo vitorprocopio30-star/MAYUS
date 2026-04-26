@@ -148,7 +148,7 @@ function deduplicarPrazos(lista: any[]): any[] {
 
 function GlassCard({ children, className = "" }: { children: React.ReactNode; className?: string }) {
   return (
-    <div className={`rounded-2xl overflow-hidden p-6 relative group border border-[#CCA761]/10 bg-gradient-to-b from-[#111111]/90 to-[#050505]/90 backdrop-blur-md shadow-[0_8px_32px_rgba(0,0,0,0.4)] ring-1 ring-white/5 transition-all duration-500 ${className}`}>
+    <div className={`rounded-2xl overflow-hidden p-6 relative group border border-[#CCA761]/10 bg-gradient-to-b from-white/90 dark:from-[#111111]/90 to-gray-50/90 dark:to-[#050505]/90 backdrop-blur-md shadow-[0_8px_32px_rgba(0,0,0,0.4)] ring-1 ring-gray-200 dark:ring-white/5 transition-all duration-500 ${className}`}>
       <div className="absolute inset-0 bg-gradient-to-br from-white/[0.02] to-transparent pointer-events-none" />
       <div className="relative z-10 w-full h-full flex flex-col">
         {children}
@@ -369,9 +369,10 @@ export default function PrazosPage() {
 
       const { data: team } = await supabase
         .from('profiles')
-        .select('id, full_name, avatar_url, role')
+        .select('id, full_name, avatar_url, is_active')
         .eq('tenant_id', profile.tenant_id)
         .eq('is_active', true)
+        .order('full_name', { ascending: true })
 
       console.log('[Prazos] Perfis carregados:', team)
       setProfiles(team || [])
@@ -807,19 +808,54 @@ export default function PrazosPage() {
   }
 
   async function atribuirResponsavel(id: string, responsavelId: string | null) {
-    const { error } = await supabase
+    if (!tenantId) return
+
+    if (responsavelId && !profiles.some((profile) => profile.id === responsavelId)) {
+      console.error('[Prazos] Responsavel inativo ou fora do tenant:', responsavelId)
+      if (typeof window !== 'undefined') {
+        window.alert('Este responsavel nao esta ativo neste escritorio.')
+      }
+      return
+    }
+
+    const { data, error } = await supabase
       .from('process_prazos')
       .update({ responsavel_id: responsavelId })
       .eq('id', id)
-    
-    if (!error) {
-      const profile = responsavelId ? profiles.find(p => p.id === responsavelId) : null
-      const currentItem = items.find((item) => item.id === id)
-      const updatedItem = currentItem ? { ...currentItem, responsavel_id: responsavelId, profiles: profile } : null
-      if (updatedItem) {
-        await syncPrazoAgenda(updatedItem)
+      .eq('tenant_id', tenantId)
+      .select('id, responsavel_id')
+      .maybeSingle()
+
+    if (error) {
+      console.error('[Prazos] Erro ao atualizar responsavel:', error)
+      if (typeof window !== 'undefined') {
+        window.alert('Nao foi possivel atualizar o responsavel deste prazo.')
       }
-      setItems(prev => prev.map(item => item.id === id ? { ...item, responsavel_id: responsavelId, profiles: profile } : item))
+      return
+    }
+
+    if (!data) {
+      console.error('[Prazos] Nenhum prazo atualizado para responsavel:', { id, tenantId })
+      if (typeof window !== 'undefined') {
+        window.alert('Prazo nao encontrado neste escritorio.')
+      }
+      return
+    }
+
+    const persistedResponsavelId = data.responsavel_id ?? null
+    const profile = persistedResponsavelId ? profiles.find(p => p.id === persistedResponsavelId) : null
+    const currentItem = items.find((item) => item.id === id)
+    const updatedItem = currentItem ? { ...currentItem, responsavel_id: persistedResponsavelId, profiles: profile } : null
+
+    setItems(prev => prev.map(item => item.id === id ? { ...item, responsavel_id: persistedResponsavelId, profiles: profile } : item))
+    setSelectedItemData(prev => prev?.id === id ? { ...prev, responsavel_id: persistedResponsavelId, profiles: profile } : prev)
+
+    if (updatedItem) {
+      try {
+        await syncPrazoAgenda(updatedItem)
+      } catch (agendaError) {
+        console.error('[Prazos] Falha ao sincronizar agenda apos atualizar responsavel:', agendaError)
+      }
     }
   }
 
@@ -866,37 +902,23 @@ export default function PrazosPage() {
     setIsSavingAnnotation(true)
     
     try {
-      if (taskDetails?.id) {
-        // Update
-        const { error } = await supabase
-          .from('process_tasks')
-          .update({ 
-            description: annotationText,
-            updated_at: new Date().toISOString()
-          })
-          .eq('id', taskDetails.id)
-        
-        if (error) throw error
-      } else {
-        // Insert
-        // Salvamento via API (service role contorna RLS de pipeline_id)
-        const res = await fetch('/api/prazos/salvar-anotacao', {
-          method: 'POST',
-          headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({
-            monitored_process_id: item.monitored_process_id,
-            numero_processo: item.monitored_processes?.numero_processo,
-            description: annotationText,
-            tenant_id: tenantId,
-          })
+      const res = await fetch('/api/prazos/salvar-anotacao', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          monitored_process_id: item.monitored_process_id,
+          numero_processo: item.monitored_processes?.numero_processo,
+          description: annotationText,
+          process_task_id: taskDetails?.id ?? item.process_task_id ?? null,
+          tenant_id: tenantId,
         })
-        const json = await res.json()
-        if (!res.ok) throw new Error(json.error ?? 'Erro ao salvar')
-        const newTask = json.task ?? null
-        setTaskDetails(newTask)
-        if (newTask?.id) {
-          setItems(prev => prev.map(i => i.id === selectedItemId ? { ...i, process_task_id: newTask.id } : i))
-        }
+      })
+      const json = await res.json()
+      if (!res.ok) throw new Error(json.error ?? 'Erro ao salvar')
+      const savedTask = json.task ?? null
+      setTaskDetails(savedTask)
+      if (savedTask?.id) {
+        setItems(prev => prev.map(i => i.id === selectedItemId ? { ...i, process_task_id: savedTask.id } : i))
       }
 
       setSaveSuccess(true)
@@ -909,35 +931,35 @@ export default function PrazosPage() {
   }
 
   return (
-    <div className={`p-8 min-h-screen bg-[#050505] text-white ${montserrat.className}`}>
+    <div className={`p-8 min-h-screen bg-white dark:bg-[#050505] text-gray-900 dark:text-white ${montserrat.className}`}>
       {/* Header Section */}
       <div className="flex flex-col md:flex-row md:items-end justify-between gap-6 mb-12">
         <div>
           <h2 className={`text-[#CCA761] text-sm uppercase tracking-[0.3em] font-medium mb-2 ${montserrat.className}`}>
             Operações Jurídicas
           </h2>
-          <h1 className={`text-4xl md:text-5xl font-light text-white tracking-tight ${cormorant.className}`}>
+          <h1 className={`text-4xl md:text-5xl font-light text-gray-900 dark:text-white tracking-tight ${cormorant.className}`}>
             Prazos & <span className="italic text-[#CCA761]">Audiências</span>
           </h1>
         </div>
 
         {/* Tabs */}
-        <div className="grid grid-cols-3 gap-1 w-full sm:w-[480px] bg-white/5 p-1 rounded-2xl border border-white/10 backdrop-blur-xl">
+        <div className="grid grid-cols-3 gap-1 w-full sm:w-[480px] bg-gray-100 dark:bg-white/5 p-1 rounded-2xl border border-gray-200 dark:border-white/10 backdrop-blur-xl">
           <button 
             onClick={() => setActiveTab('movimentacoes')}
-            className={`w-full px-4 py-2.5 rounded-xl text-sm font-medium transition-all duration-300 ${activeTab === 'movimentacoes' ? 'bg-[#CCA761] text-black shadow-lg shadow-[#CCA761]/20' : 'text-white/40 hover:text-white/70'}`}
+            className={`w-full px-4 py-2.5 rounded-xl text-sm font-medium transition-all duration-300 ${activeTab === 'movimentacoes' ? 'bg-[#CCA761] text-black shadow-lg shadow-[#CCA761]/20' : 'text-gray-400 dark:text-white/40 hover:text-gray-700 dark:text-white/70'}`}
           >
             Movimentações
           </button>
           <button 
             onClick={() => setActiveTab('prazos')}
-            className={`w-full px-4 py-2.5 rounded-xl text-sm font-medium transition-all duration-300 ${activeTab === 'prazos' ? 'bg-[#CCA761] text-black shadow-lg shadow-[#CCA761]/20' : 'text-white/40 hover:text-white/70'}`}
+            className={`w-full px-4 py-2.5 rounded-xl text-sm font-medium transition-all duration-300 ${activeTab === 'prazos' ? 'bg-[#CCA761] text-black shadow-lg shadow-[#CCA761]/20' : 'text-gray-400 dark:text-white/40 hover:text-gray-700 dark:text-white/70'}`}
           >
             Prazos
           </button>
           <button 
             onClick={() => setActiveTab('audiencias')}
-            className={`w-full px-4 py-2.5 rounded-xl text-sm font-medium transition-all duration-300 ${activeTab === 'audiencias' ? 'bg-[#CCA761] text-black shadow-lg shadow-[#CCA761]/20' : 'text-white/40 hover:text-white/70'}`}
+            className={`w-full px-4 py-2.5 rounded-xl text-sm font-medium transition-all duration-300 ${activeTab === 'audiencias' ? 'bg-[#CCA761] text-black shadow-lg shadow-[#CCA761]/20' : 'text-gray-400 dark:text-white/40 hover:text-gray-700 dark:text-white/70'}`}
           >
             Audiências
           </button>
@@ -948,32 +970,32 @@ export default function PrazosPage() {
       <GlassCard className="mb-8 !p-4">
         <div className="flex flex-wrap items-center gap-6">
           <div className="flex-1 min-w-[300px] relative">
-            <Search className="absolute left-4 top-1/2 -translate-y-1/2 text-white/20" size={18} />
+            <Search className="absolute left-4 top-1/2 -translate-y-1/2 text-gray-700 dark:text-gray-300 dark:text-white/20" size={18} />
             <input 
               type="text" 
               placeholder={activeTab === 'movimentacoes' ? 'Buscar por processo, cliente ou movimentação...' : 'Buscar por processo ou descrição...'}
               value={searchTerm}
               onChange={(e) => setSearchTerm(e.target.value)}
-              className="w-full bg-white/5 border border-white/10 rounded-xl py-3 pl-12 pr-4 text-sm focus:outline-none focus:border-[#CCA761]/50 transition-all"
+              className="w-full bg-gray-100 dark:bg-white/5 border border-gray-200 dark:border-white/10 rounded-xl py-3 pl-12 pr-4 text-sm focus:outline-none focus:border-[#CCA761]/50 transition-all"
             />
           </div>
 
           {activeTab === 'movimentacoes' ? (
             <div className="flex items-center gap-3 flex-wrap">
-              <div className="flex items-center gap-2 bg-white/5 border border-white/10 rounded-xl px-3 py-2 min-h-[44px]">
+              <div className="flex items-center gap-2 bg-gray-100 dark:bg-white/5 border border-gray-200 dark:border-white/10 rounded-xl px-3 py-2 min-h-[44px]">
                 <Calendar size={16} className="text-[#CCA761]" />
                 <input
                   type="date"
                   value={movementDateFilter}
                   onChange={(e) => setMovementDateFilter(e.target.value)}
-                  className="bg-transparent text-sm focus:outline-none text-white [color-scheme:dark]"
+                  className="bg-transparent text-sm focus:outline-none text-gray-900 dark:text-white [color-scheme:dark]"
                   title="Filtrar movimentações por data"
                 />
               </div>
               {movementDateFilter && (
                 <button
                   onClick={() => setMovementDateFilter('')}
-                  className="h-[44px] px-4 rounded-xl bg-white/5 hover:bg-white/10 text-white/70 hover:text-white text-sm border border-white/10 transition-all"
+                  className="h-[44px] px-4 rounded-xl bg-gray-100 dark:bg-white/5 hover:bg-gray-100 dark:bg-white/10 text-gray-700 dark:text-white/70 hover:text-gray-900 dark:text-white text-sm border border-gray-200 dark:border-white/10 transition-all"
                 >
                   Limpar data
                 </button>
@@ -981,12 +1003,12 @@ export default function PrazosPage() {
             </div>
           ) : (
             <div className="flex items-center gap-4 flex-wrap">
-              <div className="flex items-center gap-2 bg-white/5 border border-white/10 rounded-xl px-4 py-2">
+              <div className="flex items-center gap-2 bg-gray-100 dark:bg-white/5 border border-gray-200 dark:border-white/10 rounded-xl px-4 py-2">
                 <User size={16} className="text-[#CCA761]" />
                 <select 
                   value={filterResponsavel}
                   onChange={(e) => setFilterResponsavel(e.target.value)}
-                  className="bg-transparent text-sm text-white focus:outline-none cursor-pointer [color-scheme:dark]"
+                  className="bg-transparent text-sm text-gray-900 dark:text-white focus:outline-none cursor-pointer [color-scheme:dark]"
                 >
                   <option value="todos" style={{ backgroundColor: '#101012', color: '#f4f4f5' }}>Todos Responsáveis</option>
                   <option value="sem_responsavel" style={{ backgroundColor: '#101012', color: '#f4f4f5' }}>Sem Responsável (Fila)</option>
@@ -996,12 +1018,12 @@ export default function PrazosPage() {
                 </select>
               </div>
 
-              <div className="flex items-center gap-2 bg-white/5 border border-white/10 rounded-xl px-4 py-2">
+              <div className="flex items-center gap-2 bg-gray-100 dark:bg-white/5 border border-gray-200 dark:border-white/10 rounded-xl px-4 py-2">
                 <Gavel size={16} className="text-[#CCA761]" />
                 <select 
                   value={filterTribunal}
                   onChange={(e) => setFilterTribunal(e.target.value)}
-                  className="bg-transparent text-sm text-white focus:outline-none cursor-pointer [color-scheme:dark]"
+                  className="bg-transparent text-sm text-gray-900 dark:text-white focus:outline-none cursor-pointer [color-scheme:dark]"
                 >
                   <option value="todos" style={{ backgroundColor: '#101012', color: '#f4f4f5' }}>Todos Tribunais</option>
                   {tribunals.map(t => (
@@ -1018,15 +1040,15 @@ export default function PrazosPage() {
       {loading ? (
         <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6 animate-pulse">
           {[1, 2, 3, 4, 5, 6].map(i => (
-            <div key={i} className="h-48 bg-white/5 rounded-2xl border border-white/10" />
+            <div key={i} className="h-48 bg-gray-100 dark:bg-white/5 rounded-2xl border border-gray-200 dark:border-white/10" />
           ))}
         </div>
       ) : activeTab === 'movimentacoes' ? (
         movimentacoesFiltradas.length === 0 ? (
-          <div className="text-center py-24 border border-dashed border-white/10 rounded-3xl bg-white/[0.02]">
-            <Calendar size={64} className="mx-auto mb-6 text-white/10" />
-            <h3 className="text-xl text-white/60 mb-2">Nenhuma movimentação encontrada</h3>
-            <p className="text-white/30 max-w-md mx-auto">
+          <div className="text-center py-24 border border-dashed border-gray-200 dark:border-white/10 rounded-3xl bg-gray-50 dark:bg-white/[0.02]">
+            <Calendar size={64} className="mx-auto mb-6 text-gray-800 dark:text-gray-200 dark:text-white/10" />
+            <h3 className="text-xl text-gray-600 dark:text-white/60 mb-2">Nenhuma movimentação encontrada</h3>
+            <p className="text-gray-400 dark:text-white/30 max-w-md mx-auto">
               Não há movimentações registradas para os filtros atuais.
             </p>
           </div>
@@ -1062,26 +1084,26 @@ export default function PrazosPage() {
                         </button>
                       )}
                     </div>
-                    <span className="px-3 py-1 rounded-full text-[11px] font-bold border border-white/10 text-white/60 bg-white/5">
+                    <span className="px-3 py-1 rounded-full text-[11px] font-bold border border-gray-200 dark:border-white/10 text-gray-600 dark:text-white/60 bg-gray-100 dark:bg-white/5">
                       {formatarData(mov.dataISO || mov.dataReferencia)}
                     </span>
                   </div>
 
-                  <h3 className="text-[17px] font-medium text-white mb-3 leading-snug line-clamp-2">
+                  <h3 className="text-[17px] font-medium text-gray-900 dark:text-white mb-3 leading-snug line-clamp-2">
                     {mov.item.descricao || 'Atualização processual'}
                   </h3>
 
-                  <div className="rounded-xl border border-white/10 bg-white/[0.02] p-4 mb-4">
-                    <div className="text-[10px] uppercase tracking-[0.18em] text-white/30 font-semibold mb-2">
+                  <div className="rounded-xl border border-gray-200 dark:border-white/10 bg-gray-50 dark:bg-white/[0.02] p-4 mb-4">
+                    <div className="text-[10px] uppercase tracking-[0.18em] text-gray-400 dark:text-white/30 font-semibold mb-2">
                       Última movimentação
                     </div>
-                    <p className="text-[13px] text-white/70 leading-relaxed whitespace-pre-wrap break-words max-h-56 overflow-y-auto pr-1">
+                    <p className="text-[13px] text-gray-700 dark:text-white/70 leading-relaxed whitespace-pre-wrap break-words max-h-56 overflow-y-auto pr-1">
                       {mov.conteudo}
                     </p>
                   </div>
 
                   <div className="space-y-2 mb-6">
-                    <div className="flex items-center gap-2 text-white/40 text-[12px]">
+                    <div className="flex items-center gap-2 text-gray-400 dark:text-white/40 text-[12px]">
                       <Clock size={14} className="text-[#CCA761]" />
                       <span>Registro: {formatarData(mov.dataISO || mov.dataReferencia)}</span>
                     </div>
@@ -1097,19 +1119,19 @@ export default function PrazosPage() {
                               setCopiedId(mov.id)
                               setTimeout(() => setCopiedId(null), 2000)
                             }}
-                            className="opacity-0 group-hover/cnj-mov:opacity-100 p-1 hover:bg-white/10 rounded transition-all text-[#CCA761]"
+                            className="opacity-0 group-hover/cnj-mov:opacity-100 p-1 hover:bg-gray-100 dark:bg-white/10 rounded transition-all text-[#CCA761]"
                             title="Copiar número do processo"
                           >
                             {copiedId === mov.id ? <Check size={12} /> : <Copy size={12} />}
                           </button>
                         </div>
                         {mov.cliente && (
-                          <div className="text-[11px] text-white/30 pl-6 leading-tight">
+                          <div className="text-[11px] text-gray-400 dark:text-white/30 pl-6 leading-tight">
                             Cliente: {mov.cliente}
                           </div>
                         )}
                         {mov.tribunal && (
-                          <div className="text-[10px] text-white/20 uppercase tracking-wider pl-6">
+                          <div className="text-[10px] text-gray-700 dark:text-gray-300 dark:text-white/20 uppercase tracking-wider pl-6">
                             {mov.tribunal}{mov.comarca ? ` · ${mov.comarca}` : ''}{mov.vara ? ` · ${mov.vara}` : ''}
                           </div>
                         )}
@@ -1136,7 +1158,7 @@ export default function PrazosPage() {
                           </div>
                         )}
                         {mov.resumoCurto && (
-                          <div className="text-[11px] text-white/25 italic pl-6 leading-relaxed line-clamp-2">
+                          <div className="text-[11px] text-gray-400 dark:text-white/25 italic pl-6 leading-relaxed line-clamp-2">
                             &quot;{mov.resumoCurto}&quot;
                           </div>
                         )}
@@ -1144,8 +1166,8 @@ export default function PrazosPage() {
                     )}
                   </div>
 
-                  <div className="mt-auto pt-4 border-t border-white/5 flex items-center justify-between">
-                    <span className="text-[11px] uppercase tracking-wider text-white/30">
+                  <div className="mt-auto pt-4 border-t border-gray-200 dark:border-white/5 flex items-center justify-between">
+                    <span className="text-[11px] uppercase tracking-wider text-gray-400 dark:text-white/30">
                       {mov.tipoEvento}
                     </span>
                     <span className="text-[11px] text-[#CCA761]">Abrir detalhes</span>
@@ -1156,10 +1178,10 @@ export default function PrazosPage() {
           </div>
         )
       ) : filteredItems.length === 0 ? (
-          <div className="text-center py-24 border border-dashed border-white/10 rounded-3xl bg-white/[0.02]">
-            <Calendar size={64} className="mx-auto mb-6 text-white/10" />
-            <h3 className="text-xl text-white/60 mb-2">Nenhum registro encontrado</h3>
-            <p className="text-white/30 max-w-md mx-auto">
+          <div className="text-center py-24 border border-dashed border-gray-200 dark:border-white/10 rounded-3xl bg-gray-50 dark:bg-white/[0.02]">
+            <Calendar size={64} className="mx-auto mb-6 text-gray-800 dark:text-gray-200 dark:text-white/10" />
+            <h3 className="text-xl text-gray-600 dark:text-white/60 mb-2">Nenhum registro encontrado</h3>
+            <p className="text-gray-400 dark:text-white/30 max-w-md mx-auto">
               Ajuste seus filtros ou aguarde novas movimentações processuais monitoradas pela IA.
             </p>
           </div>
@@ -1199,12 +1221,12 @@ export default function PrazosPage() {
                 </div>
               </div>
 
-              <h3 className="text-lg font-medium text-white mb-2 line-clamp-2 leading-tight">
+              <h3 className="text-lg font-medium text-gray-900 dark:text-white mb-2 line-clamp-2 leading-tight">
                 {item.descricao}
               </h3>
 
               {(item.monitored_processes?.resumo_curto || item.monitored_processes?.ultima_movimentacao_texto) && (
-                <p className="text-[12px] text-white/40 font-normal leading-relaxed mb-4 line-clamp-3">
+                <p className="text-[12px] text-gray-400 dark:text-white/40 font-normal leading-relaxed mb-4 line-clamp-3">
                   {item.monitored_processes.resumo_curto || 
                    (item.monitored_processes.ultima_movimentacao_texto?.length > 120 
                     ? item.monitored_processes.ultima_movimentacao_texto.slice(0, 120) + '...'
@@ -1213,7 +1235,7 @@ export default function PrazosPage() {
               )}
 
               <div className="space-y-2 mb-6">
-                <div className="flex items-center gap-2 text-white/40 text-[12px]">
+                <div className="flex items-center gap-2 text-gray-400 dark:text-white/40 text-[12px]">
                   <Clock size={14} className="text-[#CCA761]" />
                   <span>Vencimento: {formatarData(item.data_vencimento)}</span>
                 </div>
@@ -1237,32 +1259,32 @@ export default function PrazosPage() {
                           setCopiedId(item.id);
                           setTimeout(() => setCopiedId(null), 2000);
                         }}
-                        className="opacity-0 group-hover/cnj:opacity-100 p-1 hover:bg-white/10 rounded transition-all text-[#CCA761]"
+                        className="opacity-0 group-hover/cnj:opacity-100 p-1 hover:bg-gray-100 dark:bg-white/10 rounded transition-all text-[#CCA761]"
                         title="Copiar CNJ"
                       >
                         {copiedId === item.id ? <Check size={12} /> : <Copy size={12} />}
                       </button>
                     </div>
                     {item.monitored_processes.partes?.polo_ativo && (
-                      <div className="text-[11px] text-white/30 pl-6 leading-tight">
+                      <div className="text-[11px] text-gray-400 dark:text-white/30 pl-6 leading-tight">
                         {item.monitored_processes.partes.polo_ativo}
                       </div>
                     )}
                   </div>
                 )}
                 {item.monitored_processes?.cliente_nome && (
-                  <div className="text-[11px] text-white/20 pl-6 -mt-1 mb-2">
+                  <div className="text-[11px] text-gray-700 dark:text-gray-300 dark:text-white/20 pl-6 -mt-1 mb-2">
                     Cliente: {item.monitored_processes.cliente_nome}
                   </div>
                 )}
                 {item.monitored_processes?.tribunal && (
-                  <div className="text-[10px] text-white/20 uppercase tracking-wider pl-6">
+                  <div className="text-[10px] text-gray-700 dark:text-gray-300 dark:text-white/20 uppercase tracking-wider pl-6">
                     {item.monitored_processes.tribunal} · {item.monitored_processes.comarca || '—'}
                   </div>
                 )}
               </div>
 
-              <div className="mt-auto pt-4 border-t border-white/5 flex items-center justify-between">
+              <div className="mt-auto pt-4 border-t border-gray-200 dark:border-white/5 flex items-center justify-between">
                 {/* Responsável */}
                 <div className="relative group/user">
                   {item.responsavel_id ? (
@@ -1322,13 +1344,13 @@ export default function PrazosPage() {
                   <div className="relative group/menu">
                     <button 
                       onClick={(e) => e.stopPropagation()}
-                      className="h-10 w-10 flex items-center justify-center rounded-lg bg-white/5 text-white/40 hover:bg-white/10 transition-all border border-white/10"
+                      className="h-10 w-10 flex items-center justify-center rounded-lg bg-gray-100 dark:bg-white/5 text-gray-400 dark:text-white/40 hover:bg-gray-100 dark:bg-white/10 transition-all border border-gray-200 dark:border-white/10"
                     >
                       <ChevronDown size={16} />
                     </button>
                     {/* Minimalistic Dropdown placeholder */}
-                    <div className="absolute bottom-full right-0 mb-2 w-48 bg-[#111111] border border-white/10 rounded-xl shadow-2xl opacity-0 invisible group-hover/menu:opacity-100 group-hover/menu:visible transition-all z-50 p-1">
-                      <p className="text-[10px] text-white/20 px-3 py-2 uppercase tracking-widest font-bold">Atribuir a:</p>
+                    <div className="absolute bottom-full right-0 mb-2 w-48 bg-gray-100 dark:bg-[#111111] border border-gray-200 dark:border-white/10 rounded-xl shadow-2xl opacity-0 invisible group-hover/menu:opacity-100 group-hover/menu:visible transition-all z-50 p-1">
+                      <p className="text-[10px] text-gray-700 dark:text-gray-300 dark:text-white/20 px-3 py-2 uppercase tracking-widest font-bold">Atribuir a:</p>
                       {profiles.map(p => (
                         <button 
                           key={p.id}
@@ -1336,18 +1358,18 @@ export default function PrazosPage() {
                             e.stopPropagation()
                             atribuirResponsavel(item.id, p.id)
                           }}
-                          className="w-full text-left px-3 py-2 text-xs text-white/60 hover:text-white hover:bg-[#CCA761] hover:text-black rounded-lg transition-all"
+                          className="w-full text-left px-3 py-2 text-xs text-gray-600 dark:text-white/60 hover:text-gray-900 dark:text-white hover:bg-[#CCA761] hover:text-black rounded-lg transition-all"
                         >
                           {p.full_name || `Colaborador ${String(p.id).slice(0, 6)}`}
                         </button>
                       ))}
-                      <div className="h-[1px] bg-white/5 my-1" />
+                      <div className="h-[1px] bg-gray-100 dark:bg-white/5 my-1" />
                       <button 
                         onClick={(e) => {
                           e.stopPropagation()
                           atribuirResponsavel(item.id, null)
                         }}
-                        className="w-full text-left px-3 py-2 text-xs text-white/40 hover:text-white hover:bg-red-500 bg-transparent rounded-lg transition-all flex items-center justify-between"
+                        className="w-full text-left px-3 py-2 text-xs text-gray-400 dark:text-white/40 hover:text-gray-900 dark:text-white hover:bg-red-500 bg-transparent rounded-lg transition-all flex items-center justify-between"
                       >
                         Remover Responsável <UserPlus size={12} />
                       </button>
@@ -1366,7 +1388,7 @@ export default function PrazosPage() {
         <div className="fixed inset-0 z-[60] flex items-center justify-center p-4">
           {/* Overlay */}
           <div 
-            className="fixed inset-0 bg-black/60 backdrop-blur-sm z-[60] animate-in fade-in duration-300"
+            className="fixed inset-0 bg-gray-200 dark:bg-black/60 backdrop-blur-sm z-[60] animate-in fade-in duration-300"
             onClick={() => {
               setIsDrawerOpen(false)
               setSelectedItemData(null)
@@ -1380,19 +1402,19 @@ export default function PrazosPage() {
               const item = selectedItemData ?? items.find(i => i.id === selectedItemId)
               if (!item) {
                 return (
-                  <div className="p-8 text-center text-white/50">Detalhes indisponíveis para este registro.</div>
+                  <div className="p-8 text-center text-gray-500 dark:text-white/50">Detalhes indisponíveis para este registro.</div>
                 )
               }
 
               return (
                 <>
                   {/* Modal Header */}
-                  <div className="p-6 border-b border-white/5 flex items-center justify-between bg-[#141414]/50 shrink-0">
+                  <div className="p-6 border-b border-gray-200 dark:border-white/5 flex items-center justify-between bg-gray-50 dark:bg-[#141414]/50 shrink-0">
                     <div>
                       <h3 className="text-[#CCA761] text-[20px] font-bold tracking-tight">
                         Detalhamento do Processo
                       </h3>
-                      <p className="text-white/40 text-xs uppercase tracking-[0.2em] mt-1 font-medium">
+                      <p className="text-gray-400 dark:text-white/40 text-xs uppercase tracking-[0.2em] mt-1 font-medium">
                         {item.monitored_processes?.numero_processo}
                       </p>
                     </div>
@@ -1402,7 +1424,7 @@ export default function PrazosPage() {
                         setSelectedItemData(null)
                         setSelectedMovimentacao(null)
                       }}
-                      className="p-2 rounded-xl bg-white/5 text-white/40 hover:text-white hover:bg-white/10 transition-all"
+                      className="p-2 rounded-xl bg-gray-100 dark:bg-white/5 text-gray-400 dark:text-white/40 hover:text-gray-900 dark:text-white hover:bg-gray-100 dark:bg-white/10 transition-all"
                     >
                       <X size={20} />
                     </button>
@@ -1414,35 +1436,35 @@ export default function PrazosPage() {
                     <div className="space-y-4">
                       <div className="flex flex-col gap-1">
                         <label className="text-[10px] text-[#CCA761] font-black uppercase tracking-widest">Número do Processo</label>
-                        <p className="text-xl font-bold text-white tracking-wide">
+                        <p className="text-xl font-bold text-gray-900 dark:text-white tracking-wide">
                           {item.monitored_processes?.numero_processo}
                         </p>
                       </div>
 
                       <div className="grid grid-cols-2 gap-6">
                         <div className="flex flex-col gap-1">
-                          <label className="text-[10px] text-white/30 font-black uppercase tracking-widest">Autor (Polo Ativo)</label>
-                          <p className="text-sm text-white/80 font-medium">
+                          <label className="text-[10px] text-gray-400 dark:text-white/30 font-black uppercase tracking-widest">Autor (Polo Ativo)</label>
+                          <p className="text-sm text-gray-800 dark:text-white/80 font-medium">
                             {item.monitored_processes?.partes?.polo_ativo || '—'}
                           </p>
                         </div>
                         <div className="flex flex-col gap-1">
-                          <label className="text-[10px] text-white/30 font-black uppercase tracking-widest">Réu (Polo Passivo)</label>
-                          <p className="text-sm text-white/80 font-medium">
+                          <label className="text-[10px] text-gray-400 dark:text-white/30 font-black uppercase tracking-widest">Réu (Polo Passivo)</label>
+                          <p className="text-sm text-gray-800 dark:text-white/80 font-medium">
                             {item.monitored_processes?.partes?.polo_passivo || '—'}
                           </p>
                         </div>
                       </div>
 
-                      <div className="pt-4 grid grid-cols-2 gap-6 border-t border-white/5">
+                      <div className="pt-4 grid grid-cols-2 gap-6 border-t border-gray-200 dark:border-white/5">
                         <div className="flex flex-col gap-1">
-                          <label className="text-[10px] text-white/30 font-black uppercase tracking-widest">Tribunal / Comarca</label>
-                          <p className="text-xs text-white/60">
+                          <label className="text-[10px] text-gray-400 dark:text-white/30 font-black uppercase tracking-widest">Tribunal / Comarca</label>
+                          <p className="text-xs text-gray-600 dark:text-white/60">
                             {item.monitored_processes?.tribunal} · {item.monitored_processes?.comarca || '—'}
                           </p>
                         </div>
                         <div className="flex flex-col gap-1">
-                          <label className="text-[10px] text-white/30 font-black uppercase tracking-widest">Vencimento</label>
+                          <label className="text-[10px] text-gray-400 dark:text-white/30 font-black uppercase tracking-widest">Vencimento</label>
                           <div className="flex items-center gap-2">
                              <Clock size={12} className="text-[#CCA761]" />
                              <p className="text-xs text-[#CCA761] font-bold">
@@ -1455,10 +1477,10 @@ export default function PrazosPage() {
 
                     {/* Movimentação Completa */}
                     {(selectedMovimentacao?.conteudo || item.monitored_processes?.ultima_movimentacao_texto) && (
-                      <div className="p-6 rounded-2xl bg-white/[0.03] border border-white/5 space-y-3">
+                      <div className="p-6 rounded-2xl bg-gray-50 dark:bg-white/[0.03] border border-gray-200 dark:border-white/5 space-y-3">
                         <div className="flex items-center justify-between gap-3 flex-wrap">
                           <label className="text-[10px] text-[#CCA761] font-black uppercase tracking-widest">Movimentação Completa</label>
-                          <span className="text-[11px] text-white/40">
+                          <span className="text-[11px] text-gray-400 dark:text-white/40">
                             {formatarData(selectedMovimentacao?.dataISO || selectedMovimentacao?.dataReferencia || item.monitored_processes?.data_ultima_movimentacao || null)}
                           </span>
                         </div>
@@ -1471,20 +1493,20 @@ export default function PrazosPage() {
                     )}
 
                     {Array.isArray(selectedMovimentacao?.historico) && selectedMovimentacao.historico.length > 1 && (
-                      <div className="p-6 rounded-2xl bg-white/[0.03] border border-white/5 space-y-4">
+                      <div className="p-6 rounded-2xl bg-gray-50 dark:bg-white/[0.03] border border-gray-200 dark:border-white/5 space-y-4">
                         <div className="flex items-center justify-between gap-3">
                           <label className="text-[10px] text-[#CCA761] font-black uppercase tracking-widest">Histórico de Movimentações</label>
-                          <span className="text-[11px] text-white/40">{selectedMovimentacao.historico.length} registros</span>
+                          <span className="text-[11px] text-gray-400 dark:text-white/40">{selectedMovimentacao.historico.length} registros</span>
                         </div>
 
                         <div className="max-h-72 overflow-y-auto space-y-3 pr-1">
                           {selectedMovimentacao.historico.slice(1).map((movHist: any) => (
-                            <div key={movHist.id} className="rounded-xl border border-white/10 bg-black/20 p-4 space-y-2">
+                            <div key={movHist.id} className="rounded-xl border border-gray-200 dark:border-white/10 bg-gray-200 dark:bg-black/20 p-4 space-y-2">
                               <div className="flex items-center justify-between">
-                                <span className="text-[10px] uppercase tracking-wider text-white/30">Movimentação</span>
+                                <span className="text-[10px] uppercase tracking-wider text-gray-400 dark:text-white/30">Movimentação</span>
                                 <span className="text-[10px] text-[#CCA761]">{formatarData(movHist.dataISO || movHist.dataReferencia || null)}</span>
                               </div>
-                              <p className="text-[12px] text-white/70 leading-relaxed whitespace-pre-wrap break-words">
+                              <p className="text-[12px] text-gray-700 dark:text-white/70 leading-relaxed whitespace-pre-wrap break-words">
                                 {movHist.conteudo || 'Sem conteúdo'}
                               </p>
                             </div>
@@ -1494,14 +1516,14 @@ export default function PrazosPage() {
                     )}
 
                     {/* Descrição do Prazo */}
-                    <div className="p-6 rounded-2xl bg-white/[0.03] border border-white/5 space-y-3">
+                    <div className="p-6 rounded-2xl bg-gray-50 dark:bg-white/[0.03] border border-gray-200 dark:border-white/5 space-y-3">
                       <label className="text-[10px] text-[#CCA761] font-black uppercase tracking-widest">Título do Prazo / Audiência</label>
-                      <h4 className="text-lg font-medium text-white leading-tight">
+                      <h4 className="text-lg font-medium text-gray-900 dark:text-white leading-tight">
                         {item.descricao}
                       </h4>
                       {item.monitored_processes?.resumo_curto && (
-                        <div className="pt-3 border-t border-white/5">
-                          <p className="text-[13px] text-white/50 leading-relaxed italic">
+                        <div className="pt-3 border-t border-gray-200 dark:border-white/5">
+                          <p className="text-[13px] text-gray-500 dark:text-white/50 leading-relaxed italic">
                             &quot;{item.monitored_processes.resumo_curto}&quot;
                           </p>
                         </div>
@@ -1520,7 +1542,7 @@ export default function PrazosPage() {
                           value={annotationText}
                           onChange={(e) => setAnnotationText(e.target.value)}
                           placeholder="Escreva aqui os detalhes importantes deste caso..."
-                          className="w-full h-48 p-4 bg-[#111] border border-white/10 rounded-xl text-sm text-white/80 focus:outline-none focus:ring-1 focus:ring-[#CCA761]/50 placeholder:text-white/10 resize-none transition-all"
+                          className="w-full h-48 p-4 bg-gray-100 dark:bg-[#111] border border-gray-200 dark:border-white/10 rounded-xl text-sm text-gray-800 dark:text-white/80 focus:outline-none focus:ring-1 focus:ring-[#CCA761]/50 placeholder:text-gray-800 dark:text-gray-200 dark:text-white/10 resize-none transition-all"
                         />
                         
                         <div className="flex justify-end">
@@ -1546,14 +1568,14 @@ export default function PrazosPage() {
                   </div>
 
                   {/* Drawer Footer */}
-                  <div className="p-6 border-t border-white/5 bg-[#141414]/50 flex justify-end">
+                  <div className="p-6 border-t border-gray-200 dark:border-white/5 bg-gray-50 dark:bg-[#141414]/50 flex justify-end">
                     <button 
                       onClick={() => {
                         setIsDrawerOpen(false)
                         setSelectedItemData(null)
                         setSelectedMovimentacao(null)
                       }}
-                      className="px-8 py-3 bg-white/5 hover:bg-white/10 text-white font-bold text-sm rounded-xl transition-all border border-white/5"
+                      className="px-8 py-3 bg-gray-100 dark:bg-white/5 hover:bg-gray-100 dark:bg-white/10 text-gray-900 dark:text-white font-bold text-sm rounded-xl transition-all border border-gray-200 dark:border-white/5"
                     >
                       Fechar Detalhes
                     </button>

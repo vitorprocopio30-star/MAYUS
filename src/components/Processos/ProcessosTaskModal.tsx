@@ -1,4 +1,4 @@
-import { useState, useEffect } from "react";
+import { useState, useEffect, useMemo, useRef } from "react";
 import dynamic from "next/dynamic";
 import { User as UserIcon, AlignLeft, X, Trash2, Calendar, CheckCircle2, ArrowRight, MessageCircle, Tag as TagIcon, Plus, Copy, Check, Pencil, FolderPlus, Loader2 } from "lucide-react";
 import { toast } from "sonner";
@@ -14,7 +14,7 @@ import "react-quill/dist/quill.snow.css";
 
 const ReactQuill = dynamic(() => import("react-quill"), { 
   ssr: false,
-  loading: () => <div className="h-[250px] w-full bg-white/5 animate-pulse rounded-lg" />
+  loading: () => <div className="h-[250px] w-full bg-gray-100 dark:bg-white/5 animate-pulse rounded-lg" />
 });
 
 interface ProcessosTaskModalProps {
@@ -33,7 +33,8 @@ interface ProcessosTaskModalProps {
 export default function ProcessosTaskModal({
   isOpen, onClose, editingTask, defaultStageId, pipeline, stages, agents, profile, onSaveSuccess, onDeleteSuccess
 }: ProcessosTaskModalProps) {
-  const supabase = createClient();
+  const supabase = useMemo(() => createClient(), []);
+  const saveInFlightRef = useRef(false);
   const [isSaving, setIsSaving] = useState(false);
   const [isCreatingDriveFolder, setIsCreatingDriveFolder] = useState(false);
 
@@ -302,9 +303,11 @@ export default function ProcessosTaskModal({
   };
 
   const handeSaveTask = async () => {
+    if (saveInFlightRef.current) return;
     if (!taskTitle.trim()) { toast.error("Título é obrigatório."); return; }
     if (!taskStageId) return;
 
+    saveInFlightRef.current = true;
     setIsSaving(true);
     try {
       if (editingTask) {
@@ -413,6 +416,7 @@ export default function ProcessosTaskModal({
       console.error("[processos][save-task]", err);
       toast.error(err?.message || "Erro ao salvar tarefa.");
     } finally {
+      saveInFlightRef.current = false;
       setIsSaving(false);
     }
   };
@@ -447,24 +451,24 @@ export default function ProcessosTaskModal({
 
   return (
     <div className="fixed inset-0 z-50 flex items-center justify-center p-4">
-      <div className="absolute inset-0 bg-black/60 backdrop-blur-md" onClick={onClose} />
-      <div className="relative w-full max-w-4xl bg-[#0f0f0f] border border-white/10 rounded-2xl shadow-[0_0_50px_rgba(0,0,0,0.8)] overflow-hidden flex flex-col max-h-[95vh] animate-in fade-in zoom-in-95 duration-200">
-            <div className="flex items-center justify-between p-5 border-b border-white/5 bg-[#141414] relative">
+      <div className="absolute inset-0 bg-gray-200 dark:bg-black/60 backdrop-blur-md" onClick={onClose} />
+      <div className="relative w-full max-w-4xl bg-[#0f0f0f] border border-gray-200 dark:border-white/10 rounded-2xl shadow-[0_0_50px_rgba(0,0,0,0.8)] overflow-hidden flex flex-col max-h-[95vh] animate-in fade-in zoom-in-95 duration-200">
+            <div className="flex items-center justify-between p-5 border-b border-gray-200 dark:border-white/5 bg-gray-50 dark:bg-[#141414] relative">
                <div className="absolute top-0 left-0 w-full h-[2px] bg-gradient-to-r from-transparent via-[#CCA761] to-transparent opacity-50" />
-               <h2 className="text-lg font-bold text-white flex items-center gap-2">
+               <h2 className="text-lg font-bold text-gray-900 dark:text-white flex items-center gap-2">
                  {editingTask ? "Editar Processo" : "Novo Processo"}
                </h2>
                <div className="flex items-center gap-2">
                  {editingTask && (
                    <button 
                      onClick={handleDeleteTask}
-                     className="text-gray-500 hover:text-red-400 p-2 rounded-lg hover:bg-white/5 transition-colors"
+                     className="text-gray-500 hover:text-red-400 p-2 rounded-lg hover:bg-gray-100 dark:bg-white/5 transition-colors"
                      title="Excluir Tarefa"
                    >
                      <Trash2 size={20} />
                    </button>
                  )}
-                  <button onClick={onClose} className="text-gray-500 hover:text-white bg-white/5 hover:bg-white/10 p-2 rounded-lg transition-colors">
+                  <button onClick={onClose} className="text-gray-500 hover:text-gray-900 dark:text-white bg-gray-100 dark:bg-white/5 hover:bg-gray-100 dark:bg-white/10 p-2 rounded-lg transition-colors">
                     <X size={20} />
                   </button>
                </div>
@@ -475,7 +479,7 @@ export default function ProcessosTaskModal({
                 <div className="space-y-1.5">
                   <label className="text-xs font-bold text-gray-400 uppercase tracking-widest">Título da Tarefa</label>
                   <input type="text" value={taskTitle} onChange={e => setTaskTitle(e.target.value)}
-                    className="w-full bg-[#1a1a1a] border border-[#2a2a2a] text-[#CCA761] rounded-lg px-4 py-3 text-lg font-bold focus:outline-none focus:border-[#CCA761]/50 placeholder-gray-700 transition-colors"
+                    className="w-full bg-gray-100 dark:bg-[#1a1a1a] border border-[#2a2a2a] text-[#CCA761] rounded-lg px-4 py-3 text-lg font-bold focus:outline-none focus:border-[#CCA761]/50 placeholder-gray-700 transition-colors"
                     placeholder="Ex: Revisar petição de tutela" autoFocus />
                 </div>
 
@@ -493,7 +497,7 @@ export default function ProcessosTaskModal({
                       </button>
                     </label>
                     <input type="text" value={taskProcessNumber} onChange={e => setTaskProcessNumber(e.target.value)}
-                      className="w-full bg-[#1a1a1a] border border-[#2a2a2a] text-white rounded-lg px-4 py-3 text-sm focus:outline-none focus:border-[#CCA761]/50 placeholder-gray-700 transition-colors"
+                      className="w-full bg-gray-100 dark:bg-[#1a1a1a] border border-[#2a2a2a] text-gray-900 dark:text-white rounded-lg px-4 py-3 text-sm focus:outline-none focus:border-[#CCA761]/50 placeholder-gray-700 transition-colors"
                       placeholder="Ex: 0000000-00.0000.0.00.0000" />
                   </div>
                   <div className="space-y-1.5">
@@ -501,7 +505,7 @@ export default function ProcessosTaskModal({
                     <select
                       value={taskUrgency}
                       onChange={e => setTaskUrgency(e.target.value as "URGENTE" | "ATENCAO" | "ROTINA")}
-                      className="w-full bg-[#1a1a1a] border border-[#2a2a2a] text-white rounded-lg px-4 py-3 text-sm focus:outline-none focus:border-[#CCA761]/50 transition-colors appearance-none cursor-pointer"
+                      className="w-full bg-gray-100 dark:bg-[#1a1a1a] border border-[#2a2a2a] text-gray-900 dark:text-white rounded-lg px-4 py-3 text-sm focus:outline-none focus:border-[#CCA761]/50 transition-colors appearance-none cursor-pointer"
                     >
                       <option value="URGENTE">Urgente</option>
                       <option value="ATENCAO">Atenção</option>
@@ -514,7 +518,7 @@ export default function ProcessosTaskModal({
                        <UserIcon size={14} /> Nome do Cliente
                     </label>
                     <input type="text" value={taskClientName} onChange={e => setTaskClientName(e.target.value)}
-                      className="w-full bg-[#1a1a1a] border border-[#2a2a2a] text-white rounded-lg px-4 py-3 text-sm focus:outline-none focus:border-[#CCA761]/50 placeholder-gray-700 transition-colors"
+                      className="w-full bg-gray-100 dark:bg-[#1a1a1a] border border-[#2a2a2a] text-gray-900 dark:text-white rounded-lg px-4 py-3 text-sm focus:outline-none focus:border-[#CCA761]/50 placeholder-gray-700 transition-colors"
                       placeholder="Ex: João da Silva" />
                   </div>
                   <div className="space-y-1.5">
@@ -524,7 +528,7 @@ export default function ProcessosTaskModal({
                     </label>
                     <div className="flex gap-2">
                       <input type="text" value={taskDriveLink} onChange={e => setTaskDriveLink(e.target.value)}
-                        className="flex-1 bg-[#1a1a1a] border border-[#2a2a2a] text-white rounded-lg px-4 py-3 text-sm focus:outline-none focus:border-[#4285F4]/50 placeholder-gray-700 transition-colors"
+                        className="flex-1 bg-gray-100 dark:bg-[#1a1a1a] border border-[#2a2a2a] text-gray-900 dark:text-white rounded-lg px-4 py-3 text-sm focus:outline-none focus:border-[#4285F4]/50 placeholder-gray-700 transition-colors"
                         placeholder="Cole o link da pasta do Drive" />
                       {editingTask?.id && !taskDriveLink && (
                         <button
@@ -538,7 +542,7 @@ export default function ProcessosTaskModal({
                         </button>
                       )}
                       {taskDriveLink && (
-                        <a href={taskDriveLink} target="_blank" rel="noopener noreferrer" className="flex items-center justify-center px-4 bg-[#1a1a1a] border border-[#2a2a2a] hover:border-[#4285F4] hover:text-[#4285F4] text-gray-400 rounded-lg transition-colors" title="Abrir pasta no Drive">
+                        <a href={taskDriveLink} target="_blank" rel="noopener noreferrer" className="flex items-center justify-center px-4 bg-gray-100 dark:bg-[#1a1a1a] border border-[#2a2a2a] hover:border-[#4285F4] hover:text-[#4285F4] text-gray-400 rounded-lg transition-colors" title="Abrir pasta no Drive">
                           <svg className="w-5 h-5" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M10 6H6a2 2 0 00-2 2v10a2 2 0 002 2h10a2 2 0 002-2v-4M14 4h6m0 0v6m0-6L10 14" /></svg>
                         </a>
                       )}
@@ -555,70 +559,70 @@ export default function ProcessosTaskModal({
                   <div className="space-y-1.5">
                     <label className="text-xs font-bold text-gray-400 uppercase tracking-widest flex items-center gap-2">⚖️ Processo 1º Grau</label>
                     <input type="text" value={taskProcesso1Grau} onChange={e => setTaskProcesso1Grau(e.target.value)}
-                      className="w-full bg-[#1a1a1a] border border-[#2a2a2a] text-white rounded-lg px-4 py-3 text-sm focus:outline-none focus:border-[#CCA761]/50 placeholder-gray-700 transition-colors" />
+                      className="w-full bg-gray-100 dark:bg-[#1a1a1a] border border-[#2a2a2a] text-gray-900 dark:text-white rounded-lg px-4 py-3 text-sm focus:outline-none focus:border-[#CCA761]/50 placeholder-gray-700 transition-colors" />
                   </div>
                   <div className="space-y-1.5">
                     <label className="text-xs font-bold text-gray-400 uppercase tracking-widest flex items-center gap-2">⚖️ Processo 2º Grau</label>
                     <input type="text" value={taskProcesso2Grau} onChange={e => setTaskProcesso2Grau(e.target.value)}
-                      className="w-full bg-[#1a1a1a] border border-[#2a2a2a] text-white rounded-lg px-4 py-3 text-sm focus:outline-none focus:border-[#CCA761]/50 placeholder-gray-700 transition-colors" />
+                      className="w-full bg-gray-100 dark:bg-[#1a1a1a] border border-[#2a2a2a] text-gray-900 dark:text-white rounded-lg px-4 py-3 text-sm focus:outline-none focus:border-[#CCA761]/50 placeholder-gray-700 transition-colors" />
                   </div>
 
                   <div className="space-y-1.5">
                     <label className="text-xs font-bold text-gray-400 uppercase tracking-widest flex items-center gap-2">🎯 Demanda</label>
                     <input type="text" value={taskDemanda} onChange={e => setTaskDemanda(e.target.value)}
-                      className="w-full bg-[#1a1a1a] border border-[#2a2a2a] text-white rounded-lg px-4 py-3 text-sm focus:outline-none focus:border-[#CCA761]/50 placeholder-gray-700 transition-colors" />
+                      className="w-full bg-gray-100 dark:bg-[#1a1a1a] border border-[#2a2a2a] text-gray-900 dark:text-white rounded-lg px-4 py-3 text-sm focus:outline-none focus:border-[#CCA761]/50 placeholder-gray-700 transition-colors" />
                   </div>
                   <div className="space-y-1.5">
                     <label className="text-xs font-bold text-gray-400 uppercase tracking-widest flex items-center gap-2">👇 Andamento do Processo 1º Grau</label>
                     <input type="text" value={taskAndamento1Grau} onChange={e => setTaskAndamento1Grau(e.target.value)}
-                      className="w-full bg-[#1a1a1a] border border-[#2a2a2a] text-white rounded-lg px-4 py-3 text-sm focus:outline-none focus:border-[#CCA761]/50 placeholder-gray-700 transition-colors" />
+                      className="w-full bg-gray-100 dark:bg-[#1a1a1a] border border-[#2a2a2a] text-gray-900 dark:text-white rounded-lg px-4 py-3 text-sm focus:outline-none focus:border-[#CCA761]/50 placeholder-gray-700 transition-colors" />
                   </div>
 
                   <div className="space-y-1.5">
                     <label className="text-xs font-bold text-gray-400 uppercase tracking-widest flex items-center gap-2">👇 Andamento do Processo 2º Grau</label>
                     <input type="text" value={taskAndamento2Grau} onChange={e => setTaskAndamento2Grau(e.target.value)}
-                      className="w-full bg-[#1a1a1a] border border-[#2a2a2a] text-white rounded-lg px-4 py-3 text-sm focus:outline-none focus:border-[#CCA761]/50 placeholder-gray-700 transition-colors" />
+                      className="w-full bg-gray-100 dark:bg-[#1a1a1a] border border-[#2a2a2a] text-gray-900 dark:text-white rounded-lg px-4 py-3 text-sm focus:outline-none focus:border-[#CCA761]/50 placeholder-gray-700 transition-colors" />
                   </div>
                   <div className="space-y-1.5">
                     <label className="text-xs font-bold text-gray-400 uppercase tracking-widest flex items-center gap-2">👨‍⚖️ Órgão julgador</label>
                     <input type="text" value={taskOrgaoJulgador} onChange={e => setTaskOrgaoJulgador(e.target.value)}
-                      className="w-full bg-[#1a1a1a] border border-[#2a2a2a] text-white rounded-lg px-4 py-3 text-sm focus:outline-none focus:border-[#CCA761]/50 placeholder-gray-700 transition-colors" />
+                      className="w-full bg-gray-100 dark:bg-[#1a1a1a] border border-[#2a2a2a] text-gray-900 dark:text-white rounded-lg px-4 py-3 text-sm focus:outline-none focus:border-[#CCA761]/50 placeholder-gray-700 transition-colors" />
                   </div>
 
                   <div className="space-y-1.5">
                     <label className="text-xs font-bold text-gray-400 uppercase tracking-widest flex items-center gap-2">👩‍⚖️ Tutela de urgência</label>
                     <input type="text" value={taskTutelaUrgencia} onChange={e => setTaskTutelaUrgencia(e.target.value)}
-                      className="w-full bg-[#1a1a1a] border border-[#2a2a2a] text-white rounded-lg px-4 py-3 text-sm focus:outline-none focus:border-[#CCA761]/50 placeholder-gray-700 transition-colors" />
+                      className="w-full bg-gray-100 dark:bg-[#1a1a1a] border border-[#2a2a2a] text-gray-900 dark:text-white rounded-lg px-4 py-3 text-sm focus:outline-none focus:border-[#CCA761]/50 placeholder-gray-700 transition-colors" />
                   </div>
                   <div className="space-y-1.5">
                     <label className="text-xs font-bold text-gray-400 uppercase tracking-widest flex items-center gap-2">👩‍⚖️ Sentença</label>
                     <input type="text" value={taskSentenca} onChange={e => setTaskSentenca(e.target.value)}
-                      className="w-full bg-[#1a1a1a] border border-[#2a2a2a] text-white rounded-lg px-4 py-3 text-sm focus:outline-none focus:border-[#CCA761]/50 placeholder-gray-700 transition-colors" />
+                      className="w-full bg-gray-100 dark:bg-[#1a1a1a] border border-[#2a2a2a] text-gray-900 dark:text-white rounded-lg px-4 py-3 text-sm focus:outline-none focus:border-[#CCA761]/50 placeholder-gray-700 transition-colors" />
                   </div>
 
                   <div className="space-y-1.5">
                     <label className="text-xs font-bold text-gray-400 uppercase tracking-widest flex items-center gap-2">🦉 Réu</label>
                     <input type="text" value={taskReu} onChange={e => setTaskReu(e.target.value)}
-                      className="w-full bg-[#1a1a1a] border border-[#2a2a2a] text-white rounded-lg px-4 py-3 text-sm focus:outline-none focus:border-[#CCA761]/50 placeholder-gray-700 transition-colors" />
+                      className="w-full bg-gray-100 dark:bg-[#1a1a1a] border border-[#2a2a2a] text-gray-900 dark:text-white rounded-lg px-4 py-3 text-sm focus:outline-none focus:border-[#CCA761]/50 placeholder-gray-700 transition-colors" />
                   </div>
                   <div className="space-y-1.5">
                     <label className="text-xs font-bold text-gray-400 uppercase tracking-widest flex items-center gap-2">💵 Valor da Causa</label>
                     <div className="relative">
                       <span className="absolute left-4 top-1/2 -translate-y-1/2 text-gray-400 font-bold">R$</span>
                       <input type="number" step="0.01" value={taskValorCausa} onChange={e => setTaskValorCausa(e.target.value)}
-                        className="w-full bg-[#1a1a1a] border border-[#2a2a2a] text-white rounded-lg px-10 py-3 text-sm focus:outline-none focus:border-[#CCA761]/50 placeholder-gray-700 transition-colors" />
+                        className="w-full bg-gray-100 dark:bg-[#1a1a1a] border border-[#2a2a2a] text-gray-900 dark:text-white rounded-lg px-10 py-3 text-sm focus:outline-none focus:border-[#CCA761]/50 placeholder-gray-700 transition-colors" />
                     </div>
                   </div>
 
                   <div className="space-y-1.5">
                     <label className="text-xs font-bold text-gray-400 uppercase tracking-widest flex items-center gap-2">📅 Fatal</label>
                     <input type="date" value={taskPrazoFatal} onChange={e => setTaskPrazoFatal(e.target.value)}
-                      className="w-full bg-[#1a1a1a] border border-[#2a2a2a] text-white rounded-lg px-4 py-3 text-sm focus:outline-none focus:border-[#CCA761]/50 placeholder-gray-700 transition-colors appearance-none" style={{ colorScheme: 'dark' }} />
+                      className="w-full bg-gray-100 dark:bg-[#1a1a1a] border border-[#2a2a2a] text-gray-900 dark:text-white rounded-lg px-4 py-3 text-sm focus:outline-none focus:border-[#CCA761]/50 placeholder-gray-700 transition-colors appearance-none" style={{ colorScheme: 'dark' }} />
                   </div>
 
                   <div className="space-y-1.5 flex items-center mt-7 gap-3 h-full">
                     <input type="checkbox" checked={taskLiminarDeferida} onChange={e => setTaskLiminarDeferida(e.target.checked)}
-                      className="w-5 h-5 bg-[#1a1a1a] border border-[#2a2a2a] rounded focus:ring-[#CCA761]/50 accent-[#CCA761] cursor-pointer" id="liminar_deferida" />
+                      className="w-5 h-5 bg-gray-100 dark:bg-[#1a1a1a] border border-[#2a2a2a] rounded focus:ring-[#CCA761]/50 accent-[#CCA761] cursor-pointer" id="liminar_deferida" />
                     <label htmlFor="liminar_deferida" className="text-xs font-bold text-gray-400 uppercase tracking-widest flex items-center gap-2 cursor-pointer pt-0">
                       ✅ Liminar Deferida
                     </label>
@@ -667,13 +671,13 @@ export default function ProcessosTaskModal({
                   <textarea
                     value={taskResponsibleNotes}
                     onChange={(e) => setTaskResponsibleNotes(e.target.value)}
-                    className="w-full min-h-[110px] bg-[#1a1a1a] border border-[#2a2a2a] text-white rounded-lg px-4 py-3 text-sm focus:outline-none focus:border-[#CCA761]/50 placeholder-gray-700 transition-colors"
+                    className="w-full min-h-[110px] bg-gray-100 dark:bg-[#1a1a1a] border border-[#2a2a2a] text-gray-900 dark:text-white rounded-lg px-4 py-3 text-sm focus:outline-none focus:border-[#CCA761]/50 placeholder-gray-700 transition-colors"
                     placeholder="Anotações operacionais do responsável: próximos passos, pendências e observações."
                   />
                 </div>
               </div>
 
-              <div className="space-y-6 lg:border-l lg:border-white/5 lg:pl-6">
+              <div className="space-y-6 lg:border-l lg:border-gray-200 dark:border-white/5 lg:pl-6">
                 <div className="space-y-1.5">
                   <label className="text-xs font-bold text-gray-400 uppercase tracking-widest flex items-center gap-2">
                     <MessageCircle size={14} /> WhatsApp (Telefone)
@@ -682,14 +686,14 @@ export default function ProcessosTaskModal({
                     <input 
                       type="text" 
                       value={taskPhone} onChange={e => setTaskPhone(e.target.value)}
-                      className="flex-1 bg-[#1a1a1a] border border-[#2a2a2a] text-white rounded-lg px-4 py-3 text-sm focus:outline-none focus:border-[#CCA761]/50 placeholder-gray-700 transition-colors"
+                      className="flex-1 bg-gray-100 dark:bg-[#1a1a1a] border border-[#2a2a2a] text-gray-900 dark:text-white rounded-lg px-4 py-3 text-sm focus:outline-none focus:border-[#CCA761]/50 placeholder-gray-700 transition-colors"
                       placeholder="Ex: 11999999999"
                     />
                     {taskPhone && (
                       <a 
                         href={`https://wa.me/${taskPhone.replace(/\D/g, "")}`} 
                         target="_blank" rel="noopener noreferrer"
-                        className="bg-[#25D366] hover:bg-[#20bd5a] text-white p-3 rounded-lg transition-colors flex items-center justify-center shadow-[0_0_15px_rgba(37,211,102,0.3)] shrink-0"
+                        className="bg-[#25D366] hover:bg-[#20bd5a] text-gray-900 dark:text-white p-3 rounded-lg transition-colors flex items-center justify-center shadow-[0_0_15px_rgba(37,211,102,0.3)] shrink-0"
                         title="Abrir no WhatsApp"
                       >
                         <MessageCircle size={20} />
@@ -705,7 +709,7 @@ export default function ProcessosTaskModal({
                   <div className="relative">
                     <select 
                       value={taskStageId} onChange={e => setTaskStageId(e.target.value)}
-                      className="w-full bg-[#1a1a1a] border border-[#2a2a2a] text-white rounded-lg px-4 py-3 text-sm focus:outline-none focus:border-[#CCA761]/50 transition-colors appearance-none cursor-pointer"
+                      className="w-full bg-gray-100 dark:bg-[#1a1a1a] border border-[#2a2a2a] text-gray-900 dark:text-white rounded-lg px-4 py-3 text-sm focus:outline-none focus:border-[#CCA761]/50 transition-colors appearance-none cursor-pointer"
                     >
                       {stages.map(s => (
                         <option key={s.id} value={s.id}>{s.name}</option>
@@ -724,7 +728,7 @@ export default function ProcessosTaskModal({
                   <select 
                     value={taskAssignedTo || ""} 
                     onChange={e => setTaskAssignedTo(e.target.value || null)}
-                    className="w-full bg-[#1a1a1a] border border-[#2a2a2a] text-white rounded-lg px-4 py-3 text-sm focus:outline-none focus:border-[#CCA761]/50 transition-colors appearance-none cursor-pointer"
+                    className="w-full bg-gray-100 dark:bg-[#1a1a1a] border border-[#2a2a2a] text-gray-900 dark:text-white rounded-lg px-4 py-3 text-sm focus:outline-none focus:border-[#CCA761]/50 transition-colors appearance-none cursor-pointer"
                   >
                     <option value="">Não atribuído</option>
                     {agents.map(agent => (
@@ -734,14 +738,14 @@ export default function ProcessosTaskModal({
                 </div>
 
                 {pipeline?.sectors && pipeline.sectors.length > 0 && (
-                  <div className="space-y-1.5 flex flex-col pt-2 border-t border-white/5">
+                  <div className="space-y-1.5 flex flex-col pt-2 border-t border-gray-200 dark:border-white/5">
                     <label className="text-xs font-bold text-blue-400 uppercase tracking-widest flex items-center gap-2">
                       <ArrowRight size={14} /> Atribuir a um Setor
                     </label>
                     <div className="relative">
                       <select 
                         value={taskSector} onChange={e => setTaskSector(e.target.value)}
-                        className="w-full bg-[#1a1a1a] border border-[#2a2a2a] text-white rounded-lg px-4 py-3 text-sm focus:outline-none focus:border-blue-500/50 transition-colors appearance-none cursor-pointer"
+                        className="w-full bg-gray-100 dark:bg-[#1a1a1a] border border-[#2a2a2a] text-gray-900 dark:text-white rounded-lg px-4 py-3 text-sm focus:outline-none focus:border-blue-500/50 transition-colors appearance-none cursor-pointer"
                       >
                         <option value="">Não atribuir (Padrão)</option>
                         {pipeline.sectors.map(s => {
@@ -756,7 +760,7 @@ export default function ProcessosTaskModal({
                   </div>
                 )}
 
-                <div className="space-y-1.5 flex flex-col pt-2 border-t border-white/5">
+                <div className="space-y-1.5 flex flex-col pt-2 border-t border-gray-200 dark:border-white/5">
                   <div className="flex flex-col gap-1 mb-1">
                     <label className="text-xs font-bold text-gray-400 uppercase tracking-widest flex items-center gap-2">
                       <TagIcon size={14} /> Etiquetas
@@ -764,7 +768,7 @@ export default function ProcessosTaskModal({
                   </div>
                   
                   {/* Selector de Etiquetas */}
-                  <div className="flex flex-wrap gap-2 mb-2 p-3 bg-[#1a1a1a] border border-[#2a2a2a] rounded-lg min-h-[50px]">
+                  <div className="flex flex-wrap gap-2 mb-2 p-3 bg-gray-100 dark:bg-[#1a1a1a] border border-[#2a2a2a] rounded-lg min-h-[50px]">
                     {availableTags.length > 0 ? (
                       availableTags.map(tag => {
                         const [name, color] = tag.includes('|') ? tag.split('|') : [tag, '#CCA761'];
@@ -816,13 +820,13 @@ export default function ProcessosTaskModal({
                       value={newTagName}
                       onChange={(e) => setNewTagName(e.target.value)}
                       placeholder="Nova etiqueta"
-                      className="bg-[#1a1a1a] border border-[#2a2a2a] text-white rounded-lg px-3 py-2 text-xs focus:outline-none focus:border-[#CCA761]/50 placeholder-gray-600"
+                      className="bg-gray-100 dark:bg-[#1a1a1a] border border-[#2a2a2a] text-gray-900 dark:text-white rounded-lg px-3 py-2 text-xs focus:outline-none focus:border-[#CCA761]/50 placeholder-gray-600"
                     />
                     <input
                       type="color"
                       value={tagColor}
                       onChange={(e) => setTagColor(e.target.value)}
-                      className="w-11 h-9 rounded-lg border border-[#2a2a2a] bg-[#1a1a1a] p-1 cursor-pointer"
+                      className="w-11 h-9 rounded-lg border border-[#2a2a2a] bg-gray-100 dark:bg-[#1a1a1a] p-1 cursor-pointer"
                     />
                     <button
                       type="button"
@@ -836,7 +840,7 @@ export default function ProcessosTaskModal({
                     <button
                       type="button"
                       onClick={handleCancelTagEdit}
-                      className="w-full h-9 rounded-lg border border-white/15 text-gray-300 text-[10px] font-black uppercase tracking-widest hover:bg-white/5"
+                      className="w-full h-9 rounded-lg border border-gray-200 dark:border-white/15 text-gray-700 dark:text-gray-300 text-[10px] font-black uppercase tracking-widest hover:bg-gray-100 dark:bg-white/5"
                     >
                       Cancelar edição da etiqueta
                     </button>
@@ -877,10 +881,10 @@ export default function ProcessosTaskModal({
               </div>
             </div>
 
-            <div className="p-5 border-t border-white/5 bg-[#141414] flex items-center justify-end gap-3">
+            <div className="p-5 border-t border-gray-200 dark:border-white/5 bg-gray-50 dark:bg-[#141414] flex items-center justify-end gap-3">
               <button 
                 onClick={onClose} 
-                className="text-sm font-semibold text-gray-400 hover:text-white px-5 py-2.5 hover:bg-white/5 rounded-lg transition-colors"
+                className="text-sm font-semibold text-gray-400 hover:text-gray-900 dark:text-white px-5 py-2.5 hover:bg-gray-100 dark:bg-white/5 rounded-lg transition-colors"
                 disabled={isSaving}
               >
                 Descartar

@@ -285,7 +285,7 @@ export function Globe() {
       <motion.div 
         animate={{ y: [0, -10, 0] }}
         transition={{ duration: 4, repeat: Infinity, ease: "easeInOut", delay: 0 }}
-        className={`absolute top-10 left-1/2 -translate-x-1/2 backdrop-blur-md border px-6 py-2 rounded-full text-[10px] uppercase tracking-[3px] z-10 transition-all duration-500 flex items-center gap-3 ${isSpeaking ? 'bg-[#CCA761]/20 border-[#CCA761]/60 text-white shadow-[0_0_30px_rgba(255,215,0,0.4)] scale-110' : 'bg-[#0D0D0D]/80 border-[#CCA761]/30 text-[#CCA761] shadow-[0_0_20px_rgba(201,168,76,0.1)]'}`}
+        className={`absolute top-10 left-1/2 -translate-x-1/2 backdrop-blur-md border px-6 py-2 rounded-full text-[10px] uppercase tracking-[3px] z-10 transition-all duration-500 flex items-center gap-3 ${isSpeaking ? 'bg-[#CCA761]/20 border-[#CCA761]/60 text-gray-900 dark:text-white shadow-[0_0_30px_rgba(255,215,0,0.4)] scale-110' : 'bg-[#0D0D0D]/80 border-[#CCA761]/30 text-[#CCA761] shadow-[0_0_20px_rgba(201,168,76,0.1)]'}`}
       >
         {isSpeaking && (
           <span className="flex gap-1">
