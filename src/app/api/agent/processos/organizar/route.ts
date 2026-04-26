@@ -2,6 +2,12 @@ import { createClient } from '@/lib/supabase/server'
 import { buildAgendaPayloadFromProcessTask, syncAgendaTaskBySource } from '@/lib/agenda/userTasks'
 import { NextRequest, NextResponse } from 'next/server'
 import { getLLMClient, buildHeaders } from '@/lib/llm-router'
+import { requireTenantApiKey } from '@/lib/integrations/server'
+import {
+  buildProcessCardClientName,
+  buildProcessCardDescription,
+  buildProcessCardTitle,
+} from '@/lib/juridico/process-card-context'
 
 function normalizarDescricaoPrazo(value: string | null | undefined): string {
   const texto = String(value ?? '')
@@ -126,14 +132,8 @@ export async function POST(req: NextRequest) {
     .in('role', ['Administrador', 'advogado', 'socio'])
 
   // 3. Buscar chave do Escavador + cliente LLM do tenant
-  const { data: escavadorInt } = await supabase
-    .from('tenant_integrations')
-    .select('api_key')
-    .eq('tenant_id', proc.tenant_id)
-    .eq('provider', 'escavador')
-    .single()
-
-  const escavadorKey = escavadorInt?.api_key || process.env.ESCAVADOR_API_KEY
+  const { apiKey: tenantEscavadorKey } = await requireTenantApiKey(proc.tenant_id, 'escavador')
+  const escavadorKey = tenantEscavadorKey || process.env.ESCAVADOR_API_KEY
 
   let llm: Awaited<ReturnType<typeof getLLMClient>>
   try {
@@ -144,13 +144,15 @@ export async function POST(req: NextRequest) {
 
   // 3b. Resolver pipeline e etapas reais
   let pipelineId: string | null = null
+  let linkedTaskContext: any = null
 
   if (proc.linked_task_id) {
     const { data: linkedTask } = await supabase
       .from('process_tasks')
-      .select('pipeline_id')
+      .select('pipeline_id, title, description, client_name')
       .eq('id', proc.linked_task_id)
       .maybeSingle()
+    linkedTaskContext = linkedTask
     pipelineId = linkedTask?.pipeline_id ?? null
   }
 
@@ -399,15 +401,35 @@ Retorne exatamente este JSON:
   let novoCard: { id: string } | null = null
 
   if (proc.linked_task_id && etapaEscolhidaId) {
+    const partes = proc.partes as any
+    const cardClientName = buildProcessCardClientName({ ...proc, partes })
+    const cardDescription = buildProcessCardDescription({
+      processo: { ...proc, partes },
+      resumoCurto: resultado.resumo_curto,
+      proximaAcao: resultado.proxima_acao_sugerida,
+    })
+
     await supabase
       .from('process_tasks')
-      .update({ stage_id: etapaEscolhidaId, updated_at: agora })
+      .update({
+        stage_id: etapaEscolhidaId,
+        client_name: linkedTaskContext?.client_name || cardClientName,
+        description: linkedTaskContext?.description || cardDescription,
+        updated_at: agora,
+      })
       .eq('id', proc.linked_task_id)
   }
 
   // 8b. Criar card no Kanban se ainda não existe
   if (!proc.linked_task_id && etapaEscolhidaId && pipelineId) {
     const partes = proc.partes as any
+    const cardTitle = buildProcessCardTitle({ ...proc, partes })
+    const cardClientName = buildProcessCardClientName({ ...proc, partes })
+    const cardDescription = buildProcessCardDescription({
+      processo: { ...proc, partes },
+      resumoCurto: resultado.resumo_curto,
+      proximaAcao: resultado.proxima_acao_sugerida,
+    })
 
     // Buscar admin do tenant para assigned_to
     const { data: advResp } = await supabase
@@ -422,9 +444,9 @@ Retorne exatamente este JSON:
       .insert({
         pipeline_id:    pipelineId,
         stage_id:       etapaEscolhidaId,
-        title:          proc.cliente_nome || partes?.polo_ativo || partes?.ativo || proc.numero_processo,
-        description:    resultado.resumo_curto,
-        client_name:    proc.cliente_nome || partes?.polo_ativo || partes?.ativo || '',
+        title:          cardTitle,
+        description:    cardDescription,
+        client_name:    cardClientName,
         reu:            partes?.polo_passivo || partes?.passivo || '',
         processo_1grau: proc.numero_processo,
         demanda:        proc.assunto || proc.classe_processual || '',

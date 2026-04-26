@@ -1,12 +1,12 @@
 import { NextResponse } from "next/server";
 import { createClient } from "@/lib/supabase/server";
 import { supabaseAdmin } from "@/lib/supabase/admin";
-import { isFullAccessRole, isStandardAccessRole, normalizeAccessRole } from "@/lib/permissions";
+import { isFullAccessRole, isStandardAccessRole, toCanonicalAccessRole } from "@/lib/permissions";
 
 export async function POST(req: Request) {
   try {
     const { memberId, role: rawRole, permissions, departmentId } = await req.json();
-    const role = normalizeAccessRole(rawRole);
+    const role = toCanonicalAccessRole(rawRole);
     const supabase = createClient();
 
     // 1. Verificar se o solicitante é um Admin autenticado
@@ -21,7 +21,7 @@ export async function POST(req: Request) {
       .eq("id", user.id)
       .maybeSingle();
 
-    const requesterRole = normalizeAccessRole(requesterProfile?.role || user.app_metadata?.role);
+    const requesterRole = requesterProfile?.role || user.app_metadata?.role;
     const tenantId = requesterProfile?.tenant_id || user.app_metadata?.tenant_id;
     const isSuperadmin = requesterProfile?.is_superadmin === true;
 

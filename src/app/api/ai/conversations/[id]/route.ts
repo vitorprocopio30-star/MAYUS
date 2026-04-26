@@ -62,8 +62,9 @@ export async function POST(req: NextRequest, { params }: { params: { id: string 
   if (!session) return NextResponse.json({ error: "Não autenticado." }, { status: 401 });
 
   const { role, content, kernel } = await req.json();
+  const normalizedContent = typeof content === "string" ? content : "";
 
-  if (!role || !content) {
+  if (!role || (role !== "approval" && !normalizedContent.trim())) {
     return NextResponse.json({ error: "Role e Content são obrigatórios." }, { status: 400 });
   }
 
@@ -72,7 +73,7 @@ export async function POST(req: NextRequest, { params }: { params: { id: string 
     .insert({
       conversation_id: params.id,
       role,
-      content,
+      content: normalizedContent,
       kernel: kernel || {},
     })
     .select("id, role, content, kernel, created_at")

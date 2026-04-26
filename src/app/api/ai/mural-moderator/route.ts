@@ -1,11 +1,39 @@
 import { NextResponse } from "next/server";
+import { brainAdminSupabase, getBrainAuthContext } from "@/lib/brain/server";
+import {
+  buildHeaders,
+  getLLMClient,
+  isOpenAICompatibleProvider,
+  normalizeLLMProvider,
+} from "@/lib/llm-router";
+
+export const dynamic = "force-dynamic";
+
+function extractJsonObject(raw: string) {
+  const trimmed = raw.trim();
+  const directMatch = trimmed.match(/\{[\s\S]*\}/);
+  if (!directMatch) {
+    throw new Error("A IA moderadora nao retornou JSON valido.");
+  }
+
+  return JSON.parse(directMatch[0]) as {
+    isApproved?: boolean;
+    reason?: string;
+    sentiment?: string;
+  };
+}
 
 export async function POST(req: Request) {
   try {
-    const { content, provider, apiKey, model } = await req.json();
+    const auth = await getBrainAuthContext();
+    if ("error" in auth) {
+      return NextResponse.json({ error: auth.error }, { status: auth.status });
+    }
 
-    if (!content || !provider || !apiKey) {
-      return NextResponse.json({ error: "Faltando dados de conexão para moderação." }, { status: 400 });
+    const { content, provider, model } = await req.json();
+
+    if (!content) {
+      return NextResponse.json({ error: "Conteudo ausente para moderacao." }, { status: 400 });
     }
 
     const systemPrompt = `Você é o AGENTE GUARDIÃO do mural de feedbacks da empresa. 
@@ -19,16 +47,19 @@ Retorne EXATAMENTE UM JSON válido (sem codificadores markdown, apenas as chaves
   "sentiment": "positive" | "negative" | "neutral"
 }`;
 
-    if (provider === "openai") {
-      const response = await fetch("https://api.openai.com/v1/chat/completions", {
+    const llm = await getLLMClient(brainAdminSupabase, auth.context.tenantId, "task_manager", {
+      preferredProvider: normalizeLLMProvider(provider),
+      allowNonOpenAICompatible: true,
+    });
+
+    if (isOpenAICompatibleProvider(llm.provider)) {
+      const response = await fetch(llm.endpoint, {
         method: "POST",
-        headers: {
-          "Content-Type": "application/json",
-          Authorization: `Bearer ${apiKey}`,
-        },
+        headers: buildHeaders(llm),
         body: JSON.stringify({
-          model: model || "gpt-4o-mini",
+          model: model || llm.model,
           response_format: { type: "json_object" },
+          temperature: 0,
           messages: [
             { role: "system", content: systemPrompt },
             { role: "user", content: content }
@@ -36,33 +67,36 @@ Retorne EXATAMENTE UM JSON válido (sem codificadores markdown, apenas as chaves
         }),
       });
 
-      if (!response.ok) throw new Error("Erro na OpenAI ao validar feedback.");
+      if (!response.ok) throw new Error("Erro no provedor de IA ao validar feedback.");
       
       const data = await response.json();
-      const parsed = JSON.parse(data.choices[0].message.content);
+      const parsed = extractJsonObject(String(data?.choices?.[0]?.message?.content || ""));
       return NextResponse.json(parsed);
     }
 
-    if (provider === "gemini") {
-       const payload = {
-        generationConfig: { responseMimeType: "application/json" },
-        contents: [
-           { role: "user", parts: [{ text: systemPrompt + "\n\nTEXTO:\n" + content }] }
-        ]
-      };
-
-      const aiModel = model || "gemini-1.5-flash";
-      const response = await fetch(`https://generativelanguage.googleapis.com/v1beta/models/${aiModel}:generateContent?key=${apiKey}`, {
+    if (llm.provider === "anthropic") {
+      const response = await fetch(llm.endpoint, {
         method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify(payload),
+        headers: buildHeaders(llm),
+        body: JSON.stringify({
+          model: model || llm.model,
+          system: systemPrompt,
+          max_tokens: 300,
+          temperature: 0,
+          messages: [{ role: "user", content }],
+        }),
       });
 
-      if (!response.ok) throw new Error("Erro no Gemini ao validar feedback.");
+      if (!response.ok) throw new Error("Erro no provedor de IA ao validar feedback.");
       
       const data = await response.json();
-      const reply = data.candidates[0].content.parts[0].text;
-      return NextResponse.json(JSON.parse(reply));
+      const reply = Array.isArray(data?.content)
+        ? data.content
+            .filter((item: any) => item?.type === "text")
+            .map((item: any) => item?.text || "")
+            .join("\n")
+        : "";
+      return NextResponse.json(extractJsonObject(reply));
     }
 
     // Default estrito se o provider não for um desses nativos que aceitam JSON facilmente

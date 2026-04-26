@@ -15,12 +15,17 @@ import { NextResponse } from "next/server";
 import { createClient } from "@supabase/supabase-js";
 import { createServerClient } from "@supabase/ssr";
 import { cookies } from "next/headers";
-import { ZapSignService } from "@/lib/services/zapsign";
-import { EscavadorService } from "@/lib/services/escavador";
+import { dispatchCapabilityExecution } from "@/lib/agent/capabilities/dispatcher";
+import { fetchAgentSkillByName } from "@/lib/agent/capabilities/registry";
+import { isBrainExecutiveRole } from "@/lib/brain/roles";
+import {
+  getAgentAuditLogForTenant,
+  markAgentAuditApprovalDecision,
+  markAgentAuditExecuted,
+  markAgentAuditFallback,
+} from "@/lib/agent/audit";
 
 // ─── Constantes ───────────────────────────────────────────────────────────────
-
-const APPROVER_ROLES = ["admin", "socio", "Administrador", "Sócio"] as const;
 
 // ─── Service Client (singleton no módulo) ────────────────────────────────────
 
@@ -28,6 +33,95 @@ const serviceClient = createClient(
   process.env.NEXT_PUBLIC_SUPABASE_URL!,
   process.env.SUPABASE_SERVICE_ROLE_KEY!
 );
+
+type BrainApprovalLink = {
+  id: string;
+  task_id: string;
+  run_id: string | null;
+  step_id: string | null;
+};
+
+type BrainMissionSyncInput = {
+  brainApproval: BrainApprovalLink | null;
+  approvalStatus: "approved" | "rejected";
+  approverId: string;
+  taskStatus: "completed" | "completed_with_warnings" | "failed" | "cancelled";
+  runStatus: "completed" | "completed_with_warnings" | "failed" | "cancelled";
+  stepStatus: "completed" | "failed" | "cancelled";
+  message?: string | null;
+  error?: string | null;
+  outputPayload?: Record<string, unknown>;
+  decisionNotes?: string | null;
+};
+
+async function findBrainApproval(tenantId: string, auditLogId: string): Promise<BrainApprovalLink | null> {
+  const { data, error } = await serviceClient
+    .from("brain_approvals")
+    .select("id, task_id, run_id, step_id")
+    .eq("tenant_id", tenantId)
+    .eq("approval_context->>audit_log_id", auditLogId)
+    .order("created_at", { ascending: false })
+    .limit(1)
+    .maybeSingle();
+
+  if (error) {
+    console.error("[Approve] Falha ao localizar brain_approval:", error.message);
+    return null;
+  }
+
+  return data;
+}
+
+async function syncBrainMissionFromApproval(params: BrainMissionSyncInput) {
+  if (!params.brainApproval) {
+    return;
+  }
+
+  const completedAt = new Date().toISOString();
+
+  await Promise.all([
+    serviceClient
+      .from("brain_approvals")
+      .update({
+        status: params.approvalStatus,
+        approved_by: params.approverId,
+        approved_at: completedAt,
+        decision_notes: params.decisionNotes ?? params.message ?? params.error ?? null,
+      })
+      .eq("id", params.brainApproval.id),
+    serviceClient
+      .from("brain_tasks")
+      .update({
+        status: params.taskStatus,
+        result_summary: params.message ?? null,
+        error_message: params.error ?? null,
+        completed_at: completedAt,
+      })
+      .eq("id", params.brainApproval.task_id),
+    params.brainApproval.run_id
+      ? serviceClient
+          .from("brain_runs")
+          .update({
+            status: params.runStatus,
+            summary: params.message ?? null,
+            error_message: params.error ?? null,
+            completed_at: completedAt,
+          })
+          .eq("id", params.brainApproval.run_id)
+      : Promise.resolve(),
+    params.brainApproval.step_id
+      ? serviceClient
+          .from("brain_steps")
+          .update({
+            status: params.stepStatus,
+            output_payload: params.outputPayload ?? {},
+            error_payload: params.error ? { error: params.error } : {},
+            completed_at: completedAt,
+          })
+          .eq("id", params.brainApproval.step_id)
+      : Promise.resolve(),
+  ]);
+}
 
 // ─── Handler Principal ────────────────────────────────────────────────────────
 
@@ -53,11 +147,14 @@ export async function POST(req: Request) {
       }
     );
 
-    const { data: { session } } = await authClient.auth.getSession();
-    if (!session) {
+    const {
+      data: { user },
+      error: authError,
+    } = await authClient.auth.getUser();
+    if (authError || !user) {
       return NextResponse.json({ error: "Nao autenticado." }, { status: 401 });
     }
-    const approverId = session.user.id;
+    const approverId = user.id;
 
     // ── 2. Validação do body ────────────────────────────────────────────────
     const { auditLogId, decision } = await req.json();
@@ -83,22 +180,25 @@ export async function POST(req: Request) {
       return NextResponse.json({ error: "Perfil do aprovador nao encontrado." }, { status: 403 });
     }
 
+    const tenantId = approverProfile.tenant_id as string;
+
     // ── 4. Validação de role ────────────────────────────────────────────────
-    if (!APPROVER_ROLES.includes(approverProfile.role as typeof APPROVER_ROLES[number])) {
+    if (!isBrainExecutiveRole(approverProfile.role)) {
       return NextResponse.json({
-        error: `Apenas perfis admin ou socio podem aprovar acoes. Perfil atual: "${approverProfile.role}".`,
+        error: `Apenas perfis executivos podem aprovar acoes. Perfil atual: "${approverProfile.role}".`,
       }, { status: 403 });
     }
 
     // ── 5. Fetch do audit log com vínculo de tenant ─────────────────────────
     // Filtra por tenant_id: impossibilita aprovar ações de outro tenant
     // mesmo que o aprovador conheça o auditLogId.
-    const { data: auditLog } = await serviceClient
-      .from("agent_audit_logs")
-      .select("*")
-      .eq("id", auditLogId)
-      .eq("tenant_id", approverProfile.tenant_id)
-      .single();
+    const auditLog = await getAgentAuditLogForTenant({
+      auditLogId,
+      tenantId,
+      client: serviceClient,
+    });
+
+    const brainApproval = await findBrainApproval(tenantId, auditLogId);
 
     if (!auditLog) {
       // 404 — não revela se o registro existe em outro tenant
@@ -139,24 +239,20 @@ export async function POST(req: Request) {
     // ── 9. Update atômico com guard de race condition ───────────────────────
     // .eq("approval_status", "pending") garante que se dois aprovadores
     // chegarem simultaneamente, apenas um terá linhas afetadas.
-    const { data: updateResult, error: updateError } = await serviceClient
-      .from("agent_audit_logs")
-      .update({
-        approval_status: decision,
-        approved_by: approverId,
-        approved_at: new Date().toISOString(),
-      })
-      .eq("id", auditLogId)
-      .eq("approval_status", "pending") // guard atômico de race condition
-      .select("id");
+    const decisionResult = await markAgentAuditApprovalDecision({
+      auditLogId,
+      decision,
+      approverId,
+      client: serviceClient,
+    });
 
-    if (updateError) {
-      console.error("[Approve] Falha ao atualizar audit log:", updateError.message);
+    if (decisionResult.error) {
+      console.error("[Approve] Falha ao atualizar audit log:", decisionResult.error);
       return NextResponse.json({ error: "Erro interno ao registrar decisao." }, { status: 500 });
     }
 
     // 0 linhas afetadas = outro aprovador chegou primeiro (race condition)
-    if (!updateResult || updateResult.length === 0) {
+    if (!decisionResult.updated) {
       return NextResponse.json({
         error: "Acao ja processada por outro aprovador simultaneamente.",
         code: "CONCURRENT_APPROVAL",
@@ -165,6 +261,20 @@ export async function POST(req: Request) {
 
     // ── 10. Rejeição — encerra aqui ─────────────────────────────────────────
     if (decision === "rejected") {
+      await syncBrainMissionFromApproval({
+        brainApproval,
+        approvalStatus: "rejected",
+        approverId,
+        taskStatus: "cancelled",
+        runStatus: "cancelled",
+        stepStatus: "cancelled",
+        message: "Acao rejeitada pelo aprovador.",
+        outputPayload: {
+          status: "rejected",
+          auditLogId,
+        },
+      });
+
       return NextResponse.json({
         status: "rejected",
         message: "Acao rejeitada e registrada com sucesso.",
@@ -185,6 +295,21 @@ export async function POST(req: Request) {
 
     if (!pendingPayload) {
       console.error("[Approve] pending_execution_payload ausente no audit log:", auditLogId);
+
+      await syncBrainMissionFromApproval({
+        brainApproval,
+        approvalStatus: "approved",
+        approverId,
+        taskStatus: "failed",
+        runStatus: "failed",
+        stepStatus: "failed",
+        error: "Payload de execucao nao encontrado. Acao aprovada mas nao executada.",
+        outputPayload: {
+          status: "approved_not_executed",
+          auditLogId,
+        },
+      });
+
       return NextResponse.json({
         error: "Payload de execucao nao encontrado. Acao aprovada mas nao executada.",
         status: "approved_not_executed",
@@ -199,144 +324,143 @@ export async function POST(req: Request) {
     // Query separada — audit log não armazena handler_type diretamente.
     // Isolamento de tenant: garante que a skill pertence ao tenant do aprovador.
 
-    const { data: skillMeta } = await serviceClient
-      .from("agent_skills")
-      .select("handler_type")
-      .eq("tenant_id", approverProfile.tenant_id)
-      .eq("name", skillName)
-      .single();
-
+    const skillMeta = await fetchAgentSkillByName({ tenantId, name: skillName });
     const handlerType = skillMeta?.handler_type ?? null;
 
     // ── 13. Despacho por handler_type ───────────────────────────────────────
     // Nova skill no banco com handler_type existente = funciona sem código.
     // handler_type null → "approved" sem executor server-side.
 
-    if (handlerType === "zapsign_contract") {
-      try {
-        const tenantId = approverProfile.tenant_id as string;
+    const dispatchResult = await dispatchCapabilityExecution({
+      handlerType,
+      capabilityName: skillName,
+      tenantId,
+      userId: approverId,
+      entities,
+      auditLogId,
+      brainContext: brainApproval
+        ? {
+            taskId: brainApproval.task_id,
+            runId: brainApproval.run_id,
+            stepId: brainApproval.step_id,
+            sourceModule: "mayus",
+          }
+        : undefined,
+    });
 
-        const { data: settings } = await serviceClient
-          .from("tenant_settings")
-          .select("ai_features")
-          .eq("tenant_id", tenantId)
-          .single();
-
-        const config = settings?.ai_features || {};
-
-        const { data: zapIntegration } = await serviceClient
-          .from("tenant_integrations")
-          .select("api_key")
-          .eq("tenant_id", tenantId)
-          .eq("provider", "zapsign")
-          .single();
-
-        if (!zapIntegration?.api_key) {
-          await serviceClient
-            .from("agent_audit_logs")
-            .update({ status: "fallback_triggered", approved_by: approverId, approved_at: new Date().toISOString() })
-            .eq("id", auditLogId);
-
-          return NextResponse.json({
-            error: "Integracao ZapSign nao configurada (api_key ausente). Acao aprovada mas nao executada.",
-            status: "approved_not_executed",
-            auditLogId,
-          }, { status: 500 });
-        }
-
-        const zapsignResult = await ZapSignService.createDocument({
-          apiToken: zapIntegration.api_key,
-          docName:  `Contrato - ${entities.signer_name ?? "Cliente"}`,
-          signers: [{
-            name:  entities.signer_name  ?? "",
-            email: entities.signer_email ?? "",
-          }],
-          lang: "pt-br",
-        });
-
-        await serviceClient
-          .from("agent_audit_logs")
-          .update({
-            payload_executed: {
-              idempotencyKey,
-              skill:        skillName,
-              handler_type: handlerType,                          // rastreabilidade
-              zapsign_document_token: zapsignResult.token,
-              sign_url:     zapsignResult.signers?.[0]?.sign_url,
-              executed_at:  new Date().toISOString(),
-            },
-          })
-          .eq("id", auditLogId);
-
-        return NextResponse.json({
-          status:     "executed",
-          message:    `Contrato gerado com sucesso para ${entities.signer_name}.`,
-          signUrl:    zapsignResult.signers?.[0]?.sign_url,
+    if (dispatchResult.status === "unsupported") {
+      await syncBrainMissionFromApproval({
+        brainApproval,
+        approvalStatus: "approved",
+        approverId,
+        taskStatus: "completed_with_warnings",
+        runStatus: "completed_with_warnings",
+        stepStatus: "completed",
+        message: dispatchResult.reply,
+        outputPayload: {
+          ...(dispatchResult.outputPayload || {}),
+          status: "approved",
           auditLogId,
-          approvedBy: approverId,
-        });
+          handler_type: handlerType,
+        },
+      });
 
-      } catch (err: any) {
-        console.error("[Approve] Erro na execucao ZapSign (handler_type=zapsign_contract):", {
-          message:  err.message,
-          status:   err.status,
-          response: err.response,
-          body:     JSON.stringify(err),
-        });
-        return NextResponse.json({
-          error:  "Falha na execucao da skill apos aprovacao.",
+      return NextResponse.json({
+        status: "approved",
+        message: dispatchResult.reply,
+        auditLogId,
+        approvedBy: approverId,
+      });
+    }
+
+    if (dispatchResult.status === "blocked") {
+      await syncBrainMissionFromApproval({
+        brainApproval,
+        approvalStatus: "approved",
+        approverId,
+        taskStatus: "failed",
+        runStatus: "failed",
+        stepStatus: "failed",
+        error: dispatchResult.reply,
+        outputPayload: {
+          ...(dispatchResult.outputPayload || {}),
           status: "approved_not_executed",
           auditLogId,
-        }, { status: 500 });
-      }
-    }
+          handler_type: handlerType,
+        },
+      });
 
-    if (handlerType === "escavador_monitor") {
-      try {
-        const tenantId = approverProfile.tenant_id as string;
-        const { data: escavadorIntegration } = await serviceClient
-          .from("tenant_integrations")
-          .select("api_key")
-          .eq("tenant_id", tenantId)
-          .eq("provider", "escavador")
-          .single();
-
-        if (!escavadorIntegration?.api_key) {
-          await serviceClient.from("agent_audit_logs").update({ status: "fallback_triggered", approved_by: approverId, approved_at: new Date().toISOString() }).eq("id", auditLogId);
-          return NextResponse.json({ error: "Integração Escavador não configurada.", status: "approved_not_executed", auditLogId }, { status: 500 });
-        }
-
-        const monitor = await EscavadorService.criarMonitoramento(escavadorIntegration.api_key, entities.numero_cnj, entities.frequencia);
-
-        if (monitor && monitor.id) {
-           await serviceClient.from("monitored_processes").update({ escavador_monitoramento_id: String(monitor.id) }).eq("numero_processo", entities.numero_cnj).eq("tenant_id", tenantId);
-        }
-
-        await serviceClient.from("agent_audit_logs").update({
-          payload_executed: { idempotencyKey, skill: skillName, handler_type: handlerType, escavador_monitoramento_id: monitor?.id, executed_at: new Date().toISOString() }
-        }).eq("id", auditLogId);
-
-        return NextResponse.json({ status: "executed", message: "Monitoramento criado com sucesso no Escavador.", auditLogId, approvedBy: approverId });
-      } catch (err: any) {
-        console.error("[Approve] Erro na execucao Escavador:", err);
-        return NextResponse.json({ error: err.message || "Falha na execucao da skill", status: "approved_not_executed", auditLogId }, { status: 500 });
-      }
-    }
-    
-    if (handlerType === "kanban_import_oab") {
       return NextResponse.json({
-        error: "Importação por OAB via IA está temporariamente bloqueada por proteção de custos. Use o painel de monitoramento com confirmação explícita.",
+        error: dispatchResult.reply,
         status: "approved_not_executed",
         auditLogId,
       }, { status: 403 });
     }
 
-    // handler_type null ou desconhecido — skill aprovada, sem executor server-side
+    if (dispatchResult.status === "failed") {
+      await markAgentAuditFallback({
+        auditLogId,
+        approverId,
+        client: serviceClient,
+      });
+
+      await syncBrainMissionFromApproval({
+        brainApproval,
+        approvalStatus: "approved",
+        approverId,
+        taskStatus: "failed",
+        runStatus: "failed",
+        stepStatus: "failed",
+        error: dispatchResult.reply,
+        outputPayload: {
+          ...(dispatchResult.outputPayload || {}),
+          status: "approved_not_executed",
+          auditLogId,
+          handler_type: handlerType,
+        },
+      });
+
+      return NextResponse.json({
+        error: dispatchResult.reply,
+        status: "approved_not_executed",
+        auditLogId,
+      }, { status: 500 });
+    }
+
+    await markAgentAuditExecuted({
+      auditLogId,
+      payloadExecuted: {
+        idempotencyKey,
+        skill: skillName,
+        handler_type: handlerType,
+        executed_at: new Date().toISOString(),
+        ...(dispatchResult.outputPayload || {}),
+      },
+      client: serviceClient,
+    });
+
+    await syncBrainMissionFromApproval({
+      brainApproval,
+      approvalStatus: "approved",
+      approverId,
+      taskStatus: "completed",
+      runStatus: "completed",
+      stepStatus: "completed",
+      message: dispatchResult.reply,
+      outputPayload: {
+        ...(dispatchResult.outputPayload || {}),
+        status: "executed",
+        auditLogId,
+        handler_type: handlerType,
+      },
+    });
+
     return NextResponse.json({
-      status:     "approved",
-      message:    `Acao "${skillName}" aprovada e registrada. handler_type "${handlerType ?? "nulo"}" sem execucao server-side.`,
+      status: "executed",
+      message: dispatchResult.reply,
       auditLogId,
       approvedBy: approverId,
+      ...(dispatchResult.data && typeof dispatchResult.data === "object" ? (dispatchResult.data as Record<string, unknown>) : {}),
     });
 
 

@@ -3,6 +3,7 @@ import { createClient } from '@supabase/supabase-js'
 import { createServerClient } from '@supabase/ssr'
 import { cookies } from 'next/headers'
 import { escavadorFetch, checkBudget } from '@/lib/services/escavador-client'
+import { requireTenantApiKey } from '@/lib/integrations/server'
 
 const adminSupabase = createClient(
   process.env.NEXT_PUBLIC_SUPABASE_URL!,
@@ -31,12 +32,10 @@ async function getAuthContext(req: NextRequest) {
     .from('profiles').select('tenant_id').eq('id', user.id).single()
   if (!profile?.tenant_id) return null
 
-  const { data: integration } = await adminSupabase
-    .from('tenant_integrations').select('api_key')
-    .eq('tenant_id', profile.tenant_id).eq('provider', 'escavador').single()
-  if (!integration?.api_key) return null
+  const { apiKey } = await requireTenantApiKey(profile.tenant_id, 'escavador')
+  if (!apiKey) return null
 
-  return { tenantId: profile.tenant_id, apiKey: integration.api_key }
+  return { tenantId: profile.tenant_id, apiKey }
 }
 
 // POST — solicita geração do resumo IA

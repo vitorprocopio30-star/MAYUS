@@ -9,6 +9,7 @@
  */
 
 import { SupabaseClient } from '@supabase/supabase-js'
+import { listTenantIntegrationsResolved } from '@/lib/integrations/server'
 
 // ─── Casos de uso ────────────────────────────────────────────────────────────
 
@@ -22,6 +23,39 @@ export type LLMUseCase =
   | 'sdr_whatsapp'
 
 export type LLMProvider = 'openrouter' | 'anthropic' | 'openai' | 'google' | 'groq'
+
+export type LLMProviderInput = LLMProvider | 'gemini' | 'grok'
+
+const OPENAI_COMPATIBLE_PROVIDERS: readonly LLMProvider[] = ['openrouter', 'openai', 'google', 'groq']
+const DEFAULT_PROVIDER_PRIORITY: readonly LLMProvider[] = ['openrouter', 'openai', 'google', 'groq', 'anthropic']
+
+export function normalizeLLMProvider(provider: string | null | undefined): LLMProvider | null {
+  const normalized = String(provider || '').trim().toLowerCase()
+
+  switch (normalized) {
+    case 'openrouter':
+    case 'anthropic':
+    case 'openai':
+    case 'google':
+    case 'groq':
+      return normalized
+    case 'gemini':
+      return 'google'
+    case 'grok':
+      return 'groq'
+    default:
+      return null
+  }
+}
+
+export function isOpenAICompatibleProvider(provider: LLMProvider): boolean {
+  return OPENAI_COMPATIBLE_PROVIDERS.includes(provider)
+}
+
+interface GetLLMClientOptions {
+  preferredProvider?: string | null
+  allowNonOpenAICompatible?: boolean
+}
 
 // ─── Tabela de modelos por provedor e caso de uso ────────────────────────────
 
@@ -73,6 +107,10 @@ const MODELS: Record<LLMProvider, Record<LLMUseCase, string>> = {
   },
 }
 
+export function getDefaultModelForUseCase(provider: LLMProvider, useCase: LLMUseCase): string {
+  return MODELS[provider][useCase]
+}
+
 // ─── Endpoints por provedor ───────────────────────────────────────────────────
 
 const ENDPOINTS: Record<LLMProvider, string> = {
@@ -108,31 +146,38 @@ export interface LLMClient {
 export async function getLLMClient(
   supabase: SupabaseClient,
   tenantId: string,
-  useCase: LLMUseCase
+  useCase: LLMUseCase,
+  options: GetLLMClientOptions = {}
 ): Promise<LLMClient> {
-  // 1. Buscar todas as integrações de IA do tenant
-  const { data: integrations } = await supabase
-    .from('tenant_integrations')
-    .select('provider, api_key, instance_name, status')
-    .eq('tenant_id', tenantId)
-    .in('provider', ['openrouter', 'anthropic', 'openai', 'google', 'groq'])
+  const requestedProvider = normalizeLLMProvider(options.preferredProvider)
+  const candidateProviders = options.allowNonOpenAICompatible
+    ? [...DEFAULT_PROVIDER_PRIORITY]
+    : [...OPENAI_COMPATIBLE_PROVIDERS]
 
-  const byProvider = Object.fromEntries(
-    (integrations ?? [])
-      .filter((integration) => {
-        const apiKey = String(integration.api_key || '').trim()
-        const status = String((integration as { status?: string | null }).status || '').trim().toLowerCase()
-        return Boolean(apiKey) && (!status || status === 'connected')
-      })
-      .map((integration) => {
-        const apiKey = String(integration.api_key || '').trim()
-        const modelOverride = String((integration as { instance_name?: string | null }).instance_name || '').trim() || null
-        return [integration.provider as LLMProvider, { apiKey, modelOverride }]
-      })
-  ) as Partial<Record<LLMProvider, { apiKey: string; modelOverride: string | null }>>
+  // 1. Buscar todas as integrações de IA do tenant
+  const integrations = await listTenantIntegrationsResolved(tenantId, ['openrouter', 'anthropic', 'openai', 'google', 'gemini', 'groq', 'grok'])
+
+  const byProvider = (integrations ?? []).reduce((acc, integration) => {
+    const provider = normalizeLLMProvider(integration.provider)
+    const apiKey = String(integration.api_key || '').trim()
+    const status = String((integration as { status?: string | null }).status || '').trim().toLowerCase()
+
+    if (!provider || !candidateProviders.includes(provider) || !apiKey || (status && status !== 'connected')) {
+      return acc
+    }
+
+    const modelOverride = String((integration as { instance_name?: string | null }).instance_name || '').trim() || null
+    const shouldOverrideExisting = !acc[provider] || integration.provider === provider
+
+    if (shouldOverrideExisting) {
+      acc[provider] = { apiKey, modelOverride }
+    }
+
+    return acc
+  }, {} as Partial<Record<LLMProvider, { apiKey: string; modelOverride: string | null }>>)
 
   // 2. Selecionar provedor por prioridade (banco → env vars)
-  const priority: LLMProvider[] = ['openrouter', 'anthropic', 'openai', 'google', 'groq']
+  const priority = DEFAULT_PROVIDER_PRIORITY.filter((provider) => candidateProviders.includes(provider))
 
   const envKeys: Partial<Record<LLMProvider, string | undefined>> = {
     openrouter: process.env.OPENROUTER_API_KEY,
@@ -146,13 +191,26 @@ export async function getLLMClient(
   let selectedKey: string | null = null
   let selectedModelOverride: string | null = null
 
+  if (requestedProvider && candidateProviders.includes(requestedProvider)) {
+    if (byProvider[requestedProvider]?.apiKey) {
+      selectedProvider = requestedProvider
+      selectedKey = byProvider[requestedProvider]!.apiKey
+      selectedModelOverride = byProvider[requestedProvider]!.modelOverride
+    } else if (envKeys[requestedProvider]) {
+      selectedProvider = requestedProvider
+      selectedKey = envKeys[requestedProvider]!
+    }
+  }
+
   // Prioridade 1: chave do próprio tenant no banco
-  for (const p of priority) {
-    if (byProvider[p]?.apiKey) {
-      selectedProvider = p
-      selectedKey = byProvider[p]!.apiKey
-      selectedModelOverride = byProvider[p]!.modelOverride
-      break
+  if (!selectedProvider) {
+    for (const p of priority) {
+      if (byProvider[p]?.apiKey) {
+        selectedProvider = p
+        selectedKey = byProvider[p]!.apiKey
+        selectedModelOverride = byProvider[p]!.modelOverride
+        break
+      }
     }
   }
 
@@ -193,6 +251,15 @@ export async function getLLMClient(
  * Monta os headers HTTP para a chamada à API do provedor selecionado.
  */
 export function buildHeaders(client: LLMClient): Record<string, string> {
+  if (client.provider === 'anthropic') {
+    return {
+      'x-api-key': client.apiKey,
+      'anthropic-version': '2023-06-01',
+      'Content-Type': 'application/json',
+      ...client.extraHeaders,
+    }
+  }
+
   return {
     'Authorization': `Bearer ${client.apiKey}`,
     'Content-Type':  'application/json',

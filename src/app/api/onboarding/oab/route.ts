@@ -1,5 +1,7 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { createClient } from '@supabase/supabase-js'
+import { createServerClient } from '@supabase/ssr'
+import { cookies } from 'next/headers'
 import { z } from 'zod'
 
 const supabase = createClient(
@@ -15,10 +17,23 @@ const OnboardingOabSchema = z.object({
 
 export async function POST(req: NextRequest) {
   try {
-    const token = req.headers.get('authorization')?.replace(/^Bearer\s+/i, '').trim()
-    if (!token) return NextResponse.json({ error: 'Não autenticado.' }, { status: 401 })
+    const cookieStore = await cookies()
+    const authClient = createServerClient(
+      process.env.NEXT_PUBLIC_SUPABASE_URL!,
+      process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY!,
+      {
+        cookies: {
+          getAll() { return cookieStore.getAll() },
+          setAll(cookiesToSet) {
+            try {
+              cookiesToSet.forEach(({ name, value, options }) => cookieStore.set(name, value, options))
+            } catch {}
+          },
+        },
+      }
+    )
 
-    const { data: { user }, error: authError } = await supabase.auth.getUser(token)
+    const { data: { user }, error: authError } = await authClient.auth.getUser()
     if (authError || !user) return NextResponse.json({ error: 'Não autenticado.' }, { status: 401 })
 
     const rawBody = await req.json().catch(() => null)
@@ -47,12 +62,17 @@ export async function POST(req: NextRequest) {
       .from('tenants').update({ oab_numero, oab_estado, updated_at: now }).eq('id', profile.tenant_id)
     if (tenantUpdateError) return NextResponse.json({ error: 'Erro interno.' }, { status: 500 })
 
-    const { error: auditError } = await supabase.from('agent_audit_logs').insert({
-      action: 'onboarding_oab', status: 'queued',
-      tenant_id: profile.tenant_id, user_id: user.id,
-      payload_executed: { skill: 'importar_processos_oab', oab_numero, oab_estado },
+    const { error: auditError } = await supabase.from('system_event_logs').insert({
+      source: 'onboarding',
+      provider: 'oab',
+      event_name: 'onboarding_oab',
+      status: 'queued',
+      tenant_id: profile.tenant_id,
+      user_id: user.id,
+      payload: { skill: 'importar_processos_oab', oab_numero, oab_estado },
       created_at: now,
     })
+    if (auditError) console.error('[ONBOARDING_OAB] Erro audit:', auditError.message)
     
     return NextResponse.json({ success: true, message: 'Importação iniciada.' }, { status: 200 })
   } catch (err) {

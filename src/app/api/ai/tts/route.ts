@@ -2,6 +2,9 @@ import { NextRequest, NextResponse } from "next/server";
 import { createServerClient } from "@supabase/ssr";
 import { createClient } from "@supabase/supabase-js";
 import { cookies } from "next/headers";
+import { getTenantIntegrationResolved, requireTenantApiKey } from "@/lib/integrations/server";
+
+export const dynamic = "force-dynamic";
 
 const adminSupabase = createClient(
   process.env.NEXT_PUBLIC_SUPABASE_URL!,
@@ -69,21 +72,16 @@ export async function GET(req: NextRequest) {
 
     // 3. Execução condicional: OpenAI
     if (provider === "openai") {
-      const { data: integration } = await adminSupabase
-        .from("tenant_integrations")
-        .select("api_key")
-        .eq("tenant_id", tenantId)
-        .eq("provider", "openai")
-        .single();
+      const { apiKey } = await requireTenantApiKey(tenantId, "openai");
 
-      if (!integration?.api_key) {
+      if (!apiKey) {
         return NextResponse.json({ error: "OpenAI API Key não configurada." }, { status: 400 });
       }
 
       const response = await fetch("https://api.openai.com/v1/audio/speech", {
         method: "POST",
         headers: {
-          Authorization: `Bearer ${integration.api_key}`,
+          Authorization: `Bearer ${apiKey}`,
           "Content-Type": "application/json",
         },
         body: JSON.stringify({
@@ -114,12 +112,7 @@ export async function GET(req: NextRequest) {
 
       // Se não houver no ambiente, busca no Banco Integration (Tenant-specific)
       if (!apiKey || !voiceId) {
-        const { data: integration } = await adminSupabase
-          .from("tenant_integrations")
-          .select("api_key, instance_name")
-          .eq("tenant_id", tenantId)
-          .eq("provider", "elevenlabs")
-          .maybeSingle();
+        const integration = await getTenantIntegrationResolved(tenantId, "elevenlabs");
         
         if (integration?.api_key) apiKey = integration.api_key;
         if (integration?.instance_name) voiceId = integration.instance_name;

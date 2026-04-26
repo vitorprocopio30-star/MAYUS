@@ -1,5 +1,6 @@
 import { createClient } from '@supabase/supabase-js'
 import { escavadorFetch } from './escavador-client'
+import { requireTenantApiKey } from '@/lib/integrations/server'
 
 const adminSupabase = createClient(
   process.env.NEXT_PUBLIC_SUPABASE_URL!,
@@ -7,10 +8,8 @@ const adminSupabase = createClient(
 )
 
 async function getApiKey(tenantId: string): Promise<string | null> {
-  const { data } = await adminSupabase
-    .from('tenant_integrations').select('api_key')
-    .eq('tenant_id', tenantId).eq('provider', 'escavador').single()
-  return data?.api_key ?? null
+  const { apiKey } = await requireTenantApiKey(tenantId, 'escavador')
+  return apiKey
 }
 
 /**

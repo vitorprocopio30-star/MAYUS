@@ -1,6 +1,8 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { createClient } from '@supabase/supabase-js'
 import { EscavadorService } from '@/lib/services/escavador'
+import { requireTenantApiKey } from '@/lib/integrations/server'
+import { pickExplicitClientName } from '@/lib/juridico/process-card-context'
 
 export const maxDuration = 60
 
@@ -35,14 +37,7 @@ export async function POST(req: NextRequest) {
   if (!tenantId)
     return NextResponse.json({ error: 'Tenant not found' }, { status: 400 })
 
-  const { data: integration } = await adminSupabase
-    .from('tenant_integrations')
-    .select('api_key')
-    .eq('tenant_id', tenantId)
-    .eq('provider', 'escavador')
-    .single()
-
-  const apiKey = integration?.api_key
+  const { apiKey } = await requireTenantApiKey(tenantId, 'escavador')
   if (!apiKey)
     return NextResponse.json({ error: 'Escavador não configurado' }, { status: 400 })
 
@@ -136,6 +131,7 @@ function normalizarProcesso(p: any) {
       p.unidade_origem?.tribunal_sigla ?? fonteTrib?.tribunal?.sigla ?? '—',
     assunto:
       capa.assunto_principal_normalizado?.nome ?? capa.assunto ?? '—',
+    cliente_nome: pickExplicitClientName(p),
     polo_ativo: poloAtivo,
     polo_passivo: poloPassivo,
     ultima_movimentacao:

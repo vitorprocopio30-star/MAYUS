@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { createClient } from '@supabase/supabase-js'
 import { EscavadorService } from '@/lib/services/escavador'
+import { requireTenantApiKey } from '@/lib/integrations/server'
 
 const adminSupabase = createClient(
   process.env.NEXT_PUBLIC_SUPABASE_URL!,
@@ -51,18 +52,11 @@ export async function POST(req: NextRequest) {
       return NextResponse.json({ ...cached, fromCache: true })
     }
 
-    const { data: integration } = await adminSupabase
-      .from('tenant_integrations')
-      .select('api_key')
-      .eq('tenant_id', profile.tenant_id)
-      .eq('provider', 'escavador')
-      .single()
+    const { apiKey } = await requireTenantApiKey(profile.tenant_id, 'escavador')
 
-    if (!integration?.api_key) {
+    if (!apiKey) {
       return NextResponse.json({ error: 'Integração com Escavador não configurada.' }, { status: 400 })
     }
-
-    const apiKey = integration.api_key
     let resultado = null
 
     if (tipo === 'numero') {

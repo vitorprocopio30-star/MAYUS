@@ -42,10 +42,14 @@ export async function PATCH(req: NextRequest, { params }: { params: { id: string
       .from('tenants').update({ status: parsed.data.status, updated_at: now }).eq('id', params.id)
     if (updateError) return NextResponse.json({ error: 'Erro interno.' }, { status: 500 })
 
-    const { error: auditError } = await supabase.from('agent_audit_logs').insert({
-      action: 'admin_status_change', status: 'success',
+    const { error: auditError } = await supabase.from('system_event_logs').insert({
+      source: 'admin',
+      provider: 'admin',
+      event_name: 'admin_status_change',
+      status: 'success',
       tenant_id: params.id,
-      payload_executed: { novo_status: parsed.data.status, alterado_por: auth.user.id },
+      user_id: auth.user.id,
+      payload: { novo_status: parsed.data.status, alterado_por: auth.user.id },
       created_at: now,
     })
     if (auditError) console.error('[ADMIN_TENANT_STATUS] Erro audit:', auditError.message)

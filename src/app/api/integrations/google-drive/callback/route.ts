@@ -1,7 +1,7 @@
 import { NextResponse } from "next/server";
 import { cookies } from "next/headers";
 import { getTenantSession } from "@/lib/auth/get-tenant-session";
-import { supabaseAdmin } from "@/lib/supabase/admin";
+import { upsertTenantIntegrationSecure, getTenantIntegrationResolved } from "@/lib/integrations/server";
 import {
   exchangeGoogleDriveCode,
   getGoogleDriveIntegrationMetadata,
@@ -43,16 +43,7 @@ export async function GET(request: Request) {
     }
 
     const { tenantId } = await getTenantSession({ requireFullAccess: true });
-    const { data: existingIntegration, error: integrationError } = await supabaseAdmin
-      .from("tenant_integrations")
-      .select("id, api_key, metadata")
-      .eq("tenant_id", tenantId)
-      .eq("provider", GOOGLE_DRIVE_PROVIDER)
-      .maybeSingle();
-
-    if (integrationError) {
-      throw integrationError;
-    }
+    const existingIntegration = await getTenantIntegrationResolved(tenantId, GOOGLE_DRIVE_PROVIDER);
 
     const tokenData = await exchangeGoogleDriveCode(request, code);
     const refreshToken = tokenData.refreshToken || existingIntegration?.api_key || null;
@@ -70,29 +61,13 @@ export async function GET(request: Request) {
       token_type: tokenData.tokenType || currentMetadata.token_type || null,
     });
 
-    const payload = {
-      tenant_id: tenantId,
+    await upsertTenantIntegrationSecure({
+      tenantId,
       provider: GOOGLE_DRIVE_PROVIDER,
-      api_key: refreshToken,
+      apiKey: refreshToken,
       status: "connected",
       metadata,
-    };
-
-    if (existingIntegration?.id) {
-      const { error: updateError } = await supabaseAdmin
-        .from("tenant_integrations")
-        .update(payload)
-        .eq("id", existingIntegration.id);
-
-      if (updateError) {
-        throw updateError;
-      }
-    } else {
-      const { error: insertError } = await supabaseAdmin.from("tenant_integrations").insert([payload]);
-      if (insertError) {
-        throw insertError;
-      }
-    }
+    });
 
     return NextResponse.redirect(buildIntegrationsRedirect(request, "connected"));
   } catch (error: any) {

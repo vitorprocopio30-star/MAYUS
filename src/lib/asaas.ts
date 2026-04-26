@@ -3,6 +3,8 @@
  * Centraliza a comunicação com a API do Asaas (v3).
  */
 
+import { requireTenantApiKey } from '@/lib/integrations/server';
+
 export interface AsaasPaymentParams {
   customer: string;
   billingType: 'BOLETO' | 'CREDIT_CARD' | 'PIX' | 'UNDEFINED';
@@ -107,19 +109,13 @@ export class AsaasService {
    * Busca a chave de API do Asaas para um tenant específico na tabela tenant_integrations.
    */
   static async getApiKey(tenantId: string, supabase: any): Promise<string | null> {
-    const { data, error } = await supabase
-      .from('tenant_integrations')
-      .select('api_key')
-      .eq('tenant_id', tenantId)
-      .eq('provider', 'asaas')
-      .maybeSingle();
-
-    if (error) {
+    try {
+      const { apiKey } = await requireTenantApiKey(tenantId, 'asaas');
+      return apiKey;
+    } catch (error: any) {
       console.error('[ASAAS] Erro ao buscar api_key para tenant:', tenantId, error.message);
       return null;
     }
-
-    return data?.api_key ?? null;
   }
 
   /**

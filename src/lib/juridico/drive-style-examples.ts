@@ -1,4 +1,4 @@
-import { getTenantGoogleDriveContext } from '@/lib/services/google-drive-tenant';
+import { buildTenantGoogleDriveServiceRequest, getTenantGoogleDriveContext } from '@/lib/services/google-drive-tenant';
 import {
   downloadGoogleDriveFile,
   isGoogleDriveFolder,
@@ -94,11 +94,6 @@ async function extractDocumentText(name: string, mimeType: string | null | undef
   return '';
 }
 
-function buildDriveServiceRequest() {
-  const baseUrl = String(process.env.NEXT_PUBLIC_SITE_URL || 'https://mayus-premium-pro.vercel.app').trim() || 'https://mayus-premium-pro.vercel.app';
-  return new Request(`${baseUrl.replace(/\/+$/, '')}/api/integrations/google-drive/callback`);
-}
-
 function findStyleFolder(children: DriveFileRecord[]) {
   const folders = children.filter((item) => isGoogleDriveFolder(item as Pick<DriveFileRecord, 'mimeType'>));
   const normalizedFolders = folders.map((folder) => ({ folder, normalized: normalizeText(folder.name || '') }));
@@ -147,7 +142,7 @@ export async function loadDriveStyleReferencePacket(params: {
   const warnings: string[] = [];
 
   try {
-    const driveContext = await getTenantGoogleDriveContext(buildDriveServiceRequest(), params.tenantId);
+    const driveContext = await getTenantGoogleDriveContext(buildTenantGoogleDriveServiceRequest(), params.tenantId);
     const rootFolderId = driveContext.metadata.drive_root_folder_id;
     if (!rootFolderId) {
       return {

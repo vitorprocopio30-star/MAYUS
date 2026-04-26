@@ -2,6 +2,7 @@ import { NextRequest, NextResponse } from 'next/server'
 import { createClient } from '@supabase/supabase-js'
 import { escavadorFetch } from '@/lib/services/escavador-client'
 import { criarMonitoramentoProcesso, solicitarResumoProcesso } from '@/lib/services/monitoramento-processos'
+import { requireTenantApiKey } from '@/lib/integrations/server'
 
 const adminSupabase = createClient(
   process.env.NEXT_PUBLIC_SUPABASE_URL!,
@@ -34,14 +35,9 @@ export async function POST(req: NextRequest) {
   if (!tenantId)
     return NextResponse.json({ error: 'Tenant not found' }, { status: 400 })
 
-  const { data: integration } = await adminSupabase
-    .from('tenant_integrations')
-    .select('api_key')
-    .eq('tenant_id', tenantId)
-    .eq('provider', 'escavador')
-    .single()
+  const { apiKey } = await requireTenantApiKey(tenantId, 'escavador')
 
-  if (!integration?.api_key)
+  if (!apiKey)
     return NextResponse.json(
       { error: 'Escavador não configurado' },
       { status: 400 }
@@ -61,7 +57,7 @@ export async function POST(req: NextRequest) {
   try {
     dadosCompletos = await escavadorFetch(
       `/processos/numero_cnj/${cnj_encoded}`,
-      integration.api_key,
+      apiKey,
       tenantId
     )
   } catch (e) {
@@ -105,7 +101,7 @@ export async function POST(req: NextRequest) {
   // 3. Ativa monitoramento via API V2
   const monitoramento = await criarMonitoramentoProcesso({
     tenantId,
-    apiKey: integration.api_key,
+    apiKey,
     numeroProcesso: numero_cnj,
     frequencia: 'SEMANAL'
   })
@@ -139,7 +135,7 @@ export async function POST(req: NextRequest) {
     .eq('numero_cnj', numero_cnj)
 
   const resumoSolicitado = monitoramentoId
-    ? await solicitarResumoProcesso(tenantId, integration.api_key, numero_cnj)
+    ? await solicitarResumoProcesso(tenantId, apiKey, numero_cnj)
     : false
 
   // Dispara organizador IA em background

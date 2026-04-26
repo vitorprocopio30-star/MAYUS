@@ -14,6 +14,7 @@ import { NextRequest, NextResponse } from "next/server";
 import { createClient } from "@supabase/supabase-js";
 import { createServerClient } from "@supabase/ssr";
 import { cookies } from "next/headers";
+import { ensureDefaultAgentSkills } from "@/lib/agent/capabilities/registry";
 
 // ─── Constantes ───────────────────────────────────────────────────────────────
 
@@ -76,9 +77,11 @@ export async function GET() {
       return NextResponse.json({ error: "Sem permissao para acessar o Skill Registry." }, { status: 403 });
     }
 
+    await ensureDefaultAgentSkills(profile.tenant_id);
+
     const { data: skills, error } = await serviceClient
       .from("agent_skills")
-      .select("id, name, description, risk_level, is_active, allowed_roles, allowed_channels, schema_version, requires_human_confirmation, created_at")
+      .select("id, name, description, risk_level, is_active, allowed_roles, allowed_channels, schema_version, requires_human_confirmation, handler_type, created_at")
       .eq("tenant_id", profile.tenant_id)
       .order("created_at", { ascending: false });
 

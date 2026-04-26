@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { createClient } from '@supabase/supabase-js'
 import { escavadorFetch } from '@/lib/services/escavador-client'
+import { requireTenantApiKey } from '@/lib/integrations/server'
 
 export const maxDuration = 60
 
@@ -46,19 +47,14 @@ export async function GET(req: NextRequest) {
 
       for (const processo of processos ?? []) {
         // Busca integração do tenant
-        const { data: integ } = await adminSupabase
-          .from('tenant_integrations')
-          .select('api_key')
-          .eq('tenant_id', processo.tenant_id)
-          .eq('provider', 'escavador')
-          .single()
+        const { apiKey } = await requireTenantApiKey(processo.tenant_id, 'escavador')
 
-        if (!integ?.api_key) continue
+        if (!apiKey) continue
 
         // Busca dados frescos do processo no Escavador
         const dados = await escavadorFetch(
           `/processos/numero_cnj/${encodeURIComponent(item.numero_cnj)}`,
-          integ.api_key,
+          apiKey,
           processo.tenant_id
         ).catch(() => null)
 

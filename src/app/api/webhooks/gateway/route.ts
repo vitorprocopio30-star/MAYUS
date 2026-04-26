@@ -1,5 +1,7 @@
 import { NextRequest, NextResponse } from "next/server";
 import { createClient } from "@supabase/supabase-js";
+import { timingSafeEqual } from "crypto";
+import { getTenantIntegrationResolved } from "@/lib/integrations/server";
 
 // ─── Cliente Supabase Administrativo (Service Role) ───────────────────────────
 // Usamos a service_role key aqui para que o servidor possa validar o segredo
@@ -34,6 +36,86 @@ interface ZapSignPayload {
     status: string;
     created_at: string;
     signers?: Array<{ email: string; status: string }>;
+  };
+}
+
+type GatewayIntegrationContext = {
+  tenantId: string;
+  provider: string;
+  status: string | null;
+  webhookSecret: string | null;
+};
+
+const ALLOWED_GATEWAY_PROVIDERS = new Set(["asaas", "zapsign"]);
+const MAX_WEBHOOK_BODY_BYTES = 512 * 1024;
+
+function normalizeWebhookSecret(value: string | null | undefined) {
+  return String(value || "").trim();
+}
+
+function safeSecretEquals(expected: string, provided: string) {
+  const expectedBuffer = Buffer.from(expected);
+  const providedBuffer = Buffer.from(provided);
+
+  return expectedBuffer.length === providedBuffer.length && timingSafeEqual(expectedBuffer, providedBuffer);
+}
+
+function extractIncomingWebhookSecret(req: NextRequest, provider: string) {
+  const genericSecret = normalizeWebhookSecret(req.headers.get("x-mayus-webhook-secret"));
+  if (genericSecret) return genericSecret;
+
+  if (provider === "asaas") {
+    return normalizeWebhookSecret(req.headers.get("asaas-access-token"));
+  }
+
+  if (provider === "zapsign") {
+    const authHeader = normalizeWebhookSecret(req.headers.get("authorization"));
+    return authHeader.replace(/^Bearer\s+/i, "").trim();
+  }
+
+  return "";
+}
+
+async function resolveGatewayIntegration(provider: string, tenantId: string | null): Promise<GatewayIntegrationContext | null> {
+  if (tenantId) {
+    const integration = await getTenantIntegrationResolved(tenantId, provider);
+    if (!integration || String(integration.status || "").trim().toLowerCase() !== "connected") {
+      return null;
+    }
+
+    return {
+      tenantId: integration.tenant_id,
+      provider: integration.provider,
+      status: integration.status,
+      webhookSecret: integration.webhook_secret,
+    };
+  }
+
+  const { data, error } = await supabaseAdmin
+    .from("tenant_integrations")
+    .select("tenant_id, provider, status")
+    .eq("provider", provider)
+    .eq("status", "connected")
+    .limit(2);
+
+  if (error) {
+    throw error;
+  }
+
+  if (!Array.isArray(data) || data.length !== 1) {
+    return null;
+  }
+
+  const resolved = await getTenantIntegrationResolved(String(data[0].tenant_id || ""), provider);
+  if (!resolved) {
+    return null;
+  }
+
+  return {
+    tenantId: resolved.tenant_id,
+    provider: resolved.provider,
+    status: resolved.status,
+    webhookSecret: resolved.webhook_secret,
   };
 }
 
@@ -152,14 +234,28 @@ async function processZapSign(
 export async function POST(req: NextRequest) {
   try {
     const { searchParams } = new URL(req.url);
-    const provider = searchParams.get("provider");
+    const provider = String(searchParams.get("provider") || "").trim().toLowerCase();
+    const tenantIdParam = searchParams.get("tenant_id");
 
     if (!provider) {
       return NextResponse.json({ error: "Provedor não especificado." }, { status: 400 });
     }
 
+    if (!ALLOWED_GATEWAY_PROVIDERS.has(provider)) {
+      return NextResponse.json({ error: "Provedor nao suportado." }, { status: 400 });
+    }
+
+    const contentLength = Number(req.headers.get("content-length") || "0");
+    if (Number.isFinite(contentLength) && contentLength > MAX_WEBHOOK_BODY_BYTES) {
+      return NextResponse.json({ error: "Payload muito grande." }, { status: 413 });
+    }
+
     // Lê o body uma única vez
     const rawBody = await req.text();
+    if (rawBody.length > MAX_WEBHOOK_BODY_BYTES) {
+      return NextResponse.json({ error: "Payload muito grande." }, { status: 413 });
+    }
+
     let payload: any;
 
     try {
@@ -168,24 +264,28 @@ export async function POST(req: NextRequest) {
       return NextResponse.json({ error: "Payload JSON inválido." }, { status: 400 });
     }
 
-    // ── Busca a integração para obter o tenantId e o segredo ──────────────────
-    // Nota: Procuramos por provider. Em prod, valide também o webhook_secret
-    // via header específico de cada provedor (ex: Asaas-Webhook-Secret).
-    const { data: integration, error: integError } = await supabaseAdmin
-      .from("tenant_integrations")
-      .select("tenant_id, webhook_secret, status")
-      .eq("provider", provider)
-      .eq("status", "connected")
-      .limit(1)
-      .maybeSingle();
+    const integration = await resolveGatewayIntegration(provider, tenantIdParam);
 
-    if (integError || !integration) {
-      console.warn(`[Gateway] Integração "${provider}" não encontrada ou inativa.`);
+    if (!integration) {
+      console.warn(`[Gateway] Integração "${provider}" não encontrada, inativa ou ambígua para tenant_id="${tenantIdParam || "ausente"}".`);
       // Sempre respondemos 200 para não gerar retentativas desnecessárias
       return NextResponse.json({ received: true }, { status: 200 });
     }
 
-    const tenantId: string = integration.tenant_id;
+    const providedSecret = extractIncomingWebhookSecret(req, provider);
+    const expectedSecret = normalizeWebhookSecret(integration.webhookSecret);
+
+    if (!expectedSecret) {
+      console.warn(`[Gateway] Segredo nao configurado para provider="${provider}" tenant_id="${integration.tenantId}". Evento ignorado por seguranca.`);
+      return NextResponse.json({ received: true }, { status: 200 });
+    }
+
+    if (!providedSecret || !safeSecretEquals(expectedSecret, providedSecret)) {
+      console.warn(`[Gateway] Segredo ausente ou inválido para provider="${provider}" tenant_id="${integration.tenantId}".`);
+      return NextResponse.json({ received: true }, { status: 200 });
+    }
+
+    const tenantId: string = integration.tenantId;
 
     // ── Roteamento para o Driver correto ──────────────────────────────────────
     let result: { action: string; message: string };

@@ -3,6 +3,8 @@ import { createClient } from '@supabase/supabase-js'
 import { createServerClient } from '@supabase/ssr'
 import { cookies } from 'next/headers'
 import { criarMonitoramentoProcesso, solicitarResumoProcesso } from '@/lib/services/monitoramento-processos'
+import { requireTenantApiKey } from '@/lib/integrations/server'
+import { pickExplicitClientName } from '@/lib/juridico/process-card-context'
 
 interface MonitoramentoCapacity {
   total_monitorados: number
@@ -102,15 +104,9 @@ export async function POST(req: NextRequest) {
   }
 
   // Buscar API Key do Escavador para sincronização
-  const { data: integration } = await adminSupabase
-    .from('tenant_integrations')
-    .select('api_key')
-    .eq('tenant_id', tenantId)
-    .eq('provider', 'escavador')
-    .in('status', ['active', 'connected'])
-    .single()
+  const { apiKey } = await requireTenantApiKey(tenantId, 'escavador')
 
-  if (!integration?.api_key) {
+  if (!apiKey) {
     return NextResponse.json(
       { error: 'Integração Escavador não configurada ou inativa.' },
       { status: 400 }
@@ -129,7 +125,7 @@ export async function POST(req: NextRequest) {
 
     const monitoramento = await criarMonitoramentoProcesso({
       tenantId,
-      apiKey: integration.api_key,
+      apiKey,
       numeroProcesso,
       frequencia: 'SEMANAL'
     })
@@ -161,6 +157,7 @@ export async function POST(req: NextRequest) {
       fase_atual: p.fase_atual,
       valor_causa: p.valor_causa ?? null,
       data_distribuicao: p.data_distribuicao ?? null,
+      cliente_nome: pickExplicitClientName(p) || null,
       partes: {
         polo_ativo: p.polo_ativo,
         polo_passivo: p.polo_passivo,
@@ -216,7 +213,7 @@ export async function POST(req: NextRequest) {
   }
 
   const resultadosResumo = await Promise.allSettled(
-    rows.map((r) => solicitarResumoProcesso(tenantId, integration.api_key, String(r.numero_processo)))
+    rows.map((r) => solicitarResumoProcesso(tenantId, apiKey, String(r.numero_processo)))
   )
   const resumosSolicitados = resultadosResumo.filter((r) => r.status === 'fulfilled' && r.value).length
 
