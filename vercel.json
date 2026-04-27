@@ -3,10 +3,6 @@
     {
       "path": "/api/agents/update-processos",
       "schedule": "0 2 * * *"
-    },
-    {
-      "path": "/api/documentos/draft-factory/queue",
-      "schedule": "*/5 * * * *"
     }
   ]
 }
