@@ -30,10 +30,10 @@ export const NeuralPortal = ({ onEnter }: NeuralPortalProps) => {
     setTimeout(onEnter, 2800);
   };
 
-  if (!mounted) return <div className="fixed inset-0 bg-[#050505] z-[9999]" />;
+  if (!mounted) return <div className="fixed inset-0 bg-white dark:bg-[#050505] z-[9999]" />;
 
   return (
-    <div className="fixed inset-0 z-[9999] bg-[#050505] flex items-center justify-center overflow-hidden">
+    <div className="fixed inset-0 z-[9999] bg-white dark:bg-[#050505] flex items-center justify-center overflow-hidden">
       {/* Cinematic Grain Overlays */}
       <div className="absolute inset-0 pointer-events-none z-10 opacity-[0.03] mix-blend-overlay bg-[url('https://grainy-gradients.vercel.app/noise.svg')]" />
       <div className="absolute inset-0 pointer-events-none z-10 bg-gradient-to-t from-black via-transparent to-black opacity-60" />
@@ -48,7 +48,7 @@ export const NeuralPortal = ({ onEnter }: NeuralPortalProps) => {
             transition={{ duration: 1, ease: [0.22, 1, 0.36, 1] }}
             className="flex flex-col items-center gap-8 z-20"
           >
-            <div className="relative w-40 h-[1px] bg-white/10 overflow-hidden">
+            <div className="relative w-40 h-[1px] bg-gray-100 dark:bg-white/10 overflow-hidden">
               <motion.div 
                 className="absolute inset-0 bg-gradient-to-r from-transparent via-[#CCA761] to-transparent shadow-[0_0_10px_#CCA761]"
                 initial={{ x: "-100%" }}
@@ -61,7 +61,7 @@ export const NeuralPortal = ({ onEnter }: NeuralPortalProps) => {
               <span className={`text-[#CCA761] text-xs font-black tracking-[1em] uppercase ${cormorant.className} animate-pulse`}>
                 Sincronizando
               </span>
-              <span className="text-white/20 text-[8px] font-bold tracking-[0.5em] uppercase">
+              <span className="text-gray-700 dark:text-gray-300 dark:text-white/20 text-[8px] font-bold tracking-[0.5em] uppercase">
                 Rede Neural Mayus Core v2.0
               </span>
             </div>
@@ -120,7 +120,7 @@ export const NeuralPortal = ({ onEnter }: NeuralPortalProps) => {
                 className="absolute bottom-20 flex flex-col items-center gap-6"
               >
                 <div className="flex flex-col items-center gap-3">
-                  <span className={`text-white text-2xl md:text-4xl ${cormorant.className} italic tracking-widest`}>
+                  <span className={`text-gray-900 dark:text-white text-2xl md:text-4xl ${cormorant.className} italic tracking-widest`}>
                     O Olhar da <span className="text-[#CCA761]">Soberania</span>
                   </span>
                   <div className="flex items-center gap-4">

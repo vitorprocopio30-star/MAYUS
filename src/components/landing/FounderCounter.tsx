@@ -53,7 +53,7 @@ export function FounderCounter() {
         />
 
         {/* Inner Content Card */}
-        <div className="relative bg-[#0a0a0a] rounded-[22px] p-8 lg:p-12 overflow-hidden">
+        <div className="relative bg-white dark:bg-[#0a0a0a] rounded-[22px] p-8 lg:p-12 overflow-hidden">
         <div className="grid grid-cols-1 lg:grid-cols-2 gap-12 items-center">
           
           {/* Left: Numbers and Urgency */}
@@ -66,19 +66,19 @@ export function FounderCounter() {
               <span className="text-[10px] font-black uppercase tracking-[0.2em] text-[#CCA761]">Círculo Fundador Ativo</span>
             </div>
 
-            <h3 className="text-4xl lg:text-5xl font-light text-white leading-tight">
+            <h3 className="text-4xl lg:text-5xl font-light text-gray-900 dark:text-white leading-tight">
               Apenas <span className="text-[#CCA761] font-black tabular-nums">{count}</span> vagas <br/>
               restantes no sistema.
             </h3>
 
             <div className="flex flex-wrap justify-center lg:justify-start gap-4">
-               <div className="flex flex-col p-4 bg-white/5 border border-white/5 rounded-2xl min-w-[120px]">
+               <div className="flex flex-col p-4 bg-gray-100 dark:bg-white/5 border border-gray-200 dark:border-white/5 rounded-2xl min-w-[120px]">
                   <span className="text-[10px] text-gray-500 uppercase tracking-widest font-black mb-1">Membros</span>
-                  <span className="text-2xl text-white font-light">{spotsTaken}/100</span>
+                  <span className="text-2xl text-gray-900 dark:text-white font-light">{spotsTaken}/100</span>
                </div>
                <div className="flex flex-col p-4 bg-[#CCA761]/5 border border-[#CCA761]/20 rounded-2xl min-w-[200px]">
                   <span className="text-[10px] text-[#CCA761] uppercase tracking-widest font-black mb-1">Benefício Atual</span>
-                  <span className="text-lg text-white font-bold italic">{tier.perk}</span>
+                  <span className="text-lg text-gray-900 dark:text-white font-bold italic">{tier.perk}</span>
                </div>
             </div>
           </div>
@@ -133,14 +133,14 @@ export function FounderCounter() {
         </div>
 
         {/* Footnote Scarcity */}
-        <div className="mt-12 pt-8 border-t border-white/5 flex flex-col md:flex-row items-center justify-between gap-6">
+        <div className="mt-12 pt-8 border-t border-gray-200 dark:border-white/5 flex flex-col md:flex-row items-center justify-between gap-6">
            <div className="flex -space-x-3">
               {[1,2,3,4,5].map(i => (
                 <div key={i} className="w-10 h-10 rounded-full border-2 border-[#0a0a0a] bg-gray-800 flex items-center justify-center overflow-hidden">
                    <img src={`https://i.pravatar.cc/100?u=${i}`} alt="Avatar" className="w-full h-full object-cover grayscale hover:grayscale-0 transition-all cursor-pointer" />
                 </div>
               ))}
-              <div className="w-10 h-10 rounded-full border-2 border-[#0a0a0a] bg-[#111] flex items-center justify-center text-[10px] text-[#CCA761] font-bold">
+              <div className="w-10 h-10 rounded-full border-2 border-[#0a0a0a] bg-gray-100 dark:bg-[#111] flex items-center justify-center text-[10px] text-[#CCA761] font-bold">
                 +22
               </div>
            </div>

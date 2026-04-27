@@ -47,7 +47,7 @@ export function SalesHero() {
           </div>
 
           {/* Main Title */}
-          <h1 className={`${cormorant.className} text-5xl md:text-8xl font-light text-white leading-tight`}>
+          <h1 className={`${cormorant.className} text-5xl md:text-8xl font-light text-gray-900 dark:text-white leading-tight`}>
             O Primeiro <span className="text-luxury">AI Operating System</span> <br />
             para Grandes Bancas
           </h1>
@@ -67,7 +67,7 @@ export function SalesHero() {
               <div className="absolute inset-0 bg-white opacity-0 group-hover:opacity-20 transition-opacity" />
             </button>
 
-            <button className="px-10 py-5 border border-white/10 hover:border-white/30 text-white font-bold uppercase tracking-[0.2em] text-xs transition-all backdrop-blur-sm">
+            <button className="px-10 py-5 border border-gray-200 dark:border-white/10 hover:border-white/30 text-gray-900 dark:text-white font-bold uppercase tracking-[0.2em] text-xs transition-all backdrop-blur-sm">
               Ver Demonstração
             </button>
           </div>
@@ -76,11 +76,11 @@ export function SalesHero() {
           <div className="pt-12 flex flex-wrap justify-center items-center gap-8 opacity-50 grayscale">
              <div className="flex items-center gap-2">
                 <ShieldCheck size={18} className="text-[#CCA761]" />
-                <span className="text-[10px] font-bold uppercase tracking-widest text-white">LGPD Compliant</span>
+                <span className="text-[10px] font-bold uppercase tracking-widest text-gray-900 dark:text-white">LGPD Compliant</span>
              </div>
              <div className="flex items-center gap-2">
                 <Sparkles size={18} className="text-[#CCA761]" />
-                <span className="text-[10px] font-bold uppercase tracking-widest text-white">Byok Architecture</span>
+                <span className="text-[10px] font-bold uppercase tracking-widest text-gray-900 dark:text-white">Byok Architecture</span>
              </div>
           </div>
         </motion.div>
