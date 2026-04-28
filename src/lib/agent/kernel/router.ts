@@ -37,6 +37,408 @@ interface IntentDefinition {
 
 const INTENT_PATTERNS: IntentDefinition[] = [
   {
+    intent: 'sales_profile_setup',
+    patterns: [
+      /auto[-\s]?configur(ar|e|acao|a[cç][aã]o)\s+(comercial|vendas|atendimento)/i,
+      /configur(ar|e)\s+(a\s+)?(skill\s+de\s+)?vendas/i,
+      /configur(ar|e)\s+(o\s+)?perfil\s+comercial/i,
+      /mayus\s+faz\s+tudo/i,
+      /usuario\s+mex(a|er)\s+(o\s+)?minimo\s+(possivel|poss[ií]vel)\s+em\s+configura[cç][oõ]es/i,
+      /mont(ar|e)\s+(a\s+)?puv\s+(do\s+)?escrit[oó]rio/i,
+      /descobr(ir|a)\s+(cliente\s+ideal|puv|solu[cç][aã]o\s+central)/i,
+      /investig(ar|ue)\s+(o\s+)?cliente\s+ideal\s+(do\s+)?escrit[oó]rio/i,
+      /perfil\s+comercial\s+(do\s+)?mayus/i,
+    ],
+    entityExtractors: [
+      {
+        key: 'ideal_client',
+        pattern: /(?:cliente\s+ideal)\s*[:\-]?\s*([^\n.]{8,240})/i,
+      },
+      {
+        key: 'core_solution',
+        pattern: /(?:solu(?:cao|\u00e7\u00e3o)\s+(?:central|principal)|solucao|solu\u00e7\u00e3o)\s*[:\-]?\s*([^\n.]{8,240})/i,
+      },
+      {
+        key: 'unique_value_proposition',
+        pattern: /(?:puv|proposta\s+unica\s+de\s+valor|proposta\s+\u00fanica\s+de\s+valor)\s*[:\-]?\s*([^\n.]{8,280})/i,
+      },
+      {
+        key: 'value_pillars',
+        pattern: /(?:pilares?)\s*[:\-]?\s*([^\n.]{8,220})/i,
+      },
+      {
+        key: 'anti_client_signals',
+        pattern: /(?:anti[-\s]?cliente|n(?:ao|\u00e3o)\s+queremos\s+atender)\s*[:\-]?\s*([^\n.]{8,220})/i,
+      },
+      {
+        key: 'confirmation',
+        pattern: /(confirmo|validado|pode\s+salvar|pode\s+gravar|salva|grava|aprovado|t[a\u00e1]\s+certo)/i,
+      },
+    ],
+    baseConfidence: 0.93,
+  },
+  {
+    intent: 'sales_consultation',
+    patterns: [
+      /atendimento\s+(consultivo|comercial|de\s+vendas)/i,
+      /consultoria\s+(comercial|de\s+vendas)/i,
+      /skill\s+de\s+vendas/i,
+      /investig(ar|ue)\s+(o\s+)?lead/i,
+      /investig(ar|ue)\s+(tudo\s+)?(que\s+)?precisa\s+(para\s+)?vend/i,
+      /cliente\s+ideal\s+(do\s+)?escrit[oó]rio/i,
+      /puv|proposta\s+unica\s+de\s+valor|proposta\s+única\s+de\s+valor/i,
+      /posicionamento\s+comercial/i,
+      /bate[-\s]?papo\s+(de\s+)?(vendas|comercial|consultivo)/i,
+      /roteiro\s+(de\s+)?(vendas|atendimento\s+comercial)/i,
+      /metodo\s+def/i,
+      /descoberta.*encantamento.*fechamento/i,
+      /mayus.*(vender|vendas).*melhor/i,
+      /fechamento\s+(consultivo|de\s+vendas)/i,
+    ],
+    entityExtractors: [
+      {
+        key: 'lead_name',
+        pattern: /(?:lead|cliente|nome)\s*[:\-]?\s*([^\d,.;:!?]+?)(?=\s*(?:area|canal|fase|etapa|dor|obje(?:cao|\u00e7\u00e3o)|valor|ticket|crm|card|,|\.|$))/i,
+      },
+      {
+        key: 'crm_task_id',
+        pattern: /(?:crm_task_id|card|lead|oportunidade)\s*[:#\-]?\s*([0-9a-f]{8}-[0-9a-f-]{27,}|crm-task-[\w-]+)/i,
+      },
+      {
+        key: 'legal_area',
+        pattern: /(?:area|segmento)\s*[:\-]?\s*([^,.;:!?]+?)(?=\s*(?:canal|fase|etapa|dor|obje(?:cao|\u00e7\u00e3o)|valor|ticket|crm|card|,|\.|$))/i,
+      },
+      {
+        key: 'channel',
+        pattern: /(?:canal|por)\s*[:\-]?\s*(WhatsApp|liga(?:cao|\u00e7\u00e3o)|telefone|reuni(?:ao|\u00e3o)|call)/i,
+      },
+      {
+        key: 'stage',
+        pattern: /(?:fase|etapa)\s*[:\-]?\s*(descoberta|encantamento|fechamento|recupera(?:cao|\u00e7\u00e3o)|reativa(?:cao|\u00e7\u00e3o))/i,
+      },
+      {
+        key: 'pain',
+        pattern: /(?:dor|caso|problema)\s*[:\-]?\s*([^\n.]{8,180})/i,
+      },
+      {
+        key: 'objection',
+        pattern: /(?:obje(?:cao|\u00e7\u00e3o)|obstaculo|impeditivo)\s*[:\-]?\s*([^\n.]{4,180})/i,
+      },
+      {
+        key: 'ticket_value',
+        pattern: /(?:valor|ticket|honor(?:arios|\u00e1rios)|pre(?:co|\u00e7o))\s*[:R$\s]*([0-9]+(?:[.,][0-9]+)*)/i,
+      },
+      {
+        key: 'objective',
+        pattern: /(?:objetivo|meta)\s*[:\-]?\s*([^\n.]{8,180})/i,
+      },
+      {
+        key: 'office_ideal_client',
+        pattern: /(?:cliente\s+ideal)\s*[:\-]?\s*([^\n.]{8,220})/i,
+      },
+      {
+        key: 'office_solution',
+        pattern: /(?:solu(?:cao|\u00e7\u00e3o)\s+(?:central|principal)|solucao)\s*[:\-]?\s*([^\n.]{8,220})/i,
+      },
+      {
+        key: 'office_unique_value_proposition',
+        pattern: /(?:puv|proposta\s+unica\s+de\s+valor|proposta\s+\u00fanica\s+de\s+valor)\s*[:\-]?\s*([^\n.]{8,260})/i,
+      },
+    ],
+    baseConfidence: 0.91,
+  },
+  {
+    intent: 'lead_reactivation',
+    patterns: [
+      /recuper(ar|e)\s+leads?\s+frios?\s+(de|da|do|por|em)\s+/i,
+      /reativ(ar|e)\s+leads?\s+frios?\s+(de|da|do|por|em)\s+/i,
+      /campanha\s+de\s+reativa[cÃƒÂ§][aÃƒÂ£]o\s+de\s+leads?/i,
+      /plano\s+de\s+reativa[cÃƒÂ§][aÃƒÂ£]o\s+de\s+leads?/i,
+      /leads?\s+frios?\s+por\s+segmento/i,
+    ],
+    entityExtractors: [
+      {
+        key: 'legal_area',
+        pattern: /(?:leads?\s+frios?\s+(?:de|da|do|por|em)|segmento|area|ÃƒÂ¡rea)\s*[:\-]?\s*([^,.;:!?]+?)(?=\s*(?:ha|h[aÃƒÂ¡]|maximo|max|limite|dias|inativos|objetivo|,|\.|$))/i,
+      },
+      {
+        key: 'segment',
+        pattern: /(?:segmento)\s*[:\-]?\s*([^,.;:!?]+?)(?=\s*(?:ha|h[aÃƒÂ¡]|maximo|max|limite|dias|inativos|objetivo|,|\.|$))/i,
+      },
+      {
+        key: 'min_days_inactive',
+        pattern: /(?:ha|h[aÃƒÂ¡]|inativos?\s+ha|sem\s+intera[cÃƒÂ§][aÃƒÂ£]o\s+ha)\s*([0-9]{1,3})\s*dias/i,
+      },
+      {
+        key: 'max_leads',
+        pattern: /(?:maximo|max|limite)\s*[:\-]?\s*([0-9]{1,2})\s*leads?/i,
+      },
+      {
+        key: 'goal',
+        pattern: /(?:objetivo|meta)\s*[:\-]?\s*([^\n.]{8,180})/i,
+      },
+    ],
+    baseConfidence: 0.9,
+  },
+  {
+    intent: 'client_acceptance_record',
+    patterns: [
+      /registr(ar|e)\s+(o\s+)?aceite\s+(do|da)\s+cliente/i,
+      /cliente\s+(aceitou|aprovou)\s+(a\s+)?(proposta|contrato|cobran[cÃƒÂ§]a)/i,
+      /aceite\s+(da\s+)?(proposta|contrato|cobran[cÃƒÂ§]a|entrada|fechamento)/i,
+      /registr(ar|e)\s+(fechamento|aceite)\s+comercial/i,
+      /trilha\s+de\s+auditoria\s+(do\s+)?aceite/i,
+    ],
+    entityExtractors: [
+      {
+        key: 'client_name',
+        pattern: /(?:cliente|lead|nome)\s*[:\-]?\s*([^\d,.;:!?]+?)(?=\s*(?:area|ÃƒÂ¡rea|valor|canal|aceitou|aprovou|crm|card|,|\.|$))/i,
+      },
+      {
+        key: 'crm_task_id',
+        pattern: /(?:crm_task_id|card|lead|oportunidade)\s*[:#\-]?\s*([0-9a-f]{8}-[0-9a-f-]{27,}|crm-task-[\w-]+)/i,
+      },
+      {
+        key: 'legal_area',
+        pattern: /(?:area|ÃƒÂ¡rea)\s*[:\-]?\s*([^,.;:!?]+?)(?=\s*(?:valor|canal|crm|card|,|\.|$))/i,
+      },
+      {
+        key: 'acceptance_type',
+        pattern: /(proposta|contrato|cobran[cÃƒÂ§]a|pagamento|entrada|fechamento)/i,
+      },
+      {
+        key: 'acceptance_channel',
+        pattern: /(?:canal|por)\s*[:\-]?\s*(WhatsApp|email|e-mail|telefone|reuniao|reuni[aÃƒÂ£]o|presencial)/i,
+      },
+      {
+        key: 'amount',
+        pattern: /(?:valor|total|honor[aÃƒÂ¡]rios)\s*[:R$\s]*([0-9]+(?:[.,][0-9]+)*)/i,
+      },
+      {
+        key: 'evidence_summary',
+        pattern: /(?:evidencia|evid[ÃƒÂê]ncia|obs|observa[cÃƒÂ§][aÃƒÂ£]o)\s*[:\-]?\s*([^\n.]{8,180})/i,
+      },
+    ],
+    baseConfidence: 0.88,
+  },
+  {
+    intent: 'external_action_preview',
+    patterns: [
+      /preview\s+(antes\s+de\s+)?(enviar|gerar|disparar)/i,
+      /pre[-\s]?flight\s+(de\s+)?(contrato|cobran[cÃƒÂ§]a|zapsign|asaas|whatsapp)/i,
+      /aprova[cÃƒÂ§][aÃƒÂ£]o\s+antes\s+de\s+(enviar|gerar|disparar)/i,
+      /revis(ar|e)\s+(contrato|cobran[cÃƒÂ§]a|zapsign|asaas)\s+antes/i,
+      /checklist\s+(de\s+)?aprova[cÃƒÂ§][aÃƒÂ£]o\s+(externa|comercial)/i,
+    ],
+    entityExtractors: [
+      {
+        key: 'action_type',
+        pattern: /(zapsign|contrato|asaas|cobran[cÃƒÂ§]a|boleto|pix|whatsapp|mensagem)/i,
+      },
+      {
+        key: 'client_name',
+        pattern: /(?:cliente|lead|nome)\s*[:\-]?\s*([^\d,.;:!?]+?)(?=\s*(?:area|ÃƒÂ¡rea|valor|email|e-mail|crm|card|,|\.|$))/i,
+      },
+      {
+        key: 'legal_area',
+        pattern: /(?:area|ÃƒÂ¡rea)\s*[:\-]?\s*([^,.;:!?]+?)(?=\s*(?:valor|email|e-mail|crm|card|,|\.|$))/i,
+      },
+      {
+        key: 'amount',
+        pattern: /(?:valor|total|honor[aÃƒÂ¡]rios)\s*[:R$\s]*([0-9]+(?:[.,][0-9]+)*)/i,
+      },
+      {
+        key: 'recipient_email',
+        pattern: /(?:email|e-mail)\s*[:\-]?\s*([a-zA-Z0-9._%+\-]+@[a-zA-Z0-9.\-]+\.[a-zA-Z]{2,})/i,
+      },
+      {
+        key: 'crm_task_id',
+        pattern: /(?:crm_task_id|card|lead|oportunidade)\s*[:#\-]?\s*([0-9a-f]{8}-[0-9a-f-]{27,}|crm-task-[\w-]+)/i,
+      },
+    ],
+    baseConfidence: 0.88,
+  },
+  {
+    intent: 'revenue_flow_plan',
+    patterns: [
+      /proposta.*contrato.*cobranca.*caso/i,
+      /proposta\s*[-\u003e>]\s*contrato\s*[-\u003e>]\s*cobran[cÃƒÂ§]a/i,
+      /contrato\s*[-\u003e>]\s*cobran[cÃƒÂ§]a\s*[-\u003e>]\s*(abertura\s+de\s+)?caso/i,
+      /fluxo\s+(agentico\s+)?(de\s+)?receita\s+(para\s+)?caso/i,
+      /revenue[-\s]?to[-\s]?case/i,
+      /abr(ir|a)\s+caso\s+ap[oÃƒÂ³]s\s+(pagamento|cobran[cÃƒÂ§]a)/i,
+      /plano\s+(de\s+)?convers[aÃƒÂ£]o\s+(do|para)\s+lead/i,
+    ],
+    entityExtractors: [
+      {
+        key: 'crm_task_id',
+        pattern: /(?:crm_task_id|card|lead|oportunidade)\s*[:#\-]?\s*([0-9a-f]{8}-[0-9a-f-]{27,}|crm-task-[\w-]+)/i,
+      },
+      {
+        key: 'client_name',
+        pattern: /(?:cliente|lead|nome)\s*[:\-]?\s*([^\d,.;:!?]+?)(?=\s*(?:area|ÃƒÂ¡rea|valor|crm|card|,|\.|$))/i,
+      },
+      {
+        key: 'legal_area',
+        pattern: /(?:area|ÃƒÂ¡rea)\s*[:\-]?\s*([^,.;:!?]+?)(?=\s*(?:valor|crm|card|,|\.|$))/i,
+      },
+      {
+        key: 'amount',
+        pattern: /(?:valor|total|honor[aÃƒÂ¡]rios)\s*[:R$\s]*([0-9]+(?:[.,][0-9]+)*)/i,
+      },
+    ],
+    baseConfidence: 0.88,
+  },
+  {
+    intent: 'lead_schedule',
+    patterns: [
+      /agend(ar|e)\s+(consulta|qualifica[cÃƒÂ§][aÃƒÂ£]o|retorno)\s+(do|para)\s+lead/i,
+      /marc(ar|e)\s+(consulta|reuni[aÃƒÂ£]o|retorno)\s+(do|para)\s+lead/i,
+      /crie\s+(um\s+)?agendamento\s+(do|para)\s+lead/i,
+      /coloque\s+(o\s+)?lead\s+na\s+agenda/i,
+      /agenda\s+(de\s+)?retorno\s+(do|para)\s+lead/i,
+    ],
+    entityExtractors: [
+      {
+        key: 'crm_task_id',
+        pattern: /(?:crm_task_id|card|lead)\s*[:#\-]?\s*([0-9a-f]{8}-[0-9a-f-]{27,}|crm-task-[\w-]+)/i,
+      },
+      {
+        key: 'lead_name',
+        pattern: /(?:lead|cliente|nome)\s*[:\-]?\s*([^\d,.;:!?]+?)(?=\s*(?:area|ÃƒÂ¡rea|dor|data|horario|hor[aÃƒÂ¡]rio|em|para|crm|card|,|\.|$))/i,
+      },
+      {
+        key: 'legal_area',
+        pattern: /(?:area|ÃƒÂ¡rea)\s*[:\-]?\s*([^,.;:!?]+?)(?=\s*(?:dor|data|horario|hor[aÃƒÂ¡]rio|em|para|crm|card|,|\.|$))/i,
+      },
+      {
+        key: 'pain',
+        pattern: /(?:dor|caso|problema)\s*[:\-]?\s*([^\n.]{8,180})/i,
+      },
+      {
+        key: 'scheduled_for',
+        pattern: /(?:data|horario|hor[aÃƒÂ¡]rio|para|em)\s*[:\-]?\s*([0-9]{4}-[0-9]{2}-[0-9]{2}(?:[T\s][0-9]{2}:?[0-9]{2}(?::?[0-9]{2})?)?)/i,
+      },
+      {
+        key: 'meeting_type',
+        pattern: /(consulta|qualifica[cÃƒÂ§][aÃƒÂ£]o|retorno|reuni[aÃƒÂ£]o)/i,
+      },
+    ],
+    baseConfidence: 0.88,
+  },
+  {
+    intent: 'lead_followup',
+    patterns: [
+      /follow[-\s]?up\s+(do|para)\s+lead/i,
+      /retom(ar|e)\s+(o\s+)?contato\s+com\s+(o\s+)?lead/i,
+      /cad[eÃª]ncia\s+(de\s+)?follow[-\s]?up/i,
+      /mensagem\s+(de\s+)?follow[-\s]?up/i,
+      /recuper(ar|e)\s+(o\s+)?lead/i,
+      /reativ(ar|e)\s+(o\s+)?lead/i,
+    ],
+    entityExtractors: [
+      {
+        key: 'crm_task_id',
+        pattern: /(?:crm_task_id|card|lead)\s*[:#\-]?\s*([0-9a-f]{8}-[0-9a-f-]{27,}|crm-task-[\w-]+)/i,
+      },
+      {
+        key: 'lead_name',
+        pattern: /(?:lead|cliente|nome)\s*[:\-]?\s*([^\d,.;:!?]+?)(?=\s*(?:area|Ã¡rea|dor|objetivo|crm|card|,|\.|$))/i,
+      },
+      {
+        key: 'legal_area',
+        pattern: /(?:area|Ã¡rea)\s*[:\-]?\s*([^,.;:!?]+?)(?=\s*(?:dor|objetivo|crm|card|,|\.|$))/i,
+      },
+      {
+        key: 'pain',
+        pattern: /(?:dor|caso|problema)\s*[:\-]?\s*([^\n.]{8,180})/i,
+      },
+      {
+        key: 'goal',
+        pattern: /(?:objetivo|meta)\s*[:\-]?\s*([^\n.]{8,180})/i,
+      },
+    ],
+    baseConfidence: 0.87,
+  },
+  {
+    intent: 'lead_qualify',
+    patterns: [
+      /qualific(ar|e)\s+(o\s+)?lead/i,
+      /roteiro\s+de\s+qualifica[cÃ§][aÃ£]o/i,
+      /documentos\s+m[iÃ­]nimos\s+(do|para)\s+lead/i,
+      /pr[oÃ³]ximo\s+melhor\s+movimento\s+(do|para)\s+lead/i,
+      /obje[cÃ§][oÃµ]es\s+(prov[aÃ¡]veis|do\s+lead)/i,
+    ],
+    entityExtractors: [
+      {
+        key: 'crm_task_id',
+        pattern: /(?:crm_task_id|card|lead)\s*[:#\-]?\s*([0-9a-f]{8}-[0-9a-f-]{27,}|crm-task-[\w-]+)/i,
+      },
+      {
+        key: 'lead_name',
+        pattern: /(?:lead|cliente|nome)\s*[:\-]?\s*([^\d,.;:!?]+?)(?=\s*(?:area|Ã¡rea|dor|crm|card|,|\.|$))/i,
+      },
+      {
+        key: 'legal_area',
+        pattern: /(?:area|Ã¡rea)\s*[:\-]?\s*([^,.;:!?]+?)(?=\s*(?:dor|crm|card|,|\.|$))/i,
+      },
+      {
+        key: 'pain',
+        pattern: /(?:dor|caso|problema)\s*[:\-]?\s*([^\n.]{8,180})/i,
+      },
+    ],
+    baseConfidence: 0.86,
+  },
+  {
+    intent: 'lead_intake',
+    patterns: [
+      /registr(ar|e)\s+(um\s+)?(novo\s+)?lead/i,
+      /captur(ar|e)\s+(um\s+)?lead/i,
+      /qualific(ar|e)\s+(um\s+)?lead/i,
+      /novo\s+lead/i,
+      /lead\s+(de|para)\s+/i,
+      /indic(a[cÃ§][aÃ£]o|ado|ada)/i,
+      /fui\s+indicad[oa]/i,
+      /me\s+indicou/i,
+      /recomend(a[cÃ§][aÃ£]o|ado|ada)/i,
+    ],
+    entityExtractors: [
+      {
+        key: 'name',
+        pattern: /(?:lead|cliente|indicado|indicada|nome)\s*[:\-]?\s*([^\d,.;:!?]+?)(?=\s*(?:telefone|whats|email|e-mail|area|Ã¡rea|dor|origem|foi|,|\.|$))/i,
+      },
+      {
+        key: 'phone',
+        pattern: /(?:telefone|whats(?:app)?|celular)\s*[:\-]?\s*(\(?\d{2}\)?\s?\d{4,5}[-\s]?\d{4})/i,
+      },
+      {
+        key: 'email',
+        pattern: /(?:email|e-mail)\s*[:\-]?\s*([a-zA-Z0-9._%+\-]+@[a-zA-Z0-9.\-]+\.[a-zA-Z]{2,})/i,
+      },
+      {
+        key: 'legalArea',
+        pattern: /(?:area|Ã¡rea)\s*[:\-]?\s*([^,.;:!?]+?)(?=\s*(?:dor|origem|canal|cidade|telefone|whats|,|\.|$))/i,
+      },
+      {
+        key: 'origin',
+        pattern: /(?:origem|veio\s+de|chegou\s+por)\s*([^,.;:!?]+?)(?=\s*(?:canal|area|Ã¡rea|dor|,|\.|$))/i,
+      },
+      {
+        key: 'channel',
+        pattern: /(?:canal)\s*[:\-]?\s*([^,.;:!?]+?)(?=\s*(?:origem|area|Ã¡rea|dor|,|\.|$))/i,
+      },
+      {
+        key: 'pain',
+        pattern: /(?:dor|caso|problema)\s*[:\-]?\s*([^\n.]{8,180})/i,
+      },
+      {
+        key: 'referredBy',
+        pattern: /(?:indicado\s+por|indicada\s+por|me\s+indicou|recomendado\s+por|recomendada\s+por)\s*[:\-]?\s*([^,.;:!?]+?)(?=\s*(?:telefone|whats|email|e-mail|area|Ã¡rea|dor|origem|,|\.|$))/i,
+      },
+    ],
+    baseConfidence: 0.84,
+  },
+  {
     intent: 'generate_contract_zapsign',
     patterns: [
       /assinar\s+contrato/i,
@@ -361,7 +763,7 @@ export function route(text: string, context: RouterContext): RouterIntent {
       if (def.entityExtractors) {
         for (const extractor of def.entityExtractors) {
           const match = text.match(extractor.pattern);
-          if (match?.[1]) entities[extractor.key] = match[1];
+          if (match?.[1]) entities[extractor.key] = match[1].trim();
         }
       }
 

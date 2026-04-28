@@ -216,6 +216,32 @@ function getEventLabel(eventType: string) {
       return "Memoria documental atualizada";
     case "legal_artifact_publish_premium_executed":
       return "Artifact premium publicado";
+    case "tenant_setup_doctor_report_created":
+      return "Setup Doctor registrado";
+    case "referral_intake_artifact_created":
+      return "Indicacao registrada";
+    case "lead_intake_artifact_created":
+      return "Lead registrado";
+    case "sales_profile_configured":
+      return "Perfil comercial configurado";
+    case "sales_profile_setup_created":
+      return "Setup comercial iniciado";
+    case "sales_consultation_plan_created":
+      return "Consultoria comercial";
+    case "lead_qualification_plan_created":
+      return "Qualificacao do lead";
+    case "lead_followup_plan_created":
+      return "Follow-up do lead";
+    case "lead_reactivation_plan_created":
+      return "Reativacao de leads";
+    case "lead_schedule_plan_created":
+      return "Agendamento do lead";
+    case "revenue_flow_plan_created":
+      return "Plano revenue-to-case";
+    case "external_action_preview_created":
+      return "Preview de acao externa";
+    case "client_acceptance_record_created":
+      return "Aceite do cliente";
     default:
       return eventType.replaceAll("_", " ");
   }
@@ -273,6 +299,30 @@ function getArtifactTypeLabel(artifactType: string) {
       return "Refresh Documental";
     case "legal_artifact_publish_premium":
       return "Artifact Premium";
+    case "tenant_setup_doctor_report":
+      return "Setup Doctor";
+    case "referral_intake":
+      return "Indicacao Comercial";
+    case "lead_intake":
+      return "Lead Comercial";
+    case "sales_profile_setup":
+      return "Auto-configuracao Comercial";
+    case "sales_consultation_plan":
+      return "Consultoria Comercial";
+    case "lead_qualification_plan":
+      return "Plano de Qualificacao";
+    case "lead_followup_plan":
+      return "Plano de Follow-up";
+    case "lead_reactivation_plan":
+      return "Reativacao de Leads";
+    case "lead_schedule_plan":
+      return "Plano de Agendamento";
+    case "revenue_flow_plan":
+      return "Revenue-to-case";
+    case "external_action_preview":
+      return "Preview Externo";
+    case "client_acceptance_record":
+      return "Aceite do Cliente";
     case "case_first_draft":
       return "Artifact da Primeira Minuta";
     case "case_brain_dossier":
@@ -408,8 +458,173 @@ function getArtifactHighlights(artifact: BrainArtifactRecord) {
     typeof metadata?.support_status_current_phase === "string" && metadata.support_status_current_phase.trim()
       ? `fase ${metadata.support_status_current_phase.trim()}`
       : null,
+    Array.isArray(metadata?.support_status_inference_notes) && metadata.support_status_inference_notes.length > 0
+      ? `${metadata.support_status_inference_notes.length} inferencias`
+      : null,
+    Array.isArray(metadata?.support_status_missing_signals) && metadata.support_status_missing_signals.length > 0
+      ? `${metadata.support_status_missing_signals.length} sinais faltantes`
+      : null,
     typeof metadata?.support_status_handoff_reason === "string" && metadata.support_status_handoff_reason.trim()
       ? `handoff ${metadata.support_status_handoff_reason.trim().replaceAll("_", " ")}`
+      : null,
+    artifact.artifact_type === "tenant_setup_doctor_report" && typeof metadata?.fixed_count === "number"
+      ? `${metadata.fixed_count} corrigidos`
+      : null,
+    artifact.artifact_type === "tenant_setup_doctor_report" && typeof metadata?.blocked_count === "number"
+      ? `${metadata.blocked_count} bloqueios`
+      : null,
+    artifact.artifact_type === "tenant_setup_doctor_report" && typeof metadata?.warning_count === "number"
+      ? `${metadata.warning_count} avisos`
+      : null,
+    artifact.artifact_type === "tenant_setup_doctor_report" && typeof metadata?.requires_human_action === "boolean"
+      ? metadata.requires_human_action ? "acao humana pendente" : "sem acao humana"
+      : null,
+    artifact.artifact_type === "referral_intake" && typeof metadata?.score === "number"
+      ? `score ${metadata.score}`
+      : null,
+    artifact.artifact_type === "referral_intake" && typeof metadata?.legal_area === "string" && metadata.legal_area.trim()
+      ? `area ${metadata.legal_area.trim()}`
+      : null,
+    artifact.artifact_type === "referral_intake" && typeof metadata?.referred_by === "string" && metadata.referred_by.trim()
+      ? `indicado por ${metadata.referred_by.trim()}`
+      : null,
+    artifact.artifact_type === "referral_intake" && typeof metadata?.needs_human_handoff === "boolean"
+      ? metadata.needs_human_handoff ? "handoff humano" : "sem handoff"
+      : null,
+    artifact.artifact_type === "lead_intake" && typeof metadata?.score === "number"
+      ? `score ${metadata.score}`
+      : null,
+    artifact.artifact_type === "lead_intake" && typeof metadata?.legal_area === "string" && metadata.legal_area.trim()
+      ? `area ${metadata.legal_area.trim()}`
+      : null,
+    artifact.artifact_type === "lead_intake" && typeof metadata?.kind === "string" && metadata.kind.trim()
+      ? `tipo ${metadata.kind.trim().replaceAll("_", " ")}`
+      : null,
+    artifact.artifact_type === "lead_intake" && typeof metadata?.needs_human_handoff === "boolean"
+      ? metadata.needs_human_handoff ? "handoff humano" : "sem handoff"
+      : null,
+    artifact.artifact_type === "sales_profile_setup" && typeof metadata?.setup_status === "string" && metadata.setup_status.trim()
+      ? `status ${metadata.setup_status.trim().replaceAll("_", " ")}`
+      : null,
+    artifact.artifact_type === "sales_profile_setup" && typeof metadata?.setup_completeness === "number"
+      ? `${metadata.setup_completeness}% perfil`
+      : null,
+    artifact.artifact_type === "sales_profile_setup" && Array.isArray(metadata?.missing_signals)
+      ? `${metadata.missing_signals.length} sinais faltantes`
+      : null,
+    artifact.artifact_type === "sales_profile_setup" && Array.isArray(metadata?.drafted_signals)
+      ? `${metadata.drafted_signals.length} rascunhos MAYUS`
+      : null,
+    artifact.artifact_type === "sales_profile_setup" && typeof metadata?.persisted === "boolean"
+      ? metadata.persisted ? "gravado" : "nao gravado"
+      : null,
+    artifact.artifact_type === "sales_consultation_plan" && typeof metadata?.consultation_phase === "string" && metadata.consultation_phase.trim()
+      ? `fase ${metadata.consultation_phase.trim().replaceAll("_", " ")}`
+      : null,
+    artifact.artifact_type === "sales_consultation_plan" && typeof metadata?.customer_profile === "string" && metadata.customer_profile.trim()
+      ? `perfil ${metadata.customer_profile.trim().replaceAll("_", " ")}`
+      : null,
+    artifact.artifact_type === "sales_consultation_plan" && Array.isArray(metadata?.objection_moves)
+      ? `${metadata.objection_moves.length} objecoes`
+      : null,
+    artifact.artifact_type === "sales_consultation_plan" && typeof metadata?.discovery_completeness === "number"
+      ? `${metadata.discovery_completeness}% descoberta`
+      : null,
+    artifact.artifact_type === "sales_consultation_plan" && Array.isArray(metadata?.missing_signals)
+      ? `${metadata.missing_signals.length} sinais faltantes`
+      : null,
+    artifact.artifact_type === "sales_consultation_plan" && typeof metadata?.firm_positioning_completeness === "number"
+      ? `${metadata.firm_positioning_completeness}% perfil comercial`
+      : null,
+    artifact.artifact_type === "sales_consultation_plan" && Array.isArray(metadata?.firm_profile_missing_signals)
+      ? `${metadata.firm_profile_missing_signals.length} sinais do escritorio`
+      : null,
+    artifact.artifact_type === "sales_consultation_plan" && typeof metadata?.external_side_effects_blocked === "boolean"
+      ? metadata.external_side_effects_blocked ? "externo bloqueado" : "externo liberado"
+      : null,
+    artifact.artifact_type === "lead_qualification_plan" && typeof metadata?.qualification_confidence === "string" && metadata.qualification_confidence.trim()
+      ? `confianca ${metadata.qualification_confidence.trim()}`
+      : null,
+    artifact.artifact_type === "lead_qualification_plan" && typeof metadata?.legal_area === "string" && metadata.legal_area.trim()
+      ? `area ${metadata.legal_area.trim()}`
+      : null,
+    artifact.artifact_type === "lead_qualification_plan" && Array.isArray(metadata?.minimum_documents)
+      ? `${metadata.minimum_documents.length} documentos`
+      : null,
+    artifact.artifact_type === "lead_qualification_plan" && Array.isArray(metadata?.risk_flags) && metadata.risk_flags.length > 0
+      ? `${metadata.risk_flags.length} alertas`
+      : null,
+    artifact.artifact_type === "lead_followup_plan" && typeof metadata?.followup_priority === "string" && metadata.followup_priority.trim()
+      ? `prioridade ${metadata.followup_priority.trim()}`
+      : null,
+    artifact.artifact_type === "lead_followup_plan" && typeof metadata?.legal_area === "string" && metadata.legal_area.trim()
+      ? `area ${metadata.legal_area.trim()}`
+      : null,
+    artifact.artifact_type === "lead_followup_plan" && Array.isArray(metadata?.cadence)
+      ? `${metadata.cadence.length} passos`
+      : null,
+    artifact.artifact_type === "lead_followup_plan" && typeof metadata?.requires_human_approval === "boolean"
+      ? metadata.requires_human_approval ? "aprovacao humana" : "sem aprovacao humana"
+      : null,
+    artifact.artifact_type === "lead_reactivation_plan" && typeof metadata?.segment === "string" && metadata.segment.trim()
+      ? `segmento ${metadata.segment.trim()}`
+      : null,
+    artifact.artifact_type === "lead_reactivation_plan" && typeof metadata?.candidate_count === "number"
+      ? `${metadata.candidate_count} candidatos`
+      : null,
+    artifact.artifact_type === "lead_reactivation_plan" && Array.isArray(metadata?.message_variants)
+      ? `${metadata.message_variants.length} mensagens`
+      : null,
+    artifact.artifact_type === "lead_reactivation_plan" && typeof metadata?.external_side_effects_blocked === "boolean"
+      ? metadata.external_side_effects_blocked ? "externo bloqueado" : "externo liberado"
+      : null,
+    artifact.artifact_type === "lead_schedule_plan" && typeof metadata?.scheduled_for === "string" && metadata.scheduled_for.trim()
+      ? `agenda ${new Date(metadata.scheduled_for.trim()).toLocaleDateString("pt-BR")}`
+      : null,
+    artifact.artifact_type === "lead_schedule_plan" && typeof metadata?.urgency === "string" && metadata.urgency.trim()
+      ? `urgencia ${metadata.urgency.trim()}`
+      : null,
+    artifact.artifact_type === "lead_schedule_plan" && typeof metadata?.agenda_task_id === "string" && metadata.agenda_task_id.trim()
+      ? `tarefa ${metadata.agenda_task_id.trim()}`
+      : null,
+    artifact.artifact_type === "lead_schedule_plan" && typeof metadata?.requires_human_approval === "boolean"
+      ? metadata.requires_human_approval ? "confirmacao humana" : "sem confirmacao humana"
+      : null,
+    artifact.artifact_type === "revenue_flow_plan" && Array.isArray(metadata?.steps)
+      ? `${metadata.steps.length} etapas`
+      : null,
+    artifact.artifact_type === "revenue_flow_plan" && typeof metadata?.amount === "number"
+      ? `valor ${new Intl.NumberFormat("pt-BR", { style: "currency", currency: "BRL" }).format(metadata.amount)}`
+      : null,
+    artifact.artifact_type === "revenue_flow_plan" && typeof metadata?.blocked_reason === "string" && metadata.blocked_reason.trim()
+      ? "bloqueado"
+      : null,
+    artifact.artifact_type === "revenue_flow_plan" && typeof metadata?.requires_human_approval === "boolean"
+      ? metadata.requires_human_approval ? "aprovacao humana" : "sem aprovacao humana"
+      : null,
+    artifact.artifact_type === "external_action_preview" && typeof metadata?.action_type === "string" && metadata.action_type.trim()
+      ? `acao ${metadata.action_type.trim().replaceAll("_", " ")}`
+      : null,
+    artifact.artifact_type === "external_action_preview" && typeof metadata?.preview_status === "string" && metadata.preview_status.trim()
+      ? `status ${metadata.preview_status.trim().replaceAll("_", " ")}`
+      : null,
+    artifact.artifact_type === "external_action_preview" && Array.isArray(metadata?.blockers)
+      ? `${metadata.blockers.length} bloqueios`
+      : null,
+    artifact.artifact_type === "external_action_preview" && typeof metadata?.external_side_effects_blocked === "boolean"
+      ? metadata.external_side_effects_blocked ? "externo bloqueado" : "externo liberado"
+      : null,
+    artifact.artifact_type === "client_acceptance_record" && typeof metadata?.acceptance_type === "string" && metadata.acceptance_type.trim()
+      ? `tipo ${metadata.acceptance_type.trim().replaceAll("_", " ")}`
+      : null,
+    artifact.artifact_type === "client_acceptance_record" && typeof metadata?.audit_status === "string" && metadata.audit_status.trim()
+      ? `status ${metadata.audit_status.trim().replaceAll("_", " ")}`
+      : null,
+    artifact.artifact_type === "client_acceptance_record" && typeof metadata?.amount === "number"
+      ? `valor ${new Intl.NumberFormat("pt-BR", { style: "currency", currency: "BRL" }).format(metadata.amount)}`
+      : null,
+    artifact.artifact_type === "client_acceptance_record" && typeof metadata?.external_side_effects_blocked === "boolean"
+      ? metadata.external_side_effects_blocked ? "externo bloqueado" : "externo liberado"
       : null,
   ].filter(Boolean) as string[];
 

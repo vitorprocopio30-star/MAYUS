@@ -3,7 +3,12 @@ import { createServerClient } from "@supabase/ssr";
 import { cookies } from "next/headers";
 import { z } from "zod";
 import { supabaseAdmin } from "@/lib/supabase/admin";
-import { analyzeLeadIntake, buildCrmTaskPayload } from "@/lib/growth/lead-intake";
+import {
+  analyzeLeadIntake,
+  buildCrmTaskPayload,
+  buildLeadIntakeEventPayload,
+  registerReferralIntakeBrainArtifact,
+} from "@/lib/growth/lead-intake";
 
 const LeadIntakeSchema = z.object({
   name: z.string().optional().nullable(),
@@ -17,6 +22,8 @@ const LeadIntakeSchema = z.object({
   urgency: z.string().optional().nullable(),
   pain: z.string().optional().nullable(),
   notes: z.string().optional().nullable(),
+  referredBy: z.string().optional().nullable(),
+  referralRelationship: z.string().optional().nullable(),
   assignedTo: z.string().uuid().optional().nullable(),
 });
 
@@ -144,9 +151,38 @@ export async function POST(request: NextRequest) {
 
     if (taskError) throw taskError;
 
+    const eventPayload = buildLeadIntakeEventPayload({
+      crmTaskId: task.id,
+      result,
+    });
+
+    const { error: eventError } = await supabaseAdmin.from("system_event_logs").insert({
+      tenant_id: profile.tenant_id,
+      user_id: user.id,
+      source: "growth",
+      provider: "mayus",
+      event_name: result.kind === "referral" ? "referral_intake_created" : "lead_intake_created",
+      status: "ok",
+      payload: eventPayload,
+      created_at: new Date().toISOString(),
+    });
+
+    if (eventError) {
+      console.error("[growth][lead-intake][event]", eventError.message);
+    }
+
+    const brainTrace = await registerReferralIntakeBrainArtifact({
+      tenantId: profile.tenant_id,
+      userId: user.id,
+      crmTaskId: task.id,
+      result,
+      supabase: supabaseAdmin,
+    });
+
     return NextResponse.json({
       success: true,
       task,
+      brainTrace,
       analysis: {
         kind: result.kind,
         score: result.score,

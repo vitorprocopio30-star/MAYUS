@@ -27,6 +27,7 @@ import {
   buildTenantGoogleDriveServiceRequest,
   getTenantGoogleDriveContext,
 } from "@/lib/services/google-drive-tenant";
+import { syncAgendaTaskBySource } from "@/lib/agenda/userTasks";
 import { getTenantIntegrationResolved, listTenantIntegrationsResolved } from "@/lib/integrations/server";
 import {
   syncProcessDocuments,
@@ -34,6 +35,62 @@ import {
   type ProcessTaskDocumentContext,
 } from "@/lib/services/process-documents";
 import { publishLegalPiecePremium } from "@/lib/juridico/publish-piece-premium";
+import {
+  analyzeLeadIntake,
+  buildCrmTaskPayload,
+  buildLeadIntakeEventPayload,
+  buildReferralIntakeArtifactMetadata,
+  type LeadIntakeInput,
+} from "@/lib/growth/lead-intake";
+import {
+  buildLeadQualificationArtifactMetadata,
+  buildLeadQualificationPlan,
+  type LeadQualificationInput,
+} from "@/lib/growth/lead-qualification";
+import {
+  buildLeadFollowupArtifactMetadata,
+  buildLeadFollowupPlan,
+  type LeadFollowupInput,
+} from "@/lib/growth/lead-followup";
+import {
+  buildLeadScheduleAgendaPayload,
+  buildLeadScheduleArtifactMetadata,
+  buildLeadSchedulePlan,
+  type LeadScheduleInput,
+} from "@/lib/growth/lead-scheduling";
+import {
+  buildRevenueFlowArtifactMetadata,
+  buildRevenueFlowPlan,
+  type RevenueFlowInput,
+} from "@/lib/growth/revenue-flow";
+import {
+  buildExternalActionPreview,
+  buildExternalActionPreviewMetadata,
+  type ExternalActionPreviewInput,
+} from "@/lib/growth/external-action-preview";
+import {
+  buildClientAcceptanceArtifactMetadata,
+  buildClientAcceptanceRecord,
+  buildClientAcceptanceSystemEventPayload,
+  type ClientAcceptanceInput,
+} from "@/lib/growth/client-acceptance";
+import {
+  buildColdLeadReactivationArtifactMetadata,
+  buildColdLeadReactivationPlan,
+  type ColdLeadCandidateInput,
+  type ColdLeadReactivationInput,
+} from "@/lib/growth/cold-lead-reactivation";
+import {
+  buildSalesConsultationArtifactMetadata,
+  buildSalesConsultationPlan,
+  type SalesConsultationInput,
+} from "@/lib/growth/sales-consultation";
+import {
+  buildSalesProfileSetupArtifactMetadata,
+  buildSalesProfileSetupPlan,
+  type SalesProfileSetupInput,
+  type SalesProfileSetupProfile,
+} from "@/lib/growth/sales-profile-setup";
 
 const serviceSupabase = createClient(
   process.env.NEXT_PUBLIC_SUPABASE_URL!,
@@ -1138,6 +1195,1293 @@ async function runEscavadorMonitor(input: DispatchCapabilityInput): Promise<Disp
   };
 }
 
+async function getOrCreateGrowthPipeline(tenantId: string) {
+  const { data: existing, error: existingError } = await serviceSupabase
+    .from("crm_pipelines")
+    .select("id")
+    .eq("tenant_id", tenantId)
+    .order("created_at", { ascending: true })
+    .limit(1)
+    .maybeSingle();
+
+  if (existingError) throw existingError;
+  if (existing?.id) return String(existing.id);
+
+  const { data: pipeline, error: pipelineError } = await serviceSupabase
+    .from("crm_pipelines")
+    .insert({
+      tenant_id: tenantId,
+      name: "Comercial",
+    })
+    .select("id")
+    .single();
+
+  if (pipelineError) throw pipelineError;
+
+  await serviceSupabase.from("crm_stages").insert([
+    { pipeline_id: pipeline.id, name: "Novo Lead", color: "#3b82f6", order_index: 0 },
+    { pipeline_id: pipeline.id, name: "Qualificacao", color: "#fbbf24", order_index: 1 },
+    { pipeline_id: pipeline.id, name: "Fechado", color: "#10b981", order_index: 2, is_win: true },
+    { pipeline_id: pipeline.id, name: "Perdido", color: "#ef4444", order_index: 3, is_loss: true },
+  ]);
+
+  return String(pipeline.id);
+}
+
+async function getGrowthDefaultStageId(pipelineId: string) {
+  const { data, error } = await serviceSupabase
+    .from("crm_stages")
+    .select("id, name, order_index")
+    .eq("pipeline_id", pipelineId)
+    .order("order_index", { ascending: true });
+
+  if (error) throw error;
+
+  const novoLead = data?.find((stage) => String(stage.name || "").toLowerCase().includes("lead"));
+  const first = novoLead || data?.[0];
+
+  if (first?.id) return String(first.id);
+
+  const { data: inserted, error: insertError } = await serviceSupabase
+    .from("crm_stages")
+    .insert({ pipeline_id: pipelineId, name: "Novo Lead", color: "#3b82f6", order_index: 0 })
+    .select("id")
+    .single();
+
+  if (insertError) throw insertError;
+  return String(inserted.id);
+}
+
+function buildLeadIntakeInputFromEntities(entities: Record<string, string>): LeadIntakeInput {
+  return {
+    name: getStringValue(entities.name) || getStringValue(entities.lead_name) || getStringValue(entities.client_name),
+    phone: getStringValue(entities.phone) || getStringValue(entities.phone_number) || getStringValue(entities.whatsapp),
+    email: getStringValue(entities.email),
+    origin: getStringValue(entities.origin) || getStringValue(entities.source),
+    channel: getStringValue(entities.channel),
+    legalArea: getStringValue(entities.legalArea) || getStringValue(entities.legal_area),
+    city: getStringValue(entities.city),
+    state: getStringValue(entities.state) || getStringValue(entities.uf),
+    urgency: getStringValue(entities.urgency),
+    pain: getStringValue(entities.pain) || getStringValue(entities.problem) || getStringValue(entities.case_summary),
+    notes: getStringValue(entities.notes),
+    referredBy: getStringValue(entities.referredBy) || getStringValue(entities.referred_by),
+    referralRelationship: getStringValue(entities.referralRelationship) || getStringValue(entities.referral_relationship),
+  };
+}
+
+function buildLeadIntakeReply(params: {
+  kind: string;
+  score: number;
+  leadName: string;
+  nextStep: string;
+  needsHumanHandoff: boolean;
+  crmTaskId: string;
+}) {
+  return [
+    "## Lead registrado",
+    `- Nome: ${params.leadName}`,
+    `- Classificacao: ${params.kind}`,
+    `- Score inicial: ${params.score}/100`,
+    `- Proximo passo: ${params.nextStep}`,
+    `- Handoff humano: ${params.needsHumanHandoff ? "sim" : "nao"}`,
+    `- CRM: ${params.crmTaskId}`,
+  ].join("\n");
+}
+
+function buildLeadQualificationReply(params: {
+  leadName: string;
+  confidence: string;
+  nextBestAction: string;
+  minimumDocuments: string[];
+  riskFlags: string[];
+}) {
+  return [
+    "## Qualificacao do lead",
+    `- Lead: ${params.leadName}`,
+    `- Confianca: ${params.confidence}`,
+    `- Proximo melhor movimento: ${params.nextBestAction}`,
+    `- Documentos minimos: ${params.minimumDocuments.join("; ")}`,
+    params.riskFlags.length > 0 ? `- Alertas: ${params.riskFlags.join("; ")}` : "- Alertas: nenhum alerta critico identificado",
+  ].join("\n");
+}
+
+function buildLeadFollowupReply(params: {
+  leadName: string;
+  priority: string;
+  nextBestAction: string;
+  cadenceStepCount: number;
+  requiresHumanApproval: boolean;
+}) {
+  return [
+    "## Follow-up do lead",
+    `- Lead: ${params.leadName}`,
+    `- Prioridade: ${params.priority}`,
+    `- Cadencia: ${params.cadenceStepCount} passos supervisionados`,
+    `- Proximo melhor movimento: ${params.nextBestAction}`,
+    `- Aprovacao humana: ${params.requiresHumanApproval ? "obrigatoria" : "nao exigida"}`,
+  ].join("\n");
+}
+
+function buildLeadScheduleReply(params: {
+  leadName: string;
+  scheduledFor: string;
+  urgency: string;
+  agendaTaskId: string | null;
+  nextBestAction: string;
+}) {
+  return [
+    "## Agendamento do lead",
+    `- Lead: ${params.leadName}`,
+    `- Data/hora: ${formatDateTimeLabel(params.scheduledFor)}`,
+    `- Urgencia: ${params.urgency}`,
+    `- Agenda interna: ${params.agendaTaskId || "tarefa registrada sem ID retornado"}`,
+    `- Proximo melhor movimento: ${params.nextBestAction}`,
+  ].join("\n");
+}
+
+function buildRevenueFlowReply(params: {
+  clientName: string;
+  nextBestAction: string;
+  stepCount: number;
+  blockedReason: string | null;
+}) {
+  return [
+    "## Plano revenue-to-case",
+    `- Cliente: ${params.clientName}`,
+    `- Etapas: ${params.stepCount}`,
+    `- Proximo melhor movimento: ${params.nextBestAction}`,
+    params.blockedReason ? `- Bloqueio: ${params.blockedReason}` : "- Bloqueio: nenhum bloqueio estrutural identificado",
+  ].join("\n");
+}
+
+function buildExternalActionPreviewReply(params: {
+  actionType: string;
+  clientName: string;
+  blockerCount: number;
+  nextBestAction: string;
+}) {
+  return [
+    "## Preview de acao externa",
+    `- Acao: ${params.actionType.replaceAll("_", " ")}`,
+    `- Cliente: ${params.clientName}`,
+    `- Bloqueios: ${params.blockerCount}`,
+    `- Proximo melhor movimento: ${params.nextBestAction}`,
+  ].join("\n");
+}
+
+function buildClientAcceptanceReply(params: {
+  clientName: string;
+  acceptanceType: string;
+  auditStatus: string;
+  nextBestAction: string;
+}) {
+  return [
+    "## Aceite do cliente registrado",
+    `- Cliente: ${params.clientName}`,
+    `- Tipo: ${params.acceptanceType}`,
+    `- Status: ${params.auditStatus.replaceAll("_", " ")}`,
+    `- Proximo melhor movimento: ${params.nextBestAction}`,
+  ].join("\n");
+}
+
+function buildColdLeadReactivationReply(params: {
+  segment: string;
+  candidateCount: number;
+  messageCount: number;
+  nextBestAction: string;
+  requiresHumanApproval: boolean;
+}) {
+  return [
+    "## Reativacao de leads frios",
+    `- Segmento: ${params.segment}`,
+    `- Lista operacional: ${params.candidateCount} candidato(s)`,
+    `- Mensagens sugeridas: ${params.messageCount}`,
+    `- Proximo melhor movimento: ${params.nextBestAction}`,
+    `- Aprovacao humana: ${params.requiresHumanApproval ? "obrigatoria" : "nao exigida"}`,
+  ].join("\n");
+}
+
+function buildSalesConsultationReply(params: {
+  leadName: string;
+  phase: string;
+  customerProfile: string;
+  objectionCount: number;
+  discoveryCompleteness: number;
+  missingSignalCount: number;
+  nextDiscoveryQuestion: string;
+  nextBestAction: string;
+}) {
+  return [
+    "## Consultoria comercial DEF",
+    `- Lead: ${params.leadName}`,
+    `- Fase: ${params.phase}`,
+    `- Perfil: ${params.customerProfile}`,
+    `- Descoberta: ${params.discoveryCompleteness}% completa`,
+    `- Sinais faltantes: ${params.missingSignalCount}`,
+    `- Proxima pergunta: ${params.nextDiscoveryQuestion}`,
+    `- Movimentos de objecao: ${params.objectionCount}`,
+    `- Proximo melhor movimento: ${params.nextBestAction}`,
+  ].join("\n");
+}
+
+function buildSalesProfileSetupReply(params: {
+  status: string;
+  completeness: number;
+  idealClient: string | null;
+  coreSolution: string | null;
+  puv: string | null;
+  pillarCount: number;
+  missingSignalCount: number;
+  nextQuestion: string;
+  persisted: boolean;
+}) {
+  return [
+    "## Auto-configuracao comercial",
+    `- Status: ${params.status.replaceAll("_", " ")}`,
+    `- Perfil: ${params.completeness}% completo`,
+    `- Cliente ideal: ${params.idealClient || "ainda investigando"}`,
+    `- Solucao central: ${params.coreSolution || "ainda investigando"}`,
+    `- PUV: ${params.puv || "rascunho pendente"}`,
+    `- Pilares: ${params.pillarCount}`,
+    `- Sinais faltantes: ${params.missingSignalCount}`,
+    `- Gravado nas configuracoes: ${params.persisted ? "sim" : "ainda nao"}`,
+    `- Proxima pergunta: ${params.nextQuestion}`,
+  ].join("\n");
+}
+
+function buildSalesConsultationInputFromEntities(entities: Record<string, string>): SalesConsultationInput {
+  return {
+    crmTaskId: getStringValue(entities.crm_task_id),
+    leadName: getStringValue(entities.lead_name) || getStringValue(entities.name) || getStringValue(entities.client_name),
+    legalArea: getStringValue(entities.legal_area) || getStringValue(entities.legalArea),
+    pain: getStringValue(entities.pain) || getStringValue(entities.problem) || getStringValue(entities.case_summary),
+    channel: getStringValue(entities.channel),
+    stage: getStringValue(entities.stage) || getStringValue(entities.phase),
+    objective: getStringValue(entities.objective) || getStringValue(entities.goal),
+    objection: getStringValue(entities.objection),
+    ticketValue: getStringValue(entities.ticket_value) || getStringValue(entities.amount) || getStringValue(entities.valor),
+    conversationSummary: getStringValue(entities.conversation_summary) || getStringValue(entities.notes),
+    officeIdealClient: getStringValue(entities.office_ideal_client),
+    officeSolution: getStringValue(entities.office_solution),
+    officeUniqueValueProposition: getStringValue(entities.office_unique_value_proposition),
+    officePillars: getStringValue(entities.office_pillars)
+      ? String(entities.office_pillars).split("|").map((item) => item.trim()).filter(Boolean)
+      : null,
+  };
+}
+
+function buildSalesProfileSetupInputFromEntities(entities: Record<string, string>): SalesProfileSetupInput {
+  return {
+    idealClient: getStringValue(entities.office_ideal_client) || getStringValue(entities.ideal_client),
+    coreSolution: getStringValue(entities.office_solution) || getStringValue(entities.core_solution) || getStringValue(entities.solution),
+    uniqueValueProposition: getStringValue(entities.office_unique_value_proposition)
+      || getStringValue(entities.unique_value_proposition)
+      || getStringValue(entities.puv),
+    valuePillars: getStringValue(entities.office_pillars) || getStringValue(entities.value_pillars) || getStringValue(entities.pillars)
+      ? String(getStringValue(entities.office_pillars) || getStringValue(entities.value_pillars) || getStringValue(entities.pillars))
+        .split("|")
+        .map((item) => item.trim())
+        .filter(Boolean)
+      : null,
+    positioningSummary: getStringValue(entities.office_positioning_summary) || getStringValue(entities.positioning_summary),
+    antiClientSignals: getStringValue(entities.anti_client_signals) || getStringValue(entities.anti_client)
+      ? String(getStringValue(entities.anti_client_signals) || getStringValue(entities.anti_client))
+        .split("|")
+        .map((item) => item.trim())
+        .filter(Boolean)
+      : null,
+    confirmationText: getStringValue(entities.confirmation) || getStringValue(entities.confirm_save),
+  };
+}
+
+function buildSalesConsultationConversationTurns(history: DispatchCapabilityInput["history"]) {
+  return (history || [])
+    .filter((item) => item?.role === "user" || item?.role === "model" || item?.role === "assistant")
+    .map((item) => ({
+      role: item.role === "model" ? "assistant" : item.role,
+      content: String(item.content || "").slice(0, 1200),
+    }))
+    .filter((item) => item.content.trim())
+    .slice(-12);
+}
+
+async function loadTenantSalesConsultationProfile(tenantId: string): Promise<SalesProfileSetupProfile | null> {
+  try {
+    const { data, error } = await serviceSupabase
+      .from("tenant_settings")
+      .select("ai_features")
+      .eq("tenant_id", tenantId)
+      .maybeSingle();
+
+    if (error) return null;
+    const profile = data?.ai_features?.sales_consultation_profile;
+    if (!profile || typeof profile !== "object") return null;
+
+    return {
+      idealClient: getStringValue(profile.ideal_client),
+      coreSolution: getStringValue(profile.core_solution),
+      uniqueValueProposition: getStringValue(profile.unique_value_proposition),
+      valuePillars: Array.isArray(profile.value_pillars)
+        ? profile.value_pillars.map((item: unknown) => getStringValue(item)).filter((item): item is string => Boolean(item))
+        : [],
+      positioningSummary: getStringValue(profile.positioning_summary),
+      antiClientSignals: Array.isArray(profile.anti_client_signals)
+        ? profile.anti_client_signals.map((item: unknown) => getStringValue(item)).filter((item): item is string => Boolean(item))
+        : [],
+      status: getStringValue(profile.status),
+    };
+  } catch {
+    return null;
+  }
+}
+
+async function persistTenantSalesConsultationProfile(params: {
+  tenantId: string;
+  profile: SalesProfileSetupProfile & { status?: string | null };
+}) {
+  const { data } = await serviceSupabase
+    .from("tenant_settings")
+    .select("ai_features")
+    .eq("tenant_id", params.tenantId)
+    .maybeSingle<{ ai_features: Record<string, unknown> | null }>();
+
+  const aiFeatures = data?.ai_features && typeof data.ai_features === "object" && !Array.isArray(data.ai_features)
+    ? data.ai_features
+    : {};
+
+  const salesProfile = {
+    ideal_client: params.profile.idealClient || null,
+    core_solution: params.profile.coreSolution || null,
+    unique_value_proposition: params.profile.uniqueValueProposition || null,
+    value_pillars: params.profile.valuePillars || [],
+    positioning_summary: params.profile.positioningSummary || null,
+    anti_client_signals: params.profile.antiClientSignals || [],
+    status: params.profile.status || "draft",
+    updated_at: new Date().toISOString(),
+  };
+
+  const { error } = await serviceSupabase
+    .from("tenant_settings")
+    .upsert({
+      tenant_id: params.tenantId,
+      ai_features: {
+        ...aiFeatures,
+        sales_consultation_profile: salesProfile,
+      },
+      updated_at: new Date().toISOString(),
+    }, { onConflict: "tenant_id" });
+
+  if (error) throw error;
+  return salesProfile;
+}
+
+function buildColdLeadReactivationInputFromEntities(entities: Record<string, string>): ColdLeadReactivationInput {
+  return {
+    legalArea: getStringValue(entities.legal_area) || getStringValue(entities.legalArea) || getStringValue(entities.segment),
+    segment: getStringValue(entities.segment),
+    minDaysInactive: getStringValue(entities.min_days_inactive) || getStringValue(entities.days_inactive),
+    maxLeads: getStringValue(entities.max_leads) || getStringValue(entities.limit),
+    goal: getStringValue(entities.goal) || getStringValue(entities.objective),
+  };
+}
+
+function buildClientAcceptanceInputFromEntities(entities: Record<string, string>): ClientAcceptanceInput {
+  return {
+    clientName: getStringValue(entities.client_name) || getStringValue(entities.lead_name) || getStringValue(entities.name),
+    crmTaskId: getStringValue(entities.crm_task_id),
+    legalArea: getStringValue(entities.legal_area) || getStringValue(entities.legalArea),
+    acceptanceType: getStringValue(entities.acceptance_type) || getStringValue(entities.type),
+    acceptanceChannel: getStringValue(entities.acceptance_channel) || getStringValue(entities.channel),
+    evidenceSummary: getStringValue(entities.evidence_summary) || getStringValue(entities.notes),
+    amount: getStringValue(entities.amount) || getStringValue(entities.valor) || getStringValue(entities.total_value),
+    acceptedAt: getStringValue(entities.accepted_at) || getStringValue(entities.date),
+  };
+}
+
+function buildExternalActionPreviewInputFromEntities(entities: Record<string, string>): ExternalActionPreviewInput {
+  return {
+    actionType: getStringValue(entities.action_type) || getStringValue(entities.action),
+    clientName: getStringValue(entities.client_name) || getStringValue(entities.lead_name) || getStringValue(entities.name),
+    legalArea: getStringValue(entities.legal_area) || getStringValue(entities.legalArea),
+    amount: getStringValue(entities.amount) || getStringValue(entities.valor) || getStringValue(entities.total_value),
+    recipientName: getStringValue(entities.recipient_name) || getStringValue(entities.signer_name),
+    recipientEmail: getStringValue(entities.recipient_email) || getStringValue(entities.signer_email) || getStringValue(entities.email),
+    crmTaskId: getStringValue(entities.crm_task_id),
+    notes: getStringValue(entities.notes),
+  };
+}
+
+function buildRevenueFlowInputFromEntities(entities: Record<string, string>): RevenueFlowInput {
+  return {
+    crmTaskId: getStringValue(entities.crm_task_id),
+    clientName: getStringValue(entities.client_name) || getStringValue(entities.lead_name) || getStringValue(entities.name),
+    legalArea: getStringValue(entities.legal_area) || getStringValue(entities.legalArea),
+    amount: getStringValue(entities.amount) || getStringValue(entities.valor) || getStringValue(entities.total_value),
+    proposalReady: entities.proposal_ready,
+    contractReady: entities.contract_ready,
+    billingReady: entities.billing_ready,
+    paymentConfirmed: entities.payment_confirmed,
+  };
+}
+
+function buildLeadQualificationInputFromEntities(entities: Record<string, string>): LeadQualificationInput {
+  return {
+    crmTaskId: getStringValue(entities.crm_task_id),
+    leadName: getStringValue(entities.lead_name) || getStringValue(entities.name) || getStringValue(entities.client_name),
+    legalArea: getStringValue(entities.legal_area) || getStringValue(entities.legalArea),
+    pain: getStringValue(entities.pain) || getStringValue(entities.problem) || getStringValue(entities.case_summary),
+    score: toNullableNumber(entities.score),
+  };
+}
+
+function buildLeadScheduleInputFromEntities(entities: Record<string, string>): LeadScheduleInput {
+  return {
+    crmTaskId: getStringValue(entities.crm_task_id),
+    leadName: getStringValue(entities.lead_name) || getStringValue(entities.name) || getStringValue(entities.client_name),
+    legalArea: getStringValue(entities.legal_area) || getStringValue(entities.legalArea),
+    pain: getStringValue(entities.pain) || getStringValue(entities.problem) || getStringValue(entities.case_summary),
+    score: toNullableNumber(entities.score),
+    scheduledFor: getStringValue(entities.scheduled_for) || getStringValue(entities.date) || getStringValue(entities.datetime),
+    meetingType: getStringValue(entities.meeting_type) || getStringValue(entities.type),
+    ownerId: getStringValue(entities.owner_id) || getStringValue(entities.assigned_to),
+    ownerName: getStringValue(entities.owner_name) || getStringValue(entities.assigned_name),
+    notes: getStringValue(entities.notes),
+  };
+}
+
+function buildLeadFollowupInputFromEntities(entities: Record<string, string>): LeadFollowupInput {
+  return {
+    crmTaskId: getStringValue(entities.crm_task_id),
+    leadName: getStringValue(entities.lead_name) || getStringValue(entities.name) || getStringValue(entities.client_name),
+    legalArea: getStringValue(entities.legal_area) || getStringValue(entities.legalArea),
+    pain: getStringValue(entities.pain) || getStringValue(entities.problem) || getStringValue(entities.case_summary),
+    score: toNullableNumber(entities.score),
+    goal: getStringValue(entities.goal) || getStringValue(entities.objective),
+  };
+}
+
+async function loadGrowthLeadCrmContext(tenantId: string, crmTaskId: string | null) {
+  if (!crmTaskId) return null;
+
+  const { data, error } = await serviceSupabase
+    .from("crm_tasks")
+    .select("id, title, description, sector, source, lead_scoring, tags, assigned_to")
+    .eq("tenant_id", tenantId)
+    .eq("id", crmTaskId)
+    .maybeSingle<{
+      id: string;
+      title: string | null;
+      description: string | null;
+      sector: string | null;
+      source: string | null;
+      lead_scoring: number | null;
+      tags: string[] | null;
+      assigned_to: string | null;
+    }>();
+
+  if (error) throw error;
+  return data || null;
+}
+
+async function loadColdLeadCandidates(params: {
+  tenantId: string;
+  legalArea: string | null | undefined;
+  maxLeads: number;
+}): Promise<ColdLeadCandidateInput[]> {
+  try {
+    const { data, error } = await serviceSupabase
+      .from("crm_tasks")
+      .select("id, title, description, sector, source, lead_scoring, tags")
+      .eq("tenant_id", params.tenantId)
+      .order("created_at", { ascending: false })
+      .limit(Math.max(1, Math.min(50, params.maxLeads * 2)));
+
+    if (error || !Array.isArray(data)) return [];
+
+    const normalizedArea = String(params.legalArea || "")
+      .normalize("NFD")
+      .replace(/[\u0300-\u036f]/g, "")
+      .toLowerCase()
+      .trim();
+
+    return data
+      .filter((row: any) => {
+        if (!normalizedArea) return true;
+        const haystack = [
+          row.sector,
+          row.title,
+          row.description,
+          ...(Array.isArray(row.tags) ? row.tags : []),
+        ].join(" ")
+          .normalize("NFD")
+          .replace(/[\u0300-\u036f]/g, "")
+          .toLowerCase();
+        return haystack.includes(normalizedArea);
+      })
+      .slice(0, params.maxLeads)
+      .map((row: any) => ({
+        id: getStringValue(row.id),
+        name: getStringValue(row.title),
+        legalArea: getStringValue(row.sector),
+        source: getStringValue(row.source),
+        score: toNullableNumber(row.lead_scoring),
+        tags: Array.isArray(row.tags) ? row.tags : [],
+      }));
+  } catch {
+    return [];
+  }
+}
+
+async function runGrowthSalesConsultation(input: DispatchCapabilityInput): Promise<DispatchCapabilityResult> {
+  const direct = buildSalesConsultationInputFromEntities(input.entities);
+  const crmTask = await loadGrowthLeadCrmContext(input.tenantId, direct.crmTaskId || null);
+  const tenantSalesProfile = await loadTenantSalesConsultationProfile(input.tenantId);
+  const plan = buildSalesConsultationPlan({
+    crmTaskId: crmTask?.id || direct.crmTaskId || null,
+    leadName: direct.leadName || crmTask?.title || null,
+    legalArea: direct.legalArea || crmTask?.sector || null,
+    pain: direct.pain || crmTask?.description || null,
+    source: crmTask?.source || null,
+    score: direct.score ?? crmTask?.lead_scoring ?? null,
+    tags: crmTask?.tags || null,
+    channel: direct.channel || null,
+    stage: direct.stage || null,
+    objective: direct.objective || null,
+    objection: direct.objection || null,
+    ticketValue: direct.ticketValue || null,
+    conversationSummary: direct.conversationSummary || null,
+    conversationTurns: buildSalesConsultationConversationTurns(input.history),
+    officeIdealClient: direct.officeIdealClient || tenantSalesProfile?.idealClient || null,
+    officeSolution: direct.officeSolution || tenantSalesProfile?.coreSolution || null,
+    officeUniqueValueProposition: direct.officeUniqueValueProposition || tenantSalesProfile?.uniqueValueProposition || null,
+    officePillars: direct.officePillars || tenantSalesProfile?.valuePillars || null,
+    officePositioningSummary: tenantSalesProfile?.positioningSummary || null,
+  });
+  const crmTaskId = crmTask?.id || direct.crmTaskId || null;
+  const metadata = buildSalesConsultationArtifactMetadata({
+    crmTaskId,
+    plan,
+  });
+
+  await registerArtifact(input, {
+    artifactType: "sales_consultation_plan",
+    title: `Consultoria comercial - ${plan.leadName}`,
+    mimeType: "application/json",
+    dedupeKey: input.auditLogId
+      ? `sales-consultation:${input.auditLogId}`
+      : `sales-consultation:${crmTaskId || plan.leadName}:${plan.phase}`,
+    metadata,
+  });
+
+  await registerLearningEvent(input, "sales_consultation_plan_created", {
+    summary: plan.summary,
+    crm_task_id: crmTaskId,
+    lead_name: plan.leadName,
+    legal_area: plan.legalArea,
+    consultation_phase: plan.phase,
+    customer_profile: plan.customerProfile,
+    objection_move_count: plan.objectionMoves.length,
+    next_best_action: plan.nextBestAction,
+    requires_human_review: plan.requiresHumanReview,
+    external_side_effects_blocked: plan.externalSideEffectsBlocked,
+  });
+
+  return {
+    status: "executed",
+    reply: buildSalesConsultationReply({
+      leadName: plan.leadName,
+      phase: plan.phase,
+      customerProfile: plan.customerProfile,
+      objectionCount: plan.objectionMoves.length,
+      discoveryCompleteness: plan.discoveryCompleteness,
+      missingSignalCount: plan.missingSignals.length,
+      nextDiscoveryQuestion: plan.nextDiscoveryQuestion,
+      nextBestAction: plan.nextBestAction,
+    }),
+    outputPayload: {
+      auditLogId: input.auditLogId || null,
+      handler_type: input.handlerType,
+      crm_task_id: crmTaskId,
+      lead_name: plan.leadName,
+      sales_consultation_phase: plan.phase,
+      sales_consultation_profile: plan.customerProfile,
+      objection_move_count: plan.objectionMoves.length,
+      discovery_completeness: plan.discoveryCompleteness,
+      missing_signal_count: plan.missingSignals.length,
+      next_discovery_question: plan.nextDiscoveryQuestion,
+      firm_positioning_completeness: plan.firmProfile.positioningCompleteness,
+      firm_profile_missing_signal_count: plan.firmProfile.missingSignals.length,
+      firm_profile_drafted: plan.firmProfile.isDrafted,
+      external_side_effects_blocked: plan.externalSideEffectsBlocked,
+      requires_human_review: plan.requiresHumanReview,
+    },
+    data: {
+      plan,
+      crmTask,
+    },
+  };
+}
+
+async function runGrowthSalesProfileSetup(input: DispatchCapabilityInput): Promise<DispatchCapabilityResult> {
+  const direct = buildSalesProfileSetupInputFromEntities(input.entities);
+  const existingProfile = await loadTenantSalesConsultationProfile(input.tenantId);
+  const plan = buildSalesProfileSetupPlan({
+    ...direct,
+    existingProfile,
+    conversationSummary: getStringValue(input.entities.conversation_summary) || getStringValue(input.entities.notes),
+    conversationTurns: buildSalesConsultationConversationTurns(input.history),
+  });
+
+  let persisted = false;
+  let persistError: string | null = null;
+  if (plan.shouldPersist) {
+    try {
+      await persistTenantSalesConsultationProfile({
+        tenantId: input.tenantId,
+        profile: plan.profile,
+      });
+      persisted = true;
+    } catch (error: any) {
+      persistError = error?.message || "Nao foi possivel gravar o perfil comercial agora.";
+    }
+  }
+
+  const metadata = {
+    ...buildSalesProfileSetupArtifactMetadata(plan),
+    persisted,
+    persist_error: persistError,
+  };
+
+  await registerArtifact(input, {
+    artifactType: "sales_profile_setup",
+    title: "Auto-configuracao comercial MAYUS",
+    mimeType: "application/json",
+    dedupeKey: input.auditLogId
+      ? `sales-profile-setup:${input.auditLogId}`
+      : `sales-profile-setup:${input.tenantId}:${plan.status}`,
+    metadata,
+  });
+
+  await registerLearningEvent(input, persisted ? "sales_profile_configured" : "sales_profile_setup_created", {
+    summary: plan.summary,
+    setup_status: plan.status,
+    setup_completeness: plan.completeness,
+    missing_signal_count: plan.missingSignals.length,
+    drafted_signal_count: plan.draftedSignals.length,
+    persisted,
+    requires_human_review: plan.requiresHumanReview,
+    external_side_effects_blocked: plan.externalSideEffectsBlocked,
+  });
+
+  return {
+    status: persistError ? "failed" : "executed",
+    reply: buildSalesProfileSetupReply({
+      status: plan.status,
+      completeness: plan.completeness,
+      idealClient: plan.profile.idealClient,
+      coreSolution: plan.profile.coreSolution,
+      puv: plan.profile.uniqueValueProposition,
+      pillarCount: plan.profile.valuePillars.length,
+      missingSignalCount: plan.missingSignals.length,
+      nextQuestion: plan.nextQuestion,
+      persisted,
+    }),
+    outputPayload: {
+      auditLogId: input.auditLogId || null,
+      handler_type: input.handlerType,
+      setup_status: plan.status,
+      setup_completeness: plan.completeness,
+      sales_profile_persisted: persisted,
+      sales_profile_persist_error: persistError,
+      missing_signal_count: plan.missingSignals.length,
+      drafted_signal_count: plan.draftedSignals.length,
+      next_question: plan.nextQuestion,
+      requires_human_review: plan.requiresHumanReview,
+      external_side_effects_blocked: plan.externalSideEffectsBlocked,
+    },
+    data: {
+      plan,
+      persisted,
+    },
+  };
+}
+
+async function runGrowthColdLeadReactivation(input: DispatchCapabilityInput): Promise<DispatchCapabilityResult> {
+  const direct = buildColdLeadReactivationInputFromEntities(input.entities);
+  const maxLeads = Math.max(1, Math.min(50, Math.round(toNullableNumber(direct.maxLeads) || 20)));
+  const candidates = await loadColdLeadCandidates({
+    tenantId: input.tenantId,
+    legalArea: direct.legalArea || direct.segment || null,
+    maxLeads,
+  });
+  const plan = buildColdLeadReactivationPlan({
+    ...direct,
+    maxLeads,
+    candidates,
+  });
+  const metadata = buildColdLeadReactivationArtifactMetadata(plan);
+
+  await registerArtifact(input, {
+    artifactType: "lead_reactivation_plan",
+    title: `Reativacao - ${plan.segment}`,
+    mimeType: "application/json",
+    dedupeKey: input.auditLogId
+      ? `lead-reactivation:${input.auditLogId}`
+      : `lead-reactivation:${plan.segment}:${plan.minDaysInactive}:${plan.candidateCount}`,
+    metadata,
+  });
+
+  await registerLearningEvent(input, "lead_reactivation_plan_created", {
+    summary: plan.summary,
+    legal_area: plan.legalArea,
+    segment: plan.segment,
+    candidate_count: plan.candidateCount,
+    message_variant_count: plan.messageVariants.length,
+    next_best_action: plan.nextBestAction,
+    requires_human_approval: plan.requiresHumanApproval,
+    external_side_effects_blocked: plan.externalSideEffectsBlocked,
+  });
+
+  return {
+    status: "executed",
+    reply: buildColdLeadReactivationReply({
+      segment: plan.segment,
+      candidateCount: plan.candidateCount,
+      messageCount: plan.messageVariants.length,
+      nextBestAction: plan.nextBestAction,
+      requiresHumanApproval: plan.requiresHumanApproval,
+    }),
+    outputPayload: {
+      auditLogId: input.auditLogId || null,
+      handler_type: input.handlerType,
+      segment: plan.segment,
+      legal_area: plan.legalArea,
+      lead_reactivation_candidate_count: plan.candidateCount,
+      lead_reactivation_message_count: plan.messageVariants.length,
+      external_side_effects_blocked: plan.externalSideEffectsBlocked,
+      requires_human_approval: plan.requiresHumanApproval,
+    },
+    data: {
+      plan,
+    },
+  };
+}
+
+async function runGrowthLeadSchedule(input: DispatchCapabilityInput): Promise<DispatchCapabilityResult> {
+  const direct = buildLeadScheduleInputFromEntities(input.entities);
+  const crmTask = await loadGrowthLeadCrmContext(input.tenantId, direct.crmTaskId || null);
+  const plan = buildLeadSchedulePlan({
+    crmTaskId: crmTask?.id || direct.crmTaskId || null,
+    leadName: direct.leadName || crmTask?.title || null,
+    legalArea: direct.legalArea || crmTask?.sector || null,
+    pain: direct.pain || crmTask?.description || null,
+    score: direct.score ?? crmTask?.lead_scoring ?? null,
+    scheduledFor: direct.scheduledFor || null,
+    meetingType: direct.meetingType || null,
+    ownerId: direct.ownerId || crmTask?.assigned_to || null,
+    ownerName: direct.ownerName || null,
+    notes: direct.notes || null,
+  });
+  const crmTaskId = crmTask?.id || direct.crmTaskId || null;
+  const agendaPayload = buildLeadScheduleAgendaPayload({
+    tenantId: input.tenantId,
+    crmTaskId,
+    userId: input.userId || null,
+    ownerId: direct.ownerId || crmTask?.assigned_to || null,
+    ownerName: direct.ownerName || null,
+    plan,
+  });
+  const agendaTaskId = await syncAgendaTaskBySource(serviceSupabase, agendaPayload);
+  const metadata = buildLeadScheduleArtifactMetadata({
+    crmTaskId,
+    agendaTaskId: agendaTaskId ? String(agendaTaskId) : null,
+    plan,
+  });
+
+  await registerArtifact(input, {
+    artifactType: "lead_schedule_plan",
+    title: `Agendamento - ${plan.leadName}`,
+    mimeType: "application/json",
+    dedupeKey: input.auditLogId
+      ? `lead-schedule:${input.auditLogId}`
+      : `lead-schedule:${crmTaskId || plan.leadName}:${plan.scheduledFor}`,
+    metadata,
+  });
+
+  await registerLearningEvent(input, "lead_schedule_plan_created", {
+    summary: plan.summary,
+    crm_task_id: crmTaskId,
+    agenda_task_id: agendaTaskId ? String(agendaTaskId) : null,
+    lead_name: plan.leadName,
+    legal_area: plan.legalArea,
+    scheduled_for: plan.scheduledFor,
+    meeting_type: plan.meetingType,
+    urgency: plan.urgency,
+    next_best_action: plan.nextBestAction,
+    requires_human_approval: plan.requiresHumanApproval,
+  });
+
+  const reply = buildLeadScheduleReply({
+    leadName: plan.leadName,
+    scheduledFor: plan.scheduledFor,
+    urgency: plan.urgency,
+    agendaTaskId: agendaTaskId ? String(agendaTaskId) : null,
+    nextBestAction: plan.nextBestAction,
+  });
+
+  return {
+    status: "executed",
+    reply,
+    outputPayload: {
+      auditLogId: input.auditLogId || null,
+      handler_type: input.handlerType,
+      crm_task_id: crmTaskId,
+      agenda_task_id: agendaTaskId ? String(agendaTaskId) : null,
+      lead_name: plan.leadName,
+      scheduled_for: plan.scheduledFor,
+      schedule_urgency: plan.urgency,
+      requires_human_approval: plan.requiresHumanApproval,
+    },
+    data: {
+      plan,
+      agendaTaskId,
+      crmTask,
+    },
+  };
+}
+
+async function runGrowthRevenueFlowPlan(input: DispatchCapabilityInput): Promise<DispatchCapabilityResult> {
+  const direct = buildRevenueFlowInputFromEntities(input.entities);
+  const commercialContext = await resolveCommercialContext(input);
+  const plan = buildRevenueFlowPlan({
+    crmTaskId: direct.crmTaskId || commercialContext.crmTask?.id || null,
+    clientName: direct.clientName || commercialContext.clientName || commercialContext.crmTask?.title || null,
+    legalArea: direct.legalArea || commercialContext.crmTask?.sector || null,
+    amount: direct.amount ?? commercialContext.amount ?? null,
+    proposalReady: Boolean(commercialContext.proposalArtifact),
+    contractReady: Boolean(commercialContext.contractArtifact),
+    billingReady: Boolean(commercialContext.billingArtifact),
+    paymentConfirmed: input.entities.payment_confirmed,
+  });
+  const metadata = buildRevenueFlowArtifactMetadata(plan);
+
+  await registerArtifact(input, {
+    artifactType: "revenue_flow_plan",
+    title: `Revenue-to-case - ${plan.clientName}`,
+    mimeType: "application/json",
+    dedupeKey: input.auditLogId
+      ? `revenue-flow:${input.auditLogId}`
+      : `revenue-flow:${plan.crmTaskId || plan.clientName}`,
+    metadata,
+  });
+
+  await registerLearningEvent(input, "revenue_flow_plan_created", {
+    summary: plan.summary,
+    crm_task_id: plan.crmTaskId,
+    client_name: plan.clientName,
+    legal_area: plan.legalArea,
+    amount: plan.amount,
+    step_count: plan.steps.length,
+    next_best_action: plan.nextBestAction,
+    blocked_reason: plan.blockedReason,
+    requires_human_approval: plan.requiresHumanApproval,
+  });
+
+  return {
+    status: "executed",
+    reply: buildRevenueFlowReply({
+      clientName: plan.clientName,
+      nextBestAction: plan.nextBestAction,
+      stepCount: plan.steps.length,
+      blockedReason: plan.blockedReason,
+    }),
+    outputPayload: {
+      auditLogId: input.auditLogId || null,
+      handler_type: input.handlerType,
+      crm_task_id: plan.crmTaskId,
+      client_name: plan.clientName,
+      revenue_flow_step_count: plan.steps.length,
+      revenue_flow_blocked_reason: plan.blockedReason,
+      requires_human_approval: plan.requiresHumanApproval,
+    },
+    data: { plan },
+  };
+}
+
+async function runGrowthExternalActionPreview(input: DispatchCapabilityInput): Promise<DispatchCapabilityResult> {
+  const direct = buildExternalActionPreviewInputFromEntities(input.entities);
+  const commercialContext = await resolveCommercialContext(input);
+  const preview = buildExternalActionPreview({
+    actionType: direct.actionType,
+    clientName: direct.clientName || commercialContext.clientName || commercialContext.crmTask?.title || null,
+    legalArea: direct.legalArea || commercialContext.crmTask?.sector || null,
+    amount: direct.amount ?? commercialContext.amount ?? null,
+    recipientName: direct.recipientName || commercialContext.clientName || null,
+    recipientEmail: direct.recipientEmail || commercialContext.email || null,
+    crmTaskId: direct.crmTaskId || commercialContext.crmTask?.id || null,
+    notes: direct.notes || null,
+  });
+  const metadata = buildExternalActionPreviewMetadata(preview);
+
+  await registerArtifact(input, {
+    artifactType: "external_action_preview",
+    title: `Preview externo - ${preview.clientName}`,
+    mimeType: "application/json",
+    dedupeKey: input.auditLogId
+      ? `external-action-preview:${input.auditLogId}`
+      : `external-action-preview:${preview.crmTaskId || preview.clientName}:${preview.actionType}`,
+    metadata,
+  });
+
+  await registerLearningEvent(input, "external_action_preview_created", {
+    summary: preview.summary,
+    action_type: preview.actionType,
+    client_name: preview.clientName,
+    crm_task_id: preview.crmTaskId,
+    blocker_count: preview.blockers.length,
+    risk_level: preview.riskLevel,
+    external_side_effects_blocked: preview.externalSideEffectsBlocked,
+    next_best_action: preview.nextBestAction,
+  });
+
+  return {
+    status: "executed",
+    reply: buildExternalActionPreviewReply({
+      actionType: preview.actionType,
+      clientName: preview.clientName,
+      blockerCount: preview.blockers.length,
+      nextBestAction: preview.nextBestAction,
+    }),
+    outputPayload: {
+      auditLogId: input.auditLogId || null,
+      handler_type: input.handlerType,
+      action_type: preview.actionType,
+      client_name: preview.clientName,
+      crm_task_id: preview.crmTaskId,
+      external_preview_blocker_count: preview.blockers.length,
+      external_side_effects_blocked: preview.externalSideEffectsBlocked,
+      requires_human_approval: preview.requiresHumanApproval,
+    },
+    data: { preview },
+  };
+}
+
+async function runGrowthClientAcceptanceRecord(input: DispatchCapabilityInput): Promise<DispatchCapabilityResult> {
+  const direct = buildClientAcceptanceInputFromEntities(input.entities);
+  const commercialContext = await resolveCommercialContext(input);
+  const record = buildClientAcceptanceRecord({
+    clientName: direct.clientName || commercialContext.clientName || commercialContext.crmTask?.title || null,
+    crmTaskId: direct.crmTaskId || commercialContext.crmTask?.id || null,
+    legalArea: direct.legalArea || commercialContext.crmTask?.sector || null,
+    acceptanceType: direct.acceptanceType || null,
+    acceptanceChannel: direct.acceptanceChannel || null,
+    evidenceSummary: direct.evidenceSummary || null,
+    amount: direct.amount ?? commercialContext.amount ?? null,
+    acceptedAt: direct.acceptedAt || null,
+  });
+  const metadata = buildClientAcceptanceArtifactMetadata(record);
+  const systemEvent = buildClientAcceptanceSystemEventPayload({
+    record,
+    userId: input.userId || null,
+    auditLogId: input.auditLogId || null,
+  });
+
+  await serviceSupabase.from("system_event_logs").insert({
+    tenant_id: input.tenantId,
+    user_id: input.userId || null,
+    source: "growth",
+    provider: "mayus",
+    event_name: systemEvent.event_name,
+    status: systemEvent.status,
+    payload: systemEvent.payload,
+    created_at: new Date().toISOString(),
+  });
+
+  await registerArtifact(input, {
+    artifactType: "client_acceptance_record",
+    title: `Aceite - ${record.clientName}`,
+    mimeType: "application/json",
+    dedupeKey: input.auditLogId
+      ? `client-acceptance:${input.auditLogId}`
+      : `client-acceptance:${record.crmTaskId || record.clientName}:${record.acceptedAt}`,
+    metadata,
+  });
+
+  await registerLearningEvent(input, "client_acceptance_record_created", {
+    summary: record.summary,
+    client_name: record.clientName,
+    crm_task_id: record.crmTaskId,
+    legal_area: record.legalArea,
+    acceptance_type: record.acceptanceType,
+    acceptance_channel: record.acceptanceChannel,
+    amount: record.amount,
+    accepted_at: record.acceptedAt,
+    audit_status: record.auditStatus,
+    external_side_effects_blocked: record.externalSideEffectsBlocked,
+  });
+
+  return {
+    status: "executed",
+    reply: buildClientAcceptanceReply({
+      clientName: record.clientName,
+      acceptanceType: record.acceptanceType,
+      auditStatus: record.auditStatus,
+      nextBestAction: record.nextBestAction,
+    }),
+    outputPayload: {
+      auditLogId: input.auditLogId || null,
+      handler_type: input.handlerType,
+      client_name: record.clientName,
+      crm_task_id: record.crmTaskId,
+      acceptance_type: record.acceptanceType,
+      client_acceptance_audit_status: record.auditStatus,
+      external_side_effects_blocked: record.externalSideEffectsBlocked,
+      requires_human_review: record.requiresHumanReview,
+    },
+    data: { record },
+  };
+}
+
+async function runGrowthLeadQualify(input: DispatchCapabilityInput): Promise<DispatchCapabilityResult> {
+  const direct = buildLeadQualificationInputFromEntities(input.entities);
+  const crmTask = await loadGrowthLeadCrmContext(input.tenantId, direct.crmTaskId || null);
+  const plan = buildLeadQualificationPlan({
+    crmTaskId: crmTask?.id || direct.crmTaskId || null,
+    leadName: direct.leadName || crmTask?.title || null,
+    legalArea: direct.legalArea || crmTask?.sector || null,
+    pain: direct.pain || crmTask?.description || null,
+    origin: crmTask?.source || null,
+    score: direct.score ?? crmTask?.lead_scoring ?? null,
+    tags: crmTask?.tags || null,
+  });
+  const metadata = buildLeadQualificationArtifactMetadata({
+    crmTaskId: crmTask?.id || direct.crmTaskId || null,
+    plan,
+  });
+
+  await registerArtifact(input, {
+    artifactType: "lead_qualification_plan",
+    title: `Qualificacao - ${plan.leadName}`,
+    mimeType: "application/json",
+    dedupeKey: input.auditLogId
+      ? `lead-qualification:${input.auditLogId}`
+      : `lead-qualification:${crmTask?.id || plan.leadName}:${plan.confidence}`,
+    metadata,
+  });
+
+  await registerLearningEvent(input, "lead_qualification_plan_created", {
+    summary: plan.summary,
+    crm_task_id: crmTask?.id || direct.crmTaskId || null,
+    lead_name: plan.leadName,
+    legal_area: plan.legalArea,
+    confidence: plan.confidence,
+    risk_flags: plan.riskFlags,
+    next_best_action: plan.nextBestAction,
+    requires_human_handoff: plan.requiresHumanHandoff,
+  });
+
+  const reply = buildLeadQualificationReply({
+    leadName: plan.leadName,
+    confidence: plan.confidence,
+    nextBestAction: plan.nextBestAction,
+    minimumDocuments: plan.minimumDocuments,
+    riskFlags: plan.riskFlags,
+  });
+
+  return {
+    status: "executed",
+    reply,
+    outputPayload: {
+      auditLogId: input.auditLogId || null,
+      handler_type: input.handlerType,
+      crm_task_id: crmTask?.id || direct.crmTaskId || null,
+      lead_name: plan.leadName,
+      qualification_confidence: plan.confidence,
+      lead_requires_human_handoff: plan.requiresHumanHandoff,
+      risk_flag_count: plan.riskFlags.length,
+    },
+    data: {
+      plan,
+      crmTask,
+    },
+  };
+}
+
+async function runGrowthLeadFollowup(input: DispatchCapabilityInput): Promise<DispatchCapabilityResult> {
+  const direct = buildLeadFollowupInputFromEntities(input.entities);
+  const crmTask = await loadGrowthLeadCrmContext(input.tenantId, direct.crmTaskId || null);
+  const plan = buildLeadFollowupPlan({
+    crmTaskId: crmTask?.id || direct.crmTaskId || null,
+    leadName: direct.leadName || crmTask?.title || null,
+    legalArea: direct.legalArea || crmTask?.sector || null,
+    pain: direct.pain || crmTask?.description || null,
+    origin: crmTask?.source || null,
+    score: direct.score ?? crmTask?.lead_scoring ?? null,
+    goal: direct.goal || null,
+    tags: crmTask?.tags || null,
+  });
+  const crmTaskId = crmTask?.id || direct.crmTaskId || null;
+  const metadata = buildLeadFollowupArtifactMetadata({
+    crmTaskId,
+    plan,
+  });
+
+  await registerArtifact(input, {
+    artifactType: "lead_followup_plan",
+    title: `Follow-up - ${plan.leadName}`,
+    mimeType: "application/json",
+    dedupeKey: input.auditLogId
+      ? `lead-followup:${input.auditLogId}`
+      : `lead-followup:${crmTaskId || plan.leadName}:${plan.priority}`,
+    metadata,
+  });
+
+  await registerLearningEvent(input, "lead_followup_plan_created", {
+    summary: plan.summary,
+    crm_task_id: crmTaskId,
+    lead_name: plan.leadName,
+    legal_area: plan.legalArea,
+    followup_priority: plan.priority,
+    cadence_step_count: plan.cadence.length,
+    next_best_action: plan.nextBestAction,
+    requires_human_approval: plan.requiresHumanApproval,
+  });
+
+  const reply = buildLeadFollowupReply({
+    leadName: plan.leadName,
+    priority: plan.priority,
+    nextBestAction: plan.nextBestAction,
+    cadenceStepCount: plan.cadence.length,
+    requiresHumanApproval: plan.requiresHumanApproval,
+  });
+
+  return {
+    status: "executed",
+    reply,
+    outputPayload: {
+      auditLogId: input.auditLogId || null,
+      handler_type: input.handlerType,
+      crm_task_id: crmTaskId,
+      lead_name: plan.leadName,
+      followup_priority: plan.priority,
+      cadence_step_count: plan.cadence.length,
+      requires_human_approval: plan.requiresHumanApproval,
+    },
+    data: {
+      plan,
+      crmTask,
+    },
+  };
+}
+
+async function runGrowthLeadIntake(input: DispatchCapabilityInput): Promise<DispatchCapabilityResult> {
+  const result = analyzeLeadIntake(buildLeadIntakeInputFromEntities(input.entities));
+  const pipelineId = await getOrCreateGrowthPipeline(input.tenantId);
+  const stageId = await getGrowthDefaultStageId(pipelineId);
+  const taskPayload = buildCrmTaskPayload({
+    tenantId: input.tenantId,
+    pipelineId,
+    stageId,
+    result,
+  });
+
+  const { data: crmTask, error: crmTaskError } = await serviceSupabase
+    .from("crm_tasks")
+    .insert(taskPayload)
+    .select("id, pipeline_id")
+    .single();
+
+  if (crmTaskError || !crmTask?.id) throw crmTaskError || new Error("crm_task_missing");
+
+  const eventPayload = buildLeadIntakeEventPayload({
+    crmTaskId: String(crmTask.id),
+    result,
+  });
+
+  await serviceSupabase.from("system_event_logs").insert({
+    tenant_id: input.tenantId,
+    user_id: input.userId || null,
+    source: "growth",
+    provider: "mayus",
+    event_name: result.kind === "referral" ? "referral_intake_created" : "lead_intake_created",
+    status: "ok",
+    payload: eventPayload,
+    created_at: new Date().toISOString(),
+  });
+
+  const artifactType = result.kind === "referral" ? "referral_intake" : "lead_intake";
+  const metadata = result.kind === "referral"
+    ? buildReferralIntakeArtifactMetadata({ crmTaskId: String(crmTask.id), result })
+    : {
+        summary: `Lead registrado no CRM para ${result.normalized.name}. Proximo passo: ${result.nextStep}`,
+        crm_task_id: String(crmTask.id),
+        kind: result.kind,
+        score: result.score,
+        score_reason: result.scoreReason,
+        tags: result.tags,
+        next_step: result.nextStep,
+        needs_human_handoff: result.needsHumanHandoff,
+        lead_name: result.normalized.name,
+        phone_present: Boolean(result.normalized.phone),
+        email_present: Boolean(result.normalized.email),
+        legal_area: result.normalized.legalArea,
+        urgency: result.normalized.urgency,
+        origin: result.normalized.origin,
+        channel: result.normalized.channel,
+        requires_human_action: result.needsHumanHandoff,
+        human_actions: result.needsHumanHandoff ? [result.nextStep] : [],
+      };
+
+  await registerArtifact(input, {
+    artifactType,
+    title: result.kind === "referral"
+      ? `Indicacao registrada - ${result.normalized.name}`
+      : `Lead registrado - ${result.normalized.name}`,
+    mimeType: "application/json",
+    dedupeKey: input.auditLogId
+      ? `${artifactType}:${input.auditLogId}`
+      : `${artifactType}:${crmTask.id}`,
+    metadata,
+  });
+
+  await registerLearningEvent(input, result.kind === "referral" ? "referral_intake_artifact_created" : "lead_intake_artifact_created", {
+    summary: metadata.summary,
+    crm_task_id: String(crmTask.id),
+    kind: result.kind,
+    score: result.score,
+    next_step: result.nextStep,
+    needs_human_handoff: result.needsHumanHandoff,
+  });
+
+  const reply = buildLeadIntakeReply({
+    kind: result.kind,
+    score: result.score,
+    leadName: result.normalized.name,
+    nextStep: result.nextStep,
+    needsHumanHandoff: result.needsHumanHandoff,
+    crmTaskId: String(crmTask.id),
+  });
+
+  return {
+    status: "executed",
+    reply,
+    outputPayload: {
+      auditLogId: input.auditLogId || null,
+      handler_type: input.handlerType,
+      crm_task_id: String(crmTask.id),
+      pipeline_id: String(crmTask.pipeline_id || pipelineId),
+      lead_kind: result.kind,
+      lead_score: result.score,
+      lead_needs_human_handoff: result.needsHumanHandoff,
+    },
+    data: {
+      crmTaskId: String(crmTask.id),
+      analysis: result,
+    },
+  };
+}
+
 async function runLegalCaseContext(input: DispatchCapabilityInput): Promise<DispatchCapabilityResult> {
   const snapshot = await getLegalCaseContextSnapshot({
     tenantId: input.tenantId,
@@ -1227,9 +2571,13 @@ async function runSupportCaseStatus(input: DispatchCapabilityInput): Promise<Dis
         case_id: snapshot.caseBrain.caseId,
         support_status_response_mode: contract.responseMode,
         support_status_confidence: contract.confidence,
+        support_status_progress_summary: contract.progressSummary,
         support_status_current_phase: contract.currentPhase,
         support_status_next_step: contract.nextStep,
         support_status_pending_items: contract.pendingItems,
+        support_status_factual_sources: contract.grounding.factualSources,
+        support_status_inference_notes: contract.grounding.inferenceNotes,
+        support_status_missing_signals: contract.grounding.missingSignals,
         support_status_handoff_reason: contract.handoffReason,
       },
     });
@@ -1244,9 +2592,13 @@ async function runSupportCaseStatus(input: DispatchCapabilityInput): Promise<Dis
       case_brain_task_id: snapshot.caseBrain.taskId,
       response_mode: contract.responseMode,
       confidence: contract.confidence,
+      progress_summary: contract.progressSummary,
       current_phase: contract.currentPhase,
       next_step: contract.nextStep,
       pending_items: contract.pendingItems,
+      factual_sources: contract.grounding.factualSources,
+      inference_notes: contract.grounding.inferenceNotes,
+      missing_signals: contract.grounding.missingSignals,
       handoff_reason: contract.handoffReason,
     });
 
@@ -1259,9 +2611,13 @@ async function runSupportCaseStatus(input: DispatchCapabilityInput): Promise<Dis
         process_task_id: snapshot.processTask.id,
         support_status_response_mode: contract.responseMode,
         support_status_confidence: contract.confidence,
+        support_status_progress_summary: contract.progressSummary,
         support_status_current_phase: contract.currentPhase,
         support_status_next_step: contract.nextStep,
         support_status_pending_count: contract.pendingItems.length,
+        support_status_factual_source_count: contract.grounding.factualSources.length,
+        support_status_inference_count: contract.grounding.inferenceNotes.length,
+        support_status_missing_signal_count: contract.grounding.missingSignals.length,
         support_status_handoff_reason: contract.handoffReason,
       },
       data: {
@@ -3094,6 +4450,26 @@ export async function dispatchCapabilityExecution(input: DispatchCapabilityInput
   const handler = String(input.handlerType || "").trim();
 
   switch (handler) {
+    case "growth_sales_profile_setup":
+      return runGrowthSalesProfileSetup(input);
+    case "growth_sales_consultation":
+      return runGrowthSalesConsultation(input);
+    case "growth_lead_reactivation":
+      return runGrowthColdLeadReactivation(input);
+    case "growth_client_acceptance_record":
+      return runGrowthClientAcceptanceRecord(input);
+    case "growth_external_action_preview":
+      return runGrowthExternalActionPreview(input);
+    case "growth_revenue_flow_plan":
+      return runGrowthRevenueFlowPlan(input);
+    case "growth_lead_schedule":
+      return runGrowthLeadSchedule(input);
+    case "growth_lead_followup":
+      return runGrowthLeadFollowup(input);
+    case "growth_lead_qualify":
+      return runGrowthLeadQualify(input);
+    case "growth_lead_intake":
+      return runGrowthLeadIntake(input);
     case "lex_case_context":
       return runLegalCaseContext(input);
     case "lex_support_case_status":

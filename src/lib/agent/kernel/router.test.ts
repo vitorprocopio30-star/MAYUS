@@ -5,10 +5,189 @@ const baseContext = {
   userId: "user-1",
   tenantId: "tenant-1",
   channel: "chat" as const,
-  availableSkills: ["support_case_status", "legal_case_context", "legal_document_memory_refresh", "legal_first_draft_generate", "legal_draft_workflow", "legal_draft_review_guidance", "legal_draft_revision_loop", "legal_artifact_publish_premium", "query_process_status"],
+  availableSkills: ["sales_profile_setup", "sales_consultation", "lead_reactivation", "client_acceptance_record", "external_action_preview", "revenue_flow_plan", "lead_schedule", "lead_followup", "lead_qualify", "lead_intake", "support_case_status", "legal_case_context", "legal_document_memory_refresh", "legal_first_draft_generate", "legal_draft_workflow", "legal_draft_review_guidance", "legal_draft_revision_loop", "legal_artifact_publish_premium", "query_process_status"],
 };
 
 describe("route - juridico MAYUS", () => {
+  it("detecta atendimento consultivo de vendas pelo metodo DEF", () => {
+    const result = route(
+      "Mayus, crie um atendimento consultivo de vendas metodo DEF para lead Maria Silva area Previdenciario canal WhatsApp fase descoberta objecao achei caro valor 4500.",
+      baseContext
+    );
+
+    expect(result.intent).toBe("sales_consultation");
+    expect(result.entities).toEqual(expect.objectContaining({
+      lead_name: "Maria Silva",
+      legal_area: "Previdenciario",
+      channel: "WhatsApp",
+      stage: "descoberta",
+      objection: "achei caro valor 4500",
+      ticket_value: "4500",
+    }));
+    expect(result.confidence).toBeGreaterThanOrEqual(0.9);
+  });
+
+  it("detecta investigacao de posicionamento comercial do escritorio", () => {
+    const result = route(
+      "Mayus, investigue o cliente ideal do escritorio e monte a PUV se ainda nao tiver.",
+      baseContext
+    );
+
+    expect(result.intent).toBe("sales_profile_setup");
+    expect(result.confidence).toBeGreaterThanOrEqual(0.9);
+  });
+
+  it("detecta auto-configuracao comercial do MAYUS", () => {
+    const result = route(
+      "Mayus, configure a skill de vendas. Cliente ideal: empresarios com passivo trabalhista. Solucao central: reduzir risco em acordos. Pilares: Diagnostico | Prova | Negociacao. Pode salvar.",
+      baseContext
+    );
+
+    expect(result.intent).toBe("sales_profile_setup");
+    expect(result.entities).toEqual(expect.objectContaining({
+      ideal_client: "empresarios com passivo trabalhista",
+      core_solution: "reduzir risco em acordos",
+      value_pillars: "Diagnostico | Prova | Negociacao",
+      confirmation: "Pode salvar",
+    }));
+    expect(result.confidence).toBeGreaterThanOrEqual(0.9);
+  });
+
+  it("detecta reativacao de leads frios por segmento", () => {
+    const result = route(
+      "Mayus, recupere leads frios de previdenciario ha 45 dias maximo 12 leads.",
+      baseContext
+    );
+
+    expect(result.intent).toBe("lead_reactivation");
+    expect(result.entities).toEqual(expect.objectContaining({
+      legal_area: "previdenciario",
+      min_days_inactive: "45",
+      max_leads: "12",
+    }));
+    expect(result.confidence).toBeGreaterThanOrEqual(0.9);
+  });
+
+  it("detecta registro de aceite do cliente", () => {
+    const result = route(
+      "Registre o aceite da proposta cliente Maria Silva area Previdenciario valor 4500 por WhatsApp.",
+      baseContext
+    );
+
+    expect(result.intent).toBe("client_acceptance_record");
+    expect(result.entities).toEqual(expect.objectContaining({
+      client_name: "Maria Silva",
+      legal_area: "Previdenciario",
+      acceptance_type: "proposta",
+      acceptance_channel: "WhatsApp",
+      amount: "4500",
+    }));
+    expect(result.confidence).toBeGreaterThanOrEqual(0.9);
+  });
+
+  it("detecta pedido de preview antes de acao externa", () => {
+    const result = route(
+      "Crie um preview antes de gerar contrato para cliente Maria Silva area Previdenciario email maria@example.com.",
+      baseContext
+    );
+
+    expect(result.intent).toBe("external_action_preview");
+    expect(result.entities).toEqual(expect.objectContaining({
+      action_type: "contrato",
+      client_name: "Maria Silva",
+      legal_area: "Previdenciario",
+      recipient_email: "maria@example.com",
+    }));
+    expect(result.confidence).toBeGreaterThanOrEqual(0.9);
+  });
+
+  it("detecta pedido de fluxo revenue-to-case supervisionado", () => {
+    const result = route(
+      "Monte o fluxo proposta -> contrato -> cobranca -> abertura de caso para cliente Maria Silva area Previdenciario valor 4500.",
+      baseContext
+    );
+
+    expect(result.intent).toBe("revenue_flow_plan");
+    expect(result.entities).toEqual(expect.objectContaining({
+      client_name: "Maria Silva",
+      legal_area: "Previdenciario",
+      amount: "4500",
+    }));
+    expect(result.confidence).toBeGreaterThanOrEqual(0.9);
+  });
+
+  it("detecta pedido de agendamento supervisionado de lead", () => {
+    const result = route(
+      "Agende consulta para lead Maria Silva area Previdenciario em 2026-04-28 10:00.",
+      baseContext
+    );
+
+    expect(result.intent).toBe("lead_schedule");
+    expect(result.entities).toEqual(expect.objectContaining({
+      lead_name: "Maria Silva",
+      legal_area: "Previdenciario",
+      scheduled_for: "2026-04-28 10:00",
+    }));
+    expect(result.confidence).toBeGreaterThanOrEqual(0.9);
+  });
+
+  it("detecta pedido de follow-up supervisionado de lead", () => {
+    const result = route(
+      "Monte uma cadencia de follow-up do lead Maria Silva area Previdenciario dor negativa do INSS.",
+      baseContext
+    );
+
+    expect(result.intent).toBe("lead_followup");
+    expect(result.entities).toEqual(expect.objectContaining({
+      lead_name: "Maria Silva",
+      legal_area: "Previdenciario",
+    }));
+    expect(result.confidence).toBeGreaterThanOrEqual(0.9);
+  });
+
+  it("detecta pedido de qualificacao de lead", () => {
+    const result = route(
+      "Monte um roteiro de qualificacao do lead Maria Silva area Previdenciario dor negativa do INSS.",
+      baseContext
+    );
+
+    expect(result.intent).toBe("lead_qualify");
+    expect(result.entities).toEqual(expect.objectContaining({
+      lead_name: "Maria Silva",
+      legal_area: "Previdenciario",
+    }));
+    expect(result.confidence).toBeGreaterThanOrEqual(0.9);
+  });
+
+  it("detecta intake comercial de lead com dados minimos", () => {
+    const result = route(
+      "Registre novo lead: Maria Silva telefone (21) 99999-0000 area Previdenciario dor negativa do INSS sem resposta.",
+      baseContext
+    );
+
+    expect(result.intent).toBe("lead_intake");
+    expect(result.entities).toEqual(expect.objectContaining({
+      name: "Maria Silva",
+      phone: "(21) 99999-0000",
+      legalArea: "Previdenciario",
+    }));
+    expect(result.confidence).toBeGreaterThanOrEqual(0.85);
+  });
+
+  it("detecta indicacao como lead_intake e preserva indicador", () => {
+    const result = route(
+      "Indicacao: lead Bianca Indicada telefone 21966665555 area Familia dor revisao de alimentos indicada por Pedro Cliente.",
+      baseContext
+    );
+
+    expect(result.intent).toBe("lead_intake");
+    expect(result.entities).toEqual(expect.objectContaining({
+      name: "Bianca Indicada",
+      referredBy: "Pedro Cliente",
+    }));
+    expect(result.confidence).toBeGreaterThanOrEqual(0.85);
+  });
+
   it("detecta pedido de suporte para atualizar cliente sobre o caso", () => {
     const result = route(
       "O cliente perguntou como esta o caso 1234567-89.2024.8.26.0100. Me de um status curto para responder.",

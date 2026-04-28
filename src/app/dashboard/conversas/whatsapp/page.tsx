@@ -63,6 +63,9 @@ export default function WhatsAppChatPremiumPage() {
   const [teamMembers, setTeamMembers] = useState<any[]>([]);
   const [isTransferring, setIsTransferring] = useState(false);
   const [isSendingContract, setIsSendingContract] = useState(false);
+  const [isGeneratingMayusReply, setIsGeneratingMayusReply] = useState(false);
+  const [isLoadingMayusDraft, setIsLoadingMayusDraft] = useState(false);
+  const [mayusDraft, setMayusDraft] = useState<any | null>(null);
   const [contractFlowMode, setContractFlowMode] = useState<'ia_only' | 'human_only' | 'hybrid'>('hybrid');
   const [zapsignTemplateId, setZapsignTemplateId] = useState<string>("");
 
@@ -196,6 +199,7 @@ export default function WhatsAppChatPremiumPage() {
     };
 
     fetchMessages();
+    loadLatestMayusDraft(activeContact.id);
 
     const channel = supabase
        .channel(`chat_ws_meta_${activeContact.id}`)
@@ -203,6 +207,9 @@ export default function WhatsAppChatPremiumPage() {
          (payload) => {
            setMessages((current) => [...current, payload.new]);
            scrollToBottom();
+           if (payload.new?.direction === "inbound") {
+             setTimeout(() => loadLatestMayusDraft(activeContact.id), 1200);
+           }
          }
        ).subscribe();
 
@@ -211,6 +218,22 @@ export default function WhatsAppChatPremiumPage() {
 
   const scrollToBottom = () => {
     setTimeout(() => messagesEndRef.current?.scrollIntoView({ behavior: "smooth" }), 100);
+  };
+
+  const loadLatestMayusDraft = async (contactId: string) => {
+    if (!contactId) return;
+    setIsLoadingMayusDraft(true);
+    try {
+      const response = await fetch(`/api/whatsapp/ai-sales-reply?contact_id=${encodeURIComponent(contactId)}`);
+      const data = await response.json();
+      if (response.ok) {
+        setMayusDraft(data.draft || null);
+      }
+    } catch {
+      setMayusDraft(null);
+    } finally {
+      setIsLoadingMayusDraft(false);
+    }
   };
 
   const [isRecording, setIsRecording] = useState(false);
@@ -370,6 +393,48 @@ export default function WhatsAppChatPremiumPage() {
     } finally {
        setIsSending(false);
     }
+  };
+
+  const handleGenerateMayusReply = async () => {
+    if (!activeContact || isGeneratingMayusReply) {
+      if (!activeContact) toast.info("Selecione um contato para o MAYUS preparar o atendimento.");
+      return;
+    }
+
+    setIsGeneratingMayusReply(true);
+    try {
+      const response = await fetch('/api/whatsapp/ai-sales-reply', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ contact_id: activeContact.id }),
+      });
+      const data = await response.json();
+      if (!response.ok) throw new Error(data.error || "Nao consegui preparar a resposta agora.");
+
+      setMayusDraft(data);
+      if (data.suggested_reply) {
+        setInputMode("responder");
+        setInputText(data.suggested_reply);
+        if (data.mode === "human_review_required") {
+          toast.warning("MAYUS preparou a resposta, mas este caso pede revisao humana antes do envio.");
+        } else {
+          toast.success("Resposta consultiva preparada pelo MAYUS.");
+        }
+      } else {
+        toast.info(data.internal_note || "MAYUS precisa completar a configuracao comercial antes de responder.");
+      }
+    } catch (error: any) {
+      toast.error(error.message || "Falha ao gerar resposta MAYUS.");
+    } finally {
+      setIsGeneratingMayusReply(false);
+    }
+  };
+
+  const handleUseMayusDraft = () => {
+    if (!mayusDraft?.suggested_reply) return;
+    setInputMode("responder");
+    setInputText(mayusDraft.suggested_reply);
+    toast.success("Rascunho MAYUS carregado no atendimento.");
   };
 
   const handleCreateContact = async () => {
@@ -573,6 +638,56 @@ export default function WhatsAppChatPremiumPage() {
                     </div>
                 </div>
 
+                {(mayusDraft || isLoadingMayusDraft) && (
+                  <div className="border-b border-[#CCA761]/15 bg-[#CCA761]/5 px-8 py-3 z-10 flex-shrink-0">
+                    <div className="flex items-start justify-between gap-5">
+                      <div className="min-w-0 flex-1">
+                        <div className="flex items-center gap-2 mb-1">
+                          <Bot size={14} className="text-[#CCA761]" />
+                          <span className="text-[9px] font-black uppercase tracking-[0.2em] text-[#CCA761]">
+                            Rascunho MAYUS
+                          </span>
+                          {mayusDraft?.mode && (
+                            <span className="text-[8px] font-black uppercase tracking-widest text-gray-500">
+                              {String(mayusDraft.mode).replaceAll("_", " ")}
+                            </span>
+                          )}
+                        </div>
+                        <p className="text-[12px] leading-relaxed text-gray-700 dark:text-gray-300 line-clamp-2">
+                          {isLoadingMayusDraft
+                            ? "Carregando rascunho consultivo..."
+                            : mayusDraft?.suggested_reply || mayusDraft?.internal_note || "Sem rascunho disponivel para este contato."}
+                        </p>
+                        {Array.isArray(mayusDraft?.risk_flags) && mayusDraft.risk_flags.length > 0 && (
+                          <div className="mt-2 flex flex-wrap gap-1.5">
+                            {mayusDraft.risk_flags.slice(0, 4).map((flag: string) => (
+                              <span key={flag} className="text-[8px] font-black uppercase tracking-widest px-2 py-1 rounded-full bg-black/20 text-gray-400 border border-white/10">
+                                {flag.replaceAll("_", " ")}
+                              </span>
+                            ))}
+                          </div>
+                        )}
+                      </div>
+                      <div className="flex items-center gap-2 flex-shrink-0">
+                        <button
+                          onClick={handleUseMayusDraft}
+                          disabled={!mayusDraft?.suggested_reply}
+                          className="px-3 py-2 rounded-lg bg-[#CCA761] text-black text-[9px] font-black uppercase tracking-widest disabled:opacity-40 disabled:cursor-not-allowed"
+                        >
+                          Usar
+                        </button>
+                        <button
+                          onClick={handleGenerateMayusReply}
+                          disabled={isGeneratingMayusReply || !activeContact}
+                          className="px-3 py-2 rounded-lg border border-[#CCA761]/20 text-[#CCA761] text-[9px] font-black uppercase tracking-widest disabled:opacity-40"
+                        >
+                          {isGeneratingMayusReply ? "Atualizando" : "Atualizar"}
+                        </button>
+                      </div>
+                    </div>
+                  </div>
+                )}
+
                 <div className="flex-1 overflow-y-auto p-10 flex flex-col gap-10 no-scrollbar min-h-0">
                     {messages.map((msg, idx) => {
                        const isMe = msg.direction === 'outbound';
@@ -617,6 +732,9 @@ export default function WhatsAppChatPremiumPage() {
                     <button onClick={() => { console.log('Mode: Responder'); setInputMode("responder"); }} className={`text-[9px] font-black uppercase tracking-[0.2em] relative transition-all flex items-center gap-1.5 ${inputMode === "responder" ? "text-[#CCA761]" : "text-gray-600 hover:text-gray-400"}`}>
                         <MessageCircle size={12} /> Atendimento
                         {inputMode === "responder" && <div className="absolute -bottom-1 left-0 w-full h-[1px] bg-[#CCA761]" />}
+                    </button>
+                    <button onClick={handleGenerateMayusReply} disabled={isGeneratingMayusReply || !activeContact} className="text-[9px] font-black uppercase tracking-[0.2em] relative transition-all flex items-center gap-1.5 text-[#CCA761] disabled:opacity-40 disabled:cursor-not-allowed">
+                        {isGeneratingMayusReply ? <Loader2 size={12} className="animate-spin" /> : <Bot size={12} />} MAYUS
                     </button>
                     <button onClick={() => { console.log('Mode: Nota'); setInputMode("nota"); }} className={`text-[9px] font-black uppercase tracking-[0.2em] relative transition-all flex items-center gap-1.5 ${inputMode === "nota" ? "text-orange-500" : "text-gray-600 hover:text-gray-400"}`}>
                         <Lock size={12} /> Nota Interna

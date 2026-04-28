@@ -1,5 +1,6 @@
 import { NextRequest, NextResponse } from "next/server";
 import { createClient } from "@supabase/supabase-js";
+import { prepareWhatsAppSalesReplyForContact } from "@/lib/growth/whatsapp-sales-reply-runtime";
 
 // ==============================================================================
 // 🚀 MAYUS - WEBHOOK OFICIAL META CLOUD API (WhatsApp Business Platform)
@@ -271,6 +272,18 @@ export async function POST(req: NextRequest) {
           type: "info",
           link_url: "/dashboard/conversas/whatsapp",
         }]);
+
+        try {
+          await prepareWhatsAppSalesReplyForContact({
+            supabase,
+            tenantId,
+            contactId,
+            trigger: "meta_webhook",
+            notify: true,
+          });
+        } catch (replyError) {
+          console.error("[Meta Webhook] Erro ao preparar resposta MAYUS:", replyError);
+        }
       }
     }
 

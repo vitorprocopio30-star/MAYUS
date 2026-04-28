@@ -1,6 +1,7 @@
 import { NextResponse } from "next/server";
 import { createClient } from "@supabase/supabase-js";
 import crypto from "crypto";
+import { prepareWhatsAppSalesReplyForContact } from "@/lib/growth/whatsapp-sales-reply-runtime";
 
 const supabase = createClient(
   process.env.NEXT_PUBLIC_SUPABASE_URL!,
@@ -129,6 +130,20 @@ export async function POST(req: Request) {
       }
 
       console.log(`[Webhook] Mensagem de ${remoteJid} salva com sucesso no tenant ${tenantId}`);
+
+      if (!fromMe) {
+        try {
+          await prepareWhatsAppSalesReplyForContact({
+            supabase,
+            tenantId,
+            contactId,
+            trigger: "evolution_webhook",
+            notify: true,
+          });
+        } catch (replyError) {
+          console.error("[Evolution Webhook] Erro ao preparar resposta MAYUS:", replyError);
+        }
+      }
       
       // Como o Supabase Realtime escuta a tabela 'whatsapp_messages', 
       // o Frontend dos clientes do tenant vão se atualizar sozinhos automaticamente! 🚀

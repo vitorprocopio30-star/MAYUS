@@ -44,7 +44,69 @@ interface IntegrationDef {
   category: "finance" | "signature" | "ai" | "comm";
 }
 
+type SetupDoctorStatus = "ok" | "fixed" | "warning" | "blocked";
+
+type SetupDoctorCheck = {
+  id: string;
+  category: string;
+  status: SetupDoctorStatus;
+  title: string;
+  detail: string;
+  autoFixable: boolean;
+  fixed?: boolean;
+  nextAction?: string | null;
+};
+
+type SetupDoctorReport = {
+  ready: boolean;
+  autoFixApplied: boolean;
+  summary: Record<SetupDoctorStatus, number>;
+  checks: SetupDoctorCheck[];
+  brainTrace?: {
+    taskId: string;
+    runId: string;
+    stepId: string;
+    artifactId: string | null;
+    eventType: string;
+  } | null;
+};
+
 // ─── Catálogo de Provedores Premium ───────────────────────────────────────────
+type SalesConsultationProfile = {
+  ideal_client: string;
+  core_solution: string;
+  unique_value_proposition: string;
+  value_pillars: string[];
+  positioning_summary: string;
+  status: "draft" | "validated";
+};
+
+const EMPTY_SALES_PROFILE: SalesConsultationProfile = {
+  ideal_client: "",
+  core_solution: "",
+  unique_value_proposition: "",
+  value_pillars: ["", "", ""],
+  positioning_summary: "",
+  status: "draft",
+};
+
+function normalizeSalesProfile(value: any): SalesConsultationProfile {
+  if (!value || typeof value !== "object") return EMPTY_SALES_PROFILE;
+
+  const pillars = Array.isArray(value.value_pillars)
+    ? value.value_pillars.map((item: unknown) => String(item || "").trim()).slice(0, 3)
+    : [];
+
+  return {
+    ideal_client: String(value.ideal_client || "").trim(),
+    core_solution: String(value.core_solution || "").trim(),
+    unique_value_proposition: String(value.unique_value_proposition || "").trim(),
+    value_pillars: [...pillars, "", "", ""].slice(0, 3),
+    positioning_summary: String(value.positioning_summary || "").trim(),
+    status: value.status === "validated" ? "validated" : "draft",
+  };
+}
+
 const CATALOG: IntegrationDef[] = [
   {
     id: "openai",
@@ -268,6 +330,142 @@ function IntegrationCard({
 
 // ─── Componente Principal ─────────────────────────────────────────────────────
 
+function SetupDoctorPanel({
+  report,
+  isLoading,
+  isFixing,
+  onRefresh,
+  onAutofix,
+}: {
+  report: SetupDoctorReport | null;
+  isLoading: boolean;
+  isFixing: boolean;
+  onRefresh: () => void;
+  onAutofix: () => void;
+}) {
+  const blocked = report?.summary.blocked || 0;
+  const warnings = report?.summary.warning || 0;
+  const fixed = report?.summary.fixed || 0;
+  const ok = report?.summary.ok || 0;
+  const hasFixableIssues = report?.checks.some((item) => item.autoFixable && item.status !== "ok") || false;
+  const statusTone = report?.ready
+    ? "border-[#4ade80]/20 bg-[#0d1a0d]"
+    : blocked > 0
+      ? "border-red-500/20 bg-[#1a0d0d]"
+      : "border-[#CCA761]/25 bg-[#15120a]";
+
+  const statusMeta: Record<SetupDoctorStatus, { label: string; className: string; icon: React.ComponentType<any> }> = {
+    ok: { label: "OK", className: "text-[#4ade80] bg-[#4ade80]/10 border-[#4ade80]/20", icon: ShieldCheck },
+    fixed: { label: "Corrigido", className: "text-[#CCA761] bg-[#CCA761]/10 border-[#CCA761]/20", icon: Save },
+    warning: { label: "Aviso", className: "text-amber-300 bg-amber-400/10 border-amber-400/20", icon: AlertTriangle },
+    blocked: { label: "Bloqueio", className: "text-red-300 bg-red-400/10 border-red-400/20", icon: AlertTriangle },
+  };
+
+  return (
+    <section className={`border rounded-3xl p-6 sm:p-7 mb-10 transition-colors ${statusTone}`}>
+      <div className="flex flex-col lg:flex-row lg:items-start justify-between gap-5">
+        <div className="flex gap-4 min-w-0">
+          <div className="w-12 h-12 rounded-2xl bg-[#CCA761]/10 border border-[#CCA761]/20 flex items-center justify-center shrink-0">
+            <FlaskConical size={22} className="text-[#CCA761]" />
+          </div>
+          <div className="min-w-0">
+            <div className="flex flex-wrap items-center gap-3 mb-2">
+              <h2 className="text-sm font-black uppercase tracking-[0.25em] text-[#CCA761]">Setup Doctor</h2>
+              {report && (
+                <span className={`px-3 py-1 rounded-full border text-[9px] font-black uppercase tracking-widest ${
+                  report.ready
+                    ? "text-[#4ade80] border-[#4ade80]/20 bg-[#4ade80]/10"
+                    : "text-amber-300 border-amber-400/20 bg-amber-400/10"
+                }`}>
+                  {report.ready ? "Pronto" : "Precisa atencao"}
+                </span>
+              )}
+            </div>
+            <p className="text-xs text-gray-400 leading-relaxed max-w-2xl">
+              Diagnostico vivo do tenant: CRM, skills, credenciais essenciais e trilha de auditoria.
+            </p>
+            {report?.brainTrace?.taskId && (
+              <Link
+                href="/dashboard/mayus"
+                className="mt-3 inline-flex items-center gap-2 rounded-full border border-[#CCA761]/25 bg-[#CCA761]/10 px-3 py-1.5 text-[10px] font-black uppercase tracking-widest text-[#CCA761] hover:bg-[#CCA761]/15"
+              >
+                <BrainCircuit size={12} />
+                Artifact registrado no MAYUS
+              </Link>
+            )}
+          </div>
+        </div>
+
+        <div className="flex flex-wrap gap-2">
+          <button
+            type="button"
+            onClick={onRefresh}
+            disabled={isLoading || isFixing}
+            className="h-10 px-4 rounded-xl border border-gray-200 dark:border-white/10 bg-white/80 dark:bg-black/20 text-[10px] font-black uppercase tracking-widest text-gray-800 dark:text-white flex items-center gap-2 disabled:opacity-50"
+            title="Atualizar diagnostico"
+          >
+            <RefreshCw size={14} className={isLoading ? "animate-spin" : ""} />
+            Atualizar
+          </button>
+          <button
+            type="button"
+            onClick={onAutofix}
+            disabled={isLoading || isFixing || !hasFixableIssues}
+            className="h-10 px-4 rounded-xl bg-[#CCA761] text-black text-[10px] font-black uppercase tracking-widest flex items-center gap-2 disabled:opacity-40"
+            title="Corrigir defaults seguros"
+          >
+            {isFixing ? <Loader2 size={14} className="animate-spin" /> : <ShieldCheck size={14} />}
+            Corrigir
+          </button>
+        </div>
+      </div>
+
+      <div className="grid grid-cols-2 sm:grid-cols-4 gap-3 mt-6">
+        {[
+          ["OK", ok, "text-[#4ade80]"],
+          ["Corrigidos", fixed, "text-[#CCA761]"],
+          ["Avisos", warnings, "text-amber-300"],
+          ["Bloqueios", blocked, "text-red-300"],
+        ].map(([label, value, color]) => (
+          <div key={String(label)} className="border border-gray-200 dark:border-white/10 rounded-2xl px-4 py-3 bg-white/70 dark:bg-black/20">
+            <div className={`text-xl font-black ${color}`}>{value}</div>
+            <div className="text-[9px] font-black uppercase tracking-widest text-gray-500">{label}</div>
+          </div>
+        ))}
+      </div>
+
+      <div className="mt-5 space-y-2">
+        {isLoading && !report ? (
+          <div className="flex items-center gap-3 text-xs text-gray-400 py-4">
+            <Loader2 size={15} className="animate-spin text-[#CCA761]" />
+            Rodando diagnostico...
+          </div>
+        ) : (
+          report?.checks.slice(0, 8).map((item) => {
+            const meta = statusMeta[item.status];
+            const StatusIcon = meta.icon;
+            return (
+              <div key={item.id} className="flex flex-col sm:flex-row sm:items-start gap-3 border border-gray-200 dark:border-white/10 rounded-2xl p-4 bg-white/70 dark:bg-black/20">
+                <span className={`inline-flex items-center gap-1.5 rounded-full border px-2.5 py-1 text-[9px] font-black uppercase tracking-widest w-fit ${meta.className}`}>
+                  <StatusIcon size={12} />
+                  {meta.label}
+                </span>
+                <div className="min-w-0 flex-1">
+                  <div className="text-xs font-black uppercase tracking-wider text-gray-900 dark:text-white">{item.title}</div>
+                  <div className="text-[11px] text-gray-500 leading-relaxed mt-1">{item.detail}</div>
+                  {item.nextAction && (
+                    <div className="text-[10px] text-[#CCA761] leading-relaxed mt-2 font-bold uppercase tracking-wider">{item.nextAction}</div>
+                  )}
+                </div>
+              </div>
+            );
+          })
+        )}
+      </div>
+    </section>
+  );
+}
+
 function ConfiguracoesContent() {
   const router = useRouter();
   const { tenantId } = useUserProfile();
@@ -301,6 +499,10 @@ function ConfiguracoesContent() {
     openai: "", gemini: "", anthropic: "", openrouter: "",
     evolution: "", meta_cloud: "", asaas: "", zapsign: ""
   });
+  const [doctorReport, setDoctorReport] = useState<SetupDoctorReport | null>(null);
+  const [isDoctorLoading, setIsDoctorLoading] = useState(false);
+  const [isDoctorFixing, setIsDoctorFixing] = useState(false);
+  const [salesProfile, setSalesProfile] = useState<SalesConsultationProfile>(EMPTY_SALES_PROFILE);
 
   const loadIntegrations = useCallback(async () => {
     if (!tenantId) return;
@@ -309,6 +511,41 @@ function ConfiguracoesContent() {
       setIntegrations(data);
     } catch (error: any) {
       toast.error(error?.message || "Nao foi possivel carregar as integracoes.");
+    }
+  }, [tenantId]);
+
+  const loadDoctorReport = useCallback(async () => {
+    if (!tenantId) return;
+    setIsDoctorLoading(true);
+    try {
+      const response = await fetch("/api/setup/doctor", { cache: "no-store" });
+      const payload = await response.json().catch(() => null);
+      if (!response.ok) throw new Error(payload?.error || "Nao foi possivel carregar o setup doctor.");
+      setDoctorReport(payload.report);
+    } catch (error: any) {
+      toast.error(error?.message || "Nao foi possivel carregar o setup doctor.");
+    } finally {
+      setIsDoctorLoading(false);
+    }
+  }, [tenantId]);
+
+  const runDoctorAutofix = useCallback(async () => {
+    if (!tenantId) return;
+    setIsDoctorFixing(true);
+    try {
+      const response = await fetch("/api/setup/doctor", { method: "POST" });
+      const payload = await response.json().catch(() => null);
+      if (!response.ok) throw new Error(payload?.error || "Nao foi possivel corrigir o setup.");
+      setDoctorReport(payload.report);
+      if (payload.report?.summary?.blocked > 0) {
+        toast.warning("Defaults corrigidos. Ainda existem credenciais externas pendentes.");
+      } else {
+        toast.success("Setup verificado e corrigido.");
+      }
+    } catch (error: any) {
+      toast.error(error?.message || "Nao foi possivel corrigir o setup.");
+    } finally {
+      setIsDoctorFixing(false);
     }
   }, [tenantId]);
 
@@ -339,15 +576,17 @@ function ConfiguracoesContent() {
       if (settings?.branding?.primary_color) setPrimaryColor(settings.branding.primary_color);
       if (settings?.ai_features?.default_department_id) setDefaultDeptId(settings.ai_features.default_department_id);
       if (settings?.ai_features) setAiFeatures(settings.ai_features);
+      setSalesProfile(normalizeSalesProfile(settings?.ai_features?.sales_consultation_profile));
       if (settings?.strategic_goals) setOfficeGoals(settings.strategic_goals);
 
       const { data: depts } = await supabase.from('departments').select('id, name').eq('tenant_id', tenantId);
       if (depts) setDepartments(depts);
       
       await loadIntegrations();
+      await loadDoctorReport();
     };
     loadData();
-  }, [tenantId, supabase, loadIntegrations]);
+  }, [tenantId, supabase, loadIntegrations, loadDoctorReport]);
 
   const handleAddGoal = () => {
     if (!newGoal.name || !newGoal.value) return toast.error("Preencha o nome e o valor da meta.");
@@ -374,6 +613,28 @@ function ConfiguracoesContent() {
   const updateApiKeyLocally = (provider: string, key: string) => {
     setApiKeys(prev => ({ ...prev, [provider]: key }));
     setHasUnsavedChanges(true);
+  };
+
+  const updateSalesProfile = (field: keyof SalesConsultationProfile, value: string | string[]) => {
+    setSalesProfile((prev) => ({ ...prev, [field]: value, status: "draft" }));
+    setHasUnsavedChanges(true);
+  };
+
+  const updateSalesProfilePillar = (index: number, value: string) => {
+    setSalesProfile((prev) => {
+      const nextPillars = [...prev.value_pillars];
+      nextPillars[index] = value;
+      return { ...prev, value_pillars: nextPillars, status: "draft" };
+    });
+    setHasUnsavedChanges(true);
+  };
+
+  const generateDraftPuv = () => {
+    const idealClient = salesProfile.ideal_client.trim() || "clientes que precisam decidir com seguranca";
+    const coreSolution = salesProfile.core_solution.trim() || "um caminho juridico claro, com diagnostico e plano de acao";
+    const draftPuv = `Ajudamos ${idealClient} a sair da incerteza e tomar a proxima decisao com ${coreSolution}, usando diagnostico consultivo, plano de provas e acompanhamento humano antes de qualquer promessa.`;
+    updateSalesProfile("unique_value_proposition", draftPuv);
+    toast.success("PUV rascunho criada para validacao.");
   };
 
   const handleSaveIntegrations = async () => {
@@ -405,6 +666,14 @@ function ConfiguracoesContent() {
     try {
       if (activeTab === 'integrations') await handleSaveIntegrations();
       toggleGamification(draftGamification);
+      const normalizedSalesProfile = {
+        ...salesProfile,
+        value_pillars: salesProfile.value_pillars.map((item) => item.trim()).filter(Boolean).slice(0, 3),
+        status: salesProfile.unique_value_proposition.trim() && salesProfile.ideal_client.trim() && salesProfile.core_solution.trim()
+          ? salesProfile.status
+          : "draft",
+        updated_at: new Date().toISOString(),
+      };
       
       const payload = { 
         tenant_id: tenantId, 
@@ -413,7 +682,8 @@ function ConfiguracoesContent() {
           ...aiFeatures, 
           default_department_id: defaultDeptId,
           contract_flow_mode: aiFeatures.contract_flow_mode || 'hybrid',
-          zapsign_template_id: aiFeatures.zapsign_template_id || ''
+          zapsign_template_id: aiFeatures.zapsign_template_id || '',
+          sales_consultation_profile: normalizedSalesProfile,
         },
         strategic_goals: officeGoals,
         updated_at: new Date().toISOString()
@@ -424,6 +694,8 @@ function ConfiguracoesContent() {
 
       setSuccess(true);
       setHasUnsavedChanges(false);
+      setSalesProfile(normalizeSalesProfile(normalizedSalesProfile));
+      await loadDoctorReport();
       toast.success("Tudo atualizado com sucesso!");
       setTimeout(() => setSuccess(false), 3000);
     } catch (err: any) {
@@ -471,6 +743,119 @@ function ConfiguracoesContent() {
         </div>
 
         <div className="space-y-10 animate-fade-in-up">
+          <SetupDoctorPanel
+            report={doctorReport}
+            isLoading={isDoctorLoading}
+            isFixing={isDoctorFixing}
+            onRefresh={loadDoctorReport}
+            onAutofix={runDoctorAutofix}
+          />
+
+          <section className="border border-[#CCA761]/20 rounded-3xl p-6 sm:p-7 bg-white/80 dark:bg-[#0d0b07] mb-10">
+            <div className="flex flex-col lg:flex-row lg:items-start justify-between gap-5 mb-6">
+              <div className="flex gap-4 min-w-0">
+                <div className="w-12 h-12 rounded-2xl bg-[#CCA761]/10 border border-[#CCA761]/20 flex items-center justify-center shrink-0">
+                  <Target size={22} className="text-[#CCA761]" />
+                </div>
+                <div>
+                  <h2 className="text-sm font-black uppercase tracking-[0.25em] text-[#CCA761]">Perfil Comercial do MAYUS</h2>
+                  <p className="text-xs text-gray-500 leading-relaxed max-w-2xl mt-2">
+                    Base que o MAYUS usa para vender como consultor: cliente ideal, solucao, PUV e pilares.
+                  </p>
+                </div>
+              </div>
+              <span className={`w-fit rounded-full border px-3 py-1 text-[9px] font-black uppercase tracking-widest ${
+                salesProfile.status === "validated"
+                  ? "border-[#4ade80]/20 bg-[#4ade80]/10 text-[#4ade80]"
+                  : "border-amber-400/20 bg-amber-400/10 text-amber-300"
+              }`}>
+                {salesProfile.status === "validated" ? "Validado" : "Rascunho"}
+              </span>
+            </div>
+
+            <div className="grid grid-cols-1 lg:grid-cols-2 gap-4">
+              <label className="space-y-2">
+                <span className="text-[10px] text-gray-500 uppercase tracking-widest font-black">Cliente ideal</span>
+                <textarea
+                  value={salesProfile.ideal_client}
+                  onChange={(event) => updateSalesProfile("ideal_client", event.target.value)}
+                  rows={4}
+                  className="w-full rounded-2xl border border-gray-200 dark:border-white/10 bg-white dark:bg-black/30 p-4 text-sm text-gray-900 dark:text-white focus:outline-none focus:border-[#CCA761]/60"
+                  placeholder="Ex: segurados do INSS com beneficio negado, urgencia financeira e disposicao para organizar documentos."
+                />
+              </label>
+
+              <label className="space-y-2">
+                <span className="text-[10px] text-gray-500 uppercase tracking-widest font-black">Solucao central</span>
+                <textarea
+                  value={salesProfile.core_solution}
+                  onChange={(event) => updateSalesProfile("core_solution", event.target.value)}
+                  rows={4}
+                  className="w-full rounded-2xl border border-gray-200 dark:border-white/10 bg-white dark:bg-black/30 p-4 text-sm text-gray-900 dark:text-white focus:outline-none focus:border-[#CCA761]/60"
+                  placeholder="Ex: diagnostico previdenciario com plano de provas, revisao do CNIS e proximo passo juridico claro."
+                />
+              </label>
+            </div>
+
+            <div className="mt-4 space-y-2">
+              <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3">
+                <span className="text-[10px] text-gray-500 uppercase tracking-widest font-black">PUV</span>
+                <button
+                  type="button"
+                  onClick={generateDraftPuv}
+                  className="w-fit rounded-xl border border-[#CCA761]/25 bg-[#CCA761]/10 px-3 py-2 text-[10px] font-black uppercase tracking-widest text-[#CCA761] hover:bg-[#CCA761]/15"
+                >
+                  Gerar PUV rascunho
+                </button>
+              </div>
+              <textarea
+                value={salesProfile.unique_value_proposition}
+                onChange={(event) => updateSalesProfile("unique_value_proposition", event.target.value)}
+                rows={4}
+                className="w-full rounded-2xl border border-gray-200 dark:border-white/10 bg-white dark:bg-black/30 p-4 text-sm text-gray-900 dark:text-white focus:outline-none focus:border-[#CCA761]/60"
+                placeholder="Uma promessa clara, autoral e verificavel. Nao use 'bom atendimento' como diferencial."
+              />
+            </div>
+
+            <div className="grid grid-cols-1 md:grid-cols-3 gap-3 mt-4">
+              {salesProfile.value_pillars.map((pillar, index) => (
+                <label key={index} className="space-y-2">
+                  <span className="text-[10px] text-gray-500 uppercase tracking-widest font-black">Pilar {index + 1}</span>
+                  <input
+                    value={pillar}
+                    onChange={(event) => updateSalesProfilePillar(index, event.target.value)}
+                    className="w-full rounded-2xl border border-gray-200 dark:border-white/10 bg-white dark:bg-black/30 p-4 text-sm text-gray-900 dark:text-white focus:outline-none focus:border-[#CCA761]/60"
+                    placeholder={index === 0 ? "Raio-X do Caso" : index === 1 ? "Plano de Provas" : "Decisao Segura"}
+                  />
+                </label>
+              ))}
+            </div>
+
+            <label className="block space-y-2 mt-4">
+              <span className="text-[10px] text-gray-500 uppercase tracking-widest font-black">Resumo de posicionamento</span>
+              <textarea
+                value={salesProfile.positioning_summary}
+                onChange={(event) => updateSalesProfile("positioning_summary", event.target.value)}
+                rows={3}
+                className="w-full rounded-2xl border border-gray-200 dark:border-white/10 bg-white dark:bg-black/30 p-4 text-sm text-gray-900 dark:text-white focus:outline-none focus:border-[#CCA761]/60"
+                placeholder="Notas livres para o MAYUS entender tom, publico, tese comercial, anti-cliente e limites de promessa."
+              />
+            </label>
+
+            <div className="mt-5 flex flex-col sm:flex-row sm:items-center justify-between gap-3">
+              <p className="text-[11px] text-gray-500 leading-relaxed max-w-2xl">
+                Se a PUV ainda estiver em rascunho, o MAYUS usa como hipotese e pede validacao antes de escalar atendimento comercial.
+              </p>
+              <button
+                type="button"
+                onClick={() => updateSalesProfile("status", salesProfile.status === "validated" ? "draft" : "validated")}
+                className="h-10 px-4 rounded-xl border border-gray-200 dark:border-white/10 bg-white/80 dark:bg-black/20 text-[10px] font-black uppercase tracking-widest text-gray-800 dark:text-white"
+              >
+                {salesProfile.status === "validated" ? "Marcar rascunho" : "Validar perfil"}
+              </button>
+            </div>
+          </section>
+
           {activeTab === 'goals' ? (
             <>
               {/* GOVERNANÇA DE CONTRATOS - CARD SOLICITADO (MOVIDO PARA O TOPO PARA TESTE) */}

@@ -211,6 +211,39 @@ function makeMaybeSingleQuery(result: { data: any; error: any }) {
   return query;
 }
 
+function makeGrowthQuery(table: string, inserts: Array<{ table: string; payload: any }>) {
+  const query: any = {
+    select: vi.fn(() => query),
+    eq: vi.fn(() => query),
+    in: vi.fn(() => query),
+    order: vi.fn(() => query),
+    limit: vi.fn(() => query),
+    insert: vi.fn((payload: any) => {
+      inserts.push({ table, payload });
+      query.lastInsert = payload;
+      return query;
+    }),
+    maybeSingle: vi.fn(async () => {
+      if (table === "crm_pipelines") return { data: { id: "pipeline-1" }, error: null };
+      return { data: null, error: null };
+    }),
+    single: vi.fn(async () => {
+      if (table === "crm_tasks") return { data: { id: "crm-task-1", pipeline_id: "pipeline-1" }, error: null };
+      return { data: { id: `${table}-1` }, error: null };
+    }),
+    then: (resolve: (value: any) => void) => {
+      if (table === "crm_stages") {
+        resolve({ data: [{ id: "stage-1", name: "Novo Lead", order_index: 0 }], error: null });
+        return;
+      }
+
+      resolve({ data: null, error: null });
+    },
+  };
+
+  return query;
+}
+
 describe("dispatchCapabilityExecution - juridico", () => {
   beforeEach(() => {
     insertMock.mockReset();
@@ -239,6 +272,661 @@ describe("dispatchCapabilityExecution - juridico", () => {
       accessToken: "access-token-1",
       metadata: {},
     });
+  });
+
+  it("executa lead_intake pelo chat, cria CRM task e artifact da missao", async () => {
+    const inserts: Array<{ table: string; payload: any }> = [];
+    fromMock.mockImplementation((table: string) => makeGrowthQuery(table, inserts));
+
+    const result = await dispatchCapabilityExecution({
+      handlerType: "growth_lead_intake",
+      capabilityName: "lead_intake",
+      tenantId: "tenant-1",
+      userId: "user-1",
+      entities: {
+        name: "Bianca Indicada",
+        phone: "21966665555",
+        legalArea: "Familia",
+        pain: "Indicada por um cliente para avaliar revisao de alimentos.",
+        referredBy: "Pedro Cliente",
+      },
+      auditLogId: "audit-lead-1",
+      brainContext: {
+        taskId: "brain-task-lead-1",
+        runId: "brain-run-lead-1",
+        stepId: "brain-step-lead-1",
+        sourceModule: "mayus",
+      },
+    });
+
+    expect(result.status).toBe("executed");
+    expect(result.reply).toContain("Lead registrado");
+    expect(result.outputPayload).toEqual(expect.objectContaining({
+      crm_task_id: "crm-task-1",
+      lead_kind: "referral",
+      lead_needs_human_handoff: true,
+    }));
+    expect(inserts.some((item) => item.table === "crm_tasks" && item.payload.title === "Bianca Indicada")).toBe(true);
+    expect(inserts.some((item) => item.table === "system_event_logs" && item.payload.event_name === "referral_intake_created")).toBe(true);
+    expect(createBrainArtifactMock).toHaveBeenCalledWith(expect.objectContaining({
+      tenantId: "tenant-1",
+      taskId: "brain-task-lead-1",
+      artifactType: "referral_intake",
+      metadata: expect.objectContaining({
+        crm_task_id: "crm-task-1",
+        kind: "referral",
+        referred_by: "Pedro Cliente",
+        phone_present: true,
+      }),
+    }));
+    expect(JSON.stringify(createBrainArtifactMock.mock.calls[0][0].metadata)).not.toContain("21966665555");
+    expect(inserts.some((item) => item.table === "learning_events" && item.payload.event_type === "referral_intake_artifact_created")).toBe(true);
+  });
+
+  it("executa lead_qualify pelo chat e registra plano de qualificacao", async () => {
+    const inserts: Array<{ table: string; payload: any }> = [];
+    fromMock.mockImplementation((table: string) => {
+      if (table === "crm_tasks") {
+        const query: any = {
+          select: vi.fn(() => query),
+          eq: vi.fn(() => query),
+          maybeSingle: vi.fn(async () => ({
+            data: {
+              id: "crm-task-1",
+              title: "Maria Silva",
+              description: "Negativa do INSS com prazo para recurso.",
+              sector: "Previdenciario",
+              source: "Instagram",
+              lead_scoring: 82,
+              tags: ["lead-intake", "previdenciario"],
+            },
+            error: null,
+          })),
+        };
+        return query;
+      }
+
+      return makeGrowthQuery(table, inserts);
+    });
+
+    const result = await dispatchCapabilityExecution({
+      handlerType: "growth_lead_qualify",
+      capabilityName: "lead_qualify",
+      tenantId: "tenant-1",
+      userId: "user-1",
+      entities: { crm_task_id: "crm-task-1" },
+      auditLogId: "audit-qualify-1",
+      brainContext: {
+        taskId: "brain-task-qualify-1",
+        runId: "brain-run-qualify-1",
+        stepId: "brain-step-qualify-1",
+        sourceModule: "mayus",
+      },
+    });
+
+    expect(result.status).toBe("executed");
+    expect(result.reply).toContain("Qualificacao do lead");
+    expect(result.outputPayload).toEqual(expect.objectContaining({
+      crm_task_id: "crm-task-1",
+      lead_name: "Maria Silva",
+      qualification_confidence: "high",
+      lead_requires_human_handoff: true,
+    }));
+    expect(createBrainArtifactMock).toHaveBeenCalledWith(expect.objectContaining({
+      tenantId: "tenant-1",
+      taskId: "brain-task-qualify-1",
+      artifactType: "lead_qualification_plan",
+      metadata: expect.objectContaining({
+        crm_task_id: "crm-task-1",
+        lead_name: "Maria Silva",
+        legal_area: "Previdenciario",
+        qualification_confidence: "high",
+        minimum_documents: expect.arrayContaining(["CNIS"]),
+      }),
+    }));
+    expect(JSON.stringify(createBrainArtifactMock.mock.calls[0][0].metadata)).not.toMatch(/phone|email|api_key|webhook_secret|sk_live|sk_test|sk-or-v1/i);
+    expect(inserts.some((item) => item.table === "learning_events" && item.payload.event_type === "lead_qualification_plan_created")).toBe(true);
+  });
+
+  it("executa lead_followup pelo chat e registra plano supervisionado", async () => {
+    const inserts: Array<{ table: string; payload: any }> = [];
+    fromMock.mockImplementation((table: string) => {
+      if (table === "crm_tasks") {
+        const query: any = {
+          select: vi.fn(() => query),
+          eq: vi.fn(() => query),
+          maybeSingle: vi.fn(async () => ({
+            data: {
+              id: "crm-task-1",
+              title: "Maria Silva",
+              description: "Negativa do INSS com prazo para recurso amanha.",
+              sector: "Previdenciario",
+              source: "Instagram",
+              lead_scoring: 82,
+              tags: ["lead-intake", "previdenciario"],
+            },
+            error: null,
+          })),
+        };
+        return query;
+      }
+
+      return makeGrowthQuery(table, inserts);
+    });
+
+    const result = await dispatchCapabilityExecution({
+      handlerType: "growth_lead_followup",
+      capabilityName: "lead_followup",
+      tenantId: "tenant-1",
+      userId: "user-1",
+      entities: { crm_task_id: "crm-task-1" },
+      auditLogId: "audit-followup-1",
+      brainContext: {
+        taskId: "brain-task-followup-1",
+        runId: "brain-run-followup-1",
+        stepId: "brain-step-followup-1",
+        sourceModule: "mayus",
+      },
+    });
+
+    expect(result.status).toBe("executed");
+    expect(result.reply).toContain("Follow-up do lead");
+    expect(result.outputPayload).toEqual(expect.objectContaining({
+      crm_task_id: "crm-task-1",
+      lead_name: "Maria Silva",
+      followup_priority: "high",
+      cadence_step_count: 3,
+      requires_human_approval: true,
+    }));
+    expect(createBrainArtifactMock).toHaveBeenCalledWith(expect.objectContaining({
+      tenantId: "tenant-1",
+      taskId: "brain-task-followup-1",
+      artifactType: "lead_followup_plan",
+      metadata: expect.objectContaining({
+        crm_task_id: "crm-task-1",
+        lead_name: "Maria Silva",
+        legal_area: "Previdenciario",
+        followup_priority: "high",
+        cadence: expect.arrayContaining([
+          expect.objectContaining({ channel: "whatsapp" }),
+          expect.objectContaining({ channel: "phone" }),
+        ]),
+        requires_human_approval: true,
+      }),
+    }));
+    expect(JSON.stringify(createBrainArtifactMock.mock.calls[0][0].metadata)).not.toMatch(/phone_number|email|api_key|webhook_secret|sk_live|sk_test|sk-or-v1/i);
+    expect(inserts.some((item) => item.table === "learning_events" && item.payload.event_type === "lead_followup_plan_created")).toBe(true);
+  });
+
+  it("executa lead_schedule pelo chat e registra agenda interna supervisionada", async () => {
+    const inserts: Array<{ table: string; payload: any }> = [];
+    fromMock.mockImplementation((table: string) => {
+      if (table === "crm_tasks") {
+        const query: any = {
+          select: vi.fn(() => query),
+          eq: vi.fn(() => query),
+          maybeSingle: vi.fn(async () => ({
+            data: {
+              id: "crm-task-1",
+              title: "Maria Silva",
+              description: "Negativa do INSS com prazo para recurso.",
+              sector: "Previdenciario",
+              source: "Instagram",
+              lead_scoring: 82,
+              tags: ["lead-intake", "previdenciario"],
+              assigned_to: "sdr-1",
+            },
+            error: null,
+          })),
+        };
+        return query;
+      }
+
+      return makeGrowthQuery(table, inserts);
+    });
+
+    const result = await dispatchCapabilityExecution({
+      handlerType: "growth_lead_schedule",
+      capabilityName: "lead_schedule",
+      tenantId: "tenant-1",
+      userId: "user-1",
+      entities: {
+        crm_task_id: "crm-task-1",
+        scheduled_for: "2026-04-28T13:00:00.000Z",
+        meeting_type: "consulta",
+        owner_name: "SDR MAYUS",
+      },
+      auditLogId: "audit-schedule-1",
+      brainContext: {
+        taskId: "brain-task-schedule-1",
+        runId: "brain-run-schedule-1",
+        stepId: "brain-step-schedule-1",
+        sourceModule: "mayus",
+      },
+    });
+
+    expect(result.status).toBe("executed");
+    expect(result.reply).toContain("Agendamento do lead");
+    expect(result.outputPayload).toEqual(expect.objectContaining({
+      crm_task_id: "crm-task-1",
+      agenda_task_id: "user_tasks-1",
+      lead_name: "Maria Silva",
+      scheduled_for: "2026-04-28T13:00:00.000Z",
+      schedule_urgency: "URGENTE",
+      requires_human_approval: true,
+    }));
+    expect(inserts.some((item) => item.table === "user_tasks" && item.payload.source_table === "growth_lead_schedule")).toBe(true);
+    expect(inserts.find((item) => item.table === "user_tasks")?.payload).toEqual(expect.objectContaining({
+      source_id: "crm:crm-task-1",
+      assigned_to: "sdr-1",
+      created_by_agent: "mayus",
+      show_only_on_date: true,
+    }));
+    expect(createBrainArtifactMock).toHaveBeenCalledWith(expect.objectContaining({
+      tenantId: "tenant-1",
+      taskId: "brain-task-schedule-1",
+      artifactType: "lead_schedule_plan",
+      metadata: expect.objectContaining({
+        crm_task_id: "crm-task-1",
+        agenda_task_id: "user_tasks-1",
+        lead_name: "Maria Silva",
+        legal_area: "Previdenciario",
+        urgency: "URGENTE",
+        requires_human_approval: true,
+      }),
+    }));
+    expect(JSON.stringify(createBrainArtifactMock.mock.calls[0][0].metadata)).not.toMatch(/phone|email|google|oauth|api_key|webhook_secret|sk_live|sk_test|sk-or-v1/i);
+    expect(inserts.some((item) => item.table === "learning_events" && item.payload.event_type === "lead_schedule_plan_created")).toBe(true);
+  });
+
+  it("executa revenue_flow_plan pelo chat sem acionar integracoes externas", async () => {
+    const inserts: Array<{ table: string; payload: any }> = [];
+    fromMock.mockImplementation((table: string) => makeGrowthQuery(table, inserts));
+
+    const result = await dispatchCapabilityExecution({
+      handlerType: "growth_revenue_flow_plan",
+      capabilityName: "revenue_flow_plan",
+      tenantId: "tenant-1",
+      userId: "user-1",
+      entities: {
+        client_name: "Maria Silva",
+        legal_area: "Previdenciario",
+        amount: "4500",
+      },
+      auditLogId: "audit-revenue-1",
+      brainContext: {
+        taskId: "brain-task-revenue-1",
+        runId: "brain-run-revenue-1",
+        stepId: "brain-step-revenue-1",
+        sourceModule: "mayus",
+      },
+    });
+
+    expect(result.status).toBe("executed");
+    expect(result.reply).toContain("Plano revenue-to-case");
+    expect(result.outputPayload).toEqual(expect.objectContaining({
+      client_name: "Maria Silva",
+      revenue_flow_step_count: 4,
+      requires_human_approval: true,
+    }));
+    expect(createBrainArtifactMock).toHaveBeenCalledWith(expect.objectContaining({
+      tenantId: "tenant-1",
+      taskId: "brain-task-revenue-1",
+      artifactType: "revenue_flow_plan",
+      metadata: expect.objectContaining({
+        client_name: "Maria Silva",
+        legal_area: "Previdenciario",
+        amount: 4500,
+        steps: expect.arrayContaining([
+          expect.objectContaining({ capability: "proposal_generate" }),
+          expect.objectContaining({ capability: "zapsign_contract" }),
+          expect.objectContaining({ capability: "asaas_cobrar" }),
+          expect.objectContaining({ capability: "revenue_to_case" }),
+        ]),
+        requires_human_approval: true,
+      }),
+    }));
+    expect(inserts.some((item) => item.table === "learning_events" && item.payload.event_type === "revenue_flow_plan_created")).toBe(true);
+    expect(inserts.some((item) => item.table === "user_tasks")).toBe(false);
+    expect(JSON.stringify(createBrainArtifactMock.mock.calls[0][0].metadata)).not.toMatch(/api_key|webhook_secret|sk_live|sk_test|sk-or-v1/i);
+  });
+
+  it("executa external_action_preview pelo chat sem executar integracao externa", async () => {
+    const inserts: Array<{ table: string; payload: any }> = [];
+    fromMock.mockImplementation((table: string) => makeGrowthQuery(table, inserts));
+
+    const result = await dispatchCapabilityExecution({
+      handlerType: "growth_external_action_preview",
+      capabilityName: "external_action_preview",
+      tenantId: "tenant-1",
+      userId: "user-1",
+      entities: {
+        action_type: "contrato",
+        client_name: "Maria Silva",
+        legal_area: "Previdenciario",
+        recipient_email: "maria@example.com",
+      },
+      auditLogId: "audit-preview-1",
+      brainContext: {
+        taskId: "brain-task-preview-1",
+        runId: "brain-run-preview-1",
+        stepId: "brain-step-preview-1",
+        sourceModule: "mayus",
+      },
+    });
+
+    expect(result.status).toBe("executed");
+    expect(result.reply).toContain("Preview de acao externa");
+    expect(result.outputPayload).toEqual(expect.objectContaining({
+      action_type: "zapsign_contract",
+      client_name: "Maria Silva",
+      external_preview_blocker_count: 0,
+      external_side_effects_blocked: true,
+      requires_human_approval: true,
+    }));
+    expect(createBrainArtifactMock).toHaveBeenCalledWith(expect.objectContaining({
+      tenantId: "tenant-1",
+      taskId: "brain-task-preview-1",
+      artifactType: "external_action_preview",
+      metadata: expect.objectContaining({
+        action_type: "zapsign_contract",
+        client_name: "Maria Silva",
+        preview_status: "pending_human_approval",
+        external_side_effects_blocked: true,
+        requires_human_approval: true,
+      }),
+    }));
+    expect(inserts.some((item) => item.table === "learning_events" && item.payload.event_type === "external_action_preview_created")).toBe(true);
+    expect(inserts.some((item) => item.table === "user_tasks")).toBe(false);
+    expect(JSON.stringify(createBrainArtifactMock.mock.calls[0][0].metadata)).not.toMatch(/maria@example\.com|api_key|webhook_secret|sk_live|sk_test|sk-or-v1/i);
+  });
+
+  it("executa client_acceptance_record pelo chat e registra auditoria operacional", async () => {
+    const inserts: Array<{ table: string; payload: any }> = [];
+    fromMock.mockImplementation((table: string) => makeGrowthQuery(table, inserts));
+
+    const result = await dispatchCapabilityExecution({
+      handlerType: "growth_client_acceptance_record",
+      capabilityName: "client_acceptance_record",
+      tenantId: "tenant-1",
+      userId: "user-1",
+      entities: {
+        client_name: "Maria Silva",
+        acceptance_type: "proposta",
+        acceptance_channel: "WhatsApp",
+        evidence_summary: "Cliente confirmou aceite da proposta.",
+        amount: "4500",
+      },
+      auditLogId: "audit-acceptance-1",
+      brainContext: {
+        taskId: "brain-task-acceptance-1",
+        runId: "brain-run-acceptance-1",
+        stepId: "brain-step-acceptance-1",
+        sourceModule: "mayus",
+      },
+    });
+
+    expect(result.status).toBe("executed");
+    expect(result.reply).toContain("Aceite do cliente registrado");
+    expect(result.outputPayload).toEqual(expect.objectContaining({
+      client_name: "Maria Silva",
+      acceptance_type: "proposal",
+      client_acceptance_audit_status: "recorded_pending_internal_review",
+      external_side_effects_blocked: true,
+      requires_human_review: true,
+    }));
+    expect(inserts.some((item) => item.table === "system_event_logs" && item.payload.event_name === "client_acceptance_recorded")).toBe(true);
+    expect(createBrainArtifactMock).toHaveBeenCalledWith(expect.objectContaining({
+      tenantId: "tenant-1",
+      taskId: "brain-task-acceptance-1",
+      artifactType: "client_acceptance_record",
+      metadata: expect.objectContaining({
+        client_name: "Maria Silva",
+        acceptance_type: "proposal",
+        amount: 4500,
+        audit_status: "recorded_pending_internal_review",
+        external_side_effects_blocked: true,
+        requires_human_review: true,
+      }),
+    }));
+    expect(inserts.some((item) => item.table === "learning_events" && item.payload.event_type === "client_acceptance_record_created")).toBe(true);
+    expect(inserts.some((item) => item.table === "user_tasks")).toBe(false);
+    expect(JSON.stringify(createBrainArtifactMock.mock.calls[0][0].metadata)).not.toMatch(/phone_number|email|api_key|webhook_secret|sk_live|sk_test|sk-or-v1/i);
+  });
+
+  it("executa lead_reactivation pelo chat e registra plano supervisionado", async () => {
+    const inserts: Array<{ table: string; payload: any }> = [];
+    fromMock.mockImplementation((table: string) => {
+      if (table === "crm_tasks") {
+        const query: any = {
+          select: vi.fn(() => query),
+          eq: vi.fn(() => query),
+          order: vi.fn(() => query),
+          limit: vi.fn(() => query),
+          then: (resolve: (value: any) => void) => {
+            resolve({
+              data: [
+                {
+                  id: "crm-task-1",
+                  title: "Maria Silva",
+                  description: "Lead frio de revisao de beneficio.",
+                  sector: "Previdenciario",
+                  source: "Instagram",
+                  lead_scoring: 82,
+                  tags: ["lead-intake", "previdenciario"],
+                },
+                {
+                  id: "crm-task-2",
+                  title: "Joao Souza",
+                  description: "Lead antigo sem retorno.",
+                  sector: "Previdenciario",
+                  source: "Indicacao",
+                  lead_scoring: 45,
+                  tags: ["previdenciario"],
+                },
+              ],
+              error: null,
+            });
+          },
+        };
+        return query;
+      }
+
+      return makeGrowthQuery(table, inserts);
+    });
+
+    const result = await dispatchCapabilityExecution({
+      handlerType: "growth_lead_reactivation",
+      capabilityName: "lead_reactivation",
+      tenantId: "tenant-1",
+      userId: "user-1",
+      entities: {
+        legal_area: "Previdenciario",
+        min_days_inactive: "45",
+        max_leads: "12",
+      },
+      auditLogId: "audit-reactivation-1",
+      brainContext: {
+        taskId: "brain-task-reactivation-1",
+        runId: "brain-run-reactivation-1",
+        stepId: "brain-step-reactivation-1",
+        sourceModule: "mayus",
+      },
+    });
+
+    expect(result.status).toBe("executed");
+    expect(result.reply).toContain("Reativacao de leads frios");
+    expect(result.outputPayload).toEqual(expect.objectContaining({
+      legal_area: "Previdenciario",
+      lead_reactivation_candidate_count: 2,
+      lead_reactivation_message_count: 3,
+      external_side_effects_blocked: true,
+      requires_human_approval: true,
+    }));
+    expect(createBrainArtifactMock).toHaveBeenCalledWith(expect.objectContaining({
+      tenantId: "tenant-1",
+      taskId: "brain-task-reactivation-1",
+      artifactType: "lead_reactivation_plan",
+      metadata: expect.objectContaining({
+        legal_area: "Previdenciario",
+        candidate_count: 2,
+        candidates: expect.arrayContaining([
+          expect.objectContaining({ id: "crm-task-1", name: "Maria Silva", priority: "high" }),
+        ]),
+        message_variants: expect.arrayContaining([
+          expect.objectContaining({ channel: "whatsapp" }),
+        ]),
+        requires_human_approval: true,
+        external_side_effects_blocked: true,
+      }),
+    }));
+    expect(inserts.some((item) => item.table === "learning_events" && item.payload.event_type === "lead_reactivation_plan_created")).toBe(true);
+    expect(inserts.some((item) => item.table === "user_tasks")).toBe(false);
+    expect(JSON.stringify(createBrainArtifactMock.mock.calls[0][0].metadata)).not.toMatch(/phone_number|email|api_key|webhook_secret|sk_live|sk_test|sk-or-v1/i);
+  });
+
+  it("executa sales_consultation pelo chat e registra plano DEF supervisionado", async () => {
+    const inserts: Array<{ table: string; payload: any }> = [];
+    fromMock.mockImplementation((table: string) => makeGrowthQuery(table, inserts));
+
+    const result = await dispatchCapabilityExecution({
+      handlerType: "growth_sales_consultation",
+      capabilityName: "sales_consultation",
+      tenantId: "tenant-1",
+      userId: "user-1",
+      entities: {
+        lead_name: "Maria Silva",
+        legal_area: "Previdenciario",
+        stage: "descoberta",
+        channel: "WhatsApp",
+        objection: "achei caro",
+        ticket_value: "4500",
+      },
+      history: [
+        { role: "user", content: "Caso: beneficio negado. Ela quer destravar aposentadoria e ja tentou resolver no INSS." },
+      ],
+      auditLogId: "audit-sales-consultation-1",
+      brainContext: {
+        taskId: "brain-task-sales-consultation-1",
+        runId: "brain-run-sales-consultation-1",
+        stepId: "brain-step-sales-consultation-1",
+        sourceModule: "mayus",
+      },
+    });
+
+    expect(result.status).toBe("executed");
+    expect(result.reply).toContain("Consultoria comercial DEF");
+    expect(result.outputPayload).toEqual(expect.objectContaining({
+      lead_name: "Maria Silva",
+      sales_consultation_phase: "discovery",
+      objection_move_count: 1,
+      discovery_completeness: expect.any(Number),
+      missing_signal_count: expect.any(Number),
+      next_discovery_question: expect.any(String),
+      firm_positioning_completeness: expect.any(Number),
+      firm_profile_missing_signal_count: expect.any(Number),
+      firm_profile_drafted: true,
+      external_side_effects_blocked: true,
+      requires_human_review: true,
+    }));
+    expect(createBrainArtifactMock).toHaveBeenCalledWith(expect.objectContaining({
+      tenantId: "tenant-1",
+      taskId: "brain-task-sales-consultation-1",
+      artifactType: "sales_consultation_plan",
+      metadata: expect.objectContaining({
+        lead_name: "Maria Silva",
+        legal_area: "Previdenciario",
+        consultation_phase: "discovery",
+        discovery_questions: expect.arrayContaining([
+          expect.stringContaining("Antes de eu te dizer qualquer caminho"),
+        ]),
+        objection_moves: expect.arrayContaining([
+          expect.objectContaining({ type: "price" }),
+        ]),
+        missing_signals: expect.any(Array),
+        discovery_completeness: expect.any(Number),
+        next_discovery_question: expect.any(String),
+        firm_profile: expect.objectContaining({
+          uniqueValueProposition: expect.stringContaining("Ajudamos"),
+        }),
+        firm_profile_missing_signals: expect.any(Array),
+        requires_human_review: true,
+        external_side_effects_blocked: true,
+      }),
+    }));
+    expect(inserts.some((item) => item.table === "learning_events" && item.payload.event_type === "sales_consultation_plan_created")).toBe(true);
+    expect(inserts.some((item) => item.table === "user_tasks")).toBe(false);
+    expect(JSON.stringify(createBrainArtifactMock.mock.calls[0][0].metadata)).not.toMatch(/phone_number|email|api_key|webhook_secret|sk_live|sk_test|sk-or-v1/i);
+  });
+
+  it("executa sales_profile_setup e grava perfil comercial nas configuracoes", async () => {
+    const inserts: Array<{ table: string; payload: any }> = [];
+    const upserts: Array<{ table: string; payload: any }> = [];
+    fromMock.mockImplementation((table: string) => {
+      if (table === "tenant_settings") {
+        const query: any = {
+          select: vi.fn(() => query),
+          eq: vi.fn(() => query),
+          maybeSingle: vi.fn(async () => ({ data: { ai_features: { existing_flag: true } }, error: null })),
+          upsert: vi.fn((payload: any) => {
+            upserts.push({ table, payload });
+            return { error: null };
+          }),
+        };
+        return query;
+      }
+
+      return makeGrowthQuery(table, inserts);
+    });
+
+    const result = await dispatchCapabilityExecution({
+      handlerType: "growth_sales_profile_setup",
+      capabilityName: "sales_profile_setup",
+      tenantId: "tenant-1",
+      userId: "user-1",
+      entities: {
+        ideal_client: "empresarios com passivo trabalhista e decisao urgente",
+        core_solution: "reduzir risco e negociar com provas antes do litigio",
+        confirmation: "pode salvar",
+      },
+      auditLogId: "audit-sales-profile-1",
+      brainContext: {
+        taskId: "brain-task-sales-profile-1",
+        runId: "brain-run-sales-profile-1",
+        stepId: "brain-step-sales-profile-1",
+        sourceModule: "mayus",
+      },
+    });
+
+    expect(result.status).toBe("executed");
+    expect(result.reply).toContain("Auto-configuracao comercial");
+    expect(result.outputPayload).toEqual(expect.objectContaining({
+      setup_status: "validated",
+      sales_profile_persisted: true,
+      external_side_effects_blocked: true,
+    }));
+    expect(upserts).toHaveLength(1);
+    expect(upserts[0].payload.ai_features).toEqual(expect.objectContaining({
+      existing_flag: true,
+      sales_consultation_profile: expect.objectContaining({
+        ideal_client: "empresarios com passivo trabalhista e decisao urgente",
+        core_solution: "reduzir risco e negociar com provas antes do litigio",
+        status: "validated",
+      }),
+    }));
+    expect(createBrainArtifactMock).toHaveBeenCalledWith(expect.objectContaining({
+      tenantId: "tenant-1",
+      taskId: "brain-task-sales-profile-1",
+      artifactType: "sales_profile_setup",
+      metadata: expect.objectContaining({
+        setup_status: "validated",
+        persisted: true,
+        profile: expect.objectContaining({
+          uniqueValueProposition: expect.stringContaining("empresarios com passivo trabalhista"),
+        }),
+      }),
+    }));
+    expect(inserts.some((item) => item.table === "learning_events" && item.payload.event_type === "sales_profile_configured")).toBe(true);
   });
 
   it("registra artifact de contexto juridico para a missao do MAYUS", async () => {
@@ -304,10 +992,16 @@ describe("dispatchCapabilityExecution - juridico", () => {
       processLabel: "E2E-2026-0001",
       clientLabel: "Cliente Playwright E2E",
       statusHeadline: "Contexto juridico consolidado. Fase atual: Contestação.",
+      progressSummary: "Contexto juridico consolidado.",
       currentPhase: "Contestação",
       nextStep: "Revisar a minuta com base no acervo validado.",
       pendingItems: [],
       summary: "Contexto juridico consolidado.",
+      grounding: {
+        factualSources: ["resumo do Case Brain", "fase do Case Brain"],
+        inferenceNotes: [],
+        missingSignals: ["pendencias documentais registradas"],
+      },
       handoffReason: null,
     });
     buildSupportCaseStatusReplyMock.mockReturnValue("## Status do caso");
@@ -334,9 +1028,13 @@ describe("dispatchCapabilityExecution - juridico", () => {
       process_task_id: "process-task-1",
       support_status_response_mode: "answer",
       support_status_confidence: "high",
+      support_status_progress_summary: "Contexto juridico consolidado.",
       support_status_current_phase: "Contestação",
       support_status_next_step: "Revisar a minuta com base no acervo validado.",
       support_status_pending_count: 0,
+      support_status_factual_source_count: 2,
+      support_status_inference_count: 0,
+      support_status_missing_signal_count: 1,
       support_status_handoff_reason: null,
     }));
     expect(createBrainArtifactMock).toHaveBeenCalledWith(expect.objectContaining({
@@ -349,7 +1047,11 @@ describe("dispatchCapabilityExecution - juridico", () => {
         process_number: "E2E-2026-0001",
         support_status_response_mode: "answer",
         support_status_confidence: "high",
+        support_status_progress_summary: "Contexto juridico consolidado.",
         support_status_current_phase: "Contestação",
+        support_status_factual_sources: ["resumo do Case Brain", "fase do Case Brain"],
+        support_status_inference_notes: [],
+        support_status_missing_signals: ["pendencias documentais registradas"],
       }),
     }));
     expect(fromMock).toHaveBeenCalledWith("learning_events");
@@ -360,6 +1062,10 @@ describe("dispatchCapabilityExecution - juridico", () => {
         process_task_id: "process-task-1",
         response_mode: "answer",
         confidence: "high",
+        progress_summary: "Contexto juridico consolidado.",
+        factual_sources: ["resumo do Case Brain", "fase do Case Brain"],
+        inference_notes: [],
+        missing_signals: ["pendencias documentais registradas"],
       }),
     }));
   });
