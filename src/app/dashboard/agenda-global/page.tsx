@@ -1,14 +1,23 @@
 "use client";
 
-import { useEffect, useState, useMemo } from "react";
+import { useEffect, useState, useMemo, useCallback } from "react";
 import { createClient } from "@/lib/supabase/client";
-import { Clock, AlertCircle, Star, Wand2, Calendar, CheckCircle2, Trophy, Sword, Lock, Target, Coins, Crown, Copy, Check } from "lucide-react";
+import { Clock, AlertCircle, Star, Wand2, Calendar, CheckCircle2, Trophy, Sword, Lock, Target, Coins, Crown, Copy, Check, ExternalLink } from "lucide-react";
 import Link from "next/link";
 import { Montserrat, Cormorant_Garamond } from "next/font/google";
 import { useGamification } from "@/hooks/useGamification";
 import { filterExistingProcessPrazoTasks, formatDateKey, getUrgencyLabel, inferUrgencyFromDeadline, sortAgendaTasks, toAgendaEvent } from "@/lib/agenda/userTasks";
 
 const TASK_META_PREFIX = "__MAYUS_TASK_META__";
+
+type GoogleCalendarGlobalState = {
+  available: boolean;
+  connected: boolean;
+  status: string;
+  connectedEmail: string | null;
+  events: any[];
+  error?: string | null;
+};
 
 const montserrat = Montserrat({ subsets: ["latin"], weight: ["300", "400", "500", "600", "700"] });
 const cormorant = Cormorant_Garamond({ subsets: ["latin"], weight: ["400", "600", "700"], style: ["normal", "italic"] });
@@ -33,6 +42,16 @@ export default function AgendaGlobalPage() {
   const [activeMission, setActiveMission] = useState<any | null>(null);
   const [copiedTextKey, setCopiedTextKey] = useState<string | null>(null);
   const [reminderDateKeys, setReminderDateKeys] = useState<string[]>([]);
+  const [googleCalendarGlobal, setGoogleCalendarGlobal] = useState<GoogleCalendarGlobalState>({
+    available: true,
+    connected: false,
+    status: "disconnected",
+    connectedEmail: null,
+    events: [],
+    error: null,
+  });
+  const [isGoogleCalendarGlobalLoading, setIsGoogleCalendarGlobalLoading] = useState(false);
+  const [isGoogleCalendarGlobalDisconnecting, setIsGoogleCalendarGlobalDisconnecting] = useState(false);
 
   const getDeadlineMeta = (dateValue?: string | null) => {
     if (!dateValue) return null;
@@ -122,6 +141,43 @@ export default function AgendaGlobalPage() {
 
   const [selectedDate, setSelectedDate] = useState<string>(formatDateKey(new Date()));
 
+  const loadGoogleCalendarGlobalEvents = useCallback(async (dateKey: string) => {
+    setIsGoogleCalendarGlobalLoading(true);
+
+    try {
+      const response = await fetch(`/api/integrations/google-calendar-global?date=${encodeURIComponent(dateKey)}`, { cache: "no-store" });
+      const data = await response.json().catch(() => null);
+
+      if (!response.ok) {
+        throw new Error(data?.error || "Nao foi possivel carregar o Google Agenda global.");
+      }
+
+      const nextState: GoogleCalendarGlobalState = {
+        available: Boolean(data?.available),
+        connected: Boolean(data?.connected),
+        status: String(data?.status || "disconnected"),
+        connectedEmail: data?.connectedEmail || null,
+        events: Array.isArray(data?.events) ? data.events : [],
+        error: null,
+      };
+      setGoogleCalendarGlobal(nextState);
+      return nextState.events.map((event) => ({
+        ...event,
+        person: "Agenda global Google",
+        visibility: "global",
+      }));
+    } catch (error: any) {
+      setGoogleCalendarGlobal((current) => ({
+        ...current,
+        events: [],
+        error: error?.message || "Nao foi possivel carregar o Google Agenda global.",
+      }));
+      return [];
+    } finally {
+      setIsGoogleCalendarGlobalLoading(false);
+    }
+  }, []);
+
   const WEEK_DAYS = useMemo(() => {
     const list = [];
     const today = new Date();
@@ -210,11 +266,12 @@ export default function AgendaGlobalPage() {
         const aTs = a.created_at ? new Date(a.created_at).getTime() : 0;
         const bTs = b.created_at ? new Date(b.created_at).getTime() : 0;
         return bTs - aTs;
-      });
+    });
 
     const taskItems = normalizedTasks.filter((task: any) => task.task_kind !== 'mission');
+    const googleCalendarEvents = await loadGoogleCalendarGlobalEvents(selectedDate);
     setActiveMission(missions[0] || null);
-    setEvents(taskItems.filter((task: any) => !task.is_critical));
+    setEvents([...taskItems.filter((task: any) => !task.is_critical), ...googleCalendarEvents]);
     setCriticalDeadlines(taskItems.filter((task: any) => task.is_critical));
     setIsLoading(false);
   };
@@ -225,6 +282,25 @@ export default function AgendaGlobalPage() {
   useEffect(() => {
      fetchTasks();
   }, [selectedDate]);
+
+  useEffect(() => {
+    if (typeof window === "undefined") return;
+
+    const currentUrl = new URL(window.location.href);
+    const status = currentUrl.searchParams.get("googleCalendarGlobal");
+    if (!status) return;
+
+    const message = currentUrl.searchParams.get("message");
+    setGoogleCalendarGlobal((current) => ({
+      ...current,
+      error: status === "error" ? message || "Nao foi possivel conectar o Google Agenda global." : null,
+    }));
+
+    currentUrl.searchParams.delete("googleCalendarGlobal");
+    currentUrl.searchParams.delete("message");
+    const nextUrl = `${currentUrl.pathname}${currentUrl.search}${currentUrl.hash}`;
+    window.history.replaceState({}, "", nextUrl);
+  }, []);
 
   useEffect(() => {
     fetchTasks();
@@ -246,6 +322,7 @@ export default function AgendaGlobalPage() {
   }, []);
 
   const toggleStatus = async (task: any) => {
+    if (task.is_external_calendar) return;
     const newStatus = task.status === 'Concluído' ? 'Pendente' : 'Concluído';
     const { data: { user } } = await supabase.auth.getUser();
     const updatePayload: Record<string, any> = {
@@ -262,6 +339,7 @@ export default function AgendaGlobalPage() {
 
   const stealTask = async (e: React.MouseEvent, task: any) => {
     e.stopPropagation(); // Avoid triggering toggleStatus
+    if (task.is_external_calendar) return;
 
     const { data: { user } } = await supabase.auth.getUser();
     await supabase
@@ -270,6 +348,40 @@ export default function AgendaGlobalPage() {
       .eq('id', task.id);
 
     setEvents(prev => prev.map(ev => ev.id === task.id ? { ...ev, assigned_to: user?.id ?? null, assigned_name_snapshot: viewerName, person: viewerName, stolen: true } : ev));
+  };
+
+  const handleConnectGoogleCalendarGlobal = () => {
+    window.location.assign("/api/integrations/google-calendar-global/connect");
+  };
+
+  const handleDisconnectGoogleCalendarGlobal = async () => {
+    if (!confirm("Desconectar a agenda global do Google deste escritorio?")) return;
+    setIsGoogleCalendarGlobalDisconnecting(true);
+
+    try {
+      const response = await fetch("/api/integrations/google-calendar-global", { method: "DELETE" });
+      const data = await response.json().catch(() => null);
+      if (!response.ok) {
+        throw new Error(data?.error || "Nao foi possivel desconectar o Google Agenda global.");
+      }
+
+      setGoogleCalendarGlobal({
+        available: true,
+        connected: false,
+        status: "disconnected",
+        connectedEmail: null,
+        events: [],
+        error: null,
+      });
+      fetchTasks();
+    } catch (error: any) {
+      setGoogleCalendarGlobal((current) => ({
+        ...current,
+        error: error?.message || "Nao foi possivel desconectar o Google Agenda global.",
+      }));
+    } finally {
+      setIsGoogleCalendarGlobalDisconnecting(false);
+    }
   };
 
   const copyTaskText = async (event: React.MouseEvent, key: string, text?: string | null) => {
@@ -287,6 +399,7 @@ export default function AgendaGlobalPage() {
   };
 
   const getReward = (task: any) => {
+    if (task?.is_external_calendar) return 0;
     const normalized = String(task?.urgency || "")
       .normalize("NFD")
       .replace(/[\u0300-\u036f]/g, "")
@@ -307,12 +420,14 @@ export default function AgendaGlobalPage() {
       });
   }, [events]);
 
-  const totalTasks = events.length;
-  const completedTasks = completedEvents.length;
+  const progressEvents = useMemo(() => events.filter((event) => !event.is_external_calendar), [events]);
+  const totalTasks = progressEvents.length;
+  const completedTasks = useMemo(() => progressEvents.filter((event) => event.status === 'Concluído').length, [progressEvents]);
   
   // RANKING EM TEMPO REAL COMPUTADO (MAYUS COINS)
   const rankingMap = useMemo(() => {
     return events.reduce<Record<string, number>>((acc, ev) => {
+      if (ev.is_external_calendar) return acc;
       const isComercial = ['Vendas', 'Comercial', 'CRM'].includes(ev.category);
       const isJuridico = ['Judicial', 'Societário', 'Tributário'].includes(ev.category);
       const isMarketing = ['Marketing', 'Social Media', 'Mídia', 'Design', 'Tráfego'].includes(ev.category);
@@ -469,6 +584,43 @@ export default function AgendaGlobalPage() {
       </div>
 
       <div className="space-y-8 animate-fade-in-up">
+        <div className="rounded-2xl border border-[#4285F4]/25 bg-[#4285F4]/10 px-5 py-4 text-xs text-gray-700 dark:text-gray-200">
+          <div className="flex flex-col md:flex-row md:items-center justify-between gap-4">
+            <div>
+              <p className="font-black uppercase tracking-[0.16em] text-[#8ab4ff]">Google Agenda Global</p>
+              <p className="mt-1 text-[11px] leading-relaxed text-gray-500 dark:text-gray-400">
+                {!googleCalendarGlobal.available
+                  ? "Indisponivel ate configurar OAuth no servidor."
+                  : googleCalendarGlobal.connected
+                    ? `Agenda global conectada: ${googleCalendarGlobal.connectedEmail || "conta Google"}`
+                    : "Opcional: conecte a conta oficial, secretaria ou setor responsavel pela agenda do escritorio."}
+              </p>
+              {googleCalendarGlobal.error && (
+                <p className="mt-1 text-[10px] font-semibold text-red-300">{googleCalendarGlobal.error}</p>
+              )}
+            </div>
+            {googleCalendarGlobal.connected ? (
+              <button
+                type="button"
+                onClick={handleDisconnectGoogleCalendarGlobal}
+                disabled={isGoogleCalendarGlobalDisconnecting}
+                className="rounded-lg border border-red-500/25 bg-red-500/10 px-4 py-2.5 text-[10px] font-black uppercase tracking-widest text-red-300 disabled:opacity-60"
+              >
+                {isGoogleCalendarGlobalDisconnecting ? "..." : "Desconectar agenda global"}
+              </button>
+            ) : (
+              <button
+                type="button"
+                onClick={handleConnectGoogleCalendarGlobal}
+                disabled={!googleCalendarGlobal.available || isGoogleCalendarGlobalLoading}
+                className="rounded-lg border border-[#4285F4]/40 bg-[#4285F4] px-4 py-2.5 text-[10px] font-black uppercase tracking-widest text-white disabled:cursor-not-allowed disabled:opacity-50"
+              >
+                Conectar agenda global do Google
+              </button>
+            )}
+          </div>
+        </div>
+
         {/* Seletor de Semana Premium */}
         <div className="flex justify-between items-center gap-2 p-1 bg-gray-100 dark:bg-white/5 rounded-2xl border border-gray-200 dark:border-white/10 shadow-inner overflow-x-auto hide-scrollbar">
            {WEEK_DAYS.map((d, i) => {
@@ -592,21 +744,26 @@ export default function AgendaGlobalPage() {
                   <div className="col-span-full text-center py-12 text-gray-500 text-sm">Todas as atividades pendentes foram concluídas.</div>
                 ) : pendingEvents.map((ev, i) => {
                   const active = ev.active || false;
+                  const isExternalCalendar = Boolean(ev.is_external_calendar);
                   const normalizedUrgency = String(ev.urgency || "").normalize("NFD").replace(/[\u0300-\u036f]/g, "").toUpperCase();
                   const bdgColor = normalizedUrgency === "URGENTE" ? "#f87171" : normalizedUrgency === "ATENCAO" ? "#CCA761" : "#9ca3af";
                   const isUrgentTask = String(ev.urgency || '').toUpperCase() === 'URGENTE';
-                  const deadlineClass = getDeadlineMeta(ev.scheduled_for);
+                  const deadlineClass = isExternalCalendar ? null : getDeadlineMeta(ev.scheduled_for);
 
                   const cardBgClass = isUrgentTask
                     ? 'bg-[#140909] hover:bg-[#1a0b0b] opacity-95 hover:opacity-100 border-red-500/40 shadow-[0_0_20px_rgba(239,68,68,0.15)]'
+                    : isExternalCalendar
+                      ? 'bg-[#4285F4]/5 hover:bg-[#4285F4]/10 opacity-95 hover:opacity-100 border-[#4285F4]/40 shadow-[0_0_18px_rgba(66,133,244,0.08)]'
                     : 'bg-white dark:bg-[#050505] hover:bg-white dark:bg-[#0a0a0a] opacity-80 hover:opacity-100';
 
                   return (
                     <div key={`pend-${i}`} className={`group relative transition-all duration-500`}>
                       <div
-                        onClick={() => toggleStatus(ev)}
-                        className={`flex flex-col justify-start gap-4 p-4 rounded-xl border transition-all duration-500 cursor-pointer relative ${cardBgClass} min-h-[160px] h-full mt-4 group-hover:-translate-y-1 shadow-lg hover:shadow-[0_10px_30px_rgba(0,0,0,0.5)]`}
-                        style={{ borderColor: isUrgentTask ? 'rgba(239,68,68,0.45)' : `${bdgColor}50`, borderTopWidth: '2px', borderTopColor: isUrgentTask ? '#ef4444' : bdgColor }}
+                        onClick={() => {
+                          if (!isExternalCalendar) toggleStatus(ev);
+                        }}
+                        className={`flex flex-col justify-start gap-4 p-4 rounded-xl border transition-all duration-500 ${isExternalCalendar ? 'cursor-default' : 'cursor-pointer'} relative ${cardBgClass} min-h-[160px] h-full mt-4 group-hover:-translate-y-1 shadow-lg hover:shadow-[0_10px_30px_rgba(0,0,0,0.5)]`}
+                        style={{ borderColor: isExternalCalendar ? 'rgba(66,133,244,0.45)' : isUrgentTask ? 'rgba(239,68,68,0.45)' : `${bdgColor}50`, borderTopWidth: '2px', borderTopColor: isExternalCalendar ? '#4285F4' : isUrgentTask ? '#ef4444' : bdgColor }}
                       >
                         {/* Alfinete Push Pin Misto (Realista 3D com Neon Sutil) */}
                         <div className="absolute -top-6 left-1/2 -translate-x-1/2 z-30 transform group-hover:-translate-y-1 group-hover:scale-110 transition-all duration-300 shadow-transparent flex items-end justify-center" style={{ filter: `drop-shadow(0 6px 4px rgba(0,0,0,0.5)) drop-shadow(0 0 8px ${bdgColor}80)` }}>
@@ -648,7 +805,7 @@ export default function AgendaGlobalPage() {
                                 >
                                   {getUrgencyLabel(ev.urgency)}
                                 </span>
-                               <span className={`text-[8px] font-bold uppercase tracking-widest text-[#a1a1aa]`}>• {ev.type}</span>
+                                <span className={`text-[8px] font-bold uppercase tracking-widest ${isExternalCalendar ? 'text-[#8ab4ff]' : 'text-[#a1a1aa]'}`}>• {ev.type}</span>
                                
                                {ev.stolen && (
                                  <span className="text-[8px] font-black uppercase tracking-widest text-[#ef4444] bg-[#ef4444]/10 border border-[#ef4444]/40 px-1.5 py-0.5 rounded animate-pulse shadow-[0_0_10px_rgba(239,68,68,0.2)]">Roubado!</span>
@@ -656,7 +813,7 @@ export default function AgendaGlobalPage() {
                              </div>
                              
                              {/* BADGE DE RECOMPENSA (MAYUS COINS) */}
-                             {gamificationEnabled && (
+                              {gamificationEnabled && !isExternalCalendar && (
                                <div className="flex">
                                  <span className={`text-[8px] font-black uppercase tracking-widest flex items-center gap-1 border rounded px-2 py-0.5 text-[#CCA761] border-[#CCA761]/30 bg-[#CCA761]/10 shadow-[0_0_10px_rgba(204,167,97,0.2)]`}>
                                     +{getReward(ev)} <Coins size={8} className="text-[#FFD700]" />
@@ -674,7 +831,7 @@ export default function AgendaGlobalPage() {
                                ))}
                              </div>
                            )}
-                           {ev.responsible_notes && (
+                            {ev.responsible_notes && (
                              <div className="mt-1.5 p-2 rounded border border-gray-200 dark:border-white/10 bg-gray-200 dark:bg-black/20">
                                <div className="flex items-center justify-between gap-2 mb-1">
                                  <span className="text-[8px] uppercase tracking-widest text-zinc-500 font-black">Anotações</span>
@@ -688,8 +845,19 @@ export default function AgendaGlobalPage() {
                                </div>
                                <p className="text-[10px] text-zinc-400 line-clamp-2">{String(ev.responsible_notes || '')}</p>
                             </div>
-                           )}
-                           {deadlineClass && (
+                            )}
+                            {isExternalCalendar && ev.html_link && (
+                              <a
+                                href={ev.html_link}
+                                target="_blank"
+                                rel="noopener noreferrer"
+                                onClick={(event) => event.stopPropagation()}
+                                className="mt-1.5 inline-flex items-center gap-1.5 rounded border border-[#4285F4]/30 bg-[#4285F4]/10 px-2 py-1 text-[8px] font-black uppercase tracking-widest text-[#8ab4ff] hover:bg-[#4285F4]/15"
+                              >
+                                <ExternalLink size={10} /> Abrir no Google
+                              </a>
+                            )}
+                            {deadlineClass && (
                              <div className={`mt-1.5 inline-flex items-center gap-1.5 text-[8px] font-black uppercase tracking-widest px-2 py-1 rounded border ${deadlineClass}`}>
                                <Calendar size={10} /> Fatal: {new Date(ev.scheduled_for).toLocaleDateString('pt-BR')} • {getDeadlineText(ev.scheduled_for)}
                              </div>
@@ -704,7 +872,7 @@ export default function AgendaGlobalPage() {
                           </div>
                         )}
 
-                        {gamificationEnabled && ev.person !== "Você" && ev.status !== "Em andamento" && (
+                        {gamificationEnabled && !isExternalCalendar && ev.person !== "Você" && ev.status !== "Em andamento" && (
                           <div className="absolute bottom-0 right-0 p-3 opacity-0 group-hover:opacity-100 transition-opacity duration-300 z-50">
                             <button 
                               onClick={(e) => stealTask(e, ev)}

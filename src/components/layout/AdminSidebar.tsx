@@ -37,6 +37,7 @@ import {
   Building2,
   Brain,
   Volume2,
+  Megaphone,
   ChevronLeft,
   ChevronRight,
 } from "lucide-react";
@@ -57,6 +58,7 @@ export function AdminSidebar() {
     "VISÃO GERAL": true,
     "CONVERSAS": true,
     "COMERCIAL": true,
+    "MARKETING": true,
     "OPERAÇÃO JURÍDICA": true,
     "FINANCEIRO": true,
     "ESTRATÉGIA": true,
@@ -122,6 +124,13 @@ export function AdminSidebar() {
         { name: "Clientes Base", icon: Briefcase, href: "/dashboard/clientes" },
         { name: "Leads & Contatos", icon: Users, href: "/dashboard/leads" },
         { name: "Contratos Online", icon: FileText, href: "/dashboard/contratos" },
+      ]
+    },
+    {
+      title: "MARKETING",
+      collapsible: true,
+      items: [
+        { name: "Marketing", icon: Megaphone, href: "/dashboard/marketing" },
       ]
     },
     {

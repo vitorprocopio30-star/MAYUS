@@ -3,7 +3,7 @@
 import { useEffect, useState, useMemo, useRef, useCallback } from "react";
 import { createClient } from "@/lib/supabase/client";
 import confetti from "canvas-confetti";
-import { Clock, AlertCircle, Star, Wand2, Calendar, CheckCircle2, Trophy, Coins, Gift, Lock, Unlock, Copy, Check, Plus, Target, X, ChevronLeft, ChevronRight } from "lucide-react";
+import { Clock, AlertCircle, Star, Wand2, Calendar, CheckCircle2, Trophy, Coins, Gift, Lock, Unlock, Copy, Check, Plus, Target, X, ChevronLeft, ChevronRight, ExternalLink } from "lucide-react";
 import { Montserrat, Cormorant_Garamond } from "next/font/google";
 import { useGamification } from "@/hooks/useGamification";
 import { buildAgendaPayloadFromManualTask, filterExistingProcessPrazoTasks, getUrgencyLabel, inferUrgencyFromDeadline, sortAgendaTasks, toAgendaEvent } from "@/lib/agenda/userTasks";
@@ -14,6 +14,15 @@ type LegacyTaskMeta = {
   process_number?: string | null;
   responsible_notes?: string | null;
   tags?: string[];
+};
+
+type GoogleCalendarState = {
+  available: boolean;
+  connected: boolean;
+  status: string;
+  connectedEmail: string | null;
+  events: any[];
+  error?: string | null;
 };
 
 const montserrat = Montserrat({ subsets: ["latin"], weight: ["300", "400", "500", "600", "700"] });
@@ -74,12 +83,55 @@ export default function AgendaDiariaPage() {
 
   const [newTaskScheduledFor, setNewTaskScheduledFor] = useState(toLocalDateKey(new Date()));
   const [isCreatingTask, setIsCreatingTask] = useState(false);
+  const [googleCalendar, setGoogleCalendar] = useState<GoogleCalendarState>({
+    available: true,
+    connected: false,
+    status: "disconnected",
+    connectedEmail: null,
+    events: [],
+    error: null,
+  });
+  const [isGoogleCalendarLoading, setIsGoogleCalendarLoading] = useState(false);
+  const [isGoogleCalendarDisconnecting, setIsGoogleCalendarDisconnecting] = useState(false);
   const [copiedTextKey, setCopiedTextKey] = useState<string | null>(null);
   const [notesOnlyTask, setNotesOnlyTask] = useState<any | null>(null);
   const [notesOnlyValue, setNotesOnlyValue] = useState("");
   const [isSavingNotesOnly, setIsSavingNotesOnly] = useState(false);
   const [reminderDateKeys, setReminderDateKeys] = useState<string[]>([]);
   const supabase = createClient();
+
+  const loadGoogleCalendarEvents = useCallback(async (dateKey: string) => {
+    setIsGoogleCalendarLoading(true);
+
+    try {
+      const response = await fetch(`/api/integrations/google-calendar?date=${encodeURIComponent(dateKey)}`, { cache: "no-store" });
+      const data = await response.json().catch(() => null);
+
+      if (!response.ok) {
+        throw new Error(data?.error || "Nao foi possivel carregar o Google Agenda.");
+      }
+
+      const nextState: GoogleCalendarState = {
+        available: Boolean(data?.available),
+        connected: Boolean(data?.connected),
+        status: String(data?.status || "disconnected"),
+        connectedEmail: data?.connectedEmail || null,
+        events: Array.isArray(data?.events) ? data.events : [],
+        error: null,
+      };
+      setGoogleCalendar(nextState);
+      return nextState.events;
+    } catch (error: any) {
+      setGoogleCalendar((current) => ({
+        ...current,
+        events: [],
+        error: error?.message || "Nao foi possivel carregar o Google Agenda.",
+      }));
+      return [];
+    } finally {
+      setIsGoogleCalendarLoading(false);
+    }
+  }, []);
 
   const getDeadlineMeta = (dateValue?: string | null) => {
     if (!dateValue) return null;
@@ -458,13 +510,14 @@ export default function AgendaDiariaPage() {
         return bTs - aTs;
       });
     const taskItems = normalizedTasks.filter((task: any) => task.task_kind !== "mission");
+    const googleCalendarEvents = await loadGoogleCalendarEvents(selectedDate);
 
     mergeKnownTags(
       taskItems.flatMap((task: any) => (Array.isArray(task.tags) ? task.tags : []))
     );
 
     setActiveMission(missions[0] || null);
-    setEvents(taskItems);
+    setEvents([...taskItems, ...googleCalendarEvents]);
     setCriticalDeadlines(taskItems.filter((task: any) => task.is_critical));
     setIsLoading(false);
   };
@@ -473,6 +526,25 @@ export default function AgendaDiariaPage() {
   useEffect(() => {
      fetchTasks();
   }, [selectedDate]);
+
+  useEffect(() => {
+    if (typeof window === "undefined") return;
+
+    const currentUrl = new URL(window.location.href);
+    const status = currentUrl.searchParams.get("googleCalendar");
+    if (!status) return;
+
+    const message = currentUrl.searchParams.get("message");
+    setGoogleCalendar((current) => ({
+      ...current,
+      error: status === "error" ? message || "Nao foi possivel conectar o Google Agenda." : null,
+    }));
+
+    currentUrl.searchParams.delete("googleCalendar");
+    currentUrl.searchParams.delete("message");
+    const nextUrl = `${currentUrl.pathname}${currentUrl.search}${currentUrl.hash}`;
+    window.history.replaceState({}, "", nextUrl);
+  }, []);
 
   useEffect(() => {
     fetchTasks();
@@ -499,6 +571,40 @@ export default function AgendaDiariaPage() {
       supabase.removeChannel(channel);
     };
   }, [isRealtimeOn]);
+
+  const handleConnectGoogleCalendar = () => {
+    window.location.assign("/api/integrations/google-calendar/connect");
+  };
+
+  const handleDisconnectGoogleCalendar = async () => {
+    if (!confirm("Desconectar seu Google Agenda do MAYUS?")) return;
+    setIsGoogleCalendarDisconnecting(true);
+
+    try {
+      const response = await fetch("/api/integrations/google-calendar", { method: "DELETE" });
+      const data = await response.json().catch(() => null);
+      if (!response.ok) {
+        throw new Error(data?.error || "Nao foi possivel desconectar o Google Agenda.");
+      }
+
+      setGoogleCalendar({
+        available: true,
+        connected: false,
+        status: "disconnected",
+        connectedEmail: null,
+        events: [],
+        error: null,
+      });
+      fetchTasks();
+    } catch (error: any) {
+      setGoogleCalendar((current) => ({
+        ...current,
+        error: error?.message || "Nao foi possivel desconectar o Google Agenda.",
+      }));
+    } finally {
+      setIsGoogleCalendarDisconnecting(false);
+    }
+  };
 
   const getReward = (task: any) => {
     const sourceTable = String(task?.source_table || "");
@@ -607,8 +713,9 @@ export default function AgendaDiariaPage() {
     });
   }, [events, isTaskVisibleOnSelectedDate, normalizeTaskStatus, selectedDate, showFilters, statusFilter, typeFilter]);
 
-  const totalTasks = visibleEvents.length;
-  const completedTasks = useMemo(() => visibleEvents.filter(e => e.status === 'Concluído').length, [visibleEvents]);
+  const progressEvents = useMemo(() => visibleEvents.filter((event) => !event.is_external_calendar), [visibleEvents]);
+  const totalTasks = progressEvents.length;
+  const completedTasks = useMemo(() => progressEvents.filter(e => e.status === 'Concluído').length, [progressEvents]);
   const progress = useMemo(() => totalTasks > 0 ? Math.round((completedTasks / totalTasks) * 100) : 0, [totalTasks, completedTasks]);
   const isKilled = useMemo(() => totalTasks > 0 && completedTasks === totalTasks, [totalTasks, completedTasks]);
 
@@ -1121,7 +1228,44 @@ export default function AgendaDiariaPage() {
                </div>
             </div>
           )}
-          
+
+          <div className="w-full md:w-[340px] rounded-xl border border-[#4285F4]/25 bg-[#4285F4]/10 px-4 py-3 text-xs text-gray-700 dark:text-gray-200">
+            <div className="flex items-start justify-between gap-3">
+              <div>
+                <p className="font-black uppercase tracking-[0.16em] text-[#8ab4ff]">Google Agenda</p>
+                <p className="mt-1 text-[11px] leading-relaxed text-gray-500 dark:text-gray-400">
+                  {!googleCalendar.available
+                    ? "Indisponivel ate configurar OAuth no servidor."
+                    : googleCalendar.connected
+                      ? `Conectado: ${googleCalendar.connectedEmail || "conta Google"}`
+                      : "Opcional: traga seus eventos do Gmail para a agenda diaria."}
+                </p>
+                {googleCalendar.error && (
+                  <p className="mt-1 text-[10px] font-semibold text-red-300">{googleCalendar.error}</p>
+                )}
+              </div>
+              {googleCalendar.connected ? (
+                <button
+                  type="button"
+                  onClick={handleDisconnectGoogleCalendar}
+                  disabled={isGoogleCalendarDisconnecting}
+                  className="shrink-0 rounded-lg border border-red-500/25 bg-red-500/10 px-3 py-2 text-[10px] font-black uppercase tracking-widest text-red-300 disabled:opacity-60"
+                >
+                  {isGoogleCalendarDisconnecting ? "..." : "Desconectar"}
+                </button>
+              ) : (
+                <button
+                  type="button"
+                  onClick={handleConnectGoogleCalendar}
+                  disabled={!googleCalendar.available || isGoogleCalendarLoading}
+                  className="shrink-0 rounded-lg border border-[#4285F4]/40 bg-[#4285F4] px-3 py-2 text-[10px] font-black uppercase tracking-widest text-white disabled:cursor-not-allowed disabled:opacity-50"
+                >
+                  Conectar
+                </button>
+              )}
+            </div>
+          </div>
+
           <div className="flex gap-2">
             <button
               onClick={openCreateTaskModal}
@@ -1346,20 +1490,23 @@ export default function AgendaDiariaPage() {
                   <div className="text-center py-12 text-gray-500 text-sm">Nenhuma atividade agendada.</div>
                 ) : visibleEvents.map((ev, i) => {
                   const isDone = ev.status === 'Concluído';
+                  const isExternalCalendar = Boolean(ev.is_external_calendar);
                   const active = ev.active || false;
                   const normalizedUrgency = String(ev.urgency || "").normalize("NFD").replace(/[\u0300-\u036f]/g, "").toUpperCase();
                   const bdgColor = normalizedUrgency === "URGENTE" ? "#f87171" : normalizedUrgency === "ATENCAO" ? "#CCA761" : "#9ca3af";
                   const isUrgentTask = String(ev.urgency || '').toUpperCase() === 'URGENTE';
-                  const deadlineMeta = getDeadlineMeta(ev.scheduled_for);
+                  const deadlineMeta = isExternalCalendar ? null : getDeadlineMeta(ev.scheduled_for);
 
                   // Lógica Visual: Escura quando pendente, Verde + Vibrante quando concluída. Cor do badge mantém.
                   const cardBgClass = isDone
                     ? 'border-[#4ade80]/30 bg-gray-100 dark:bg-[#111] hover:bg-gray-50 dark:hover:bg-[#151515] shadow-[0_0_20px_rgba(74,222,128,0.05)]'
+                    : isExternalCalendar
+                      ? 'border-[#4285F4]/30 bg-[#4285F4]/5 hover:bg-[#4285F4]/10 opacity-95 hover:opacity-100 shadow-[0_0_18px_rgba(66,133,244,0.08)]'
                     : isUrgentTask
                       ? 'border-red-500/40 bg-red-50 dark:bg-[#140909] hover:bg-red-100 dark:hover:bg-[#1a0b0b] opacity-95 hover:opacity-100 shadow-[0_0_20px_rgba(239,68,68,0.15)]'
                       : 'border-gray-200 dark:border-white/5 bg-white dark:bg-[#050505] hover:bg-gray-50 dark:hover:bg-[#0a0a0a] opacity-80 hover:opacity-100';
 
-                  const leftLineColor = isDone ? '#4ade80' : isUrgentTask ? '#ef4444' : 'rgba(204,167,97,0.3)';
+                  const leftLineColor = isDone ? '#4ade80' : isExternalCalendar ? '#4285F4' : isUrgentTask ? '#ef4444' : 'rgba(204,167,97,0.3)';
                   const leftGlaow = isDone ? '0 0 10px rgba(74,222,128,0.5)' : isUrgentTask ? '0 0 10px rgba(239,68,68,0.5)' : 'none';
 
                   return (
@@ -1369,8 +1516,10 @@ export default function AgendaDiariaPage() {
                       </div>
 
                       <div
-                        onClick={(event) => openEditTaskModal(event, ev)}
-                        className={`flex-1 flex items-center justify-between p-4 rounded-xl border transition-all duration-500 cursor-pointer overflow-hidden relative ${cardBgClass}`}
+                        onClick={(event) => {
+                          if (!isExternalCalendar) openEditTaskModal(event, ev);
+                        }}
+                        className={`flex-1 flex items-center justify-between p-4 rounded-xl border transition-all duration-500 ${isExternalCalendar ? 'cursor-default' : 'cursor-pointer'} overflow-hidden relative ${cardBgClass}`}
                       >
                         <div className="flex items-center gap-4 relative z-10">
                           {/* LINHA LATERAL - FICA VERDE QUANDO FEITA */}
@@ -1386,7 +1535,7 @@ export default function AgendaDiariaPage() {
                                 >
                                   {getUrgencyLabel(ev.urgency)}
                                 </span>
-                                <span className={`text-[9px] font-bold uppercase tracking-widest ${isDone ? 'text-gray-500' : 'text-gray-400'}`}>• {ev.type}</span>
+                                <span className={`text-[9px] font-bold uppercase tracking-widest ${isExternalCalendar ? 'text-[#8ab4ff]' : isDone ? 'text-gray-500' : 'text-gray-400'}`}>• {ev.type}</span>
                                 
                                 {ev.created_by_agent && (
                                   <span className="text-[8px] bg-gray-100 dark:bg-white/5 border border-gray-200 dark:border-white/10 text-gray-700 dark:text-gray-300 font-bold px-1.5 py-0.5 rounded flex items-center gap-1"><Wand2 size={10} /> {ev.created_by_agent}</span>
@@ -1408,7 +1557,7 @@ export default function AgendaDiariaPage() {
                               
                               <div className="flex">
                                 {/* BADGE DE RECOMPENSA (MAYUS COINS) */}
-                                 {gamificationEnabled && (
+                                  {gamificationEnabled && !isExternalCalendar && (
                                    <span className={`text-[9px] font-black uppercase tracking-widest flex items-center gap-1 border rounded px-2 py-0.5 ${isDone ? 'text-gray-500 border-gray-600 bg-gray-100 dark:bg-white/5' : 'text-[#CCA761] border-[#CCA761]/30 bg-[#CCA761]/10 shadow-[0_0_10px_rgba(204,167,97,0.2)]'}`}>
                                     +{getReward(ev)} <Coins size={10} className={isDone ? '' : 'text-[#FFD700]'} />
                                    </span>
@@ -1420,7 +1569,7 @@ export default function AgendaDiariaPage() {
                              <h4 className={`text-sm font-bold tracking-wide transition-colors duration-500 mt-1 ${isDone ? 'text-[#4ade80] line-through decoration-[#4ade80]/50' : 'text-gray-900 dark:text-white'
                                }`}>{ev.title}</h4>
 
-                             {ev.process_number && (
+                              {ev.process_number && (
                                <div className="mt-2 flex items-center gap-2 flex-wrap">
                                  <span className="text-[10px] font-black tracking-wide text-[#CCA761]">Proc: {ev.process_number}</span>
                                  <button
@@ -1435,6 +1584,18 @@ export default function AgendaDiariaPage() {
 
                               {ev.author_name && (
                                 <p className="text-[10px] text-gray-400 font-semibold mt-1">Autor: {ev.author_name}</p>
+                              )}
+
+                              {isExternalCalendar && ev.html_link && (
+                                <a
+                                  href={ev.html_link}
+                                  target="_blank"
+                                  rel="noopener noreferrer"
+                                  onClick={(event) => event.stopPropagation()}
+                                  className="mt-2 inline-flex items-center gap-1.5 rounded border border-[#4285F4]/30 bg-[#4285F4]/10 px-2 py-1 text-[9px] font-black uppercase tracking-widest text-[#8ab4ff] hover:bg-[#4285F4]/15"
+                                >
+                                  <ExternalLink size={10} /> Abrir no Google
+                                </a>
                               )}
 
                               {deadlineMeta && (
@@ -1463,6 +1624,7 @@ export default function AgendaDiariaPage() {
                           </div>
                         </div>
 
+                        {!isExternalCalendar && (
                         <div className="absolute bottom-3 right-3 text-right flex flex-col items-end z-20">
                           <button
                             onClick={(event) => {
@@ -1484,6 +1646,7 @@ export default function AgendaDiariaPage() {
                             </button>
                           )}
                         </div>
+                        )}
 
                         {/* CHECKMARK GIGANTE QUE APARECE QUANDO DONE */}
                         {isDone && (

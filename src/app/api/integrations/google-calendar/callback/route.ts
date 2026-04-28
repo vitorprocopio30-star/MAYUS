@@ -1,0 +1,89 @@
+import { cookies } from "next/headers";
+import { NextResponse } from "next/server";
+import { getTenantSession } from "@/lib/auth/get-tenant-session";
+import { getTenantIntegrationResolved, upsertTenantIntegrationSecure } from "@/lib/integrations/server";
+import {
+  exchangeGoogleCalendarCode,
+  getGoogleCalendarIntegrationMetadata,
+  getGoogleCalendarProviderForUser,
+  GOOGLE_CALENDAR_STATE_COOKIE,
+  mergeGoogleCalendarMetadata,
+} from "@/lib/services/google-calendar";
+import { resolvePublicAppUrl } from "@/lib/url/resolve-public-app-url";
+
+function buildAgendaRedirect(request: Request, status: "connected" | "error", message?: string) {
+  const url = new URL("/dashboard/agenda", resolvePublicAppUrl(request));
+  url.searchParams.set("googleCalendar", status);
+  if (message) {
+    url.searchParams.set("message", message.slice(0, 240));
+  }
+  return url;
+}
+
+export async function GET(request: Request) {
+  const url = new URL(request.url);
+  const code = url.searchParams.get("code");
+  const state = url.searchParams.get("state");
+  const oauthError = url.searchParams.get("error");
+  const cookieStore = await cookies();
+  const expectedState = cookieStore.get(GOOGLE_CALENDAR_STATE_COOKIE)?.value || null;
+  cookieStore.delete(GOOGLE_CALENDAR_STATE_COOKIE);
+
+  try {
+    if (oauthError) {
+      throw new Error("A autorização do Google foi cancelada ou negada.");
+    }
+
+    if (!state || !expectedState || state !== expectedState) {
+      throw new Error("Não foi possível validar o retorno do Google Agenda.");
+    }
+
+    if (!code) {
+      throw new Error("Código de autorização do Google Agenda ausente.");
+    }
+
+    const { tenantId, userId } = await getTenantSession();
+    const provider = getGoogleCalendarProviderForUser(userId);
+    const existingIntegration = await getTenantIntegrationResolved(tenantId, provider);
+    const tokenData = await exchangeGoogleCalendarCode(request, code);
+    const refreshToken = tokenData.refreshToken || existingIntegration?.api_key || null;
+
+    if (!refreshToken) {
+      throw new Error("O Google não retornou o token permanente. Revogue o acesso do app e conecte novamente.");
+    }
+
+    const currentMetadata = getGoogleCalendarIntegrationMetadata(existingIntegration);
+    const metadata = mergeGoogleCalendarMetadata(existingIntegration?.metadata, {
+      access_token: tokenData.accessToken,
+      connected_email: tokenData.connectedEmail || currentMetadata.connected_email || null,
+      expires_at: tokenData.expiresAt,
+      scope: tokenData.scope || currentMetadata.scope || null,
+      token_type: tokenData.tokenType || currentMetadata.token_type || null,
+    });
+
+    await upsertTenantIntegrationSecure({
+      tenantId,
+      provider,
+      apiKey: refreshToken,
+      status: "connected",
+      displayName: "Google Agenda pessoal",
+      metadata,
+    });
+
+    return NextResponse.redirect(buildAgendaRedirect(request, "connected"));
+  } catch (error: any) {
+    console.error("[google-calendar][callback]", error);
+
+    if (error.message === "Unauthorized") {
+      return NextResponse.redirect(new URL("/login", resolvePublicAppUrl(request)));
+    }
+
+    return NextResponse.redirect(
+      buildAgendaRedirect(
+        request,
+        "error",
+        error?.message || "Não foi possível concluir a conexão com o Google Agenda."
+      )
+    );
+  }
+}

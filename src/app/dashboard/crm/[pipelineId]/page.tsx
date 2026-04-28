@@ -17,6 +17,7 @@ import { TagsInput } from "react-tag-input-component";
 
 import WinLeadModal from "@/components/crm/WinLeadModal";
 import LostLeadModal from "@/components/crm/LostLeadModal";
+import CallAnalysisAction from "../_components/CallAnalysisAction";
 
 // Import CSS for ReactQuill
 import "react-quill/dist/quill.snow.css";
@@ -439,18 +440,27 @@ export default function PipelinePage() {
                                         </div>
                                       )}
                                        
-                                      {task.sector && (
-                                        <div className="mb-3">
-                                          {(() => {
-                                            const [name, color] = task.sector.includes('|') ? task.sector.split('|') : [task.sector, '#60a5fa'];
+                                       {task.sector && (
+                                         <div className="mb-3">
+                                           {(() => {
+                                             const [name, color] = task.sector.includes('|') ? task.sector.split('|') : [task.sector, '#60a5fa'];
                                             return (
                                               <span className="text-[9px] font-black uppercase tracking-widest px-2 py-1 rounded bg-gray-100 dark:bg-[#111] border" style={{ color: color, borderColor: color }}>
                                                 {name}
                                               </span>
                                             );
-                                          })()}
-                                        </div>
-                                      )}
+                                           })()}
+                                         </div>
+                                       )}
+
+                                      <div className="mb-2.5" onClick={(event) => event.stopPropagation()}>
+                                         <CallAnalysisAction
+                                           crmTaskId={task.id}
+                                           leadName={task.title}
+                                           legalArea={task.sector?.split('|')[0] || null}
+                                           currentStage={stage.name}
+                                        />
+                                      </div>
 
                                       <div className="flex items-center justify-between text-[11px] text-zinc-500 mt-auto pt-2 border-t border-zinc-800/70">
                                         <div className="flex items-center gap-1.5">
@@ -494,15 +504,16 @@ export default function PipelinePage() {
                 <thead className="bg-gray-100 dark:bg-white/5 border-b border-gray-200 dark:border-white/5 text-xs uppercase tracking-wider text-gray-400 font-bold">
                   <tr>
                     <th className="p-4">Tarefa</th>
-                    <th className="p-4">Etapa</th>
-                    <th className="p-4">Responsável</th>
-                    <th className="p-4">Criação</th>
-                  </tr>
-                </thead>
-                <tbody className="divide-y divide-gray-200 dark:divide-white/5 text-sm text-gray-700 dark:text-gray-300">
-                  {tasks.length === 0 ? (
-                    <tr><td colSpan={4} className="p-8 text-center text-gray-500">Nenhuma tarefa encontrada.</td></tr>
-                  ) : tasks.map(task => {
+                     <th className="p-4">Etapa</th>
+                     <th className="p-4">Responsável</th>
+                     <th className="p-4">Criação</th>
+                     <th className="p-4">Call</th>
+                   </tr>
+                 </thead>
+                 <tbody className="divide-y divide-gray-200 dark:divide-white/5 text-sm text-gray-700 dark:text-gray-300">
+                   {tasks.length === 0 ? (
+                     <tr><td colSpan={5} className="p-8 text-center text-gray-500">Nenhuma tarefa encontrada.</td></tr>
+                   ) : tasks.map(task => {
                     const stage = visibleStages.find(s => s.id === task.stage_id) || stages.find(s => s.id === task.stage_id);
                     const assignee = agents.find(a => a.id === task.assigned_to);
                     return (
@@ -555,12 +566,21 @@ export default function PipelinePage() {
                              </div>
                            ) : <span className="text-gray-600 text-xs">-</span>}
                         </td>
-                        <td className="p-4 text-xs text-gray-500">
-                          {new Date(task.created_at).toLocaleDateString('pt-BR')}
-                        </td>
-                      </tr>
-                    );
-                  })}
+                         <td className="p-4 text-xs text-gray-500">
+                           {new Date(task.created_at).toLocaleDateString('pt-BR')}
+                         </td>
+                         <td className="p-4" onClick={(event) => event.stopPropagation()}>
+                            <CallAnalysisAction
+                              crmTaskId={task.id}
+                              leadName={task.title}
+                              legalArea={task.sector?.split('|')[0] || null}
+                             currentStage={stage?.name || null}
+                             compact
+                           />
+                         </td>
+                       </tr>
+                     );
+                   })}
                 </tbody>
               </table>
             </div>
