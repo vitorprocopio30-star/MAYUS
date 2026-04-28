@@ -3,6 +3,19 @@ export type MarketingObjective = "awareness" | "authority" | "lead_generation" |
 export type MarketingTone = "educational" | "direct" | "empathetic" | "premium" | "conversational";
 export type MarketingFrequency = "weekly" | "biweekly" | "monthly";
 
+export type MarketingProfile = {
+  firmName: string;
+  positioning: string;
+  legalAreas: string[];
+  audiences: string[];
+  channels: MarketingChannel[];
+  voiceTone: MarketingTone;
+  websites: string[];
+  socialProfiles: string[];
+  admiredReferences: string[];
+  ethicsGuardrails: string[];
+};
+
 export type ReferenceInput = {
   id: string;
   title: string;
@@ -75,9 +88,15 @@ export type MarketingAgendaTaskDraft = {
   tags: string[];
 };
 
+export type MarketingCalendarDefaults = Pick<EditorialCalendarInput, "style" | "channels" | "legalAreas" | "tones" | "audiences">;
+
 function cleanText(value?: string | null) {
   const text = String(value || "").replace(/\s+/g, " ").trim();
   return text || null;
+}
+
+function cleanList(values?: string[] | null) {
+  return Array.from(new Set((values || []).map((value) => cleanText(value)).filter(Boolean) as string[]));
 }
 
 function normalizeKey(value?: string | null) {
@@ -247,6 +266,16 @@ export function generateEditorialCalendar(input: EditorialCalendarInput): Editor
     status: "draft",
     notes: "Editable calendar item generated from provided metadata only.",
   }));
+}
+
+export function buildMarketingCalendarDefaults(profile: MarketingProfile | null): MarketingCalendarDefaults {
+  return {
+    style: cleanText(profile?.positioning) || "autoridade acessivel",
+    channels: profile?.channels?.length ? profile.channels : ["linkedin"],
+    legalAreas: cleanList(profile?.legalAreas).length ? cleanList(profile?.legalAreas) : ["Trabalhista", "Previdenciario"],
+    tones: profile?.voiceTone ? [profile.voiceTone] : ["educational"],
+    audiences: cleanList(profile?.audiences).length ? cleanList(profile?.audiences) : ["leads qualificados"],
+  };
 }
 
 export function updateEditorialCalendarItem(

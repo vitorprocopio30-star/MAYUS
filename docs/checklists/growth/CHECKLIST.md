@@ -85,11 +85,12 @@ Evidencia 2026-04-28: Agenda Global ganhou conexao Google Agenda global com OAut
 Evidencia 2026-04-28: MVP textual `POST /api/growth/call-analysis` recebe transcript/notes e gera analise comercial sem side effects externos.
 - [x] Relatorio de call com resumo, dor, objecoes, pontos fortes/fracos, proximo passo e follow-up.
 Evidencia 2026-04-28: builder `buildCallCommercialAnalysis` retorna resumo, dor, interesse, objecoes, pontos fortes/fracos, oportunidades perdidas, proxima acao, follow-up sugerido e probabilidade de avanco.
-- [~] Historico/artifact seguro da analise de call no lead/oportunidade.
-Evidencia parcial 2026-04-28: CRM visual envia `crmTaskId` para `POST /api/growth/call-analysis`; endpoint registra evento seguro e artifact agentico `call_commercial_analysis` quando possivel, sem transcript bruto persistido. Exibicao visual do historico no lead ainda pendente.
+- [x] Historico/artifact seguro da analise de call no lead/oportunidade.
+Evidencia 2026-04-28: CRM visual envia `crmTaskId` para `POST /api/growth/call-analysis`; endpoint registra evento seguro e artifact agentico `call_commercial_analysis` quando possivel, sem transcript bruto persistido. `GET /api/growth/call-analysis?crmTaskId=...` retorna historico seguro por lead e o modal do CRM exibe data, interesse, probabilidade, resumo seguro e proximo passo.
 - [x] Marketing por referencias sem copia de conteudo.
 Evidencia 2026-04-28: backend `src/lib/marketing/editorial-calendar.ts` extrai padroes de referencias fornecidas e cria ideias originais com guardrails explicitos contra copia.
-- [ ] Cadastro de perfis, redes, canais, sites e referencias admiradas.
+- [x] Cadastro de perfis, redes, canais, sites e referencias admiradas.
+Evidencia 2026-04-28: `/dashboard/marketing/perfil` salva perfil de marca, areas, publicos, canais, tom, sites, redes, referencias admiradas e guardrails eticos em `localStorage`; `/dashboard/marketing/calendario` usa esse perfil como briefing inicial sem publicacao externa automatica.
 - [x] Extracao de padroes vencedores: temas, formatos, ganchos, CTAs, frequencia, tom e engajamento.
 Evidencia 2026-04-28: tela local de Referencias usa `extractReferencePatterns` para exibir padroes de referencias cadastradas pelo usuario.
 - [x] Calendario editorial editavel.

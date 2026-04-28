@@ -79,10 +79,11 @@ Use esse checklist para marcar:
 - [x] Backend de marketing por referencias/calendario entregue em 2026-04-28: `src/lib/marketing/editorial-calendar.ts` cria tipos, extrai padroes de referencias fornecidas, gera ideias originais com guardrails anti-copia e calendario editorial editavel. Testes focados passaram.
 - [x] MVP de analise de call comercial entregue em 2026-04-28: `POST /api/growth/call-analysis` e `buildCallCommercialAnalysis` geram relatorio estruturado de transcript/notes com dor, objecoes, interesse, pontos fortes/fracos, oportunidades perdidas, proximo passo, follow-up, probabilidade e hints de CRM, sem side effects externos. Persistencia no historico do lead ainda pendente.
 - [x] Call analysis endurecido em 2026-04-28: `POST /api/growth/call-analysis` agora exige `getTenantSession`, retorna 401 sem auth e registra evento seguro `call_analysis_prepared` em `system_event_logs` quando ha `crmTaskId`, sem armazenar transcript bruto, dor textual completa, objecoes ou follow-up sugerido no payload persistido.
-- [x] Historico seguro de call conectado em 2026-04-28: CRM visual envia `crmTaskId` para a analise; endpoint cria artifact agentico `call_commercial_analysis` quando possivel e registra fallback seguro em `system_event_logs`, sem persistir transcript bruto.
+- [x] Historico seguro de call conectado em 2026-04-28: CRM visual envia `crmTaskId` para a analise; endpoint cria artifact agentico `call_commercial_analysis` quando possivel e registra fallback seguro em `system_event_logs`, sem persistir transcript bruto. O mesmo endpoint agora expõe `GET` seguro por `crmTaskId`, e o modal do CRM mostra histórico com data, interesse, probabilidade, resumo seguro e próximo passo.
 - [x] UI local de Marketing conectada ao backend em 2026-04-28: Referencias captura metadados/metricas e exibe padroes via `extractReferencePatterns`; Calendario gera, edita, aprova, recusa e volta rascunhos via `generateEditorialCalendar` e `updateEditorialCalendarItem`, com persistencia MVP em `localStorage`.
 - [x] Conteudos aprovados conectados a tarefas internas em 2026-04-28: item aprovado no calendario editorial pode criar tarefa privada em `user_tasks` via `buildMarketingAgendaTaskDraft` e `buildAgendaPayloadFromManualTask`, registrando origem `marketing_editorial_calendar` em descricao/tags/notas, sem publicacao externa nem Google Calendar automatico.
 - [x] Meta Ads CSV MVP entregue em 2026-04-28: `src/lib/marketing/meta-ads-analysis.ts` e `/dashboard/marketing/meta-ads` analisam CSV colado/exportado ou arquivo `.csv` client-side, calculam CPL/CTR/CPC/CPM, vencedores, gasto desperdicado, temas de criativo/publico, findings e recomendacoes supervisionadas. XLSX/PDF seguem pendentes.
+- [x] Perfil e canais de Marketing MVP entregue em 2026-04-28: `/dashboard/marketing/perfil` cadastra posicionamento, areas, publicos, canais, tom, sites, redes, referencias admiradas e guardrails eticos em `localStorage`; calendario editorial usa esse perfil como briefing inicial, sem publicacao externa automatica.
 - [x] Smoke autenticado real parcial passou em 2026-04-26: `GET /api/integrations`, `POST /api/integrations` controlado com cleanup, OpenRouter via Vault e TTS OpenAI.
 - [~] Google Drive real validado parcialmente em 2026-04-26: conta conectada e clear root passaram; salvar/restaurar root via API falhou no ambiente local com `The OAuth client was not found`; root foi restaurado via service role; client ID local foi confirmado como malformado.
 - [x] Smoke seguro de webhook Asaas passou em 2026-04-26 com payload sintetico e auditoria em `system_event_logs` confirmada.
@@ -97,9 +98,10 @@ Use esse checklist para marcar:
 - [x] Abrir execucao do MAYUS Growth OS pela Agenda Google opcional.
 - [x] Adicionar Google Agenda global opcional do escritorio.
 - [x] Abrir execucao de upload e analise de call comercial no CRM.
-- [~] Persistir analise de call no historico/artifact do lead e expor acao no CRM.
+- [x] Persistir analise de call no historico/artifact do lead e expor acao no CRM.
 - [x] Conectar UI de Marketing ao backend de referencias/calendario.
 - [x] Expor acao de analise de call no CRM visual e promover evento seguro para artifact/historico do lead.
+- [x] Cadastrar perfis, redes, canais, sites e referencias admiradas para orientar Marketing.
 - [ ] Evoluir Meta Ads upload para arquivo real XLSX/PDF ou rota server-side quando necessario.
 - [x] Criar artifact agentico para `referral_intake` e expor no MAYUS.
 - [x] Expor Auto Setup Doctor no MAYUS/Configuracoes com status pronto, corrigido, alerta, bloqueado e artifact agentico rastreavel.

@@ -1,6 +1,7 @@
 import { describe, expect, it } from "vitest";
 import {
   extractReferencePatterns,
+  buildMarketingCalendarDefaults,
   buildMarketingAgendaTaskDraft,
   generateContentIdeas,
   generateEditorialCalendar,
@@ -90,6 +91,29 @@ describe("marketing editorial calendar", () => {
     expect(calendar.every((item) => item.status === "draft")).toBe(true);
     expect(calendar[0].angle).toContain("autoridade acessivel");
     expect(calendar[0].notes).toContain("provided metadata only");
+  });
+
+  it("builds calendar defaults from the saved marketing profile", () => {
+    const defaults = buildMarketingCalendarDefaults({
+      firmName: "MAYUS Advocacia",
+      positioning: "premium consultivo",
+      legalAreas: ["Previdenciario", "Trabalhista", "Previdenciario"],
+      audiences: ["segurados do INSS", "empresas"],
+      channels: ["linkedin", "blog"],
+      voiceTone: "premium",
+      websites: ["https://example.com"],
+      socialProfiles: ["https://linkedin.com/company/example"],
+      admiredReferences: ["referencia local"],
+      ethicsGuardrails: ["Nao prometer resultado juridico."],
+    });
+
+    expect(defaults).toEqual({
+      style: "premium consultivo",
+      channels: ["linkedin", "blog"],
+      legalAreas: ["Previdenciario", "Trabalhista"],
+      tones: ["premium"],
+      audiences: ["segurados do INSS", "empresas"],
+    });
   });
 
   it("updates a calendar item immutably while preserving untouched items", () => {

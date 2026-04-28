@@ -22,6 +22,68 @@ const CallAnalysisSchema = z.object({
   path: ["transcript"],
 });
 
+function normalizeHistoryItem(row: any) {
+  const metadata = row?.metadata && typeof row.metadata === "object" ? row.metadata : {};
+
+  return {
+    id: String(row?.id || ""),
+    title: String(row?.title || "Analise de call"),
+    createdAt: row?.created_at || null,
+    summary: metadata.summary || null,
+    leadName: metadata.lead_name || null,
+    legalArea: metadata.legal_area || null,
+    interestLevel: metadata.interest_level || null,
+    advancementProbability: typeof metadata.advancement_probability === "number" ? metadata.advancement_probability : null,
+    strengths: Array.isArray(metadata.strengths) ? metadata.strengths.slice(0, 4) : [],
+    weaknesses: Array.isArray(metadata.weaknesses) ? metadata.weaknesses.slice(0, 4) : [],
+    missedOpportunities: Array.isArray(metadata.missed_opportunities) ? metadata.missed_opportunities.slice(0, 4) : [],
+    recommendedNextStep: metadata.recommended_next_step || null,
+    requiresHumanReview: metadata.requires_human_review === true,
+    externalSideEffectsBlocked: metadata.external_side_effects_blocked !== false,
+  };
+}
+
+export async function GET(request: NextRequest) {
+  try {
+    let session: Awaited<ReturnType<typeof getTenantSession>>;
+    try {
+      session = await getTenantSession();
+    } catch {
+      return NextResponse.json({ error: "Nao autenticado." }, { status: 401 });
+    }
+
+    const crmTaskId = request.nextUrl.searchParams.get("crmTaskId")?.trim();
+    if (!crmTaskId) {
+      return NextResponse.json({ error: "crmTaskId e obrigatorio." }, { status: 422 });
+    }
+
+    const { data, error } = await supabaseAdmin
+      .from("brain_artifacts")
+      .select("id,title,metadata,created_at")
+      .eq("tenant_id", session.tenantId)
+      .eq("artifact_type", "call_commercial_analysis")
+      .eq("metadata->>crm_task_id", crmTaskId)
+      .order("created_at", { ascending: false })
+      .limit(5);
+
+    if (error) throw error;
+
+    return NextResponse.json({
+      success: true,
+      crmTaskId,
+      history: (data || []).map(normalizeHistoryItem),
+      metadata: {
+        source: "brain_artifacts",
+        raw_transcript_included: false,
+        external_side_effects_blocked: true,
+      },
+    });
+  } catch (error: any) {
+    console.error("[growth][call-analysis][history]", error);
+    return NextResponse.json({ error: error?.message || "Nao foi possivel carregar o historico de calls." }, { status: 500 });
+  }
+}
+
 export async function POST(request: NextRequest) {
   try {
     let session: Awaited<ReturnType<typeof getTenantSession>>;

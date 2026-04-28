@@ -1,7 +1,7 @@
 "use client";
 
 import { FormEvent, MouseEvent, useState } from "react";
-import { Loader2, PhoneCall, X } from "lucide-react";
+import { Clock3, Loader2, PhoneCall, X } from "lucide-react";
 
 type CallAnalysis = {
   summary?: string;
@@ -17,6 +17,16 @@ type CallAnalysis = {
   crmUpdateHints?: Array<{ field: string; value: string | number | string[] | null; reason: string }>;
   requiresHumanReview?: boolean;
   externalSideEffectsBlocked?: boolean;
+};
+
+type CallAnalysisHistoryItem = {
+  id: string;
+  title: string;
+  createdAt: string | null;
+  summary: string | null;
+  interestLevel: "low" | "medium" | "high" | null;
+  advancementProbability: number | null;
+  recommendedNextStep: string | null;
 };
 
 type Props = {
@@ -54,12 +64,33 @@ export default function CallAnalysisAction({ crmTaskId, leadName, legalArea, cur
   const [isOpen, setIsOpen] = useState(false);
   const [notes, setNotes] = useState("");
   const [analysis, setAnalysis] = useState<CallAnalysis | null>(null);
+  const [history, setHistory] = useState<CallAnalysisHistoryItem[]>([]);
   const [error, setError] = useState<string | null>(null);
+  const [historyError, setHistoryError] = useState<string | null>(null);
   const [isSubmitting, setIsSubmitting] = useState(false);
+  const [isLoadingHistory, setIsLoadingHistory] = useState(false);
+
+  const loadHistory = async () => {
+    if (!crmTaskId) return;
+
+    setIsLoadingHistory(true);
+    setHistoryError(null);
+    try {
+      const response = await fetch(`/api/growth/call-analysis?crmTaskId=${encodeURIComponent(crmTaskId)}`);
+      const json = await response.json().catch(() => null);
+      if (!response.ok) throw new Error(json?.error || "Nao foi possivel carregar o historico.");
+      setHistory(Array.isArray(json?.history) ? json.history : []);
+    } catch (err: any) {
+      setHistoryError(err?.message || "Nao foi possivel carregar o historico.");
+    } finally {
+      setIsLoadingHistory(false);
+    }
+  };
 
   const openModal = (event: MouseEvent<HTMLButtonElement>) => {
     event.stopPropagation();
     setIsOpen(true);
+    void loadHistory();
   };
 
   const closeModal = () => {
@@ -99,6 +130,7 @@ export default function CallAnalysisAction({ crmTaskId, leadName, legalArea, cur
       }
 
       setAnalysis(json?.analysis || null);
+      await loadHistory();
     } catch (err: any) {
       setError(err?.message || "Nao foi possivel analisar a call.");
     } finally {
@@ -140,6 +172,58 @@ export default function CallAnalysisAction({ crmTaskId, leadName, legalArea, cur
             </div>
 
             <form onSubmit={handleSubmit} className="space-y-4 p-5">
+              <section className="rounded-xl border border-zinc-800 bg-black/20 p-4">
+                <div className="flex items-center justify-between gap-3">
+                  <div className="flex items-center gap-2">
+                    <Clock3 size={14} className="text-[#CCA761]" />
+                    <h4 className="text-[10px] font-black uppercase tracking-widest text-zinc-500">Historico seguro</h4>
+                  </div>
+                  {crmTaskId ? (
+                    <button type="button" onClick={loadHistory} className="text-[10px] font-black uppercase tracking-widest text-[#CCA761] hover:text-[#e0bd75]">
+                      Atualizar
+                    </button>
+                  ) : null}
+                </div>
+
+                <div className="mt-3 grid gap-2">
+                  {!crmTaskId ? (
+                    <p className="text-xs text-zinc-500">Historico indisponivel sem lead/oportunidade vinculada.</p>
+                  ) : isLoadingHistory ? (
+                    <p className="text-xs text-zinc-500">Carregando historico...</p>
+                  ) : historyError ? (
+                    <p className="text-xs text-red-300">{historyError}</p>
+                  ) : history.length === 0 ? (
+                    <p className="text-xs text-zinc-500">Nenhuma analise anterior registrada para este lead.</p>
+                  ) : history.map((item) => (
+                    <article key={item.id} className="rounded-lg border border-white/5 bg-white/[0.03] p-3">
+                      <div className="flex flex-wrap items-center justify-between gap-2">
+                        <p className="text-xs font-bold text-zinc-200">{item.title}</p>
+                        <span className="text-[10px] text-zinc-500">
+                          {item.createdAt ? new Date(item.createdAt).toLocaleString("pt-BR") : "Sem data"}
+                        </span>
+                      </div>
+                      <div className="mt-2 flex flex-wrap gap-2 text-[10px] font-black uppercase tracking-widest">
+                        <span className="rounded-full border border-[#CCA761]/20 bg-[#CCA761]/10 px-2 py-1 text-[#CCA761]">
+                          Interesse {interestLabel[item.interestLevel || ""] || "-"}
+                        </span>
+                        <span className="rounded-full border border-white/10 px-2 py-1 text-zinc-400">
+                          {item.advancementProbability ?? "-"}% avanco
+                        </span>
+                        <span className="rounded-full border border-emerald-500/20 bg-emerald-500/10 px-2 py-1 text-emerald-300">
+                          Side effects bloqueados
+                        </span>
+                      </div>
+                      {item.summary ? <p className="mt-2 text-xs leading-5 text-zinc-400">{item.summary}</p> : null}
+                      {item.recommendedNextStep ? (
+                        <p className="mt-2 rounded-lg border border-white/5 bg-black/20 p-2 text-xs leading-5 text-zinc-300">
+                          <span className="font-bold text-[#CCA761]">Proximo passo: </span>{item.recommendedNextStep}
+                        </p>
+                      ) : null}
+                    </article>
+                  ))}
+                </div>
+              </section>
+
               <div>
                 <label className="mb-2 block text-[10px] font-black uppercase tracking-widest text-zinc-500">
                   Subir gravacao/transcricao da call em texto

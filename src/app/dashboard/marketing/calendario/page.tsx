@@ -5,6 +5,7 @@ import { ArrowLeft, CalendarDays, Wand2 } from "lucide-react";
 import { useEffect, useState } from "react";
 import { buildAgendaPayloadFromManualTask } from "@/lib/agenda/userTasks";
 import {
+  buildMarketingCalendarDefaults,
   buildMarketingAgendaTaskDraft,
   generateEditorialCalendar,
   updateEditorialCalendarItem,
@@ -14,7 +15,7 @@ import {
   type MarketingObjective,
   type MarketingTone,
 } from "@/lib/marketing/editorial-calendar";
-import { loadMarketingCalendar, saveMarketingCalendar } from "@/lib/marketing/local-persistence";
+import { loadMarketingCalendar, loadMarketingProfile, saveMarketingCalendar } from "@/lib/marketing/local-persistence";
 import { createClient } from "@/lib/supabase/client";
 
 const channels: MarketingChannel[] = ["blog", "linkedin", "instagram", "email", "whatsapp"];
@@ -66,9 +67,31 @@ export default function CalendarioMarketingPage() {
   const [currentUserRole, setCurrentUserRole] = useState<string | null>(null);
   const [creatingTaskItemId, setCreatingTaskItemId] = useState<string | null>(null);
   const [agendaMessage, setAgendaMessage] = useState<string | null>(null);
+  const [profileDefaultsApplied, setProfileDefaultsApplied] = useState(false);
 
   useEffect(() => {
-    setCalendar(loadMarketingCalendar());
+    const savedCalendar = loadMarketingCalendar();
+    const profile = loadMarketingProfile();
+    const defaults = buildMarketingCalendarDefaults(profile);
+    const hasSavedProfile = Boolean(
+      profile.firmName.trim() ||
+      profile.positioning.trim() ||
+      profile.legalAreas.length ||
+      profile.audiences.length ||
+      profile.websites.length ||
+      profile.socialProfiles.length ||
+      profile.admiredReferences.length,
+    );
+    setCalendar(savedCalendar);
+    setForm((current) => ({
+      ...current,
+      style: defaults.style,
+      channels: defaults.channels,
+      legalAreas: defaults.legalAreas.join(", "),
+      tones: defaults.tones,
+      audiences: defaults.audiences.join(", "),
+    }));
+    setProfileDefaultsApplied(hasSavedProfile);
     setIsLoaded(true);
   }, []);
 
@@ -180,7 +203,7 @@ export default function CalendarioMarketingPage() {
         <p className="mt-6 text-xs font-bold uppercase tracking-[0.24em] text-[#CCA761]">Planejamento</p>
         <h1 className="mt-3 text-3xl font-semibold tracking-tight md:text-4xl">Calendario Editorial</h1>
         <p className="mt-4 max-w-2xl text-sm leading-7 text-muted-foreground">
-          Gere uma grade editorial local com frequencia, estilo, canais, area juridica, objetivo, tom, publico, data inicial e periodos.
+          Gere uma grade editorial local com frequencia, estilo, canais, area juridica, objetivo, tom, publico, data inicial e periodos. Quando houver perfil de marketing salvo, ele vira o briefing inicial.
         </p>
       </section>
 
@@ -193,6 +216,12 @@ export default function CalendarioMarketingPage() {
             </div>
             <span className="rounded-full border border-border px-3 py-1 text-xs text-muted-foreground">MVP localStorage</span>
           </div>
+
+          {profileDefaultsApplied ? (
+            <p className="mt-4 rounded-2xl border border-[#CCA761]/20 bg-[#CCA761]/10 p-3 text-xs leading-5 text-muted-foreground">
+              Defaults carregados de Perfil e Canais. Ajuste o briefing se quiser variar campanha, publico ou canal.
+            </p>
+          ) : null}
 
           <div className="mt-6 grid gap-4">
             <div className="grid gap-4 sm:grid-cols-2">

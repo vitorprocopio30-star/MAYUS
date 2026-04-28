@@ -464,11 +464,12 @@ Evidencia 2026-04-28: Agenda Diaria e Agenda Global renderizam eventos externos 
 Evidencia 2026-04-28: MVP textual em `POST /api/growth/call-analysis` analisa transcript/notes de call sem Meet/Zoom e sem side effects externos.
 - [x] Gerar relatorio da call com resumo, dor principal, interesse, objecoes, pontos fortes/fracos, oportunidades perdidas, proximo passo, follow-up e probabilidade de avanco.
 Evidencia 2026-04-28: `buildCallCommercialAnalysis` retorna summary, pain, interestLevel, objections, strengths, weaknesses, missedOpportunities, recommendedNextStep, suggestedFollowUp, advancementProbability e crmUpdateHints.
-- [~] Salvar a analise da call no historico do lead/oportunidade.
-Evidencia parcial 2026-04-28: `POST /api/growth/call-analysis` exige auth por `getTenantSession`, recebe `crmTaskId` pelo CRM visual, registra evento seguro em `system_event_logs` e cria artifact agentico `call_commercial_analysis` quando possivel, sem transcript bruto no payload persistido; exibicao visual do historico no lead ainda pendente.
+- [x] Salvar a analise da call no historico do lead/oportunidade.
+Evidencia 2026-04-28: `POST /api/growth/call-analysis` exige auth por `getTenantSession`, recebe `crmTaskId` pelo CRM visual, registra evento seguro em `system_event_logs` e cria artifact agentico `call_commercial_analysis` quando possivel, sem transcript bruto no payload persistido; `GET /api/growth/call-analysis?crmTaskId=...` lista historico seguro e o modal do CRM exibe data, interesse, probabilidade, resumo seguro e proximo passo.
 - [x] Criar marketing por referencias sem copiar conteudo.
 Evidencia 2026-04-28: `extractReferencePatterns` e `generateContentIdeas` usam apenas metadados/metricas fornecidos e incluem guardrails para nao copiar titulos, paragrafos, exemplos proprietarios ou framing distintivo.
-- [ ] Permitir cadastrar perfis, redes, canais, sites, blogs e concorrentes/referencias admiradas.
+- [x] Permitir cadastrar perfis, redes, canais, sites, blogs e concorrentes/referencias admiradas.
+Evidencia 2026-04-28: `/dashboard/marketing/perfil` salva perfil operacional de marketing em `localStorage` com posicionamento, areas, publicos, canais, tom, sites, redes, referencias admiradas e guardrails eticos; o calendario editorial carrega esse perfil como briefing inicial e segue sem publicacao externa automatica.
 - [x] Extrair padroes de engajamento, temas, formatos, ganchos, CTAs, frequencia e tom de comunicacao.
 Evidencia 2026-04-28: `/dashboard/marketing/referencias` coleta referencias em estado local e renderiza padroes calculados por `extractReferencePatterns`.
 - [x] Criar calendario editorial editavel.

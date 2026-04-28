@@ -1,7 +1,14 @@
 import Link from "next/link";
-import { ArrowRight, CalendarDays, CheckCircle2, Images, Megaphone, Upload } from "lucide-react";
+import { ArrowRight, Building2, CalendarDays, CheckCircle2, Images, Megaphone, Upload } from "lucide-react";
 
 const marketingAreas = [
+  {
+    title: "Perfil e Canais",
+    description: "Cadastre posicionamento, areas, publicos, redes, sites e referencias admiradas.",
+    href: "/dashboard/marketing/perfil",
+    icon: Building2,
+    label: "Base operacional",
+  },
   {
     title: "Referencias",
     description: "Organize benchmarks, repertorio visual e ideias para campanhas futuras.",
@@ -46,12 +53,12 @@ export default function MarketingPage() {
             Marketing
           </h1>
           <p className="mt-4 max-w-2xl text-sm leading-7 text-muted-foreground md:text-base">
-            Shell operacional para organizar referencias, calendario editorial, subida de Meta Ads e conteudos aprovados. Esta area e estatica por enquanto e nao altera fluxos de backend.
+            Shell operacional para organizar perfil de marca, referencias, calendario editorial, Meta Ads e conteudos aprovados. O MVP salva dados localmente, cria tarefas internas quando aprovado e nao publica nada automaticamente.
           </p>
         </div>
       </section>
 
-      <section className="mt-8 grid gap-4 md:grid-cols-2 xl:grid-cols-4">
+      <section className="mt-8 grid gap-4 md:grid-cols-2 xl:grid-cols-5">
         {marketingAreas.map((area) => {
           const Icon = area.icon;
 

@@ -1,11 +1,12 @@
 import { NextRequest } from "next/server";
 import { beforeEach, describe, expect, it, vi } from "vitest";
 
-const { getTenantSessionMock, systemEventInsertMock, brainInsertMock, brainDeleteMock } = vi.hoisted(() => ({
+const { getTenantSessionMock, systemEventInsertMock, brainInsertMock, brainDeleteMock, artifactSelectMock } = vi.hoisted(() => ({
   getTenantSessionMock: vi.fn(),
   systemEventInsertMock: vi.fn(),
   brainInsertMock: vi.fn(),
   brainDeleteMock: vi.fn(),
+  artifactSelectMock: vi.fn(),
 }));
 
 function insertChain(table: string, payload: unknown) {
@@ -46,12 +47,19 @@ vi.mock("@/lib/supabase/admin", () => ({
         };
       }
 
+      if (table === "brain_artifacts") {
+        return {
+          insert: (payload: unknown) => insertChain(table, payload),
+          select: artifactSelectMock,
+        };
+      }
+
       return { insert: (payload: unknown) => insertChain(table, payload) };
     }),
   },
 }));
 
-import { POST } from "./route";
+import { GET, POST } from "./route";
 
 function buildRequest(body: unknown) {
   return new NextRequest("http://localhost:3000/api/growth/call-analysis", {
@@ -74,6 +82,11 @@ describe("growth call analysis route", () => {
     systemEventInsertMock.mockResolvedValue({ error: null });
     brainInsertMock.mockImplementation(() => undefined);
     brainDeleteMock.mockResolvedValue({ error: null });
+    artifactSelectMock.mockReturnValue({
+      eq: vi.fn().mockReturnThis(),
+      order: vi.fn().mockReturnThis(),
+      limit: vi.fn().mockResolvedValue({ data: [], error: null }),
+    });
   });
 
   it("rejects unauthenticated requests", async () => {
@@ -221,5 +234,48 @@ describe("growth call analysis route", () => {
     expect(json.metadata.brain_trace).toBeNull();
     expect(systemEventInsertMock).toHaveBeenCalled();
     expect(brainDeleteMock).toHaveBeenCalledWith("id", "task-1");
+  });
+
+  it("returns safe call analysis history without transcript payload", async () => {
+    const query: any = {
+      eq: vi.fn(() => query),
+      order: vi.fn(() => query),
+      limit: vi.fn(async () => ({
+        data: [{
+          id: "artifact-1",
+          title: "Analise de call - Ana",
+          created_at: "2026-04-28T12:00:00.000Z",
+          metadata: {
+            crm_task_id: "crm-task-3",
+            summary: "Analise deterministica segura.",
+            lead_name: "Ana",
+            legal_area: "Previdenciario",
+            interest_level: "high",
+            advancement_probability: 82,
+            recommended_next_step: "Revisar e propor avanco humano.",
+            transcript: "RAW_TRANSCRIPT_SHOULD_NOT_LEAK",
+            requires_human_review: true,
+            external_side_effects_blocked: true,
+          },
+        }],
+        error: null,
+      })),
+    };
+    artifactSelectMock.mockReturnValue(query);
+
+    const response = await GET(new NextRequest("http://localhost:3000/api/growth/call-analysis?crmTaskId=crm-task-3"));
+    const json = await response.json();
+
+    expect(response.status).toBe(200);
+    expect(json.success).toBe(true);
+    expect(json.history[0]).toEqual(expect.objectContaining({
+      id: "artifact-1",
+      interestLevel: "high",
+      advancementProbability: 82,
+      recommendedNextStep: "Revisar e propor avanco humano.",
+    }));
+    expect(query.eq).toHaveBeenCalledWith("metadata->>crm_task_id", "crm-task-3");
+    expect(JSON.stringify(json.history)).not.toContain("RAW_TRANSCRIPT_SHOULD_NOT_LEAK");
+    expect(json.metadata.raw_transcript_included).toBe(false);
   });
 });
