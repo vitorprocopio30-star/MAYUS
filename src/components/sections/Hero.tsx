@@ -7,9 +7,9 @@ import { EyebrowBadge } from "@/components/ui/EyebrowBadge";
 import { HudFrame } from "@/components/ui/HudFrame";
 import { DIALOGUES, FRAME_COUNT, HERO_TEXT_FADE_END, framePath } from "@/lib/hero";
 
-const HERO_MEDIA_SCALE = 0.84;
-const HERO_MEDIA_OFFSET_X = 0.12;
-const HERO_MEDIA_OFFSET_Y = 0.18;
+const HERO_MEDIA_SCALE = 0.86;
+const HERO_MEDIA_OFFSET_X = 0.04;
+const HERO_MEDIA_OFFSET_Y = 0.08;
 
 export function Hero() {
   const sectionRef = useRef<HTMLElement | null>(null);
@@ -80,11 +80,11 @@ export function Hero() {
     let baseW: number;
     let baseH: number;
     if (canvasRatio > imgRatio) {
-      baseW = cw;
-      baseH = cw / imgRatio;
-    } else {
       baseH = ch;
       baseW = ch * imgRatio;
+    } else {
+      baseW = cw;
+      baseH = cw / imgRatio;
     }
 
     const scale = HERO_MEDIA_SCALE;
@@ -227,12 +227,20 @@ export function Hero() {
               "linear-gradient(90deg, rgba(0,0,0,0.98) 0%, rgba(0,0,0,0.72) 28%, rgba(0,0,0,0.12) 58%, rgba(0,0,0,0.64) 100%), radial-gradient(circle at center, transparent 28%, rgba(0,0,0,0.42) 70%, #000000 100%)",
           }}
         />
+        <div
+          className="pointer-events-none absolute inset-x-0 top-0 z-[6] h-[30vh]"
+          style={{
+            background:
+              "linear-gradient(180deg, rgba(0,0,0,0.97) 0%, rgba(0,0,0,0.72) 22%, rgba(14,10,4,0.35) 54%, transparent 100%), radial-gradient(ellipse 48% 58% at 56% 0%, rgba(204,167,97,0.13) 0%, rgba(204,167,97,0.035) 40%, transparent 72%)",
+          }}
+        />
+        <div className="pointer-events-none absolute inset-x-0 top-0 z-[6] h-40 bg-[linear-gradient(90deg,#000000_0%,rgba(0,0,0,0.74)_22%,rgba(0,0,0,0.18)_50%,rgba(0,0,0,0.72)_78%,#000000_100%)] opacity-75 blur-[10px]" />
 
-        <div className="pointer-events-none absolute left-6 top-24 text-[#CCA761] md:left-10 md:top-28">
-          <HudFrame corner="tl" size={26} />
+        <div className="pointer-events-none absolute left-6 top-28 z-10 text-[#CCA761] md:left-10 md:top-32">
+          <HudFrame corner="tl" size={30} />
         </div>
-        <div className="pointer-events-none absolute right-6 top-24 text-[#CCA761] md:right-10 md:top-28">
-          <HudFrame corner="tr" size={26} />
+        <div className="pointer-events-none absolute right-6 top-28 z-10 text-[#CCA761] md:right-10 md:top-32">
+          <HudFrame corner="tr" size={30} />
         </div>
         <div className="pointer-events-none absolute bottom-14 left-6 text-[#CCA761] md:bottom-16 md:left-10">
           <HudFrame corner="bl" size={26} />
@@ -295,20 +303,20 @@ export function Hero() {
           </p>
         </div>
 
-        <div className="pointer-events-none absolute left-6 top-20 z-10 flex items-center gap-2 md:left-10 md:top-24">
-          <div className="h-px w-8 bg-[#CCA761]/60" />
-          <span className="font-mono text-[10px] uppercase tracking-[0.32em] text-zinc-400">
+        <div className="pointer-events-none absolute left-6 top-20 z-10 flex items-center gap-3 md:left-10 md:top-24">
+          <div className="h-px w-10 bg-gradient-to-r from-[#CCA761] to-[#CCA761]/20" />
+          <span className="font-mono text-[10px] uppercase tracking-[0.34em] text-zinc-300 md:text-[11px]">
             Núcleo operacional &mdash; ativo
           </span>
         </div>
 
         <div className="pointer-events-none absolute right-6 top-20 z-10 flex items-center gap-3 md:right-10 md:top-24">
-          <span className="font-mono text-[10px] uppercase tracking-[0.32em] text-zinc-400">
+          <span className="font-mono text-[10px] uppercase tracking-[0.34em] text-zinc-300 md:text-[11px]">
             Confiança
           </span>
           <span
             ref={powerReadoutRef}
-            className="font-mono text-[10px] uppercase tracking-[0.22em] text-[#CCA761]"
+            className="font-mono text-[10px] uppercase tracking-[0.22em] text-[#E2C97E] md:text-[11px]"
           >
             87.3%
           </span>

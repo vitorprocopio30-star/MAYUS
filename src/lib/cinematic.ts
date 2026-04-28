@@ -1,7 +1,11 @@
-export const CINE_FRAME_COUNT = 169;
+const CINE_SOURCE_FRAME_COUNT = 169;
+export const CINE_FRAME_COUNT = 72;
 
-export const cineFramePath = (n: number) =>
-  `/frames_hero2/frame_${String(n).padStart(4, "0")}.jpg`;
+export const cineFramePath = (n: number) => {
+  const sourceFrame =
+    1 + Math.floor(((n - 1) / Math.max(1, CINE_FRAME_COUNT - 1)) * (CINE_SOURCE_FRAME_COUNT - 1));
+  return `/frames_hero2/frame_${String(sourceFrame).padStart(4, "0")}.jpg`;
+};
 
 export type Beat = {
   id: string;

@@ -24,6 +24,7 @@ export function ShaderAnimation({ className = "h-full w-full" }: ShaderAnimation
     if (!containerRef.current) return;
 
     const container = containerRef.current;
+    let isVisible = false;
 
     const vertexShader = `
       void main() {
@@ -92,6 +93,7 @@ export function ShaderAnimation({ className = "h-full w-full" }: ShaderAnimation
     window.addEventListener("resize", onWindowResize, false);
 
     const animate = () => {
+      if (!isVisible) return;
       const animationId = requestAnimationFrame(animate);
       uniforms.time.value += 0.05;
       renderer.render(scene, camera);
@@ -109,9 +111,24 @@ export function ShaderAnimation({ className = "h-full w-full" }: ShaderAnimation
       animationId: 0,
     };
 
-    animate();
+    renderer.render(scene, camera);
+
+    const observer = new IntersectionObserver(
+      ([entry]) => {
+        isVisible = Boolean(entry?.isIntersecting);
+        if (isVisible && !sceneRef.current?.animationId) {
+          animate();
+        } else if (sceneRef.current?.animationId) {
+          cancelAnimationFrame(sceneRef.current.animationId);
+          sceneRef.current.animationId = 0;
+        }
+      },
+      { rootMargin: "160px" },
+    );
+    observer.observe(container);
 
     return () => {
+      observer.disconnect();
       window.removeEventListener("resize", onWindowResize);
 
       if (sceneRef.current) {

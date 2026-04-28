@@ -6,10 +6,9 @@ import { useEffect, useState } from "react";
 import { motion } from "framer-motion";
 import { Play, Plus } from "lucide-react";
 import { Cormorant_Garamond } from "next/font/google";
-import { AgenticComparisonBackdrop } from "@/components/sections/AgenticComparisonBackdrop";
 import { Hero } from "@/components/sections/Hero";
 import { CinematicReveal } from "@/components/sections/CinematicReveal";
-import { ShaderAnimation } from "@/components/ui/shader-animation";
+import { LuxVortexCard } from "@/components/ui/lux-vortex-card";
 
 const cormorant = Cormorant_Garamond({
   subsets: ["latin"],
@@ -30,7 +29,7 @@ const agentFlow = [
   "PLANEJA: define a próxima ação",
   "EXECUTA: skill jurídica",
   "OBSERVA O RESULTADO",
-  "REPLANEJA E RECOMECA",
+  "REPLANEJA E RECOMEÇA",
 ];
 
 const painPoints = [
@@ -83,7 +82,7 @@ const modules = [
     feats: [
       "Alerta proativo via WhatsApp em tempo real",
       "Classificação automática de urgência por IA",
-      "Linha do tempo completa de movimentacoes",
+      "Linha do tempo completa de movimentações",
       "100 processos incluídos no plano",
     ],
   },
@@ -107,7 +106,7 @@ const modules = [
     feats: [
       "Contagem regressiva em tempo real",
       "Filtro por responsável, área e urgência",
-      "Notificacoes escalonadas",
+      "Notificações escalonadas",
       "Exportação direta para agenda",
     ],
   },
@@ -120,7 +119,7 @@ const modules = [
       "Consulta processual em tempo real",
       "Atualização proativa sem solicitação",
       "Triagem de novos leads",
-      "Disponivel 24h por dia",
+      "Disponível 24h por dia",
     ],
   },
   {
@@ -200,82 +199,19 @@ const comparisonRows = [
 ];
 
 const plans = [
-  {
-    name: "Mensal",
-    badge: "Plano padrão",
-    desc: "Acesso completo sem fidelidade.",
-    price: "647",
-    note: "/ mês · sem fidelidade",
-    featured: false,
-    feats: [
-      "Usuários ilimitados no escritório",
-      "100 processos monitorados",
-      "Todos os modulos ativos",
-      "Agente WhatsApp + MAYUSOrb",
-      "Suporte por WhatsApp",
-    ],
-  },
-  {
-    name: "Fundador",
-    badge: "Círculo fundador",
-    desc: "Preço congelado para sempre. Acesso antecipado a tudo.",
-    price: "397",
-    note: "/ mês · cobrado anualmente",
-    featured: true,
-    feats: [
-      "Tudo do plano mensal",
-      "Preço congelado enquanto ativo",
-      "Acesso antecipado a novos modulos",
-      "Voto em prioridade de desenvolvimento",
-      "Canal direto com o fundador",
-    ],
-  },
-  {
-    name: "Anual",
-    badge: "Plano anual",
-    desc: "Melhor custo-benefício fora do Círculo Fundador.",
-    price: "497",
-    note: "/ mês · cobrado anualmente",
-    featured: false,
-    feats: [
-      "Usuários ilimitados no escritório",
-      "100 processos monitorados",
-      "Todos os modulos ativos",
-      "Agente WhatsApp + MAYUSOrb",
-      "Suporte por WhatsApp",
-    ],
-  },
+  { name: "Mensal", badge: "Plano padrão", desc: "Acesso completo sem fidelidade.", price: "647", note: "/ mês · sem fidelidade", featured: false, feats: ["Usuários ilimitados no escritório", "100 processos monitorados", "Todos os módulos ativos", "Agente WhatsApp + MAYUSOrb", "Suporte por WhatsApp"] },
+  { name: "Fundador", badge: "Círculo fundador", desc: "Preço congelado para sempre. Acesso antecipado a tudo.", price: "397", note: "/ mês · cobrado anualmente", featured: true, feats: ["Tudo do plano mensal", "Preço congelado enquanto ativo", "Acesso antecipado a novos módulos", "Voto em prioridade de desenvolvimento", "Canal direto com o fundador"] },
+  { name: "Anual", badge: "Plano anual", desc: "Melhor custo-benefício fora do Círculo Fundador.", price: "497", note: "/ mês · cobrado anualmente", featured: false, feats: ["Usuários ilimitados no escritório", "100 processos monitorados", "Todos os módulos ativos", "Agente WhatsApp + MAYUSOrb", "Suporte por WhatsApp"] },
 ];
 
 const faqs = [
-  {
-    q: "Qual a diferença entre agente e sistema agêntico?",
-    a: "Um agente responde quando chamado. Um sistema agêntico observa, planeja, executa e replaneja em loop contínuo, sem precisar ser chamado. O MAYUS é agêntico: ele age antes de você perceber que precisava.",
-  },
-  {
-    q: "Preciso trocar meu sistema atual para usar o MAYUS?",
-    a: "Não necessariamente. O MAYUS pode operar em paralelo com sistemas existentes. Você começa pelo monitoramento, importa os processos via OAB e expande conforme a equipe se adapta.",
-  },
-  {
-    q: "O que é BYOK e por que isso importa?",
-    a: "BYOK significa Bring Your Own Key: você usa sua própria chave de IA. Seus dados ficam sob sua política, e você controla os custos de uso diretamente.",
-  },
-  {
-    q: "O preço fundador realmente trava para sempre?",
-    a: "Sim. Enquanto sua assinatura estiver ativa e você renovar anualmente, o preço fundador permanece travado.",
-  },
-  {
-    q: "Em quanto tempo meu escritório está operando?",
-    a: "O onboarding foi desenhado para começar em menos de uma hora: OAB, importação, pipelines e monitoramento inicial.",
-  },
-  {
-    q: "O agente WhatsApp consulta processos em tempo real?",
-    a: "Sim. Ele usa o monitoramento do MAYUS para responder com informação atualizada e escalar para humano quando precisar de critério jurídico.",
-  },
-  {
-    q: "Se eu quiser sair, levo meus dados?",
-    a: "Sempre. Processos, tarefas, histórico de movimentações e memória institucional devem permanecer exportáveis pelo escritório.",
-  },
+  { q: "Qual a diferença entre agente e sistema agêntico?", a: "Um agente responde quando chamado. Um sistema agêntico observa, planeja, executa e replaneja em loop contínuo, sem precisar ser chamado. O MAYUS é agêntico: ele age antes de você perceber que precisava." },
+  { q: "Preciso trocar meu sistema atual para usar o MAYUS?", a: "Não necessariamente. O MAYUS pode operar em paralelo com sistemas existentes. Você começa pelo monitoramento, importa os processos via OAB e expande conforme a equipe se adapta." },
+  { q: "O que é BYOK e por que isso importa?", a: "BYOK significa Bring Your Own Key: você usa sua própria chave de IA. Seus dados ficam sob sua política, e você controla os custos de uso diretamente." },
+  { q: "O preço fundador realmente trava para sempre?", a: "Sim. Enquanto sua assinatura estiver ativa e você renovar anualmente, o preço fundador permanece travado." },
+  { q: "Em quanto tempo meu escritório está operando?", a: "O onboarding foi desenhado para começar em menos de uma hora: OAB, importação, pipelines e monitoramento inicial." },
+  { q: "O agente WhatsApp consulta processos em tempo real?", a: "Sim. Ele usa o monitoramento do MAYUS para responder com informação atualizada e escalar para humano quando precisar de critério jurídico." },
+  { q: "Se eu quiser sair, levo meus dados?", a: "Sempre. Processos, tarefas, histórico de movimentações e memória institucional devem permanecer exportáveis pelo escritório." },
 ];
 
 const revealTransition = {
@@ -287,7 +223,7 @@ const Reveal = ({ children, delay = 0 }: { children: React.ReactNode; delay?: nu
   <motion.div
     initial={{ opacity: 0, y: 34, scale: 0.99, filter: "blur(7px)" }}
     whileInView={{ opacity: 1, y: 0, scale: 1, filter: "blur(0px)" }}
-    viewport={{ once: true, amount: 0.18 }}
+    viewport={{ once: false, amount: 0.18 }}
     transition={{ ...revealTransition, delay }}
   >
     {children}
@@ -299,7 +235,7 @@ const Stagger = ({ children, className = "" }: { children: React.ReactNode; clas
     className={className}
     initial="hidden"
     whileInView="visible"
-    viewport={{ once: true, amount: 0.16 }}
+    viewport={{ once: false, amount: 0.16 }}
     variants={{
       hidden: {},
       visible: {
@@ -336,22 +272,51 @@ const Divider = () => (
   </div>
 );
 
+const SectionImageBackdrop = ({
+  src,
+  position = "center",
+  opacity = 0.24,
+  glow = "center",
+}: {
+  src: string;
+  position?: string;
+  opacity?: number;
+  glow?: "left" | "center" | "right";
+}) => {
+  const glowPosition =
+    glow === "left" ? "22% 42%" : glow === "right" ? "76% 40%" : "50% 44%";
+
+  return (
+    <div aria-hidden="true" className="pointer-events-none absolute inset-0 z-0 overflow-hidden">
+      <Image
+        src={src}
+        alt=""
+        fill
+        sizes="100vw"
+        className="object-cover"
+        style={{ objectPosition: position, opacity }}
+      />
+      <div className="absolute inset-0 bg-[#050505]/72" />
+      <div
+        className="absolute inset-0"
+        style={{
+          background: `radial-gradient(ellipse 58% 44% at ${glowPosition}, rgba(226,201,126,0.16) 0%, transparent 62%), linear-gradient(90deg, rgba(3,3,4,0.96) 0%, rgba(3,3,4,0.58) 48%, rgba(3,3,4,0.94) 100%)`,
+        }}
+      />
+      <div className="absolute inset-0 opacity-[0.10] bg-[linear-gradient(to_right,rgba(226,201,126,0.16)_1px,transparent_1px),linear-gradient(to_bottom,rgba(226,201,126,0.10)_1px,transparent_1px)] bg-[size:88px_88px]" />
+    </div>
+  );
+};
+
 export default function LandingPage() {
   const [scrolled, setScrolled] = useState(false);
   const [openFaq, setOpenFaq] = useState<number | null>(0);
-  const [showVideoPulse, setShowVideoPulse] = useState(false);
-  const [luxCursor, setLuxCursor] = useState({ x: 50, y: 42 });
 
   useEffect(() => {
     const onScroll = () => setScrolled(window.scrollY > 60);
     onScroll();
     window.addEventListener("scroll", onScroll, { passive: true });
     return () => window.removeEventListener("scroll", onScroll);
-  }, []);
-
-  useEffect(() => {
-    const id = setInterval(() => setShowVideoPulse((s) => !s), 1500);
-    return () => clearInterval(id);
   }, []);
 
   return (
@@ -395,6 +360,7 @@ export default function LandingPage() {
           </div>
 
           <div className="hidden items-center gap-10 font-mono text-[10px] uppercase tracking-[0.2em] text-[#F5F0E8]/60 lg:flex">
+            <a href="#operacao" className="hover:text-[#C4A35A]">Operação</a>
             <a href="#conceito" className="hover:text-[#C4A35A]">Conceito</a>
             <a href="#arquitetura" className="hover:text-[#C4A35A]">Arquitetura</a>
             <a href="#circulo-fundador" className="hover:text-[#C4A35A]">Fundadores</a>
@@ -412,41 +378,13 @@ export default function LandingPage() {
       </nav>
 
       <Hero />
-      <CinematicReveal />
 
-      <div
-        className="post-cinematic-luxury relative z-10"
-        style={{
-          "--lux-x": `${luxCursor.x}%`,
-          "--lux-y": `${luxCursor.y}%`,
-        } as React.CSSProperties}
-        onMouseMove={(event) => {
-          const rect = event.currentTarget.getBoundingClientRect();
-          setLuxCursor({
-            x: ((event.clientX - rect.left) / rect.width) * 100,
-            y: ((event.clientY - rect.top) / rect.height) * 100,
-          });
-        }}
-      >
-      <div className="lux-cursor-glow" />
+      <div className="post-cinematic-luxury relative z-10">
 
-      <div className="relative z-10 overflow-hidden bg-[#C4A35A] py-3">
-        <div className="inline-flex animate-[ticker_32s_linear_infinite] whitespace-nowrap font-mono text-[10px] font-semibold uppercase tracking-[0.2em] text-black">
-          {Array.from({ length: 2 }).map((_, pass) => (
-            <span key={pass} className="inline-flex">
-              {tickerItems.flatMap((item) => [item, "|"]).map((item, idx) => (
-                <span key={`${pass}-${idx}`} className="px-8">{item}</span>
-              ))}
-            </span>
-          ))}
-        </div>
-      </div>
-
-      <section className="lux-bg-demo relative z-10 overflow-hidden px-6 py-28">
-        <div className="pointer-events-none absolute inset-0 z-0 opacity-45 mix-blend-screen">
-          <ShaderAnimation />
-        </div>
-        <div className="pointer-events-none absolute inset-0 z-0 bg-[linear-gradient(90deg,rgba(5,5,5,0.92)_0%,rgba(5,5,5,0.56)_46%,rgba(5,5,5,0.9)_100%),radial-gradient(ellipse_70%_45%_at_50%_52%,rgba(226,201,126,0.10)_0%,transparent_68%)]" />
+      <section id="operacao" className="lux-bg-demo relative z-10 scroll-mt-24 overflow-hidden px-6 py-28">
+        <SectionImageBackdrop src="/images/hero_luxury.png" opacity={0.20} glow="center" />
+        <div className="pointer-events-none absolute inset-0 z-0 bg-[radial-gradient(ellipse_48%_28%_at_50%_44%,rgba(226,201,126,0.16)_0%,rgba(92,70,28,0.12)_38%,transparent_72%),radial-gradient(ellipse_34%_24%_at_18%_18%,rgba(226,201,126,0.10)_0%,transparent_68%),linear-gradient(118deg,rgba(30,24,14,0.42)_0%,transparent_36%),linear-gradient(90deg,rgba(5,5,5,0.94)_0%,rgba(5,5,5,0.58)_46%,rgba(5,5,5,0.92)_100%)]" />
+        <div className="pointer-events-none absolute inset-0 z-0 opacity-[0.14] bg-[linear-gradient(to_right,rgba(226,201,126,0.18)_1px,transparent_1px),linear-gradient(to_bottom,rgba(226,201,126,0.10)_1px,transparent_1px)] bg-[size:84px_84px]" />
         <div className="relative z-10 mx-auto max-w-[1180px]">
           <Reveal>
             <div className="mb-14 text-center">
@@ -468,12 +406,12 @@ export default function LandingPage() {
               <button
                 type="button"
                 aria-label="Reproduzir video"
-                className={`absolute left-1/2 top-1/2 flex h-24 w-24 -translate-x-1/2 -translate-y-1/2 items-center justify-center rounded-full bg-gradient-to-br from-[#E2C97E] to-[#C4A35A] text-black shadow-[0_0_40px_rgba(196,163,90,0.45)] transition-transform ${showVideoPulse ? "scale-105" : "scale-100"}`}
+                className="absolute left-1/2 top-1/2 flex h-24 w-24 -translate-x-1/2 -translate-y-1/2 animate-[videoPulse_1.8s_ease-in-out_infinite] items-center justify-center rounded-full bg-gradient-to-br from-[#E2C97E] to-[#C4A35A] text-black shadow-[0_0_40px_rgba(196,163,90,0.45)]"
               >
                 <Play size={30} className="ml-1" fill="currentColor" />
               </button>
               <div className="absolute bottom-8 left-8 flex items-center gap-3 font-mono text-[10px] uppercase tracking-[0.2em] text-[#C4A35A]">
-                <span className={`h-2 w-2 rounded-full bg-[#C4A35A] ${showVideoPulse ? "opacity-100" : "opacity-40"}`} />
+                <span className="h-2 w-2 animate-pulse rounded-full bg-[#C4A35A]" />
                 Demonstração pronta
               </div>
             </div>
@@ -481,12 +419,66 @@ export default function LandingPage() {
         </div>
       </section>
 
+      <div className="relative z-10 overflow-hidden bg-[#C4A35A] py-3">
+        <div className="inline-flex animate-[ticker_32s_linear_infinite] whitespace-nowrap font-mono text-[10px] font-semibold uppercase tracking-[0.2em] text-black">
+          {Array.from({ length: 2 }).map((_, pass) => (
+            <span key={pass} className="inline-flex">
+              {tickerItems.flatMap((item) => [item, "|"]).map((item, idx) => (
+                <span key={`${pass}-${idx}`} className="px-8">{item}</span>
+              ))}
+            </span>
+          ))}
+        </div>
+      </div>
+
+      <CinematicReveal />
+
       <Divider />
 
-      <section className="agentic-comparison-section scroll-animation lux-bg-agentic relative z-10 h-[190vh] overflow-visible border-y border-[#C4A35A]/15">
-        <div className="sticky top-0 min-h-[100dvh] overflow-hidden px-6 py-8 md:-top-56 md:py-10">
-          <AgenticComparisonBackdrop />
-          <div className="relative z-10 mx-auto flex min-h-[calc(100dvh-5rem)] max-w-[1550px] flex-col justify-center md:min-h-[calc(100dvh+4rem)]">
+      <section id="conceito" className="relative z-10 min-h-[100svh] scroll-mt-28 overflow-hidden px-6 py-24 md:py-28">
+        <SectionImageBackdrop src="/bg_office.png" position="center" opacity={0.24} glow="left" />
+        <div className="pointer-events-none absolute inset-0 bg-[radial-gradient(ellipse_48%_34%_at_62%_38%,rgba(226,201,126,0.18)_0%,rgba(108,82,35,0.10)_38%,transparent_70%),radial-gradient(ellipse_42%_30%_at_18%_18%,rgba(94,33,33,0.22)_0%,transparent_68%),linear-gradient(112deg,rgba(54,37,18,0.42)_0%,transparent_34%),linear-gradient(180deg,#07070a_0%,#050505_100%)]" />
+        <div className="pointer-events-none absolute inset-0 opacity-[0.13] bg-[linear-gradient(135deg,rgba(245,240,232,0.16)_1px,transparent_1px)] bg-[size:54px_54px]" />
+        <div className="pointer-events-none absolute inset-0 z-[1] bg-[radial-gradient(ellipse_62%_48%_at_50%_46%,rgba(226,201,126,0.12)_0%,rgba(9,7,5,0.20)_52%,rgba(2,2,2,0.86)_100%),linear-gradient(180deg,rgba(3,3,3,0.78)_0%,rgba(9,7,4,0.30)_44%,rgba(3,3,3,0.86)_100%)]" />
+        <div className="pointer-events-none absolute inset-0 z-[1] bg-[linear-gradient(135deg,rgba(226,201,126,0.055)_0%,transparent_32%,rgba(255,255,255,0.026)_100%)]" />
+
+        <div className="relative z-10 mx-auto grid min-h-[calc(100svh-12rem)] max-w-[1240px] items-center gap-14 lg:grid-cols-[1.05fr_0.95fr]">
+          <Reveal>
+            <div>
+              <SectionLabel>A origem</SectionLabel>
+              <h2 className="font-display mt-4 text-5xl font-semibold leading-[1.02] text-[#F5F0E8] md:text-7xl">
+                Um escritório perdeu um processo por um prazo que <span className="text-[#E2C97E]">nenhum sistema capturou.</span>
+              </h2>
+              <div className="mt-8 space-y-5 text-sm leading-7 text-[#F5F0E8]/72">
+                <p>
+                  Não faltava esforço nem competência. Faltava um sistema que agisse no lugar certo, na hora certa, sem precisar ser chamado.
+                </p>
+                <p>
+                  Três sistemas. Três cobranças. Zero integração. Zero autonomia. O MAYUS nasceu dessa frustração: não como mais um software jurídico, mas como o sistema operacional que nenhum deles ousou ser.
+                </p>
+              </div>
+            </div>
+          </Reveal>
+          <Reveal delay={0.1}>
+            <LuxVortexCard className="w-full px-8 py-10 text-left md:px-10 md:py-12 lg:mt-4 lg:px-12">
+              <blockquote className="font-display text-3xl font-semibold leading-[1.04] text-[#F5F0E8] md:text-5xl">
+                “Não criei uma ferramenta para advogados. Criei o sócio de IA que todo escritório jurídico deveria ter.”
+                <p className="mt-6 font-mono text-[10px] uppercase tracking-[0.28em] text-[#C4A35A]">Manifesto MAYUS</p>
+              </blockquote>
+            </LuxVortexCard>
+          </Reveal>
+        </div>
+      </section>
+
+      <Divider />
+
+      <section id="agentico" className="agentic-comparison-section lux-bg-agentic relative z-10 scroll-mt-20 overflow-hidden border-y border-[#C4A35A]/15 px-6 py-24 md:py-28">
+        <SectionImageBackdrop src="/frames_agentic/frame_0001.jpg" opacity={0.30} glow="right" />
+        <div className="relative z-10 mx-auto max-w-[1550px]">
+          <div aria-hidden="true" className="pointer-events-none absolute inset-0 z-0 overflow-hidden">
+            <div className="absolute bottom-0 right-0 h-48 w-80 bg-[linear-gradient(135deg,rgba(5,5,5,0)_0%,rgba(5,5,5,0.84)_46%,rgba(5,5,5,0.98)_100%)] md:h-64 md:w-[34rem]" />
+          </div>
+          <div className="relative z-10 flex flex-col justify-center">
           <Reveal>
             <div className="mx-auto mb-7 max-w-3xl text-center md:mb-9">
                 <SectionLabel>A distinção que muda tudo</SectionLabel>
@@ -501,7 +493,7 @@ export default function LandingPage() {
 
           <div className="grid items-stretch gap-5 lg:grid-cols-[1fr_auto_1fr]">
             <Reveal>
-              <article className="agentic-static-card h-full min-h-[380px] rounded-2xl border border-[#C4A35A]/20 bg-[#050505]/95 p-6 shadow-[inset_0_0_0_1px_rgba(255,255,255,0.025),0_28px_80px_rgba(0,0,0,0.72)] md:min-h-[510px] md:p-7">
+              <article className="agentic-static-card h-full min-h-[360px] rounded-2xl border border-[#C4A35A]/20 bg-[#050505]/86 p-6 shadow-[0_20px_56px_rgba(0,0,0,0.42)] md:min-h-[430px] md:p-7">
                 <p className="font-mono text-[10px] uppercase tracking-[0.28em] text-[#F5F0E8]/55">Modelo reativo</p>
                 <h3 className="font-display mt-3 text-5xl font-semibold md:text-6xl">Agente</h3>
                 <p className="mt-1 text-[#C4A35A]">Responde quando chamado.</p>
@@ -516,13 +508,13 @@ export default function LandingPage() {
               <div className="h-16 w-px bg-gradient-to-t from-transparent to-[#C4A35A]" />
             </div>
             <Reveal delay={0.1}>
-              <article className="agentic-static-card lux-prime-card h-full min-h-[380px] rounded-2xl border border-[#C4A35A]/50 bg-[#050505]/95 p-6 shadow-[inset_0_0_0_1px_rgba(226,201,126,0.04),0_0_50px_rgba(196,163,90,0.15),0_28px_80px_rgba(0,0,0,0.72)] md:min-h-[510px] md:p-7">
+              <article className="agentic-static-card lux-prime-card h-full min-h-[360px] rounded-2xl border border-[#C4A35A]/45 bg-[#050505]/86 p-6 shadow-[0_20px_56px_rgba(0,0,0,0.42)] md:min-h-[430px] md:p-7">
                 <p className="font-mono text-[10px] uppercase tracking-[0.28em] text-[#E2C97E]">Modelo autônomo</p>
                 <h3 className="font-display mt-3 text-5xl font-semibold text-[#E2C97E] md:text-6xl">Agêntico</h3>
                 <p className="mt-1 text-[#E2C97E]/90">Age sem precisar ser chamado.</p>
                 <div className="mt-5 space-y-2">
                   {agentFlow.map((step) => (
-                    <div key={step} className="rounded-lg border border-[#C4A35A]/20 bg-black/70 px-4 py-2.5 font-mono text-[10px] uppercase tracking-[0.18em] text-[#F5F0E8]/72">
+                    <div key={step} className="rounded-lg border border-[#C4A35A]/20 bg-black/52 px-4 py-2.5 font-mono text-[10px] uppercase tracking-[0.18em] text-[#F5F0E8]/72">
                       {step}
                     </div>
                   ))}
@@ -542,38 +534,12 @@ export default function LandingPage() {
 
       <Divider />
 
-      <section id="conceito" className="lux-bg-origin relative z-10 px-6 py-28">
-        <div className="mx-auto grid max-w-[1240px] gap-14 lg:grid-cols-[1.05fr_0.95fr]">
+      <section className="lux-bg-demo relative z-10 overflow-hidden px-6 py-28">
+        <SectionImageBackdrop src="/bg_office.png" position="center" opacity={0.30} glow="left" />
+        <div className="relative z-10 mx-auto grid max-w-[1200px] gap-16 lg:grid-cols-2">
           <Reveal>
             <div>
-              <SectionLabel>A origem</SectionLabel>
-              <h2 className="font-display mt-4 text-5xl font-semibold leading-[1.02] md:text-7xl">
-                Um escritório perdeu um processo por um prazo que <span className="text-[#E2C97E]">nenhum sistema capturou.</span>
-              </h2>
-              <div className="mt-8 space-y-5 text-sm leading-7 text-[#F5F0E8]/62">
-                <p>
-                  Não faltava esforço nem competência. Faltava um sistema que agisse no lugar certo, na hora certa, sem precisar ser chamado.
-                </p>
-                <p>
-                  Três sistemas. Três cobranças. Zero integração. Zero autonomia. O MAYUS nasceu dessa frustração: não como mais um software jurídico, mas como o sistema operacional que nenhum deles ousou ser.
-                </p>
-              </div>
-            </div>
-          </Reveal>
-          <Reveal delay={0.1}>
-            <blockquote className="font-display rounded-2xl border border-[#C4A35A]/25 bg-black/35 p-8 text-3xl font-semibold leading-tight text-[#F5F0E8] md:text-5xl">
-              “Não criei uma ferramenta para advogados. Criei o sócio de IA que todo escritório jurídico deveria ter.”
-              <p className="mt-6 font-mono text-[10px] uppercase tracking-[0.28em] text-[#C4A35A]">Manifesto MAYUS</p>
-            </blockquote>
-          </Reveal>
-        </div>
-      </section>
-
-      <section className="lux-bg-diagnostic relative z-10 px-6 py-28">
-        <div className="mx-auto grid max-w-[1200px] gap-16 lg:grid-cols-2">
-          <Reveal>
-            <div>
-              <SectionLabel>O diagnostico</SectionLabel>
+              <SectionLabel>O diagnóstico</SectionLabel>
               <h2 className="font-display mt-4 text-5xl font-semibold leading-[1.02] md:text-7xl">
                 O escritório jurídico ainda vive no <span className="text-[#E2C97E]">século XX.</span>
               </h2>
@@ -582,44 +548,67 @@ export default function LandingPage() {
               </p>
             </div>
           </Reveal>
-          <div className="space-y-4">
+          <Stagger className="space-y-4">
             {painPoints.map((item, idx) => (
-              <Reveal key={item.n} delay={idx * 0.06}>
-                <div className="grid grid-cols-[52px_1fr] gap-4 border-t border-[#C4A35A]/20 pt-5">
+              <StaggerItem key={item.n}>
+                <div
+                  className="grid grid-cols-[52px_1fr] gap-4 border-t border-[#C4A35A]/20 pt-5 transition-all duration-500 hover:border-[#E2C97E]/45"
+                  style={{ transitionDelay: `${idx * 60}ms` }}
+                >
                   <p className="font-mono text-3xl leading-none text-[#C4A35A]/60">{item.n}</p>
                   <div>
                     <h4 className="text-sm font-semibold uppercase tracking-[0.08em] text-[#F5F0E8]">{item.title}</h4>
                     <p className="mt-2 text-xs leading-6 text-[#F5F0E8]/58">{item.text}</p>
                   </div>
                 </div>
-              </Reveal>
+              </StaggerItem>
             ))}
-          </div>
+          </Stagger>
         </div>
       </section>
 
-      <section className="lux-bg-manifest relative z-10 border-y border-[#C4A35A]/20 px-6 py-24">
-        <div className="mx-auto max-w-[1100px] text-center">
-          <Reveal>
-            <blockquote className="font-display text-4xl font-semibold leading-tight md:text-6xl">
-              “O escritório que não opera com inteligência agêntica hoje está competindo com um <span className="text-[#E2C97E]">braço amarrado nas costas.</span>”
+      <section className="relative z-10 min-h-[54vh] overflow-hidden border-y border-[#C4A35A]/20 bg-black px-6 py-24">
+        <SectionImageBackdrop src="/images/vision_sovereign.png" opacity={0.18} glow="center" />
+        <div className="pointer-events-none absolute inset-0 z-0 bg-[radial-gradient(ellipse_70%_45%_at_50%_52%,rgba(226,201,126,0.12)_0%,rgba(12,10,6,0.22)_45%,rgba(0,0,0,0.82)_100%)]" />
+        <div className="pointer-events-none absolute inset-0 z-[1] bg-[radial-gradient(ellipse_70%_45%_at_50%_52%,rgba(226,201,126,0.08)_0%,rgba(12,10,6,0.26)_45%,rgba(0,0,0,0.74)_100%),linear-gradient(90deg,rgba(0,0,0,0.72)_0%,rgba(0,0,0,0.28)_50%,rgba(0,0,0,0.72)_100%)]" />
+        <div className="relative z-10 mx-auto max-w-[980px] text-center">
+          <Stagger>
+            <blockquote className="manifest-quote font-display text-4xl font-semibold leading-tight md:text-5xl xl:text-6xl">
+              <StaggerItem>
+                <span className="block">“O escritório que não opera com</span>
+              </StaggerItem>
+              <StaggerItem>
+                <span className="block">inteligência agêntica hoje está competindo</span>
+              </StaggerItem>
+              <StaggerItem>
+                <span className="block">
+                  com um <span className="text-[#E2C97E]">braço amarrado nas costas.</span>”
+                </span>
+              </StaggerItem>
             </blockquote>
-            <p className="mt-6 font-mono text-[10px] uppercase tracking-[0.28em] text-[#C4A35A]">Manifesto MAYUS - soberania digital</p>
-          </Reveal>
+            <StaggerItem>
+              <p className="mt-7 font-mono text-[10px] uppercase tracking-[0.28em] text-[#C4A35A]">
+                Manifesto MAYUS - soberania digital
+              </p>
+            </StaggerItem>
+          </Stagger>
         </div>
       </section>
-
-      <section className="lux-bg-os relative z-10 px-6 py-28">
-        <div className="mx-auto max-w-[1240px]">
+      <section className="lux-bg-origin relative z-10 overflow-hidden px-6 py-20 md:py-24">
+        <SectionImageBackdrop src="/images/mayus_core_motion.png" opacity={0.24} glow="right" />
+        <div className="pointer-events-none absolute inset-0 bg-[radial-gradient(ellipse_58%_42%_at_50%_34%,rgba(226,201,126,0.11)_0%,transparent_62%),linear-gradient(112deg,rgba(94,33,33,0.20)_0%,transparent_38%)]" />
+        <div className="pointer-events-none absolute inset-0 z-[1] bg-[radial-gradient(ellipse_62%_48%_at_50%_46%,rgba(226,201,126,0.12)_0%,rgba(9,7,5,0.20)_52%,rgba(2,2,2,0.86)_100%),linear-gradient(180deg,rgba(3,3,3,0.78)_0%,rgba(9,7,4,0.30)_44%,rgba(3,3,3,0.86)_100%)]" />
+        <div className="pointer-events-none absolute inset-0 z-[1] bg-[linear-gradient(135deg,rgba(226,201,126,0.055)_0%,transparent_32%,rgba(255,255,255,0.026)_100%)]" />
+        <div className="relative z-10 mx-auto max-w-[1240px]">
           <Reveal>
-            <div className="grid gap-10 lg:grid-cols-[1fr_1fr] lg:items-end">
-              <div>
+            <div className="max-w-[1120px]">
+              <div className="contents">
                 <SectionLabel>O que é o MAYUS</SectionLabel>
-                <h2 className="font-display mt-4 text-5xl font-semibold leading-[1.02] md:text-7xl">
+              <h2 className="font-display mt-4 max-w-[1060px] text-5xl font-semibold leading-[1.02] md:text-6xl xl:text-7xl">
                   Não é um software. É um <span className="text-[#E2C97E]">sistema operacional</span> para seu escritório.
                 </h2>
               </div>
-              <div className="space-y-4 text-sm leading-7 text-[#F5F0E8]/62">
+              <div className="mt-7 max-w-[820px] space-y-4 text-sm leading-7 text-[#F5F0E8]/72 md:text-base md:leading-8">
                 <p>
                   O MAYUS é o primeiro AI Operating System projetado para escritórios de advocacia brasileiros. Ele não substitui o advogado; elimina tudo que não deveria ser feito por um advogado.
                 </p>
@@ -629,29 +618,45 @@ export default function LandingPage() {
               </div>
             </div>
           </Reveal>
-          <Stagger className="mt-12 grid gap-5 md:grid-cols-3">
-            {pillars.map((pillar) => (
-              <StaggerItem key={pillar.n}>
-                <article className="h-full rounded-2xl border border-[#C4A35A]/20 bg-[#0A0A0A]/70 p-7">
-                  <p className="font-mono text-[10px] uppercase tracking-[0.24em] text-[#C4A35A]/70">{pillar.n}</p>
-                  <h3 className="font-display mt-4 text-3xl font-semibold text-[#F5F0E8]">{pillar.title}</h3>
-                  <p className="mt-4 text-sm leading-7 text-[#F5F0E8]/58">{pillar.text}</p>
-                </article>
-              </StaggerItem>
-            ))}
+          <Stagger className="mt-12 grid gap-8 md:grid-cols-3">
+            {pillars.map((pillar) => {
+              const cardGold = "#8B6E35";
+
+              return (
+                <StaggerItem key={pillar.n}>
+                  <article className="gradient-skew-card group relative mx-auto h-[380px] w-full max-w-[340px] transition-all duration-500 md:h-[390px]">
+                    <span
+                      className="absolute left-[50px] top-0 h-full w-1/2 skew-x-[15deg] rounded-lg opacity-85 transition-all duration-500 group-hover:left-[20px] group-hover:w-[calc(100%-90px)] group-hover:skew-x-0"
+                      style={{ background: cardGold }}
+                    />
+                    <span className="pointer-events-none absolute inset-0 z-10">
+                      <span className="animate-blob absolute left-0 top-0 h-0 w-0 rounded-lg bg-[#8B6E35]/35 opacity-0 transition-all duration-100 group-hover:left-[50px] group-hover:top-[-42px] group-hover:h-[86px] group-hover:w-[86px] group-hover:opacity-100" />
+                      <span className="animate-blob animation-delay-1000 absolute bottom-0 right-0 h-0 w-0 rounded-lg bg-[#8B6E35]/35 opacity-0 transition-all duration-500 group-hover:bottom-[-42px] group-hover:right-[50px] group-hover:h-[86px] group-hover:w-[86px] group-hover:opacity-100" />
+                    </span>
+                    <div className="relative left-0 z-20 flex h-[300px] flex-col justify-center rounded-lg border border-[#8B6E35]/45 bg-black/42 p-7 text-white transition-all duration-500 group-hover:left-[-18px] group-hover:border-[#8B6E35]/70 group-hover:bg-black/50 md:h-[320px] md:p-8">
+                      <p className="font-mono text-[10px] uppercase tracking-[0.24em] text-[#E2C97E]/80">{pillar.n}</p>
+                      <h3 className="font-display mt-4 text-3xl font-semibold leading-tight text-[#F5F0E8]">{pillar.title}</h3>
+                      <p className="mt-4 text-sm leading-7 text-[#F5F0E8]/68">{pillar.text}</p>
+                    </div>
+                  </article>
+                </StaggerItem>
+              );
+            })}
           </Stagger>
         </div>
       </section>
 
       <Divider />
 
-      <section className="lux-bg-modules relative z-10 px-6 py-28" id="arquitetura">
-        <div className="mx-auto max-w-[1240px]">
+      <section className="lux-bg-modules relative z-10 overflow-hidden px-6 py-28" id="arquitetura">
+        <SectionImageBackdrop src="/images/vision_sovereign.png" opacity={0.22} glow="center" />
+        <div className="pointer-events-none absolute inset-0 z-[1] bg-[radial-gradient(ellipse_70%_50%_at_50%_24%,rgba(226,201,126,0.08)_0%,transparent_66%),linear-gradient(90deg,rgba(0,0,0,0.76)_0%,rgba(0,0,0,0.34)_50%,rgba(0,0,0,0.84)_100%),linear-gradient(180deg,rgba(0,0,0,0.34)_0%,rgba(0,0,0,0.86)_100%)]" />
+        <div className="relative z-10 mx-auto max-w-[1240px]">
           <Reveal>
             <div className="mx-auto mb-16 max-w-3xl text-center">
               <SectionLabel>Módulos ativos</SectionLabel>
               <h2 className="font-display mt-4 text-5xl font-semibold leading-[1.02] md:text-7xl">
-                Cada modulo resolve um problema <span className="text-[#E2C97E]">real da rotina.</span>
+                Cada módulo resolve um problema <span className="text-[#E2C97E]">real da rotina.</span>
               </h2>
               <p className="mt-5 text-sm leading-7 text-[#F5F0E8]/60">
                 Não são features genéricas. São resultados desenhados a partir das maiores dores dos escritórios jurídicos brasileiros.
@@ -681,8 +686,9 @@ export default function LandingPage() {
         </div>
       </section>
 
-      <section className="lux-bg-architecture relative z-10 border-y border-[#C4A35A]/15 px-6 py-28">
-        <div className="mx-auto grid max-w-[1240px] gap-12 lg:grid-cols-[1fr_1.1fr] lg:items-center">
+      <section className="lux-bg-architecture relative z-10 overflow-hidden border-y border-[#C4A35A]/15 px-6 py-28">
+        <SectionImageBackdrop src="/landing/hero-bg.png" opacity={0.18} glow="left" />
+        <div className="relative z-10 mx-auto grid max-w-[1240px] gap-12 lg:grid-cols-[1fr_1.1fr] lg:items-center">
           <Reveal>
             <div>
               <SectionLabel>Arquitetura</SectionLabel>
@@ -715,8 +721,9 @@ export default function LandingPage() {
         </div>
       </section>
 
-      <section className="lux-bg-comparison relative z-10 px-6 py-28">
-        <div className="mx-auto max-w-[1240px]">
+      <section className="lux-bg-comparison relative z-10 overflow-hidden px-6 py-28">
+        <SectionImageBackdrop src="/images/hero_luxury.png" opacity={0.20} glow="right" />
+        <div className="relative z-10 mx-auto max-w-[1240px]">
           <Reveal>
             <div className="mx-auto mb-14 max-w-3xl text-center">
               <SectionLabel>Por que MAYUS</SectionLabel>
@@ -800,8 +807,9 @@ export default function LandingPage() {
         </div>
       </section>
 
-      <section id="circulo-fundador" className="lux-bg-pricing relative z-10 px-6 py-28">
-        <div className="mx-auto max-w-[1240px] text-center">
+      <section id="circulo-fundador" className="lux-bg-pricing relative z-10 overflow-hidden px-6 py-28">
+        <SectionImageBackdrop src="/landing/founder-badge.png" opacity={0.16} glow="center" />
+        <div className="relative z-10 mx-auto max-w-[1240px] text-center">
           <Reveal>
             <SectionLabel>A oferta</SectionLabel>
             <h2 className="font-display mt-4 text-5xl font-semibold leading-[1.02] md:text-7xl">
@@ -856,8 +864,9 @@ export default function LandingPage() {
         </div>
       </section>
 
-      <section className="lux-bg-faq relative z-10 border-y border-[#C4A35A]/18 px-6 py-24">
-        <div className="mx-auto grid max-w-[1180px] gap-12 lg:grid-cols-[1fr_1.5fr]">
+      <section className="lux-bg-faq relative z-10 overflow-hidden border-y border-[#C4A35A]/18 px-6 py-24">
+        <SectionImageBackdrop src="/images/mayus_core_motion.png" opacity={0.16} glow="left" />
+        <div className="relative z-10 mx-auto grid max-w-[1180px] gap-12 lg:grid-cols-[1fr_1.5fr]">
           <Reveal>
             <div>
               <SectionLabel>Dúvidas</SectionLabel>
@@ -888,9 +897,10 @@ export default function LandingPage() {
         </div>
       </section>
 
-      <section id="cta" className="relative z-10 bg-[radial-gradient(ellipse_60%_45%_at_50%_45%,rgba(196,163,90,0.1)_0%,transparent_70%),linear-gradient(180deg,#080706_0%,#050505_100%)] px-6 py-28 text-center">
+      <section id="cta" className="relative z-10 overflow-hidden bg-[radial-gradient(ellipse_60%_45%_at_50%_45%,rgba(196,163,90,0.1)_0%,transparent_70%),linear-gradient(180deg,#080706_0%,#050505_100%)] px-6 py-28 text-center">
+        <SectionImageBackdrop src="/landing/hero-bg.png" opacity={0.16} glow="center" />
         <Reveal>
-          <SectionLabel>Decisao</SectionLabel>
+          <SectionLabel>Decisão</SectionLabel>
           <h2 className="font-display mt-4 text-6xl font-semibold leading-[1.04] md:text-8xl">
             Seu escritório vai operar com <span className="text-[#E2C97E]">soberania digital.</span>
           </h2>
@@ -953,6 +963,20 @@ export default function LandingPage() {
           0%, 100% { transform: translate3d(0,0,0); opacity: 0.34; }
           50% { transform: translate3d(0,-10px,0); opacity: 0.85; }
         }
+        @keyframes videoPulse {
+          0%, 100% { transform: translate(-50%, -50%) scale(1); }
+          50% { transform: translate(-50%, -50%) scale(1.05); }
+        }
+        @keyframes blob {
+          0%, 100% { transform: translateY(10px); }
+          50% { transform: translateX(-10px); }
+        }
+        .animate-blob {
+          animation: blob 2s ease-in-out infinite;
+        }
+        .animation-delay-1000 {
+          animation-delay: -1s;
+        }
         .post-cinematic-luxury {
           background:
             radial-gradient(900px 520px at var(--lux-x, 50%) var(--lux-y, 42%), rgba(226,201,126,0.105), transparent 62%),
@@ -971,20 +995,6 @@ export default function LandingPage() {
           background-size: 96px 96px;
           mask-image: linear-gradient(to bottom, transparent, black 8%, black 92%, transparent);
         }
-        .lux-cursor-glow {
-          pointer-events: none;
-          position: fixed;
-          left: var(--lux-x, 50%);
-          top: var(--lux-y, 42%);
-          z-index: 1;
-          width: 34rem;
-          height: 34rem;
-          border-radius: 999px;
-          transform: translate(-50%, -50%);
-          background: radial-gradient(circle, rgba(226,201,126,0.09), rgba(196,163,90,0.035) 38%, transparent 70%);
-          filter: blur(18px);
-          mix-blend-mode: screen;
-        }
         .post-cinematic-luxury section {
           isolation: isolate;
         }
@@ -997,7 +1007,6 @@ export default function LandingPage() {
           top: 0;
           height: 1px;
           background: linear-gradient(90deg, transparent, rgba(226,201,126,0.38), transparent);
-          animation: lux-border 7s ease-in-out infinite;
         }
         .post-cinematic-luxury section::before {
           content: "";
@@ -1006,19 +1015,18 @@ export default function LandingPage() {
           inset: 0;
           z-index: -1;
           background: linear-gradient(180deg, transparent 0%, rgba(226,201,126,0.035) 48%, transparent 52%);
-          animation: lux-scan 8s ease-in-out infinite;
           opacity: 0.28;
         }
-        .post-cinematic-luxury article,
-        .post-cinematic-luxury blockquote,
+        .post-cinematic-luxury article:not(.gradient-skew-card):not(.agentic-static-card),
+        .post-cinematic-luxury blockquote:not(.manifest-quote),
         .post-cinematic-luxury .lux-plan-card {
           position: relative;
           overflow: hidden;
           backdrop-filter: blur(18px);
           transform: translateZ(0);
         }
-        .post-cinematic-luxury article::before,
-        .post-cinematic-luxury blockquote::before,
+        .post-cinematic-luxury article:not(.gradient-skew-card):not(.agentic-static-card)::before,
+        .post-cinematic-luxury blockquote:not(.manifest-quote)::before,
         .lux-prime-card::before {
           content: "";
           pointer-events: none;
@@ -1030,8 +1038,8 @@ export default function LandingPage() {
             linear-gradient(120deg, transparent 18%, rgba(255,255,255,0.08), transparent 42%);
           transition: opacity 500ms ease;
         }
-        .post-cinematic-luxury article:hover::before,
-        .post-cinematic-luxury blockquote:hover::before,
+        .post-cinematic-luxury article:not(.gradient-skew-card):not(.agentic-static-card):hover::before,
+        .post-cinematic-luxury blockquote:not(.manifest-quote):hover::before,
         .lux-prime-card:hover::before {
           opacity: 1;
         }

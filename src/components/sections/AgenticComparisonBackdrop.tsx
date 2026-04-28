@@ -2,10 +2,14 @@
 
 import { useCallback, useEffect, useRef } from "react";
 
-const AGENTIC_FRAME_COUNT = 120;
+const AGENTIC_SOURCE_FRAME_COUNT = 120;
+const AGENTIC_FRAME_COUNT = 48;
 
-const agenticFramePath = (n: number) =>
-  `/frames_agentic/frame_${String(n).padStart(4, "0")}.jpg`;
+const agenticFramePath = (index: number) => {
+  const sourceFrame =
+    1 + Math.floor((index / Math.max(1, AGENTIC_FRAME_COUNT - 1)) * (AGENTIC_SOURCE_FRAME_COUNT - 1));
+  return `/frames_agentic/frame_${String(sourceFrame).padStart(4, "0")}.jpg`;
+};
 
 export function AgenticComparisonBackdrop() {
   const rootRef = useRef<HTMLDivElement | null>(null);
@@ -55,30 +59,50 @@ export function AgenticComparisonBackdrop() {
   }, [drawFrame]);
 
   useEffect(() => {
-    const imgs: HTMLImageElement[] = [];
     let cancelled = false;
+    let loaded = false;
 
-    for (let i = 1; i <= AGENTIC_FRAME_COUNT; i++) {
-      const img = new Image();
-      const index = i - 1;
-      img.onload = () => {
-        if (cancelled) return;
-        if (lastFrameRef.current < 0) {
-          lastFrameRef.current = 0;
-          drawFrame(0);
-          return;
-        }
-        if (lastFrameRef.current === index) {
-          drawFrame(index);
-        }
-      };
-      img.src = agenticFramePath(i);
-      imgs.push(img);
-    }
+    const loadFrames = () => {
+      if (loaded) return;
+      loaded = true;
+      const imgs: HTMLImageElement[] = [];
 
-    framesRef.current = imgs;
+      for (let i = 0; i < AGENTIC_FRAME_COUNT; i++) {
+        const img = new Image();
+        const index = i;
+        img.onload = () => {
+          if (cancelled) return;
+          if (lastFrameRef.current < 0) {
+            lastFrameRef.current = 0;
+            drawFrame(0);
+            return;
+          }
+          if (lastFrameRef.current === index) {
+            drawFrame(index);
+          }
+        };
+        img.src = agenticFramePath(index);
+        imgs.push(img);
+      }
+
+      framesRef.current = imgs;
+    };
+
+    const observer = new IntersectionObserver(
+      ([entry]) => {
+        if (entry?.isIntersecting) {
+          loadFrames();
+          observer.disconnect();
+        }
+      },
+      { rootMargin: "900px" },
+    );
+
+    if (rootRef.current) observer.observe(rootRef.current);
+
     return () => {
       cancelled = true;
+      observer.disconnect();
     };
   }, [drawFrame]);
 
