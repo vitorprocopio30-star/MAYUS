@@ -143,14 +143,87 @@ describe("support_case_status contract", () => {
 
     expect(contract.responseMode).toBe("answer");
     expect(contract.confidence).toBe("high");
+    expect(contract.progressSummary).toBe("O caso segue em contestacao com contexto juridico consolidado.");
     expect(contract.currentPhase).toBe("Contestacao");
     expect(contract.nextStep).toBe("Aguardar a documentacao complementar do cliente.");
     expect(contract.pendingItems).toEqual(["Comprovante de residencia"]);
+    expect(contract.grounding.factualSources).toEqual(expect.arrayContaining([
+      "resumo do Case Brain",
+      "fase do Case Brain",
+      "lacunas documentais registradas",
+    ]));
+    expect(contract.grounding.inferenceNotes).toEqual([]);
 
     const reply = buildSupportCaseStatusReply(contract);
     expect(reply).toContain("## Status do caso");
+    expect(reply).toContain("Andamento: O caso segue em contestacao");
     expect(reply).toContain("Fase atual: Contestacao");
     expect(reply).toContain("Pendencias: Comprovante de residencia");
+    expect(reply).toContain("Base confirmada:");
+    expect(reply).toContain("Inferencias: sem inferencias relevantes");
+  });
+
+  it("distingue inferencia de proximo passo quando so ha pendencia documental", () => {
+    const contract = buildSupportCaseStatusContract(makeSnapshot({
+      caseBrain: {
+        ...makeSnapshot().caseBrain,
+        firstActions: [],
+      },
+    }));
+
+    expect(contract.responseMode).toBe("answer");
+    expect(contract.nextStep).toContain("Confirmar e organizar a pendencia documental");
+    expect(contract.grounding.inferenceNotes).toContain("proximo passo inferido a partir da primeira pendencia documental");
+
+    const reply = buildSupportCaseStatusReply(contract);
+    expect(reply).toContain("Inferencias: proximo passo inferido");
+  });
+
+  it("usa andamento operacional na confianca quando nao ha resumo do brain", () => {
+    const contract = buildSupportCaseStatusContract(makeSnapshot({
+      caseBrain: {
+        ...makeSnapshot().caseBrain,
+        taskId: null,
+        summaryMaster: null,
+        currentPhase: null,
+        firstActions: [],
+        missingDocuments: [],
+      },
+      documentMemory: {
+        ...makeSnapshot().documentMemory,
+        summaryMaster: null,
+        currentPhase: null,
+        missingDocuments: [],
+        freshness: "missing",
+      },
+    }));
+
+    expect(contract.responseMode).toBe("answer");
+    expect(contract.confidence).toBe("high");
+    expect(contract.progressSummary).toBe("Caso com pedido de beneficio por incapacidade.");
+    expect(contract.currentPhase).toBe("Contestacao");
+    expect(contract.grounding.inferenceNotes).toContain("andamento resumido a partir da descricao operacional do processo");
+  });
+
+  it("identifica memoria documental desatualizada sem chamar de sincronizada", () => {
+    const contract = buildSupportCaseStatusContract(makeSnapshot({
+      caseBrain: {
+        ...makeSnapshot().caseBrain,
+        taskId: null,
+        summaryMaster: null,
+        currentPhase: null,
+        firstActions: [],
+        missingDocuments: [],
+      },
+      documentMemory: {
+        ...makeSnapshot().documentMemory,
+        freshness: "stale",
+      },
+    }));
+
+    expect(contract.grounding.factualSources).toContain("memoria documental desatualizada");
+    expect(contract.grounding.factualSources).toContain("fase de memoria documental desatualizada");
+    expect(contract.grounding.factualSources).not.toContain("memoria documental sincronizada");
   });
 
   it("escala para handoff humano quando o caso nao esta suficientemente aterrado", () => {
@@ -180,8 +253,14 @@ describe("support_case_status contract", () => {
     expect(contract.responseMode).toBe("handoff");
     expect(contract.confidence).toBe("low");
     expect(contract.handoffReason).toBe("insufficient_case_grounding");
+    expect(contract.grounding.missingSignals).toEqual(expect.arrayContaining([
+      "andamento consolidado",
+      "fase atual",
+      "proximo passo",
+    ]));
 
     const reply = buildSupportCaseStatusReply(contract);
     expect(reply).toContain("handoff humano recomendado");
+    expect(reply).toContain("Sinais faltantes:");
   });
 });

@@ -623,7 +623,7 @@ function buildPublishPremiumScenario() {
 
 function buildSupportStatusScenario() {
   return {
-    chatReply: `## Status do caso\n- Processo: ${PROCESS_NUMBER}\n- Cliente: ${CLIENT_NAME}\n- Status atual: O caso segue em contestação com contexto jurídico consolidado. Fase atual: Contestação.\n- Fase atual: Contestação\n- Proximo passo: Revisar a documentação complementar antes do próximo movimento relevante.\n- Pendencias: nenhuma pendencia critica registrada`,
+    chatReply: `## Status do caso\n- Processo: ${PROCESS_NUMBER}\n- Cliente: ${CLIENT_NAME}\n- Andamento: O caso segue em contestacao com contexto juridico consolidado.\n- Fase atual: Contestacao\n- Proximo passo: Revisar a documentacao complementar antes do proximo movimento relevante.\n- Pendencias: nenhuma pendencia critica registrada\n- Base confirmada: resumo do Case Brain; fase do Case Brain\n- Inferencias: sem inferencias relevantes`,
     kernel: {
       status: "executed",
       taskId: SUPPORT_STATUS_TASK_ID,
@@ -634,9 +634,13 @@ function buildSupportStatusScenario() {
         process_number: PROCESS_NUMBER,
         support_status_response_mode: "answer",
         support_status_confidence: "high",
-        support_status_current_phase: "Contestação",
-        support_status_next_step: "Revisar a documentação complementar antes do próximo movimento relevante.",
+        support_status_progress_summary: "O caso segue em contestacao com contexto juridico consolidado.",
+        support_status_current_phase: "Contestacao",
+        support_status_next_step: "Revisar a documentacao complementar antes do proximo movimento relevante.",
         support_status_pending_count: 0,
+        support_status_factual_source_count: 2,
+        support_status_inference_count: 0,
+        support_status_missing_signal_count: 1,
         support_status_handoff_reason: null,
       },
     },
@@ -658,9 +662,13 @@ function buildSupportStatusScenario() {
               client_name: CLIENT_NAME,
               support_status_response_mode: "answer",
               support_status_confidence: "high",
-              support_status_current_phase: "Contestação",
-              support_status_next_step: "Revisar a documentação complementar antes do próximo movimento relevante.",
+              support_status_progress_summary: "O caso segue em contestacao com contexto juridico consolidado.",
+              support_status_current_phase: "Contestacao",
+              support_status_next_step: "Revisar a documentacao complementar antes do proximo movimento relevante.",
               support_status_pending_items: [],
+              support_status_factual_sources: ["resumo do Case Brain", "fase do Case Brain"],
+              support_status_inference_notes: [],
+              support_status_missing_signals: ["pendencias documentais registradas"],
               support_status_handoff_reason: null,
             },
             created_at: "2026-04-20T22:40:00.000Z",
@@ -675,7 +683,11 @@ function buildSupportStatusScenario() {
               summary: `Status do caso ${PROCESS_NUMBER} preparado com confiança high.`,
               response_mode: "answer",
               confidence: "high",
-              current_phase: "Contestação",
+              progress_summary: "O caso segue em contestacao com contexto juridico consolidado.",
+              current_phase: "Contestacao",
+              factual_sources: ["resumo do Case Brain", "fase do Case Brain"],
+              inference_notes: [],
+              missing_signals: ["pendencias documentais registradas"],
             },
             created_at: "2026-04-20T22:40:01.000Z",
           },
@@ -1126,7 +1138,7 @@ async function mockMayusRoutes(page: Page) {
 
 async function openMayus(page: Page) {
   await mockMayusRoutes(page);
-  await loginThroughUi(page);
+  await loginThroughUi(page, { browserProfileMode: "ui-harness" });
   await page.goto("/dashboard/mayus", { waitUntil: "domcontentloaded" });
   await expect(page).toHaveURL(/\/dashboard\/mayus$/);
   await expect(page.getByTestId("mayus-chat-input")).toBeVisible({ timeout: 120_000 });
@@ -1171,7 +1183,9 @@ test.describe("MAYUS authenticated", () => {
     await page.getByTestId("mayus-send-button").click();
 
     await expect(page.getByText(/Status do caso/i).first()).toBeVisible();
-    await expect(page.getByText(/Status atual:/i).first()).toBeVisible();
+    await expect(page.getByText(/Andamento:/i).first()).toBeVisible();
+    await expect(page.getByText(/Base confirmada:/i).first()).toBeVisible();
+    await expect(page.getByText(/Inferencias:/i).first()).toBeVisible();
 
     const supportMission = page.getByTestId(`mayus-mission-card-${SUPPORT_STATUS_TASK_ID}`).first();
     const supportArtifact = page.getByTestId("mayus-artifact-support-status-artifact-1").first();
@@ -1183,7 +1197,8 @@ test.describe("MAYUS authenticated", () => {
     await expect(supportArtifact).toContainText(PROCESS_NUMBER);
     await expect(supportArtifact).toContainText(/modo answer/i);
     await expect(supportArtifact).toContainText(/confianca high/i);
-    await expect(supportArtifact).toContainText(/fase Contestação/i);
+    await expect(supportArtifact).toContainText(/fase Contestacao/i);
+    await expect(supportArtifact).toContainText(/1 sinais faltantes/i);
     await expect(supportEvent).toBeVisible();
     await expect(supportEvent).toContainText(/status do caso respondido/i);
   });

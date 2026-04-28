@@ -223,6 +223,7 @@ Cada processo deve ter um estado resumido com:
 - E preciso respeitar isolamento por tenant.
 - Documentos sensiveis exigem controle rigoroso de acesso.
 - O sistema deve deixar claro quando a resposta foi baseada em documento real e quando foi inferencia.
+- Para `support_case_status`, a resposta ao cliente deve explicitar essa fronteira na pratica: andamento, fase, proximo passo e pendencias podem ser respondidos a partir da base confirmada, enquanto inferencias operacionais precisam ser marcadas como inferencia e manter handoff humano quando a confianca for baixa. Evidencia 2026-04-27: validacao focada do pacote.
 
 ## Metricas de sucesso
 

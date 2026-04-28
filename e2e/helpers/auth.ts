@@ -5,6 +5,10 @@ import { expect, type Page } from "@playwright/test";
 
 let cachedEnvFile: Record<string, string> | null = null;
 
+type LoginThroughUiOptions = {
+  browserProfileMode?: "real" | "ui-harness";
+};
+
 function loadLocalEnvFile() {
   if (cachedEnvFile) return cachedEnvFile;
 
@@ -64,7 +68,48 @@ export function getPlaywrightCredentials() {
   };
 }
 
-export async function loginThroughUi(page: Page) {
+function buildProfileFromSessionUser(user: any) {
+  const metadata = {
+    ...(user?.user_metadata || {}),
+    ...(user?.app_metadata || {}),
+  };
+
+  return {
+    id: user.id,
+    tenant_id: metadata.tenant_id || metadata.tenantId || "playwright-tenant",
+    full_name: metadata.full_name || metadata.name || metadata.email || "Playwright E2E",
+    role: metadata.role || "admin",
+    is_active: true,
+    avatar_url: metadata.avatar_url || null,
+    custom_permissions: Array.isArray(metadata.custom_permissions) ? metadata.custom_permissions : [],
+    email_corporativo: metadata.email_corporativo || user.email || null,
+    oab_registro: metadata.oab_registro || null,
+    is_superadmin: Boolean(metadata.is_superadmin),
+  };
+}
+
+async function installUiHarnessBrowserProfile(page: Page, runtime: ReturnType<typeof getPlaywrightRuntimeConfig>, session: any) {
+  const supabaseOrigin = new URL(runtime.supabaseUrl).origin;
+  const profile = buildProfileFromSessionUser(session.user);
+
+  await page.route(`${supabaseOrigin}/auth/v1/user**`, async (route) => {
+    await route.fulfill({
+      status: 200,
+      contentType: "application/json",
+      body: JSON.stringify(session.user),
+    });
+  });
+
+  await page.route(`${supabaseOrigin}/rest/v1/profiles**`, async (route) => {
+    await route.fulfill({
+      status: 200,
+      contentType: "application/vnd.pgrst.object+json",
+      body: JSON.stringify(profile),
+    });
+  });
+}
+
+export async function loginThroughUi(page: Page, options: LoginThroughUiOptions = {}) {
   const credentials = getPlaywrightCredentials();
   const runtime = getPlaywrightRuntimeConfig();
 
@@ -91,6 +136,10 @@ export async function loginThroughUi(page: Page) {
 
   if (!data.session) {
     throw new Error("O bootstrap auth E2E nao retornou sessao valida.");
+  }
+
+  if (options.browserProfileMode === "ui-harness") {
+    await installUiHarnessBrowserProfile(page, runtime, data.session);
   }
 
   const projectRef = new URL(runtime.supabaseUrl).hostname.split(".")[0];

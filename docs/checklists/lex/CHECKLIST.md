@@ -53,6 +53,8 @@ Evidencia 2026-04-24: playbook `lex.escavador.audiencia_designada` cria `lex_pro
 
 - [x] `support_case_status` existe como skill.
 - [x] Contrato minimo de resposta curta e handoff existe em teste.
+- [x] Resposta de status cobre andamento, fase, proximo passo e pendencias.
+Evidencia 2026-04-27: validacao focada confirmou separacao entre base confirmada e inferencias operacionais antes da resposta ao cliente.
 - [ ] Conectar resposta segura em WhatsApp.
 - [ ] Registrar artifact de atendimento de status.
 - [ ] Criar politicas de linguagem para cliente: claro, curto, sem prometer resultado.

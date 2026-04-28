@@ -125,6 +125,12 @@ export type SupportCaseStatusConfidence = "high" | "medium" | "low";
 
 export type SupportCaseStatusHandoffReason = "case_not_identified" | "ambiguous_case_match" | "insufficient_case_grounding";
 
+export type SupportCaseStatusGrounding = {
+  factualSources: string[];
+  inferenceNotes: string[];
+  missingSignals: string[];
+};
+
 export type SupportCaseStatusContract = {
   responseMode: SupportCaseStatusResponseMode;
   confidence: SupportCaseStatusConfidence;
@@ -132,10 +138,12 @@ export type SupportCaseStatusContract = {
   processLabel: string;
   clientLabel: string | null;
   statusHeadline: string;
+  progressSummary: string | null;
   currentPhase: string | null;
   nextStep: string | null;
   pendingItems: string[];
   summary: string | null;
+  grounding: SupportCaseStatusGrounding;
   handoffReason: SupportCaseStatusHandoffReason | null;
 };
 
@@ -514,6 +522,13 @@ function resolveSupportCasePhase(snapshot: LegalCaseContextSnapshot) {
     || null;
 }
 
+function resolveSupportCaseProgressSummary(snapshot: LegalCaseContextSnapshot) {
+  return snapshot.caseBrain.summaryMaster
+    || snapshot.documentMemory.summaryMaster
+    || snapshot.processTask.description
+    || null;
+}
+
 function resolveSupportCaseSummary(snapshot: LegalCaseContextSnapshot) {
   return snapshot.caseBrain.summaryMaster
     || snapshot.documentMemory.summaryMaster
@@ -539,6 +554,50 @@ function resolveSupportCaseNextStep(snapshot: LegalCaseContextSnapshot, pendingI
   return null;
 }
 
+function resolveSupportCaseGrounding(params: {
+  snapshot: LegalCaseContextSnapshot;
+  progressSummary: string | null;
+  currentPhase: string | null;
+  nextStep: string | null;
+  pendingItems: string[];
+}) {
+  const { snapshot, progressSummary, currentPhase, nextStep, pendingItems } = params;
+  const factualSources = uniqueStrings([
+    snapshot.caseBrain.taskId && snapshot.caseBrain.summaryMaster ? "resumo do Case Brain" : null,
+    snapshot.caseBrain.taskId && snapshot.caseBrain.currentPhase ? "fase do Case Brain" : null,
+    snapshot.documentMemory.freshness === "fresh" && snapshot.documentMemory.summaryMaster ? "memoria documental sincronizada" : null,
+    snapshot.documentMemory.freshness === "stale" && snapshot.documentMemory.summaryMaster ? "memoria documental desatualizada" : null,
+    snapshot.documentMemory.freshness === "fresh" && snapshot.documentMemory.currentPhase ? "fase da memoria documental" : null,
+    snapshot.documentMemory.freshness === "stale" && snapshot.documentMemory.currentPhase ? "fase de memoria documental desatualizada" : null,
+    snapshot.processTask.stageName ? "etapa operacional do processo" : null,
+    snapshot.caseBrain.firstActions.length > 0 ? "acoes iniciais do Case Brain" : null,
+    pendingItems.length > 0 ? "lacunas documentais registradas" : null,
+  ]);
+
+  const inferenceNotes = uniqueStrings([
+    !snapshot.caseBrain.firstActions[0] && pendingItems.length > 0 && nextStep
+      ? "proximo passo inferido a partir da primeira pendencia documental"
+      : null,
+    !snapshot.caseBrain.summaryMaster && !snapshot.documentMemory.summaryMaster && snapshot.processTask.description && progressSummary
+      ? "andamento resumido a partir da descricao operacional do processo"
+      : null,
+  ]);
+
+  const missingSignals = uniqueStrings([
+    !progressSummary ? "andamento consolidado" : null,
+    !currentPhase ? "fase atual" : null,
+    !nextStep ? "proximo passo" : null,
+    pendingItems.length === 0 ? "pendencias documentais registradas" : null,
+    snapshot.documentMemory.freshness === "missing" ? "memoria documental sincronizada" : null,
+  ]);
+
+  return {
+    factualSources,
+    inferenceNotes,
+    missingSignals,
+  };
+}
+
 function resolveSupportCaseStatusHeadline(params: {
   currentPhase: string | null;
   summary: string | null;
@@ -561,17 +620,25 @@ function resolveSupportCaseStatusHeadline(params: {
 export function buildSupportCaseStatusContract(snapshot: LegalCaseContextSnapshot): SupportCaseStatusContract {
   const processLabel = snapshot.processTask.processNumber || snapshot.processTask.title;
   const currentPhase = resolveSupportCasePhase(snapshot);
+  const progressSummary = resolveSupportCaseProgressSummary(snapshot);
   const summary = resolveSupportCaseSummary(snapshot);
   const pendingItems = resolveSupportCasePendingItems(snapshot);
   const nextStep = resolveSupportCaseNextStep(snapshot, pendingItems);
+  const grounding = resolveSupportCaseGrounding({
+    snapshot,
+    progressSummary,
+    currentPhase,
+    nextStep,
+    pendingItems,
+  });
   const hasCaseGrounding = Boolean(snapshot.caseBrain.taskId)
     || snapshot.documentMemory.freshness !== "missing"
     || Boolean(snapshot.processTask.stageName);
-  const signalCount = [summary, currentPhase, nextStep, pendingItems.length > 0 ? "pending" : null]
+  const signalCount = [progressSummary, currentPhase, nextStep, pendingItems.length > 0 ? "pending" : null]
     .filter(Boolean)
     .length;
 
-  const confidence = hasCaseGrounding && currentPhase && (summary || nextStep)
+  const confidence = hasCaseGrounding && currentPhase && (progressSummary || nextStep)
     ? "high"
     : hasCaseGrounding && signalCount >= 2
       ? "medium"
@@ -584,11 +651,13 @@ export function buildSupportCaseStatusContract(snapshot: LegalCaseContextSnapsho
     processTaskId: snapshot.processTask.id,
     processLabel,
     clientLabel: snapshot.processTask.clientName || null,
-    statusHeadline: resolveSupportCaseStatusHeadline({ currentPhase, summary }),
+    statusHeadline: resolveSupportCaseStatusHeadline({ currentPhase, summary: progressSummary }),
+    progressSummary,
     currentPhase,
     nextStep,
     pendingItems,
     summary,
+    grounding,
     handoffReason: responseMode === "handoff" ? "insufficient_case_grounding" : null,
   };
 }
@@ -600,6 +669,12 @@ export function buildSupportCaseStatusReply(contract: SupportCaseStatusContract)
       `- Processo: ${contract.processLabel}`,
       contract.clientLabel ? `- Cliente: ${contract.clientLabel}` : null,
       "- Nao encontrei base segura suficiente para responder este status automaticamente.",
+      contract.grounding.factualSources.length > 0
+        ? `- Base confirmada: ${contract.grounding.factualSources.join("; ")}`
+        : null,
+      contract.grounding.missingSignals.length > 0
+        ? `- Sinais faltantes: ${contract.grounding.missingSignals.join("; ")}`
+        : null,
       "- Encaminhamento: handoff humano recomendado antes de atualizar o cliente.",
       contract.handoffReason === "insufficient_case_grounding"
         ? "- Motivo: o contexto atual do caso ainda esta incompleto para uma resposta curta e segura."
@@ -611,12 +686,18 @@ export function buildSupportCaseStatusReply(contract: SupportCaseStatusContract)
     "## Status do caso",
     `- Processo: ${contract.processLabel}`,
     contract.clientLabel ? `- Cliente: ${contract.clientLabel}` : null,
-    `- Status atual: ${contract.statusHeadline}`,
+    `- Andamento: ${contract.progressSummary || contract.statusHeadline}`,
     contract.currentPhase ? `- Fase atual: ${contract.currentPhase}` : null,
     contract.nextStep ? `- Proximo passo: ${contract.nextStep}` : null,
     contract.pendingItems.length > 0
       ? `- Pendencias: ${contract.pendingItems.join("; ")}`
       : "- Pendencias: nenhuma pendencia critica registrada",
+    contract.grounding.factualSources.length > 0
+      ? `- Base confirmada: ${contract.grounding.factualSources.join("; ")}`
+      : null,
+    contract.grounding.inferenceNotes.length > 0
+      ? `- Inferencias: ${contract.grounding.inferenceNotes.join("; ")}`
+      : "- Inferencias: sem inferencias relevantes",
   ].filter(Boolean).join("\n");
 }
 

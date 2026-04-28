@@ -189,14 +189,27 @@ Decisao tecnica recomendada:
 
 ### 5.1 Growth MVP
 
-- [ ] `lead_capture`.
-- [ ] `lead_qualify`.
-- [ ] `lead_followup`.
-- [ ] Agendamento.
+- [x] `lead_capture`.
+Evidencia 2026-04-27: skill formal `lead_intake` registra lead/indicacao pelo chat, cria card CRM e artifact operacional sem enviar nada externo.
+- [x] `lead_qualify`.
+Evidencia 2026-04-27: skill `lead_qualify` monta roteiro por area, documentos minimos, objecoes provaveis, alertas e proximo melhor movimento como artifact `lead_qualification_plan`.
+- [x] `sales_consultation`.
+Evidencia 2026-04-28: skill `sales_consultation` aplica atendimento consultivo DEF com artifact `sales_consultation_plan`, descoberta antes da proposta, sinais capturados/faltantes no bate-papo, proxima pergunta adaptativa, cliente ideal do escritorio, solucao central, PUV sugerida quando ausente, pilares autorais, encantamento personalizado, movimentos de objecao, fechamento racional, scorecard de qualidade e side effects externos bloqueados.
+- [x] `sales_profile_setup`.
+Evidencia 2026-04-28: skill `sales_profile_setup` auto-configura a base comercial do escritorio por chat, extrai cliente ideal, solucao central, PUV, pilares e anti-cliente, cria artifact `sales_profile_setup`, registra learning event e grava o perfil em `tenant_settings.ai_features.sales_consultation_profile` para a `sales_consultation` usar sem exigir configuracao manual.
+- [x] WhatsApp consultivo supervisionado.
+Evidencia 2026-04-28: `/api/whatsapp/ai-sales-reply` e `whatsapp-sales-reply` geram resposta DEF para conversa real de WhatsApp com base no historico e no perfil comercial salvo; `/dashboard/conversas/whatsapp` ganhou botao MAYUS que coloca a resposta no composer sem envio automatico, com revisao humana para preco, contrato, urgencia ou promessa de resultado.
+Evidencia 2026-04-28: `prepareWhatsAppSalesReplyForContact` foi plugado nos webhooks Meta Cloud e Evolution para preparar rascunho/auditoria/notificacao em background quando chega mensagem inbound, mantendo `may_auto_send=false`.
+Evidencia 2026-04-28: `GET /api/whatsapp/ai-sales-reply` e o painel "Rascunho MAYUS" em `/dashboard/conversas/whatsapp` tornam o auto-rascunho visivel no atendimento e permitem usar/atualizar o texto sem envio automatico.
+- [x] `lead_followup`.
+Evidencia 2026-04-27: skill `lead_followup` monta cadencia supervisionada, mensagem inicial, checklist humano e condicoes de pausa como artifact `lead_followup_plan`, sem envio externo automatico.
+- [x] Agendamento.
+Evidencia 2026-04-27: skill `lead_schedule` cria agendamento interno em `user_tasks`, artifact `lead_schedule_plan`, checklist de preparo e confirmacao humana obrigatoria, sem calendario externo automatico.
 - [x] Proposta.
 - [x] Contrato.
 - [x] Cobranca inicial.
-- [ ] Reativacao de leads frios.
+- [x] Reativacao de leads frios.
+Evidencia 2026-04-28: skill `lead_reactivation` gera artifact `lead_reactivation_plan` com lista operacional, criterios, mensagens, checklist humano e side effects externos bloqueados.
 
 ### 5.2 Revenue Loop
 
@@ -361,12 +374,12 @@ fechar a camada agentica de suporte para clientes que perguntam como esta o caso
 
 ### 8.3 Resposta de Status
 
-- [ ] Resumir andamento.
-- [ ] Resumir fase.
-- [ ] Resumir proximo passo.
-- [ ] Resumir pendencias.
-- [ ] Distinguir dado real de inferencia.
-- [ ] Gerar handoff humano quando confianca for baixa.
+- [x] Resumir andamento.
+- [x] Resumir fase.
+- [x] Resumir proximo passo.
+- [x] Resumir pendencias.
+- [x] Distinguir dado real de inferencia.
+- [x] Gerar handoff humano quando confianca for baixa.
 
 ### 8.4 Auditabilidade
 
@@ -388,35 +401,94 @@ fechar a camada agentica de suporte para clientes que perguntam como esta o caso
 - [x] Unit tests de resposta.
 - [x] Dispatcher tests de artifact/event de `support_case_status`.
 - [x] E2E observavel no MAYUS para resposta normal e handoff ambiguo.
-- [ ] `npm test`.
-- [ ] `npm run build`.
-- [ ] `npm run test:e2e`.
+- [x] Validacao focada 2026-04-27: contrato/reply, dispatcher/router, typecheck e E2E filtrado "status do caso".
+- [x] `npm test`.
+- [x] `npm run build`.
+- [~] `npm run test:e2e`: suite completa global ainda nao reexecutada; E2Es filtrados de MAYUS passaram e `e2e/documentos-authenticated.spec.ts` passou completo com 9/9 apos estabilizacao do harness.
 
 ---
 
 ## 9. Pacotes Futuros
 
+### 9.0 Auto Setup Doctor
+
+- [x] Diagnosticar tenant autenticado.
+- [x] Criar pipeline/etapas CRM padrao quando seguro.
+- [x] Semear skills padrao quando seguro.
+- [x] Detectar integracoes pendentes sem inventar credenciais.
+- [x] Bloquear Google Drive quando OAuth local estiver ausente/malformado.
+- [x] Registrar evento operacional do doctor.
+- [x] Expor painel do estado de setup em Configuracoes.
+- [x] Criar UI de execucao do doctor em Configuracoes.
+- [x] Criar artifact agentico do estado de setup no MAYUS.
+Evidencia 2026-04-27: `POST /api/setup/doctor` registra missao `setup/settings`, run, step, artifact `tenant_setup_doctor_report` e learning event `tenant_setup_doctor_report_created` quando ha correcao/bloqueio relevante; payload sanitizado sem chaves; Configuracoes aponta para o artifact no MAYUS e o dashboard reconhece labels/highlights do doctor.
+
 ### 9.1 Referral Intake
 
-- [ ] Diferenciar indicacao de suporte.
-- [ ] Criar entrada correta no CRM.
-- [ ] Coletar dados minimos do indicado.
-- [ ] Encaminhar para SDR/closer.
-- [ ] Registrar origem e relacionamento.
-- [ ] Criar artifact/event.
+- [x] Diferenciar indicacao de suporte.
+- [x] Criar entrada correta no CRM.
+- [x] Coletar dados minimos do indicado.
+- [x] Encaminhar para SDR/closer.
+- [x] Registrar origem e relacionamento.
+- [x] Criar artifact/event.
+Evidencia 2026-04-27: `POST /api/growth/lead-intake` registra artifact `referral_intake`, mission/run/step e learning event `referral_intake_artifact_created` para indicacoes; metadata evita telefone/e-mail bruto e expõe score, origem, indicador, proximo passo e handoff humano no MAYUS.
+- [x] Expor `referral_intake` pelo chat como skill formal.
+Evidencia 2026-04-27: registry `lead_intake`, router e dispatcher `growth_lead_intake` permitem registrar indicacoes pelo MAYUS/chat; a execução cria CRM task, artifact da missão e learning event.
 
 ### 9.2 Growth Frontdoor
 
-- [ ] Intake comercial completo.
-- [ ] Qualificacao.
-- [ ] Follow-up.
-- [ ] Agendamento.
+- [x] Intake comercial completo.
+Evidencia 2026-04-27: `lead_intake` opera pelo chat e pela rota Growth, cria CRM task e artifact `lead_intake`/`referral_intake`.
+- [x] Qualificacao.
+Evidencia 2026-04-27: `lead_qualify` cria plano de qualificacao como artifact `lead_qualification_plan` sem envio externo.
+- [x] Follow-up.
+Evidencia 2026-04-27: `lead_followup` cria plano de follow-up supervisionado como artifact `lead_followup_plan`, com learning event e aprovacao humana obrigatoria antes de contato externo.
+- [x] Agendamento.
+Evidencia 2026-04-27: `lead_schedule` cria tarefa de agenda interna e artifact `lead_schedule_plan` para consulta/qualificacao/retorno, sem Google OAuth ou convite externo automatico.
 - [ ] Proposta.
 - [ ] Contrato.
 - [ ] Cobranca.
 - [ ] Abertura de caso.
 
-### 9.3 Voice Brain Execution
+### 9.3 MAYUS Growth OS / Socio Operacional
+
+- [ ] Posicionar MAYUS como socio operacional de IA para escritorios de advocacia.
+- [ ] Registrar copy central: para o advogado iniciante, estrutura; para o escritorio grande, controle.
+- [x] Adicionar Google Agenda opcional por usuario.
+Evidencia 2026-04-28: `src/lib/services/google-calendar.ts` adiciona OAuth read-only por usuario com provider `google_calendar_user:{userId}`; rotas `/api/integrations/google-calendar`, `/connect` e `/callback` conectam, listam eventos diarios e desconectam; Agenda Diaria mostra botao/status e eventos externos sem gamificacao/edicao.
+- [x] Adicionar Google Agenda global opcional do escritorio.
+Evidencia 2026-04-28: rotas `/api/integrations/google-calendar-global`, `/connect` e `/callback` usam provider `google_calendar_global`, exigem `requireFullAccess`, conectam/desconectam a conta global e listam eventos diarios na Agenda Global.
+- [x] Importar eventos externos para a agenda diaria/global do MAYUS sem substituir a agenda interna.
+Evidencia 2026-04-28: Agenda Diaria e Agenda Global renderizam eventos externos do Google Calendar como itens read-only, sem edicao, sem baixa e sem recompensas, preservando `user_tasks` como agenda interna.
+- [x] Criar upload e analise de calls comerciais no CRM.
+Evidencia 2026-04-28: MVP textual em `POST /api/growth/call-analysis` analisa transcript/notes de call sem Meet/Zoom e sem side effects externos.
+- [x] Gerar relatorio da call com resumo, dor principal, interesse, objecoes, pontos fortes/fracos, oportunidades perdidas, proximo passo, follow-up e probabilidade de avanco.
+Evidencia 2026-04-28: `buildCallCommercialAnalysis` retorna summary, pain, interestLevel, objections, strengths, weaknesses, missedOpportunities, recommendedNextStep, suggestedFollowUp, advancementProbability e crmUpdateHints.
+- [~] Salvar a analise da call no historico do lead/oportunidade.
+Evidencia parcial 2026-04-28: `POST /api/growth/call-analysis` exige auth por `getTenantSession`, recebe `crmTaskId` pelo CRM visual, registra evento seguro em `system_event_logs` e cria artifact agentico `call_commercial_analysis` quando possivel, sem transcript bruto no payload persistido; exibicao visual do historico no lead ainda pendente.
+- [x] Criar marketing por referencias sem copiar conteudo.
+Evidencia 2026-04-28: `extractReferencePatterns` e `generateContentIdeas` usam apenas metadados/metricas fornecidos e incluem guardrails para nao copiar titulos, paragrafos, exemplos proprietarios ou framing distintivo.
+- [ ] Permitir cadastrar perfis, redes, canais, sites, blogs e concorrentes/referencias admiradas.
+- [x] Extrair padroes de engajamento, temas, formatos, ganchos, CTAs, frequencia e tom de comunicacao.
+Evidencia 2026-04-28: `/dashboard/marketing/referencias` coleta referencias em estado local e renderiza padroes calculados por `extractReferencePatterns`.
+- [x] Criar calendario editorial editavel.
+Evidencia 2026-04-28: `generateEditorialCalendar` cria itens editaveis e `updateEditorialCalendarItem` aplica edicoes supervisionadas sem mutar a lista original.
+- [x] Permitir configurar frequencia, estilo, formato, canal, area juridica, objetivo, tom e publico-alvo.
+Evidencia 2026-04-28: `/dashboard/marketing/calendario` gera calendario local com frequencia, estilo, canais, areas, objetivos, tons, publicos, data inicial e periodos.
+- [x] Permitir editar, aprovar ou recusar conteudos sugeridos.
+Evidencia 2026-04-28: calendario local permite edicao, aprovacao, recusa e retorno para rascunho de itens, persistindo o estado em `localStorage`; persistencia server-side fica para etapa futura.
+- [x] Conectar conteudos aprovados com agenda/tarefas quando fizer sentido.
+Evidencia 2026-04-28: `/dashboard/marketing/calendario` cria tarefa interna supervisionada em `user_tasks` para item aprovado, com payload derivado por `buildMarketingAgendaTaskDraft`, tags de marketing e sem publicar ou sincronizar externamente.
+- [~] Criar analise de Meta Ads por upload de CSV, XLSX ou PDF.
+Evidencia parcial 2026-04-28: MVP local aceita CSV colado/exportado e upload client-side `.csv` em `/dashboard/marketing/meta-ads`; XLSX/PDF seguem pendentes.
+- [x] Diagnosticar campanhas vencedoras, verba desperdicada, CPL, CTR, CPC, CPM, criativos, publicos e temas.
+Evidencia 2026-04-28: `analyzeMetaAdsCsv` normaliza metricas e retorna winners, wastedSpend, creativeThemes, audienceThemes, findings e totals.
+- [x] Recomendar realocacao de verba e novos criativos sob revisao humana.
+Evidencia 2026-04-28: `meta-ads-analysis` gera `budgetRecommendations` deterministicas para scale, pause, test e monitor, sem Meta API ou alteracao automatica de campanha.
+- [ ] Amarrar ciclo completo: marketing -> lead -> CRM -> call -> follow-up -> contrato -> cobranca -> juridico -> prazos -> metricas.
+- [ ] Manter Meta Ads API, Google Meet automatico, Drive automatico de gravacoes, publicacao automatica e monitoramento amplo como integracoes futuras fora do escopo inicial.
+
+### 9.4 Voice Brain Execution
 
 - [ ] Contrato entre ElevenLabs shell e brain principal.
 - [ ] Resposta curta pronta para TTS.
@@ -498,6 +570,23 @@ Ultima validacao consolidada conhecida:
 - [x] 2026-04-26: smoke autenticado real de integracoes passou para `GET /api/integrations`, `POST /api/integrations` controlado com cleanup, OpenRouter via Vault e TTS OpenAI; Google Drive conectado foi lido e limpeza de root passou, mas salvar/restaurar via API falhou por OAuth client local invalido.
 - [x] 2026-04-26: smoke seguro de webhook Asaas passou com payload sintetico `PAYMENT_OVERDUE`, resposta 200 e auditoria `system_event_logs` confirmada; diagnostico Google OAuth confirmou refresh `401 invalid_client` / `The OAuth client was not found`.
 - [x] 2026-04-26: Google Drive agora valida formato do OAuth client ID em `isGoogleDriveConfigured`; o `.env.local` atual tem client ID presente, mas malformado, entao a integracao fica explicitamente nao configurada ate trocar credenciais.
+- [x] 2026-04-27: `support_case_status` passou a responder andamento, fase, proximo passo, pendencias, base confirmada e inferencias; metadata/event/outputPayload carregam fontes reais, inferencias e sinais faltantes. Validacoes passaram: testes focados, `npm.cmd test` completo, `npm.cmd run build`, `npx.cmd tsc --noEmit --pretty false`, validacao read-only contra Supabase real sem escrita, E2E filtrado de status do caso e `e2e/documentos-authenticated.spec.ts` completo com 9/9. O E2E MAYUS usa `browserProfileMode: "ui-harness"` explicito para nao depender do profile Supabase no browser enquanto Documentos preserva auth/profile real; o webServer do Playwright usa mock oficial de Google Fonts para nao depender de rede externa.
+- [x] 2026-04-27: `referral_intake` iniciou sobre a base de Growth: `lead-intake` agora classifica indicacao como tipo proprio, preserva indicador/relacionamento, registra tags/origem no payload CRM, cria evento auditavel `referral_intake_created` em `system_event_logs` e mantem pedidos de status roteados como suporte. Validacao focada: `npm.cmd test -- --run src/lib/growth/lead-intake.test.ts` passou com 8 testes; typecheck e diff-check passaram.
+- [x] 2026-04-27: primeiro nucleo de auto-configuracao criado em `runTenantDoctor`: `GET /api/setup/doctor` diagnostica e `POST /api/setup/doctor` aplica defaults seguros para CRM e skills; integracoes sem credencial ficam bloqueadas com proxima acao humana. Validacao focada: `npm.cmd test -- --run src/lib/setup/tenant-doctor.test.ts src/lib/growth/lead-intake.test.ts` passou com 11 testes; typecheck passou.
+- [x] 2026-04-27: Auto Setup Doctor virou artifact agentico: `tenant_setup_doctor_report` cria mission/run/step/artifact/event, Configuracoes exibe link para o MAYUS quando a trilha foi registrada, e o dashboard MAYUS mostra label/highlights de corrigidos, bloqueios, avisos e acao humana. Validacoes passaram: `npm.cmd test -- --run src/lib/setup/tenant-doctor.test.ts src/lib/growth/lead-intake.test.ts` com 13 testes, `npx.cmd tsc --noEmit --pretty false` e `git diff --check`.
+- [x] 2026-04-27: `referral_intake` ganhou artifact agentico proprio: indicacoes criam mission/run/step, artifact `referral_intake`, learning event `referral_intake_artifact_created` e highlights no MAYUS sem expor telefone/e-mail bruto. Validacoes passaram: `npm.cmd test -- --run src/lib/growth/lead-intake.test.ts src/lib/setup/tenant-doctor.test.ts` com 15 testes, `npx.cmd tsc --noEmit --pretty false` e `git diff --check`.
+- [x] 2026-04-27: `lead_intake` virou skill formal de chat: seed em `agent_skills`, prompt do MAYUS, router deterministico e dispatcher `growth_lead_intake` criam card CRM, artifact `lead_intake`/`referral_intake`, system event e learning event. Validacoes passaram: `npm.cmd test -- --run src/lib/agent/kernel/router.test.ts src/lib/agent/capabilities/dispatcher.test.ts src/lib/growth/lead-intake.test.ts` com 35 testes, `npx.cmd tsc --noEmit --pretty false` e `git diff --check`.
+- [x] 2026-04-27: `lead_qualify` iniciou o `growth_frontdoor`: playbooks por area, documentos minimos, objecoes provaveis, alertas, handoff e proximo melhor movimento viram artifact `lead_qualification_plan` no MAYUS/chat. Validacoes passaram: `npm.cmd test -- --run src/lib/growth/lead-qualification.test.ts src/lib/agent/kernel/router.test.ts src/lib/agent/capabilities/dispatcher.test.ts src/lib/growth/lead-intake.test.ts` com 40 testes, `npx.cmd tsc --noEmit --pretty false` e `git diff --check`.
+- [x] 2026-04-27: `lead_followup` avancou o `growth_frontdoor`: cadencia supervisionada, mensagem inicial, checklist humano, condicoes de pausa e proximo movimento viram artifact `lead_followup_plan` no MAYUS/chat, sem envio externo automatico. Validacoes passaram: `npm.cmd test -- --run src/lib/growth/lead-followup.test.ts src/lib/growth/lead-qualification.test.ts src/lib/agent/kernel/router.test.ts src/lib/agent/capabilities/dispatcher.test.ts src/lib/growth/lead-intake.test.ts` com 45 testes, `npx.cmd tsc --noEmit --pretty false` e `git diff --check`.
+- [x] 2026-04-27: `lead_schedule` adicionou agendamento supervisionado ao `growth_frontdoor`: cria tarefa em `user_tasks`, artifact `lead_schedule_plan`, checklist de preparo, mensagem de confirmacao sugerida e learning event, sem Google Calendar/OAuth ou convite externo automatico. Validacoes passaram: `npm.cmd test -- --run src/lib/growth/lead-scheduling.test.ts src/lib/growth/lead-followup.test.ts src/lib/growth/lead-qualification.test.ts src/lib/agent/kernel/router.test.ts src/lib/agent/capabilities/dispatcher.test.ts src/lib/growth/lead-intake.test.ts` com 50 testes, `npx.cmd tsc --noEmit --pretty false` e `git diff --check`.
+- [x] 2026-04-27: `revenue_flow_plan` criou a orquestracao supervisionada proposta -> contrato -> cobranca -> abertura de caso: registry, router, prompt do MAYUS e dispatcher geram artifact `revenue_flow_plan` e learning event com etapas, bloqueios e acao humana, sem acionar ZapSign/Asaas ou abrir caso real automaticamente. Validacoes passaram: `npm.cmd test -- --run src/lib/growth/revenue-flow.test.ts src/lib/growth/lead-scheduling.test.ts src/lib/growth/lead-followup.test.ts src/lib/growth/lead-qualification.test.ts src/lib/agent/kernel/router.test.ts src/lib/agent/capabilities/dispatcher.test.ts src/lib/growth/lead-intake.test.ts` com 55 testes, `npx.cmd tsc --noEmit --pretty false` e `git diff --check`.
+- [x] 2026-04-28: `external_action_preview` adicionou pre-flight supervisionado antes de acoes externas: registry, router, prompt do MAYUS e dispatcher geram artifact `external_action_preview` e learning event com checklist, bloqueios, risco e side effects externos bloqueados, sem acionar ZapSign/Asaas/WhatsApp. Validacoes passaram: `npm.cmd test -- --run src/lib/growth/external-action-preview.test.ts src/lib/growth/revenue-flow.test.ts src/lib/growth/lead-scheduling.test.ts src/lib/growth/lead-followup.test.ts src/lib/growth/lead-qualification.test.ts src/lib/agent/kernel/router.test.ts src/lib/agent/capabilities/dispatcher.test.ts src/lib/growth/lead-intake.test.ts` com 60 testes e `npx.cmd tsc --noEmit --pretty false`.
+- [x] 2026-04-28: `client_acceptance_record` adicionou trilha auditavel de aceite do cliente: registry, router, prompt do MAYUS e dispatcher geram artifact `client_acceptance_record`, learning event e evento `client_acceptance_recorded` em `system_event_logs`, mantendo side effects externos bloqueados ate revisao humana. Validacoes passaram: `npm.cmd test -- --run src/lib/growth/client-acceptance.test.ts src/lib/growth/external-action-preview.test.ts src/lib/growth/revenue-flow.test.ts src/lib/growth/lead-scheduling.test.ts src/lib/growth/lead-followup.test.ts src/lib/growth/lead-qualification.test.ts src/lib/agent/kernel/router.test.ts src/lib/agent/capabilities/dispatcher.test.ts src/lib/growth/lead-intake.test.ts` com 65 testes e `npx.cmd tsc --noEmit --pretty false`.
+- [x] 2026-04-28: `lead_reactivation` fechou a reativacao segura de leads frios por segmento: registry, router, prompt do MAYUS e dispatcher geram artifact `lead_reactivation_plan` e learning event com lista operacional, criterios, mensagens sugeridas e aprovacao humana obrigatoria, sem WhatsApp/e-mail/telefone automatico. Validacoes passaram: `npm.cmd test -- --run src/lib/growth/cold-lead-reactivation.test.ts src/lib/growth/client-acceptance.test.ts src/lib/growth/external-action-preview.test.ts src/lib/growth/revenue-flow.test.ts src/lib/growth/lead-scheduling.test.ts src/lib/growth/lead-followup.test.ts src/lib/growth/lead-qualification.test.ts src/lib/agent/kernel/router.test.ts src/lib/agent/capabilities/dispatcher.test.ts src/lib/growth/lead-intake.test.ts` com 69 testes, `npx.cmd tsc --noEmit --pretty false` e `git diff --check`.
+- [x] 2026-04-28: `sales_consultation` criou a skill DEF de atendimento comercial superior a script comum: registry, router, prompt do MAYUS e dispatcher geram artifact `sales_consultation_plan` e learning event com descoberta, sinais capturados/faltantes do historico, proxima pergunta adaptativa, cliente ideal, solucao central, PUV sugerida quando ausente, pilares autorais, encantamento, fechamento, diagnostico, objecoes, ancoragem segura, scorecard e travas eticas/supervisionadas, sem contatos externos automaticos. Auto Setup Doctor diagnostica `commercial:sales_profile` incompleto em Configuracoes, e Configuracoes salva o perfil comercial em `tenant_settings.ai_features.sales_consultation_profile`. Validacoes passaram: `npm.cmd test -- --run src/lib/growth/sales-consultation.test.ts src/lib/growth/cold-lead-reactivation.test.ts src/lib/growth/client-acceptance.test.ts src/lib/growth/external-action-preview.test.ts src/lib/growth/revenue-flow.test.ts src/lib/growth/lead-scheduling.test.ts src/lib/growth/lead-followup.test.ts src/lib/growth/lead-qualification.test.ts src/lib/agent/kernel/router.test.ts src/lib/agent/capabilities/dispatcher.test.ts src/lib/growth/lead-intake.test.ts src/lib/setup/tenant-doctor.test.ts` com 82 testes, `npx.cmd tsc --noEmit --pretty false` e `git diff --check`.
+- [x] 2026-04-28: `sales_profile_setup` complementou a consultoria comercial com auto-configuracao por chat: registry, router, prompt e dispatcher criam artifact `sales_profile_setup`, gravam `tenant_settings.ai_features.sales_consultation_profile`, registram `sales_profile_configured` quando persistido e deixam Configuracoes como ajuste fino. Validacoes passaram: `npm.cmd test -- --run src/lib/growth/sales-profile-setup.test.ts src/lib/growth/sales-consultation.test.ts src/lib/growth/cold-lead-reactivation.test.ts src/lib/growth/client-acceptance.test.ts src/lib/growth/external-action-preview.test.ts src/lib/growth/revenue-flow.test.ts src/lib/growth/lead-scheduling.test.ts src/lib/growth/lead-followup.test.ts src/lib/growth/lead-qualification.test.ts src/lib/growth/lead-intake.test.ts src/lib/setup/tenant-doctor.test.ts src/lib/agent/kernel/router.test.ts src/lib/agent/capabilities/dispatcher.test.ts` com 87 testes, `npx.cmd tsc --noEmit --pretty false` e `git diff --check`.
+- [x] 2026-04-28: o atendimento comercial chegou ao WhatsApp com `/api/whatsapp/ai-sales-reply`, builder `whatsapp-sales-reply` e botao MAYUS em `/dashboard/conversas/whatsapp`; a resposta sugerida entra no composer, eventos sao auditados em `system_event_logs` e side effects externos seguem bloqueados ate envio humano.
+- [x] 2026-04-28: webhooks Meta Cloud e Evolution passaram a preparar resposta comercial automaticamente ao receber mensagem inbound, usando `prepareWhatsAppSalesReplyForContact`; o MAYUS audita `whatsapp_sales_reply_prepared`, notifica a equipe e preserva envio humano/supervisionado.
 
 Observacao:
 

@@ -527,7 +527,7 @@ Legenda:
 
 Status do roadmap:
 - foco atual do produto: **Fase 3 -> Fase 5**
-- foco atual de execucao: **Support Case Status**
+- foco atual de execucao: **Support Case Status - validado em foco 2026-04-27**
 - documento complementar de apoio: `docs/architecture/document-brain-roadmap.md`
 
 ---
@@ -813,9 +813,10 @@ Fechar a camada agentica de suporte para clientes que perguntam como esta o caso
 - resolver suporte juridico operacional antes da voz aumenta utilidade imediata e prepara base melhor para a camada multimodal futura
 
 ### Escopo deste pacote
-- `[ ]` identificar o processo certo a partir de nome, numero, cliente ou contexto
-- `[ ]` resumir andamento, fase, proximo passo e pendencias do caso em linguagem de suporte
-- `[ ]` separar resposta segura de handoff humano quando houver baixa confianca
+- `[x]` identificar o processo certo a partir de nome, numero, cliente ou contexto
+- `[x]` resumir andamento, fase, proximo passo e pendencias do caso em linguagem de suporte
+- `[x]` distinguir base confirmada de inferencias operacionais antes de responder ao cliente
+- `[x]` separar resposta segura de handoff humano quando houver baixa confianca
 - `[ ]` registrar artifact e learning event de atendimento de status do caso
 
 ### Fora deste pacote
@@ -841,7 +842,7 @@ Dependencia:
 ## Execution Continuity
 
 ### Estado atual
-- fase corrente de execucao: **Support Case Status**
+- fase corrente de execucao: **Support Case Status - validacao focada registrada em 2026-04-27**
 - documento auxiliar de execucao recomendado:
 - `docs/brain/IMPLEMENTATION-PLAN-support-case-status.md`
 
@@ -861,24 +862,20 @@ Dependencia:
 - `[x]` learning loop capture com revisao humana versionada, delta formal e candidato supervisionavel de padrao
 
 ### Proximo passo exato
-- `[ ]` implementar `support_case_status` em:
-- `src/lib/agent/capabilities/registry.ts`
-- `src/lib/agent/capabilities/dispatcher.ts`
-- `src/lib/skills/consulta-processo-whatsapp.ts`
-- `src/lib/lex/case-context.ts`
-- `src/app/dashboard/mayus/page.tsx`
-- `src/lib/agent/capabilities/dispatcher.test.ts`
-- `e2e/mayus-authenticated.spec.ts`
+- `[ ]` registrar artifact e learning event de atendimento de status do caso
+- `[ ]` observar E2E completo quando o ambiente autenticado estiver liberado
 
 ### Proximo pacote depois deste
 - `[ ]` abrir `referral_intake`
 - `[ ]` depois abrir `growth_frontdoor`
+- `[ ]` depois abrir `mayus_growth_os`
 - `[ ]` deixar `voice_brain_execution` para conectar tudo no fim
 
 ### Validacao-base atual
 - `[x]` `npm test`
 - `[x]` `npm run build`
 - `[x]` `npm run test:e2e`
+- `[x]` 2026-04-27: validacao focada de `support_case_status` para andamento, fase, proximo passo, pendencias e fronteira base confirmada/inferencia
 
 ### Regra para novas sessoes
 Sempre continuar a partir desta ordem:
@@ -886,6 +883,70 @@ Sempre continuar a partir desta ordem:
 2. confirmar a camada ativa
 3. continuar do primeiro item `[ ]` da camada ativa
 4. atualizar os marcadores ao fim da sessao
+
+---
+
+## Expansao Estrategica - MAYUS Operating System / Growth OS
+
+### Tese central
+
+O MAYUS deve ser apresentado como o socio operacional de IA do escritorio juridico.
+
+Frase-mae:
+
+**Para o advogado iniciante, o MAYUS e a estrutura que ele ainda nao tem. Para o escritorio grande, e o controle que ele esta perdendo.**
+
+### Posicionamento
+
+O MAYUS nao e apenas um software juridico com IA. E o primeiro socio operacional de IA para escritorios de advocacia brasileiros: organiza a rotina, acompanha a operacao, apoia o crescimento e conecta juridico, comercial, marketing, agenda, atendimento, cobranca, documentos, equipe e metricas em um unico cerebro.
+
+Categoria principal:
+- `MAYUS Operating System`
+
+Frente de crescimento:
+- `MAYUS Growth OS`
+
+### Checklist marcavel
+
+- `[ ]` posicionar MAYUS como socio operacional de IA da banca
+- `[x]` adicionar Google Agenda opcional por usuario
+Evidencia 2026-04-28: criada integracao OAuth opcional `google_calendar_user:{userId}`, botao na Agenda Diaria, leitura read-only de eventos do calendario primario e exibicao como eventos externos sem substituir tarefas internas.
+- `[x]` adicionar Google Agenda global opcional do escritorio
+Evidencia 2026-04-28: criada integracao OAuth opcional `google_calendar_global`, restrita a usuarios com acesso completo, com botao na Agenda Global, leitura read-only de eventos do calendario primario conectado e desconexao supervisionada.
+- `[x]` importar eventos externos para a agenda diaria/global do MAYUS sem quebrar a agenda interna
+Evidencia 2026-04-28: Agenda Diaria importa eventos do Google Calendar pessoal e Agenda Global importa eventos da conta global por data; eventos externos nao substituem tarefas internas, nao sao editaveis e nao entram em gamificacao/conclusao.
+- `[x]` criar upload e analise de calls comerciais no CRM
+Evidencia 2026-04-28: criado MVP textual `POST /api/growth/call-analysis` com builder deterministico `buildCallCommercialAnalysis`; aceita transcript/notes, bloqueia side effects externos e retorna relatorio comercial estruturado.
+- `[~]` salvar resumo, dor principal, objecoes, pontos fortes, pontos fracos, proximo passo e follow-up no historico do lead
+Evidencia 2026-04-28: `POST /api/growth/call-analysis` exige `getTenantSession`, recebe `crmTaskId` pelo CRM visual, registra evento seguro em `system_event_logs` e cria artifact agentico `call_commercial_analysis` quando possivel, sem transcript bruto no payload persistido.
+- `[x]` criar marketing por referencias sem copiar conteudo
+Evidencia 2026-04-28: criado backend puro `src/lib/marketing/editorial-calendar.ts` que extrai padroes de referencias fornecidas e gera ideias originais com guardrails explicitos contra copia.
+- `[ ]` permitir cadastro de perfis, redes, canais, sites e concorrentes/referencias admiradas
+- `[x]` identificar padroes de engajamento, temas, formatos, ganchos, CTAs, frequencia e tom de comunicacao
+Evidencia 2026-04-28: `/dashboard/marketing/referencias` permite registrar referencias em estado local e exibe padroes calculados por `extractReferencePatterns`.
+- `[x]` criar calendario editorial editavel
+Evidencia 2026-04-28: `generateEditorialCalendar` e `updateEditorialCalendarItem` criam calendario deterministico e editavel a partir de frequencia, estilo, canais, area juridica, objetivo, tom e publico-alvo.
+- `[x]` permitir frequencia, estilo, formato, canal, area juridica, objetivo, tom e publico-alvo
+Evidencia 2026-04-28: `/dashboard/marketing/calendario` ganhou formulario local para frequencia, estilo, canais, areas, objetivos, tons, publicos, data inicial e quantidade de periodos.
+- `[x]` permitir aprovar, editar ou recusar conteudos sugeridos
+Evidencia 2026-04-28: calendario permite editar, aprovar, recusar e voltar itens para rascunho via `updateEditorialCalendarItem`, mantendo persistencia MVP em `localStorage`; persistencia server-side fica para etapa futura.
+- `[x]` conectar conteudos aprovados com agenda/tarefas quando fizer sentido
+Evidencia 2026-04-28: itens aprovados no calendario editorial podem criar tarefa interna em `user_tasks` com origem `marketing_editorial_calendar` em descricao/tags/notas, mantendo revisao humana e sem publicacao externa ou Google Calendar automatico.
+- `[~]` criar analise de Meta Ads por upload de CSV, XLSX ou PDF
+Evidencia parcial 2026-04-28: criado MVP local de analise de CSV em `src/lib/marketing/meta-ads-analysis.ts` e `/dashboard/marketing/meta-ads`, com input de arquivo `.csv` e textarea; XLSX/PDF ainda pendentes.
+- `[ ]` diagnosticar campanhas vencedoras, desperdicio de verba, CPL, CTR, CPC, CPM, criativos, publicos e temas
+- `[ ]` recomendar realocacao de verba e novos criativos de forma supervisionada
+- `[ ]` amarrar ciclo completo: marketing -> lead -> CRM -> call -> follow-up -> contrato -> cobranca -> juridico -> prazos -> metricas
+- `[ ]` deixar Meta Ads API, Google Meet automatico, Drive automatico de gravacoes, publicacao automatica e monitoramento amplo para integracoes futuras
+
+### Ordem recomendada de implementacao
+
+1. Agenda Google opcional
+2. Upload e analise de call comercial
+3. Marketing por referencias
+4. Calendario editorial editavel
+5. Analise de Meta Ads por upload
+6. Integracoes automaticas futuras
 
 ---
 

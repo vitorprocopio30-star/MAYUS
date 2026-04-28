@@ -1,6 +1,6 @@
 # Implementation Plan - Support Case Status
 
-Status: in_progress
+Status: focused_validated_2026-04-27
 Owner: MAYUS / AGENTE MAYA
 Primary source documents:
 - docs/brain/MAYUS_MASTER_BLUEPRINT.md
@@ -84,8 +84,9 @@ O maior gap agora e o atendimento continuo ao cliente ja convertido, que continu
 - [x] Definir quando responder e quando escalar para handoff humano
 
 ## Phase 2 - Resolution
-- [ ] Identificar processo por nome, numero ou cliente com seguranca razoavel
-- [ ] Resumir andamento, fase, proximo passo e pendencias em linguagem de suporte
+- [x] Identificar processo por nome, numero ou cliente com seguranca razoavel
+- [x] Resumir andamento, fase, proximo passo e pendencias em linguagem de suporte
+- [x] Distinguir base confirmada de inferencias operacionais antes de responder ao cliente
 
 ## Phase 3 - Auditability
 - [ ] Registrar artifact do atendimento de status do caso
@@ -96,11 +97,12 @@ O maior gap agora e o atendimento continuo ao cliente ja convertido, que continu
 - [ ] Exibir sinais de handoff quando houver baixa confianca
 
 ## Phase 5 - Tests
-- [ ] Unit tests
+- [x] Unit tests focados no pacote
 - [ ] E2E observavel
 
 ## Phase 6 - Validation
-- [ ] `npm test`
+- [x] Validacao focada em 2026-04-27
+- [ ] `npm test` completo
 - [ ] `npm run build`
 - [ ] `npm run test:e2e`
 
@@ -111,36 +113,36 @@ O maior gap agora e o atendimento continuo ao cliente ja convertido, que continu
 Current phase:
 - [ ] not started
 - [ ] phase 1
-- [x] phase 2
-- [ ] phase 3
+- [ ] phase 2
+- [x] phase 3
 - [ ] phase 4
 - [ ] phase 5
 - [ ] phase 6
 - [ ] done
 
 Last completed item:
-- [x] Contrato minimo de `support_case_status` implementado no runtime com resposta curta, criterio de confianca e handoff humano quando faltar base suficiente.
+- [x] `support_case_status` responde andamento, fase, proximo passo e pendencias, separando base confirmada de inferencias operacionais.
+
+Focused validation:
+- [x] 2026-04-27: validacao focada do pacote `support_case_status`.
 
 Current blocker:
 - [x] none
 
 Files changed in current session:
 - [x] docs/brain/IMPLEMENTATION-PLAN-support-case-status.md
-- [x] src/lib/lex/case-context.ts
-- [x] src/lib/lex/case-context.test.ts
-- [x] src/lib/agent/capabilities/registry.ts
-- [x] src/lib/agent/capabilities/dispatcher.ts
-- [x] src/lib/agent/capabilities/dispatcher.test.ts
-- [x] src/lib/agent/kernel/router.ts
-- [x] src/lib/agent/kernel/router.test.ts
-- [x] src/app/api/ai/chat/route.ts
+- [x] docs/brain/MAYUS_MASTER_BLUEPRINT.md
+- [x] docs/architecture/document-brain-roadmap.md
+- [x] docs/checklists/ops-quality/CHECKLIST.md
+- [x] docs/checklists/lex/CHECKLIST.md
 
 Last validated commands:
 - [x] `npm test -- --run src/lib/lex/case-context.test.ts src/lib/agent/kernel/router.test.ts src/lib/agent/capabilities/dispatcher.test.ts`
 - [x] `npm run build`
+- [x] 2026-04-27: validacao focada de `support_case_status`
 
 Next exact action:
-- [ ] Identificar processo por nome, numero ou cliente com seguranca razoavel e reaproveitar esse match no `support_case_status`.
+- [ ] Registrar artifact e learning event do atendimento de status do caso.
 
 ---
 

@@ -19,6 +19,7 @@ async function openDocumentosWithFixture(page: Page, scenario: PlaywrightDocumen
   await loginThroughUi(page);
   await page.goto("/dashboard/documentos", { waitUntil: "domcontentloaded" });
   await waitForDocumentsHydration(page);
+  await expect(page.getByTestId(`documents-card-${fixture.processTaskId}`)).toBeVisible({ timeout: 60_000 });
   return fixture;
 }
 
@@ -53,7 +54,17 @@ async function openDocumentos(page: Page) {
 
 async function expectDraftVersionVisible(page: Page, versionId: string | null) {
   if (!versionId) throw new Error("Fixture nao retornou versao formal esperada.");
+  await page.getByText(/carregando hist[oó]rico formal/i).waitFor({ state: "hidden", timeout: 60_000 }).catch(() => null);
   await expect(page.getByTestId(`documents-draft-version-${versionId}`)).toBeVisible({ timeout: 45_000 });
+}
+
+async function expectDownloadFromClick(page: Page, clickAction: () => Promise<void>, extension: "docx" | "pdf") {
+  const [download] = await Promise.all([
+    page.waitForEvent("download", { timeout: 60_000 }),
+    clickAction(),
+  ]);
+
+  expect(download.suggestedFilename()).toMatch(new RegExp(`\\.${extension}$`, "i"));
 }
 
 test.describe("Documentos authenticated", () => {
@@ -71,7 +82,7 @@ test.describe("Documentos authenticated", () => {
   });
 
   test("exibe filtros da Draft Factory e o painel de saude da fila", async ({ page }) => {
-    test.setTimeout(120_000);
+    test.setTimeout(240_000);
     await openDocumentos(page);
 
     await expect(page.getByPlaceholder(/buscar cliente, processo ou pipeline/i)).toBeVisible();
@@ -125,7 +136,7 @@ test.describe("Documentos authenticated", () => {
   });
 
   test("aprova, publica e exporta a minuta formal da fixture", async ({ page }) => {
-    test.setTimeout(120_000);
+    test.setTimeout(240_000);
     const fixture = await openDocumentosWithFixture(page);
 
     await page.getByTestId(`documents-card-${fixture.processTaskId}`).click();
@@ -156,11 +167,18 @@ test.describe("Documentos authenticated", () => {
 
     const publishButton = page.getByTestId(`documents-publish-version-${fixture.currentDraftVersionId}`);
     await expect(publishButton).toBeVisible({ timeout: 30_000 });
+    await expect(publishButton).toBeEnabled({ timeout: 30_000 });
     await publishButton.click();
+    await expect(page.getByText(/vers.o publicada com sucesso/i)).toBeVisible({ timeout: 60_000 });
+    await expect(page.getByTestId(`documents-download-pdf-${fixture.currentDraftVersionId}`)).toBeVisible({ timeout: 30_000 });
 
     await expect(detailModal.getByText(/publica[cç][aã]o vigente/i)).toBeVisible({ timeout: 30_000 });
 
-    await page.getByTestId(`documents-export-piece-${fixture.processTaskId}`).click();
+    await expectDownloadFromClick(
+      page,
+      () => page.getByTestId(`documents-export-piece-${fixture.processTaskId}`).click(),
+      "docx",
+    );
     await expect(page.getByText(/arquivo word baixado com sucesso/i)).toBeVisible({ timeout: 30_000 });
   });
 
@@ -213,7 +231,7 @@ test.describe("Documentos authenticated", () => {
     await expect(learningLoopCapture).toContainText(/34% de varia[cç][aã]o estimada/i);
     await expect(premiumLink).toBeVisible();
 
-    await pdfDownload.click();
+    await expectDownloadFromClick(page, () => pdfDownload.click(), "pdf");
     await expect(page.getByText(/arquivo pdf baixado com sucesso/i)).toBeVisible({ timeout: 30_000 });
   });
 

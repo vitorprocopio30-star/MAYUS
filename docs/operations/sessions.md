@@ -4,6 +4,125 @@ Log central das sessoes de desenvolvimento. Cada sessao registra briefing, feito
 
 ---
 
+## Sessao 8 - 27/04/2026
+
+### Briefing
+Retomar `support_case_status` sem depender de novas credenciais externas, fechando resposta de status mais operacional e auditavel.
+
+### Feitos
+- [x] Ampliar contrato `support_case_status` com andamento, base confirmada, inferencias e sinais faltantes.
+- [x] Ajustar resposta do chat para explicitar andamento, fase, proximo passo, pendencias, fontes reais e inferencias.
+- [x] Publicar os novos campos em artifact metadata, learning event e outputPayload.
+- [x] Exibir highlights adicionais no dashboard MAYUS para inferencias e sinais faltantes.
+- [x] Atualizar E2E observavel do MAYUS para resposta normal e handoff ambiguo.
+- [x] Estabilizar o bootstrap do E2E MAYUS com `browserProfileMode: "ui-harness"` explicito, preservando o modo real para Documentos.
+
+### Pendencias
+- [ ] Validar fluxo completo de chat real de `support_case_status` em tenant descartavel/staging, aceitando escritas controladas em auditoria/artifacts/events.
+- [x] Resolver instabilidade do bootstrap autenticado Playwright no harness MAYUS sem mascarar os E2Es reais de Documentos.
+
+### Validacoes
+- Primeira tentativa de Vitest focado falhou no sandbox com `spawn EPERM`; rerun fora do sandbox passou.
+- `npm.cmd test -- --run src/lib/lex/case-context.test.ts src/lib/agent/capabilities/dispatcher.test.ts src/lib/agent/kernel/router.test.ts` passou: 3 arquivos, 29 testes.
+- `npm.cmd test` passou: 24 arquivos, 143 testes.
+- `npm.cmd run build` passou com warnings preexistentes de hooks/img.
+- `npx.cmd tsc --noEmit --pretty false` passou.
+- Primeira tentativa de Playwright filtrado falhou no sandbox com `spawn EPERM`; rerun fora do sandbox passou.
+- `npx.cmd playwright test e2e/mayus-authenticated.spec.ts -g "status do caso"` passou: 2 testes Chromium.
+- Validacao read-only contra Supabase real passou sem escrita: contrato `support_case_status` montado para processo real com `responseMode=answer`, `confidence=high`, andamento/fase presentes e grounding no reply.
+- Rodadas posteriores de `npm.cmd run test:e2e` e E2E filtrado travaram no bootstrap autenticado da UI antes do chat, com a tela em `Acessando Cofre de Chaves...`; classificado como bloqueio de ambiente/browser, nao regressao do contrato.
+- Apos separar o profile browser em modo `ui-harness`, `npx.cmd playwright test e2e/mayus-authenticated.spec.ts -g "status do caso" --reporter=list` passou: 2 testes.
+- Smokes de seguranca do helper passaram: `npx.cmd playwright test e2e/documentos-auth.spec.ts --reporter=list` passou com 3 testes anonimos; `npx.cmd playwright test e2e/documentos-authenticated.spec.ts --grep "abre a area|abre o detalhe" --reporter=list` passou com 2 testes autenticados reais; `npx.cmd playwright test e2e/mayus-authenticated.spec.ts --grep "resolve o contexto juridico|responde status do caso" --reporter=list` passou com 2 testes.
+- O bootstrap Playwright deixou de depender de Google Fonts remoto via `NEXT_FONT_GOOGLE_MOCKED_RESPONSES` e fixture local; `npx.cmd playwright test e2e/documentos-authenticated.spec.ts --reporter=list` passou completo: 9 testes Chromium em 3,3 min.
+- `git diff --check` ainda acusa `src/app/page.tsx:1184: new blank line at EOF`, arquivo fora do escopo desta frente e ja modificado previamente.
+- A frente `Referral Intake` foi iniciada: `lead-intake` diferencia indicacao de suporte/status, coleta indicador/relacionamento, registra tags/origem no payload CRM, cria evento auditavel `referral_intake_created` e recomenda confirmacao por SDR/closer.
+- `npm.cmd test -- --run src/lib/growth/lead-intake.test.ts` passou: 1 arquivo, 8 testes.
+- O primeiro nucleo do Auto Setup Doctor foi criado: `GET /api/setup/doctor` diagnostica sem corrigir; `POST /api/setup/doctor` aplica autocorrecoes seguras para CRM e skills, detecta integracoes pendentes, bloqueia Google Drive com OAuth invalido e registra evento operacional `tenant_doctor_check`/`tenant_doctor_autofix`.
+- A UI do Auto Setup Doctor foi exposta em `/dashboard/configuracoes`, com contadores de OK/corrigidos/avisos/bloqueios, lista de checks e botoes para atualizar diagnostico ou aplicar defaults seguros.
+- O Auto Setup Doctor virou trilha agentica: `POST /api/setup/doctor` registra `brain_tasks`, `brain_runs`, `brain_steps`, artifact `tenant_setup_doctor_report` e learning event `tenant_setup_doctor_report_created` quando ha correcao ou bloqueio relevante.
+- O payload do artifact foi sanitizado para expor somente status, resumo, checks, acoes humanas e contadores; nao inclui chaves, tokens ou campos de segredo.
+- A tela de Configuracoes mostra link para o MAYUS quando a trilha agentica foi registrada, e o dashboard MAYUS reconhece label/highlights do Setup Doctor.
+- `referral_intake` tambem virou trilha agentica: indicacoes registradas por `POST /api/growth/lead-intake` criam mission/run/step, artifact `referral_intake` e learning event `referral_intake_artifact_created`.
+- O artifact de indicacao evita telefone/e-mail bruto e expõe apenas score, origem, canal, area, indicador, relacionamento, proximo passo e handoff humano.
+- O dashboard MAYUS reconhece label/highlights de `referral_intake` com score, area, indicador e handoff humano.
+- `lead_intake` virou skill formal de chat: seed em `agent_skills`, prompt do MAYUS, router deterministico e dispatcher `growth_lead_intake`.
+- A execucao por chat cria card CRM, system event, artifact `lead_intake` ou `referral_intake` dentro da missao e learning event; nao aciona WhatsApp, pagamento, assinatura ou outra integracao externa.
+- O dashboard MAYUS reconhece tambem artifact/event `lead_intake` com score, area, tipo e handoff humano.
+- `lead_qualify` iniciou o `growth_frontdoor`: skill formal com playbooks de Previdenciario, Trabalhista, Familia e fallback geral, gerando artifact `lead_qualification_plan` com roteiro, documentos minimos, objecoes provaveis, alertas e proximo melhor movimento.
+- O dashboard MAYUS reconhece artifact/event de qualificacao com confianca, area, quantidade de documentos e alertas.
+- `lead_followup` avancou o `growth_frontdoor`: skill formal com cadencia supervisionada, mensagem inicial sugerida, checklist humano, condicoes de pausa e proximo melhor movimento, gerando artifact `lead_followup_plan` e learning event.
+- O dispatcher de `lead_followup` nao envia WhatsApp, telefone ou e-mail automaticamente; ele deixa o contato como acao humana/aprovacao obrigatoria.
+- O dashboard MAYUS reconhece artifact/event de follow-up com prioridade, area, quantidade de passos e aprovacao humana.
+- `lead_schedule` adicionou agendamento supervisionado ao `growth_frontdoor`: skill formal cria tarefa em `user_tasks`, artifact `lead_schedule_plan`, checklist de preparo, mensagem de confirmacao sugerida e learning event.
+- O dispatcher de `lead_schedule` nao cria Google Calendar, OAuth, convite externo ou envio automatico; ele registra agenda interna e exige confirmacao humana do horario com o lead.
+- O dashboard MAYUS reconhece artifact/event de agendamento com data, urgencia, tarefa de agenda e confirmacao humana.
+- `revenue_flow_plan` criou o plano supervisionado proposta -> contrato -> cobranca -> abertura de caso: skill formal com artifact `revenue_flow_plan`, learning event, etapas, bloqueios e proxima acao humana.
+- O dispatcher de `revenue_flow_plan` nao chama ZapSign, Asaas nem `openCaseFromConfirmedBilling`; ele apenas organiza o fluxo e deixa os passos externos sob aprovacao/execucao explicita.
+- `external_action_preview` adicionou pre-flight supervisionado antes de acoes externas: skill formal com artifact `external_action_preview`, checklist, bloqueios, risco e side effects externos bloqueados.
+- O dispatcher de `external_action_preview` nao chama ZapSign, Asaas, WhatsApp ou qualquer integracao externa; ele tambem evita persistir e-mail do destinatario no metadata do artifact.
+- `client_acceptance_record` adicionou trilha auditavel de aceite do cliente: skill formal com artifact `client_acceptance_record`, learning event e evento operacional `client_acceptance_recorded` em `system_event_logs`.
+- O dispatcher de `client_acceptance_record` nao executa contrato, cobranca, WhatsApp ou abertura de caso; ele registra o aceite e mantem side effects externos bloqueados ate revisao humana/evidencia.
+- `lead_reactivation` adicionou reativacao supervisionada de leads frios por segmento: skill formal com artifact `lead_reactivation_plan`, lista operacional de candidatos do CRM, criterios, mensagens sugeridas, checklist humano e learning event.
+- `sales_consultation` adicionou skill DEF de atendimento consultivo comercial: artifact `sales_consultation_plan`, descoberta antes da proposta, sinais capturados/faltantes no bate-papo, proxima pergunta adaptativa, cliente ideal do escritorio, solucao central, PUV sugerida quando ausente, pilares autorais, encantamento personalizado, fechamento racional, movimentos de objecao e bloqueio de contatos externos automaticos.
+- `sales_profile_setup` adicionou auto-configuracao comercial por chat: o MAYUS investiga cliente ideal, solucao central, PUV, pilares e anti-cliente, monta rascunhos quando faltam, cria artifact `sales_profile_setup` e grava `tenant_settings.ai_features.sales_consultation_profile` para reduzir configuracao manual.
+- WhatsApp ganhou geracao de resposta comercial pelo MAYUS: `/api/whatsapp/ai-sales-reply` le historico do contato, aplica o perfil comercial salvo e devolve resposta DEF para o composer da tela `/dashboard/conversas/whatsapp`; o sistema registra `whatsapp_sales_reply_prepared` e nao envia automaticamente.
+- Meta Cloud e Evolution agora tambem preparam rascunho comercial automaticamente no recebimento inbound via `prepareWhatsAppSalesReplyForContact`, com notificacao interna e auditoria, mas sem disparo externo automatico.
+- A tela de WhatsApp mostra o painel "Rascunho MAYUS", carregando o ultimo evento `whatsapp_sales_reply_prepared` do contato e permitindo usar/atualizar a resposta no composer.
+- Auto Setup Doctor passou a diagnosticar `commercial:sales_profile` e avisar em Configuracoes quando o MAYUS ainda precisa investigar cliente ideal, solucao, PUV e pilares antes de escalar atendimento comercial.
+- Configuracoes ganhou painel "Perfil Comercial do MAYUS" para preencher/validar cliente ideal, solucao, PUV e pilares; o painel salva em `tenant_settings.ai_features.sales_consultation_profile`, fonte lida pela skill `sales_consultation`.
+- O dispatcher de `lead_reactivation` nao envia WhatsApp, telefone, e-mail ou campanha externa; ele deixa a execucao como lote manual aprovado e registra side effects externos bloqueados.
+- `npm.cmd test -- --run src/lib/setup/tenant-doctor.test.ts src/lib/growth/lead-intake.test.ts` passou: 2 arquivos, 11 testes.
+- `npx.cmd tsc --noEmit --pretty false` passou apos o doctor.
+- `git diff --check` passou apos remover apenas a linha extra no EOF de `src/app/page.tsx`.
+- `npx.cmd tsc --noEmit --pretty false` passou apos expor a UI do doctor.
+- `npm.cmd test -- --run src/lib/setup/tenant-doctor.test.ts src/lib/growth/lead-intake.test.ts` passou novamente: 2 arquivos, 11 testes.
+- Primeira tentativa dos testes focados do artifact falhou no sandbox com `spawn EPERM`; rerun fora do sandbox passou.
+- `npm.cmd test -- --run src/lib/setup/tenant-doctor.test.ts src/lib/growth/lead-intake.test.ts` passou apos o artifact: 2 arquivos, 13 testes.
+- `npx.cmd tsc --noEmit --pretty false` passou apos o artifact.
+- `git diff --check` passou apos o artifact; restaram apenas warnings de conversao LF/CRLF em arquivos ja modificados.
+- Primeira tentativa dos testes focados de `referral_intake` agentico falhou no sandbox com `spawn EPERM`; rerun fora do sandbox passou.
+- `npm.cmd test -- --run src/lib/growth/lead-intake.test.ts src/lib/setup/tenant-doctor.test.ts` passou apos `referral_intake`: 2 arquivos, 15 testes.
+- `npx.cmd tsc --noEmit --pretty false` passou apos `referral_intake`.
+- `git diff --check` passou apos `referral_intake`; restaram apenas warnings LF/CRLF.
+- Primeira tentativa dos testes focados da skill formal `lead_intake` falhou no sandbox com `spawn EPERM`; rerun fora do sandbox passou.
+- `npm.cmd test -- --run src/lib/agent/kernel/router.test.ts src/lib/agent/capabilities/dispatcher.test.ts src/lib/growth/lead-intake.test.ts` passou: 3 arquivos, 35 testes.
+- `npx.cmd tsc --noEmit --pretty false` passou apos `lead_intake`.
+- `git diff --check` passou apos `lead_intake`; restaram apenas warnings LF/CRLF.
+- Primeira tentativa dos testes focados de `lead_qualify` falhou no sandbox com `spawn EPERM`; rerun fora do sandbox passou.
+- `npm.cmd test -- --run src/lib/growth/lead-qualification.test.ts src/lib/agent/kernel/router.test.ts src/lib/agent/capabilities/dispatcher.test.ts src/lib/growth/lead-intake.test.ts` passou: 4 arquivos, 40 testes.
+- `npx.cmd tsc --noEmit --pretty false` passou apos `lead_qualify`.
+- `git diff --check` passou apos `lead_qualify`; restaram apenas warnings LF/CRLF.
+- Primeira tentativa dos testes focados de `lead_followup` falhou no sandbox com `spawn EPERM`; rerun fora do sandbox passou.
+- `npm.cmd test -- --run src/lib/growth/lead-followup.test.ts src/lib/growth/lead-qualification.test.ts src/lib/agent/kernel/router.test.ts src/lib/agent/capabilities/dispatcher.test.ts src/lib/growth/lead-intake.test.ts` passou: 5 arquivos, 45 testes.
+- `npx.cmd tsc --noEmit --pretty false` passou apos `lead_followup`.
+- Primeira tentativa dos testes focados de `lead_schedule` falhou no sandbox com `spawn EPERM`; rerun fora do sandbox passou.
+- `npm.cmd test -- --run src/lib/growth/lead-scheduling.test.ts src/lib/growth/lead-followup.test.ts src/lib/growth/lead-qualification.test.ts src/lib/agent/kernel/router.test.ts src/lib/agent/capabilities/dispatcher.test.ts src/lib/growth/lead-intake.test.ts` passou: 6 arquivos, 50 testes.
+- `npx.cmd tsc --noEmit --pretty false` passou apos `lead_schedule`.
+- Primeira tentativa dos testes focados de `revenue_flow_plan` falhou no sandbox com `spawn EPERM`; rerun fora do sandbox apontou ajustes locais de router/mock, depois passou.
+- `npm.cmd test -- --run src/lib/growth/revenue-flow.test.ts src/lib/growth/lead-scheduling.test.ts src/lib/growth/lead-followup.test.ts src/lib/growth/lead-qualification.test.ts src/lib/agent/kernel/router.test.ts src/lib/agent/capabilities/dispatcher.test.ts src/lib/growth/lead-intake.test.ts` passou: 7 arquivos, 55 testes.
+- `npx.cmd tsc --noEmit --pretty false` passou apos `revenue_flow_plan`.
+- Primeira tentativa dos testes focados de `external_action_preview` falhou no sandbox com `spawn EPERM`; rerun fora do sandbox passou.
+- `npm.cmd test -- --run src/lib/growth/external-action-preview.test.ts src/lib/growth/revenue-flow.test.ts src/lib/growth/lead-scheduling.test.ts src/lib/growth/lead-followup.test.ts src/lib/growth/lead-qualification.test.ts src/lib/agent/kernel/router.test.ts src/lib/agent/capabilities/dispatcher.test.ts src/lib/growth/lead-intake.test.ts` passou: 8 arquivos, 60 testes.
+- `npx.cmd tsc --noEmit --pretty false` passou apos `external_action_preview`.
+- Primeira tentativa dos testes focados de `client_acceptance_record` falhou no sandbox com `spawn EPERM`; rerun fora do sandbox passou.
+- `npm.cmd test -- --run src/lib/growth/client-acceptance.test.ts src/lib/growth/external-action-preview.test.ts src/lib/growth/revenue-flow.test.ts src/lib/growth/lead-scheduling.test.ts src/lib/growth/lead-followup.test.ts src/lib/growth/lead-qualification.test.ts src/lib/agent/kernel/router.test.ts src/lib/agent/capabilities/dispatcher.test.ts src/lib/growth/lead-intake.test.ts` passou: 9 arquivos, 65 testes.
+- `npx.cmd tsc --noEmit --pretty false` passou apos `client_acceptance_record`.
+- Primeira tentativa dos testes focados de `lead_reactivation` falhou no sandbox com `spawn EPERM`; rerun fora do sandbox apontou apenas ajuste de matcher para canal `phone`, depois passou.
+- `npm.cmd test -- --run src/lib/growth/cold-lead-reactivation.test.ts src/lib/agent/kernel/router.test.ts src/lib/agent/capabilities/dispatcher.test.ts` passou: 3 arquivos, 41 testes.
+- `npm.cmd test -- --run src/lib/growth/cold-lead-reactivation.test.ts src/lib/growth/client-acceptance.test.ts src/lib/growth/external-action-preview.test.ts src/lib/growth/revenue-flow.test.ts src/lib/growth/lead-scheduling.test.ts src/lib/growth/lead-followup.test.ts src/lib/growth/lead-qualification.test.ts src/lib/agent/kernel/router.test.ts src/lib/agent/capabilities/dispatcher.test.ts src/lib/growth/lead-intake.test.ts` passou: 10 arquivos, 69 testes.
+- `npx.cmd tsc --noEmit --pretty false` passou apos `lead_reactivation`.
+- `git diff --check` passou apos `lead_reactivation`; restaram apenas warnings LF/CRLF.
+
+### Observacoes
+- O trabalho ficou isolado em `support_case_status`, dashboard MAYUS e tracking; nao tocou integrações/Vault/OAuth.
+- O fluxo read-only real valida snapshot/contrato/reply sem side effects; o fluxo real de chat ainda grava auditoria, artifacts e learning events, entao deve ser executado em staging ou com caso descartavel.
+- `browserProfileMode: "ui-harness"` deve ficar restrito a specs de orquestracao que ja mockam APIs internas do MAYUS; Documentos continua exercitando auth/profile reais.
+- O mock de Google Fonts fica restrito ao webServer do Playwright e preserva o runtime normal de dev/build.
+- `Referral Intake` agora tem artifact agentico proprio no MAYUS; `lead_intake`, `lead_qualify`, `lead_followup`, `lead_reactivation`, `lead_schedule`, `revenue_flow_plan`, `external_action_preview` e `client_acceptance_record` ja operam como skills formais de chat. Proximo bloco natural e registrar taxa de resposta/motivo de perda do Growth.
+- Auto Setup Doctor agora aparece em Configuracoes e tambem como artifact agentico proprio no MAYUS; build nao foi rodado nesta etapa porque a validacao pedida foi coberta por testes focados, typecheck e diff-check, e o worktree segue amplo com assets/landing fora do escopo.
+
+---
+
 ## Sessao 7 - 26/04/2026
 
 ### Briefing

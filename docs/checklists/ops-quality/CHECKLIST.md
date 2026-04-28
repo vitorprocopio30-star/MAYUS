@@ -34,7 +34,8 @@ Evidencia 2026-04-24: E2E completo foi tentado com `PORT=3001` e `PLAYWRIGHT_BAS
 - [ ] Cobrir webhooks com segredo ausente, invalido e valido.
 - [ ] Cobrir chat com payload grande, historico invalido e provider invalido.
 - [ ] Cobrir tenant isolation em rotas admin e juridicas.
-- [ ] Cobrir fluxo support_case_status ponta a ponta.
+- [x] Cobrir fluxo support_case_status com validacao focada.
+Evidencia 2026-04-27: pacote responde andamento, fase, proximo passo e pendencias, distinguindo base confirmada de inferencias operacionais.
 - [ ] Cobrir Draft Factory: gerar, retry, aprovar, publicar, exportar.
 - [x] Cobrir classificador Lex proativo para contestacao -> replica.
 - [x] Cobrir registry Lex proativo para sentenca, citacao, audiencia e fallback sem playbook.

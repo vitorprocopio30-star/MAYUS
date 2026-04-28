@@ -1,7 +1,14 @@
 import { defineConfig, devices } from "@playwright/test";
+import path from "node:path";
 
 const port = Number(process.env.PORT || 3000);
 const baseURL = process.env.PLAYWRIGHT_BASE_URL || `http://localhost:${port}`;
+const googleFontsMockPath = path.resolve(
+  process.cwd(),
+  "e2e",
+  "fixtures",
+  "next-google-fonts-mock.cjs",
+);
 
 export default defineConfig({
   testDir: "./e2e",
@@ -20,6 +27,11 @@ export default defineConfig({
   },
   webServer: {
     command: "npm run dev",
+    env: {
+      ...process.env,
+      NEXT_FONT_GOOGLE_MOCKED_RESPONSES:
+        process.env.NEXT_FONT_GOOGLE_MOCKED_RESPONSES || googleFontsMockPath,
+    },
     url: baseURL,
     reuseExistingServer: true,
     timeout: 240_000,
