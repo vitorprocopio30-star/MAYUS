@@ -6,6 +6,10 @@ import {
   buildProcessCardDescription,
   buildProcessCardTitle,
 } from '@/lib/juridico/process-card-context'
+import {
+  chooseSemanticLegalStage,
+  resolveProcessPipelineContext,
+} from '@/lib/juridico/process-pipeline-resolver'
 
 const adminSupabase = createClient(
   process.env.NEXT_PUBLIC_SUPABASE_URL!,
@@ -78,6 +82,7 @@ type MonitoredProcessContext = {
   partes: PartesProcesso
   movimentacoes: MovimentacaoHistorica[] | null
   advogado_responsavel_id?: string | null
+  linked_task_id?: string | null
 }
 
 type AnalisePrazoLLM =
@@ -408,7 +413,7 @@ export async function analisarMovimentacao(params: {
   // Busca contexto do processo
   const { data: processo } = await adminSupabase
     .from('monitored_processes')
-    .select('numero_processo, resumo_curto, cliente_nome, tribunal, partes, movimentacoes, advogado_responsavel_id, classe_processual')
+    .select('numero_processo, resumo_curto, cliente_nome, tribunal, partes, movimentacoes, advogado_responsavel_id, classe_processual, linked_task_id')
     .eq('id', params.processo_id)
     .single()
 
@@ -542,18 +547,35 @@ export async function analisarMovimentacao(params: {
     criado_em: new Date().toISOString()
   }
 
+  const pipelineContext = await resolveProcessPipelineContext({
+    supabase: adminSupabase,
+    tenantId: params.tenant_id,
+    linkedTaskId: processo?.linked_task_id,
+    processNumber: params.numero_cnj,
+  })
+  const pipelineId = pipelineContext.pipelineId
+  const stageId = chooseSemanticLegalStage(pipelineContext.visibleStages, [
+    descricaoPrazo,
+    tipoEvento,
+    params.movimentacao.conteudo ?? '',
+  ]) || pipelineContext.fallbackStageId
+
+  if (!pipelineId || !stageId) {
+    console.warn(`[ANALISADOR] Pipeline juridica nao encontrada para ${params.numero_cnj}. Prazo sera criado sem card.`)
+  }
+
   const { data: cardsExistentes } = await adminSupabase
     .from('process_tasks')
     .select('id, title, description, client_name, movimentacoes_timeline')
     .eq('processo_1grau', params.numero_cnj)
-    .eq('pipeline_id', '7b4d39bb-785c-402a-826d-0088867d934c')
+    .eq('pipeline_id', pipelineId || '')
     .order('updated_at', { ascending: false })
     .limit(1)
 
   const cardExistente = cardsExistentes?.[0] ?? null
   let taskId: string | null = null
 
-  if (cardExistente) {
+  if (cardExistente && stageId) {
     const timelineAtual = Array.isArray(cardExistente.movimentacoes_timeline)
       ? cardExistente.movimentacoes_timeline
       : []
@@ -571,6 +593,7 @@ export async function analisarMovimentacao(params: {
     await adminSupabase
       .from('process_tasks')
       .update({
+        stage_id: stageId,
         movimentacoes_timeline: timelineAtualizada,
         client_name: cardExistente.client_name || cardClientName,
         description: cardExistente.description || cardDescription,
@@ -583,10 +606,13 @@ export async function analisarMovimentacao(params: {
 
     taskId = cardExistente.id
   } else {
+    if (!pipelineId || !stageId) {
+      taskId = null
+    } else {
     const { count } = await adminSupabase
       .from('process_tasks')
       .select('*', { count: 'exact', head: true })
-      .eq('stage_id', '5ecb8f05-042d-40e7-a093-e1f3ce8478da')
+      .eq('stage_id', stageId)
     const position_index = count ?? 0
     const cardTitle = buildProcessCardTitle({
       ...(processo ?? {}),
@@ -603,8 +629,8 @@ export async function analisarMovimentacao(params: {
     })
 
     const { data: novoCard } = await adminSupabase.from('process_tasks').insert({
-      pipeline_id: '7b4d39bb-785c-402a-826d-0088867d934c',
-      stage_id: '5ecb8f05-042d-40e7-a093-e1f3ce8478da',
+      pipeline_id: pipelineId,
+      stage_id: stageId,
       title: cardTitle,
       description: cardDescription,
       client_name: cardClientName,
@@ -627,6 +653,7 @@ export async function analisarMovimentacao(params: {
         .from('monitored_processes')
         .update({ linked_task_id: taskId })
         .eq('id', params.processo_id)
+    }
     }
   }
 

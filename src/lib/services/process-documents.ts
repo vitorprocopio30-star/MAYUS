@@ -4,8 +4,10 @@ import {
   downloadGoogleDriveFile,
   isGoogleDriveFolder,
   listGoogleDriveChildren,
+  moveGoogleDriveFile,
   type GoogleDriveFolderStructure,
 } from "@/lib/services/google-drive";
+import { inferProcessDocumentOrganization, planProcessDocumentMove } from "@/lib/juridico/document-organization";
 
 export type ProcessTaskDocumentContext = {
   id: string;
@@ -67,7 +69,24 @@ export type SyncProcessDocumentsResult = {
   warnings: ProcessDocumentSyncWarning[];
 };
 
-const FOLDER_DOCUMENT_TYPE_MAP: Record<string, string> = {
+export type OrganizeProcessDocumentsResult = SyncProcessDocumentsResult & {
+  organization: {
+    moved: number;
+    skipped: number;
+    needsReview: number;
+    moves: Array<{
+      driveFileId: string;
+      name: string;
+      fromFolderLabel: string;
+      toFolderLabel: string;
+      documentType: string;
+      confidence: "high" | "medium" | "low";
+      reason: string;
+    }>;
+  };
+};
+
+export const FOLDER_DOCUMENT_TYPE_MAP: Record<string, string> = {
   "01-Documentos do Cliente": "documento_cliente",
   "02-Inicial": "inicial",
   "03-Contestacao": "contestacao",
@@ -340,10 +359,16 @@ export async function syncProcessDocuments(params: {
       mimeType: file.mimeType,
     });
 
-    const documentType = inferDocumentType(file.folderLabel, file.name, extracted.normalizedText);
+    const organization = inferProcessDocumentOrganization({
+      name: file.name,
+      mimeType: file.mimeType,
+      textSample: extracted.normalizedText,
+      folderLabel: file.folderLabel,
+    });
+    const documentType = organization.documentType;
     const classificationStatus: SyncedProcessDocument["classificationStatus"] = FOLDER_DOCUMENT_TYPE_MAP[file.folderLabel]
       ? "folder_inferred"
-      : documentType !== "geral"
+      : organization.confidence !== "low"
         ? "classified"
         : "pending";
 
@@ -489,5 +514,108 @@ export async function syncProcessDocuments(params: {
     documents,
     structure,
     warnings,
+  };
+}
+
+export async function organizeProcessDocuments(params: {
+  tenantId: string;
+  accessToken: string;
+  task: ProcessTaskDocumentContext;
+}): Promise<OrganizeProcessDocumentsResult> {
+  const { tenantId, accessToken, task } = params;
+
+  if (!task.drive_folder_id) {
+    throw new Error("Crie a estrutura documental do processo antes de organizar.");
+  }
+
+  const { data: memory } = await supabaseAdmin
+    .from("process_document_memory")
+    .select("folder_structure")
+    .eq("process_task_id", task.id)
+    .maybeSingle<ProcessDocumentMemoryRecord>();
+
+  const rootChildren = await listGoogleDriveChildren(accessToken, task.drive_folder_id);
+  const structure: GoogleDriveFolderStructure = { ...normalizeFolderStructure(memory?.folder_structure) };
+  for (const child of rootChildren) {
+    if (!isGoogleDriveFolder(child) || !child.name) continue;
+    structure[child.name] = {
+      id: child.id,
+      name: child.name,
+      webViewLink: child.webViewLink || buildGoogleDriveFolderUrl(child.id),
+    };
+  }
+
+  const folderEntries = await Promise.all(
+    Object.values(structure).map(async (folder) => {
+      const children = await listGoogleDriveChildren(accessToken, folder.id);
+      return children
+        .filter((item) => !isGoogleDriveFolder(item))
+        .map((item) => ({
+          ...item,
+          currentFolderId: folder.id,
+          currentFolderLabel: folder.name,
+        }));
+    })
+  );
+
+  const candidateFiles = [
+    ...rootChildren
+      .filter((item) => !isGoogleDriveFolder(item))
+      .map((item) => ({
+        ...item,
+        currentFolderId: task.drive_folder_id || null,
+        currentFolderLabel: "Raiz do Processo",
+      })),
+    ...folderEntries.flat(),
+  ];
+
+  let skipped = 0;
+  let needsReview = 0;
+  const moves: OrganizeProcessDocumentsResult["organization"]["moves"] = [];
+
+  for (const file of candidateFiles) {
+    const movePlan = planProcessDocumentMove({
+      fileId: file.id,
+      name: file.name || "Documento sem nome",
+      mimeType: file.mimeType || null,
+      currentFolderId: file.currentFolderId,
+      currentFolderLabel: file.currentFolderLabel,
+      availableFolders: structure,
+    });
+    const { organization } = movePlan;
+
+    if (organization.needsHumanReview) needsReview += 1;
+    if (movePlan.action !== "move") {
+      skipped += 1;
+      continue;
+    }
+
+    await moveGoogleDriveFile(accessToken, {
+      fileId: file.id,
+      addParentId: movePlan.targetFolderId,
+      removeParentIds: file.parents?.length ? file.parents : file.currentFolderId ? [file.currentFolderId] : [],
+    });
+
+    moves.push({
+      driveFileId: file.id,
+      name: file.name || "Documento sem nome",
+      fromFolderLabel: file.currentFolderLabel,
+      toFolderLabel: organization.folderLabel,
+      documentType: organization.documentType,
+      confidence: organization.confidence,
+      reason: organization.reason,
+    });
+  }
+
+  const synced = await syncProcessDocuments({ tenantId, accessToken, task });
+
+  return {
+    ...synced,
+    organization: {
+      moved: moves.length,
+      skipped,
+      needsReview,
+      moves,
+    },
   };
 }

@@ -75,6 +75,30 @@ type ProcessDocumentItem = {
   modified_at?: string | null;
 };
 
+type DocumentOrganizationEvent = {
+  id: string;
+  tenant_id?: string | null;
+  event_name: string;
+  status: string;
+  payload?: {
+    process_task_id?: string | null;
+    uploaded_count?: number | null;
+    moved_count?: number | null;
+    skipped_count?: number | null;
+    needs_review_count?: number | null;
+    auto_organized?: boolean | null;
+    moves?: Array<{
+      name?: string | null;
+      fromFolderLabel?: string | null;
+      toFolderLabel?: string | null;
+      documentType?: string | null;
+      confidence?: string | null;
+      reason?: string | null;
+    }> | null;
+  } | null;
+  created_at: string;
+};
+
 type TenantLegalSettingsRecord = {
   metadata?: Record<string, unknown> | null;
 };
@@ -124,6 +148,7 @@ type ProcessDocumentCard = ProcessTaskListItem & {
   summaryMaster: string | null;
   missingDocuments: string[];
   documents: ProcessDocumentItem[];
+  organizationEvents: DocumentOrganizationEvent[];
   draftPlan: DraftPlanSummary | null;
   autoDraftFactoryEnabled: boolean;
   caseBrainTaskId: string | null;
@@ -635,7 +660,8 @@ export default function DocumentosPage() {
   const [selectedCardId, setSelectedCardId] = useState<string | null>(null);
   const [cards, setCards] = useState<ProcessDocumentCard[]>([]);
   const [uploadFolderByTask, setUploadFolderByTask] = useState<Record<string, string>>({});
-  const [uploadFilesByTask, setUploadFilesByTask] = useState<Record<string, globalThis.File | null>>({});
+  const [uploadFilesByTask, setUploadFilesByTask] = useState<Record<string, globalThis.File[]>>({});
+  const [organizationStatusByTask, setOrganizationStatusByTask] = useState<Record<string, string>>({});
   const [uploadInputVersionByTask, setUploadInputVersionByTask] = useState<Record<string, number>>({});
   const [pieceTypeByTask, setPieceTypeByTask] = useState<Record<string, string>>({});
   const [piecePracticeAreaByTask, setPiecePracticeAreaByTask] = useState<Record<string, string>>({});
@@ -732,7 +758,7 @@ export default function DocumentosPage() {
     setIsLoading(true);
 
     try {
-      const [tasksRes, stagesRes, pipelinesRes, memoryRes, documentsRes, legalProfileRes] = await Promise.all([
+      const [tasksRes, stagesRes, pipelinesRes, memoryRes, documentsRes, eventsRes, legalProfileRes] = await Promise.all([
         supabase
           .from("process_tasks")
           .select("id, pipeline_id, stage_id, title, client_name, process_number, drive_link, drive_folder_id, drive_structure_ready, created_at")
@@ -750,6 +776,14 @@ export default function DocumentosPage() {
           .eq("tenant_id", tenantId)
           .order("modified_at", { ascending: false }),
         supabase
+          .from("system_event_logs")
+          .select("id, tenant_id, event_name, status, payload, created_at")
+          .eq("tenant_id", tenantId)
+          .eq("source", "documentos")
+          .in("event_name", ["process_document_batch_uploaded", "process_document_repository_organized"])
+          .order("created_at", { ascending: false })
+          .limit(100),
+        supabase
           .from("tenant_legal_profiles")
           .select("metadata")
           .eq("tenant_id", tenantId)
@@ -761,12 +795,14 @@ export default function DocumentosPage() {
       if (pipelinesRes.error) throw pipelinesRes.error;
       if (memoryRes.error) throw memoryRes.error;
       if (documentsRes.error) throw documentsRes.error;
+      if (eventsRes.error) throw eventsRes.error;
       if (legalProfileRes.error) throw legalProfileRes.error;
 
       const stagesMap = new Map((stagesRes.data || []).map((stage: ProcessStage) => [stage.id, stage.name]));
       const pipelinesMap = new Map((pipelinesRes.data || []).map((pipeline: ProcessPipeline) => [pipeline.id, pipeline.name]));
       const memoryMap = new Map((memoryRes.data || []).map((memory: ProcessDocumentMemory) => [memory.process_task_id, memory]));
       const docsByTask = new Map<string, ProcessDocumentItem[]>();
+      const eventsByTask = new Map<string, DocumentOrganizationEvent[]>();
       const autoDraftFactoryEnabled = isAutoDraftFactoryEnabled((legalProfileRes.data as TenantLegalSettingsRecord | null)?.metadata || null);
       const loadedGeneratedPieces: Record<string, GeneratedPieceResult> = {};
 
@@ -774,6 +810,13 @@ export default function DocumentosPage() {
         const current = docsByTask.get(document.process_task_id) || [];
         current.push(document);
         docsByTask.set(document.process_task_id, current);
+      });
+      ((eventsRes.data || []) as DocumentOrganizationEvent[]).forEach((event) => {
+        const taskId = String(event.payload?.process_task_id || "");
+        if (!taskId) return;
+        const current = eventsByTask.get(taskId) || [];
+        current.push(event);
+        eventsByTask.set(taskId, current);
       });
 
       const artifactIds = Array.from(
@@ -816,6 +859,7 @@ export default function DocumentosPage() {
           summaryMaster: memory?.summary_master || null,
           missingDocuments: Array.isArray(memory?.missing_documents) ? memory!.missing_documents! : [],
           documents: (docsByTask.get(task.id) || []).slice(0, 5),
+          organizationEvents: (eventsByTask.get(task.id) || []).slice(0, 5),
           draftPlan,
           autoDraftFactoryEnabled,
           caseBrainTaskId: memory?.case_brain_task_id || null,
@@ -841,7 +885,7 @@ export default function DocumentosPage() {
         const next = { ...current };
         nextCards.forEach((card) => {
           if (!next[card.id]) {
-            next[card.id] = "01-Documentos do Cliente";
+            next[card.id] = "auto";
           }
         });
         return next;
@@ -1117,18 +1161,55 @@ export default function DocumentosPage() {
     }
   };
 
+  const handleOrganizeRepository = async (taskId: string) => {
+    setBusyTaskId(taskId);
+    try {
+      const response = await fetch(`/api/documentos/processos/${taskId}/organize`, {
+        method: "POST",
+      });
+
+      const data = await response.json().catch(() => null);
+      if (!response.ok) {
+        throw new Error(data?.error || "Não foi possível organizar o acervo.");
+      }
+
+      const moved = data?.organization?.moved || 0;
+      const review = data?.organization?.needsReview || 0;
+      const warnings = Array.isArray(data?.warnings) ? data.warnings : [];
+      const baseMessage = moved > 0
+        ? `Acervo organizado: ${moved} arquivo(s) movido(s) para as pastas jurídicas.`
+        : "Acervo analisado. Nenhum arquivo precisou ser movido.";
+      setOrganizationStatusByTask((current) => ({
+        ...current,
+        [taskId]: `${baseMessage} ${review} item(ns) para revisão humana.`,
+      }));
+
+      if (warnings.length > 0 || review > 0) {
+        toast.warning(`${baseMessage} ${review} item(ns) ficaram para revisão humana.`);
+      } else {
+        toast.success(baseMessage);
+      }
+
+      await loadRepository();
+    } catch (error: any) {
+      toast.error(error?.message || "Não foi possível organizar o acervo.");
+    } finally {
+      setBusyTaskId(null);
+    }
+  };
+
   const handleUploadDocument = async (taskId: string) => {
-    const file = uploadFilesByTask[taskId];
-    if (!file) {
-      toast.error("Selecione um arquivo antes de enviar.");
+    const files = uploadFilesByTask[taskId] || [];
+    if (files.length === 0) {
+      toast.error("Selecione pelo menos um arquivo antes de enviar.");
       return;
     }
 
     setBusyTaskId(taskId);
     try {
       const formData = new FormData();
-      formData.append("file", file);
-      formData.append("folderLabel", uploadFolderByTask[taskId] || "01-Documentos do Cliente");
+      files.forEach((file) => formData.append("files", file));
+      formData.append("folderLabel", uploadFolderByTask[taskId] || "auto");
 
       const response = await fetch(`/api/documentos/processos/${taskId}/upload`, {
         method: "POST",
@@ -1142,14 +1223,18 @@ export default function DocumentosPage() {
 
       const warnings = Array.isArray(data?.warnings) ? data.warnings : [];
       if (data?.uploaded && data?.indexed === false) {
-        toast.warning("Documento enviado ao Drive, mas a indexação no MAYUS falhou. Tente sincronizar novamente.");
+        toast.warning(`${data?.uploadedCount || files.length} documento(s) enviado(s) ao Drive, mas a indexacao no MAYUS falhou. Tente sincronizar novamente.`);
       } else if (warnings.length > 0) {
-        toast.warning("Documento enviado. O MAYUS indexou o arquivo, mas a leitura do conteúdo ficou parcial.");
+        toast.warning(`${data?.uploadedCount || files.length} documento(s) enviado(s). O MAYUS indexou o acervo, mas a leitura de alguns itens ficou parcial.`);
       } else {
-        toast.success("Documento enviado e sincronizado com sucesso.");
+        toast.success(`${data?.uploadedCount || files.length} documento(s) enviado(s), organizados e sincronizados com sucesso.`);
       }
+      setOrganizationStatusByTask((current) => ({
+        ...current,
+        [taskId]: `${data?.uploadedCount || files.length} documento(s) importado(s). Modo: ${uploadFolderByTask[taskId] === "auto" || !uploadFolderByTask[taskId] ? "organização automática" : "pasta escolhida"}.`,
+      }));
 
-      setUploadFilesByTask((current) => ({ ...current, [taskId]: null }));
+      setUploadFilesByTask((current) => ({ ...current, [taskId]: [] }));
       setUploadInputVersionByTask((current) => ({ ...current, [taskId]: (current[taskId] || 0) + 1 }));
       await loadRepository();
     } catch (error: any) {
@@ -2383,17 +2468,24 @@ export default function DocumentosPage() {
                         )}
 
                         {Boolean(selectedCard.drive_structure_ready && selectedCard.drive_folder_id && selectedCard.drive_link) && (
+                          <>
                           <div className="mt-5 rounded-xl border border-[#CCA761]/20 bg-gradient-to-b from-[#CCA761]/[0.05] to-transparent p-5 space-y-4">
                             <div className="flex items-center gap-2 text-[#CCA761] text-[10px] uppercase tracking-[0.3em] font-black">
                               <Upload size={14} /> Upload via Plataforma
                             </div>
+                            {organizationStatusByTask[selectedCard.id] ? (
+                              <p className="rounded-lg border border-[#CCA761]/15 bg-[#CCA761]/5 px-3 py-2 text-[11px] font-semibold leading-relaxed text-[#CCA761]">
+                                {organizationStatusByTask[selectedCard.id]}
+                              </p>
+                            ) : null}
 
                             <div className="flex flex-col sm:flex-row gap-3">
                               <select
-                                value={uploadFolderByTask[selectedCard.id] || "01-Documentos do Cliente"}
+                                value={uploadFolderByTask[selectedCard.id] || "auto"}
                                 onChange={(event) => setUploadFolderByTask((current) => ({ ...current, [selectedCard.id]: event.target.value }))}
                                 className="bg-white dark:bg-[#0a0a0a] border border-[#CCA761]/20 rounded-xl px-4 py-3 text-xs text-gray-900 dark:text-white focus:outline-none focus:border-[#CCA761]/60 font-medium tracking-wide appearance-none sm:w-[50%]"
                               >
+                                <option value="auto">Organizar automaticamente</option>
                                 {DOCUMENT_FOLDER_OPTIONS.map((folderLabel) => (
                                   <option key={folderLabel} value={folderLabel}>{folderLabel.replace(/^\d{2}-/, '')}</option>
                                 ))}
@@ -2404,9 +2496,10 @@ export default function DocumentosPage() {
                                   key={`${selectedCard.id}-${uploadInputVersionByTask[selectedCard.id] || 0}`}
                                   id={`modal-upload-input-${selectedCard.id}`}
                                   type="file"
+                                  multiple
                                   onChange={(event) => {
-                                    const nextFile = event.target.files?.[0] || null;
-                                    setUploadFilesByTask((current) => ({ ...current, [selectedCard.id]: nextFile }));
+                                    const nextFiles = Array.from(event.target.files || []);
+                                    setUploadFilesByTask((current) => ({ ...current, [selectedCard.id]: nextFiles }));
                                   }}
                                   className="hidden"
                                 />
@@ -2415,7 +2508,9 @@ export default function DocumentosPage() {
                                   className="w-full h-full min-h-[44px] bg-white dark:bg-[#0a0a0a] border border-[#CCA761]/20 rounded-xl pl-4 pr-3 py-1.5 text-xs text-gray-900 dark:text-white flex items-center justify-between gap-3 cursor-pointer hover:border-[#CCA761]/50 transition-colors group/upload"
                                 >
                                   <span className="truncate text-gray-400 group-hover/upload:text-gray-800 dark:text-gray-200 font-medium">
-                                    {uploadFilesByTask[selectedCard.id]?.name || "Localizar..."}
+                                    {(uploadFilesByTask[selectedCard.id] || []).length > 1
+                                      ? `${(uploadFilesByTask[selectedCard.id] || []).length} arquivos selecionados`
+                                      : (uploadFilesByTask[selectedCard.id] || [])[0]?.name || "Localizar..."}
                                   </span>
                                 </label>
                               </div>
@@ -2431,6 +2526,42 @@ export default function DocumentosPage() {
                               Enviar
                             </button>
                           </div>
+
+                          {selectedCard.organizationEvents.length > 0 ? (
+                            <div className="mt-5 rounded-xl border border-gray-200 dark:border-white/10 bg-white dark:bg-[#0a0a0a]/80 p-5">
+                              <div className="flex items-center gap-2 text-[10px] font-black uppercase tracking-[0.3em] text-gray-500 mb-3">
+                                <CheckCircle2 size={13} /> Historico de organizacao
+                              </div>
+                              <div className="grid gap-2">
+                                {selectedCard.organizationEvents.map((event) => {
+                                  const uploaded = event.payload?.uploaded_count || 0;
+                                  const moved = event.payload?.moved_count || 0;
+                                  const review = event.payload?.needs_review_count || 0;
+                                  const title = event.event_name === "process_document_batch_uploaded"
+                                    ? `${uploaded} documento(s) importado(s)`
+                                    : `${moved} arquivo(s) movido(s)`;
+                                  return (
+                                    <div key={event.id} className="rounded-lg border border-gray-200 dark:border-white/5 bg-gray-50 dark:bg-[#111] px-3 py-2">
+                                      <div className="flex items-center justify-between gap-3">
+                                        <p className="min-w-0 truncate text-xs font-bold text-gray-900 dark:text-white">{title}</p>
+                                        <span className="shrink-0 text-[10px] text-gray-500">{formatDateTime(event.created_at)}</span>
+                                      </div>
+                                      <p className="mt-1 text-[11px] text-gray-500">
+                                        Status: {event.status}
+                                        {review ? ` · ${review} para revisao` : ""}
+                                      </p>
+                                      {Array.isArray(event.payload?.moves) && event.payload.moves.length > 0 ? (
+                                        <p className="mt-1 truncate text-[11px] text-[#CCA761]">
+                                          {event.payload.moves[0]?.name} para {event.payload.moves[0]?.toFolderLabel}
+                                        </p>
+                                      ) : null}
+                                    </div>
+                                  );
+                                })}
+                              </div>
+                            </div>
+                          ) : null}
+                          </>
                         )}
                       </div>
                     </div>
@@ -2597,13 +2728,23 @@ export default function DocumentosPage() {
                   )}
 
                   <button
+                    type="button"
+                    onClick={() => handleOrganizeRepository(selectedCard.id)}
+                    disabled={busyTaskId === selectedCard.id || !Boolean(selectedCard.drive_structure_ready)}
+                    className="w-full py-3 rounded-xl border border-[#CCA761]/30 bg-[#CCA761]/10 hover:bg-[#CCA761]/20 text-[9px] font-black uppercase tracking-[0.1em] text-[#CCA761] flex items-center justify-center gap-1.5 disabled:opacity-50 transition-colors text-center"
+                  >
+                    {busyTaskId === selectedCard.id ? <Loader2 size={12} className="animate-spin shrink-0" /> : <Sparkles size={12} className="shrink-0" />}
+                    <span className="truncate">Organizar Acervo</span>
+                  </button>
+
+                  <button
                       type="button"
                       onClick={() => handleSync(selectedCard.id)}
                       disabled={busyTaskId === selectedCard.id || !Boolean(selectedCard.drive_structure_ready)}
-                      className="w-full py-3 rounded-xl border border-gray-200 dark:border-white/10 bg-gray-100 dark:bg-white/5 hover:bg-gray-100 dark:bg-white/10 text-[9px] font-black uppercase tracking-[0.1em] text-gray-900 dark:text-white flex items-center justify-center gap-1.5 disabled:opacity-50 transition-colors col-span-2 lg:col-span-2 text-center"
+                      className="w-full py-3 rounded-xl border border-gray-200 dark:border-white/10 bg-gray-100 dark:bg-white/5 hover:bg-gray-100 dark:bg-white/10 text-[9px] font-black uppercase tracking-[0.1em] text-gray-900 dark:text-white flex items-center justify-center gap-1.5 disabled:opacity-50 transition-colors text-center"
                     >
                       {busyTaskId === selectedCard.id ? <Loader2 size={12} className="animate-spin shrink-0" /> : <RefreshCw size={12} className="shrink-0" />}
-                      <span>Orquestrar Sincronização IA</span>
+                      <span className="truncate">Sincronizar IA</span>
                   </button>
 
                   <Link

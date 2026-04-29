@@ -1,13 +1,26 @@
-import { createClient } from '@/lib/supabase/server'
+import { createClient as createCookieSupabaseClient } from '@/lib/supabase/server'
+import { createClient as createSupabaseClient } from '@supabase/supabase-js'
 import { buildAgendaPayloadFromProcessTask, syncAgendaTaskBySource } from '@/lib/agenda/userTasks'
 import { NextRequest, NextResponse } from 'next/server'
 import { getLLMClient, buildHeaders } from '@/lib/llm-router'
 import { requireTenantApiKey } from '@/lib/integrations/server'
+import { buildDocumentOrganizationSummary } from '@/lib/juridico/document-organization'
 import {
   buildProcessCardClientName,
   buildProcessCardDescription,
   buildProcessCardTitle,
 } from '@/lib/juridico/process-card-context'
+
+function createRequestSupabaseClient(req: NextRequest) {
+  const token = req.headers.get('Authorization')?.replace(/^Bearer\s+/i, '').trim()
+  if (!token) return createCookieSupabaseClient()
+
+  return createSupabaseClient(
+    process.env.NEXT_PUBLIC_SUPABASE_URL!,
+    process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY!,
+    { global: { headers: { Authorization: `Bearer ${token}` } } }
+  )
+}
 
 function normalizarDescricaoPrazo(value: string | null | undefined): string {
   const texto = String(value ?? '')
@@ -110,7 +123,7 @@ function escolherEtapaSemantica(stages: any[], sinais: string[]) {
 }
 
 export async function POST(req: NextRequest) {
-  const supabase = createClient()
+  const supabase = createRequestSupabaseClient(req)
   const { data: { user } } = await supabase.auth.getUser()
   if (!user) return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
 
@@ -489,6 +502,28 @@ Retorne exatamente este JSON:
     }
   }
 
+  const organizedTaskId = proc.linked_task_id || novoCard?.id || null
+  let documentOrganization: ReturnType<typeof buildDocumentOrganizationSummary> | null = null
+  let documentMemory: any = null
+
+  if (organizedTaskId) {
+    const [{ data: documents }, { data: memory }] = await Promise.all([
+      supabase
+        .from('process_documents')
+        .select('name, document_type, extraction_status, classification_status, folder_label')
+        .eq('process_task_id', organizedTaskId)
+        .limit(200),
+      supabase
+        .from('process_document_memory')
+        .select('document_count, sync_status, last_synced_at, summary_master, missing_documents')
+        .eq('process_task_id', organizedTaskId)
+        .maybeSingle(),
+    ])
+
+    documentOrganization = buildDocumentOrganizationSummary(documents || [])
+    documentMemory = memory || null
+  }
+
   return NextResponse.json({
     success: true,
     processo_atualizado: procAtualizado,
@@ -496,6 +531,9 @@ Retorne exatamente este JSON:
     prazos_criados:      resultado.prazos?.length || 0,
     peca_sugerida:       resultado.peca_sugerida,
     kanban_stage_id:     etapaEscolhidaId,
-    kanban_card_criado:  !!novoCard?.id
+    kanban_card_criado:  !!novoCard?.id,
+    process_task_id:     organizedTaskId,
+    document_organization: documentOrganization,
+    document_memory:     documentMemory
   })
 }

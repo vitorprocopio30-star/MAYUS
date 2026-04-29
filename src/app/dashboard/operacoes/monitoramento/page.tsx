@@ -814,7 +814,11 @@ function MonitoramentoContent() {
           ...prev,
           processos: prev.processos.map(p => p.id === processoId ? { ...p, ...data.processo_atualizado } : p)
         } : prev)
-        setFeedback('OrganizaÃ§Ã£o concluÃ­da e card atualizado no fluxo jurÃ­dico.')
+        const docs = data?.document_organization
+        const docsLabel = docs?.total
+          ? ` Acervo: ${docs.total} documento(s), ${docs.extracted || 0} com texto extraido, ${docs.pendingReviewCount || 0} para revisar.`
+          : ' Acervo sem documentos sincronizados ainda.'
+        setFeedback(`OrganizaÃ§Ã£o concluÃ­da e card atualizado no fluxo jurÃ­dico.${docsLabel}`)
       } else {
         setOrganizando(prev => ({ ...prev, [processoId]: 'idle' }))
         setError(data?.error || 'NÃ£o foi possÃ­vel organizar este processo com IA.')
@@ -859,6 +863,7 @@ function MonitoramentoContent() {
       if (i < monitorados.length - 1) await new Promise(r => setTimeout(r, 1000))
     }
     setOrganizandoTodos(false)
+    setFeedback(`Organizacao em lote concluida para ${monitorados.length} processo(s).`)
   }, [result])
 
   const exportarCsv = () => {

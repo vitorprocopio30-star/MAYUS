@@ -4,6 +4,7 @@ import { supabaseAdmin } from "@/lib/supabase/admin";
 import { getTenantGoogleDriveContext } from "@/lib/services/google-drive-tenant";
 import { syncProcessDocuments, type ProcessTaskDocumentContext } from "@/lib/services/process-documents";
 import { uploadGoogleDriveFile } from "@/lib/services/google-drive";
+import { inferProcessDocumentOrganization } from "@/lib/juridico/document-organization";
 
 export const runtime = "nodejs";
 
@@ -13,7 +14,7 @@ type ProcessDocumentMemoryRecord = {
 
 export async function POST(request: NextRequest, { params }: { params: { taskId: string } }) {
   try {
-    const { tenantId } = await getTenantSession();
+    const { tenantId, userId } = await getTenantSession();
     const taskId = String(params?.taskId || "").trim();
 
     if (!taskId) {
@@ -36,11 +37,18 @@ export async function POST(request: NextRequest, { params }: { params: { taskId:
     }
 
     const formData = await request.formData();
-    const file = formData.get("file");
-    const folderLabel = String(formData.get("folderLabel") || "").trim() || "01-Documentos do Cliente";
+    const files = [
+      ...formData.getAll("files"),
+      ...formData.getAll("file"),
+    ].filter((item): item is File => item instanceof File && item.size > 0);
+    const requestedFolderLabel = String(formData.get("folderLabel") || "").trim();
 
-    if (!(file instanceof File)) {
-      return NextResponse.json({ error: "Selecione um arquivo válido para upload." }, { status: 400 });
+    if (files.length === 0) {
+      return NextResponse.json({ error: "Selecione pelo menos um arquivo valido para upload." }, { status: 400 });
+    }
+
+    if (files.length > 25) {
+      return NextResponse.json({ error: "Envie no maximo 25 arquivos por lote para manter a organizacao estavel." }, { status: 400 });
     }
 
     const driveContext = await getTenantGoogleDriveContext(request, tenantId);
@@ -51,15 +59,35 @@ export async function POST(request: NextRequest, { params }: { params: { taskId:
       .maybeSingle<ProcessDocumentMemoryRecord>();
 
     const folderStructure = memory?.folder_structure || {};
-    const targetFolderId = folderStructure[folderLabel]?.id || task.drive_folder_id;
+    const autoOrganize = !requestedFolderLabel || /^auto|organizar automaticamente$/i.test(requestedFolderLabel);
+    const uploadedFiles = [];
+    const organizations = [];
 
-    const bytes = await file.arrayBuffer();
-    const uploadedFile = await uploadGoogleDriveFile(driveContext.accessToken, {
-      name: file.name,
-      mimeType: file.type || "application/octet-stream",
-      bytes,
-      parentFolderId: targetFolderId,
-    });
+    for (const file of files) {
+      const organization = autoOrganize
+        ? inferProcessDocumentOrganization({
+            name: file.name,
+            mimeType: file.type || "application/octet-stream",
+          })
+        : inferProcessDocumentOrganization({
+            name: file.name,
+            mimeType: file.type || "application/octet-stream",
+            folderLabel: requestedFolderLabel,
+          });
+      const folderLabel = organization.folderLabel === "Raiz do Processo" ? "01-Documentos do Cliente" : organization.folderLabel;
+      const targetFolderId = folderStructure[folderLabel]?.id || task.drive_folder_id;
+
+      const bytes = await file.arrayBuffer();
+      const uploadedFile = await uploadGoogleDriveFile(driveContext.accessToken, {
+        name: file.name,
+        mimeType: file.type || "application/octet-stream",
+        bytes,
+        parentFolderId: targetFolderId,
+      });
+
+      uploadedFiles.push(uploadedFile);
+      organizations.push({ fileName: file.name, ...organization });
+    }
 
     try {
       const result = await syncProcessDocuments({
@@ -68,23 +96,66 @@ export async function POST(request: NextRequest, { params }: { params: { taskId:
         task,
       });
 
+      await supabaseAdmin.from("system_event_logs").insert({
+        tenant_id: tenantId,
+        user_id: userId,
+        source: "documentos",
+        provider: "google_drive",
+        event_name: "process_document_batch_uploaded",
+        status: "completed",
+        payload: {
+          process_task_id: task.id,
+          process_title: task.title,
+          process_number: task.process_number || null,
+          uploaded_count: uploadedFiles.length,
+          auto_organized: autoOrganize,
+          organizations: organizations.slice(0, 25),
+          document_count: (result.memory as any)?.document_count ?? result.documents.length,
+          warnings: result.warnings.slice(0, 10),
+        },
+      });
+
       return NextResponse.json({
         success: true,
         uploaded: true,
+        uploadedCount: uploadedFiles.length,
         indexed: true,
-        uploadedFile,
+        uploadedFile: uploadedFiles[0] || null,
+        uploadedFiles,
+        organizations,
         ...result,
       });
     } catch (syncError: any) {
+      await supabaseAdmin.from("system_event_logs").insert({
+        tenant_id: tenantId,
+        user_id: userId,
+        source: "documentos",
+        provider: "google_drive",
+        event_name: "process_document_batch_uploaded",
+        status: "partial",
+        payload: {
+          process_task_id: task.id,
+          process_title: task.title,
+          process_number: task.process_number || null,
+          uploaded_count: uploadedFiles.length,
+          auto_organized: autoOrganize,
+          organizations: organizations.slice(0, 25),
+          sync_error: syncError?.message || "Arquivo enviado ao Drive, mas a indexacao no MAYUS falhou.",
+        },
+      });
+
       return NextResponse.json({
         success: true,
         uploaded: true,
+        uploadedCount: uploadedFiles.length,
         indexed: false,
-        uploadedFile,
+        uploadedFile: uploadedFiles[0] || null,
+        uploadedFiles,
+        organizations,
         warnings: [
           {
             stage: "index",
-            fileName: file.name,
+            fileName: files.map((file) => file.name).join(", "),
             message: syncError?.message || "Arquivo enviado ao Drive, mas a indexação no MAYUS falhou.",
           },
         ],

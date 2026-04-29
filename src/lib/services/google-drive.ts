@@ -449,6 +449,41 @@ export async function uploadGoogleDriveFile(
   return data;
 }
 
+export async function moveGoogleDriveFile(
+  accessToken: string,
+  params: {
+    fileId: string;
+    addParentId: string;
+    removeParentIds?: string[] | null;
+  }
+) {
+  const url = new URL(`${GOOGLE_DRIVE_API_BASE_URL}/files/${params.fileId}`);
+  url.searchParams.set("fields", "id,name,mimeType,webViewLink,modifiedTime,parents,size");
+  url.searchParams.set("supportsAllDrives", "true");
+  url.searchParams.set("addParents", params.addParentId);
+  const removeParents = (params.removeParentIds || []).filter(Boolean).join(",");
+  if (removeParents) {
+    url.searchParams.set("removeParents", removeParents);
+  }
+
+  const response = await fetch(url.toString(), {
+    method: "PATCH",
+    headers: {
+      Authorization: `Bearer ${accessToken}`,
+      "Content-Type": "application/json",
+    },
+    body: JSON.stringify({}),
+  });
+
+  const data = (await response.json().catch(() => null)) as GoogleDriveFileRecord | null;
+
+  if (!response.ok || !data?.id) {
+    throw new Error(getGoogleTokenErrorMessage(data, "Não foi possível mover o arquivo no Google Drive."));
+  }
+
+  return data;
+}
+
 export async function downloadGoogleDriveFile(accessToken: string, fileId: string): Promise<Uint8Array> {
   const response = await fetch(
     `${GOOGLE_DRIVE_API_BASE_URL}/files/${fileId}?alt=media&supportsAllDrives=true`,
