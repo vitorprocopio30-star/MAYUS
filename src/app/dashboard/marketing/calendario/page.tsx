@@ -15,7 +15,14 @@ import {
   type MarketingObjective,
   type MarketingTone,
 } from "@/lib/marketing/editorial-calendar";
-import { loadMarketingCalendar, loadMarketingProfile, saveMarketingCalendar } from "@/lib/marketing/local-persistence";
+import {
+  loadLocalMarketingState,
+  loadRemoteMarketingState,
+  saveLocalMarketingState,
+  saveMarketingCalendar,
+  saveRemoteMarketingState,
+  shouldUseRemoteMarketingState,
+} from "@/lib/marketing/local-persistence";
 import { createClient } from "@/lib/supabase/client";
 
 const channels: MarketingChannel[] = ["blog", "linkedin", "instagram", "email", "whatsapp"];
@@ -68,31 +75,45 @@ export default function CalendarioMarketingPage() {
   const [creatingTaskItemId, setCreatingTaskItemId] = useState<string | null>(null);
   const [agendaMessage, setAgendaMessage] = useState<string | null>(null);
   const [profileDefaultsApplied, setProfileDefaultsApplied] = useState(false);
+  const [storageLabel, setStorageLabel] = useState("Carregando");
 
   useEffect(() => {
-    const savedCalendar = loadMarketingCalendar();
-    const profile = loadMarketingProfile();
-    const defaults = buildMarketingCalendarDefaults(profile);
-    const hasSavedProfile = Boolean(
-      profile.firmName.trim() ||
-      profile.positioning.trim() ||
-      profile.legalAreas.length ||
-      profile.audiences.length ||
-      profile.websites.length ||
-      profile.socialProfiles.length ||
-      profile.admiredReferences.length,
-    );
-    setCalendar(savedCalendar);
-    setForm((current) => ({
-      ...current,
-      style: defaults.style,
-      channels: defaults.channels,
-      legalAreas: defaults.legalAreas.join(", "),
-      tones: defaults.tones,
-      audiences: defaults.audiences.join(", "),
-    }));
-    setProfileDefaultsApplied(hasSavedProfile);
-    setIsLoaded(true);
+    let cancelled = false;
+
+    async function loadState() {
+      const localState = loadLocalMarketingState();
+      const remoteState = await loadRemoteMarketingState().catch(() => null);
+      const useRemote = shouldUseRemoteMarketingState(remoteState);
+      const sourceState = useRemote ? remoteState! : localState;
+      const defaults = buildMarketingCalendarDefaults(sourceState.profile);
+      const hasSavedProfile = Boolean(
+        sourceState.profile.firmName.trim() ||
+        sourceState.profile.positioning.trim() ||
+        sourceState.profile.legalAreas.length ||
+        sourceState.profile.audiences.length ||
+        sourceState.profile.websites.length ||
+        sourceState.profile.socialProfiles.length ||
+        sourceState.profile.admiredReferences.length,
+      );
+      if (cancelled) return;
+
+      setCalendar(sourceState.calendar);
+      saveLocalMarketingState({ calendar: sourceState.calendar, profile: sourceState.profile });
+      setForm((current) => ({
+        ...current,
+        style: defaults.style,
+        channels: defaults.channels,
+        legalAreas: defaults.legalAreas.join(", "),
+        tones: defaults.tones,
+        audiences: defaults.audiences.join(", "),
+      }));
+      setProfileDefaultsApplied(hasSavedProfile);
+      setStorageLabel(useRemote ? "Servidor" : "Local com fallback");
+      setIsLoaded(true);
+    }
+
+    void loadState();
+    return () => { cancelled = true; };
   }, []);
 
   useEffect(() => {
@@ -119,6 +140,7 @@ export default function CalendarioMarketingPage() {
   useEffect(() => {
     if (!isLoaded) return;
     saveMarketingCalendar(calendar);
+    void saveRemoteMarketingState({ calendar }).then((saved) => setStorageLabel(saved ? "Servidor" : "Local com fallback"));
   }, [calendar, isLoaded]);
 
   function updateForm<K extends keyof CalendarForm>(key: K, value: CalendarForm[K]) {
@@ -214,7 +236,7 @@ export default function CalendarioMarketingPage() {
               <p className="text-xs font-bold uppercase tracking-[0.22em] text-[#CCA761]">Briefing</p>
               <h2 className="mt-2 text-xl font-semibold">Parametros do calendario</h2>
             </div>
-            <span className="rounded-full border border-border px-3 py-1 text-xs text-muted-foreground">MVP localStorage</span>
+            <span className="rounded-full border border-border px-3 py-1 text-xs text-muted-foreground">{storageLabel}</span>
           </div>
 
           {profileDefaultsApplied ? (
@@ -355,7 +377,7 @@ export default function CalendarioMarketingPage() {
               <p className="text-xs font-bold uppercase tracking-[0.22em] text-[#CCA761]">Draft calendar</p>
               <h2 className="mt-2 text-xl font-semibold">Itens editaveis</h2>
             </div>
-            <span className="text-sm text-muted-foreground">{calendar.length} pautas salvas localmente</span>
+            <span className="text-sm text-muted-foreground">{calendar.length} pautas salvas - {storageLabel.toLowerCase()}</span>
           </div>
 
           <div className="mt-6 grid gap-4">

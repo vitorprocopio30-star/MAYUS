@@ -84,6 +84,7 @@ Use esse checklist para marcar:
 - [x] Conteudos aprovados conectados a tarefas internas em 2026-04-28: item aprovado no calendario editorial pode criar tarefa privada em `user_tasks` via `buildMarketingAgendaTaskDraft` e `buildAgendaPayloadFromManualTask`, registrando origem `marketing_editorial_calendar` em descricao/tags/notas, sem publicacao externa nem Google Calendar automatico.
 - [x] Meta Ads CSV MVP entregue em 2026-04-28: `src/lib/marketing/meta-ads-analysis.ts` e `/dashboard/marketing/meta-ads` analisam CSV colado/exportado ou arquivo `.csv` client-side, calculam CPL/CTR/CPC/CPM, vencedores, gasto desperdicado, temas de criativo/publico, findings e recomendacoes supervisionadas. XLSX/PDF seguem pendentes.
 - [x] Perfil e canais de Marketing MVP entregue em 2026-04-28: `/dashboard/marketing/perfil` cadastra posicionamento, areas, publicos, canais, tom, sites, redes, referencias admiradas e guardrails eticos em `localStorage`; calendario editorial usa esse perfil como briefing inicial, sem publicacao externa automatica.
+- [x] Marketing persistente por tenant entregue em 2026-04-28: `/api/marketing/state` salva perfil, referencias e calendario em `tenant_settings.ai_features.marketing_os`, telas de Perfil/Referencias/Calendario/Kanban/Aprovados usam servidor com fallback local e Conteudos Aprovados virou hub operacional para tarefa interna e publicacao manual supervisionada.
 - [x] Agenda Google e Marketing UX refinados em 2026-04-28: Agenda Diaria/Global deixam claro que usuarios apenas conectam a conta Google via OAuth, com diagnostico tecnico apenas quando o servidor nao esta configurado; sidebar agora expõe submenus de Marketing e `/dashboard/marketing/kanban` acompanha pautas por status usando o mesmo calendario local, sem publicacao externa.
 - [x] CRM Growth sem lead abandonado concluido em 2026-04-28: `buildCrmLeadNextStepStatus` identifica oportunidade aberta sem proximo passo ou parada ha 2+ dias, e o CRM exibe banner/card/lista recomendando data, canal e responsavel sem side effects externos.
 - [x] Smoke autenticado real parcial passou em 2026-04-26: `GET /api/integrations`, `POST /api/integrations` controlado com cleanup, OpenRouter via Vault e TTS OpenAI.
@@ -104,6 +105,7 @@ Use esse checklist para marcar:
 - [x] Conectar UI de Marketing ao backend de referencias/calendario.
 - [x] Expor acao de analise de call no CRM visual e promover evento seguro para artifact/historico do lead.
 - [x] Cadastrar perfis, redes, canais, sites e referencias admiradas para orientar Marketing.
+- [x] Persistir Marketing OS por tenant com fallback local e hub operacional de conteudos aprovados.
 - [ ] Evoluir Meta Ads upload para arquivo real XLSX/PDF ou rota server-side quando necessario.
 - [x] Expor Kanban Marketing na lateral usando o calendario editorial local.
 - [x] Alertar no CRM leads/oportunidades sem proximo passo operacional.

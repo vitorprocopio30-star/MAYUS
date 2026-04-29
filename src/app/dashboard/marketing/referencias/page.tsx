@@ -8,7 +8,14 @@ import {
   type MarketingChannel,
   type ReferenceInput,
 } from "@/lib/marketing/editorial-calendar";
-import { loadMarketingReferences, saveMarketingReferences } from "@/lib/marketing/local-persistence";
+import {
+  loadLocalMarketingState,
+  loadRemoteMarketingState,
+  saveLocalMarketingState,
+  saveMarketingReferences,
+  saveRemoteMarketingState,
+  shouldUseRemoteMarketingState,
+} from "@/lib/marketing/local-persistence";
 
 const channels: MarketingChannel[] = ["blog", "linkedin", "instagram", "email", "whatsapp"];
 
@@ -51,17 +58,34 @@ export default function ReferenciasMarketingPage() {
   const [form, setForm] = useState<ReferenceForm>(initialForm);
   const [references, setReferences] = useState<ReferenceInput[]>([]);
   const [isLoaded, setIsLoaded] = useState(false);
+  const [storageLabel, setStorageLabel] = useState("Carregando");
 
   const patterns = extractReferencePatterns(references);
 
   useEffect(() => {
-    setReferences(loadMarketingReferences());
-    setIsLoaded(true);
+    let cancelled = false;
+
+    async function loadState() {
+      const localState = loadLocalMarketingState();
+      const remoteState = await loadRemoteMarketingState().catch(() => null);
+      const useRemote = shouldUseRemoteMarketingState(remoteState);
+      const sourceState = useRemote ? remoteState! : localState;
+      if (cancelled) return;
+
+      setReferences(sourceState.references);
+      saveLocalMarketingState({ references: sourceState.references });
+      setStorageLabel(useRemote ? "Servidor" : "Local com fallback");
+      setIsLoaded(true);
+    }
+
+    void loadState();
+    return () => { cancelled = true; };
   }, []);
 
   useEffect(() => {
     if (!isLoaded) return;
     saveMarketingReferences(references);
+    void saveRemoteMarketingState({ references }).then((saved) => setStorageLabel(saved ? "Servidor" : "Local com fallback"));
   }, [isLoaded, references]);
 
   function updateForm<K extends keyof ReferenceForm>(key: K, value: ReferenceForm[K]) {
@@ -119,7 +143,7 @@ export default function ReferenciasMarketingPage() {
               <p className="text-xs font-bold uppercase tracking-[0.22em] text-[#CCA761]">Nova referencia</p>
               <h2 className="mt-2 text-xl font-semibold">Dados do benchmark</h2>
             </div>
-            <span className="rounded-full border border-border px-3 py-1 text-xs text-muted-foreground">MVP localStorage</span>
+            <span className="rounded-full border border-border px-3 py-1 text-xs text-muted-foreground">{storageLabel}</span>
           </div>
 
           <div className="mt-6 grid gap-4">
@@ -221,7 +245,7 @@ export default function ReferenciasMarketingPage() {
                 <p className="text-xs font-bold uppercase tracking-[0.22em] text-[#CCA761]">Lista</p>
                 <h2 className="mt-2 text-xl font-semibold">Referencias capturadas</h2>
               </div>
-              <span className="text-sm text-muted-foreground">{references.length} itens salvos localmente</span>
+              <span className="text-sm text-muted-foreground">{references.length} itens salvos - {storageLabel.toLowerCase()}</span>
             </div>
 
             <div className="mt-5 grid gap-3">

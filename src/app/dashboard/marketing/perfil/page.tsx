@@ -4,7 +4,15 @@ import Link from "next/link";
 import { ArrowLeft, Building2, Plus, Save, Trash2 } from "lucide-react";
 import { useEffect, useState } from "react";
 import type { MarketingChannel, MarketingProfile, MarketingTone } from "@/lib/marketing/editorial-calendar";
-import { emptyMarketingProfile, loadMarketingProfile, saveMarketingProfile } from "@/lib/marketing/local-persistence";
+import {
+  emptyMarketingProfile,
+  loadLocalMarketingState,
+  loadRemoteMarketingState,
+  saveLocalMarketingState,
+  saveMarketingProfile,
+  saveRemoteMarketingState,
+  shouldUseRemoteMarketingState,
+} from "@/lib/marketing/local-persistence";
 
 const channels: MarketingChannel[] = ["blog", "linkedin", "instagram", "email", "whatsapp"];
 const tones: MarketingTone[] = ["educational", "direct", "empathetic", "premium", "conversational"];
@@ -31,10 +39,26 @@ export default function MarketingProfilePage() {
   const [drafts, setDrafts] = useState<Record<string, string>>({});
   const [isLoaded, setIsLoaded] = useState(false);
   const [message, setMessage] = useState<string | null>(null);
+  const [storageLabel, setStorageLabel] = useState("Carregando");
 
   useEffect(() => {
-    setProfile(loadMarketingProfile());
-    setIsLoaded(true);
+    let cancelled = false;
+
+    async function loadState() {
+      const localState = loadLocalMarketingState();
+      const remoteState = await loadRemoteMarketingState().catch(() => null);
+      const useRemote = shouldUseRemoteMarketingState(remoteState);
+      const sourceState = useRemote ? remoteState! : localState;
+      if (cancelled) return;
+
+      setProfile(sourceState.profile);
+      saveLocalMarketingState({ profile: sourceState.profile });
+      setStorageLabel(useRemote ? "Servidor" : "Local com fallback");
+      setIsLoaded(true);
+    }
+
+    void loadState();
+    return () => { cancelled = true; };
   }, []);
 
   useEffect(() => {
@@ -68,7 +92,13 @@ export default function MarketingProfilePage() {
 
   function saveNow() {
     saveMarketingProfile(profile);
-    setMessage("Perfil salvo localmente. Nenhuma publicacao externa foi feita.");
+    void saveRemoteMarketingState({ profile }).then((saved) => {
+      setStorageLabel(saved ? "Servidor" : "Local com fallback");
+      setMessage(saved
+        ? "Perfil salvo no servidor do escritorio. Nenhuma publicacao externa foi feita."
+        : "Perfil salvo localmente. O servidor nao respondeu e nenhuma publicacao externa foi feita."
+      );
+    });
   }
 
   return (
@@ -96,7 +126,7 @@ export default function MarketingProfilePage() {
               <p className="text-xs font-bold uppercase tracking-[0.22em] text-[#CCA761]">Base da marca</p>
               <h2 className="mt-2 text-xl font-semibold">Dados principais</h2>
             </div>
-            <span className="rounded-full border border-border px-3 py-1 text-xs text-muted-foreground">MVP localStorage</span>
+            <span className="rounded-full border border-border px-3 py-1 text-xs text-muted-foreground">{storageLabel}</span>
           </div>
 
           <div className="mt-6 grid gap-4">

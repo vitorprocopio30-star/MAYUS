@@ -4,7 +4,14 @@ import Link from "next/link";
 import { ArrowLeft, CalendarDays, CheckCircle2, LayoutDashboard, Megaphone, XCircle } from "lucide-react";
 import { useEffect, useMemo, useState } from "react";
 import { updateEditorialCalendarItem, type EditorialCalendarItem } from "@/lib/marketing/editorial-calendar";
-import { loadMarketingCalendar, saveMarketingCalendar } from "@/lib/marketing/local-persistence";
+import {
+  loadLocalMarketingState,
+  loadRemoteMarketingState,
+  saveLocalMarketingState,
+  saveMarketingCalendar,
+  saveRemoteMarketingState,
+  shouldUseRemoteMarketingState,
+} from "@/lib/marketing/local-persistence";
 
 const columns = [
   { status: "draft", title: "Rascunho", icon: Megaphone, className: "border-zinc-500/25 bg-zinc-500/10 text-zinc-400" },
@@ -28,15 +35,32 @@ const nextActions: Array<{ status: EditorialCalendarItem["status"]; label: strin
 export default function MarketingKanbanPage() {
   const [calendar, setCalendar] = useState<EditorialCalendarItem[]>([]);
   const [isLoaded, setIsLoaded] = useState(false);
+  const [storageLabel, setStorageLabel] = useState("Carregando");
 
   useEffect(() => {
-    setCalendar(loadMarketingCalendar());
-    setIsLoaded(true);
+    let cancelled = false;
+
+    async function loadState() {
+      const localState = loadLocalMarketingState();
+      const remoteState = await loadRemoteMarketingState().catch(() => null);
+      const useRemote = shouldUseRemoteMarketingState(remoteState);
+      const sourceState = useRemote ? remoteState! : localState;
+      if (cancelled) return;
+
+      setCalendar(sourceState.calendar);
+      saveLocalMarketingState({ calendar: sourceState.calendar });
+      setStorageLabel(useRemote ? "Servidor" : "Local com fallback");
+      setIsLoaded(true);
+    }
+
+    void loadState();
+    return () => { cancelled = true; };
   }, []);
 
   useEffect(() => {
     if (!isLoaded) return;
     saveMarketingCalendar(calendar);
+    void saveRemoteMarketingState({ calendar }).then((saved) => setStorageLabel(saved ? "Servidor" : "Local com fallback"));
   }, [calendar, isLoaded]);
 
   const grouped = useMemo(() => {
@@ -66,8 +90,9 @@ export default function MarketingKanbanPage() {
         <p className="mt-6 text-xs font-bold uppercase tracking-[0.24em] text-[#CCA761]">Fluxo editorial</p>
         <h1 className="mt-3 text-3xl font-semibold tracking-tight md:text-4xl">Kanban Marketing</h1>
         <p className="mt-4 max-w-2xl text-sm leading-7 text-muted-foreground">
-          Acompanhe o calendario editorial por status. Este kanban usa o mesmo MVP local do calendario e nao publica conteudo nem aciona integracoes externas.
+          Acompanhe o calendario editorial por status. Este kanban usa o calendario persistido do escritorio quando disponivel e nao publica conteudo nem aciona integracoes externas.
         </p>
+        <span className="mt-5 inline-flex rounded-full border border-border px-3 py-1 text-xs text-muted-foreground">{storageLabel}</span>
       </section>
 
       <section className="mt-8 grid gap-4 xl:grid-cols-4">

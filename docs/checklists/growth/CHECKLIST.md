@@ -90,19 +90,19 @@ Evidencia 2026-04-28: CRM visual envia `crmTaskId` para `POST /api/growth/call-a
 - [x] Marketing por referencias sem copia de conteudo.
 Evidencia 2026-04-28: backend `src/lib/marketing/editorial-calendar.ts` extrai padroes de referencias fornecidas e cria ideias originais com guardrails explicitos contra copia.
 - [x] Cadastro de perfis, redes, canais, sites e referencias admiradas.
-Evidencia 2026-04-28: `/dashboard/marketing/perfil` salva perfil de marca, areas, publicos, canais, tom, sites, redes, referencias admiradas e guardrails eticos em `localStorage`; `/dashboard/marketing/calendario` usa esse perfil como briefing inicial sem publicacao externa automatica.
+Evidencia 2026-04-28: `/api/marketing/state` persiste perfil de marca, referencias e calendario em `tenant_settings.ai_features.marketing_os` com fallback local; `/dashboard/marketing/perfil` salva areas, publicos, canais, tom, sites, redes, referencias admiradas e guardrails eticos sem publicacao externa automatica.
 - [x] Extracao de padroes vencedores: temas, formatos, ganchos, CTAs, frequencia, tom e engajamento.
 Evidencia 2026-04-28: tela local de Referencias usa `extractReferencePatterns` para exibir padroes de referencias cadastradas pelo usuario.
 - [x] Calendario editorial editavel.
-Evidencia 2026-04-28: `generateEditorialCalendar` e `updateEditorialCalendarItem` geram e editam calendario por frequencia, estilo, canal, area, objetivo, tom e publico-alvo.
+Evidencia 2026-04-28: `generateEditorialCalendar` e `updateEditorialCalendarItem` geram e editam calendario por frequencia, estilo, canal, area, objetivo, tom e publico-alvo, sincronizando com o estado server-side do escritorio quando autenticado.
 - [x] Kanban Marketing para acompanhar status editorial.
 Evidencia 2026-04-28: `/dashboard/marketing/kanban` usa o mesmo calendario editorial em `localStorage` e organiza pautas em Rascunho, Aprovado, Publicado e Recusado; a sidebar mostra os submenus de Marketing diretamente na lateral.
 - [x] Configuracoes de frequencia, estilo, formato, canal, area juridica, objetivo, tom e publico-alvo.
 Evidencia 2026-04-28: tela local de Calendario Editorial gera calendario com frequencia, estilo, canais, areas, objetivos, tons, publicos, data inicial e periodos.
 - [x] Aprovacao, edicao ou recusa de conteudos sugeridos.
-Evidencia 2026-04-28: calendario editorial local permite editar, aprovar, recusar e voltar para rascunho, mantendo persistencia MVP em `localStorage`; persistencia server-side fica para etapa futura.
+Evidencia 2026-04-28: calendario editorial permite editar, aprovar, recusar e voltar para rascunho, com persistencia server-side por tenant e fallback local quando a API nao responder.
 - [x] Conteudos aprovados entram na agenda/tarefas quando fizer sentido.
-Evidencia 2026-04-28: pauta aprovada no calendario editorial pode virar tarefa interna privada em `user_tasks`, com origem de marketing registrada em descricao/tags/notas e sem side effect externo.
+Evidencia 2026-04-28: `/dashboard/marketing/aprovados` lista pautas aprovadas/publicadas, cria tarefa interna privada em `user_tasks`, marca publicacao manual e registra origem de marketing em descricao/tags/notas, sem side effect externo.
 - [~] Analise de Meta Ads por upload de CSV, XLSX ou PDF.
 Evidencia parcial 2026-04-28: MVP local em `/dashboard/marketing/meta-ads` aceita CSV colado/exportado ou arquivo `.csv` client-side e analisa com `analyzeMetaAdsCsv`; XLSX/PDF ainda pendentes.
 - [x] Diagnostico de campanhas, CPL, CTR, CPC, CPM, criativos, publicos, verba desperdicada e oportunidades.

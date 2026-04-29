@@ -60,7 +60,7 @@ export default function MarketingPage() {
             Marketing
           </h1>
           <p className="mt-4 max-w-2xl text-sm leading-7 text-muted-foreground md:text-base">
-            Shell operacional para organizar perfil de marca, referencias, calendario editorial, Meta Ads e conteudos aprovados. O MVP salva dados localmente, cria tarefas internas quando aprovado e nao publica nada automaticamente.
+            Shell operacional para organizar perfil de marca, referencias, calendario editorial, Meta Ads e conteudos aprovados. Os dados usam persistencia do escritorio quando disponivel, criam tarefas internas quando aprovado e nao publicam nada automaticamente.
           </p>
         </div>
       </section>

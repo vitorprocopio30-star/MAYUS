@@ -469,7 +469,7 @@ Evidencia 2026-04-28: `POST /api/growth/call-analysis` exige auth por `getTenant
 - [x] Criar marketing por referencias sem copiar conteudo.
 Evidencia 2026-04-28: `extractReferencePatterns` e `generateContentIdeas` usam apenas metadados/metricas fornecidos e incluem guardrails para nao copiar titulos, paragrafos, exemplos proprietarios ou framing distintivo.
 - [x] Permitir cadastrar perfis, redes, canais, sites, blogs e concorrentes/referencias admiradas.
-Evidencia 2026-04-28: `/dashboard/marketing/perfil` salva perfil operacional de marketing em `localStorage` com posicionamento, areas, publicos, canais, tom, sites, redes, referencias admiradas e guardrails eticos; o calendario editorial carrega esse perfil como briefing inicial e segue sem publicacao externa automatica.
+Evidencia 2026-04-28: `/api/marketing/state` salva Marketing OS em `tenant_settings.ai_features.marketing_os`; `/dashboard/marketing/perfil` persiste perfil operacional com posicionamento, areas, publicos, canais, tom, sites, redes, referencias admiradas e guardrails eticos, mantendo fallback local e sem publicacao externa automatica.
 - [x] Extrair padroes de engajamento, temas, formatos, ganchos, CTAs, frequencia e tom de comunicacao.
 Evidencia 2026-04-28: `/dashboard/marketing/referencias` coleta referencias em estado local e renderiza padroes calculados por `extractReferencePatterns`.
 - [x] Criar calendario editorial editavel.
@@ -479,9 +479,9 @@ Evidencia 2026-04-28: a sidebar lista Marketing OS, Perfil e Canais, Kanban Mark
 - [x] Permitir configurar frequencia, estilo, formato, canal, area juridica, objetivo, tom e publico-alvo.
 Evidencia 2026-04-28: `/dashboard/marketing/calendario` gera calendario local com frequencia, estilo, canais, areas, objetivos, tons, publicos, data inicial e periodos.
 - [x] Permitir editar, aprovar ou recusar conteudos sugeridos.
-Evidencia 2026-04-28: calendario local permite edicao, aprovacao, recusa e retorno para rascunho de itens, persistindo o estado em `localStorage`; persistencia server-side fica para etapa futura.
+Evidencia 2026-04-28: calendario permite edicao, aprovacao, recusa e retorno para rascunho de itens, persistindo por tenant via API server-side com fallback local.
 - [x] Conectar conteudos aprovados com agenda/tarefas quando fizer sentido.
-Evidencia 2026-04-28: `/dashboard/marketing/calendario` cria tarefa interna supervisionada em `user_tasks` para item aprovado, com payload derivado por `buildMarketingAgendaTaskDraft`, tags de marketing e sem publicar ou sincronizar externamente.
+Evidencia 2026-04-28: `/dashboard/marketing/aprovados` virou hub operacional com pautas aprovadas/publicadas, criacao de tarefa interna supervisionada em `user_tasks`, marcacao de publicacao manual e nenhum side effect externo automatico.
 - [~] Criar analise de Meta Ads por upload de CSV, XLSX ou PDF.
 Evidencia parcial 2026-04-28: MVP local aceita CSV colado/exportado e upload client-side `.csv` em `/dashboard/marketing/meta-ads`; XLSX/PDF seguem pendentes.
 - [x] Diagnosticar campanhas vencedoras, verba desperdicada, CPL, CTR, CPC, CPM, criativos, publicos e temas.
