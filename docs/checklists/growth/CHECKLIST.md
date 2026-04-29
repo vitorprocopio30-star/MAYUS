@@ -121,6 +121,6 @@ Evidencia 2026-04-28: router detecta `sales_consultation`; dispatcher gera artif
 - [x] Auto Setup Doctor identifica perfil comercial incompleto.
 Evidencia 2026-04-28: `GET/POST /api/setup/doctor` agora inclui check `commercial:sales_profile`; quando faltam cliente ideal, solucao, PUV ou pilares, Configuracoes mostra aviso e proxima acao para o usuario MAYUS responder antes de escalar vendas. A tela Configuracoes ganhou painel "Perfil Comercial do MAYUS" para salvar cliente ideal, solucao central, PUV, pilares e status rascunho/validado em `tenant_settings.ai_features.sales_consultation_profile`.
 Evidencia 2026-04-28: a auto-configuracao por chat tambem grava esse mesmo perfil via skill `sales_profile_setup`, reduzindo a necessidade de mexer manualmente em Configuracoes.
-- [ ] Lead nunca fica sem proximo passo.
-Evidencia parcial 2026-04-24: leads criados via `lead-intake` recebem `nextStep` e descricao no card CRM; ainda falta cobrir follow-up automatico e leads criados por outros fluxos.
+- [x] Lead nunca fica sem proximo passo.
+Evidencia 2026-04-28: `buildCrmLeadNextStepStatus` detecta oportunidades abertas sem sinal de proximo passo ou paradas ha 2+ dias; o CRM visual exibe banner e alerta nos cards/lista com sugestao de definir data, canal e responsavel, sem contato externo automatico.
 - [ ] O advogado consegue operar Growth por chat sem abrir o CRM.

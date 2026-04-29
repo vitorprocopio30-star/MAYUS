@@ -488,6 +488,8 @@ Evidencia parcial 2026-04-28: MVP local aceita CSV colado/exportado e upload cli
 Evidencia 2026-04-28: `analyzeMetaAdsCsv` normaliza metricas e retorna winners, wastedSpend, creativeThemes, audienceThemes, findings e totals.
 - [x] Recomendar realocacao de verba e novos criativos sob revisao humana.
 Evidencia 2026-04-28: `meta-ads-analysis` gera `budgetRecommendations` deterministicas para scale, pause, test e monitor, sem Meta API ou alteracao automatica de campanha.
+- [x] Impedir lead aberto sem proximo passo operacional.
+Evidencia 2026-04-28: `buildCrmLeadNextStepStatus` cobre cards CRM abertos sem proximo passo explicito ou parados ha 2+ dias; o board/lista do CRM mostra alerta e sugestao supervisionada para definir data, canal e responsavel.
 - [ ] Amarrar ciclo completo: marketing -> lead -> CRM -> call -> follow-up -> contrato -> cobranca -> juridico -> prazos -> metricas.
 - [ ] Manter Meta Ads API, Google Meet automatico, Drive automatico de gravacoes, publicacao automatica e monitoramento amplo como integracoes futuras fora do escopo inicial.
 

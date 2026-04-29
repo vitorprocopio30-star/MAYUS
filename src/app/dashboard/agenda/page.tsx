@@ -1235,62 +1235,6 @@ export default function AgendaDiariaPage() {
             </div>
           )}
 
-          <div className="w-full md:w-[340px] rounded-xl border border-[#4285F4]/25 bg-[#4285F4]/10 px-4 py-3 text-xs text-gray-700 dark:text-gray-200">
-            <div className="flex items-start justify-between gap-3">
-              <div>
-                <p className="font-black uppercase tracking-[0.16em] text-[#8ab4ff]">Google Agenda</p>
-                <p className="mt-1 text-[11px] leading-relaxed text-gray-500 dark:text-gray-400">
-                  {!googleCalendar.available
-                    ? "Indisponivel ate configurar OAuth no servidor."
-                    : googleCalendar.connected
-                      ? `Conectado: ${googleCalendar.connectedEmail || "conta Google"}`
-                      : "Opcional: conecte sua conta Google e veja seus eventos aqui."}
-                </p>
-                {googleCalendar.error && (
-                  <p className="mt-1 text-[10px] font-semibold text-red-300">{googleCalendar.error}</p>
-                )}
-                {!googleCalendar.available && googleCalendar.setup?.redirectUris?.personal && (
-                  <div className="mt-3 space-y-2 rounded-lg border border-[#4285F4]/20 bg-black/10 p-2 text-[10px] leading-relaxed text-gray-500 dark:text-gray-400">
-                    <p className="font-bold text-[#8ab4ff]">Configuração necessária no Google Cloud:</p>
-                    {(googleCalendar.setup.missingEnv || []).length > 0 && (
-                      <p>Env ausente: {(googleCalendar.setup.missingEnv || []).join(", ")}</p>
-                    )}
-                    {(googleCalendar.setup.invalidEnv || []).length > 0 && (
-                      <p>Env inválida: {(googleCalendar.setup.invalidEnv || []).join(", ")}</p>
-                    )}
-                    <button
-                      type="button"
-                      onClick={(event) => copyTaskText(event, "google-calendar-personal-redirect", googleCalendar.setup?.redirectUris?.personal)}
-                      className="inline-flex max-w-full items-center gap-1 rounded-md border border-[#4285F4]/30 px-2 py-1 font-bold text-[#8ab4ff]"
-                    >
-                      {copiedTextKey === "google-calendar-personal-redirect" ? <Check size={10} /> : <Copy size={10} />}
-                      <span className="truncate">Callback pessoal</span>
-                    </button>
-                  </div>
-                )}
-              </div>
-              {googleCalendar.connected ? (
-                <button
-                  type="button"
-                  onClick={handleDisconnectGoogleCalendar}
-                  disabled={isGoogleCalendarDisconnecting}
-                  className="shrink-0 rounded-lg border border-red-500/25 bg-red-500/10 px-3 py-2 text-[10px] font-black uppercase tracking-widest text-red-300 disabled:opacity-60"
-                >
-                  {isGoogleCalendarDisconnecting ? "..." : "Desconectar"}
-                </button>
-              ) : (
-                <button
-                  type="button"
-                  onClick={handleConnectGoogleCalendar}
-                  disabled={!googleCalendar.available || isGoogleCalendarLoading}
-                  className="shrink-0 rounded-lg border border-[#4285F4]/40 bg-[#4285F4] px-3 py-2 text-[10px] font-black uppercase tracking-widest text-white disabled:cursor-not-allowed disabled:opacity-50"
-                >
-                  Conectar
-                </button>
-              )}
-            </div>
-          </div>
-
           <div className="flex gap-2">
             <button
               onClick={openCreateTaskModal}
@@ -1712,6 +1656,62 @@ export default function AgendaDiariaPage() {
                 <Star className="text-[#CCA761] mb-4" size={24} />
                 <h5 className="text-sm font-bold text-gray-900 dark:text-white mb-2 tracking-wide">Insight da Inteligência (MAYUS)</h5>
                 <p className="text-[11px] text-gray-400 leading-relaxed italic font-medium">&quot;{buildInsightText}&quot;</p>
+              </div>
+
+              <div className="rounded-xl border border-[#4285F4]/25 bg-[#4285F4]/10 px-4 py-3 text-xs text-gray-700 dark:text-gray-200">
+                <div className="flex items-start justify-between gap-3">
+                  <div>
+                    <p className="font-black uppercase tracking-[0.16em] text-[#8ab4ff]">Google Agenda</p>
+                    <p className="mt-1 text-[11px] leading-relaxed text-gray-500 dark:text-gray-400">
+                      {!googleCalendar.available
+                        ? "Indisponivel ate configurar OAuth no servidor."
+                        : googleCalendar.connected
+                          ? `Conectado: ${googleCalendar.connectedEmail || "conta Google"}`
+                          : "Opcional: conecte sua conta Google e veja seus eventos aqui."}
+                    </p>
+                    {googleCalendar.error && (
+                      <p className="mt-1 text-[10px] font-semibold text-red-300">{googleCalendar.error}</p>
+                    )}
+                    {!googleCalendar.available && googleCalendar.setup?.redirectUris?.personal && (
+                      <div className="mt-3 space-y-2 rounded-lg border border-[#4285F4]/20 bg-black/10 p-2 text-[10px] leading-relaxed text-gray-500 dark:text-gray-400">
+                        <p className="font-bold text-[#8ab4ff]">Configuração necessária no Google Cloud:</p>
+                        {(googleCalendar.setup.missingEnv || []).length > 0 && (
+                          <p>Env ausente: {(googleCalendar.setup.missingEnv || []).join(", ")}</p>
+                        )}
+                        {(googleCalendar.setup.invalidEnv || []).length > 0 && (
+                          <p>Env inválida: {(googleCalendar.setup.invalidEnv || []).join(", ")}</p>
+                        )}
+                        <button
+                          type="button"
+                          onClick={(event) => copyTaskText(event, "google-calendar-personal-redirect", googleCalendar.setup?.redirectUris?.personal)}
+                          className="inline-flex max-w-full items-center gap-1 rounded-md border border-[#4285F4]/30 px-2 py-1 font-bold text-[#8ab4ff]"
+                        >
+                          {copiedTextKey === "google-calendar-personal-redirect" ? <Check size={10} /> : <Copy size={10} />}
+                          <span className="truncate">Callback pessoal</span>
+                        </button>
+                      </div>
+                    )}
+                  </div>
+                  {googleCalendar.connected ? (
+                    <button
+                      type="button"
+                      onClick={handleDisconnectGoogleCalendar}
+                      disabled={isGoogleCalendarDisconnecting}
+                      className="shrink-0 rounded-lg border border-red-500/25 bg-red-500/10 px-3 py-2 text-[10px] font-black uppercase tracking-widest text-red-300 disabled:opacity-60"
+                    >
+                      {isGoogleCalendarDisconnecting ? "..." : "Desconectar"}
+                    </button>
+                  ) : (
+                    <button
+                      type="button"
+                      onClick={handleConnectGoogleCalendar}
+                      disabled={!googleCalendar.available || isGoogleCalendarLoading}
+                      className="shrink-0 rounded-lg border border-[#4285F4]/40 bg-[#4285F4] px-3 py-2 text-[10px] font-black uppercase tracking-widest text-white disabled:cursor-not-allowed disabled:opacity-50"
+                    >
+                      Conectar
+                    </button>
+                  )}
+                </div>
               </div>
             </div>
 

@@ -23,6 +23,7 @@ import CallAnalysisAction from "../_components/CallAnalysisAction";
 import "react-quill/dist/quill.snow.css";
 import { Pipeline, Stage, Profile, Task } from "@/types/crm";
 import CrmTaskModal from "@/components/crm/CrmTaskModal";
+import { buildCrmLeadNextStepStatus } from "@/lib/growth/crm-next-step";
 
 function normalizarNomeEtapa(nome?: string | null) {
   return String(nome ?? '')
@@ -258,6 +259,28 @@ export default function PipelinePage() {
     [stages]
   );
 
+  const leadNextStepAlerts = useMemo(() => {
+    return tasks
+      .map((task) => {
+        const stage = stages.find((s) => s.id === task.stage_id);
+        return {
+          task,
+          stage,
+          status: buildCrmLeadNextStepStatus({
+            title: task.title,
+            description: task.description,
+            tags: task.tags,
+            stageName: stage?.name,
+            isWin: stage?.is_win,
+            isLoss: stage?.is_loss,
+            lastMovedAt: task.data_ultima_movimentacao,
+            createdAt: task.created_at,
+          }),
+        };
+      })
+      .filter((item) => item.status.needsNextStep);
+  }, [stages, tasks]);
+
   const openNewTaskModal = (stageId?: string) => {
     setDefaultStageId(stageId || (visibleStages[0]?.id ?? stages[0]?.id ?? ""));
     setEditingTask(null);
@@ -370,6 +393,31 @@ export default function PipelinePage() {
         </div>
       </header>
 
+      {leadNextStepAlerts.length > 0 && (
+        <section className="flex-none border-b border-amber-500/20 bg-amber-500/10 px-6 py-3 text-amber-100">
+          <div className="flex flex-col gap-3 md:flex-row md:items-center md:justify-between">
+            <div className="flex items-start gap-3">
+              <AlertTriangle size={18} className="mt-0.5 text-amber-300" />
+              <div>
+                <p className="text-xs font-black uppercase tracking-[0.18em] text-amber-300">
+                  {leadNextStepAlerts.length} lead{leadNextStepAlerts.length === 1 ? "" : "s"} sem proximo passo operacional
+                </p>
+                <p className="mt-1 text-xs leading-5 text-amber-100/80">
+                  MAYUS recomenda definir data, canal e responsavel antes de deixar a oportunidade parada.
+                </p>
+              </div>
+            </div>
+            <div className="flex flex-wrap gap-2 text-[10px] font-bold uppercase tracking-widest text-amber-100/80">
+              {leadNextStepAlerts.slice(0, 3).map(({ task }) => (
+                <span key={task.id} className="rounded-full border border-amber-500/30 bg-black/20 px-2.5 py-1">
+                  {task.title}
+                </span>
+              ))}
+            </div>
+          </div>
+        </section>
+      )}
+
       {/* MAIN CONTENT */}
       <main className="flex-1 overflow-hidden relative">
         {viewMode === "board" ? (
@@ -407,7 +455,17 @@ export default function PipelinePage() {
                           >
                             {stageTasks.map((task, index) => {
                               const assignee = agents.find(a => a.id === task.assigned_to);
-                              
+                              const nextStepStatus = buildCrmLeadNextStepStatus({
+                                title: task.title,
+                                description: task.description,
+                                tags: task.tags,
+                                stageName: stage.name,
+                                isWin: stage.is_win,
+                                isLoss: stage.is_loss,
+                                lastMovedAt: task.data_ultima_movimentacao,
+                                createdAt: task.created_at,
+                              });
+
                               // Check 48h Idleness
                               const timeSinceMove = new Date().getTime() - new Date(task.data_ultima_movimentacao || task.created_at).getTime();
                               const isIdle = timeSinceMove > (48 * 60 * 60 * 1000); // 48 horas em ms
@@ -421,8 +479,8 @@ export default function PipelinePage() {
                                       ref={provided.innerRef}
                                       {...provided.draggableProps}
                                       {...provided.dragHandleProps}
-                                      onClick={() => openEditTaskModal(task)}
-                                      className={`group relative overflow-hidden px-3.5 py-3 rounded-xl border bg-[#0c0c0c] hover:bg-gray-100 dark:bg-[#111] cursor-grab active:cursor-grabbing transition-all duration-150 ${showIdleAlert ? 'border-red-500/35' : 'border-zinc-800'}`}
+                                       onClick={() => openEditTaskModal(task)}
+                                      className={`group relative overflow-hidden px-3.5 py-3 rounded-xl border bg-[#0c0c0c] hover:bg-gray-100 dark:bg-[#111] cursor-grab active:cursor-grabbing transition-all duration-150 ${showIdleAlert ? 'border-red-500/35' : nextStepStatus.needsNextStep ? 'border-amber-500/35' : 'border-zinc-800'}`}
                                       style={{ ...provided.draggableProps.style }}
                                     >
                                       {showIdleAlert && (
@@ -434,13 +492,22 @@ export default function PipelinePage() {
                                       <div className="absolute top-3 bottom-3 left-0 w-[2px] opacity-70 rounded-r-full" style={{ backgroundColor: stage.color, color: stage.color }} />
                                       <h4 className="text-gray-900 dark:text-white text-[14px] font-bold tracking-wide mb-1.5 line-clamp-2 group-hover:text-[#CCA761] transition-colors">{task.title}</h4>
                                       
-                                      {task.description && (
-                                        <div className="text-zinc-400 text-[12px] mb-2.5 line-clamp-1 leading-relaxed">
-                                          {task.description.replace(/(<([^>]+)>)/gi, "")}
-                                        </div>
-                                      )}
-                                       
-                                       {task.sector && (
+                                       {task.description && (
+                                         <div className="text-zinc-400 text-[12px] mb-2.5 line-clamp-1 leading-relaxed">
+                                           {task.description.replace(/(<([^>]+)>)/gi, "")}
+                                         </div>
+                                       )}
+
+                                       {nextStepStatus.needsNextStep && (
+                                         <div className="mb-2.5 rounded-lg border border-amber-500/20 bg-amber-500/10 px-2.5 py-2 text-[10px] leading-4 text-amber-100">
+                                           <div className="mb-1 flex items-center gap-1.5 font-black uppercase tracking-widest text-amber-300">
+                                             <AlertTriangle size={10} /> Sem proximo passo
+                                           </div>
+                                           {nextStepStatus.suggestedNextStep}
+                                         </div>
+                                       )}
+
+                                        {task.sector && (
                                          <div className="mb-3">
                                            {(() => {
                                              const [name, color] = task.sector.includes('|') ? task.sector.split('|') : [task.sector, '#60a5fa'];
@@ -508,15 +575,26 @@ export default function PipelinePage() {
                      <th className="p-4">Responsável</th>
                      <th className="p-4">Criação</th>
                      <th className="p-4">Call</th>
-                   </tr>
-                 </thead>
-                 <tbody className="divide-y divide-gray-200 dark:divide-white/5 text-sm text-gray-700 dark:text-gray-300">
-                   {tasks.length === 0 ? (
-                     <tr><td colSpan={5} className="p-8 text-center text-gray-500">Nenhuma tarefa encontrada.</td></tr>
-                   ) : tasks.map(task => {
-                    const stage = visibleStages.find(s => s.id === task.stage_id) || stages.find(s => s.id === task.stage_id);
-                    const assignee = agents.find(a => a.id === task.assigned_to);
-                    return (
+                     <th className="p-4">Proximo passo</th>
+                    </tr>
+                  </thead>
+                  <tbody className="divide-y divide-gray-200 dark:divide-white/5 text-sm text-gray-700 dark:text-gray-300">
+                    {tasks.length === 0 ? (
+                      <tr><td colSpan={6} className="p-8 text-center text-gray-500">Nenhuma tarefa encontrada.</td></tr>
+                    ) : tasks.map(task => {
+                     const stage = visibleStages.find(s => s.id === task.stage_id) || stages.find(s => s.id === task.stage_id);
+                     const assignee = agents.find(a => a.id === task.assigned_to);
+                     const nextStepStatus = buildCrmLeadNextStepStatus({
+                       title: task.title,
+                       description: task.description,
+                       tags: task.tags,
+                       stageName: stage?.name,
+                       isWin: stage?.is_win,
+                       isLoss: stage?.is_loss,
+                       lastMovedAt: task.data_ultima_movimentacao,
+                       createdAt: task.created_at,
+                     });
+                     return (
                       <tr key={task.id} onClick={() => openEditTaskModal(task)} className="hover:bg-gray-100 dark:bg-white/5 cursor-pointer transition-colors group">
                         <td className="p-4">
                           <div className="font-semibold text-gray-900 dark:text-white mb-1 group-hover:text-[#CCA761] transition-colors">{task.title}</div>
@@ -569,17 +647,26 @@ export default function PipelinePage() {
                          <td className="p-4 text-xs text-gray-500">
                            {new Date(task.created_at).toLocaleDateString('pt-BR')}
                          </td>
-                         <td className="p-4" onClick={(event) => event.stopPropagation()}>
-                            <CallAnalysisAction
-                              crmTaskId={task.id}
+                          <td className="p-4" onClick={(event) => event.stopPropagation()}>
+                             <CallAnalysisAction
+                               crmTaskId={task.id}
                               leadName={task.title}
                               legalArea={task.sector?.split('|')[0] || null}
                              currentStage={stage?.name || null}
-                             compact
-                           />
-                         </td>
-                       </tr>
-                     );
+                              compact
+                            />
+                          </td>
+                          <td className="p-4">
+                            {nextStepStatus.needsNextStep ? (
+                              <div className="max-w-[260px] rounded-lg border border-amber-500/20 bg-amber-500/10 px-3 py-2 text-xs leading-5 text-amber-100">
+                                <span className="font-bold text-amber-300">Ajustar: </span>{nextStepStatus.reason}
+                              </div>
+                            ) : (
+                              <span className="text-xs text-emerald-300">Registrado</span>
+                            )}
+                          </td>
+                        </tr>
+                      );
                    })}
                 </tbody>
               </table>
