@@ -123,4 +123,5 @@ Evidencia 2026-04-28: `GET/POST /api/setup/doctor` agora inclui check `commercia
 Evidencia 2026-04-28: a auto-configuracao por chat tambem grava esse mesmo perfil via skill `sales_profile_setup`, reduzindo a necessidade de mexer manualmente em Configuracoes.
 - [x] Lead nunca fica sem proximo passo.
 Evidencia 2026-04-28: `buildCrmLeadNextStepStatus` detecta oportunidades abertas sem sinal de proximo passo ou paradas ha 2+ dias; o CRM visual exibe banner e alerta nos cards/lista com sugestao de definir data, canal e responsavel, sem contato externo automatico.
-- [ ] O advogado consegue operar Growth por chat sem abrir o CRM.
+- [x] O advogado consegue operar Growth por chat sem abrir o CRM.
+Evidencia 2026-04-28: skill `marketing_ops_assistant` foi registrada no router/registry/dispatcher; comandos como "o que devo publicar esta semana", "conteudos aprovados" e "leads sem proximo passo" geram artifact `marketing_ops_assistant_plan` com pautas da semana, aprovados sem tarefa, leads sem proximo passo e proximas acoes supervisionadas, sem publicar ou enviar nada automaticamente.

@@ -87,6 +87,7 @@ Use esse checklist para marcar:
 - [x] Marketing persistente por tenant entregue em 2026-04-28: `/api/marketing/state` salva perfil, referencias e calendario em `tenant_settings.ai_features.marketing_os`, telas de Perfil/Referencias/Calendario/Kanban/Aprovados usam servidor com fallback local e Conteudos Aprovados virou hub operacional para tarefa interna e publicacao manual supervisionada.
 - [x] Agenda Google e Marketing UX refinados em 2026-04-28: Agenda Diaria/Global deixam claro que usuarios apenas conectam a conta Google via OAuth, com diagnostico tecnico apenas quando o servidor nao esta configurado; sidebar agora expõe submenus de Marketing e `/dashboard/marketing/kanban` acompanha pautas por status usando o mesmo calendario local, sem publicacao externa.
 - [x] CRM Growth sem lead abandonado concluido em 2026-04-28: `buildCrmLeadNextStepStatus` identifica oportunidade aberta sem proximo passo ou parada ha 2+ dias, e o CRM exibe banner/card/lista recomendando data, canal e responsavel sem side effects externos.
+- [x] Growth por chat sem abrir CRM entregue em 2026-04-28: skill `marketing_ops_assistant` roteia pedidos de publicacao semanal, conteudos aprovados e leads sem proximo passo; dispatcher le `marketing_os`, CRM e cria artifact/learning event com plano supervisionado, sem WhatsApp, publicacao, Meta Ads ou tarefas automaticas.
 - [x] Smoke autenticado real parcial passou em 2026-04-26: `GET /api/integrations`, `POST /api/integrations` controlado com cleanup, OpenRouter via Vault e TTS OpenAI.
 - [~] Google Drive real validado parcialmente em 2026-04-26: conta conectada e clear root passaram; salvar/restaurar root via API falhou no ambiente local com `The OAuth client was not found`; root foi restaurado via service role; client ID local foi confirmado como malformado.
 - [x] Smoke seguro de webhook Asaas passou em 2026-04-26 com payload sintetico e auditoria em `system_event_logs` confirmada.
@@ -109,6 +110,7 @@ Use esse checklist para marcar:
 - [ ] Evoluir Meta Ads upload para arquivo real XLSX/PDF ou rota server-side quando necessario.
 - [x] Expor Kanban Marketing na lateral usando o calendario editorial local.
 - [x] Alertar no CRM leads/oportunidades sem proximo passo operacional.
+- [x] Operar Growth/Marketing por chat sem abrir CRM com artifact supervisionado.
 - [x] Criar artifact agentico para `referral_intake` e expor no MAYUS.
 - [x] Expor Auto Setup Doctor no MAYUS/Configuracoes com status pronto, corrigido, alerta, bloqueado e artifact agentico rastreavel.
 - [x] Resolver instabilidade do bootstrap autenticado Playwright no harness MAYUS sem mascarar os E2Es reais de Documentos.

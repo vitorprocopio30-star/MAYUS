@@ -490,6 +490,8 @@ Evidencia 2026-04-28: `analyzeMetaAdsCsv` normaliza metricas e retorna winners, 
 Evidencia 2026-04-28: `meta-ads-analysis` gera `budgetRecommendations` deterministicas para scale, pause, test e monitor, sem Meta API ou alteracao automatica de campanha.
 - [x] Impedir lead aberto sem proximo passo operacional.
 Evidencia 2026-04-28: `buildCrmLeadNextStepStatus` cobre cards CRM abertos sem proximo passo explicito ou parados ha 2+ dias; o board/lista do CRM mostra alerta e sugestao supervisionada para definir data, canal e responsavel.
+- [x] Operar Growth/Marketing por chat sem abrir CRM.
+Evidencia 2026-04-28: `marketing_ops_assistant` foi adicionado ao router/registry/dispatcher; le `tenant_settings.ai_features.marketing_os` e cards CRM para responder por chat com pautas da semana, conteudos aprovados sem tarefa, leads sem proximo passo e acoes recomendadas, criando artifact `marketing_ops_assistant_plan` e learning event sem side effects externos.
 - [ ] Amarrar ciclo completo: marketing -> lead -> CRM -> call -> follow-up -> contrato -> cobranca -> juridico -> prazos -> metricas.
 - [ ] Manter Meta Ads API, Google Meet automatico, Drive automatico de gravacoes, publicacao automatica e monitoramento amplo como integracoes futuras fora do escopo inicial.
 

@@ -5,10 +5,24 @@ const baseContext = {
   userId: "user-1",
   tenantId: "tenant-1",
   channel: "chat" as const,
-  availableSkills: ["sales_profile_setup", "sales_consultation", "lead_reactivation", "client_acceptance_record", "external_action_preview", "revenue_flow_plan", "lead_schedule", "lead_followup", "lead_qualify", "lead_intake", "support_case_status", "legal_case_context", "legal_document_memory_refresh", "legal_first_draft_generate", "legal_draft_workflow", "legal_draft_review_guidance", "legal_draft_revision_loop", "legal_artifact_publish_premium", "query_process_status"],
+  availableSkills: ["marketing_ops_assistant", "sales_profile_setup", "sales_consultation", "lead_reactivation", "client_acceptance_record", "external_action_preview", "revenue_flow_plan", "lead_schedule", "lead_followup", "lead_qualify", "lead_intake", "support_case_status", "legal_case_context", "legal_document_memory_refresh", "legal_first_draft_generate", "legal_draft_workflow", "legal_draft_review_guidance", "legal_draft_revision_loop", "legal_artifact_publish_premium", "query_process_status"],
 };
 
 describe("route - juridico MAYUS", () => {
+  it("detecta operacao de marketing por chat", () => {
+    const result = route(
+      "Mayus, o que eu devo publicar esta semana no LinkedIn para Previdenciario?",
+      baseContext
+    );
+
+    expect(result.intent).toBe("marketing_ops_assistant");
+    expect(result.entities).toEqual(expect.objectContaining({
+      channel: "LinkedIn",
+      legal_area: "Previdenciario",
+    }));
+    expect(result.confidence).toBeGreaterThanOrEqual(0.9);
+  });
+
   it("detecta atendimento consultivo de vendas pelo metodo DEF", () => {
     const result = route(
       "Mayus, crie um atendimento consultivo de vendas metodo DEF para lead Maria Silva area Previdenciario canal WhatsApp fase descoberta objecao achei caro valor 4500.",

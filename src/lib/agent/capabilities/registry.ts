@@ -61,6 +61,28 @@ function channelAllowed(channel: string, allowedChannels: string[] | null | unde
 
 const DEFAULT_CAPABILITY_SEEDS: DefaultCapabilitySeed[] = [
   {
+    name: "marketing_ops_assistant",
+    description: "Opera Growth/Marketing por chat: resume calendario, conteudos aprovados, leads sem proximo passo e proximas acoes supervisionadas sem publicar ou enviar nada automaticamente.",
+    version: "1.0",
+    schema_version: "1",
+    input_schema: {
+      type: "object",
+      properties: {
+        request: { type: "string", description: "Pedido original do usuario." },
+        legal_area: { type: "string", description: "Area juridica ou segmento de marketing." },
+        channel: { type: "string", description: "Canal editorial: LinkedIn, Instagram, blog, email ou WhatsApp." },
+        objective: { type: "string", description: "Objetivo de marketing ou crescimento." },
+      },
+    },
+    output_schema: { type: "object" },
+    allowed_roles: [],
+    allowed_channels: ["chat"],
+    requires_human_confirmation: false,
+    risk_level: "low",
+    is_active: true,
+    handler_type: "growth_marketing_ops_assistant",
+  },
+  {
     name: "sales_profile_setup",
     description: "Auto-configura o perfil comercial do escritorio por bate-papo: cliente ideal, solucao, PUV, pilares e anti-cliente, gravando a base para o atendimento MAYUS.",
     version: "1.0",

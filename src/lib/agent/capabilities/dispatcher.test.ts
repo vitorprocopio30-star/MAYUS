@@ -785,6 +785,126 @@ describe("dispatchCapabilityExecution - juridico", () => {
     expect(JSON.stringify(createBrainArtifactMock.mock.calls[0][0].metadata)).not.toMatch(/phone_number|email|api_key|webhook_secret|sk_live|sk_test|sk-or-v1/i);
   });
 
+  it("executa marketing_ops_assistant pelo chat sem side effects externos", async () => {
+    const inserts: Array<{ table: string; payload: any }> = [];
+    fromMock.mockImplementation((table: string) => {
+      if (table === "tenant_settings") {
+        const query: any = {
+          select: vi.fn(() => query),
+          eq: vi.fn(() => query),
+          maybeSingle: vi.fn(async () => ({
+            data: {
+              ai_features: {
+                marketing_os: {
+                  profile: {
+                    firmName: "MAYUS Advocacia",
+                    positioning: "Autoridade juridica premium",
+                    legalAreas: ["Previdenciario"],
+                    audiences: ["Segurados do INSS"],
+                    channels: ["linkedin"],
+                    voiceTone: "premium",
+                    websites: [],
+                    socialProfiles: [],
+                    admiredReferences: [],
+                    ethicsGuardrails: ["Nao prometer resultado juridico."],
+                  },
+                  calendar: [
+                    {
+                      id: "item-1",
+                      title: "Previdenciario: guia educativo",
+                      channel: "linkedin",
+                      legalArea: "Previdenciario",
+                      objective: "authority",
+                      tone: "premium",
+                      audience: "Segurados do INSS",
+                      angle: "guia educativo",
+                      guardrails: [],
+                      sourcePatternIds: [],
+                      date: "2026-04-30",
+                      status: "approved",
+                      notes: "",
+                    },
+                  ],
+                  references: [],
+                },
+              },
+            },
+            error: null,
+          })),
+        };
+        return query;
+      }
+
+      if (table === "crm_tasks") {
+        const query: any = {
+          select: vi.fn(() => query),
+          eq: vi.fn(() => query),
+          order: vi.fn(() => query),
+          limit: vi.fn(async () => ({
+            data: [
+              {
+                id: "crm-task-1",
+                title: "Maria Silva",
+                description: "Lead novo sem combinado claro.",
+                tags: ["previdenciario"],
+                sector: "Previdenciario",
+                created_at: "2026-04-25T10:00:00.000Z",
+                data_ultima_movimentacao: null,
+              },
+            ],
+            error: null,
+          })),
+        };
+        return query;
+      }
+
+      return makeGrowthQuery(table, inserts);
+    });
+
+    const result = await dispatchCapabilityExecution({
+      handlerType: "growth_marketing_ops_assistant",
+      capabilityName: "marketing_ops_assistant",
+      tenantId: "tenant-1",
+      userId: "user-1",
+      entities: {
+        request: "Mayus, o que eu devo publicar esta semana?",
+        legal_area: "Previdenciario",
+        channel: "linkedin",
+      },
+      auditLogId: "audit-marketing-ops-1",
+      brainContext: {
+        taskId: "brain-task-marketing-ops-1",
+        runId: "brain-run-marketing-ops-1",
+        stepId: "brain-step-marketing-ops-1",
+        sourceModule: "mayus",
+      },
+    });
+
+    expect(result.status).toBe("executed");
+    expect(result.reply).toContain("Growth por chat");
+    expect(result.outputPayload).toEqual(expect.objectContaining({
+      mode: "weekly_plan",
+      this_week_count: 1,
+      approved_without_task_count: 1,
+      leads_needing_next_step_count: 1,
+      external_side_effects_blocked: true,
+      requires_human_approval: true,
+    }));
+    expect(createBrainArtifactMock).toHaveBeenCalledWith(expect.objectContaining({
+      tenantId: "tenant-1",
+      taskId: "brain-task-marketing-ops-1",
+      artifactType: "marketing_ops_assistant_plan",
+      metadata: expect.objectContaining({
+        this_week_count: 1,
+        approved_without_task_count: 1,
+        leads_needing_next_step_count: 1,
+        external_side_effects_blocked: true,
+      }),
+    }));
+    expect(inserts.some((item) => item.table === "learning_events" && item.payload.event_type === "marketing_ops_assistant_plan_created")).toBe(true);
+    expect(inserts.some((item) => item.table === "user_tasks")).toBe(false);
+  });
+
   it("executa sales_consultation pelo chat e registra plano DEF supervisionado", async () => {
     const inserts: Array<{ table: string; payload: any }> = [];
     fromMock.mockImplementation((table: string) => makeGrowthQuery(table, inserts));

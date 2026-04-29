@@ -91,6 +91,11 @@ import {
   type SalesProfileSetupInput,
   type SalesProfileSetupProfile,
 } from "@/lib/growth/sales-profile-setup";
+import {
+  buildMarketingOpsAssistantMetadata,
+  buildMarketingOpsAssistantPlan,
+  type MarketingOpsAssistantInput,
+} from "@/lib/growth/marketing-ops-assistant";
 
 const serviceSupabase = createClient(
   process.env.NEXT_PUBLIC_SUPABASE_URL!,
@@ -175,6 +180,20 @@ type TenantLegalTemplateReviewRecord = {
   template_mode?: string | null;
   structure_markdown?: string | null;
   guidance_notes?: string | null;
+};
+
+type MarketingOpsStateRecord = {
+  ai_features: Record<string, any> | null;
+};
+
+type MarketingOpsCrmTaskRecord = {
+  id: string;
+  title: string | null;
+  description: string | null;
+  tags: string[] | null;
+  sector: string | null;
+  created_at: string | null;
+  data_ultima_movimentacao: string | null;
 };
 
 type LegalDocumentMemoryRefreshResultStatus = "completed" | "failed";
@@ -1495,6 +1514,42 @@ function buildSalesProfileSetupInputFromEntities(entities: Record<string, string
   };
 }
 
+function buildMarketingOpsAssistantInputFromEntities(entities: Record<string, string>): MarketingOpsAssistantInput {
+  return {
+    request: entities.request || null,
+    legalArea: entities.legal_area || null,
+    channel: entities.channel || null,
+    objective: entities.objective || null,
+  };
+}
+
+async function loadMarketingOpsState(tenantId: string) {
+  const { data, error } = await serviceSupabase
+    .from("tenant_settings")
+    .select("ai_features")
+    .eq("tenant_id", tenantId)
+    .maybeSingle<MarketingOpsStateRecord>();
+
+  if (error) throw error;
+  const aiFeatures = data?.ai_features && typeof data.ai_features === "object" && !Array.isArray(data.ai_features)
+    ? data.ai_features
+    : {};
+  const marketingOs = aiFeatures.marketing_os;
+  return marketingOs && typeof marketingOs === "object" && !Array.isArray(marketingOs) ? marketingOs : {};
+}
+
+async function loadMarketingOpsCrmTasks(tenantId: string): Promise<MarketingOpsCrmTaskRecord[]> {
+  const { data, error } = await serviceSupabase
+    .from("crm_tasks")
+    .select("id, title, description, tags, sector, created_at, data_ultima_movimentacao")
+    .eq("tenant_id", tenantId)
+    .order("created_at", { ascending: false })
+    .limit(40);
+
+  if (error) throw error;
+  return (data || []) as MarketingOpsCrmTaskRecord[];
+}
+
 function buildSalesConsultationConversationTurns(history: DispatchCapabilityInput["history"]) {
   return (history || [])
     .filter((item) => item?.role === "user" || item?.role === "model" || item?.role === "assistant")
@@ -1961,6 +2016,69 @@ async function runGrowthColdLeadReactivation(input: DispatchCapabilityInput): Pr
       lead_reactivation_message_count: plan.messageVariants.length,
       external_side_effects_blocked: plan.externalSideEffectsBlocked,
       requires_human_approval: plan.requiresHumanApproval,
+    },
+    data: {
+      plan,
+    },
+  };
+}
+
+async function runGrowthMarketingOpsAssistant(input: DispatchCapabilityInput): Promise<DispatchCapabilityResult> {
+  const direct = buildMarketingOpsAssistantInputFromEntities(input.entities);
+  const [state, crmTasks] = await Promise.all([
+    loadMarketingOpsState(input.tenantId),
+    loadMarketingOpsCrmTasks(input.tenantId),
+  ]);
+
+  const request = direct.request || input.history?.slice().reverse().find((item) => item.role === "user")?.content || null;
+  const plan = buildMarketingOpsAssistantPlan({
+    ...direct,
+    request,
+    state,
+    crmTasks,
+  });
+  const metadata = buildMarketingOpsAssistantMetadata(plan);
+
+  await registerArtifact(input, {
+    artifactType: "marketing_ops_assistant_plan",
+    title: "Growth por chat - Marketing OS",
+    mimeType: "application/json",
+    dedupeKey: input.auditLogId ? `marketing-ops:${input.auditLogId}` : `marketing-ops:${input.tenantId}:${plan.mode}`,
+    metadata,
+  });
+
+  await registerLearningEvent(input, "marketing_ops_assistant_plan_created", {
+    summary: plan.summary,
+    mode: plan.mode,
+    this_week_count: plan.thisWeek.length,
+    approved_without_task_count: plan.approvedWithoutTask.length,
+    leads_needing_next_step_count: plan.leadsNeedingNextStep.length,
+    external_side_effects_blocked: plan.externalSideEffectsBlocked,
+    requires_human_approval: plan.humanApprovalRequired,
+  });
+
+  const reply = [
+    "## Growth por chat",
+    plan.summary,
+    plan.thisWeek.length > 0 ? `- Pautas da semana: ${plan.thisWeek.map((item) => `${item.date} ${item.channel} - ${item.title}`).join("; ")}` : "- Pautas da semana: nenhuma pauta ativa encontrada para os proximos 7 dias.",
+    plan.approvedWithoutTask.length > 0 ? `- Aprovados sem tarefa: ${plan.approvedWithoutTask.map((item) => item.title).join("; ")}` : "- Aprovados sem tarefa: nenhum pendente encontrado.",
+    plan.leadsNeedingNextStep.length > 0 ? `- Leads sem proximo passo: ${plan.leadsNeedingNextStep.map((lead) => lead.title).join("; ")}` : "- Leads sem proximo passo: nenhum alerta prioritario encontrado.",
+    `- Proxima acao: ${plan.recommendedActions[0]}`,
+    "- Side effects externos: bloqueados ate revisao humana.",
+  ].join("\n");
+
+  return {
+    status: "executed",
+    reply,
+    outputPayload: {
+      auditLogId: input.auditLogId || null,
+      handler_type: input.handlerType,
+      mode: plan.mode,
+      this_week_count: plan.thisWeek.length,
+      approved_without_task_count: plan.approvedWithoutTask.length,
+      leads_needing_next_step_count: plan.leadsNeedingNextStep.length,
+      external_side_effects_blocked: plan.externalSideEffectsBlocked,
+      requires_human_approval: plan.humanApprovalRequired,
     },
     data: {
       plan,
@@ -4450,6 +4568,8 @@ export async function dispatchCapabilityExecution(input: DispatchCapabilityInput
   const handler = String(input.handlerType || "").trim();
 
   switch (handler) {
+    case "growth_marketing_ops_assistant":
+      return runGrowthMarketingOpsAssistant(input);
     case "growth_sales_profile_setup":
       return runGrowthSalesProfileSetup(input);
     case "growth_sales_consultation":

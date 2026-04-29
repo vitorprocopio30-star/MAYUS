@@ -37,6 +37,39 @@ interface IntentDefinition {
 
 const INTENT_PATTERNS: IntentDefinition[] = [
   {
+    intent: 'marketing_ops_assistant',
+    patterns: [
+      /o que (eu|nos|n[oó]s)?\s*devo\s+publicar\s+(esta|essa)\s+semana/i,
+      /ger(e|ar)\s+pautas?\s+(para|de)\s+/i,
+      /marketing\s+os/i,
+      /calend[aá]rio\s+editorial/i,
+      /conte[uú]dos?\s+aprovados?/i,
+      /aprove\s+(as\s+)?(melhores\s+)?pautas/i,
+      /pautas?.*(agenda|tarefa|publicar)/i,
+      /leads?\s+sem\s+pr[oó]ximo\s+passo/i,
+      /growth\s+por\s+chat/i,
+    ],
+    entityExtractors: [
+      {
+        key: 'legal_area',
+        pattern: /(?:\b[aá]rea\b|\bpara\b|\bde\b)\s*[:\-]?\s*([^,.;:!?]+?)(?=\s*(?:no|na|em|canal|objetivo|publico|p[uú]blico|,|\.|\?|!|$))/i,
+      },
+      {
+        key: 'channel',
+        pattern: /(linkedin|instagram|blog|email|whatsapp)/i,
+      },
+      {
+        key: 'objective',
+        pattern: /(?:objetivo|meta)\s*[:\-]?\s*([^\n.]{4,120})/i,
+      },
+      {
+        key: 'request',
+        pattern: /^([\s\S]{1,500})$/i,
+      },
+    ],
+    baseConfidence: 0.9,
+  },
+  {
     intent: 'sales_profile_setup',
     patterns: [
       /auto[-\s]?configur(ar|e|acao|a[cç][aã]o)\s+(comercial|vendas|atendimento)/i,
