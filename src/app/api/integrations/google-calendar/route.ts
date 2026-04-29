@@ -5,6 +5,7 @@ import {
   fetchGoogleCalendarEvents,
   getGoogleCalendarIntegrationMetadata,
   getGoogleCalendarProviderForUser,
+  getGoogleCalendarSetupInfo,
   isGoogleCalendarConfigured,
   mergeGoogleCalendarMetadata,
   needsGoogleCalendarTokenRefresh,
@@ -24,6 +25,7 @@ export async function GET(request: NextRequest) {
         status: "unavailable",
         connectedEmail: null,
         events: [],
+        setup: getGoogleCalendarSetupInfo(request),
       });
     }
 

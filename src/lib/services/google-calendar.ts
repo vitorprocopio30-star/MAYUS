@@ -20,6 +20,20 @@ type GoogleCalendarConfig = {
   clientSecret: string;
 };
 
+export type GoogleCalendarSetupInfo = {
+  configured: boolean;
+  clientIdPresent: boolean;
+  clientSecretPresent: boolean;
+  clientIdValid: boolean;
+  missingEnv: string[];
+  invalidEnv: string[];
+  redirectUris: {
+    personal: string;
+    global: string;
+  };
+  requiredScopes: string[];
+};
+
 type GoogleTokenResponse = {
   access_token?: string;
   expires_in?: number;
@@ -44,6 +58,7 @@ export type GoogleCalendarSanitizedState = {
   status: string;
   connectedEmail: string | null;
   events: GoogleCalendarAgendaEvent[];
+  setup?: GoogleCalendarSetupInfo;
 };
 
 export type GoogleCalendarAgendaEvent = {
@@ -85,10 +100,14 @@ type GoogleCalendarEventRecord = {
   end?: { dateTime?: string | null; date?: string | null } | null;
 };
 
+function isValidGoogleCalendarClientId(clientId: string): boolean {
+  return /^[0-9]+-[A-Za-z0-9_-]+\.apps\.googleusercontent\.com$/.test(clientId);
+}
+
 function getGoogleCalendarConfig(): GoogleCalendarConfig {
   const clientId = String(process.env.GOOGLE_CALENDAR_CLIENT_ID || process.env.GOOGLE_CLIENT_ID || "").trim();
   const clientSecret = String(process.env.GOOGLE_CALENDAR_CLIENT_SECRET || process.env.GOOGLE_CLIENT_SECRET || "").trim();
-  const hasValidClientIdShape = /^[0-9]+-[A-Za-z0-9_-]+\.apps\.googleusercontent\.com$/.test(clientId);
+  const hasValidClientIdShape = isValidGoogleCalendarClientId(clientId);
 
   if (!clientId || !clientSecret || !hasValidClientIdShape) {
     throw new Error("GoogleCalendarNotConfigured");
@@ -151,6 +170,31 @@ export function isGoogleCalendarConfigured(): boolean {
   } catch {
     return false;
   }
+}
+
+export function getGoogleCalendarSetupInfo(request: Request): GoogleCalendarSetupInfo {
+  const clientId = String(process.env.GOOGLE_CALENDAR_CLIENT_ID || process.env.GOOGLE_CLIENT_ID || "").trim();
+  const clientSecret = String(process.env.GOOGLE_CALENDAR_CLIENT_SECRET || process.env.GOOGLE_CLIENT_SECRET || "").trim();
+  const clientIdValid = isValidGoogleCalendarClientId(clientId);
+  const missingEnv = [
+    !clientId ? "GOOGLE_CALENDAR_CLIENT_ID or GOOGLE_CLIENT_ID" : null,
+    !clientSecret ? "GOOGLE_CALENDAR_CLIENT_SECRET or GOOGLE_CLIENT_SECRET" : null,
+  ].filter(Boolean) as string[];
+  const invalidEnv = [clientId && !clientIdValid ? "GOOGLE_CALENDAR_CLIENT_ID" : null].filter(Boolean) as string[];
+
+  return {
+    configured: missingEnv.length === 0 && invalidEnv.length === 0,
+    clientIdPresent: Boolean(clientId),
+    clientSecretPresent: Boolean(clientSecret),
+    clientIdValid,
+    missingEnv,
+    invalidEnv,
+    redirectUris: {
+      personal: getGoogleCalendarRedirectUri(request, GOOGLE_CALENDAR_CALLBACK_PATH),
+      global: getGoogleCalendarRedirectUri(request, GOOGLE_CALENDAR_GLOBAL_CALLBACK_PATH),
+    },
+    requiredScopes: GOOGLE_CALENDAR_SCOPE.split(" "),
+  };
 }
 
 export function getGoogleCalendarRedirectUri(request: Request, callbackPath = GOOGLE_CALENDAR_CALLBACK_PATH): string {

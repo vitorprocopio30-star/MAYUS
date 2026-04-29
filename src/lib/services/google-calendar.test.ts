@@ -3,6 +3,7 @@ import {
   getGoogleCalendarDayWindow,
   getGoogleCalendarGlobalProvider,
   getGoogleCalendarProviderForUser,
+  getGoogleCalendarSetupInfo,
   mapGoogleCalendarEvent,
   sanitizeGoogleCalendarState,
 } from "@/lib/services/google-calendar";
@@ -66,5 +67,37 @@ describe("google-calendar service", () => {
       events: [],
     });
     expect(JSON.stringify(state)).not.toMatch(/secret|access_token|api_key|refresh/i);
+  });
+
+  it("gera diagnostico de setup sem expor segredo OAuth", () => {
+    const previousClientId = process.env.GOOGLE_CALENDAR_CLIENT_ID;
+    const previousClientSecret = process.env.GOOGLE_CALENDAR_CLIENT_SECRET;
+    const previousGoogleClientId = process.env.GOOGLE_CLIENT_ID;
+    const previousGoogleClientSecret = process.env.GOOGLE_CLIENT_SECRET;
+
+    delete process.env.GOOGLE_CALENDAR_CLIENT_ID;
+    delete process.env.GOOGLE_CALENDAR_CLIENT_SECRET;
+    delete process.env.GOOGLE_CLIENT_ID;
+    delete process.env.GOOGLE_CLIENT_SECRET;
+
+    const setup = getGoogleCalendarSetupInfo(new Request("https://app.example.com/dashboard/agenda"));
+
+    expect(setup.configured).toBe(false);
+    expect(setup.missingEnv).toEqual(expect.arrayContaining([
+      "GOOGLE_CALENDAR_CLIENT_ID or GOOGLE_CLIENT_ID",
+      "GOOGLE_CALENDAR_CLIENT_SECRET or GOOGLE_CLIENT_SECRET",
+    ]));
+    expect(setup.redirectUris.personal).toBe("https://app.example.com/api/integrations/google-calendar/callback");
+    expect(setup.redirectUris.global).toBe("https://app.example.com/api/integrations/google-calendar-global/callback");
+    expect(JSON.stringify(setup)).not.toMatch(/secret-value|client-secret/i);
+
+    if (previousClientId === undefined) delete process.env.GOOGLE_CALENDAR_CLIENT_ID;
+    else process.env.GOOGLE_CALENDAR_CLIENT_ID = previousClientId;
+    if (previousClientSecret === undefined) delete process.env.GOOGLE_CALENDAR_CLIENT_SECRET;
+    else process.env.GOOGLE_CALENDAR_CLIENT_SECRET = previousClientSecret;
+    if (previousGoogleClientId === undefined) delete process.env.GOOGLE_CLIENT_ID;
+    else process.env.GOOGLE_CLIENT_ID = previousGoogleClientId;
+    if (previousGoogleClientSecret === undefined) delete process.env.GOOGLE_CLIENT_SECRET;
+    else process.env.GOOGLE_CLIENT_SECRET = previousGoogleClientSecret;
   });
 });

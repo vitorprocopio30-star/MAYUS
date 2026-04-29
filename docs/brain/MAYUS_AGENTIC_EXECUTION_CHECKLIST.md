@@ -474,6 +474,8 @@ Evidencia 2026-04-28: `/dashboard/marketing/perfil` salva perfil operacional de 
 Evidencia 2026-04-28: `/dashboard/marketing/referencias` coleta referencias em estado local e renderiza padroes calculados por `extractReferencePatterns`.
 - [x] Criar calendario editorial editavel.
 Evidencia 2026-04-28: `generateEditorialCalendar` cria itens editaveis e `updateEditorialCalendarItem` aplica edicoes supervisionadas sem mutar a lista original.
+- [x] Expor Kanban Marketing na lateral.
+Evidencia 2026-04-28: a sidebar lista Marketing OS, Perfil e Canais, Kanban Marketing, Referencias, Calendario Editorial, Conteudos Aprovados e Meta Ads; `/dashboard/marketing/kanban` usa o calendario editorial local para mover pautas entre rascunho, aprovado, publicado e recusado sem publicacao externa.
 - [x] Permitir configurar frequencia, estilo, formato, canal, area juridica, objetivo, tom e publico-alvo.
 Evidencia 2026-04-28: `/dashboard/marketing/calendario` gera calendario local com frequencia, estilo, canais, areas, objetivos, tons, publicos, data inicial e periodos.
 - [x] Permitir editar, aprovar ou recusar conteudos sugeridos.

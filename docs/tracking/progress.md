@@ -84,6 +84,7 @@ Use esse checklist para marcar:
 - [x] Conteudos aprovados conectados a tarefas internas em 2026-04-28: item aprovado no calendario editorial pode criar tarefa privada em `user_tasks` via `buildMarketingAgendaTaskDraft` e `buildAgendaPayloadFromManualTask`, registrando origem `marketing_editorial_calendar` em descricao/tags/notas, sem publicacao externa nem Google Calendar automatico.
 - [x] Meta Ads CSV MVP entregue em 2026-04-28: `src/lib/marketing/meta-ads-analysis.ts` e `/dashboard/marketing/meta-ads` analisam CSV colado/exportado ou arquivo `.csv` client-side, calculam CPL/CTR/CPC/CPM, vencedores, gasto desperdicado, temas de criativo/publico, findings e recomendacoes supervisionadas. XLSX/PDF seguem pendentes.
 - [x] Perfil e canais de Marketing MVP entregue em 2026-04-28: `/dashboard/marketing/perfil` cadastra posicionamento, areas, publicos, canais, tom, sites, redes, referencias admiradas e guardrails eticos em `localStorage`; calendario editorial usa esse perfil como briefing inicial, sem publicacao externa automatica.
+- [x] Agenda Google e Marketing UX refinados em 2026-04-28: Agenda Diaria/Global deixam claro que usuarios apenas conectam a conta Google via OAuth, com diagnostico tecnico apenas quando o servidor nao esta configurado; sidebar agora expõe submenus de Marketing e `/dashboard/marketing/kanban` acompanha pautas por status usando o mesmo calendario local, sem publicacao externa.
 - [x] Smoke autenticado real parcial passou em 2026-04-26: `GET /api/integrations`, `POST /api/integrations` controlado com cleanup, OpenRouter via Vault e TTS OpenAI.
 - [~] Google Drive real validado parcialmente em 2026-04-26: conta conectada e clear root passaram; salvar/restaurar root via API falhou no ambiente local com `The OAuth client was not found`; root foi restaurado via service role; client ID local foi confirmado como malformado.
 - [x] Smoke seguro de webhook Asaas passou em 2026-04-26 com payload sintetico e auditoria em `system_event_logs` confirmada.
@@ -103,6 +104,7 @@ Use esse checklist para marcar:
 - [x] Expor acao de analise de call no CRM visual e promover evento seguro para artifact/historico do lead.
 - [x] Cadastrar perfis, redes, canais, sites e referencias admiradas para orientar Marketing.
 - [ ] Evoluir Meta Ads upload para arquivo real XLSX/PDF ou rota server-side quando necessario.
+- [x] Expor Kanban Marketing na lateral usando o calendario editorial local.
 - [x] Criar artifact agentico para `referral_intake` e expor no MAYUS.
 - [x] Expor Auto Setup Doctor no MAYUS/Configuracoes com status pronto, corrigido, alerta, bloqueado e artifact agentico rastreavel.
 - [x] Resolver instabilidade do bootstrap autenticado Playwright no harness MAYUS sem mascarar os E2Es reais de Documentos.

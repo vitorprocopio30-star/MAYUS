@@ -1,5 +1,5 @@
 import Link from "next/link";
-import { ArrowRight, Building2, CalendarDays, CheckCircle2, Images, Megaphone, Upload } from "lucide-react";
+import { ArrowRight, Building2, CalendarDays, CheckCircle2, Images, LayoutDashboard, Megaphone, Upload } from "lucide-react";
 
 const marketingAreas = [
   {
@@ -8,6 +8,13 @@ const marketingAreas = [
     href: "/dashboard/marketing/perfil",
     icon: Building2,
     label: "Base operacional",
+  },
+  {
+    title: "Kanban Marketing",
+    description: "Acompanhe pautas por status: rascunho, aprovado, publicado e recusado.",
+    href: "/dashboard/marketing/kanban",
+    icon: LayoutDashboard,
+    label: "Fluxo editorial",
   },
   {
     title: "Referencias",
@@ -58,7 +65,7 @@ export default function MarketingPage() {
         </div>
       </section>
 
-      <section className="mt-8 grid gap-4 md:grid-cols-2 xl:grid-cols-5">
+      <section className="mt-8 grid gap-4 md:grid-cols-2 xl:grid-cols-3 2xl:grid-cols-6">
         {marketingAreas.map((area) => {
           const Icon = area.icon;
 

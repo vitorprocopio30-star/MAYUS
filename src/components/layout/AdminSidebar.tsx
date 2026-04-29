@@ -38,6 +38,9 @@ import {
   Brain,
   Volume2,
   Megaphone,
+  Images,
+  CheckCircle2,
+  Upload,
   ChevronLeft,
   ChevronRight,
 } from "lucide-react";
@@ -130,7 +133,13 @@ export function AdminSidebar() {
       title: "MARKETING",
       collapsible: true,
       items: [
-        { name: "Marketing", icon: Megaphone, href: "/dashboard/marketing" },
+        { name: "Marketing OS", icon: Megaphone, href: "/dashboard/marketing" },
+        { name: "Perfil e Canais", icon: Building2, href: "/dashboard/marketing/perfil" },
+        { name: "Kanban Marketing", icon: LayoutDashboard, href: "/dashboard/marketing/kanban" },
+        { name: "Referências", icon: Images, href: "/dashboard/marketing/referencias" },
+        { name: "Calendário Editorial", icon: Calendar, href: "/dashboard/marketing/calendario" },
+        { name: "Conteúdos Aprovados", icon: CheckCircle2, href: "/dashboard/marketing/aprovados" },
+        { name: "Meta Ads", icon: Upload, href: "/dashboard/marketing/meta-ads" },
       ]
     },
     {

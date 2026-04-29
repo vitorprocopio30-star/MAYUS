@@ -23,6 +23,11 @@ type GoogleCalendarState = {
   connectedEmail: string | null;
   events: any[];
   error?: string | null;
+  setup?: {
+    missingEnv?: string[];
+    invalidEnv?: string[];
+    redirectUris?: { personal?: string; global?: string };
+  } | null;
 };
 
 const montserrat = Montserrat({ subsets: ["latin"], weight: ["300", "400", "500", "600", "700"] });
@@ -117,6 +122,7 @@ export default function AgendaDiariaPage() {
         status: String(data?.status || "disconnected"),
         connectedEmail: data?.connectedEmail || null,
         events: Array.isArray(data?.events) ? data.events : [],
+        setup: data?.setup || null,
         error: null,
       };
       setGoogleCalendar(nextState);
@@ -1238,10 +1244,29 @@ export default function AgendaDiariaPage() {
                     ? "Indisponivel ate configurar OAuth no servidor."
                     : googleCalendar.connected
                       ? `Conectado: ${googleCalendar.connectedEmail || "conta Google"}`
-                      : "Opcional: traga seus eventos do Gmail para a agenda diaria."}
+                      : "Opcional: conecte sua conta Google e veja seus eventos aqui."}
                 </p>
                 {googleCalendar.error && (
                   <p className="mt-1 text-[10px] font-semibold text-red-300">{googleCalendar.error}</p>
+                )}
+                {!googleCalendar.available && googleCalendar.setup?.redirectUris?.personal && (
+                  <div className="mt-3 space-y-2 rounded-lg border border-[#4285F4]/20 bg-black/10 p-2 text-[10px] leading-relaxed text-gray-500 dark:text-gray-400">
+                    <p className="font-bold text-[#8ab4ff]">Configuração necessária no Google Cloud:</p>
+                    {(googleCalendar.setup.missingEnv || []).length > 0 && (
+                      <p>Env ausente: {(googleCalendar.setup.missingEnv || []).join(", ")}</p>
+                    )}
+                    {(googleCalendar.setup.invalidEnv || []).length > 0 && (
+                      <p>Env inválida: {(googleCalendar.setup.invalidEnv || []).join(", ")}</p>
+                    )}
+                    <button
+                      type="button"
+                      onClick={(event) => copyTaskText(event, "google-calendar-personal-redirect", googleCalendar.setup?.redirectUris?.personal)}
+                      className="inline-flex max-w-full items-center gap-1 rounded-md border border-[#4285F4]/30 px-2 py-1 font-bold text-[#8ab4ff]"
+                    >
+                      {copiedTextKey === "google-calendar-personal-redirect" ? <Check size={10} /> : <Copy size={10} />}
+                      <span className="truncate">Callback pessoal</span>
+                    </button>
+                  </div>
                 )}
               </div>
               {googleCalendar.connected ? (

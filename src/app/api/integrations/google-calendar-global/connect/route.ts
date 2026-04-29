@@ -6,6 +6,7 @@ import {
   buildGoogleCalendarAuthUrl,
   GOOGLE_CALENDAR_GLOBAL_CALLBACK_PATH,
   GOOGLE_CALENDAR_GLOBAL_STATE_COOKIE,
+  getGoogleCalendarSetupInfo,
   isGoogleCalendarConfigured,
 } from "@/lib/services/google-calendar";
 import { resolvePublicAppUrl } from "@/lib/url/resolve-public-app-url";
@@ -16,7 +17,7 @@ export async function GET(request: Request) {
 
     if (!isGoogleCalendarConfigured()) {
       return NextResponse.json(
-        { error: "Google Agenda não configurado no servidor." },
+        { error: "Google Agenda não configurado no servidor.", setup: getGoogleCalendarSetupInfo(request) },
         { status: 503 }
       );
     }
