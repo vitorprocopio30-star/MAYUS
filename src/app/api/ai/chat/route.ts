@@ -14,11 +14,9 @@ import { createClient, SupabaseClient } from "@supabase/supabase-js";
 import { createServerClient } from "@supabase/ssr";
 import { cookies } from "next/headers";
 import {
-  getLLMClient,
-  buildHeaders,
-  isOpenAICompatibleProvider,
   normalizeLLMProvider,
 } from "@/lib/llm-router";
+import { callLLMWithFallback } from "@/lib/llm-fallback";
 import {
   canExecuteAgentSkill,
   fetchTenantAgentSkills,
@@ -151,6 +149,61 @@ function skillToLLMTool(skill: AgentSkill) {
       description: skill.description,
       parameters: skill.input_schema ?? { type: "object", properties: {}, required: [] },
     },
+  };
+}
+
+function isAnthropicMessagesEndpoint(input: RequestInfo | URL) {
+  const url = typeof input === "string"
+    ? input
+    : input instanceof URL
+      ? input.toString()
+      : input.url;
+
+  return url.includes("api.anthropic.com") && url.includes("/v1/messages");
+}
+
+function buildAnthropicToolUseFallbackFetch(openAITools: ReturnType<typeof skillToLLMTool>[]): typeof fetch {
+  return async (input, init) => {
+    if (typeof init?.body !== "string") {
+      return fetch(input, init);
+    }
+
+    let requestBody: Record<string, any>;
+    try {
+      requestBody = JSON.parse(init.body);
+    } catch {
+      return fetch(input, init);
+    }
+
+    const isAnthropic = isAnthropicMessagesEndpoint(input);
+    const messages = Array.isArray(requestBody.messages) ? requestBody.messages : [];
+    const convertedBody: Record<string, unknown> = isAnthropic
+      ? {
+          model: requestBody.model,
+          system: requestBody.system,
+          max_tokens: requestBody.max_tokens,
+          temperature: requestBody.temperature,
+          messages,
+          tools: requestBody.tools,
+        }
+      : {
+          model: requestBody.model,
+          messages: [
+            ...(typeof requestBody.system === "string" && requestBody.system
+              ? [{ role: "system", content: requestBody.system }]
+              : []),
+            ...messages,
+          ],
+          max_tokens: requestBody.max_tokens,
+          temperature: requestBody.temperature,
+          tools: openAITools.length > 0 ? openAITools : undefined,
+          tool_choice: openAITools.length > 0 ? "auto" : undefined,
+        };
+
+    return fetch(input, {
+      ...init,
+      body: JSON.stringify(convertedBody),
+    });
   };
 }
 
@@ -408,19 +461,6 @@ export async function POST(req: Request) {
       }, { status: 400 });
     }
 
-    // 5. Resolver cliente LLM via router BYOK
-    let llm: Awaited<ReturnType<typeof getLLMClient>> | null = null;
-    if (providerInput !== "n8n") {
-      try {
-        llm = await getLLMClient(adminSupabase, tenantId, "chat_geral", {
-          preferredProvider: requestedProvider,
-          allowNonOpenAICompatible: true,
-        });
-      } catch {
-        return NextResponse.json({ error: "Integracao nao configurada." }, { status: 400 });
-      }
-    }
-
     // 6. Memória e Skills via USER CLIENT
     const memoryContext = await fetchInstitutionalMemory(userSupabase, tenantId);
     
@@ -449,7 +489,7 @@ export async function POST(req: Request) {
     }
 
     // 8. Provider: OpenAI-compatible APIs (OpenAI / OpenRouter / Google / Groq)
-    if (llm && isOpenAICompatibleProvider(llm.provider)) {
+    if (requestedProvider && requestedProvider !== "anthropic" && providerInput !== "n8n") {
       const dynamicTools = authorizedSkills.map(skillToLLMTool);
       const messages = [
         { role: "system", content: dynamicSystemPrompt },
@@ -460,25 +500,32 @@ export async function POST(req: Request) {
         { role: "user", content: message },
       ];
 
-      const openaiController = new AbortController();
-      const openaiTimeout = setTimeout(() => openaiController.abort(), 30000);
-
-      const response = await fetch(llm!.endpoint, {
-        method: "POST",
-        headers: buildHeaders(llm!),
-        body: JSON.stringify({
-          model: model || llm!.model,
+      const aiResult = await callLLMWithFallback<any>({
+        supabase: adminSupabase,
+        tenantId,
+        useCase: "chat_geral",
+        preferredProvider: requestedProvider,
+        request: {
+          ...(model ? { model } : {}),
           messages,
           tools: dynamicTools.length > 0 ? dynamicTools : undefined,
           tool_choice: dynamicTools.length > 0 ? "auto" : undefined,
-        }),
-        signal: openaiController.signal,
-      });
+        },
+        timeoutMs: 30000,
+      })
 
-      clearTimeout(openaiTimeout);
+      if (aiResult.ok === false) {
+        return NextResponse.json(
+          {
+            error: aiResult.notice.message,
+            ai_notice: aiResult.notice,
+            kernel: { status: "ai_unavailable" },
+          },
+          { status: aiResult.failureKind === "missing_key" || aiResult.failureKind === "invalid_key" ? 400 : 503 }
+        )
+      }
 
-      if (!response.ok) throw new Error("Erro na OpenAI ao processar a mensagem.");
-      const data = await response.json();
+      const data = aiResult.data;
       const responseMessage = data.choices[0].message;
 
       if (responseMessage.tool_calls?.length > 0) {
@@ -500,15 +547,20 @@ export async function POST(req: Request) {
         }
       }
 
-      return NextResponse.json({ reply: responseMessage.content, kernel: { status: "success" } });
+      return NextResponse.json({
+        reply: responseMessage.content,
+        ai_notice: aiResult.notice || null,
+        kernel: { status: "success" },
+      });
     }
 
-    if (llm?.provider === "anthropic") {
+    if (requestedProvider === "anthropic") {
       const anthropicTools = authorizedSkills.map((skill) => ({
         name: skill.name,
         description: skill.description,
         input_schema: skill.input_schema ?? { type: "object", properties: {}, required: [] },
       }));
+      const dynamicTools = authorizedSkills.map(skillToLLMTool);
 
       const messages = [
         ...history
@@ -520,30 +572,35 @@ export async function POST(req: Request) {
         { role: "user", content: message },
       ];
 
-      const anthropicController = new AbortController();
-      const anthropicTimeout = setTimeout(() => anthropicController.abort(), 30000);
-
-      const response = await fetch(llm.endpoint, {
-        method: "POST",
-        headers: buildHeaders(llm),
-        body: JSON.stringify({
-          model: model || llm.model,
+      const aiResult = await callLLMWithFallback<any>({
+        supabase: adminSupabase,
+        tenantId,
+        useCase: "chat_geral",
+        preferredProvider: requestedProvider,
+        allowNonOpenAICompatible: true,
+        request: {
+          ...(model ? { model } : {}),
           system: dynamicSystemPrompt,
           max_tokens: 4096,
           messages,
           tools: anthropicTools.length > 0 ? anthropicTools : undefined,
-        }),
-        signal: anthropicController.signal,
+        },
+        timeoutMs: 30000,
+        fetchImpl: buildAnthropicToolUseFallbackFetch(dynamicTools),
       });
 
-      clearTimeout(anthropicTimeout);
-
-      if (!response.ok) {
-        const errorText = await response.text();
-        throw new Error(errorText || "Erro na Anthropic ao processar a mensagem.");
+      if (aiResult.ok === false) {
+        return NextResponse.json(
+          {
+            error: aiResult.notice.message,
+            ai_notice: aiResult.notice,
+            kernel: { status: "ai_unavailable" },
+          },
+          { status: aiResult.failureKind === "missing_key" || aiResult.failureKind === "invalid_key" ? 400 : 503 }
+        );
       }
 
-      const data = await response.json();
+      const data = aiResult.data;
       const toolUses = Array.isArray(data.content)
         ? data.content.filter((item: any) => item?.type === "tool_use")
         : [];
@@ -567,15 +624,39 @@ export async function POST(req: Request) {
         }
       }
 
+      const responseMessage = data.choices?.[0]?.message;
+      if (responseMessage?.tool_calls?.length > 0) {
+        for (const toolCall of responseMessage.tool_calls) {
+          return executeToolInvocation({
+            toolName: toolCall.function.name,
+            toolArguments: toolCall.function.arguments,
+            safeText: routerResult.safeText,
+            executorContext,
+            fallbackBase,
+            authorizedSkills,
+            userId,
+            tenantId,
+            history,
+            taskId,
+            runId,
+            stepId,
+          });
+        }
+      }
+
       const reply = Array.isArray(data.content)
         ? data.content
             .filter((item: any) => item?.type === "text")
             .map((item: any) => item?.text || "")
             .join("\n\n")
             .trim()
-        : "";
+        : responseMessage?.content || "";
 
-      return NextResponse.json({ reply, kernel: { status: "success" } });
+      return NextResponse.json({
+        reply,
+        ai_notice: aiResult.notice || null,
+        kernel: { status: "success" },
+      });
     }
 
     // n8n

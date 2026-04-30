@@ -48,6 +48,22 @@ export function normalizeLLMProvider(provider: string | null | undefined): LLMPr
   }
 }
 
+export type LLMClientCandidate = LLMClient & {
+  source: 'tenant' | 'env'
+  isPreferred: boolean
+}
+
+const LLM_INTEGRATION_PROVIDERS = ['openrouter', 'anthropic', 'openai', 'google', 'gemini', 'groq', 'grok'] as const
+
+function buildExtraHeaders(provider: LLMProvider): Record<string, string> {
+  const extraHeaders: Record<string, string> = {}
+  if (provider === 'openrouter') {
+    extraHeaders['HTTP-Referer'] = process.env.NEXT_PUBLIC_SITE_URL ?? 'https://mayus.app'
+    extraHeaders['X-Title'] = 'MAYUS'
+  }
+  return extraHeaders
+}
+
 export function isOpenAICompatibleProvider(provider: LLMProvider): boolean {
   return OPENAI_COMPATIBLE_PROVIDERS.includes(provider)
 }
@@ -245,6 +261,81 @@ export async function getLLMClient(
     endpoint:     ENDPOINTS[selectedProvider],
     extraHeaders,
   }
+}
+
+export async function getLLMClientCandidates(
+  supabase: SupabaseClient,
+  tenantId: string,
+  useCase: LLMUseCase,
+  options: GetLLMClientOptions = {}
+): Promise<LLMClientCandidate[]> {
+  const requestedProvider = normalizeLLMProvider(options.preferredProvider)
+  const candidateProviders = options.allowNonOpenAICompatible
+    ? [...DEFAULT_PROVIDER_PRIORITY]
+    : [...OPENAI_COMPATIBLE_PROVIDERS]
+  const integrations = await listTenantIntegrationsResolved(tenantId, [...LLM_INTEGRATION_PROVIDERS])
+  const byProvider = (integrations ?? []).reduce((acc, integration) => {
+    const provider = normalizeLLMProvider(integration.provider)
+    const apiKey = String(integration.api_key || '').trim()
+    const status = String((integration as { status?: string | null }).status || '').trim().toLowerCase()
+
+    if (!provider || !candidateProviders.includes(provider) || !apiKey || (status && status !== 'connected')) {
+      return acc
+    }
+
+    const modelOverride = String((integration as { instance_name?: string | null }).instance_name || '').trim() || null
+    const shouldOverrideExisting = !acc[provider] || integration.provider === provider
+    if (shouldOverrideExisting) {
+      acc[provider] = { apiKey, modelOverride }
+    }
+
+    return acc
+  }, {} as Partial<Record<LLMProvider, { apiKey: string; modelOverride: string | null }>>)
+  const priority = DEFAULT_PROVIDER_PRIORITY.filter((provider) => candidateProviders.includes(provider))
+  const orderedProviders = [
+    ...(requestedProvider && candidateProviders.includes(requestedProvider) ? [requestedProvider] : []),
+    ...priority.filter((provider) => provider !== requestedProvider),
+  ]
+  const envKeys: Partial<Record<LLMProvider, string | undefined>> = {
+    openrouter: process.env.OPENROUTER_API_KEY,
+    anthropic:  process.env.ANTHROPIC_API_KEY,
+    openai:     process.env.OPENAI_API_KEY,
+    google:     process.env.GOOGLE_AI_API_KEY,
+    groq:       process.env.GROQ_API_KEY,
+  }
+  const candidates: LLMClientCandidate[] = []
+
+  for (const provider of orderedProviders) {
+    const integration = byProvider[provider]
+    if (integration?.apiKey) {
+      candidates.push({
+        provider,
+        model: integration.modelOverride || MODELS[provider][useCase],
+        apiKey: integration.apiKey,
+        endpoint: ENDPOINTS[provider],
+        extraHeaders: buildExtraHeaders(provider),
+        source: 'tenant',
+        isPreferred: provider === requestedProvider,
+      })
+    }
+  }
+
+  for (const provider of orderedProviders) {
+    const apiKey = envKeys[provider]
+    if (apiKey) {
+      candidates.push({
+        provider,
+        model: MODELS[provider][useCase],
+        apiKey,
+        endpoint: ENDPOINTS[provider],
+        extraHeaders: buildExtraHeaders(provider),
+        source: 'env',
+        isPreferred: provider === requestedProvider,
+      })
+    }
+  }
+
+  return candidates
 }
 
 /**

@@ -8,7 +8,7 @@ vi.mock("@/lib/integrations/server", () => ({
   listTenantIntegrationsResolved: listTenantIntegrationsResolvedMock,
 }));
 
-import { buildHeaders, getLLMClient, normalizeLLMProvider } from "./llm-router";
+import { buildHeaders, getLLMClient, getLLMClientCandidates, normalizeLLMProvider } from "./llm-router";
 
 describe("llm-router", () => {
   beforeEach(() => {
@@ -117,5 +117,28 @@ describe("llm-router", () => {
       "HTTP-Referer": "https://example.test",
       "X-Title": "MAYUS",
     });
+  });
+
+  it("lista candidatos para fallback sem alterar o cliente principal", async () => {
+    vi.stubEnv("OPENAI_API_KEY", "env-openai-key");
+    listTenantIntegrationsResolvedMock.mockResolvedValueOnce([
+      { provider: "openrouter", api_key: "openrouter-key", status: "connected", instance_name: "custom/openrouter" },
+      { provider: "groq", api_key: "groq-key", status: "connected" },
+    ]);
+
+    const candidates = await getLLMClientCandidates({} as any, "tenant-1", "chat_geral", {
+      preferredProvider: "groq",
+    });
+
+    expect(candidates.map((candidate) => ({
+      provider: candidate.provider,
+      source: candidate.source,
+      model: candidate.model,
+      isPreferred: candidate.isPreferred,
+    }))).toEqual([
+      { provider: "groq", source: "tenant", model: "llama-3.3-70b-versatile", isPreferred: true },
+      { provider: "openrouter", source: "tenant", model: "custom/openrouter", isPreferred: false },
+      { provider: "openai", source: "env", model: "gpt-5.4-nano", isPreferred: false },
+    ]);
   });
 });

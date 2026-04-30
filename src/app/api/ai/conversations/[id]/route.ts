@@ -84,6 +84,12 @@ export async function POST(req: NextRequest, { params }: { params: { id: string 
     return NextResponse.json({ error: "Erro ao salvar mensagem." }, { status: 500 });
   }
 
+  // Atualiza o timestamp da conversa para ela subir no histórico
+  await supabase
+    .from("mayus_conversations")
+    .update({ updated_at: new Date().toISOString() })
+    .eq("id", params.id);
+
   return NextResponse.json({ message: data }, { status: 201 });
 }
 

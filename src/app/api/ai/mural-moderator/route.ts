@@ -1,25 +1,70 @@
 import { NextResponse } from "next/server";
 import { brainAdminSupabase, getBrainAuthContext } from "@/lib/brain/server";
-import {
-  buildHeaders,
-  getLLMClient,
-  isOpenAICompatibleProvider,
-  normalizeLLMProvider,
-} from "@/lib/llm-router";
+import { callLLMWithFallback } from "@/lib/llm-fallback";
+import { normalizeLLMProvider } from "@/lib/llm-router";
 
 export const dynamic = "force-dynamic";
 
-function extractJsonObject(raw: string) {
+type ModerationResult = {
+  isApproved?: boolean;
+  reason?: string;
+  sentiment?: string;
+};
+
+function extractJsonObject(raw: string): ModerationResult {
   const trimmed = raw.trim();
   const directMatch = trimmed.match(/\{[\s\S]*\}/);
   if (!directMatch) {
     throw new Error("A IA moderadora nao retornou JSON valido.");
   }
 
-  return JSON.parse(directMatch[0]) as {
-    isApproved?: boolean;
-    reason?: string;
-    sentiment?: string;
+  return JSON.parse(directMatch[0]) as ModerationResult;
+}
+
+function extractTextFromLLMResponse(data: unknown) {
+  if (typeof data === "string") return data;
+  if (!data || typeof data !== "object") return "";
+
+  const response = data as {
+    choices?: Array<{ message?: { content?: unknown } }>;
+    content?: Array<{ type?: string; text?: string }>;
+  };
+
+  const openAIContent = response.choices?.[0]?.message?.content;
+  if (typeof openAIContent === "string") return openAIContent;
+
+  if (Array.isArray(response.content)) {
+    return response.content
+      .filter((item) => item?.type === "text" || typeof item?.text === "string")
+      .map((item) => item?.text || "")
+      .join("\n");
+  }
+
+  return "";
+}
+
+function createProviderAwareFetch(systemPrompt: string): typeof fetch {
+  return async (input, init) => {
+    const url = typeof input === "string" ? input : input instanceof URL ? input.toString() : input.url;
+    if (!url.includes("api.anthropic.com")) {
+      return fetch(input, init);
+    }
+
+    const body = typeof init?.body === "string" ? JSON.parse(init.body) : {};
+    const messages = Array.isArray(body.messages)
+      ? body.messages.filter((message: any) => message?.role !== "system")
+      : [{ role: "user", content: "" }];
+
+    return fetch(input, {
+      ...init,
+      body: JSON.stringify({
+        model: body.model,
+        system: systemPrompt,
+        max_tokens: body.max_tokens || 300,
+        temperature: body.temperature,
+        messages,
+      }),
+    });
   };
 }
 
@@ -30,82 +75,58 @@ export async function POST(req: Request) {
       return NextResponse.json({ error: auth.error }, { status: auth.status });
     }
 
-    const { content, provider, model } = await req.json();
+    const { content, provider } = await req.json();
 
     if (!content) {
       return NextResponse.json({ error: "Conteudo ausente para moderacao." }, { status: 400 });
     }
 
-    const systemPrompt = `Você é o AGENTE GUARDIÃO do mural de feedbacks da empresa. 
-Sua tarefa é ler a mensagem do funcionário e aprovar ou reprovar, garantindo que não haja palavrões, xingamentos explícitos, discriminação, racismo ou preconceito.
-Críticas profissionais e reclamações são PERMITIDAS, desde que sem baixaria.
+    const systemPrompt = `Voce e o AGENTE GUARDIAO do mural de feedbacks da empresa.
+Sua tarefa e ler a mensagem do funcionario e aprovar ou reprovar, garantindo que nao haja palavroes, xingamentos explicitos, discriminacao, racismo ou preconceito.
+Criticas profissionais e reclamacoes sao PERMITIDAS, desde que sem baixaria.
 
-Retorne EXATAMENTE UM JSON válido (sem codificadores markdown, apenas as chaves puras) com o formato:
+Retorne EXATAMENTE UM JSON valido (sem codificadores markdown, apenas as chaves puras) com o formato:
 {
   "isApproved": boolean,
-  "reason": "Se isApproved for false, escreva o porquê de forma gentil para o funcionário.",
+  "reason": "Se isApproved for false, escreva o porque de forma gentil para o funcionario.",
   "sentiment": "positive" | "negative" | "neutral"
 }`;
 
-    const llm = await getLLMClient(brainAdminSupabase, auth.context.tenantId, "task_manager", {
+    const aiResult = await callLLMWithFallback<unknown>({
+      supabase: brainAdminSupabase,
+      tenantId: auth.context.tenantId,
+      useCase: "task_manager",
       preferredProvider: normalizeLLMProvider(provider),
       allowNonOpenAICompatible: true,
+      request: {
+        response_format: { type: "json_object" },
+        temperature: 0,
+        max_tokens: 300,
+        messages: [
+          { role: "system", content: systemPrompt },
+          { role: "user", content },
+        ],
+      },
+      fetchImpl: createProviderAwareFetch(systemPrompt),
     });
 
-    if (isOpenAICompatibleProvider(llm.provider)) {
-      const response = await fetch(llm.endpoint, {
-        method: "POST",
-        headers: buildHeaders(llm),
-        body: JSON.stringify({
-          model: model || llm.model,
-          response_format: { type: "json_object" },
-          temperature: 0,
-          messages: [
-            { role: "system", content: systemPrompt },
-            { role: "user", content: content }
-          ],
-        }),
-      });
-
-      if (!response.ok) throw new Error("Erro no provedor de IA ao validar feedback.");
-      
-      const data = await response.json();
-      const parsed = extractJsonObject(String(data?.choices?.[0]?.message?.content || ""));
-      return NextResponse.json(parsed);
+    if (aiResult.ok === false) {
+      return NextResponse.json(
+        {
+          error: aiResult.notice.message,
+          ai_notice: aiResult.notice,
+        },
+        { status: aiResult.failureKind === "missing_key" || aiResult.failureKind === "invalid_key" ? 400 : 503 }
+      );
     }
 
-    if (llm.provider === "anthropic") {
-      const response = await fetch(llm.endpoint, {
-        method: "POST",
-        headers: buildHeaders(llm),
-        body: JSON.stringify({
-          model: model || llm.model,
-          system: systemPrompt,
-          max_tokens: 300,
-          temperature: 0,
-          messages: [{ role: "user", content }],
-        }),
-      });
-
-      if (!response.ok) throw new Error("Erro no provedor de IA ao validar feedback.");
-      
-      const data = await response.json();
-      const reply = Array.isArray(data?.content)
-        ? data.content
-            .filter((item: any) => item?.type === "text")
-            .map((item: any) => item?.text || "")
-            .join("\n")
-        : "";
-      return NextResponse.json(extractJsonObject(reply));
-    }
-
-    // Default estrito se o provider não for um desses nativos que aceitam JSON facilmente
-    return NextResponse.json({ isApproved: true, sentiment: "neutral", reason: "" });
-
-  } catch (error: any) {
-    console.error("Erro na moderação:", error);
-    // Em caso de falha da IA, por segurança vamos aprovar, mas avisar no console.
-    // Ou podemos jogar erro para evitar que algo ruim passe. Vamos bloquear por segurança.
-    return NextResponse.json({ error: error.message || "Erro no processamento da IA Moderadora." }, { status: 500 });
+    const parsed = extractJsonObject(extractTextFromLLMResponse(aiResult.data));
+    return NextResponse.json({ ...parsed, ai_notice: aiResult.notice || null });
+  } catch (error) {
+    console.error("Erro na moderacao:", error);
+    return NextResponse.json(
+      { error: "Nao foi possivel validar o feedback com seguranca. Tente novamente em instantes." },
+      { status: 503 }
+    );
   }
 }
