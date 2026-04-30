@@ -17,7 +17,9 @@ vi.mock("@supabase/supabase-js", () => ({
 }));
 
 function buildSupabaseMock() {
+  const messageInserts: unknown[] = [];
   return {
+    messageInserts,
     from: vi.fn((table: string) => {
       if (table === "tenant_integrations") {
         return {
@@ -50,7 +52,10 @@ function buildSupabaseMock() {
 
       if (table === "whatsapp_messages") {
         return {
-          insert: vi.fn(async () => ({ error: null })),
+          insert: vi.fn(async (rows: unknown[]) => {
+            messageInserts.push(...rows);
+            return { error: null };
+          }),
         };
       }
 
@@ -60,11 +65,14 @@ function buildSupabaseMock() {
 }
 
 describe("/api/evolution-webhook", () => {
+  let supabaseMock: ReturnType<typeof buildSupabaseMock>;
+
   beforeEach(() => {
     vi.resetModules();
     vi.clearAllMocks();
     delete process.env.EVOLUTION_WEBHOOK_SECRET;
-    createClientMock.mockReturnValue(buildSupabaseMock());
+    supabaseMock = buildSupabaseMock();
+    createClientMock.mockReturnValue(supabaseMock);
     handleWhatsAppInternalCommandMock.mockResolvedValue({ handled: true, sent: true, intent: "daily_playbook" });
   });
 
@@ -101,6 +109,16 @@ describe("/api/evolution-webhook", () => {
       contactId: "contact-1",
       source: "evolution_webhook",
     }));
+    expect(supabaseMock.messageInserts).toEqual([
+      expect.objectContaining({
+        tenant_id: "tenant-1",
+        contact_id: "contact-1",
+        direction: "inbound",
+        content: "Mayus, relatorio do escritorio",
+        message_id_from_evolution: "msg-1",
+        status: "delivered",
+      }),
+    ]);
     expect(prepareWhatsAppSalesReplyForContactMock).not.toHaveBeenCalled();
   });
 });

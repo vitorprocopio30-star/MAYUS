@@ -14,6 +14,10 @@ function validateUrl(url: string): void {
   }
 }
 
+function cleanWhatsAppNumber(value: string) {
+  return String(value || "").split("@")[0].replace(/\D/g, "");
+}
+
 // Rota Segura (Server-Side) de Disparo do MAYUS
 export async function POST(req: NextRequest) {
   try {
@@ -51,7 +55,7 @@ export async function POST(req: NextRequest) {
        // MOTOR OFICIAL DA META CLOUD API
        const [phoneId] = provider.instance_name.split('|');
        const token = provider.api_key;
-       const cleanPhone = phone_number.replace(/\D/g, '');
+       const cleanPhone = cleanWhatsAppNumber(phone_number);
 
        const url = `https://graph.facebook.com/v22.0/${phoneId}/messages`;
        const fbPayload: any = {
@@ -81,7 +85,7 @@ export async function POST(req: NextRequest) {
        const [baseUrlRaw, instanceName] = provider.instance_name.split('|');
        const baseUrl = baseUrlRaw.replace(/\/$/, '');
        validateUrl(baseUrl);
-       const cleanPhone = phone_number.split('@')[0];
+       const cleanPhone = cleanWhatsAppNumber(phone_number);
 
        let evoUrl = `${baseUrl}/message/sendText/${instanceName}`;
        let evoPayload: any = { number: cleanPhone };
