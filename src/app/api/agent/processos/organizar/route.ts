@@ -2,7 +2,7 @@ import { createClient as createCookieSupabaseClient } from '@/lib/supabase/serve
 import { createClient as createSupabaseClient } from '@supabase/supabase-js'
 import { buildAgendaPayloadFromProcessTask, syncAgendaTaskBySource } from '@/lib/agenda/userTasks'
 import { NextRequest, NextResponse } from 'next/server'
-import { getLLMClient, buildHeaders } from '@/lib/llm-router'
+import { callLLMWithFallback } from '@/lib/llm-fallback'
 import { requireTenantApiKey } from '@/lib/integrations/server'
 import { buildDocumentOrganizationSummary } from '@/lib/juridico/document-organization'
 import {
@@ -144,16 +144,9 @@ export async function POST(req: NextRequest) {
     .eq('tenant_id', proc.tenant_id)
     .in('role', ['Administrador', 'advogado', 'socio'])
 
-  // 3. Buscar chave do Escavador + cliente LLM do tenant
+  // 3. Buscar chave do Escavador
   const { apiKey: tenantEscavadorKey } = await requireTenantApiKey(proc.tenant_id, 'escavador')
   const escavadorKey = tenantEscavadorKey || process.env.ESCAVADOR_API_KEY
-
-  let llm: Awaited<ReturnType<typeof getLLMClient>>
-  try {
-    llm = await getLLMClient(supabase, proc.tenant_id, 'organizar_processo')
-  } catch {
-    return NextResponse.json({ error: 'Chave de IA não configurada' }, { status: 400 })
-  }
 
   // 3b. Resolver pipeline e etapas reais
   let pipelineId: string | null = null
@@ -304,23 +297,29 @@ Retorne exatamente este JSON:
   "peca_sugerida": "Nome da peça processual a elaborar agora (ou null)"
 }`
 
-  // 5. Chamar IA
-  const aiResp = await fetch(llm.endpoint, {
-    method: 'POST',
-    headers: buildHeaders(llm),
-    body: JSON.stringify({
-      model: llm.model,
+  // 5. Chamar IA com fallback seguro entre provedores configurados
+  const aiResult = await callLLMWithFallback<any>({
+    supabase,
+    tenantId: proc.tenant_id,
+    useCase: 'organizar_processo',
+    request: {
       max_tokens: 1500,
-      messages: [{ role: 'user', content: prompt }]
-    })
+      messages: [{ role: 'user', content: prompt }],
+    },
   })
 
-  if (!aiResp.ok) {
-    const err = await aiResp.text()
-    return NextResponse.json({ error: `IA: ${err}` }, { status: 500 })
+  if (aiResult.ok === false) {
+    return NextResponse.json(
+      {
+        error: aiResult.notice.message,
+        ai_notice: aiResult.notice,
+      },
+      { status: aiResult.failureKind === 'missing_key' || aiResult.failureKind === 'invalid_key' ? 400 : 503 }
+    )
   }
 
-  const aiData = await aiResp.json()
+  const aiData = aiResult.data
+  const aiNotice = aiResult.notice || null
   const rawText = aiData.choices?.[0]?.message?.content || ''
 
   let resultado: any
@@ -534,6 +533,7 @@ Retorne exatamente este JSON:
     kanban_card_criado:  !!novoCard?.id,
     process_task_id:     organizedTaskId,
     document_organization: documentOrganization,
-    document_memory:     documentMemory
+    document_memory:     documentMemory,
+    ai_notice:           aiNotice
   })
 }

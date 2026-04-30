@@ -1,5 +1,5 @@
 import { createClient } from '@supabase/supabase-js'
-import { getLLMClient, buildHeaders } from '@/lib/llm-router'
+import { callLLMWithFallback } from '@/lib/llm-fallback'
 import { prepareProactiveMovementDraft } from '@/lib/lex/proactive-movement-draft'
 import {
   buildProcessCardClientName,
@@ -96,6 +96,11 @@ type AnalisePrazoLLM =
       motivo: string
     }
 
+function extrairConteudoLLM(data: any): string | null {
+  const content = data?.choices?.[0]?.message?.content
+  return typeof content === 'string' ? content.trim() : null
+}
+
 function calcularDiasUteis(inicio: Date, dias: number): Date {
   let count = 0
   const data = new Date(inicio)
@@ -110,12 +115,11 @@ function calcularDiasUteis(inicio: Date, dias: number): Date {
 async function classificarComLLM(tenantId: string, conteudo: string, resumo: string | null): Promise<string | null> {
   const tipos = 'CONTESTACAO, SENTENCA, RECURSO, AUDIENCIA, DESPACHO, CITACAO, ARQUIVAMENTO, EXTINCAO'
   try {
-    const llm = await getLLMClient(adminSupabase, tenantId, 'classificar_movimentacao')
-    const res = await fetch(llm.endpoint, {
-      method: 'POST',
-      headers: buildHeaders(llm),
-      body: JSON.stringify({
-        model: llm.model,
+    const aiResult = await callLLMWithFallback<any>({
+      supabase: adminSupabase,
+      tenantId,
+      useCase: 'classificar_movimentacao',
+      request: {
         temperature: 0,
         max_tokens: 20,
         messages: [
@@ -129,14 +133,19 @@ async function classificarComLLM(tenantId: string, conteudo: string, resumo: str
             role: 'user',
             content: `Movimentação: "${conteudo}"\nContexto: "${resumo ?? 'não disponível'}"`
           }
-        ]
-      })
+        ],
+      },
     })
-    const data = await res.json()
-    const tipo = data.choices?.[0]?.message?.content?.trim().toUpperCase().replace(/[^A-Z]/g, '')
+
+    if (aiResult.ok === false) {
+      console.warn(`[ANALISADOR] Classificacao LLM indisponivel: ${aiResult.failureKind}`)
+      return null
+    }
+
+    const tipo = extrairConteudoLLM(aiResult.data)?.toUpperCase().replace(/[^A-Z]/g, '')
     return tipos.includes(tipo) ? tipo : null
-  } catch (err) {
-    console.error('[ANALISADOR] Falha LLM:', err)
+  } catch {
+    console.warn('[ANALISADOR] Falha LLM durante classificacao.')
     return null
   }
 }
@@ -275,7 +284,6 @@ async function analisarComLLM(params: {
   textoMovimentacao: string
 }): Promise<AnalisePrazoLLM | null> {
   try {
-    const llm = await getLLMClient(adminSupabase, params.tenantId, 'classificar_movimentacao')
     let poloEscritorio = inferirPoloEscritorio(
       params.monitoredProcess.cliente_nome,
       params.monitoredProcess.partes
@@ -348,19 +356,23 @@ SE houver prazo real, retorne JSON:
 
 Responda APENAS com o JSON, sem texto adicional.`
 
-    const res = await fetch(llm.endpoint, {
-      method: 'POST',
-      headers: buildHeaders(llm),
-      body: JSON.stringify({
-        model: llm.model,
+    const aiResult = await callLLMWithFallback<any>({
+      supabase: adminSupabase,
+      tenantId: params.tenantId,
+      useCase: 'classificar_movimentacao',
+      request: {
         temperature: 0,
         max_tokens: 400,
-        messages: [{ role: 'user', content: prompt }]
-      })
+        messages: [{ role: 'user', content: prompt }],
+      },
     })
 
-    const data = await res.json()
-    const responseText = data.choices?.[0]?.message?.content?.trim()
+    if (aiResult.ok === false) {
+      console.warn(`[ANALISADOR] Analise LLM indisponivel: ${aiResult.failureKind}`)
+      return null
+    }
+
+    const responseText = extrairConteudoLLM(aiResult.data)
     if (!responseText) return null
 
     const parsed = JSON.parse(limparJsonResposta(responseText))
@@ -386,8 +398,8 @@ Responda APENAS com o JSON, sem texto adicional.`
     }
 
     return null
-  } catch (err) {
-    console.error('[ANALISADOR] Falha ao analisar com LLM:', err)
+  } catch {
+    console.warn('[ANALISADOR] Falha ao analisar com LLM.')
     return null
   }
 }

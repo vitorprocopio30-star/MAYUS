@@ -1,4 +1,5 @@
-import { buildHeaders, getLLMClient } from '@/lib/llm-router';
+import { callLLMWithFallback, type LLMFallbackTrace } from '@/lib/llm-fallback';
+import type { AINotice } from '@/lib/llm-errors';
 import { loadDriveStyleReferencePacket } from '@/lib/juridico/drive-style-examples';
 import { MAYUS_LEGAL_SYSTEM_PROMPT } from '@/lib/juridico/mayus-legal-system-prompt';
 import {
@@ -143,6 +144,8 @@ export type GeneratedLegalPiece = {
   requiresHumanReview: boolean;
   model: string;
   provider: string;
+  aiNotice?: AINotice | null;
+  aiFallbackTrace?: LLMFallbackTrace[];
   expansionApplied: boolean;
   qualityMetrics: DraftMetrics;
 };
@@ -158,15 +161,19 @@ export type GenerateLegalPieceParams = {
 };
 
 type ChatCallParams = {
-  provider: string;
-  endpoint: string;
-  apiKey: string;
-  model: string;
-  extraHeaders: Record<string, string>;
+  tenantId: string;
   systemPrompt: string;
   userPrompt: string;
   temperature: number;
   maxTokens: number;
+};
+
+type ChatCallResult = {
+  text: string;
+  provider: string;
+  model: string;
+  notice?: AINotice;
+  fallbackTrace: LLMFallbackTrace[];
 };
 
 const MAX_SOURCE_DOCUMENTS = 8;
@@ -345,60 +352,64 @@ function extractResponseText(data: any) {
   return '';
 }
 
-async function callTextModel(params: ChatCallParams) {
-  const { provider, endpoint, apiKey, model, extraHeaders, systemPrompt, userPrompt, temperature, maxTokens } = params;
-
-  if (provider === 'anthropic') {
-    const response = await fetch(endpoint, {
-      method: 'POST',
-      headers: {
-        'Content-Type': 'application/json',
-        'x-api-key': apiKey,
-        'anthropic-version': '2023-06-01',
-      },
-      body: JSON.stringify({
-        model,
-        system: systemPrompt,
-        max_tokens: maxTokens,
-        temperature,
-        messages: [{ role: 'user', content: userPrompt }],
-      }),
-    });
-
-    if (!response.ok) {
-      const errorText = await response.text();
-      throw new Error(errorText || 'Falha ao chamar o provedor Anthropic.');
+function createProviderAwareFetch(systemPrompt: string): typeof fetch {
+  return async (input, init) => {
+    const endpoint = typeof input === 'string' ? input : input instanceof URL ? input.toString() : input.url;
+    if (!endpoint.includes('api.anthropic.com')) {
+      return fetch(input, init);
     }
 
-    const data = await response.json();
-    const text = extractResponseText(data);
-    if (!text) throw new Error('A IA nao retornou conteudo textual.');
-    return text;
-  }
+    const body = typeof init?.body === 'string' ? JSON.parse(init.body) : {};
+    const messages = Array.isArray(body.messages)
+      ? body.messages.filter((message: any) => message?.role !== 'system')
+      : [{ role: 'user', content: '' }];
 
-  const response = await fetch(endpoint, {
-    method: 'POST',
-    headers: buildHeaders({ provider: provider as any, model, apiKey, endpoint, extraHeaders }),
-    body: JSON.stringify({
-      model,
+    return fetch(input, {
+      ...init,
+      body: JSON.stringify({
+        model: body.model,
+        system: systemPrompt,
+        max_tokens: body.max_tokens,
+        temperature: body.temperature,
+        messages,
+      }),
+    });
+  };
+}
+
+async function callTextModel(params: ChatCallParams): Promise<ChatCallResult> {
+  const { tenantId, systemPrompt, userPrompt, temperature, maxTokens } = params;
+  const aiResult = await callLLMWithFallback<any>({
+    supabase: supabaseAdmin,
+    tenantId,
+    useCase: 'gerar_peca',
+    allowNonOpenAICompatible: true,
+    request: {
       temperature,
       max_tokens: maxTokens,
       messages: [
         { role: 'system', content: systemPrompt },
         { role: 'user', content: userPrompt },
       ],
-    }),
+    },
+    timeoutMs: 180000,
+    fetchImpl: createProviderAwareFetch(systemPrompt),
   });
 
-  if (!response.ok) {
-    const errorText = await response.text();
-    throw new Error(errorText || 'Falha ao chamar o provedor de IA.');
+  if (aiResult.ok === false) {
+    throw new Error(aiResult.notice.message);
   }
 
-  const data = await response.json();
-  const text = extractResponseText(data);
+  const text = extractResponseText(aiResult.data);
   if (!text) throw new Error('A IA nao retornou conteudo textual.');
-  return text;
+
+  return {
+    text,
+    provider: aiResult.usedClient.provider,
+    model: aiResult.usedClient.model,
+    notice: aiResult.notice,
+    fallbackTrace: aiResult.fallbackTrace,
+  };
 }
 
 function buildWritingDirectives(pieceRequest: NormalizedPieceRequest, tone: string | null | undefined) {
@@ -979,9 +990,6 @@ export async function generateLegalPiece(params: GenerateLegalPieceParams): Prom
     familyLabel: pieceRequest.familyLabel,
   });
 
-  const llm = await getLLMClient(supabaseAdmin, params.tenantId, 'gerar_peca', {
-    allowNonOpenAICompatible: true,
-  });
   const plannerSystemPrompt = `${MAYUS_LEGAL_SYSTEM_PROMPT}
 
 MODO ATUAL: PLANNER JURIDICO
@@ -997,14 +1005,21 @@ MODO ATUAL: REDATOR JURIDICO
 - Nao explique o que esta fazendo.
 - Escreva como advogado da Dutra Advocacia, com densidade, maturidade e aderencia documental.`;
 
+  const aiNotices: AINotice[] = [];
+  const aiFallbackTrace: LLMFallbackTrace[] = [];
+  let usedModel = '';
+  let usedProvider = '';
+  const registerAIResult = (result: ChatCallResult) => {
+    usedModel = result.model;
+    usedProvider = result.provider;
+    if (result.notice) aiNotices.push(result.notice);
+    aiFallbackTrace.push(...result.fallbackTrace);
+  };
+
   let planPayload: PiecePlannerResponsePayload | null = null;
   try {
-    const plannerRaw = await callTextModel({
-      provider: llm.provider,
-      endpoint: llm.endpoint,
-      apiKey: llm.apiKey,
-      model: llm.model,
-      extraHeaders: llm.extraHeaders,
+    const plannerResult = await callTextModel({
+      tenantId: params.tenantId,
       systemPrompt: plannerSystemPrompt,
       userPrompt: buildPlanningPrompt({
         task,
@@ -1022,7 +1037,8 @@ MODO ATUAL: REDATOR JURIDICO
       temperature: 0.1,
       maxTokens: MAX_PLANNER_TOKENS,
     });
-    planPayload = parseJsonPayload<PiecePlannerResponsePayload>(plannerRaw);
+    registerAIResult(plannerResult);
+    planPayload = parseJsonPayload<PiecePlannerResponsePayload>(plannerResult.text);
   } catch {
     planPayload = null;
   }
@@ -1054,17 +1070,15 @@ MODO ATUAL: REDATOR JURIDICO
     instructions,
   });
 
-  let draftMarkdown = normalizeFreeText(await callTextModel({
-    provider: llm.provider,
-    endpoint: llm.endpoint,
-    apiKey: llm.apiKey,
-    model: llm.model,
-    extraHeaders: llm.extraHeaders,
+  const writerResult = await callTextModel({
+    tenantId: params.tenantId,
     systemPrompt: writerSystemPrompt,
     userPrompt: writerPrompt,
     temperature: 0.2,
     maxTokens: MAX_WRITER_TOKENS,
-  }));
+  });
+  registerAIResult(writerResult);
+  let draftMarkdown = normalizeFreeText(writerResult.text);
 
   if (!draftMarkdown) {
     throw new Error('A IA nao retornou o texto final da peca.');
@@ -1073,17 +1087,15 @@ MODO ATUAL: REDATOR JURIDICO
   let metrics = computeDraftMetrics(draftMarkdown);
   let expansionApplied = false;
   if (isDraftTooShallow(pieceRequest, metrics)) {
-    draftMarkdown = normalizeFreeText(await callTextModel({
-      provider: llm.provider,
-      endpoint: llm.endpoint,
-      apiKey: llm.apiKey,
-      model: llm.model,
-      extraHeaders: llm.extraHeaders,
+    const expansionResult = await callTextModel({
+      tenantId: params.tenantId,
       systemPrompt: writerSystemPrompt,
       userPrompt: buildExpansionPrompt({ pieceRequest, plan, draftMarkdown, metrics }),
       temperature: 0.15,
       maxTokens: MAX_EXPANDER_TOKENS,
-    }));
+    });
+    registerAIResult(expansionResult);
+    draftMarkdown = normalizeFreeText(expansionResult.text);
     metrics = computeDraftMetrics(draftMarkdown);
     expansionApplied = true;
   }
@@ -1114,8 +1126,10 @@ MODO ATUAL: REDATOR JURIDICO
     warnings,
     confidenceNote,
     requiresHumanReview: safeBoolean(true, true),
-    model: llm.model,
-    provider: llm.provider,
+    model: usedModel,
+    provider: usedProvider,
+    aiNotice: aiNotices[0] || null,
+    aiFallbackTrace,
     expansionApplied,
     qualityMetrics: metrics,
   };
