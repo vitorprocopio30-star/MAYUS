@@ -423,6 +423,22 @@ fechar a camada agentica de suporte para clientes que perguntam como esta o caso
 - [x] Criar artifact agentico do estado de setup no MAYUS.
 Evidencia 2026-04-27: `POST /api/setup/doctor` registra missao `setup/settings`, run, step, artifact `tenant_setup_doctor_report` e learning event `tenant_setup_doctor_report_created` quando ha correcao/bloqueio relevante; payload sanitizado sem chaves; Configuracoes aponta para o artifact no MAYUS e o dashboard reconhece labels/highlights do doctor.
 
+### 9.0.1 Auto-Configuracao Supervisionada do Escritorio
+
+- [x] Base tecnica de diagnostico e autofix seguro via Auto Setup Doctor.
+- [x] Artifact, mission/run/step, learning event e evento operacional para setup.
+- [x] Bloqueio explicito de credenciais externas ausentes ou invalidas.
+- [x] Auto-configuracao do perfil comercial por chat via `sales_profile_setup`.
+- [~] Doctor identifica perfil comercial incompleto e orienta proxima acao humana.
+- [ ] Onboarding conversacional para areas de atuacao, equipe, tom, permissoes e rotina.
+- [ ] Criar pipeline juridico padrao por area de atuacao e objetivo do escritorio.
+- [ ] Criar estrutura documental padrao por area/tipo de processo.
+- [ ] Sugerir playbooks de atendimento, marketing, agenda e cobranca.
+- [ ] Score de prontidao do escritorio com proximo melhor passo.
+- [ ] Aprovar/rejeitar configuracoes sugeridas em lote.
+
+Evidencia 2026-04-29: a auto-configuracao virou frente explicita de execucao. O estado atual nao e promessa vazia: `runTenantDoctor` ja diagnostica/aplica defaults seguros, e `sales_profile_setup` ja configura o perfil comercial por chat. Falta expandir para o onboarding completo do escritorio e aplicar o mesmo padrao aos demais modulos.
+
 ### 9.1 Referral Intake
 
 - [x] Diferenciar indicacao de suporte.
@@ -490,8 +506,15 @@ Evidencia 2026-04-28: `analyzeMetaAdsCsv` normaliza metricas e retorna winners, 
 Evidencia 2026-04-28: `meta-ads-analysis` gera `budgetRecommendations` deterministicas para scale, pause, test e monitor, sem Meta API ou alteracao automatica de campanha.
 - [x] Impedir lead aberto sem proximo passo operacional.
 Evidencia 2026-04-28: `buildCrmLeadNextStepStatus` cobre cards CRM abertos sem proximo passo explicito ou parados ha 2+ dias; o board/lista do CRM mostra alerta e sugestao supervisionada para definir data, canal e responsavel.
+Evidencia 2026-04-30: o alerta deixou de ser apenas passivo e passou a devolver `organizedPlan` com canal, responsavel, horario sugerido, objetivo, checklist e trava de aprovacao humana; o CRM mostra "MAYUS organizou" no board/lista.
 - [x] Operar Growth/Marketing por chat sem abrir CRM.
 Evidencia 2026-04-28: `marketing_ops_assistant` foi adicionado ao router/registry/dispatcher; le `tenant_settings.ai_features.marketing_os` e cards CRM para responder por chat com pautas da semana, conteudos aprovados sem tarefa, leads sem proximo passo e acoes recomendadas, criando artifact `marketing_ops_assistant_plan` e learning event sem side effects externos.
+- [~] Controlar MAYUS por WhatsApp interno autorizado.
+Escopo: permitir que usuarios autorizados comandem o MAYUS pelo WhatsApp para pedir relatorios, status do escritorio, agenda, leads parados, prazos criticos e proximas acoes; autenticar por telefone/perfil, registrar artifact/evento e manter side effects externos sob aprovacao.
+Evidencia parcial 2026-04-30: `whatsapp-command-center` reconhece intents de relatorio/playbook, CRM e agenda, valida remetente contra `daily_playbook.authorizedPhones` e gera resposta interna sem side effects; Configuracoes Globais permite cadastrar telefones autorizados. Falta plugar no webhook Meta/Evolution e envio real.
+- [~] Criar Playbook diario configuravel por usuario/escritorio.
+Escopo: usuario escolhe se recebe, horario, dias, canal, escopo e nivel de detalhe; o MAYUS gera relatorio executivo premium com CRM, juridico, agenda, financeiro, marketing e proximas acoes. WhatsApp deve enviar resumo/link e o HTML premium deve ficar no MAYUS.
+Evidencia parcial 2026-04-30: `POST /api/mayus/daily-playbook` gera playbook com CRM/agenda, persiste artifact/evento quando solicitado e bloqueia side effects externos; Configuracoes Globais ganhou painel "Playbook Diario MAYUS" com horario, dias, canais, escopo, detalhe e previa sem persistir.
 - [ ] Amarrar ciclo completo: marketing -> lead -> CRM -> call -> follow-up -> contrato -> cobranca -> juridico -> prazos -> metricas.
 - [ ] Manter Meta Ads API, Google Meet automatico, Drive automatico de gravacoes, publicacao automatica e monitoramento amplo como integracoes futuras fora do escopo inicial.
 

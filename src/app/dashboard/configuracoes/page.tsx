@@ -6,7 +6,8 @@ import {
   Settings2, Trophy, Save, Building2, Users, Palette, Zap, Bot, 
   ChevronRight, LayoutDashboard, Loader2, Scale, Target, Trash2, 
   BrainCircuit, MessageSquare, Cpu, Globe, Eye, EyeOff, Link2, 
-  FileCheck, CreditCard, AlertTriangle, ShieldCheck, X, Webhook, Copy, RefreshCw, FlaskConical
+  FileCheck, CreditCard, AlertTriangle, ShieldCheck, X, Webhook, Copy, RefreshCw, FlaskConical,
+  Clock, CalendarDays, Mail, Smartphone
 } from "lucide-react";
 import { useGamification } from "@/hooks/useGamification";
 import Link from "next/link";
@@ -81,6 +82,17 @@ type SalesConsultationProfile = {
   status: "draft" | "validated";
 };
 
+type DailyPlaybookPreferences = {
+  enabled: boolean;
+  timezone: string;
+  deliveryTime: string;
+  weekdays: number[];
+  channels: Array<"whatsapp" | "email" | "mayus_panel">;
+  scope: "executive" | "growth" | "legal" | "full";
+  detailLevel: "short" | "standard" | "deep";
+  authorizedPhones: string[];
+};
+
 const EMPTY_SALES_PROFILE: SalesConsultationProfile = {
   ideal_client: "",
   core_solution: "",
@@ -88,6 +100,17 @@ const EMPTY_SALES_PROFILE: SalesConsultationProfile = {
   value_pillars: ["", "", ""],
   positioning_summary: "",
   status: "draft",
+};
+
+const DEFAULT_DAILY_PLAYBOOK: DailyPlaybookPreferences = {
+  enabled: false,
+  timezone: "America/Sao_Paulo",
+  deliveryTime: "08:00",
+  weekdays: [1, 2, 3, 4, 5],
+  channels: ["mayus_panel"],
+  scope: "full",
+  detailLevel: "standard",
+  authorizedPhones: [],
 };
 
 function normalizeSalesProfile(value: any): SalesConsultationProfile {
@@ -105,6 +128,58 @@ function normalizeSalesProfile(value: any): SalesConsultationProfile {
     positioning_summary: String(value.positioning_summary || "").trim(),
     status: value.status === "validated" ? "validated" : "draft",
   };
+}
+
+function normalizeDailyPlaybookPreferences(value: any): DailyPlaybookPreferences {
+  const channels = Array.isArray(value?.channels)
+    ? value.channels.filter((channel: unknown): channel is DailyPlaybookPreferences["channels"][number] => ["whatsapp", "email", "mayus_panel"].includes(String(channel)))
+    : DEFAULT_DAILY_PLAYBOOK.channels;
+  const weekdays: number[] = Array.isArray(value?.weekdays)
+    ? Array.from(new Set<number>(value.weekdays.filter((day: unknown): day is number => typeof day === "number" && Number.isInteger(day) && day >= 0 && day <= 6)))
+    : DEFAULT_DAILY_PLAYBOOK.weekdays;
+  const deliveryTime = typeof value?.deliveryTime === "string"
+    ? value.deliveryTime
+    : typeof value?.delivery_time === "string"
+      ? value.delivery_time
+      : DEFAULT_DAILY_PLAYBOOK.deliveryTime;
+  const detailLevel = ["short", "standard", "deep"].includes(String(value?.detailLevel || value?.detail_level))
+    ? String(value?.detailLevel || value?.detail_level) as DailyPlaybookPreferences["detailLevel"]
+    : DEFAULT_DAILY_PLAYBOOK.detailLevel;
+  const scope = ["executive", "growth", "legal", "full"].includes(String(value?.scope))
+    ? String(value.scope) as DailyPlaybookPreferences["scope"]
+    : DEFAULT_DAILY_PLAYBOOK.scope;
+  const normalizeAuthorizedPhone = (phone: unknown) => {
+    const digits = String(phone || "").replace(/\D/g, "");
+    if (!digits) return "";
+    if (digits.length === 11) return `55${digits}`;
+    if (digits.length >= 13 && digits.startsWith("55")) return digits.slice(0, 13);
+    return digits.slice(0, 13);
+  };
+
+  const authorizedPhones = Array.isArray(value?.authorizedPhones)
+    ? value.authorizedPhones.map(normalizeAuthorizedPhone).filter(Boolean).slice(0, 10)
+    : Array.isArray(value?.authorized_phones)
+      ? value.authorized_phones.map(normalizeAuthorizedPhone).filter(Boolean).slice(0, 10)
+      : DEFAULT_DAILY_PLAYBOOK.authorizedPhones;
+
+  return {
+    enabled: value?.enabled === true,
+    timezone: typeof value?.timezone === "string" && value.timezone.trim() ? value.timezone.trim() : DEFAULT_DAILY_PLAYBOOK.timezone,
+    deliveryTime: /^\d{1,2}:[0-5]\d$/.test(deliveryTime) ? deliveryTime.padStart(5, "0") : DEFAULT_DAILY_PLAYBOOK.deliveryTime,
+    weekdays: weekdays.length > 0 ? weekdays : DEFAULT_DAILY_PLAYBOOK.weekdays,
+    channels: channels.length > 0 ? channels : DEFAULT_DAILY_PLAYBOOK.channels,
+    scope,
+    detailLevel,
+    authorizedPhones,
+  };
+}
+
+function normalizeAuthorizedPhoneInput(value: string) {
+  const digits = value.replace(/\D/g, "");
+  if (!digits) return "";
+  if (digits.length === 11) return `55${digits}`;
+  if (digits.length >= 13 && digits.startsWith("55")) return digits.slice(0, 13);
+  return digits.slice(0, 13);
 }
 
 const CATALOG: IntegrationDef[] = [
@@ -213,7 +288,7 @@ function StatusBadge({ isConnected }: { isConnected: boolean }) {
     <span className={`flex items-center gap-1.5 text-[9px] font-black uppercase tracking-widest px-2.5 py-1 rounded-full border ${
       isConnected 
         ? "bg-[#4ade80]/10 border-[#4ade80]/20 text-[#4ade80]" 
-        : "bg-gray-100 dark:bg-white/5 border-gray-200 dark:border-white/10 text-gray-500"
+        : "bg-white/5 border-white/10 text-gray-500"
     }`}>
       <span className={`w-1.5 h-1.5 rounded-full ${isConnected ? "bg-[#4ade80] animate-pulse" : "bg-gray-600"}`} />
       {isConnected ? "Conectado" : "Desconectado"}
@@ -249,7 +324,7 @@ function IntegrationCard({
 
   return (
     <div className={`group relative bg-[#0c0c0c] border rounded-2xl transition-all duration-300 overflow-hidden ${
-      isExpanded ? "border-[#CCA761]/30 shadow-[0_0_40px_rgba(204,167,97,0.05)]" : "border-gray-200 dark:border-white/5 hover:border-gray-200 dark:border-white/10"
+      isExpanded ? "border-[#CCA761]/30 shadow-[0_0_40px_rgba(204,167,97,0.05)]" : "border-white/5 hover:border-white/10"
     }`}>
       {/* Glow de fundo */}
       {isConnected && (
@@ -258,19 +333,19 @@ function IntegrationCard({
 
       {/* Header */}
       <div className="flex items-center gap-4 p-5">
-        <div className={`w-11 h-11 ${def.iconBg} rounded-xl flex items-center justify-center border border-gray-200 dark:border-white/5 shrink-0`}>
+        <div className={`w-11 h-11 ${def.iconBg} rounded-xl flex items-center justify-center border border-white/5 shrink-0`}>
           <def.icon size={20} className={def.iconColor} />
         </div>
         <div className="flex-1 min-w-0">
           <div className="flex items-center gap-3 mb-0.5">
-            <h3 className="text-sm font-bold text-gray-900 dark:text-white uppercase tracking-tight">{def.label}</h3>
+            <h3 className="text-sm font-bold text-white uppercase tracking-tight">{def.label}</h3>
             <StatusBadge isConnected={isConnected} />
           </div>
           <p className="text-[10px] text-gray-500 leading-tight truncate">{def.tagline}</p>
         </div>
         <button 
           onClick={() => setIsExpanded(!isExpanded)}
-          className={`p-2 rounded-lg border transition-all ${isExpanded ? "bg-gray-100 dark:bg-white/10 border-gray-300 dark:border-white/20 text-gray-900 dark:text-white" : "border-transparent text-gray-700 hover:text-gray-400"}`}
+          className={`p-2 rounded-lg border transition-all ${isExpanded ? "bg-white/10 border-white/20 text-white" : "border-transparent text-gray-700 hover:text-gray-400"}`}
         >
           {isExpanded ? <X size={16} /> : <ChevronRight size={16} />}
         </button>
@@ -278,7 +353,7 @@ function IntegrationCard({
 
       {/* Expandido */}
       {isExpanded && (
-        <div className="px-5 pb-5 pt-2 border-t border-gray-200 dark:border-white/5 space-y-4 animate-in fade-in slide-in-from-top-2 duration-300">
+        <div className="px-5 pb-5 pt-2 border-t border-white/5 space-y-4 animate-in fade-in slide-in-from-top-2 duration-300">
           <div className="space-y-1.5">
             <label className="text-[9px] font-black uppercase tracking-widest text-gray-500 ml-1">{def.apiKeyLabel}</label>
             <div className="relative">
@@ -287,11 +362,11 @@ function IntegrationCard({
                 value={tempKey}
                 onChange={(e) => setTempKey(e.target.value)}
                 placeholder={def.apiKeyPlaceholder}
-                className="w-full bg-gray-200 dark:bg-black/40 border border-gray-200 dark:border-white/10 rounded-xl px-4 py-3 text-xs font-mono text-gray-900 dark:text-white focus:border-[#CCA761] outline-none transition-all pr-12"
+                className="w-full bg-gray-200 dark:bg-black/40 border border-white/10 rounded-xl px-4 py-3 text-xs font-mono text-white focus:border-[#CCA761] outline-none transition-all pr-12"
               />
               <button 
                 onClick={() => setShowKey(!showKey)}
-                className="absolute right-4 top-1/2 -translate-y-1/2 text-gray-600 hover:text-gray-900 dark:text-white"
+                className="absolute right-4 top-1/2 -translate-y-1/2 text-gray-600 hover:text-white"
               >
                 {showKey ? <EyeOff size={14} /> : <Eye size={14} />}
               </button>
@@ -302,9 +377,9 @@ function IntegrationCard({
             <label className="text-[9px] font-black uppercase tracking-widest text-gray-500 ml-1 flex items-center gap-2">
               <Webhook size={10} /> Endpoint de Webhook (Destino)
             </label>
-            <div className="flex items-center gap-2 bg-white dark:bg-[#050505] border border-gray-200 dark:border-white/5 rounded-xl px-3 py-2.5">
+            <div className="flex items-center gap-2 bg-white dark:bg-[#050505] border border-white/5 rounded-xl px-3 py-2.5">
               <code className="text-[10px] text-[#CCA761] font-mono flex-1 truncate">{webhookUrl}</code>
-              <button onClick={copyWebhook} className="text-gray-600 hover:text-gray-900 dark:text-white transition-colors">
+              <button onClick={copyWebhook} className="text-gray-600 hover:text-white transition-colors">
                 <Copy size={13} />
               </button>
             </div>
@@ -401,7 +476,7 @@ function SetupDoctorPanel({
             type="button"
             onClick={onRefresh}
             disabled={isLoading || isFixing}
-            className="h-10 px-4 rounded-xl border border-gray-200 dark:border-white/10 bg-white/80 dark:bg-black/20 text-[10px] font-black uppercase tracking-widest text-gray-800 dark:text-white flex items-center gap-2 disabled:opacity-50"
+            className="h-10 px-4 rounded-xl border border-white/10 bg-white/80 dark:bg-black/20 text-[10px] font-black uppercase tracking-widest text-white flex items-center gap-2 disabled:opacity-50"
             title="Atualizar diagnostico"
           >
             <RefreshCw size={14} className={isLoading ? "animate-spin" : ""} />
@@ -427,7 +502,7 @@ function SetupDoctorPanel({
           ["Avisos", warnings, "text-amber-300"],
           ["Bloqueios", blocked, "text-red-300"],
         ].map(([label, value, color]) => (
-          <div key={String(label)} className="border border-gray-200 dark:border-white/10 rounded-2xl px-4 py-3 bg-white/70 dark:bg-black/20">
+          <div key={String(label)} className="border border-white/10 rounded-2xl px-4 py-3 bg-white/70 dark:bg-black/20">
             <div className={`text-xl font-black ${color}`}>{value}</div>
             <div className="text-[9px] font-black uppercase tracking-widest text-gray-500">{label}</div>
           </div>
@@ -445,13 +520,13 @@ function SetupDoctorPanel({
             const meta = statusMeta[item.status];
             const StatusIcon = meta.icon;
             return (
-              <div key={item.id} className="flex flex-col sm:flex-row sm:items-start gap-3 border border-gray-200 dark:border-white/10 rounded-2xl p-4 bg-white/70 dark:bg-black/20">
+              <div key={item.id} className="flex flex-col sm:flex-row sm:items-start gap-3 border border-white/10 rounded-2xl p-4 bg-white/70 dark:bg-black/20">
                 <span className={`inline-flex items-center gap-1.5 rounded-full border px-2.5 py-1 text-[9px] font-black uppercase tracking-widest w-fit ${meta.className}`}>
                   <StatusIcon size={12} />
                   {meta.label}
                 </span>
                 <div className="min-w-0 flex-1">
-                  <div className="text-xs font-black uppercase tracking-wider text-gray-900 dark:text-white">{item.title}</div>
+                  <div className="text-xs font-black uppercase tracking-wider text-white">{item.title}</div>
                   <div className="text-[11px] text-gray-500 leading-relaxed mt-1">{item.detail}</div>
                   {item.nextAction && (
                     <div className="text-[10px] text-[#CCA761] leading-relaxed mt-2 font-bold uppercase tracking-wider">{item.nextAction}</div>
@@ -503,6 +578,9 @@ function ConfiguracoesContent() {
   const [isDoctorLoading, setIsDoctorLoading] = useState(false);
   const [isDoctorFixing, setIsDoctorFixing] = useState(false);
   const [salesProfile, setSalesProfile] = useState<SalesConsultationProfile>(EMPTY_SALES_PROFILE);
+  const [dailyPlaybook, setDailyPlaybook] = useState<DailyPlaybookPreferences>(DEFAULT_DAILY_PLAYBOOK);
+  const [isPreviewingPlaybook, setIsPreviewingPlaybook] = useState(false);
+  const [playbookPreview, setPlaybookPreview] = useState<string | null>(null);
 
   const loadIntegrations = useCallback(async () => {
     if (!tenantId) return;
@@ -577,6 +655,7 @@ function ConfiguracoesContent() {
       if (settings?.ai_features?.default_department_id) setDefaultDeptId(settings.ai_features.default_department_id);
       if (settings?.ai_features) setAiFeatures(settings.ai_features);
       setSalesProfile(normalizeSalesProfile(settings?.ai_features?.sales_consultation_profile));
+      setDailyPlaybook(normalizeDailyPlaybookPreferences(settings?.ai_features?.daily_playbook));
       if (settings?.strategic_goals) setOfficeGoals(settings.strategic_goals);
 
       const { data: depts } = await supabase.from('departments').select('id, name').eq('tenant_id', tenantId);
@@ -627,6 +706,64 @@ function ConfiguracoesContent() {
       return { ...prev, value_pillars: nextPillars, status: "draft" };
     });
     setHasUnsavedChanges(true);
+  };
+
+  const updateDailyPlaybook = (patch: Partial<DailyPlaybookPreferences>) => {
+    setDailyPlaybook((prev) => ({ ...prev, ...patch }));
+    setHasUnsavedChanges(true);
+    setPlaybookPreview(null);
+  };
+
+  const toggleDailyPlaybookChannel = (channel: DailyPlaybookPreferences["channels"][number]) => {
+    setDailyPlaybook((prev) => {
+      const hasChannel = prev.channels.includes(channel);
+      const nextChannels = hasChannel
+        ? prev.channels.filter((item) => item !== channel)
+        : [...prev.channels, channel];
+
+      return {
+        ...prev,
+        channels: nextChannels.length > 0 ? nextChannels : ["mayus_panel"],
+      };
+    });
+    setHasUnsavedChanges(true);
+    setPlaybookPreview(null);
+  };
+
+  const toggleDailyPlaybookWeekday = (day: number) => {
+    setDailyPlaybook((prev) => {
+      const nextWeekdays = prev.weekdays.includes(day)
+        ? prev.weekdays.filter((item) => item !== day)
+        : [...prev.weekdays, day].sort((a, b) => a - b);
+
+      return {
+        ...prev,
+        weekdays: nextWeekdays.length > 0 ? nextWeekdays : DEFAULT_DAILY_PLAYBOOK.weekdays,
+      };
+    });
+    setHasUnsavedChanges(true);
+    setPlaybookPreview(null);
+  };
+
+  const previewDailyPlaybook = async () => {
+    setIsPreviewingPlaybook(true);
+    try {
+      const response = await fetch("/api/mayus/daily-playbook", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ preferences: dailyPlaybook, persist: false }),
+      });
+      const data = await response.json().catch(() => null);
+
+      if (!response.ok) throw new Error(data?.error || "Nao foi possivel gerar a previa.");
+
+      setPlaybookPreview(data?.playbook?.whatsappSummary || data?.playbook?.executiveSummary || "Playbook gerado.");
+      toast.success("Previa do Playbook gerada sem criar artifact.");
+    } catch (error: any) {
+      toast.error(error?.message || "Falha ao gerar previa do Playbook.");
+    } finally {
+      setIsPreviewingPlaybook(false);
+    }
   };
 
   const generateDraftPuv = () => {
@@ -684,6 +821,10 @@ function ConfiguracoesContent() {
           contract_flow_mode: aiFeatures.contract_flow_mode || 'hybrid',
           zapsign_template_id: aiFeatures.zapsign_template_id || '',
           sales_consultation_profile: normalizedSalesProfile,
+          daily_playbook: {
+            ...dailyPlaybook,
+            updated_at: new Date().toISOString(),
+          },
         },
         strategic_goals: officeGoals,
         updated_at: new Date().toISOString()
@@ -714,7 +855,7 @@ function ConfiguracoesContent() {
   const BASE_WEBHOOK_URL = typeof window !== "undefined" ? `${window.location.origin}/api/webhooks/gateway` : "";
 
   return (
-    <div className="flex-1 overflow-auto bg-white dark:bg-[#050505] min-h-screen text-gray-900 dark:text-white p-6 sm:p-10 hide-scrollbar">
+    <div className="flex-1 overflow-auto bg-white dark:bg-[#050505] min-h-screen text-white p-6 sm:p-10 hide-scrollbar">
       <div className="max-w-4xl mx-auto">
         {/* Header */}
         <div className="flex items-center justify-between mb-8">
@@ -723,23 +864,23 @@ function ConfiguracoesContent() {
               <Settings2 size={28} className="text-[#CCA761]" />
             </div>
             <div>
-              <h1 className={`text-3xl font-bold tracking-wider uppercase text-gray-900 dark:text-white ${cormorant.className} drop-shadow-md`}>Configurações Globais</h1>
+              <h1 className={`text-3xl font-bold tracking-wider uppercase text-white ${cormorant.className} drop-shadow-md`}>Configurações Globais</h1>
               <p className="text-gray-400 text-sm tracking-widest mt-1">Gerencie a inteligência e metas do seu escritório</p>
             </div>
           </div>
           <button
             onClick={handleSave}
             disabled={isSaving}
-            className="flex items-center gap-3 px-8 py-3.5 bg-gradient-to-r from-[#CCA761] via-[#f1d58d] to-[#CCA761] text-[#0a0a0a] rounded-xl font-black uppercase tracking-[0.2em] text-[11px] shadow-[0_0_20px_rgba(204,167,97,0.3)] hover:scale-105 active:scale-95 transition-all disabled:opacity-50 group overflow-hidden border border-gray-200 dark:border-white/10"
+            className="flex items-center gap-3 px-8 py-3.5 bg-gradient-to-r from-[#CCA761] via-[#f1d58d] to-[#CCA761] text-[#0a0a0a] rounded-xl font-black uppercase tracking-[0.2em] text-[11px] shadow-[0_0_20px_rgba(204,167,97,0.3)] hover:scale-105 active:scale-95 transition-all disabled:opacity-50 group overflow-hidden border border-white/10"
           >
             {isSaving ? <Loader2 className="w-4 h-4 animate-spin"/> : success ? "CONCLUÍDO!" : hasUnsavedChanges ? <><Save size={16}/> SALVAR ALTERAÇÕES</> : <><Save size={16}/> ATUALIZAR ESCRITÓRIO</>}
           </button>
         </div>
 
         {/* Abas */}
-        <div className="flex border-b border-gray-200 dark:border-white/5 mb-10">
-          <button onClick={() => setActiveTab('goals')} className={`px-8 py-4 text-[10px] font-black uppercase tracking-[0.2em] transition-all border-b-2 ${activeTab === 'goals' ? 'border-[#CCA761] text-[#CCA761]' : 'border-transparent text-gray-500 hover:text-gray-700 dark:text-gray-300'}`}>Metas do Escritório (BI)</button>
-          <button onClick={() => setActiveTab('integrations')} className={`px-8 py-4 text-[10px] font-black uppercase tracking-[0.2em] transition-all border-b-2 ${activeTab === 'integrations' ? 'border-[#CCA761] text-[#CCA761]' : 'border-transparent text-gray-500 hover:text-gray-700 dark:text-gray-300'}`}>Integrações & APIs</button>
+        <div className="flex border-b border-white/5 mb-10">
+          <button onClick={() => setActiveTab('goals')} className={`px-8 py-4 text-[10px] font-black uppercase tracking-[0.2em] transition-all border-b-2 ${activeTab === 'goals' ? 'border-[#CCA761] text-[#CCA761]' : 'border-transparent text-gray-500 hover:text-gray-300'}`}>Metas do Escritório (BI)</button>
+          <button onClick={() => setActiveTab('integrations')} className={`px-8 py-4 text-[10px] font-black uppercase tracking-[0.2em] transition-all border-b-2 ${activeTab === 'integrations' ? 'border-[#CCA761] text-[#CCA761]' : 'border-transparent text-gray-500 hover:text-gray-300'}`}>Integrações & APIs</button>
         </div>
 
         <div className="space-y-10 animate-fade-in-up">
@@ -780,7 +921,7 @@ function ConfiguracoesContent() {
                   value={salesProfile.ideal_client}
                   onChange={(event) => updateSalesProfile("ideal_client", event.target.value)}
                   rows={4}
-                  className="w-full rounded-2xl border border-gray-200 dark:border-white/10 bg-white dark:bg-black/30 p-4 text-sm text-gray-900 dark:text-white focus:outline-none focus:border-[#CCA761]/60"
+                  className="w-full rounded-2xl border border-white/10 bg-black/30 p-4 text-sm text-white focus:outline-none focus:border-[#CCA761]/60"
                   placeholder="Ex: segurados do INSS com beneficio negado, urgencia financeira e disposicao para organizar documentos."
                 />
               </label>
@@ -791,7 +932,7 @@ function ConfiguracoesContent() {
                   value={salesProfile.core_solution}
                   onChange={(event) => updateSalesProfile("core_solution", event.target.value)}
                   rows={4}
-                  className="w-full rounded-2xl border border-gray-200 dark:border-white/10 bg-white dark:bg-black/30 p-4 text-sm text-gray-900 dark:text-white focus:outline-none focus:border-[#CCA761]/60"
+                  className="w-full rounded-2xl border border-white/10 bg-black/30 p-4 text-sm text-white focus:outline-none focus:border-[#CCA761]/60"
                   placeholder="Ex: diagnostico previdenciario com plano de provas, revisao do CNIS e proximo passo juridico claro."
                 />
               </label>
@@ -812,7 +953,7 @@ function ConfiguracoesContent() {
                 value={salesProfile.unique_value_proposition}
                 onChange={(event) => updateSalesProfile("unique_value_proposition", event.target.value)}
                 rows={4}
-                className="w-full rounded-2xl border border-gray-200 dark:border-white/10 bg-white dark:bg-black/30 p-4 text-sm text-gray-900 dark:text-white focus:outline-none focus:border-[#CCA761]/60"
+                className="w-full rounded-2xl border border-white/10 bg-black/30 p-4 text-sm text-white focus:outline-none focus:border-[#CCA761]/60"
                 placeholder="Uma promessa clara, autoral e verificavel. Nao use 'bom atendimento' como diferencial."
               />
             </div>
@@ -824,7 +965,7 @@ function ConfiguracoesContent() {
                   <input
                     value={pillar}
                     onChange={(event) => updateSalesProfilePillar(index, event.target.value)}
-                    className="w-full rounded-2xl border border-gray-200 dark:border-white/10 bg-white dark:bg-black/30 p-4 text-sm text-gray-900 dark:text-white focus:outline-none focus:border-[#CCA761]/60"
+                    className="w-full rounded-2xl border border-white/10 bg-black/30 p-4 text-sm text-white focus:outline-none focus:border-[#CCA761]/60"
                     placeholder={index === 0 ? "Raio-X do Caso" : index === 1 ? "Plano de Provas" : "Decisao Segura"}
                   />
                 </label>
@@ -837,7 +978,7 @@ function ConfiguracoesContent() {
                 value={salesProfile.positioning_summary}
                 onChange={(event) => updateSalesProfile("positioning_summary", event.target.value)}
                 rows={3}
-                className="w-full rounded-2xl border border-gray-200 dark:border-white/10 bg-white dark:bg-black/30 p-4 text-sm text-gray-900 dark:text-white focus:outline-none focus:border-[#CCA761]/60"
+                className="w-full rounded-2xl border border-white/10 bg-black/30 p-4 text-sm text-white focus:outline-none focus:border-[#CCA761]/60"
                 placeholder="Notas livres para o MAYUS entender tom, publico, tese comercial, anti-cliente e limites de promessa."
               />
             </label>
@@ -849,10 +990,200 @@ function ConfiguracoesContent() {
               <button
                 type="button"
                 onClick={() => updateSalesProfile("status", salesProfile.status === "validated" ? "draft" : "validated")}
-                className="h-10 px-4 rounded-xl border border-gray-200 dark:border-white/10 bg-white/80 dark:bg-black/20 text-[10px] font-black uppercase tracking-widest text-gray-800 dark:text-white"
+                className="h-10 px-4 rounded-xl border border-white/10 bg-white/80 dark:bg-black/20 text-[10px] font-black uppercase tracking-widest text-white"
               >
                 {salesProfile.status === "validated" ? "Marcar rascunho" : "Validar perfil"}
               </button>
+            </div>
+          </section>
+
+          <section className="border border-[#CCA761]/20 rounded-3xl p-6 sm:p-7 bg-white/80 dark:bg-[#0d0b07] mb-10">
+            <div className="flex flex-col lg:flex-row lg:items-start justify-between gap-5 mb-6">
+              <div className="flex gap-4 min-w-0">
+                <div className="w-12 h-12 rounded-2xl bg-[#CCA761]/10 border border-[#CCA761]/20 flex items-center justify-center shrink-0">
+                  <CalendarDays size={22} className="text-[#CCA761]" />
+                </div>
+                <div>
+                  <h2 className="text-sm font-black uppercase tracking-[0.25em] text-[#CCA761]">Playbook Diario MAYUS</h2>
+                  <p className="text-xs text-gray-500 leading-relaxed max-w-2xl mt-2">
+                    Relatorio operacional configuravel para o escritorio receber o plano do dia por painel, WhatsApp ou e-mail.
+                  </p>
+                </div>
+              </div>
+              <button
+                type="button"
+                onClick={() => updateDailyPlaybook({ enabled: !dailyPlaybook.enabled })}
+                className={`w-fit rounded-full border px-3 py-1 text-[9px] font-black uppercase tracking-widest transition ${
+                  dailyPlaybook.enabled
+                    ? "border-[#4ade80]/20 bg-[#4ade80]/10 text-[#4ade80]"
+                    : "border-white/10 bg-white/5 text-gray-500"
+                }`}
+              >
+                {dailyPlaybook.enabled ? "Ativo" : "Pausado"}
+              </button>
+            </div>
+
+            <div className="grid grid-cols-1 lg:grid-cols-[0.9fr_1.1fr] gap-5">
+              <div className="space-y-4">
+                <label className="block space-y-2">
+                  <span className="text-[10px] text-gray-500 uppercase tracking-widest font-black flex items-center gap-2">
+                    <Clock size={13} className="text-[#CCA761]" /> Horario de envio
+                  </span>
+                  <input
+                    type="time"
+                    value={dailyPlaybook.deliveryTime}
+                    onChange={(event) => updateDailyPlaybook({ deliveryTime: event.target.value })}
+                    className="w-full rounded-2xl border border-white/10 bg-black/30 p-4 text-sm text-white focus:outline-none focus:border-[#CCA761]/60"
+                  />
+                </label>
+
+                <label className="block space-y-2">
+                  <span className="text-[10px] text-gray-500 uppercase tracking-widest font-black">Fuso horario</span>
+                  <input
+                    value={dailyPlaybook.timezone}
+                    onChange={(event) => updateDailyPlaybook({ timezone: event.target.value })}
+                    className="w-full rounded-2xl border border-white/10 bg-black/30 p-4 text-sm text-white focus:outline-none focus:border-[#CCA761]/60"
+                    placeholder="America/Sao_Paulo"
+                  />
+                </label>
+
+                <div className="space-y-2">
+                  <span className="text-[10px] text-gray-500 uppercase tracking-widest font-black">Dias de envio</span>
+                  <div className="grid grid-cols-7 gap-1.5">
+                    {[
+                      [0, "D"],
+                      [1, "S"],
+                      [2, "T"],
+                      [3, "Q"],
+                      [4, "Q"],
+                      [5, "S"],
+                      [6, "S"],
+                    ].map(([day, label]) => {
+                      const active = dailyPlaybook.weekdays.includes(Number(day));
+                      return (
+                        <button
+                          key={day}
+                          type="button"
+                          onClick={() => toggleDailyPlaybookWeekday(Number(day))}
+                          className={`h-10 rounded-xl border text-[10px] font-black uppercase tracking-widest transition ${
+                            active
+                              ? "border-[#CCA761] bg-[#CCA761]/15 text-[#CCA761]"
+                              : "border-white/10 bg-black/20 text-gray-500 hover:text-gray-300"
+                          }`}
+                        >
+                          {label}
+                        </button>
+                      );
+                    })}
+                  </div>
+                </div>
+              </div>
+
+              <div className="space-y-4">
+                <div className="space-y-2">
+                  <span className="text-[10px] text-gray-500 uppercase tracking-widest font-black">Canais</span>
+                  <div className="grid grid-cols-1 sm:grid-cols-3 gap-2">
+                    {[
+                      { id: "mayus_panel", label: "Painel", icon: LayoutDashboard },
+                      { id: "whatsapp", label: "WhatsApp", icon: Smartphone },
+                      { id: "email", label: "E-mail", icon: Mail },
+                    ].map((channel) => {
+                      const Icon = channel.icon;
+                      const active = dailyPlaybook.channels.includes(channel.id as DailyPlaybookPreferences["channels"][number]);
+                      return (
+                        <button
+                          key={channel.id}
+                          type="button"
+                          onClick={() => toggleDailyPlaybookChannel(channel.id as DailyPlaybookPreferences["channels"][number])}
+                          className={`flex items-center justify-center gap-2 rounded-2xl border px-3 py-3 text-[10px] font-black uppercase tracking-widest transition ${
+                            active
+                              ? "border-[#CCA761] bg-[#CCA761]/15 text-[#CCA761]"
+                              : "border-white/10 bg-black/20 text-gray-500 hover:text-gray-300"
+                          }`}
+                        >
+                          <Icon size={14} /> {channel.label}
+                        </button>
+                      );
+                    })}
+                  </div>
+                </div>
+
+                <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+                  <label className="space-y-2">
+                    <span className="text-[10px] text-gray-500 uppercase tracking-widest font-black">Escopo</span>
+                    <select
+                      value={dailyPlaybook.scope}
+                      onChange={(event) => updateDailyPlaybook({ scope: event.target.value as DailyPlaybookPreferences["scope"] })}
+                      className="w-full rounded-2xl border border-white/10 bg-black/30 p-4 text-sm text-white focus:outline-none focus:border-[#CCA761]/60"
+                    >
+                      <option value="full">Completo</option>
+                      <option value="executive">Executivo</option>
+                      <option value="growth">Growth/CRM</option>
+                      <option value="legal">Juridico</option>
+                    </select>
+                  </label>
+
+                  <label className="space-y-2">
+                    <span className="text-[10px] text-gray-500 uppercase tracking-widest font-black">Detalhe</span>
+                    <select
+                      value={dailyPlaybook.detailLevel}
+                      onChange={(event) => updateDailyPlaybook({ detailLevel: event.target.value as DailyPlaybookPreferences["detailLevel"] })}
+                      className="w-full rounded-2xl border border-white/10 bg-black/30 p-4 text-sm text-white focus:outline-none focus:border-[#CCA761]/60"
+                    >
+                      <option value="short">Curto</option>
+                      <option value="standard">Padrao</option>
+                      <option value="deep">Profundo</option>
+                    </select>
+                  </label>
+                </div>
+
+                <div className="rounded-2xl border border-white/10 bg-black/30 p-4">
+                  <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3">
+                    <div>
+                      <p className="text-[10px] font-black uppercase tracking-[0.2em] text-[#CCA761]">Previa segura</p>
+                      <p className="mt-1 text-[11px] text-gray-500 leading-relaxed">
+                        Gera um resumo sem criar artifact e sem enviar mensagem externa.
+                      </p>
+                    </div>
+                    <button
+                      type="button"
+                      onClick={previewDailyPlaybook}
+                      disabled={isPreviewingPlaybook}
+                      className="h-10 px-4 rounded-xl border border-[#CCA761]/25 bg-[#CCA761]/10 text-[10px] font-black uppercase tracking-widest text-[#CCA761] hover:bg-[#CCA761]/15 disabled:opacity-50 flex items-center justify-center gap-2"
+                    >
+                      {isPreviewingPlaybook ? <Loader2 size={14} className="animate-spin" /> : <FlaskConical size={14} />}
+                      Gerar previa
+                    </button>
+                  </div>
+                  {playbookPreview && (
+                    <pre className="mt-4 max-h-56 overflow-auto whitespace-pre-wrap rounded-xl border border-white/10 bg-[#050505] p-4 text-[11px] leading-5 text-gray-300">
+                      {playbookPreview}
+                    </pre>
+                  )}
+                </div>
+
+                <label className="block space-y-2">
+                  <span className="text-[10px] text-gray-500 uppercase tracking-widest font-black flex items-center gap-2">
+                    <Smartphone size={13} className="text-[#CCA761]" /> Telefones autorizados para comandar o MAYUS
+                  </span>
+                  <textarea
+                    value={dailyPlaybook.authorizedPhones.join("\n")}
+                    onChange={(event) => updateDailyPlaybook({
+                      authorizedPhones: event.target.value
+                        .split(/\n|,|;/)
+                        .map((phone) => normalizeAuthorizedPhoneInput(phone))
+                        .filter(Boolean)
+                        .slice(0, 10),
+                    })}
+                    rows={3}
+                    className="w-full rounded-2xl border border-white/10 bg-black/30 p-4 text-sm text-white focus:outline-none focus:border-[#CCA761]/60"
+                    placeholder="Ex: 5521999990000"
+                  />
+                  <p className="text-[10px] text-gray-500 leading-relaxed">
+                    Use um numero por linha. O MAYUS normaliza para DDI 55 e aceita telefone com DDD, por exemplo 5521999990000.
+                  </p>
+                </label>
+              </div>
             </div>
           </section>
 
@@ -860,9 +1191,9 @@ function ConfiguracoesContent() {
             <>
               {/* GOVERNANÇA DE CONTRATOS - CARD SOLICITADO (MOVIDO PARA O TOPO PARA TESTE) */}
               <div className="bg-[#0C0C0C] border border-[#CCA761]/40 p-8 rounded-3xl relative shadow-2xl z-50 isolate mb-10">
-                 <div className="flex items-center justify-between mb-8 border-b border-gray-200 dark:border-white/5 pb-4">
+                 <div className="flex items-center justify-between mb-8 border-b border-white/5 pb-4">
                     <h2 className="text-sm font-black uppercase tracking-[0.3em] text-[#CCA761] flex items-center gap-3"><ShieldCheck size={18} /> Governança de Fechamento</h2>
-                    <span className="text-[9px] text-gray-500 font-bold uppercase tracking-widest bg-gray-100 dark:bg-white/5 px-3 py-1 rounded-full border border-gray-200 dark:border-white/5">Protocolo ZapSign Ativo</span>
+                    <span className="text-[9px] text-gray-500 font-bold uppercase tracking-widest bg-white/5 px-3 py-1 rounded-full border border-white/5">Protocolo ZapSign Ativo</span>
                  </div>
 
                  <div className="grid grid-cols-1 md:grid-cols-3 gap-4 mb-8">
@@ -881,21 +1212,21 @@ function ConfiguracoesContent() {
                         className={`flex flex-col items-center gap-4 p-6 rounded-2xl border-2 transition-all text-center ${
                           aiFeatures.contract_flow_mode === mode.id 
                             ? 'bg-[#CCA761]/5 border-[#CCA761] shadow-[0_0_20px_rgba(204,167,97,0.1)]' 
-                            : 'bg-gray-200 dark:bg-black border-gray-200 dark:border-white/10 hover:border-gray-300 dark:border-white/20 grayscale hover:grayscale-0'
+                            : 'bg-gray-200 dark:bg-black border-white/10 hover:border-white/20 grayscale hover:grayscale-0'
                         }`}
                       >
-                         <div className={`p-4 rounded-xl mb-1 ${aiFeatures.contract_flow_mode === mode.id ? 'bg-[#CCA761] text-black' : 'bg-gray-100 dark:bg-white/5 text-gray-500'}`}>
+                         <div className={`p-4 rounded-xl mb-1 ${aiFeatures.contract_flow_mode === mode.id ? 'bg-[#CCA761] text-black' : 'bg-white/5 text-gray-500'}`}>
                            <mode.icon size={24} />
                          </div>
                          <div>
-                            <span className="block text-[11px] font-black uppercase tracking-widest text-gray-900 dark:text-white mb-1">{mode.label}</span>
+                            <span className="block text-[11px] font-black uppercase tracking-widest text-white mb-1">{mode.label}</span>
                             <span className="text-[9px] text-gray-500 font-bold uppercase tracking-tighter">{mode.desc}</span>
                          </div>
                       </button>
                     ))}
                  </div>
 
-                 <div className="bg-gray-200 dark:bg-black/40 border border-gray-200 dark:border-white/10 p-6 rounded-2xl space-y-4 relative z-[999]">
+                 <div className="bg-gray-200 dark:bg-black/40 border border-white/10 p-6 rounded-2xl space-y-4 relative z-[999]">
                     <div className="flex items-center justify-between">
                        <label className="text-[10px] font-black text-gray-500 uppercase tracking-widest flex items-center gap-2" htmlFor="zapsign_template_id"><Link2 size={14} className="text-[#CCA761]" /> ID do Template ZapSign</label>
                        <a href="https://app.zapsign.com.br" target="_blank" className="text-[8px] text-[#CCA761] hover:underline font-bold uppercase tracking-widest">Acessar Painel ZapSign</a>
@@ -914,7 +1245,7 @@ function ConfiguracoesContent() {
                           setHasUnsavedChanges(true);
                         }}
                         onFocus={(e) => e.target.select()}
-                        className="w-full bg-gray-100 dark:bg-[#111] border border-[#CCA761]/20 rounded-xl px-5 py-4 text-sm text-gray-900 dark:text-white placeholder:text-gray-700 outline-none focus:border-[#CCA761] font-mono transition-all relative z-[1000] cursor-text select-text pointer-events-auto shadow-[inset_0_0_10px_rgba(0,0,0,0.5)]"
+                        className="w-full bg-[#111] border border-[#CCA761]/20 rounded-xl px-5 py-4 text-sm text-white placeholder:text-gray-700 outline-none focus:border-[#CCA761] font-mono transition-all relative z-[1000] cursor-text select-text pointer-events-auto shadow-[inset_0_0_10px_rgba(0,0,0,0.5)]"
                       />
                       <div className="absolute inset-0 rounded-xl border border-[#CCA761]/0 group-hover:border-[#CCA761]/10 pointer-events-none transition-all" />
                     </div>
@@ -924,14 +1255,14 @@ function ConfiguracoesContent() {
               {/* ESTRUTURA OPERACIONAL */}
               <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
                 {configCards.map((card, i) => (
-                  <Link key={i} href={card.href} className="group relative bg-[#0C0C0C] border border-gray-200 dark:border-white/5 p-6 rounded-2xl hover:border-[#CCA761]/30 transition-all overflow-hidden flex flex-col h-full">
+                  <Link key={i} href={card.href} className="group relative bg-[#0C0C0C] border border-white/5 p-6 rounded-2xl hover:border-[#CCA761]/30 transition-all overflow-hidden flex flex-col h-full">
                     <div className="absolute top-0 right-0 w-24 h-24 bg-gradient-to-br from-white/[0.03] to-transparent rounded-bl-full pointer-events-none" />
                     <div className={`w-12 h-12 rounded-xl flex items-center justify-center mb-6 border transition-colors group-hover:bg-[#CCA761]/10 group-hover:border-[#CCA761]/20`} style={{ borderColor: `${card.color}20`, backgroundColor: `${card.color}05` }}>
                       <card.icon size={22} style={{ color: card.color }} />
                     </div>
-                    <h3 className="text-lg font-bold text-gray-900 dark:text-white mb-2 group-hover:text-[#CCA761] transition-colors">{card.title}</h3>
+                    <h3 className="text-lg font-bold text-white mb-2 group-hover:text-[#CCA761] transition-colors">{card.title}</h3>
                     <p className="text-gray-500 text-xs leading-relaxed mb-6 flex-1">{card.desc}</p>
-                    <div className="flex items-center justify-between border-t border-gray-200 dark:border-white/5 pt-4">
+                    <div className="flex items-center justify-between border-t border-white/5 pt-4">
                       <span className="text-[10px] font-black uppercase tracking-widest text-gray-600">{card.stats}</span>
                       <ChevronRight size={14} className="text-gray-700 group-hover:translate-x-1 transition-transform" />
                     </div>
@@ -941,39 +1272,39 @@ function ConfiguracoesContent() {
 
               {/* METAS ESTRATÉGICAS */}
               <div className="bg-[#0C0C0C] border border-[#CCA761]/20 p-8 rounded-3xl relative overflow-hidden shadow-2xl">
-                 <div className="flex items-center justify-between mb-6 border-b border-gray-200 dark:border-white/5 pb-4">
+                 <div className="flex items-center justify-between mb-6 border-b border-white/5 pb-4">
                     <h2 className="text-sm font-black uppercase tracking-[0.3em] text-[#CCA761] flex items-center gap-3"><Target size={18} /> KPIs & Metas (BI)</h2>
                  </div>
                  <div className="space-y-4 mb-8">
                     {officeGoals.map(goal => (
-                      <div key={goal.id} className="flex items-center justify-between bg-gray-200 dark:bg-black/40 border border-gray-200 dark:border-white/5 p-4 rounded-xl group hover:border-[#CCA761]/30 transition-all font-mono">
+                      <div key={goal.id} className="flex items-center justify-between bg-gray-200 dark:bg-black/40 border border-white/5 p-4 rounded-xl group hover:border-[#CCA761]/30 transition-all font-mono">
                          <div className="flex flex-col">
-                            <span className="text-[10px] font-black uppercase tracking-widest text-gray-900 dark:text-white">{goal.name}</span>
+                            <span className="text-[10px] font-black uppercase tracking-widest text-white">{goal.name}</span>
                             <span className="text-xs font-bold text-[#4ade80]">{goal.unit === 'R$' ? `R$ ${Number(goal.value).toLocaleString('pt-BR')}` : `${goal.value} ${goal.unit}`}</span>
                          </div>
                          <button onClick={() => handleRemoveGoal(goal.id)} className="p-2 text-gray-700 hover:text-red-500 rounded-lg opacity-0 group-hover:opacity-100 transition-all"><Trash2 size={14} /></button>
                       </div>
                     ))}
                  </div>
-                 <div className="bg-gray-200 dark:bg-black/20 p-6 rounded-2xl border border-gray-200 dark:border-white/5 items-end flex gap-3">
+                 <div className="bg-gray-200 dark:bg-black/20 p-6 rounded-2xl border border-white/5 items-end flex gap-3">
                     <div className="flex-1 space-y-1.5 font-mono">
                        <label className="text-[9px] font-black uppercase text-gray-500 tracking-widest">Nome</label>
-                       <input value={newGoal.name} onChange={e => setNewGoal({...newGoal, name: e.target.value})} className="w-full bg-gray-100 dark:bg-[#111] border border-gray-200 dark:border-white/5 rounded-xl px-4 py-3 text-[10px] text-gray-900 dark:text-white outline-none focus:border-[#CCA761]"/>
+                       <input value={newGoal.name} onChange={e => setNewGoal({...newGoal, name: e.target.value})} className="w-full bg-[#111] border border-white/5 rounded-xl px-4 py-3 text-[10px] text-white outline-none focus:border-[#CCA761]"/>
                     </div>
                     <div className="w-[100px] space-y-1.5 font-mono">
                        <label className="text-[9px] font-black uppercase text-gray-500 tracking-widest">Valor</label>
-                       <input value={newGoal.value} onChange={e => setNewGoal({...newGoal, value: e.target.value})} className="w-full bg-gray-100 dark:bg-[#111] border border-gray-200 dark:border-white/5 rounded-xl px-4 py-3 text-[10px] text-gray-900 dark:text-white outline-none focus:border-[#CCA761]"/>
+                       <input value={newGoal.value} onChange={e => setNewGoal({...newGoal, value: e.target.value})} className="w-full bg-[#111] border border-white/5 rounded-xl px-4 py-3 text-[10px] text-white outline-none focus:border-[#CCA761]"/>
                     </div>
                     <button onClick={handleAddGoal} className="px-5 h-[42px] bg-[#CCA761] text-black rounded-xl font-black text-[9px] uppercase tracking-widest shadow-[0_0_15px_rgba(204,167,97,0.3)]">ADICIONAR</button>
                  </div>
               </div>
 
               {/* GAMIFICAÇÃO */}
-              <div className={`bg-[#0C0C0C] border border-gray-200 dark:border-white/5 p-8 rounded-3xl transition-all ${draftGamification ? 'border-[#CCA761]/20' : ''}`}>
+              <div className={`bg-[#0C0C0C] border border-white/5 p-8 rounded-3xl transition-all ${draftGamification ? 'border-[#CCA761]/20' : ''}`}>
                 <div className="flex items-start justify-between gap-4 mb-6">
                   <div className="flex gap-4">
                     <Trophy size={20} className="text-[#CCA761]" />
-                    <h3 className="text-lg font-bold text-gray-900 dark:text-white">Gamificação Ativa</h3>
+                    <h3 className="text-lg font-bold text-white">Gamificação Ativa</h3>
                   </div>
                   <button onClick={() => setDraftGamification(!draftGamification)} className={`w-12 h-6 flex items-center rounded-full p-1 transition-colors ${draftGamification ? "bg-[#CCA761]" : "bg-gray-800"}`}><div className={`bg-white w-4 h-4 rounded-full transition-transform ${draftGamification ? "translate-x-6" : "translate-x-0"}`} /></button>
                 </div>
@@ -983,7 +1314,7 @@ function ConfiguracoesContent() {
             <div className="space-y-12 pb-20">
               {/* IA */}
               <section className="space-y-6">
-                <div className="flex items-center gap-3 pb-3 border-b border-gray-200 dark:border-white/5">
+                <div className="flex items-center gap-3 pb-3 border-b border-white/5">
                   <BrainCircuit size={16} className="text-gray-500" />
                   <h2 className="text-sm font-black uppercase tracking-[0.25em] text-gray-500">Inteligência Neural</h2>
                 </div>
@@ -1003,7 +1334,7 @@ function ConfiguracoesContent() {
 
               {/* COMUNICAÇÃO */}
               <section className="space-y-6">
-                <div className="flex items-center gap-3 pb-3 border-b border-gray-200 dark:border-white/5">
+                <div className="flex items-center gap-3 pb-3 border-b border-white/5">
                   <MessageSquare size={16} className="text-gray-500" />
                   <h2 className="text-sm font-black uppercase tracking-[0.25em] text-gray-500">Comunicação Omnichannel</h2>
                 </div>
@@ -1023,7 +1354,7 @@ function ConfiguracoesContent() {
 
               {/* FINANCEIRO & BI */}
               <section className="space-y-6">
-                <div className="flex items-center gap-3 pb-3 border-b border-gray-200 dark:border-white/5">
+                <div className="flex items-center gap-3 pb-3 border-b border-white/5">
                   <CreditCard size={16} className="text-[#CCA761]" />
                   <h2 className="text-sm font-black uppercase tracking-[0.25em] text-gray-500">BI & Gestão Estratégica</h2>
                 </div>

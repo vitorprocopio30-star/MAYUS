@@ -8,6 +8,7 @@ Objetivo: o MAYUS deve captar, qualificar, acompanhar e converter clientes sem e
 Evidencia 2026-04-27: `lead_intake` foi registrado em `agent_skills`, roteado pelo kernel, executado pelo dispatcher no chat, cria card CRM, artifact `lead_intake`/`referral_intake`, evento operacional e learning event sem acionar integracoes externas.
 - [x] Capturar origem, area juridica, urgencia, cidade, canal e dor principal.
 Evidencia 2026-04-24: `/dashboard/vendas/nova` ganhou aba "Novo Lead" e `POST /api/growth/lead-intake` aceita `origin`, `channel`, `legalArea`, `urgency`, `city`, `state`, `phone`, `email`, `pain` e `notes`.
+Evidencia 2026-04-30: `lead-intake` passou a aceitar campanha, conteudo, landing page, referrer e UTMs em camelCase/snake_case; `buildMarketingAttribution` normaliza esses sinais, grava tags/descricao/evento auditavel e preserva `growth_intake` como fallback tecnico quando nao ha atribuicao rastreada.
 - [x] Separar lead novo de cliente pedindo status de caso.
 Evidencia 2026-04-24: `src/lib/growth/lead-intake.ts` classifica `new_lead`, `case_status_request` e `needs_context`; teste cobre pedido de andamento/status de processo.
 - [x] Separar indicacao de lead frio e de suporte/status.
@@ -103,13 +104,19 @@ Evidencia 2026-04-28: tela local de Calendario Editorial gera calendario com fre
 Evidencia 2026-04-28: calendario editorial permite editar, aprovar, recusar e voltar para rascunho, com persistencia server-side por tenant e fallback local quando a API nao responder.
 - [x] Conteudos aprovados entram na agenda/tarefas quando fizer sentido.
 Evidencia 2026-04-28: `/dashboard/marketing/aprovados` lista pautas aprovadas/publicadas, cria tarefa interna privada em `user_tasks`, marca publicacao manual e registra origem de marketing em descricao/tags/notas, sem side effect externo.
+- [x] Home de Marketing diagnostica prontidao e recomenda proximas acoes de forma autonoma e autoconfiguravel.
+Evidencia 2026-04-30: `buildMarketingReadiness` le o estado de Marketing OS, classifica `empty`/`partial`/`ready`, calcula score, checks, metricas, pautas da semana, aprovados sem tarefa e acoes recomendadas; `/dashboard/marketing` consome o diagnostico com fallback local/servidor e links operacionais, sem publicar ou acionar integracoes externas automaticamente.
+Evidencia 2026-04-30: a home de Marketing agora mostra contadores/listas de conteudos prontos para publicar e aprovados que precisam de revisao final, a partir dos rascunhos persistidos nas notas.
+- [x] Conteudos aprovados geram rascunho final supervisionado por canal.
+Evidencia 2026-04-30: `buildMarketingFinalDraft` prepara texto final, CTA e checklist etico para blog, LinkedIn, Instagram, e-mail ou WhatsApp; `/dashboard/marketing/aprovados` exibe o rascunho no card, persiste/recupera o bloco nas notas, permite copiar texto, marcar revisao e separa conteudos prontos para publicar dos pendentes, mantendo publicacao/envio como acao manual supervisionada.
 - [~] Analise de Meta Ads por upload de CSV, XLSX ou PDF.
 Evidencia parcial 2026-04-28: MVP local em `/dashboard/marketing/meta-ads` aceita CSV colado/exportado ou arquivo `.csv` client-side e analisa com `analyzeMetaAdsCsv`; XLSX/PDF ainda pendentes.
 - [x] Diagnostico de campanhas, CPL, CTR, CPC, CPM, criativos, publicos, verba desperdicada e oportunidades.
 Evidencia 2026-04-28: `meta-ads-analysis` calcula totais, benchmarks, campanhas vencedoras, gasto desperdicado, temas criativos/publicos e findings.
 - [x] Recomendar realocacao de verba e novos criativos com revisao humana.
 Evidencia 2026-04-28: recomendacoes deterministicas sao geradas sem Meta API e sem alteracao automatica de campanhas.
-- [ ] Ciclo completo conectado: marketing -> lead -> CRM -> call -> follow-up -> contrato -> cobranca -> juridico -> prazos -> metricas.
+- [~] Ciclo completo conectado: marketing -> lead -> CRM -> call -> follow-up -> contrato -> cobranca -> juridico -> prazos -> metricas.
+Evidencia parcial 2026-04-30: primeira ponte Marketing -> Lead/CRM concluida com atribuicao de campanha/conteudo/UTM no intake, eventos seguros e badges de origem/campanha/sem atribuicao no CRM; ainda faltam ROI por campanha, ligacao com call/follow-up/contrato/cobranca/juridico/prazos e metricas finais.
 - [ ] Integracoes automaticas futuras mantidas fora do escopo inicial: Meta Ads API, Google Meet, Drive de gravacoes, publicacao automatica e monitoramento amplo.
 
 ## Criterios de aceite
@@ -123,5 +130,12 @@ Evidencia 2026-04-28: `GET/POST /api/setup/doctor` agora inclui check `commercia
 Evidencia 2026-04-28: a auto-configuracao por chat tambem grava esse mesmo perfil via skill `sales_profile_setup`, reduzindo a necessidade de mexer manualmente em Configuracoes.
 - [x] Lead nunca fica sem proximo passo.
 Evidencia 2026-04-28: `buildCrmLeadNextStepStatus` detecta oportunidades abertas sem sinal de proximo passo ou paradas ha 2+ dias; o CRM visual exibe banner e alerta nos cards/lista com sugestao de definir data, canal e responsavel, sem contato externo automatico.
+Evidencia 2026-04-30: o status agora organiza o proximo movimento com canal, responsavel, horario sugerido, objetivo e checklist operacional, e a UI troca o tom de "ajustar" para "MAYUS organizou".
 - [x] O advogado consegue operar Growth por chat sem abrir o CRM.
 Evidencia 2026-04-28: skill `marketing_ops_assistant` foi registrada no router/registry/dispatcher; comandos como "o que devo publicar esta semana", "conteudos aprovados" e "leads sem proximo passo" geram artifact `marketing_ops_assistant_plan` com pautas da semana, aprovados sem tarefa, leads sem proximo passo e proximas acoes supervisionadas, sem publicar ou enviar nada automaticamente.
+- [~] O usuario autorizado consegue controlar o MAYUS por WhatsApp.
+Critério: mensagens internas como "relatorio do escritorio", "leads parados", "agenda de hoje" e "prazos criticos" devem gerar resposta segura, artifact/evento e proximas acoes sem executar side effects externos sem aprovacao.
+Evidencia parcial 2026-04-30: modulo `whatsapp-command-center` normaliza telefone, exige autorizacao explicita em `daily_playbook.authorizedPhones`, identifica intents internas e gera resposta segura com Playbook/CRM/agenda sem envio automatico.
+- [~] Playbook diario configuravel.
+Critério: cada usuario/escritorio define horario, dias, canal, escopo e nivel de detalhe; o MAYUS gera resumo WhatsApp/e-mail/painel e uma versao HTML premium linkavel dentro do sistema.
+Evidencia parcial 2026-04-30: Configuracoes Globais salva `ai_features.daily_playbook`, gera previa via API sem artifact e a rota `POST /api/mayus/daily-playbook` ja cria artifact/evento quando persistido.

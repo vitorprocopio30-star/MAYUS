@@ -88,6 +88,8 @@ Use esse checklist para marcar:
 - [x] Agenda Google e Marketing UX refinados em 2026-04-28: Agenda Diaria/Global deixam claro que usuarios apenas conectam a conta Google via OAuth, com diagnostico tecnico apenas quando o servidor nao esta configurado; sidebar agora expõe submenus de Marketing e `/dashboard/marketing/kanban` acompanha pautas por status usando o mesmo calendario local, sem publicacao externa.
 - [x] CRM Growth sem lead abandonado concluido em 2026-04-28: `buildCrmLeadNextStepStatus` identifica oportunidade aberta sem proximo passo ou parada ha 2+ dias, e o CRM exibe banner/card/lista recomendando data, canal e responsavel sem side effects externos.
 - [x] Growth por chat sem abrir CRM entregue em 2026-04-28: skill `marketing_ops_assistant` roteia pedidos de publicacao semanal, conteudos aprovados e leads sem proximo passo; dispatcher le `marketing_os`, CRM e cria artifact/learning event com plano supervisionado, sem WhatsApp, publicacao, Meta Ads ou tarefas automaticas.
+- [x] Atribuicao Marketing -> Lead/CRM iniciada em 2026-04-30: criado `src/lib/marketing/marketing-attribution.ts`, `lead-intake` aceita campanha/conteudo/landing/referrer/UTMs em camelCase e snake_case, registra tags/descricao/evento auditavel, preserva `growth_intake` para leads sem origem rastreada e o CRM exibe badge de origem/campanha/sem atribuicao. Validacoes passaram com 16 testes focados e typecheck global.
+- [x] Fallback IA em rotas criticas avancado em 2026-04-29: `/api/monitoramento/resumir`, chat geral OpenAI-compatible, chat Anthropic com tool-use, geracao de pecas, analisador de movimentacoes, moderador do mural, organizador de processo e `/api/ai/ping` usam wrapper/classificacao de falha com mensagens/erros sanitizados e trace sem chave. `ai/ping` nao envia chave em query string para Gemini e nao devolve erro bruto do provedor.
 - [x] Smoke autenticado real parcial passou em 2026-04-26: `GET /api/integrations`, `POST /api/integrations` controlado com cleanup, OpenRouter via Vault e TTS OpenAI.
 - [~] Google Drive real validado parcialmente em 2026-04-26: conta conectada e clear root passaram; salvar/restaurar root via API falhou no ambiente local com `The OAuth client was not found`; root foi restaurado via service role; client ID local foi confirmado como malformado.
 - [x] Smoke seguro de webhook Asaas passou em 2026-04-26 com payload sintetico e auditoria em `system_event_logs` confirmada.
@@ -107,10 +109,17 @@ Use esse checklist para marcar:
 - [x] Expor acao de analise de call no CRM visual e promover evento seguro para artifact/historico do lead.
 - [x] Cadastrar perfis, redes, canais, sites e referencias admiradas para orientar Marketing.
 - [x] Persistir Marketing OS por tenant com fallback local e hub operacional de conteudos aprovados.
+- [x] Transformar `/dashboard/marketing` em centro operacional autonomo/autoconfiguravel com diagnostico de prontidao, checklist, metricas editoriais e proximas acoes supervisionadas.
+- [x] Gerar, persistir, copiar, marcar revisao e separar prontos para publicar do rascunho final supervisionado por canal, mantendo publicacao manual e revisao humana.
+- [x] Conectar prontos para publicar e pendentes de revisao final na Central de Marketing com metricas, listas e recomendacoes supervisionadas.
 - [ ] Evoluir Meta Ads upload para arquivo real XLSX/PDF ou rota server-side quando necessario.
 - [x] Expor Kanban Marketing na lateral usando o calendario editorial local.
 - [x] Alertar no CRM leads/oportunidades sem proximo passo operacional.
+- [x] Transformar alerta de proximo passo do CRM em plano organizado pelo MAYUS com canal, responsavel, horario sugerido, objetivo e checklist operacional.
 - [x] Operar Growth/Marketing por chat sem abrir CRM com artifact supervisionado.
+- [x] Criar primeira ponte Marketing -> Lead/CRM com atribuicao de campanha, conteudo e UTM sem banco novo.
+- [~] Criar controle interno do MAYUS por WhatsApp autorizado para relatorios, agenda, leads, prazos e status do sistema: reconhecimento/autorizacao/resposta segura implementados em modulo puro e Configuracoes permite cadastrar telefones; falta plugar nos webhooks e envio real.
+- [~] Criar Playbook diario configuravel por usuario/escritorio: API, artifact/evento, configuracao visual e previa segura entregues; faltam entrega programada, WhatsApp interno autorizado e HTML premium linkavel.
 - [x] Criar artifact agentico para `referral_intake` e expor no MAYUS.
 - [x] Expor Auto Setup Doctor no MAYUS/Configuracoes com status pronto, corrigido, alerta, bloqueado e artifact agentico rastreavel.
 - [x] Resolver instabilidade do bootstrap autenticado Playwright no harness MAYUS sem mascarar os E2Es reais de Documentos.

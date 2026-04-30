@@ -2,6 +2,7 @@ import { NextResponse } from "next/server";
 import { createClient } from "@supabase/supabase-js";
 import crypto from "crypto";
 import { prepareWhatsAppSalesReplyForContact } from "@/lib/growth/whatsapp-sales-reply-runtime";
+import { handleWhatsAppInternalCommand } from "@/lib/mayus/whatsapp-command-runtime";
 
 const supabase = createClient(
   process.env.NEXT_PUBLIC_SUPABASE_URL!,
@@ -12,6 +13,7 @@ function verifySignature(body: string, signature: string | null): boolean {
   const secret = process.env.EVOLUTION_WEBHOOK_SECRET;
   if (!secret) return true; // Se não configurado, permite (compatibilidade)
   if (!signature) return false;
+  if (signature === secret) return true;
   const expected = crypto.createHmac("sha256", secret).update(body).digest("hex");
   const expectedBuf = Buffer.from(expected);
   const signatureBuf = Buffer.from(signature);
@@ -22,7 +24,9 @@ function verifySignature(body: string, signature: string | null): boolean {
 export async function POST(req: Request) {
   try {
     const rawBody = await req.text();
-    const signature = req.headers.get("x-evolution-signature") || req.headers.get("apikey");
+    const signature = req.headers.get("x-evolution-signature")
+      || req.headers.get("x-mayus-webhook-secret")
+      || req.headers.get("apikey");
 
     if (!verifySignature(rawBody, signature)) {
       return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
@@ -132,6 +136,28 @@ export async function POST(req: Request) {
       console.log(`[Webhook] Mensagem de ${remoteJid} salva com sucesso no tenant ${tenantId}`);
 
       if (!fromMe) {
+        try {
+          const internalCommand = await handleWhatsAppInternalCommand({
+            supabase,
+            tenantId,
+            senderPhone: remoteJid,
+            content,
+            contactId,
+            source: "evolution_webhook",
+          });
+
+          if (internalCommand.handled) {
+            console.log("[Evolution Webhook] Comando interno MAYUS processado:", {
+              tenantId,
+              intent: internalCommand.intent,
+              sent: internalCommand.sent,
+            });
+            return NextResponse.json({ success: true, internal_command: true });
+          }
+        } catch (commandError) {
+          console.error("[Evolution Webhook] Erro ao processar comando interno MAYUS:", commandError);
+        }
+
         try {
           await prepareWhatsAppSalesReplyForContact({
             supabase,

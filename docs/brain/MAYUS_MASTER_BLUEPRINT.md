@@ -909,6 +909,8 @@ Frente de crescimento:
 ### Checklist marcavel
 
 - `[ ]` posicionar MAYUS como socio operacional de IA da banca
+- `[~]` transformar auto-configuracao em promessa central do produto
+Evidencia 2026-04-29: a base ja existe em `Auto Setup Doctor` e `sales_profile_setup`: o MAYUS diagnostica tenant, aplica defaults seguros, bloqueia credenciais externas ausentes, cria artifact agentico e auto-configura o perfil comercial por chat. Falta expandir para onboarding guiado completo de juridico, marketing, agenda, financeiro, documentos e permissoes.
 - `[x]` adicionar Google Agenda opcional por usuario
 Evidencia 2026-04-28: criada integracao OAuth opcional `google_calendar_user:{userId}`, botao na Agenda Diaria, leitura read-only de eventos do calendario primario e exibicao como eventos externos sem substituir tarefas internas.
 - `[x]` adicionar Google Agenda global opcional do escritorio
@@ -932,21 +934,69 @@ Evidencia 2026-04-28: `/dashboard/marketing/calendario` ganhou formulario local 
 Evidencia 2026-04-28: calendario permite editar, aprovar, recusar e voltar itens para rascunho via `updateEditorialCalendarItem`, mantendo persistencia MVP em `localStorage`; persistencia server-side fica para etapa futura.
 - `[x]` conectar conteudos aprovados com agenda/tarefas quando fizer sentido
 Evidencia 2026-04-28: itens aprovados no calendario editorial podem criar tarefa interna em `user_tasks` com origem `marketing_editorial_calendar` em descricao/tags/notas, mantendo revisao humana e sem publicacao externa ou Google Calendar automatico.
+- `[x]` transformar a home de Marketing em centro operacional autonomo e autoconfiguravel
+Evidencia 2026-04-30: criado helper puro `src/lib/marketing/marketing-readiness.ts` com score/status/checklist/metricas/recomendacoes e `/dashboard/marketing` passou a mostrar Diagnostico MAYUS, prontidao, proximas acoes, pautas da semana e aprovados pendentes, mantendo publicacao, WhatsApp e campanhas externas bloqueados ate revisao humana.
+Evidencia 2026-04-30: a Central de Marketing tambem identifica conteudos com rascunho revisado como "Prontos para publicar" e separa aprovados que ainda precisam de revisao final, sempre com publicacao manual.
+- `[x]` gerar rascunho final supervisionado para conteudos aprovados
+Evidencia 2026-04-30: criado helper puro `src/lib/marketing/content-draft.ts` para gerar post LinkedIn, roteiro Instagram, artigo, e-mail ou mensagem WhatsApp a partir de conteudo aprovado/publicado; `/dashboard/marketing/aprovados` ganhou acao "Gerar rascunho" com checklist etico, persistencia do rascunho nas notas do item, recuperacao ao recarregar, copia manual, marcacao de revisao e separacao visual entre prontos para publicar, pendentes de revisao e publicados, sem publicacao ou envio externo automatico.
 - `[~]` criar analise de Meta Ads por upload de CSV, XLSX ou PDF
 Evidencia parcial 2026-04-28: criado MVP local de analise de CSV em `src/lib/marketing/meta-ads-analysis.ts` e `/dashboard/marketing/meta-ads`, com input de arquivo `.csv` e textarea; XLSX/PDF ainda pendentes.
 - `[ ]` diagnosticar campanhas vencedoras, desperdicio de verba, CPL, CTR, CPC, CPM, criativos, publicos e temas
 - `[ ]` recomendar realocacao de verba e novos criativos de forma supervisionada
-- `[ ]` amarrar ciclo completo: marketing -> lead -> CRM -> call -> follow-up -> contrato -> cobranca -> juridico -> prazos -> metricas
+- `[~]` amarrar ciclo completo: marketing -> lead -> CRM -> call -> follow-up -> contrato -> cobranca -> juridico -> prazos -> metricas
+Evidencia parcial 2026-04-30: primeira ponte Marketing -> Lead/CRM entregue com `buildMarketingAttribution`, intake aceitando campanha/conteudo/landing/referrer/UTMs em camelCase e snake_case, tags/descricao/evento auditavel, fallback tecnico `growth_intake` para leads sem origem rastreada e badges de atribuicao no CRM. Ainda faltam ROI por campanha e conexao completa ate contrato/cobranca/juridico/prazos/metricas.
+- `[~]` controlar MAYUS por WhatsApp interno autorizado
+Escopo: usuario autorizado pode pedir relatorio do escritorio, leads parados, agenda, prazos criticos e status do sistema; o MAYUS responde com base real, cria artifact/evento e nao executa side effects externos sem aprovacao.
+Evidencia parcial 2026-04-30: modulo `whatsapp-command-center` valida remetente autorizado, classifica intents internas e gera resposta operacional segura; painel do Playbook permite configurar telefones autorizados.
+- `[~]` gerar Playbook diario configuravel
+Escopo: configuracao por usuario/escritorio para horario, dias, canal, escopo e nivel de detalhe; envio por WhatsApp/e-mail/painel deve carregar resumo executivo e link para HTML premium dentro do MAYUS.
+Evidencia parcial 2026-04-30: Configuracoes Globais ganhou painel premium de Playbook Diario com horario, dias, canais, escopo, detalhe e previa segura; a API gera playbook e artifact/evento sem executar envio externo automaticamente.
 - `[ ]` deixar Meta Ads API, Google Meet automatico, Drive automatico de gravacoes, publicacao automatica e monitoramento amplo para integracoes futuras
 
 ### Ordem recomendada de implementacao
 
-1. Agenda Google opcional
-2. Upload e analise de call comercial
-3. Marketing por referencias
-4. Calendario editorial editavel
-5. Analise de Meta Ads por upload
-6. Integracoes automaticas futuras
+1. Auto-configuracao supervisionada do escritorio
+2. Agenda Google opcional
+3. Upload e analise de call comercial
+4. Marketing por referencias
+5. Calendario editorial editavel
+6. Analise de Meta Ads por upload
+7. Integracoes automaticas futuras
+
+---
+
+## Auto-Configuracao Supervisionada
+
+### Tese
+
+O MAYUS nao deve exigir implantacao manual longa. Ele deve entrevistar o escritorio, diagnosticar o que existe, aplicar defaults seguros e pedir aprovacao humana para qualquer mudanca sensivel.
+
+Frase de produto:
+
+**Voce nao configura o sistema. O MAYUS configura o escritorio digital com voce.**
+
+### Escopo executavel
+
+1. `[x]` diagnosticar tenant, integracoes, CRM e skills com Auto Setup Doctor
+2. `[x]` aplicar defaults seguros de CRM e skills sem credenciais externas
+3. `[x]` criar artifact agentico de setup e eventos de auditoria
+4. `[x]` auto-configurar perfil comercial por chat com `sales_profile_setup`
+5. `[~]` diagnosticar perfil comercial incompleto no Setup Doctor
+6. `[ ]` onboarding conversacional completo do escritorio: areas, equipe, tom, permissoes, objetivos e rotina
+7. `[ ]` criar pipeline juridico padrao por area de atuacao
+8. `[ ]` criar estrutura documental padrao por area e tipo de processo
+9. `[ ]` configurar playbooks de atendimento, marketing, agenda e cobranca a partir da entrevista
+10. `[ ]` gerar checklist de credenciais externas pendentes sem expor codigo ou segredos
+11. `[ ]` permitir revisao/aprovacao em lote das configuracoes sugeridas
+12. `[ ]` criar score de prontidao do escritorio e proximo melhor passo
+
+### Guardrails
+
+1. Nunca inventar credenciais.
+2. Nunca conectar integracao externa sem OAuth/chave valida fornecida pelo usuario.
+3. Nunca mudar permissao, cobranca, mensagem externa ou dado sensivel sem aprovacao.
+4. Toda auto-configuracao deve gerar artifact, evento e resumo humano.
+5. O usuario deve ver resultado operacional, nao detalhes de codigo.
 
 ---
 
