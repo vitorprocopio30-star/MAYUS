@@ -61,6 +61,30 @@ function channelAllowed(channel: string, allowedChannels: string[] | null | unde
 
 const DEFAULT_CAPABILITY_SEEDS: DefaultCapabilitySeed[] = [
   {
+    name: "marketing_copywriter",
+    description: "Cria copy juridica responsavel por canal a partir de pauta, perfil e referencias como sinais, com variacoes, CTA, guardrails eticos e revisao humana obrigatoria.",
+    version: "1.0",
+    schema_version: "1",
+    input_schema: {
+      type: "object",
+      properties: {
+        request: { type: "string", description: "Pedido original do usuario." },
+        content_id: { type: "string", description: "ID da pauta aprovada, quando conhecido." },
+        content_title: { type: "string", description: "Titulo ou trecho da pauta." },
+        legal_area: { type: "string", description: "Area juridica do conteudo." },
+        channel: { type: "string", description: "Canal: LinkedIn, Instagram, blog, email ou WhatsApp." },
+        objective: { type: "string", description: "Objetivo: awareness, authority, lead_generation, nurture ou retention." },
+      },
+    },
+    output_schema: { type: "object" },
+    allowed_roles: [],
+    allowed_channels: ["chat"],
+    requires_human_confirmation: false,
+    risk_level: "low",
+    is_active: true,
+    handler_type: "growth_marketing_copywriter",
+  },
+  {
     name: "marketing_ops_assistant",
     description: "Opera Growth/Marketing por chat: resume calendario, conteudos aprovados, leads sem proximo passo e proximas acoes supervisionadas sem publicar ou enviar nada automaticamente.",
     version: "1.0",

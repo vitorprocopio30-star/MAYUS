@@ -11,6 +11,14 @@ export type MarketingAttributionInput = {
   utmCampaign?: string | null;
   utmTerm?: string | null;
   utmContent?: string | null;
+  utm_source?: string | null;
+  utm_medium?: string | null;
+  utm_campaign?: string | null;
+  utm_term?: string | null;
+  utm_content?: string | null;
+  content_id?: string | null;
+  content_title?: string | null;
+  landing_page?: string | null;
 };
 
 export type MarketingAttribution = {
@@ -26,7 +34,7 @@ export type MarketingAttribution = {
   utmCampaign: string | null;
   utmTerm: string | null;
   utmContent: string | null;
-  source: string;
+  source: string | null;
   hasTrackedSource: boolean;
   tags: string[];
 };
@@ -38,25 +46,37 @@ function cleanText(value?: string | null) {
 
 function slugTag(prefix: string, value: string | null) {
   if (!value) return null;
-  const safeValue = value.toLowerCase().replace(/\s+/g, "-").slice(0, 48);
+  const safeValue = value
+    .normalize("NFD")
+    .replace(/[\u0300-\u036f]/g, "")
+    .toLowerCase()
+    .replace(/[^a-z0-9]+/g, "-")
+    .replace(/^-+|-+$/g, "")
+    .slice(0, 48);
+  if (!safeValue) return null;
   return `${prefix}:${safeValue}`;
 }
 
 export function buildMarketingAttribution(input: MarketingAttributionInput): MarketingAttribution {
-  const origin = cleanText(input.origin || input.utmSource);
-  const channel = cleanText(input.channel || input.utmMedium);
-  const campaign = cleanText(input.campaign || input.utmCampaign);
-  const contentId = cleanText(input.contentId || input.utmContent);
-  const contentTitle = cleanText(input.contentTitle);
-  const landingPage = cleanText(input.landingPage);
+  const rawUtmSource = cleanText(input.utmSource || input.utm_source);
+  const rawUtmMedium = cleanText(input.utmMedium || input.utm_medium);
+  const rawUtmCampaign = cleanText(input.utmCampaign || input.utm_campaign);
+  const rawUtmTerm = cleanText(input.utmTerm || input.utm_term);
+  const rawUtmContent = cleanText(input.utmContent || input.utm_content);
+  const origin = cleanText(input.origin || rawUtmSource);
+  const channel = cleanText(input.channel || rawUtmMedium);
+  const campaign = cleanText(input.campaign || rawUtmCampaign);
+  const contentId = cleanText(input.contentId || input.content_id || rawUtmContent);
+  const contentTitle = cleanText(input.contentTitle || input.content_title);
+  const landingPage = cleanText(input.landingPage || input.landing_page);
   const referrer = cleanText(input.referrer);
-  const utmSource = cleanText(input.utmSource);
-  const utmMedium = cleanText(input.utmMedium);
-  const utmCampaign = cleanText(input.utmCampaign);
-  const utmTerm = cleanText(input.utmTerm);
-  const utmContent = cleanText(input.utmContent);
+  const utmSource = rawUtmSource;
+  const utmMedium = rawUtmMedium;
+  const utmCampaign = rawUtmCampaign;
+  const utmTerm = rawUtmTerm;
+  const utmContent = rawUtmContent;
   const hasTrackedSource = Boolean(origin || channel || campaign || contentId || landingPage || referrer || utmSource || utmMedium || utmCampaign || utmTerm || utmContent);
-  const source = origin || utmSource || campaign || referrer || "marketing_untracked";
+  const source = origin || utmSource || campaign || referrer || null;
   const tags = [
     slugTag("origem", origin),
     slugTag("canal", channel),

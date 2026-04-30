@@ -16,6 +16,8 @@ export type Task = {
   motivo_perda?: string;
   phone?: string | null;
   sector?: string | null;
+  source?: string | null;
+  lead_scoring?: number | null;
   department_id?: string | null;
   data_ultima_movimentacao?: string;
 };

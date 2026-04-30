@@ -106,6 +106,62 @@ describe("lead intake", () => {
     expect(payload.tags).toContain("canal:formulario");
   });
 
+  it("preserves marketing attribution for campaign and UTM leads", () => {
+    const result = analyzeLeadIntake({
+      name: "Lead Meta",
+      phone: "21988887777",
+      utm_source: "Meta Ads",
+      utm_medium: "Paid Social",
+      utm_campaign: "Familia Abril",
+      utm_content: "criativo-01",
+      content_title: "Guia de guarda compartilhada",
+      legalArea: "Familia",
+      pain: "Preciso revisar acordo de guarda e entender os proximos passos.",
+    });
+
+    const payload = buildCrmTaskPayload({
+      tenantId: "tenant-1",
+      pipelineId: "pipeline-1",
+      stageId: "stage-1",
+      result,
+    });
+    const eventPayload = buildLeadIntakeEventPayload({ crmTaskId: "crm-task-1", result });
+
+    expect(payload.source).toBe("Meta Ads");
+    expect(payload.tags).toContain("marketing-attribution");
+    expect(payload.tags).toContain("campanha:familia-abril");
+    expect(payload.description).toContain("Atribuicao de marketing:");
+    expect(payload.description).toContain("UTM campaign: Familia Abril");
+    expect(eventPayload).toEqual(expect.objectContaining({
+      origin: "Meta Ads",
+      channel: "Paid Social",
+      campaign: "Familia Abril",
+      content_id: "criativo-01",
+      content_title: "Guia de guarda compartilhada",
+      has_marketing_attribution: true,
+    }));
+  });
+
+  it("keeps growth_intake as technical source when marketing attribution is missing", () => {
+    const result = analyzeLeadIntake({
+      name: "Lead Organico",
+      phone: "21988887777",
+      legalArea: "Consumidor",
+      pain: "Preciso resolver uma cobranca indevida com bastante urgencia.",
+    });
+
+    const payload = buildCrmTaskPayload({
+      tenantId: "tenant-1",
+      pipelineId: "pipeline-1",
+      stageId: "stage-1",
+      result,
+    });
+
+    expect(payload.source).toBe("growth_intake");
+    expect(payload.tags).toContain("sem-atribuicao-marketing");
+    expect(payload.description).toContain("sem origem/campanha rastreada");
+  });
+
   it("builds referral crm payload with referral source and relationship details", () => {
     const result = analyzeLeadIntake({
       name: "Bianca Indicada",

@@ -51,6 +51,47 @@ function formatCrmPlanDate(value: string) {
   });
 }
 
+function getCrmAttributionBadge(task: Task) {
+  const tags = task.tags || [];
+  const campaignTag = tags.find((tag) => tag.startsWith("campanha:"));
+  const contentTag = tags.find((tag) => tag.startsWith("conteudo:"));
+  const hasMarketingAttribution = tags.includes("marketing-attribution");
+  const missingAttribution = tags.includes("sem-atribuicao-marketing");
+
+  if (campaignTag) {
+    return { label: campaignTag.replace("campanha:", "Campanha ").replace(/-/g, " "), tone: "emerald" as const };
+  }
+
+  if (contentTag) {
+    return { label: contentTag.replace("conteudo:", "Conteudo ").replace(/-/g, " "), tone: "emerald" as const };
+  }
+
+  if (hasMarketingAttribution && task.source) {
+    return { label: `Origem ${task.source}`, tone: "emerald" as const };
+  }
+
+  if (missingAttribution) {
+    return { label: "Sem atribuicao", tone: "amber" as const };
+  }
+
+  return null;
+}
+
+function CrmAttributionBadge({ task }: { task: Task }) {
+  const badge = getCrmAttributionBadge(task);
+  if (!badge) return null;
+
+  const className = badge.tone === "emerald"
+    ? "border-emerald-500/25 bg-emerald-500/10 text-emerald-200"
+    : "border-amber-500/25 bg-amber-500/10 text-amber-200";
+
+  return (
+    <span className={`inline-flex items-center rounded-md border px-2 py-1 text-[9px] font-black uppercase tracking-widest ${className}`}>
+      {badge.label}
+    </span>
+  );
+}
+
 // Dynamic import for ReactQuill to avoid SSR issues
 const ReactQuill = dynamic(() => import("react-quill"), { 
   ssr: false,
@@ -553,6 +594,10 @@ export default function PipelinePage() {
                                         </div>
                                       )}
 
+                                      <div className="relative z-10 mb-2.5">
+                                        <CrmAttributionBadge task={task} />
+                                      </div>
+
                                       <div className="relative z-10 mb-2.5" onClick={(event) => event.stopPropagation()}>
                                         <CallAnalysisAction
                                           crmTaskId={task.id}
@@ -643,7 +688,7 @@ export default function PipelinePage() {
                                  </span>
                                );
                              })()}
-                            {task.tags?.map(tag => {
+                             {task.tags?.map(tag => {
                               const [name, color] = tag.includes('|') ? tag.split('|') : [tag, '#CCA761'];
                               return (
                                 <span 
@@ -654,9 +699,10 @@ export default function PipelinePage() {
                                   {name}
                                 </span>
                               );
-                            })}
-                          </div>
-                        </td>
+                             })}
+                             <CrmAttributionBadge task={task} />
+                           </div>
+                         </td>
                         <td className="p-4">
                           <span className="inline-flex items-center gap-2 px-2.5 py-1 rounded-md text-xs font-bold bg-gray-100 dark:bg-[#1a1a1a] border border-[#2a2a2a]">
                             <span className="w-2 h-2 rounded-full" style={{ backgroundColor: stage?.color || "#fff" }} />

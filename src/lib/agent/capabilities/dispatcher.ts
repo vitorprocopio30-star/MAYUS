@@ -96,6 +96,11 @@ import {
   buildMarketingOpsAssistantPlan,
   type MarketingOpsAssistantInput,
 } from "@/lib/growth/marketing-ops-assistant";
+import {
+  buildMarketingCopywriterArtifactMetadata,
+  buildMarketingCopywriterDraft,
+} from "@/lib/marketing/marketing-copywriter";
+import type { EditorialCalendarItem } from "@/lib/marketing/editorial-calendar";
 
 const serviceSupabase = createClient(
   process.env.NEXT_PUBLIC_SUPABASE_URL!,
@@ -1278,6 +1283,16 @@ function buildLeadIntakeInputFromEntities(entities: Record<string, string>): Lea
     email: getStringValue(entities.email),
     origin: getStringValue(entities.origin) || getStringValue(entities.source),
     channel: getStringValue(entities.channel),
+    campaign: getStringValue(entities.campaign) || getStringValue(entities.utm_campaign),
+    contentId: getStringValue(entities.contentId) || getStringValue(entities.content_id) || getStringValue(entities.utm_content),
+    contentTitle: getStringValue(entities.contentTitle) || getStringValue(entities.content_title),
+    landingPage: getStringValue(entities.landingPage) || getStringValue(entities.landing_page),
+    referrer: getStringValue(entities.referrer),
+    utmSource: getStringValue(entities.utmSource) || getStringValue(entities.utm_source),
+    utmMedium: getStringValue(entities.utmMedium) || getStringValue(entities.utm_medium),
+    utmCampaign: getStringValue(entities.utmCampaign) || getStringValue(entities.utm_campaign),
+    utmTerm: getStringValue(entities.utmTerm) || getStringValue(entities.utm_term),
+    utmContent: getStringValue(entities.utmContent) || getStringValue(entities.utm_content),
     legalArea: getStringValue(entities.legalArea) || getStringValue(entities.legal_area),
     city: getStringValue(entities.city),
     state: getStringValue(entities.state) || getStringValue(entities.uf),
@@ -1520,6 +1535,49 @@ function buildMarketingOpsAssistantInputFromEntities(entities: Record<string, st
     legalArea: entities.legal_area || null,
     channel: entities.channel || null,
     objective: entities.objective || null,
+  };
+}
+
+function buildMarketingCopywriterInputFromEntities(entities: Record<string, string>) {
+  return {
+    request: getStringValue(entities.request),
+    contentId: getStringValue(entities.content_id) || getStringValue(entities.contentId),
+    contentTitle: getStringValue(entities.content_title) || getStringValue(entities.contentTitle) || getStringValue(entities.title),
+    legalArea: getStringValue(entities.legal_area) || getStringValue(entities.legalArea),
+    channel: getStringValue(entities.channel),
+    objective: getStringValue(entities.objective),
+  };
+}
+
+function selectMarketingCopyItem(state: any, direct: ReturnType<typeof buildMarketingCopywriterInputFromEntities>): EditorialCalendarItem {
+  const calendar = Array.isArray(state?.calendar) ? state.calendar as EditorialCalendarItem[] : [];
+  const normalizedContentId = String(direct.contentId || "").trim().toLowerCase();
+  const normalizedTitle = String(direct.contentTitle || "").trim().toLowerCase();
+  const normalizedArea = String(direct.legalArea || "").trim().toLowerCase();
+  const normalizedChannel = String(direct.channel || "").trim().toLowerCase();
+
+  const matched = calendar.find((item) => normalizedContentId && String(item.id).toLowerCase() === normalizedContentId)
+    || calendar.find((item) => normalizedTitle && String(item.title).toLowerCase().includes(normalizedTitle))
+    || calendar.find((item) => item.status === "approved" && (!normalizedArea || String(item.legalArea).toLowerCase().includes(normalizedArea)) && (!normalizedChannel || item.channel === normalizedChannel))
+    || calendar.find((item) => item.status === "approved")
+    || calendar[0];
+
+  if (matched) return matched;
+
+  return {
+    id: `copy-${Date.now()}`,
+    title: direct.contentTitle || direct.request || "Pauta juridica para copy supervisionada",
+    channel: (direct.channel === "instagram" || direct.channel === "blog" || direct.channel === "email" || direct.channel === "whatsapp" || direct.channel === "linkedin") ? direct.channel : "linkedin",
+    legalArea: direct.legalArea || "Juridico geral",
+    objective: direct.objective === "awareness" || direct.objective === "authority" || direct.objective === "lead_generation" || direct.objective === "nurture" || direct.objective === "retention" ? direct.objective : "authority",
+    tone: "educational",
+    audience: "leads qualificados",
+    angle: direct.request || "orientacao juridica clara para decisao responsavel",
+    guardrails: ["Nao copiar referencias", "Nao prometer resultado"],
+    sourcePatternIds: [],
+    date: new Date().toISOString().slice(0, 10),
+    status: "approved",
+    notes: "Pauta sintetica criada para rascunho de copy supervisionada.",
   };
 }
 
@@ -2083,6 +2141,64 @@ async function runGrowthMarketingOpsAssistant(input: DispatchCapabilityInput): P
     data: {
       plan,
     },
+  };
+}
+
+async function runGrowthMarketingCopywriter(input: DispatchCapabilityInput): Promise<DispatchCapabilityResult> {
+  const direct = buildMarketingCopywriterInputFromEntities(input.entities);
+  const state = await loadMarketingOpsState(input.tenantId);
+  const item = selectMarketingCopyItem(state, direct);
+  const draft = buildMarketingCopywriterDraft({
+    item,
+    profile: (state as any).profile || null,
+    references: Array.isArray((state as any).references) ? (state as any).references : [],
+  });
+  const metadata = buildMarketingCopywriterArtifactMetadata(draft);
+
+  await registerArtifact(input, {
+    artifactType: "marketing_copywriter_draft",
+    title: `Copy - ${draft.title}`,
+    mimeType: "application/json",
+    dedupeKey: input.auditLogId ? `marketing-copy:${input.auditLogId}` : `marketing-copy:${input.tenantId}:${draft.attributionHint.contentId}`,
+    metadata,
+  });
+
+  await registerLearningEvent(input, "marketing_copywriter_draft_created", {
+    title: draft.title,
+    channel: draft.channel,
+    campaign_suggestion: draft.campaignSuggestion,
+    risk_flag_count: draft.riskFlags.length,
+    variant_count: draft.variants.length,
+    requires_human_approval: draft.humanApprovalRequired,
+    external_side_effects_blocked: draft.externalSideEffectsBlocked,
+  });
+
+  const reply = [
+    "## Copy juridica supervisionada",
+    `- Conteudo: ${draft.title}`,
+    `- Canal: ${draft.channel}`,
+    `- Headline: ${draft.headline}`,
+    `- Hook: ${draft.hook}`,
+    `- CTA: ${draft.cta}`,
+    draft.riskFlags.length > 0 ? `- Alertas: ${draft.riskFlags.join("; ")}` : "- Alertas: nenhum alerta critico identificado.",
+    `- Campanha sugerida: ${draft.campaignSuggestion}`,
+    "- Side effects externos: bloqueados ate revisao humana.",
+  ].join("\n");
+
+  return {
+    status: "executed",
+    reply,
+    outputPayload: {
+      auditLogId: input.auditLogId || null,
+      handler_type: input.handlerType,
+      channel: draft.channel,
+      campaign_suggestion: draft.campaignSuggestion,
+      risk_flag_count: draft.riskFlags.length,
+      variant_count: draft.variants.length,
+      requires_human_approval: draft.humanApprovalRequired,
+      external_side_effects_blocked: draft.externalSideEffectsBlocked,
+    },
+    data: { draft },
   };
 }
 
@@ -4568,6 +4684,8 @@ export async function dispatchCapabilityExecution(input: DispatchCapabilityInput
   const handler = String(input.handlerType || "").trim();
 
   switch (handler) {
+    case "growth_marketing_copywriter":
+      return runGrowthMarketingCopywriter(input);
     case "growth_marketing_ops_assistant":
       return runGrowthMarketingOpsAssistant(input);
     case "growth_sales_profile_setup":

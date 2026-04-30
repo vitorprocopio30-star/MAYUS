@@ -939,6 +939,8 @@ Evidencia 2026-04-30: criado helper puro `src/lib/marketing/marketing-readiness.
 Evidencia 2026-04-30: a Central de Marketing tambem identifica conteudos com rascunho revisado como "Prontos para publicar" e separa aprovados que ainda precisam de revisao final, sempre com publicacao manual.
 - `[x]` gerar rascunho final supervisionado para conteudos aprovados
 Evidencia 2026-04-30: criado helper puro `src/lib/marketing/content-draft.ts` para gerar post LinkedIn, roteiro Instagram, artigo, e-mail ou mensagem WhatsApp a partir de conteudo aprovado/publicado; `/dashboard/marketing/aprovados` ganhou acao "Gerar rascunho" com checklist etico, persistencia do rascunho nas notas do item, recuperacao ao recarregar, copia manual, marcacao de revisao e separacao visual entre prontos para publicar, pendentes de revisao e publicados, sem publicacao ou envio externo automatico.
+- `[x]` criar skill de copy juridica responsavel
+Evidencia 2026-04-30: criada skill `marketing_copywriter`, seed `growth_marketing_copywriter`, roteamento por chat e motor puro `buildMarketingCopywriterDraft`; a copy gera headline, hook, corpo por canal, CTA, variacoes, sugestao de campanha/atribuicao, checklist OAB/etico e flags de risco, registra artifact `marketing_copywriter_draft` e learning event, mantendo referencias apenas como sinais e bloqueando qualquer side effect externo.
 - `[~]` criar analise de Meta Ads por upload de CSV, XLSX ou PDF
 Evidencia parcial 2026-04-28: criado MVP local de analise de CSV em `src/lib/marketing/meta-ads-analysis.ts` e `/dashboard/marketing/meta-ads`, com input de arquivo `.csv` e textarea; XLSX/PDF ainda pendentes.
 - `[ ]` diagnosticar campanhas vencedoras, desperdicio de verba, CPL, CTR, CPC, CPM, criativos, publicos e temas

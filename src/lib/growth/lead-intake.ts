@@ -1,3 +1,9 @@
+import {
+  buildMarketingAttribution,
+  buildMarketingAttributionDescription,
+  type MarketingAttribution,
+} from "@/lib/marketing/marketing-attribution";
+
 export type LeadUrgency = "low" | "medium" | "high";
 export type LeadKind = "new_lead" | "referral" | "case_status_request" | "needs_context";
 
@@ -7,6 +13,24 @@ export type LeadIntakeInput = {
   email?: string | null;
   origin?: string | null;
   channel?: string | null;
+  campaign?: string | null;
+  contentId?: string | null;
+  contentTitle?: string | null;
+  landingPage?: string | null;
+  referrer?: string | null;
+  utmSource?: string | null;
+  utmMedium?: string | null;
+  utmCampaign?: string | null;
+  utmTerm?: string | null;
+  utmContent?: string | null;
+  utm_source?: string | null;
+  utm_medium?: string | null;
+  utm_campaign?: string | null;
+  utm_term?: string | null;
+  utm_content?: string | null;
+  content_id?: string | null;
+  content_title?: string | null;
+  landing_page?: string | null;
   legalArea?: string | null;
   city?: string | null;
   state?: string | null;
@@ -23,6 +47,17 @@ export type NormalizedLeadIntake = {
   email: string | null;
   origin: string | null;
   channel: string | null;
+  campaign: string | null;
+  contentId: string | null;
+  contentTitle: string | null;
+  landingPage: string | null;
+  referrer: string | null;
+  utmSource: string | null;
+  utmMedium: string | null;
+  utmCampaign: string | null;
+  utmTerm: string | null;
+  utmContent: string | null;
+  marketingAttribution: MarketingAttribution;
   legalArea: string | null;
   city: string | null;
   state: string | null;
@@ -137,13 +172,25 @@ function normalizeForMatch(value: string | null) {
 
 export function normalizeLeadInput(input: LeadIntakeInput): NormalizedLeadIntake {
   const pain = cleanText(input.pain);
+  const marketingAttribution = buildMarketingAttribution(input);
 
   return {
     name: cleanText(input.name) || "Lead sem nome",
     phone: normalizePhone(input.phone),
     email: cleanText(input.email),
-    origin: cleanText(input.origin),
-    channel: cleanText(input.channel),
+    origin: marketingAttribution.origin,
+    channel: marketingAttribution.channel,
+    campaign: marketingAttribution.campaign,
+    contentId: marketingAttribution.contentId,
+    contentTitle: marketingAttribution.contentTitle,
+    landingPage: marketingAttribution.landingPage,
+    referrer: marketingAttribution.referrer,
+    utmSource: marketingAttribution.utmSource,
+    utmMedium: marketingAttribution.utmMedium,
+    utmCampaign: marketingAttribution.utmCampaign,
+    utmTerm: marketingAttribution.utmTerm,
+    utmContent: marketingAttribution.utmContent,
+    marketingAttribution,
     legalArea: cleanText(input.legalArea),
     city: cleanText(input.city),
     state: cleanText(input.state)?.toUpperCase() || null,
@@ -244,6 +291,7 @@ export function buildLeadTags(input: NormalizedLeadIntake, kind: LeadKind, score
   if (input.legalArea) tags.add(input.legalArea.toLowerCase());
   if (input.origin) tags.add(`origem:${input.origin.toLowerCase()}`);
   if (input.channel) tags.add(`canal:${input.channel.toLowerCase()}`);
+  input.marketingAttribution.tags.forEach((tag) => tags.add(tag));
   if (input.urgency === "high") tags.add("urgente");
   if (score >= 75) tags.add("lead-quente");
   if (kind === "referral") tags.add("indicacao");
@@ -283,10 +331,13 @@ export function buildLeadDescription(result: Omit<LeadIntakeResult, "description
     normalized.city || normalized.state ? `Localidade: ${[normalized.city, normalized.state].filter(Boolean).join("/")}` : null,
     normalized.origin ? `Origem: ${normalized.origin}` : null,
     normalized.channel ? `Canal: ${normalized.channel}` : null,
+    normalized.campaign ? `Campanha: ${normalized.campaign}` : null,
+    normalized.contentTitle ? `Conteudo: ${normalized.contentTitle}` : null,
     normalized.referredBy ? `Indicado por: ${normalized.referredBy}` : null,
     normalized.referralRelationship ? `Relacionamento com indicador: ${normalized.referralRelationship}` : null,
     normalized.pain ? `Dor principal: ${normalized.pain}` : null,
     normalized.notes ? `Observacoes: ${normalized.notes}` : null,
+    buildMarketingAttributionDescription(normalized.marketingAttribution),
     `Proximo passo recomendado: ${nextStep}`,
   ].filter(Boolean).join("\n");
 }
@@ -329,7 +380,7 @@ export function buildCrmTaskPayload(params: {
     tags: result.tags,
     phone: result.normalized.phone,
     sector: result.normalized.legalArea,
-    source: result.kind === "referral" ? result.normalized.origin || "indicacao" : result.normalized.origin || "growth_intake",
+    source: result.kind === "referral" ? result.normalized.origin || "indicacao" : result.normalized.marketingAttribution.source || "growth_intake",
     lead_scoring: result.score,
     data_ultima_movimentacao: new Date().toISOString(),
   };
@@ -353,6 +404,17 @@ export function buildLeadIntakeEventPayload(params: {
     legal_area: result.normalized.legalArea,
     origin: result.kind === "referral" ? result.normalized.origin || "indicacao" : result.normalized.origin,
     channel: result.normalized.channel,
+    campaign: result.normalized.campaign,
+    content_id: result.normalized.contentId,
+    content_title: result.normalized.contentTitle,
+    landing_page: result.normalized.landingPage,
+    referrer: result.normalized.referrer,
+    utm_source: result.normalized.utmSource,
+    utm_medium: result.normalized.utmMedium,
+    utm_campaign: result.normalized.utmCampaign,
+    utm_term: result.normalized.utmTerm,
+    utm_content: result.normalized.utmContent,
+    has_marketing_attribution: result.normalized.marketingAttribution.hasTrackedSource,
     referred_by: result.normalized.referredBy,
     referral_relationship: result.normalized.referralRelationship,
   };
@@ -380,6 +442,10 @@ export function buildReferralIntakeArtifactMetadata(params: {
     urgency: result.normalized.urgency,
     origin: result.normalized.origin || "indicacao",
     channel: result.normalized.channel,
+    campaign: result.normalized.campaign,
+    content_id: result.normalized.contentId,
+    content_title: result.normalized.contentTitle,
+    has_marketing_attribution: result.normalized.marketingAttribution.hasTrackedSource,
     referred_by: result.normalized.referredBy,
     referral_relationship: result.normalized.referralRelationship,
     requires_human_action: true,

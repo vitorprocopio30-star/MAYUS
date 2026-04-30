@@ -14,6 +14,7 @@ import {
   type MarketingChannel,
   type MarketingFrequency,
   type MarketingObjective,
+  type ReferenceInput,
   type MarketingTone,
 } from "@/lib/marketing/editorial-calendar";
 import {
@@ -70,6 +71,7 @@ export default function CalendarioMarketingPage() {
   const supabase = createClient();
   const [form, setForm] = useState<CalendarForm>(initialForm);
   const [calendar, setCalendar] = useState<EditorialCalendarItem[]>([]);
+  const [references, setReferences] = useState<ReferenceInput[]>([]);
   const [error, setError] = useState<string | null>(null);
   const [isLoaded, setIsLoaded] = useState(false);
   const [tenantId, setTenantId] = useState<string | null>(null);
@@ -102,7 +104,8 @@ export default function CalendarioMarketingPage() {
       if (cancelled) return;
 
       setCalendar(sourceState.calendar);
-      saveLocalMarketingState({ calendar: sourceState.calendar, profile: sourceState.profile });
+      setReferences(sourceState.references);
+      saveLocalMarketingState({ calendar: sourceState.calendar, profile: sourceState.profile, references: sourceState.references });
       setForm((current) => ({
         ...current,
         style: defaults.style,
@@ -162,6 +165,7 @@ export default function CalendarioMarketingPage() {
         objectives: form.objectives,
         tones: form.tones,
         audiences: splitList(form.audiences),
+        references,
         periods: Math.max(1, Number(form.periods) || 1),
       }));
       setError(null);

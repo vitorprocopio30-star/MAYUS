@@ -109,6 +109,8 @@ Evidencia 2026-04-30: `buildMarketingReadiness` le o estado de Marketing OS, cla
 Evidencia 2026-04-30: a home de Marketing agora mostra contadores/listas de conteudos prontos para publicar e aprovados que precisam de revisao final, a partir dos rascunhos persistidos nas notas.
 - [x] Conteudos aprovados geram rascunho final supervisionado por canal.
 Evidencia 2026-04-30: `buildMarketingFinalDraft` prepara texto final, CTA e checklist etico para blog, LinkedIn, Instagram, e-mail ou WhatsApp; `/dashboard/marketing/aprovados` exibe o rascunho no card, persiste/recupera o bloco nas notas, permite copiar texto, marcar revisao e separa conteudos prontos para publicar dos pendentes, mantendo publicacao/envio como acao manual supervisionada.
+- [x] Skill de copy juridica responsavel para Marketing.
+Evidencia 2026-04-30: criada `marketing_copywriter` com motor puro `buildMarketingCopywriterDraft`, variacoes de headline/hook/CTA, sugestao de campanha/atribuicao, checklist OAB/etico, flags de risco e artifact `marketing_copywriter_draft`; `content-draft` passou a usar essa camada e o calendario agora passa referencias salvas para gerar pautas com sinais reais, sem copiar conteudo e sem publicacao automatica.
 - [~] Analise de Meta Ads por upload de CSV, XLSX ou PDF.
 Evidencia parcial 2026-04-28: MVP local em `/dashboard/marketing/meta-ads` aceita CSV colado/exportado ou arquivo `.csv` client-side e analisa com `analyzeMetaAdsCsv`; XLSX/PDF ainda pendentes.
 - [x] Diagnostico de campanhas, CPL, CTR, CPC, CPM, criativos, publicos, verba desperdicada e oportunidades.
