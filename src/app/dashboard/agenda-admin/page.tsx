@@ -198,15 +198,15 @@ export default function AgendaAdminPage() {
 
         {/* Resumo Rápido de Produtividade Global */}
         <div className="flex gap-4">
-           <div className="bg-white dark:bg-[#0a0a0a] border border-gray-200 dark:border-white/5 p-4 rounded-xl text-center min-w-[120px]">
+           <div className="bg-[#0a0a0a] border border-white/5 p-4 rounded-xl text-center min-w-[120px]">
               <span className="text-gray-500 text-[9px] uppercase tracking-widest font-black block mb-1">Total Equipe</span>
-              <span className="text-3xl text-gray-900 dark:text-white font-light">{totalTasks}</span>
+              <span className="text-3xl text-white font-light">{totalTasks}</span>
            </div>
-           <div className="bg-white dark:bg-[#0a0a0a] border border-green-500/20 p-4 rounded-xl text-center min-w-[120px] shadow-[inset_0_0_20px_rgba(34,197,94,0.05)]">
+           <div className="bg-[#0a0a0a] border border-green-500/20 p-4 rounded-xl text-center min-w-[120px] shadow-[inset_0_0_20px_rgba(34,197,94,0.05)]">
               <span className="text-green-500 text-[9px] uppercase tracking-widest font-black block mb-1">Concluídas</span>
               <span className="text-3xl text-green-400 font-light">{completedTasks}</span>
            </div>
-           <div className="bg-white dark:bg-[#0a0a0a] border border-[#CCA761]/20 p-4 rounded-xl text-center min-w-[120px] shadow-[inset_0_0_20px_rgba(204,167,97,0.05)]">
+           <div className="bg-[#0a0a0a] border border-[#CCA761]/20 p-4 rounded-xl text-center min-w-[120px] shadow-[inset_0_0_20px_rgba(204,167,97,0.05)]">
               <span className="text-[#CCA761] text-[9px] uppercase tracking-widest font-black block mb-1">Pendências</span>
               <span className="text-3xl text-[#CCA761] font-light">{pendingTasks}</span>
            </div>
@@ -217,30 +217,30 @@ export default function AgendaAdminPage() {
       <div className="flex flex-wrap gap-2">
         <button
           onClick={() => { resetCreateForm(); setShowCreateTask(true); }}
-          className="flex items-center gap-2 px-4 py-2 rounded-lg bg-gray-100 dark:bg-[#111] border border-[#CCA761]/30 text-[#CCA761] text-xs font-black uppercase tracking-widest"
+          className="flex items-center gap-2 px-4 py-2 rounded-lg bg-[#111] border border-[#CCA761]/30 text-[#CCA761] text-xs font-black uppercase tracking-widest"
         >
           <Plus size={14} /> Nova tarefa (global)
         </button>
         <button
           onClick={() => { resetCreateForm(); setShowCreateMission(true); }}
-          className="flex items-center gap-2 px-4 py-2 rounded-lg bg-gray-100 dark:bg-[#111] border border-red-500/40 text-red-400 text-xs font-black uppercase tracking-widest"
+          className="flex items-center gap-2 px-4 py-2 rounded-lg bg-[#111] border border-red-500/40 text-red-400 text-xs font-black uppercase tracking-widest"
         >
           <Plus size={14} /> Nova missão
         </button>
       </div>
 
-      <div className="flex items-center gap-4 bg-white dark:bg-[#050505] p-2 rounded-xl border border-gray-200 dark:border-white/10 shadow-lg">
+      <div className="flex items-center gap-4 bg-white dark:bg-[#050505] p-2 rounded-xl border border-white/10 shadow-lg">
         <div className="flex-1 flex items-center gap-3 px-4">
           <Search size={20} className="text-gray-500" />
           <input 
              type="text" 
              placeholder="Pesquisar por funcionário, título da tarefa, ou cliente..." 
-             className="w-full bg-transparent border-none text-gray-900 dark:text-white outline-none placeholder:text-gray-600 font-medium"
+             className="w-full bg-transparent border-none text-white outline-none placeholder:text-gray-600 font-medium"
              value={searchTerm}
              onChange={(e) => setSearchTerm(e.target.value)}
           />
         </div>
-        <button className="bg-gray-100 dark:bg-white/5 hover:bg-gray-100 dark:bg-white/10 text-gray-900 dark:text-white px-4 py-2 rounded-lg text-xs font-bold uppercase tracking-widest transition-colors flex items-center gap-2">
+        <button className="bg-white/5 hover:bg-white/10 text-white px-4 py-2 rounded-lg text-xs font-bold uppercase tracking-widest transition-colors flex items-center gap-2">
            <Filter size={14} /> Filtros
         </button>
       </div>
@@ -260,16 +260,16 @@ export default function AgendaAdminPage() {
               const prog = Math.round((done / personTasks.length) * 100);
 
               return (
-                <div key={idx} className="bg-white dark:bg-[#0a0a0a] border border-gray-200 dark:border-white/5 rounded-2xl overflow-hidden hover:border-gray-200 dark:border-white/10 transition-colors">
+                <div key={idx} className="bg-[#0a0a0a] border border-white/5 rounded-2xl overflow-hidden hover:border-white/10 transition-colors">
                   
                   {/* Cabelhaço do Colaborador */}
-                  <div className="bg-gradient-to-r from-[#111] to-[#050505] p-5 border-b border-gray-200 dark:border-white/5 flex flex-col sm:flex-row justify-between items-start sm:items-center gap-4">
+                  <div className="bg-gradient-to-r from-[#111] to-[#050505] p-5 border-b border-white/5 flex flex-col sm:flex-row justify-between items-start sm:items-center gap-4">
                     <div className="flex items-center gap-4">
-                      <div className="w-12 h-12 rounded-full bg-gray-100 dark:bg-[#1a1a1a] border border-gray-200 dark:border-white/10 flex items-center justify-center text-xl font-black text-gray-700 dark:text-gray-300">
+                      <div className="w-12 h-12 rounded-full bg-[#1a1a1a] border border-white/10 flex items-center justify-center text-xl font-black text-gray-300">
                          {person.charAt(0)}
                       </div>
                       <div>
-                        <h2 className="text-xl font-bold text-gray-900 dark:text-white tracking-tight">{person}</h2>
+                        <h2 className="text-xl font-bold text-white tracking-tight">{person}</h2>
                         <div className="flex items-center gap-3 mt-1">
                            <span className="text-[10px] uppercase font-black tracking-widest text-[#CCA761]">{prog}% Concluído</span>
                            <span className="text-[10px] uppercase font-bold tracking-widest text-gray-500">{personTasks.length} Atividades Totais</span>
@@ -277,7 +277,7 @@ export default function AgendaAdminPage() {
                       </div>
                     </div>
 
-                    <div className="w-full sm:w-1/3 h-1.5 bg-gray-200 dark:bg-black rounded-full overflow-hidden border border-gray-200 dark:border-white/5">
+                    <div className="w-full sm:w-1/3 h-1.5 bg-gray-200 dark:bg-black rounded-full overflow-hidden border border-white/5">
                        <div className="h-full bg-gradient-to-r from-red-500 via-[#CCA761] to-green-500 transition-all duration-1000" style={{ width: `${prog}%` }} />
                     </div>
                   </div>
@@ -288,7 +288,7 @@ export default function AgendaAdminPage() {
                         <div key={i} className={`p-4 rounded-xl border flex flex-col justify-between transition-all ${t.status === 'Concluído' ? 'border-green-500/20 bg-green-500/5 opacity-50' : 'border-[#CCA761]/30 bg-[#CCA761]/5 shadow-[inset_0_0_15px_rgba(204,167,97,0.02)]'}`}>
                            <div>
                               <div className="flex justify-between items-start mb-3">
-                                 <span className="text-[9px] font-black uppercase tracking-widest px-2 py-0.5 rounded shadow-sm bg-gray-200 dark:bg-black/50 border border-gray-200 dark:border-white/10 text-gray-700 dark:text-gray-300">
+                                 <span className="text-[9px] font-black uppercase tracking-widest px-2 py-0.5 rounded shadow-sm bg-gray-200 dark:bg-black/50 border border-white/10 text-gray-300">
                                    {t.time_text || '--:--'}
                                  </span>
                                  <div className="flex items-center gap-2">
@@ -304,10 +304,10 @@ export default function AgendaAdminPage() {
                                      )}
                                  </div>
                               </div>
-                              <h4 className={`text-sm font-bold tracking-wide ${t.status === 'Concluído' ? 'text-gray-500 line-through' : 'text-gray-800 dark:text-gray-200'}`}>{t.title}</h4>
+                              <h4 className={`text-sm font-bold tracking-wide ${t.status === 'Concluído' ? 'text-gray-500 line-through' : 'text-gray-200'}`}>{t.title}</h4>
                               {t.client_name && <p className="text-[10px] text-gray-500 font-semibold mt-2 uppercase">Ref: {t.client_name}</p>}
                            </div>
-                           <div className="mt-4 pt-3 border-t border-gray-200 dark:border-white/5 flex justify-between items-center">
+                           <div className="mt-4 pt-3 border-t border-white/5 flex justify-between items-center">
                               <span className="text-[9px] font-black uppercase tracking-widest text-[#CCA761]">{t.category}</span>
                               <span className="text-[9px] font-bold uppercase tracking-widest text-gray-600">{t.type}</span>
                            </div>
@@ -325,41 +325,41 @@ export default function AgendaAdminPage() {
       {(showCreateTask || showCreateMission) && (
         <div className="fixed inset-0 z-50 flex items-center justify-center p-4">
           <div className="absolute inset-0 bg-gray-200 dark:bg-black/70" onClick={() => { setShowCreateTask(false); setShowCreateMission(false); }} />
-          <div className="relative w-full max-w-2xl rounded-2xl border border-[#CCA761]/20 bg-white dark:bg-[#0a0a0a] p-6">
-            <button className="absolute top-4 right-4 p-2 rounded-lg bg-gray-100 dark:bg-white/5 text-gray-400" onClick={() => { setShowCreateTask(false); setShowCreateMission(false); }}>
+          <div className="relative w-full max-w-2xl rounded-2xl border border-[#CCA761]/20 bg-[#0a0a0a] p-6">
+            <button className="absolute top-4 right-4 p-2 rounded-lg bg-white/5 text-gray-400" onClick={() => { setShowCreateTask(false); setShowCreateMission(false); }}>
               <X size={16} />
             </button>
-            <h3 className="text-lg text-gray-900 dark:text-white font-bold mb-4">{showCreateMission ? "Nova missão" : "Nova tarefa global"}</h3>
+            <h3 className="text-lg text-white font-bold mb-4">{showCreateMission ? "Nova missão" : "Nova tarefa global"}</h3>
             <div className="space-y-3">
-              <input value={newTitle} onChange={(e) => setNewTitle(e.target.value)} placeholder="Título" className="w-full bg-[#151515] border border-gray-200 dark:border-white/10 rounded-lg px-3 py-2 text-sm text-gray-900 dark:text-white" />
-              <textarea value={newDescription} onChange={(e) => setNewDescription(e.target.value)} placeholder="Descrição" className="w-full bg-[#151515] border border-gray-200 dark:border-white/10 rounded-lg px-3 py-2 text-sm text-gray-900 dark:text-white min-h-[90px]" />
+              <input value={newTitle} onChange={(e) => setNewTitle(e.target.value)} placeholder="Título" className="w-full bg-[#151515] border border-white/10 rounded-lg px-3 py-2 text-sm text-white" />
+              <textarea value={newDescription} onChange={(e) => setNewDescription(e.target.value)} placeholder="Descrição" className="w-full bg-[#151515] border border-white/10 rounded-lg px-3 py-2 text-sm text-white min-h-[90px]" />
               <div className="grid grid-cols-1 sm:grid-cols-3 gap-3">
-                <select value={newAssignedTo} onChange={(e) => setNewAssignedTo(e.target.value)} className="bg-[#151515] border border-gray-200 dark:border-white/10 rounded-lg px-3 py-2 text-sm text-gray-900 dark:text-white">
+                <select value={newAssignedTo} onChange={(e) => setNewAssignedTo(e.target.value)} className="bg-[#151515] border border-white/10 rounded-lg px-3 py-2 text-sm text-white">
                   <option value="">Sem responsável</option>
                   {profiles.map((member) => (
                     <option key={member.id} value={member.id}>{member.full_name || `Colaborador ${String(member.id).slice(0, 6)}`}</option>
                   ))}
                 </select>
-                <select value={newUrgency} onChange={(e) => setNewUrgency(e.target.value as any)} className="bg-[#151515] border border-gray-200 dark:border-white/10 rounded-lg px-3 py-2 text-sm text-gray-900 dark:text-white">
+                <select value={newUrgency} onChange={(e) => setNewUrgency(e.target.value as any)} className="bg-[#151515] border border-white/10 rounded-lg px-3 py-2 text-sm text-white">
                   <option value="URGENTE">Urgente</option>
                   <option value="ATENCAO">Atenção</option>
                   <option value="ROTINA">Rotina</option>
                 </select>
-                <input type="date" value={newDate} onChange={(e) => setNewDate(e.target.value)} className="bg-[#151515] border border-gray-200 dark:border-white/10 rounded-lg px-3 py-2 text-sm text-gray-900 dark:text-white" />
+                <input type="date" value={newDate} onChange={(e) => setNewDate(e.target.value)} className="bg-[#151515] border border-white/10 rounded-lg px-3 py-2 text-sm text-white" />
               </div>
               <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
-                <select value={newVisibility} onChange={(e) => setNewVisibility(e.target.value as any)} className="bg-[#151515] border border-gray-200 dark:border-white/10 rounded-lg px-3 py-2 text-sm text-gray-900 dark:text-white">
+                <select value={newVisibility} onChange={(e) => setNewVisibility(e.target.value as any)} className="bg-[#151515] border border-white/10 rounded-lg px-3 py-2 text-sm text-white">
                   <option value="global">Global (aparece na Agenda Global)</option>
                   <option value="private">Pessoal (somente do responsável)</option>
                 </select>
-                <label className="flex items-center gap-2 text-sm text-gray-700 dark:text-gray-300 bg-[#151515] border border-gray-200 dark:border-white/10 rounded-lg px-3 py-2">
+                <label className="flex items-center gap-2 text-sm text-gray-300 bg-[#151515] border border-white/10 rounded-lg px-3 py-2">
                   <input type="checkbox" checked={newReminderOnly} onChange={(e) => setNewReminderOnly(e.target.checked)} />
                   Mostrar somente na data marcada (lembrete)
                 </label>
               </div>
               {newReminderOnly && (
                 <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
-                  <label className="flex items-center gap-3 text-sm text-gray-700 dark:text-gray-300 bg-[#151515] border border-gray-200 dark:border-white/10 rounded-lg px-3 py-2">
+                  <label className="flex items-center gap-3 text-sm text-gray-300 bg-[#151515] border border-white/10 rounded-lg px-3 py-2">
                     <span className="whitespace-nowrap">Aparecer antes por</span>
                     <input
                       type="number"
@@ -368,16 +368,16 @@ export default function AgendaAdminPage() {
                       inputMode="numeric"
                       value={newReminderDaysBefore}
                       onChange={(e) => setNewReminderDaysBefore(e.target.value)}
-                      className="w-20 bg-gray-200 dark:bg-black/20 border border-gray-200 dark:border-white/10 rounded-lg px-2 py-1 text-sm text-gray-900 dark:text-white"
+                      className="w-20 bg-gray-200 dark:bg-black/20 border border-white/10 rounded-lg px-2 py-1 text-sm text-white"
                     />
                     <span>dia(s)</span>
                   </label>
                 </div>
               )}
               {showCreateMission ? (
-                <input value={newReward} onChange={(e) => setNewReward(e.target.value)} placeholder="Recompensa em coins" className="w-full bg-[#151515] border border-gray-200 dark:border-white/10 rounded-lg px-3 py-2 text-sm text-gray-900 dark:text-white" />
+                <input value={newReward} onChange={(e) => setNewReward(e.target.value)} placeholder="Recompensa em coins" className="w-full bg-[#151515] border border-white/10 rounded-lg px-3 py-2 text-sm text-white" />
               ) : (
-                <select value={newType} onChange={(e) => setNewType(e.target.value)} className="w-full bg-[#151515] border border-gray-200 dark:border-white/10 rounded-lg px-3 py-2 text-sm text-gray-900 dark:text-white">
+                <select value={newType} onChange={(e) => setNewType(e.target.value)} className="w-full bg-[#151515] border border-white/10 rounded-lg px-3 py-2 text-sm text-white">
                   <option value="Tarefa">Tarefa</option>
                   <option value="Prazo">Prazo</option>
                   <option value="Processo">Processo</option>

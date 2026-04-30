@@ -10,7 +10,7 @@ export default function DashboardLayout({
   children: React.ReactNode;
 }) {
   return (
-    <div className="min-h-screen flex bg-white dark:bg-[#030303] text-gray-900 dark:text-white/90 transition-all duration-300">
+    <div className="min-h-screen flex bg-white dark:bg-[#030303] text-white/90 transition-all duration-300">
       
       {/* Sidebar Fixa à Esquerda */}
       <AdminSidebar />

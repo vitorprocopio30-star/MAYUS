@@ -64,7 +64,7 @@ function ToggleSwitch({
       } ${loading ? "opacity-50 cursor-not-allowed" : "cursor-pointer"}`}
     >
       {loading ? (
-        <Loader2 size={12} className="absolute left-1/2 -translate-x-1/2 animate-spin text-gray-900 dark:text-white" />
+        <Loader2 size={12} className="absolute left-1/2 -translate-x-1/2 animate-spin text-white" />
       ) : (
         <span className={`inline-block h-4 w-4 transform rounded-full bg-white shadow transition-transform ${
           checked ? "translate-x-6" : "translate-x-1"
@@ -92,18 +92,18 @@ function SkillCard({
     <div className={`relative bg-white dark:bg-[#0d0d0d] border rounded-2xl p-5 transition-all duration-200 ${
       skill.is_active
         ? "border-[#CCA761]/20 shadow-[0_0_20px_rgba(204,167,97,0.04)]"
-        : "border-gray-200 dark:border-white/5 opacity-55"
+        : "border-white/5 opacity-55"
     }`}>
       {/* Header */}
       <div className="flex items-start justify-between gap-4">
         <div className="flex items-start gap-3 min-w-0">
           <div className={`w-9 h-9 rounded-xl flex items-center justify-center shrink-0 transition-colors ${
-            skill.is_active ? "bg-[#CCA761]/15 text-[#CCA761]" : "bg-gray-100 dark:bg-white/5 text-gray-600"
+            skill.is_active ? "bg-[#CCA761]/15 text-[#CCA761]" : "bg-white/5 text-gray-600"
           }`}>
             <Bot size={18} />
           </div>
           <div className="min-w-0">
-            <h3 className="text-gray-900 dark:text-white font-semibold text-sm truncate">{skill.name}</h3>
+            <h3 className="text-white font-semibold text-sm truncate">{skill.name}</h3>
             <p className="text-gray-500 text-xs mt-0.5 line-clamp-2 leading-relaxed">
               {skill.description ?? "Sem descrição definida."}
             </p>
@@ -118,7 +118,7 @@ function SkillCard({
       </div>
 
       {/* Badges */}
-      <div className="flex flex-wrap gap-1.5 mt-4 pt-3 border-t border-gray-200 dark:border-white/5">
+      <div className="flex flex-wrap gap-1.5 mt-4 pt-3 border-t border-white/5">
         {/* Risk */}
         <span className={`text-[10px] font-bold uppercase tracking-widest px-2 py-0.5 rounded-full border ${riskStyle}`}>
           {skill.risk_level}
@@ -132,26 +132,26 @@ function SkillCard({
         )}
 
         {/* Schema version */}
-        <span className="text-[10px] text-gray-600 px-2 py-0.5 rounded-full border border-gray-200 dark:border-white/5">
+        <span className="text-[10px] text-gray-600 px-2 py-0.5 rounded-full border border-white/5">
           v{skill.schema_version}
         </span>
 
         {/* Roles */}
         {(skill.allowed_roles ?? []).length > 0 ? (
           skill.allowed_roles.map(role => (
-            <span key={role} className="text-[10px] text-gray-500 px-2 py-0.5 rounded-full border border-gray-200 dark:border-white/5 flex items-center gap-1">
+            <span key={role} className="text-[10px] text-gray-500 px-2 py-0.5 rounded-full border border-white/5 flex items-center gap-1">
               <Users size={9} /> {role}
             </span>
           ))
         ) : (
-          <span className="text-[10px] text-gray-600 px-2 py-0.5 rounded-full border border-gray-200 dark:border-white/5 flex items-center gap-1">
+          <span className="text-[10px] text-gray-600 px-2 py-0.5 rounded-full border border-white/5 flex items-center gap-1">
             <Users size={9} /> todos os perfis
           </span>
         )}
 
         {/* Channels */}
         {(skill.allowed_channels ?? []).length > 0 && (
-          <span className="text-[10px] text-gray-600 px-2 py-0.5 rounded-full border border-gray-200 dark:border-white/5 flex items-center gap-1">
+          <span className="text-[10px] text-gray-600 px-2 py-0.5 rounded-full border border-white/5 flex items-center gap-1">
             <Layers size={9} /> {skill.allowed_channels.join(", ")}
           </span>
         )}
@@ -264,7 +264,7 @@ export default function AgentSkillRegistryPage() {
             <ChevronRight size={10} />
             <span className="text-[#CCA761]">Agente</span>
           </div>
-          <h1 className={`text-3xl text-gray-900 dark:text-white mb-1 ${cormorant.className}`}>Skill Registry</h1>
+          <h1 className={`text-3xl text-white mb-1 ${cormorant.className}`}>Skill Registry</h1>
           <p className="text-gray-500 text-sm">
             Gerencie as capacidades autônomas do MAYUS para este escritório.
           </p>
@@ -272,7 +272,7 @@ export default function AgentSkillRegistryPage() {
         <button
           onClick={fetchSkills}
           disabled={loading}
-          className="flex items-center gap-2 text-xs text-gray-500 hover:text-[#CCA761] transition-colors border border-gray-200 dark:border-white/10 hover:border-[#CCA761]/30 rounded-xl px-3 py-2"
+          className="flex items-center gap-2 text-xs text-gray-500 hover:text-[#CCA761] transition-colors border border-white/10 hover:border-[#CCA761]/30 rounded-xl px-3 py-2"
         >
           <RefreshCw size={13} className={loading ? "animate-spin" : ""} />
           Atualizar
@@ -286,10 +286,10 @@ export default function AgentSkillRegistryPage() {
           { label: "Ativas",          value: activeCount,                 icon: <ShieldCheck size={16} className="text-emerald-400" /> },
           { label: "Inativas",        value: skills.length - activeCount, icon: <ShieldOff size={16} className="text-gray-600" /> },
         ].map(stat => (
-          <div key={stat.label} className="bg-white dark:bg-[#0d0d0d] border border-gray-200 dark:border-white/5 rounded-xl p-4 flex items-center gap-3">
+          <div key={stat.label} className="bg-white dark:bg-[#0d0d0d] border border-white/5 rounded-xl p-4 flex items-center gap-3">
             {stat.icon}
             <div>
-              <p className="text-gray-900 dark:text-white font-bold text-xl leading-none">{stat.value}</p>
+              <p className="text-white font-bold text-xl leading-none">{stat.value}</p>
               <p className="text-gray-600 text-[10px] uppercase tracking-widest mt-1">{stat.label}</p>
             </div>
           </div>
@@ -308,7 +308,7 @@ export default function AgentSkillRegistryPage() {
       {!loading && skills.length === 0 && !error && (
         <div className="text-center py-20 opacity-50">
           <Bot size={48} className="text-[#CCA761] mx-auto mb-4" />
-          <p className={`text-2xl text-gray-900 dark:text-white mb-2 ${cormorant.className}`}>Nenhuma skill configurada</p>
+          <p className={`text-2xl text-white mb-2 ${cormorant.className}`}>Nenhuma skill configurada</p>
           <p className="text-gray-500 text-sm max-w-sm mx-auto">
             Skills são registradas via migration ou pela equipe de desenvolvimento.
           </p>

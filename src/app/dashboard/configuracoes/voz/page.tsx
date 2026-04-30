@@ -109,7 +109,7 @@ export default function VozConfiguracoesPage() {
     <div className={`p-6 max-w-4xl mx-auto space-y-8 animate-in fade-in py-10 ${montserrat.className}`}>
       {/* HEADER */}
       <div>
-        <h1 className={`text-4xl font-black text-gray-900 dark:text-white italic tracking-wide ${cormorant.className}`}>
+        <h1 className={`text-4xl font-black text-white italic tracking-wide ${cormorant.className}`}>
           Voz do <span className="text-[#CCA761]">MAYUS</span>
         </h1>
         <p className="text-gray-400 mt-2 text-sm leading-relaxed max-w-2xl">
@@ -119,19 +119,19 @@ export default function VozConfiguracoesPage() {
 
       <div className="grid gap-6">
         {/* SELETOR DE PROVIDER */}
-        <div className="bg-[#0f0f0f] border border-gray-200 dark:border-white/10 rounded-2xl p-6">
-          <h2 className="text-lg font-bold text-gray-900 dark:text-white mb-4 flex items-center gap-2">
+        <div className="bg-[#0f0f0f] border border-white/10 rounded-2xl p-6">
+          <h2 className="text-lg font-bold text-white mb-4 flex items-center gap-2">
             <Volume2 className="text-[#CCA761]" size={20} /> Provedor de Síntese Vocal (TTS)
           </h2>
           
           <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
             <div 
               onClick={() => setProvider("openai")}
-              className={`cursor-pointer p-5 rounded-xl border transition-all duration-300 ${provider === "openai" ? "bg-[#10a37f]/10 border-[#10a37f] shadow-[0_0_20px_rgba(16,163,127,0.1)]" : "bg-gray-50 dark:bg-[#141414] border-gray-200 dark:border-white/5 hover:border-gray-200 dark:border-white/10"}`}
+              className={`cursor-pointer p-5 rounded-xl border transition-all duration-300 ${provider === "openai" ? "bg-[#10a37f]/10 border-[#10a37f] shadow-[0_0_20px_rgba(16,163,127,0.1)]" : "bg-gray-50 dark:bg-[#141414] border-white/5 hover:border-white/10"}`}
             >
               <div className="flex items-center gap-3 mb-2">
                 <Bot size={24} className={provider === "openai" ? "text-[#10a37f]" : "text-gray-500"} />
-                <h3 className={`font-bold ${provider === "openai" ? "text-gray-900 dark:text-white" : "text-gray-400"}`}>OpenAI TTS-1</h3>
+                <h3 className={`font-bold ${provider === "openai" ? "text-white" : "text-gray-400"}`}>OpenAI TTS-1</h3>
               </div>
               <p className="text-xs text-gray-500 leading-relaxed">
                 Recomendado. Rápido, natural e já integrado com a chave principal. Usa o modelo tts-1 oficial para baixa latência.
@@ -140,11 +140,11 @@ export default function VozConfiguracoesPage() {
 
             <div 
               onClick={() => setProvider("elevenlabs")}
-              className={`cursor-pointer p-5 rounded-xl border transition-all duration-300 ${provider === "elevenlabs" ? "bg-gray-100 dark:bg-white/10 border-white shadow-[0_0_20px_rgba(255,255,255,0.05)]" : "bg-gray-50 dark:bg-[#141414] border-gray-200 dark:border-white/5 hover:border-gray-200 dark:border-white/10"}`}
+              className={`cursor-pointer p-5 rounded-xl border transition-all duration-300 ${provider === "elevenlabs" ? "bg-white/10 border-white shadow-[0_0_20px_rgba(255,255,255,0.05)]" : "bg-gray-50 dark:bg-[#141414] border-white/5 hover:border-white/10"}`}
             >
               <div className="flex items-center gap-3 mb-2">
-                <Zap size={24} className={provider === "elevenlabs" ? "text-gray-900 dark:text-white" : "text-gray-500"} />
-                <h3 className={`font-bold ${provider === "elevenlabs" ? "text-gray-900 dark:text-white" : "text-gray-400"}`}>ElevenLabs (Premium)</h3>
+                <Zap size={24} className={provider === "elevenlabs" ? "text-white" : "text-gray-500"} />
+                <h3 className={`font-bold ${provider === "elevenlabs" ? "text-white" : "text-gray-400"}`}>ElevenLabs (Premium)</h3>
               </div>
               <p className="text-xs text-gray-500 leading-relaxed">
                 Opção de altíssima fidelidade. Exige chave de API separada e Voice ID específico configurado na plataforma.
@@ -162,7 +162,7 @@ export default function VozConfiguracoesPage() {
                <select 
                   value={openAiVoice} 
                   onChange={e => setOpenAiVoice(e.target.value)}
-                  className="w-full bg-gray-100 dark:bg-[#111] border border-gray-200 dark:border-white/10 rounded-lg px-4 py-3 text-sm text-gray-900 dark:text-white focus:outline-none focus:border-[#10a37f]"
+                  className="w-full bg-[#111] border border-white/10 rounded-lg px-4 py-3 text-sm text-white focus:outline-none focus:border-[#10a37f]"
                >
                  {OPENAI_VOICES.map(v => (
                    <option key={v} value={v}>{v.charAt(0).toUpperCase() + v.slice(1)}</option>
@@ -177,7 +177,7 @@ export default function VozConfiguracoesPage() {
         {provider === "elevenlabs" && (
           <div className="bg-gray-50 dark:bg-[#141414] border border-white/30 rounded-2xl p-6 animate-in slide-in-from-top-2 space-y-4">
             <div className="flex items-center justify-between">
-              <h3 className="text-sm font-black uppercase tracking-widest text-gray-900 dark:text-white">Ajustes — ElevenLabs</h3>
+              <h3 className="text-sm font-black uppercase tracking-widest text-white">Ajustes — ElevenLabs</h3>
               {isElevenConfigured && (
                  <span className="flex items-center gap-1.5 text-[10px] font-bold uppercase tracking-widest text-[#CCA761] bg-[#CCA761]/10 px-2.5 py-1 rounded-lg border border-[#CCA761]/30">
                    <CheckCircle2 size={12} /> API Configurada
@@ -192,7 +192,7 @@ export default function VozConfiguracoesPage() {
                  value={elevenApi} 
                  onChange={e => setElevenApi(e.target.value)}
                  placeholder={isElevenConfigured ? "Deixe em branco para manter a atual..." : "sk_..."}
-                 className="w-full bg-gray-100 dark:bg-[#111] border border-gray-200 dark:border-white/10 rounded-lg px-4 py-2.5 text-sm text-gray-900 dark:text-white focus:outline-none focus:border-[#CCA761] font-mono"
+                 className="w-full bg-[#111] border border-white/10 rounded-lg px-4 py-2.5 text-sm text-white focus:outline-none focus:border-[#CCA761] font-mono"
                />
             </div>
             
@@ -203,7 +203,7 @@ export default function VozConfiguracoesPage() {
                   value={elevenVoiceId} 
                   onChange={e => setElevenVoiceId(e.target.value)}
                   placeholder="EX: 21m00Tcm4llvDq8ikGAP..."
-                  className="w-full bg-gray-100 dark:bg-[#111] border border-gray-200 dark:border-white/10 rounded-lg px-4 py-2.5 text-sm text-gray-900 dark:text-white focus:outline-none focus:border-[#CCA761] font-mono"
+                  className="w-full bg-[#111] border border-white/10 rounded-lg px-4 py-2.5 text-sm text-white focus:outline-none focus:border-[#CCA761] font-mono"
                 />
                 <p className="text-[10px] text-gray-500 mt-2">Dica: Este é o ID alfanumérico da voz no ElevenLabs.</p>
              </div>

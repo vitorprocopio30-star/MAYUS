@@ -248,12 +248,12 @@ export default function ConfigFunilPage() {
   return (
     <div className="flex-1 w-full flex flex-col min-h-screen bg-white dark:bg-[#050505]">
       {/* HEADER */}
-      <header className="flex-none bg-white dark:bg-[#0a0a0a]/80 backdrop-blur-xl border-b border-gray-200 dark:border-white/5 sticky top-0 z-30">
+      <header className="flex-none bg-[#0a0a0a]/80 backdrop-blur-xl border-b border-white/5 sticky top-0 z-30">
         <div className="px-6 py-4 flex items-center justify-between">
           <div className="flex items-center gap-4">
             <Link 
               href={`/dashboard/crm/${pipelineId}`}
-              className="p-2 -ml-2 rounded-lg text-gray-400 hover:text-gray-900 dark:text-white hover:bg-gray-100 dark:bg-white/5 transition-colors"
+              className="p-2 -ml-2 rounded-lg text-gray-400 hover:text-white hover:bg-white/5 transition-colors"
             >
               <ArrowLeft size={20} />
             </Link>
@@ -286,43 +286,43 @@ export default function ConfigFunilPage() {
           
           {/* SEC 1: Informações Básicas */}
           <section className="space-y-4">
-            <h2 className="text-lg font-bold text-gray-900 dark:text-white mb-6">Informações básicas</h2>
+            <h2 className="text-lg font-bold text-white mb-6">Informações básicas</h2>
             
             <div className="space-y-1.5">
-              <label className="text-sm font-medium text-gray-700 dark:text-gray-300">Nome do funil</label>
+              <label className="text-sm font-medium text-gray-300">Nome do funil</label>
               <input 
                 type="text" 
                 value={name}
                 onChange={e => setName(e.target.value)}
-                className="w-full bg-gray-100 dark:bg-[#111] border border-gray-200 dark:border-white/10 text-gray-900 dark:text-white rounded-lg px-4 py-3 text-sm focus:outline-none focus:border-[#CCA761]/50 transition-colors"
+                className="w-full bg-[#111] border border-white/10 text-white rounded-lg px-4 py-3 text-sm focus:outline-none focus:border-[#CCA761]/50 transition-colors"
                 placeholder="Ex: Comercial, Integração, etc."
               />
             </div>
 
             <div className="space-y-1.5">
-              <label className="text-sm font-medium text-gray-700 dark:text-gray-300">Descrição</label>
+              <label className="text-sm font-medium text-gray-300">Descrição</label>
               <textarea 
                 value={description}
                 onChange={e => setDescription(e.target.value)}
                 rows={4}
-                className="w-full bg-gray-100 dark:bg-[#111] border border-gray-200 dark:border-white/10 text-gray-900 dark:text-white rounded-lg px-4 py-3 text-sm focus:outline-none focus:border-[#CCA761]/50 transition-colors resize-none"
+                className="w-full bg-[#111] border border-white/10 text-white rounded-lg px-4 py-3 text-sm focus:outline-none focus:border-[#CCA761]/50 transition-colors resize-none"
                 placeholder="Descreva o propósito deste funil..."
               />
             </div>
           </section>
 
           {/* SEC 2: Etapas / Passos */}
-          <section className="space-y-4 pt-6 mt-6 border-t border-gray-200 dark:border-white/5">
+          <section className="space-y-4 pt-6 mt-6 border-t border-white/5">
             <div className="flex items-center justify-between mb-6">
               <div className="flex items-center gap-3">
-                <h2 className="text-lg font-bold text-gray-900 dark:text-white">Passos</h2>
-                <div className="bg-gray-100 dark:bg-white/10 text-gray-900 dark:text-white text-xs font-bold px-2 py-0.5 rounded-full">
+                <h2 className="text-lg font-bold text-white">Passos</h2>
+                <div className="bg-white/10 text-white text-xs font-bold px-2 py-0.5 rounded-full">
                   {stages.length}
                 </div>
               </div>
               <button 
                 onClick={handleAddStage}
-                className="flex items-center gap-2 text-sm text-gray-400 hover:text-gray-900 dark:text-white transition-colors bg-gray-100 dark:bg-white/5 hover:bg-gray-100 dark:bg-white/10 px-3 py-1.5 rounded-md"
+                className="flex items-center gap-2 text-sm text-gray-400 hover:text-white transition-colors bg-white/5 hover:bg-white/10 px-3 py-1.5 rounded-md"
               >
                 <Plus size={16} /> Adicionar etapa
               </button>
@@ -342,7 +342,7 @@ export default function ConfigFunilPage() {
                               className={`group flex flex-col md:flex-row items-start md:items-center gap-4 p-4 rounded-2xl border transition-all duration-500 relative overflow-hidden shadow-lg ${
                                 snapshot.isDragging 
                                   ? 'border-[#CCA761]/60 bg-gradient-to-r from-[#CCA761]/10 to-[#111] shadow-[0_0_30px_rgba(204,167,97,0.15)] ring-1 ring-[#CCA761]/20 z-50' 
-                                  : 'border-gray-200 dark:border-white/5 bg-gradient-to-r from-[#111] to-[#0a0a0a] hover:border-gray-300 dark:border-white/20 hover:bg-[#151515]'
+                                  : 'border-white/5 bg-gradient-to-r from-[#111] to-[#0a0a0a] hover:border-white/20 hover:bg-[#151515]'
                               }`}
                             >
                               {/* Background Gradient Suave */}
@@ -351,7 +351,7 @@ export default function ConfigFunilPage() {
                               {/* Linha Mágica da Etapa */}
                               <div className="absolute top-3 bottom-3 left-0 w-1.5 rounded-r-full shadow-[0_0_10px_currentColor]" style={{ backgroundColor: stage.color, color: stage.color }} />
 
-                              <div {...provided.dragHandleProps} className="hidden md:flex text-gray-600 cursor-grab active:cursor-grabbing hover:text-gray-900 dark:text-white transition-colors p-1 z-10 ml-2">
+                              <div {...provided.dragHandleProps} className="hidden md:flex text-gray-600 cursor-grab active:cursor-grabbing hover:text-white transition-colors p-1 z-10 ml-2">
                                 <GripVertical size={18} />
                               </div>
 
@@ -372,13 +372,13 @@ export default function ConfigFunilPage() {
                       type="text"
                       value={stage.name}
                       onChange={e => updateStageData(stage.id, { name: e.target.value })}
-                      className="w-full bg-transparent border-b border-transparent hover:border-gray-200 dark:border-white/10 focus:border-[#CCA761]/50 focus:outline-none text-base text-gray-100 group-hover:text-gray-900 dark:text-white font-bold tracking-wide py-1 px-2 transition-colors placeholder:text-gray-600"
+                      className="w-full bg-transparent border-b border-transparent hover:border-white/10 focus:border-[#CCA761]/50 focus:outline-none text-base text-gray-100 group-hover:text-white font-bold tracking-wide py-1 px-2 transition-colors placeholder:text-gray-600"
                       placeholder="Nome da etapa"
                     />
                   </div>
 
                   {/* Ações */}
-                  <div className="flex flex-wrap items-center justify-end gap-3 w-full md:w-auto mt-2 md:mt-0 pt-3 md:pt-0 border-t border-gray-200 dark:border-white/5 md:border-t-0 pl-2 z-10">
+                  <div className="flex flex-wrap items-center justify-end gap-3 w-full md:w-auto mt-2 md:mt-0 pt-3 md:pt-0 border-t border-white/5 md:border-t-0 pl-2 z-10">
 
                     <button 
                       onClick={() => handleRemoveStage(stage.id, stage.is_new)}
@@ -399,16 +399,16 @@ export default function ConfigFunilPage() {
               </DragDropContext>
             </div>
             {stages.length === 0 && (
-              <div className="text-center py-8 bg-gray-100 dark:bg-[#111] rounded-xl border border-dashed border-gray-200 dark:border-white/10 text-gray-500 text-sm">
+              <div className="text-center py-8 bg-[#111] rounded-xl border border-dashed border-white/10 text-gray-500 text-sm">
                 Nenhuma etapa definida. Adicione pelo menos uma etapa.
               </div>
             )}
           </section>
 
           {/* SEC 3: Etiquetas do Funil */}
-          <section className="space-y-4 pt-6 mt-6 border-t border-gray-200 dark:border-white/5">
-            <h2 className="text-lg font-bold text-gray-900 dark:text-white mb-2">Etiquetas</h2>
-            <div className="bg-gray-100 dark:bg-[#111] border border-gray-200 dark:border-white/5 rounded-xl p-4">
+          <section className="space-y-4 pt-6 mt-6 border-t border-white/5">
+            <h2 className="text-lg font-bold text-white mb-2">Etiquetas</h2>
+            <div className="bg-[#111] border border-white/5 rounded-xl p-4">
               <p className="text-sm text-gray-400 mb-4">Crie etiquetas personalizadas que estarão disponíveis para os leads deste funil.</p>
               
               <div className="flex gap-3 mb-6">
@@ -417,14 +417,14 @@ export default function ConfigFunilPage() {
                   value={newTagName}
                   onChange={e => setNewTagName(e.target.value)}
                   placeholder="Nome da etiqueta"
-                  className="flex-1 bg-gray-200 dark:bg-black/20 border border-gray-200 dark:border-white/10 rounded-lg px-3 py-2 text-sm text-gray-900 dark:text-white focus:outline-none focus:border-[#CCA761]/50 transition-colors"
+                  className="flex-1 bg-gray-200 dark:bg-black/20 border border-white/10 rounded-lg px-3 py-2 text-sm text-white focus:outline-none focus:border-[#CCA761]/50 transition-colors"
                   onKeyDown={e => e.key === 'Enter' && handleAddTag()}
                 />
                 <input 
                   type="color" 
                   value={newTagColor}
                   onChange={e => setNewTagColor(e.target.value)}
-                  className="w-10 h-[38px] rounded border border-gray-200 dark:border-white/10 bg-transparent p-0 cursor-pointer"
+                  className="w-10 h-[38px] rounded border border-white/10 bg-transparent p-0 cursor-pointer"
                 />
                 <button 
                   onClick={handleAddTag}
@@ -455,9 +455,9 @@ export default function ConfigFunilPage() {
           </section>
 
           {/* SEC 3.5: Setores do Funil */}
-          <section className="space-y-4 pt-6 mt-6 border-t border-gray-200 dark:border-white/5">
-            <h2 className="text-lg font-bold text-gray-900 dark:text-white mb-2">Setores (Transferência)</h2>
-            <div className="bg-gray-100 dark:bg-[#111] border border-gray-200 dark:border-white/5 rounded-xl p-4">
+          <section className="space-y-4 pt-6 mt-6 border-t border-white/5">
+            <h2 className="text-lg font-bold text-white mb-2">Setores (Transferência)</h2>
+            <div className="bg-[#111] border border-white/5 rounded-xl p-4">
               <p className="text-sm text-gray-400 mb-4">Cadastre os setores para os quais você deseja atribuir/transferir as oportunidades dentro deste funil.</p>
               
               <div className="flex gap-3 mb-6">
@@ -466,18 +466,18 @@ export default function ConfigFunilPage() {
                   value={newSectorName}
                   onChange={e => setNewSectorName(e.target.value)}
                   placeholder="Nome do Setor (ex: Vendas, Envio)"
-                  className="flex-1 bg-gray-200 dark:bg-black/20 border border-gray-200 dark:border-white/10 rounded-lg px-3 py-2 text-sm text-gray-900 dark:text-white focus:outline-none focus:border-blue-500/50 transition-colors"
+                  className="flex-1 bg-gray-200 dark:bg-black/20 border border-white/10 rounded-lg px-3 py-2 text-sm text-white focus:outline-none focus:border-blue-500/50 transition-colors"
                   onKeyDown={e => e.key === 'Enter' && handleAddSector()}
                 />
                 <input 
                   type="color" 
                   value={newSectorColor}
                   onChange={e => setNewSectorColor(e.target.value)}
-                  className="w-10 h-[38px] rounded border border-gray-200 dark:border-white/10 bg-transparent p-0 cursor-pointer"
+                  className="w-10 h-[38px] rounded border border-white/10 bg-transparent p-0 cursor-pointer"
                 />
                 <button 
                   onClick={handleAddSector}
-                  className="bg-blue-500/10 text-blue-400 hover:bg-blue-500 hover:text-gray-900 dark:text-white px-4 py-2 rounded-lg text-sm font-bold transition-colors"
+                  className="bg-blue-500/10 text-blue-400 hover:bg-blue-500 hover:text-white px-4 py-2 rounded-lg text-sm font-bold transition-colors"
                 >
                   Cadastrar Setor
                 </button>
@@ -505,17 +505,17 @@ export default function ConfigFunilPage() {
           </section>
 
           {/* SEC 4: Caixas de entrada */}
-          {false && <section className="space-y-4 pt-8 mt-8 border-t border-gray-200 dark:border-white/5 relative">
+          {false && <section className="space-y-4 pt-8 mt-8 border-t border-white/5 relative">
             <div className="absolute top-0 right-0 w-64 h-64 bg-[#CCA761] opacity-[0.03] blur-[100px] pointer-events-none" />
             
             <div className="flex items-center gap-3 mb-2">
               <div className="p-2 bg-[#CCA761]/10 rounded-lg text-[#CCA761] border border-[#CCA761]/20">
                 <MessageCircle size={20} />
               </div>
-              <h2 className="text-xl font-bold text-gray-900 dark:text-white tracking-wide">Caixas de Entrada (Integração)</h2>
+              <h2 className="text-xl font-bold text-white tracking-wide">Caixas de Entrada (Integração)</h2>
             </div>
             
-            <div className="bg-gradient-to-br from-[#111] to-[#0a0a0a] border border-gray-200 dark:border-white/5 rounded-2xl p-6 shadow-[0_8px_30px_rgba(0,0,0,0.5)] relative overflow-hidden group">
+            <div className="bg-gradient-to-br from-[#111] to-[#0a0a0a] border border-white/5 rounded-2xl p-6 shadow-[0_8px_30px_rgba(0,0,0,0.5)] relative overflow-hidden group">
               <div className="absolute top-0 left-0 w-full h-[1px] bg-gradient-to-r from-transparent via-gray-300 dark:via-white/10 to-transparent opacity-0 group-hover:opacity-100 transition-opacity duration-700" />
               
               <p className="text-sm text-gray-400 mb-6 leading-relaxed">
@@ -528,12 +528,12 @@ export default function ConfigFunilPage() {
                   value={newInboxName}
                   onChange={e => setNewInboxName(e.target.value)}
                   placeholder="Nome do Canal (ex: WhatsApp Atendimento)"
-                  className="flex-1 bg-gray-200 dark:bg-black/40 border border-[#2a2a2a] rounded-xl px-4 py-3 text-sm text-gray-900 dark:text-white focus:outline-none focus:border-[#CCA761]/50 focus:ring-1 focus:ring-[#CCA761]/30 transition-all placeholder:text-gray-600"
+                  className="flex-1 bg-gray-200 dark:bg-black/40 border border-[#2a2a2a] rounded-xl px-4 py-3 text-sm text-white focus:outline-none focus:border-[#CCA761]/50 focus:ring-1 focus:ring-[#CCA761]/30 transition-all placeholder:text-gray-600"
                   onKeyDown={e => e.key === 'Enter' && handleAddInbox()}
                 />
                 <button 
                   onClick={handleAddInbox}
-                  className="bg-gradient-to-r from-[#1a1a1a] to-[#222] border border-gray-200 dark:border-white/5 hover:border-[#CCA761]/30 hover:bg-[#CCA761]/10 text-[#CCA761] px-6 py-3 rounded-xl text-sm font-bold transition-all shadow-md shadow-black/50"
+                  className="bg-gradient-to-r from-[#1a1a1a] to-[#222] border border-white/5 hover:border-[#CCA761]/30 hover:bg-[#CCA761]/10 text-[#CCA761] px-6 py-3 rounded-xl text-sm font-bold transition-all shadow-md shadow-black/50"
                 >
                   Conectar 
                 </button>
@@ -541,7 +541,7 @@ export default function ConfigFunilPage() {
 
               <div className="flex flex-wrap gap-3">
                 {pipelineInboxes.map(inbox => (
-                  <div key={inbox} className="inline-flex items-center gap-3 bg-gradient-to-r from-[#222] to-[#1a1a1a] text-gray-800 dark:text-gray-200 text-xs font-bold px-4 py-2 rounded-xl border border-gray-200 dark:border-white/10 shadow-lg group/item transition-all hover:bg-gray-100 dark:bg-white/5">
+                  <div key={inbox} className="inline-flex items-center gap-3 bg-gradient-to-r from-[#222] to-[#1a1a1a] text-gray-200 text-xs font-bold px-4 py-2 rounded-xl border border-white/10 shadow-lg group/item transition-all hover:bg-white/5">
                     <span className="flex items-center gap-2">
                        <span className="relative flex h-2 w-2">
                          <span className="animate-ping absolute inline-flex h-full w-full rounded-full bg-green-400 opacity-75"></span>
@@ -569,11 +569,11 @@ export default function ConfigFunilPage() {
           </section>}
 
           {/* SEC 5: Automação */}
-          {false && <section className="space-y-6 pt-8 mt-8 border-t border-gray-200 dark:border-white/5">
+          {false && <section className="space-y-6 pt-8 mt-8 border-t border-white/5">
             <div>
-              <h2 className="text-xl font-bold text-gray-900 dark:text-white tracking-wide">Automações do Funil</h2>
+              <h2 className="text-xl font-bold text-white tracking-wide">Automações do Funil</h2>
               <p className="text-sm text-gray-400 mt-1.5 leading-relaxed">
-                Deixe o sitema trabalhar por você. <span className="text-[#CCA761] hover:text-gray-900 dark:text-white font-semibold cursor-pointer transition-colors border-b border-[#CCA761]/30 hover:border-white">Criar Regras Personalizadas Avançadas...</span>
+                Deixe o sitema trabalhar por você. <span className="text-[#CCA761] hover:text-white font-semibold cursor-pointer transition-colors border-b border-[#CCA761]/30 hover:border-white">Criar Regras Personalizadas Avançadas...</span>
               </p>
             </div>
             
@@ -585,7 +585,7 @@ export default function ConfigFunilPage() {
                 { title: "Encerramento Definitivo", desc: "Avançar o card para concluído/perdido quando chat for arquivado.", field: "auto_resolve" },
                 { title: "Win Automático de Atendimento", desc: "Transformar card do lead em Ganho/Fechado se conversa concluir bem.", field: "auto_win" },
               ].map((auto, idx) => (
-                <div key={idx} className="flex gap-4 items-start bg-gray-100 dark:bg-[#111] hover:bg-[#151515] border border-gray-200 dark:border-white/5 hover:border-[#CCA761]/20 p-5 rounded-2xl transition-all shadow-md group relative overflow-hidden">
+                <div key={idx} className="flex gap-4 items-start bg-[#111] hover:bg-[#151515] border border-white/5 hover:border-[#CCA761]/20 p-5 rounded-2xl transition-all shadow-md group relative overflow-hidden">
                   <div className="absolute top-0 right-0 w-32 h-32 bg-[#CCA761] opacity-0 group-hover:opacity-[0.03] blur-[30px] transition-opacity" />
                   
                   <div className="relative inline-flex items-center mt-0.5 cursor-pointer z-10 flex-shrink-0">
@@ -595,10 +595,10 @@ export default function ConfigFunilPage() {
                       onChange={e => setAutomations({ ...automations, [auto.field]: e.target.checked })}
                       className="sr-only peer" 
                     />
-                    <div className="w-11 h-6 bg-gray-200 dark:bg-black/50 border border-gray-200 dark:border-white/10 peer-focus:outline-none rounded-full peer peer-checked:after:translate-x-full peer-checked:after:border-white after:content-[''] after:absolute after:top-[2px] after:left-[2px] after:bg-gray-400 peer-checked:after:bg-white after:rounded-full after:h-5 after:w-5 after:transition-all peer-checked:bg-gradient-to-r peer-checked:from-[#CCA761] peer-checked:to-[#e3c27e] peer-checked:border-transparent cursor-pointer shadow-inner"></div>
+                    <div className="w-11 h-6 bg-gray-200 dark:bg-black/50 border border-white/10 peer-focus:outline-none rounded-full peer peer-checked:after:translate-x-full peer-checked:after:border-white after:content-[''] after:absolute after:top-[2px] after:left-[2px] after:bg-gray-400 peer-checked:after:bg-white after:rounded-full after:h-5 after:w-5 after:transition-all peer-checked:bg-gradient-to-r peer-checked:from-[#CCA761] peer-checked:to-[#e3c27e] peer-checked:border-transparent cursor-pointer shadow-inner"></div>
                   </div>
                   <div className="z-10">
-                    <h4 className="text-sm font-extrabold text-gray-800 dark:text-gray-200 group-hover:text-[#CCA761] transition-colors">{auto.title}</h4>
+                    <h4 className="text-sm font-extrabold text-gray-200 group-hover:text-[#CCA761] transition-colors">{auto.title}</h4>
                     <p className="text-xs text-gray-500 mt-1.5 leading-relaxed pr-2">{auto.desc}</p>
                   </div>
                 </div>
@@ -607,7 +607,7 @@ export default function ConfigFunilPage() {
           </section>}
 
           {/* SEC 5: Excluir funil */}
-          <section className="space-y-4 pt-8 mt-6 border-t border-gray-200 dark:border-white/5">
+          <section className="space-y-4 pt-8 mt-6 border-t border-white/5">
             <div>
               <h2 className="text-lg font-bold text-red-400 mb-1">Excluir funil</h2>
               <p className="text-sm text-gray-500">Depois de excluir um funil, não há como voltar atrás. Todas as tarefas e etapas serão excluídas permanentemente.</p>

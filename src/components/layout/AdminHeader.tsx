@@ -1,4 +1,4 @@
-﻿"use client";
+"use client";
 
 import Image from "next/image";
 import { Bell, Search, User, LogOut, Settings, ShieldAlert } from "lucide-react";
@@ -55,7 +55,7 @@ export function AdminHeader() {
       const data = await response.json().catch(() => ({}));
 
       if (!response.ok) {
-        throw new Error(data?.error || "Erro ao carregar approvals do cerebro.");
+        throw new Error(data?.error || "Erro ao carregar approvals do cérebro.");
       }
 
       const inbox = data as BrainInboxResponse;
@@ -66,7 +66,7 @@ export function AdminHeader() {
     }
   }, [isExecutive]);
 
-  // Carrega nome do escritÃ³rio: primeiro do cache localStorage, depois confirma com o DB
+  // Carrega nome do escritório: primeiro do cache localStorage, depois confirma com o DB
   useEffect(() => {
     if (typeof window !== "undefined") {
       const g = localStorage.getItem("MTO_COMMERCIAL_GENERAL");
@@ -106,7 +106,7 @@ export function AdminHeader() {
   useEffect(() => {
     if (!profile?.tenant_id) return;
 
-    // Busca inicial de histÃ³rico
+    // Busca inicial de histórico
     async function fetchNotifications() {
       const { data } = await supabase
         .from('notifications')
@@ -163,34 +163,34 @@ export function AdminHeader() {
   };
 
   // Nome e iniciais do avatar
-  const displayName = profile?.full_name || "UsuÃ¡rio";
+  const displayName = profile?.full_name || "Usuário";
   const initials = displayName
     .split(" ")
     .map((n: string) => n[0])
     .join("")
     .slice(0, 2)
     .toUpperCase();
-  const displayRole = roleLabels[role || ""] || role || "â€”";
+  const displayRole = roleLabels[role || ""] || role || "—";
 
   return (
-    <header className={`h-20 border-b border-border bg-card/80 backdrop-blur-md sticky top-0 z-30 px-6 flex items-center justify-between ${montserrat.className}`}>
+    <header className={`h-20 border-b border-white/5 bg-[#050505]/60 backdrop-blur-xl sticky top-0 z-30 px-6 flex items-center justify-between ${montserrat.className}`}>
 
       {/* Office + Search */}
       <div className="hidden md:flex items-center gap-4 flex-1">
-        <div className="px-4 py-2 border border-gray-200 dark:border-white/5 bg-gray-100 dark:bg-[#111111]/50 rounded-xl shadow-inner flex items-center gap-3 shrink-0">
+        <div className="px-4 py-2 border border-[#CCA761]/20 bg-[#0a0a0a]/80 rounded-xl shadow-[inset_0_0_10px_rgba(204,167,97,0.05)] flex items-center gap-3 shrink-0">
           <div className="w-6 h-6 rounded-full bg-gradient-to-tr from-[#CCA761] to-[#e4ce99] flex items-center justify-center text-black font-black text-xs shadow-[0_0_10px_rgba(204,167,97,0.4)]">
-            {(globalName || "EscritÃ³rio").charAt(0).toUpperCase()}
+            {(globalName || "Escritório").charAt(0).toUpperCase()}
           </div>
           <span className="text-[#CCA761] font-bold tracking-[0.15em] text-sm uppercase">
-            {globalName || "EscritÃ³rio"}
+            {globalName || "Escritório"}
           </span>
         </div>
-        <div className="flex items-center gap-3 bg-gray-100 dark:bg-[#111111] px-4 py-2.5 rounded-xl border border-transparent dark:border-[#222] focus-within:border-[#CCA761] transition-colors w-full max-w-xl">
+        <div className="flex items-center gap-3 bg-[#0a0a0a] px-4 py-2.5 rounded-xl border border-white/5 focus-within:border-[#CCA761]/50 transition-colors w-full max-w-xl">
           <Search size={18} className="text-gray-400" />
           <input
             type="text"
             placeholder="Buscar clientes, contratos ou processos..."
-            className="bg-transparent border-none outline-none text-sm w-full text-gray-800 dark:text-gray-200 placeholder:text-gray-500"
+            className="bg-transparent border-none outline-none text-sm w-full text-white placeholder:text-white/30"
           />
         </div>
       </div>
@@ -209,10 +209,10 @@ export function AdminHeader() {
                   void loadBrainInbox();
                 }
               }}
-              className="relative p-2 rounded-full hover:bg-secondary transition-colors"
-              title="Approvals do cÃ©rebro"
+              className="relative p-2 rounded-full hover:bg-white/5 transition-colors"
+              title="Approvals do cérebro"
             >
-              <ShieldAlert size={20} className="text-foreground/70" />
+              <ShieldAlert size={20} className="text-white/70" />
               {brainPendingCount > 0 && (
                 <span className="absolute top-1 right-1 min-w-[16px] h-4 px-1 bg-[#CCA761] rounded-full border-2 border-white dark:border-[#0C0C0C] text-[8px] flex items-center justify-center text-black font-bold animate-pulse">
                   {brainPendingCount > 9 ? "9+" : brainPendingCount}
@@ -221,10 +221,10 @@ export function AdminHeader() {
             </button>
 
             {brainInboxOpen && (
-              <div className="absolute right-0 mt-3 w-80 md:w-96 bg-card rounded-xl shadow-xl border border-border overflow-hidden flex flex-col z-50 animate-fade-in-up" style={{ animationDuration: '0.15s' }}>
-                <div className="p-4 border-b border-border flex items-center justify-between bg-secondary">
-                  <h3 className="font-bold text-sm text-gray-900 dark:text-white flex items-center gap-2">
-                    Approvals do CÃ©rebro
+              <div className="absolute right-0 mt-3 w-80 md:w-96 bg-[#0a0a0a] rounded-xl shadow-[0_0_30px_rgba(204,167,97,0.05)] border border-white/10 overflow-hidden flex flex-col z-50 animate-fade-in-up" style={{ animationDuration: '0.15s' }}>
+                <div className="p-4 border-b border-white/5 flex items-center justify-between bg-[#111]">
+                  <h3 className="font-bold text-sm text-white flex items-center gap-2">
+                    Approvals do Cérebro
                     {brainPendingCount > 0 && <span className="bg-[#CCA761] text-black px-2 py-0.5 rounded-full text-xs">{brainPendingCount}</span>}
                   </h3>
                   <Link
@@ -236,24 +236,24 @@ export function AdminHeader() {
                   </Link>
                 </div>
 
-                <div className="overflow-y-auto flex-1 p-2 space-y-1 bg-white dark:bg-[#0f0f0f] min-h-[100px] max-h-[320px]">
+                <div className="overflow-y-auto flex-1 p-2 space-y-1 bg-[#050505] min-h-[100px] max-h-[320px]">
                   {brainPendingApprovals.length === 0 ? (
-                    <div className="text-center py-8 text-gray-500 text-sm">Nenhuma aprovaÃ§Ã£o pendente no cÃ©rebro.</div>
+                    <div className="text-center py-8 text-gray-500 text-sm">Nenhuma aprovação pendente no cérebro.</div>
                   ) : (
                     brainPendingApprovals.map((approval) => (
                       <Link
                         key={approval.id}
                         href="/dashboard/aprovacoes"
                         onClick={() => setBrainInboxOpen(false)}
-                        className="block rounded-lg border border-gray-200 dark:border-white/5 bg-gray-100 dark:bg-white/5 p-3 hover:bg-white/[0.08] transition-colors"
+                        className="block rounded-lg border border-white/5 bg-[#0a0a0a] p-3 hover:bg-white/5 hover:border-[#CCA761]/30 transition-colors"
                       >
                         <div className="flex items-start justify-between gap-3">
                           <div className="min-w-0">
-                            <p className="text-sm font-semibold text-gray-900 dark:text-white truncate">
-                              {approval.awaiting_payload?.skillName || approval.step?.title || approval.task?.title || "AÃ§Ã£o do cÃ©rebro"}
+                            <p className="text-sm font-semibold text-white truncate">
+                              {approval.awaiting_payload?.skillName || approval.step?.title || approval.task?.title || "Ação do cérebro"}
                             </p>
                             <p className="text-xs text-gray-500 mt-1 truncate">
-                              {approval.task?.module || "core"} Â· {approval.task?.status?.replaceAll("_", " ") || "pendente"}
+                              {approval.task?.module || "core"} · {approval.task?.status?.replaceAll("_", " ") || "pendente"}
                             </p>
                           </div>
                           <span className="text-[10px] uppercase tracking-widest text-[#CCA761] shrink-0">
@@ -273,9 +273,9 @@ export function AdminHeader() {
         <div className="relative">
           <button
             onClick={() => { setNotifOpen(!notifOpen); setProfileOpen(false); setBrainInboxOpen(false); }}
-            className="relative p-2 rounded-full hover:bg-secondary transition-colors"
+            className="relative p-2 rounded-full hover:bg-white/5 transition-colors"
           >
-            <Bell size={20} className="text-foreground/70" />
+            <Bell size={20} className="text-white/70" />
             {unreadCount > 0 && (
               <span className="absolute top-1 right-1 w-4 h-4 bg-red-500 rounded-full border-2 border-white dark:border-[#0C0C0C] text-[8px] flex items-center justify-center text-gray-900 dark:text-white font-bold animate-pulse">
                 {unreadCount > 9 ? '9+' : unreadCount}
@@ -285,24 +285,24 @@ export function AdminHeader() {
 
           {/* Modal Dropdown Notifications */}
           {notifOpen && (
-            <div className="absolute right-0 mt-3 w-80 max-h-96 md:w-96 bg-card rounded-xl shadow-xl border border-border overflow-hidden flex flex-col z-50 animate-fade-in-up" style={{ animationDuration: '0.15s' }}>
-              <div className="p-4 border-b border-border flex items-center justify-between bg-secondary">
-                <h3 className="font-bold text-sm text-gray-900 dark:text-white flex items-center gap-2">
-                  NotificaÃ§Ãµes do Sistema {unreadCount > 0 && <span className="bg-[#CCA761] text-black px-2 py-0.5 rounded-full text-xs">{unreadCount}</span>}
+            <div className="absolute right-0 mt-3 w-80 max-h-96 md:w-96 bg-[#0a0a0a] rounded-xl shadow-[0_0_30px_rgba(0,0,0,0.5)] border border-white/10 overflow-hidden flex flex-col z-50 animate-fade-in-up" style={{ animationDuration: '0.15s' }}>
+              <div className="p-4 border-b border-white/5 flex items-center justify-between bg-[#111]">
+                <h3 className="font-bold text-sm text-white flex items-center gap-2">
+                  Notificações do Sistema {unreadCount > 0 && <span className="bg-[#CCA761] text-black px-2 py-0.5 rounded-full text-xs">{unreadCount}</span>}
                 </h3>
                 {unreadCount > 0 && (
                   <button onClick={markAllAsRead} className="text-xs text-[#CCA761] hover:underline font-semibold">Marcar lidas</button>
                 )}
               </div>
-              <div className="overflow-y-auto flex-1 p-2 space-y-1 bg-white dark:bg-[#0f0f0f] min-h-[100px] max-h-[300px]">
+              <div className="overflow-y-auto flex-1 p-2 space-y-1 bg-[#050505] min-h-[100px] max-h-[300px]">
                 {notifications.length === 0 ? (
-                  <div className="text-center py-8 text-gray-500 text-sm">Nenhuma aba invisÃ­vel, vocÃª estÃ¡ em dia.</div>
+                  <div className="text-center py-8 text-gray-500 text-sm">Nenhuma aba invisível, você está em dia.</div>
                 ) : (
                   notifications.map(n => (
-                    <div key={n.id} className={`p-3 rounded-lg flex items-start gap-3 transition-colors ${!n.is_read ? 'bg-gray-100 dark:bg-white/5 border border-gray-200 dark:border-white/5' : 'hover:bg-gray-50 dark:bg-white/[0.02]'}`}>
+                    <div key={n.id} className={`p-3 rounded-lg flex items-start gap-3 transition-colors ${!n.is_read ? 'bg-[#0a0a0a] border border-white/10' : 'hover:bg-white/[0.02]'}`}>
                       <div className={`mt-1 w-2 h-2 rounded-full shrink-0 ${n.type === 'success' ? 'bg-green-500' : n.type === 'alert' ? 'bg-red-500' : 'bg-[#CCA761]'}`} />
                       <div className="flex-1 min-w-0">
-                        <p className={`text-sm font-semibold truncate ${!n.is_read ? 'text-gray-900 dark:text-white' : 'text-gray-400'}`}>{n.title}</p>
+                        <p className={`text-sm font-semibold truncate ${!n.is_read ? 'text-white' : 'text-gray-400'}`}>{n.title}</p>
                         <p className="text-xs text-gray-500 mt-1 line-clamp-2">{n.message}</p>
                         {n.link_url && (
                           <Link href={n.link_url} onClick={() => setNotifOpen(false)} className="text-xs text-[#CCA761] hover:underline mt-2 inline-block font-medium">Ver detalhes &rarr;</Link>
@@ -316,7 +316,7 @@ export function AdminHeader() {
           )}
         </div>
 
-        <div className="h-8 w-px bg-gray-200 dark:bg-[#222]" />
+        <div className="h-8 w-px bg-white/10" />
 
         {/* User Profile */}
         <div className="relative">
@@ -332,8 +332,8 @@ export function AdminHeader() {
                 </div>
               ) : (
                 <>
-                  <p className="text-sm font-semibold text-gray-900 dark:text-white">{displayName}</p>
-                  <p className="text-[10px] text-gray-500 uppercase tracking-widest font-bold text-[#CCA761]">{displayRole}</p>
+                  <p className="text-sm font-semibold text-white">{displayName}</p>
+                  <p className="text-[10px] text-white/50 uppercase tracking-widest font-bold text-[#CCA761]">{displayRole}</p>
                 </>
               )}
             </div>
@@ -354,25 +354,25 @@ export function AdminHeader() {
 
           {/* Dropdown Menu */}
           {profileOpen && (
-            <div className="absolute right-0 mt-3 w-52 bg-card rounded-xl shadow-xl border border-border overflow-hidden py-1 z-50 animate-fade-in-up" style={{ animationDuration: '0.15s' }}>
+            <div className="absolute right-0 mt-3 w-52 bg-[#0a0a0a] rounded-xl shadow-[0_0_30px_rgba(0,0,0,0.5)] border border-white/10 overflow-hidden py-1 z-50 animate-fade-in-up" style={{ animationDuration: '0.15s' }}>
               <button
                 onClick={() => { router.push("/dashboard/perfil"); setProfileOpen(false); }}
-                className="w-full text-left px-4 py-3 text-sm text-gray-700 dark:text-gray-300 hover:bg-gray-50 dark:hover:bg-gray-100 dark:bg-[#1a1a1a] flex items-center gap-3 transition-colors"
+                className="w-full text-left px-4 py-3 text-sm text-gray-300 hover:bg-white/5 flex items-center gap-3 transition-colors"
               >
                 <User size={16} />
                 Meu Perfil
               </button>
               <button
                 onClick={() => { router.push("/dashboard/configuracoes"); setProfileOpen(false); }}
-                className="w-full text-left px-4 py-3 text-sm text-gray-700 dark:text-gray-300 hover:bg-gray-50 dark:hover:bg-gray-100 dark:bg-[#1a1a1a] flex items-center gap-3 transition-colors"
+                className="w-full text-left px-4 py-3 text-sm text-gray-300 hover:bg-white/5 flex items-center gap-3 transition-colors"
               >
                 <Settings size={16} />
-                ConfiguraÃ§Ãµes
+                Configurações
               </button>
-              <div className="border-t border-gray-100 dark:border-[#222]" />
+              <div className="border-t border-white/5" />
               <button
                 onClick={handleLogout}
-                className="w-full text-left px-4 py-3 text-sm text-red-600 dark:text-red-400 hover:bg-red-50 dark:hover:bg-red-900/10 flex items-center gap-3 transition-colors font-medium"
+                className="w-full text-left px-4 py-3 text-sm text-red-500 hover:bg-red-500/10 flex items-center gap-3 transition-colors font-medium"
               >
                 <LogOut size={16} />
                 Sair da Plataforma

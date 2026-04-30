@@ -399,8 +399,8 @@ export default function LandingPage() {
           </Reveal>
 
           <Reveal delay={0.15}>
-            <div className="relative aspect-video overflow-hidden rounded-[26px] border border-[#C4A35A]/25 bg-gradient-to-br from-[#0E0C09] to-[#070605] shadow-[0_35px_90px_rgba(0,0,0,0.55)]">
-              <div className="absolute inset-0 bg-[radial-gradient(ellipse_60%_35%_at_50%_50%,rgba(196,163,90,0.12)_0%,transparent_70%)]" />
+            <div className="relative aspect-video overflow-hidden rounded-[26px] border border-[#CCA761]/30 bg-gradient-to-br from-[#0A0A0A] to-[#030303] shadow-[0_40px_100px_rgba(0,0,0,0.7)] backdrop-blur-md">
+              <div className="absolute inset-0 bg-[radial-gradient(ellipse_60%_35%_at_50%_50%,rgba(204,167,97,0.15)_0%,transparent_70%)]" />
               <div className="absolute left-8 top-7 font-mono text-[9px] uppercase tracking-[0.25em] text-[#F5F0E8]/45">Demo · MAYUS OS · escritório real</div>
               <div className="absolute right-8 top-7 font-mono text-[9px] uppercase tracking-[0.25em] text-[#F5F0E8]/45">06:42</div>
               <button
@@ -493,7 +493,7 @@ export default function LandingPage() {
 
           <div className="grid items-stretch gap-5 lg:grid-cols-[1fr_auto_1fr]">
             <Reveal>
-              <article className="agentic-static-card h-full min-h-[360px] rounded-2xl border border-[#C4A35A]/20 bg-[#050505]/86 p-6 shadow-[0_20px_56px_rgba(0,0,0,0.42)] md:min-h-[430px] md:p-7">
+              <article className="agentic-static-card h-full min-h-[360px] rounded-2xl border border-[#CCA761]/25 bg-[#030303]/90 backdrop-blur-xl p-6 shadow-[0_30px_60px_rgba(0,0,0,0.6)] md:min-h-[430px] md:p-7">
                 <p className="font-mono text-[10px] uppercase tracking-[0.28em] text-[#F5F0E8]/55">Modelo reativo</p>
                 <h3 className="font-display mt-3 text-5xl font-semibold md:text-6xl">Agente</h3>
                 <p className="mt-1 text-[#C4A35A]">Responde quando chamado.</p>
@@ -508,7 +508,7 @@ export default function LandingPage() {
               <div className="h-16 w-px bg-gradient-to-t from-transparent to-[#C4A35A]" />
             </div>
             <Reveal delay={0.1}>
-              <article className="agentic-static-card lux-prime-card h-full min-h-[360px] rounded-2xl border border-[#C4A35A]/45 bg-[#050505]/86 p-6 shadow-[0_20px_56px_rgba(0,0,0,0.42)] md:min-h-[430px] md:p-7">
+              <article className="agentic-static-card lux-prime-card h-full min-h-[360px] rounded-2xl border border-[#CCA761]/50 bg-[#030303]/90 backdrop-blur-xl p-6 shadow-[0_30px_60px_rgba(204,167,97,0.15)] md:min-h-[430px] md:p-7">
                 <p className="font-mono text-[10px] uppercase tracking-[0.28em] text-[#E2C97E]">Modelo autônomo</p>
                 <h3 className="font-display mt-3 text-5xl font-semibold text-[#E2C97E] md:text-6xl">Agêntico</h3>
                 <p className="mt-1 text-[#E2C97E]/90">Age sem precisar ser chamado.</p>
@@ -666,7 +666,7 @@ export default function LandingPage() {
           <Stagger className="grid gap-5 md:grid-cols-2 lg:grid-cols-3">
             {modules.map((module) => (
               <StaggerItem key={module.title}>
-                <article className="lux-module-card h-full rounded-2xl border border-[#C4A35A]/20 bg-[#0A0A0A]/80 p-7 transition-all duration-300 hover:-translate-y-1 hover:border-[#C4A35A]/45">
+                <article className="lux-module-card h-full rounded-2xl border border-[#CCA761]/25 bg-[#050505]/85 backdrop-blur-md p-7 transition-all duration-300 hover:-translate-y-1 hover:border-[#CCA761]/50 hover:shadow-[0_10px_30px_rgba(204,167,97,0.1)]">
                   <span className="inline-block rounded-full border border-[#C4A35A]/35 px-3 py-1 font-mono text-[9px] uppercase tracking-[0.2em] text-[#C4A35A]">{module.badge}</span>
                   <p className="mt-5 text-lg font-semibold leading-snug text-[#E2C97E]">{module.result}</p>
                   <h3 className="font-display mt-5 text-4xl font-semibold text-[#F5F0E8]">{module.title}</h3>
@@ -738,7 +738,7 @@ export default function LandingPage() {
           <Stagger className="grid gap-5 lg:grid-cols-3">
             {competitors.map((item) => (
               <StaggerItem key={item.n}>
-                <article className="h-full rounded-2xl border border-[#C4A35A]/20 bg-black/35 p-7">
+                <article className="h-full rounded-2xl border border-[#CCA761]/30 bg-black/50 backdrop-blur-lg p-7 shadow-lg">
                   <div className="flex items-center gap-4">
                     <span className="font-mono text-3xl text-[#C4A35A]/70">{item.n}</span>
                     <h3 className="font-display text-3xl font-semibold">{item.name}</h3>

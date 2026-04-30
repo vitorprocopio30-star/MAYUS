@@ -44,6 +44,11 @@ const config: Config = {
           foreground: "hsl(var(--card-foreground))",
         },
       },
+      fontFamily: {
+        sans: ["var(--font-montserrat)", "var(--font-inter)", "sans-serif"],
+        montserrat: ["var(--font-montserrat)", "sans-serif"],
+        cormorant: ["var(--font-cormorant)", "serif"],
+      },
       borderRadius: {
         lg: "var(--radius)",
         md: "calc(var(--radius) - 2px)",

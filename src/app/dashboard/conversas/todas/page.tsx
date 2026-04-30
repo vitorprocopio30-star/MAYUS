@@ -329,26 +329,26 @@ export default function TodasConversasPage() {
   ];
 
   return (
-    <div className={`h-[calc(100vh-6rem)] w-full flex bg-white dark:bg-[#050505] rounded-tl-3xl border-t border-l border-gray-200 dark:border-white/5 overflow-hidden ${montserrat.className} text-sm`}>
+    <div className={`h-[calc(100vh-6rem)] w-full flex bg-white dark:bg-[#050505] rounded-tl-3xl border-t border-l border-white/5 overflow-hidden ${montserrat.className} text-sm`}>
 
       {/* ----------------- PAINEL ESQUERDO (LISTA DE CONVERSAS) ----------------- */}
-      <div className="w-[320px] flex-shrink-0 border-r border-gray-200 dark:border-white/5 bg-white dark:bg-[#0a0a0a] flex flex-col h-full relative z-10">
+      <div className="w-[320px] flex-shrink-0 border-r border-white/5 bg-[#0a0a0a] flex flex-col h-full relative z-10">
 
         {/* Header Esquerdo */}
-        <div className="p-4 border-b border-gray-200 dark:border-white/5 bg-white dark:bg-[#050505] flex flex-col gap-4">
+        <div className="p-4 border-b border-white/5 bg-white dark:bg-[#050505] flex flex-col gap-4">
           <div className="flex justify-between items-center">
-            <h2 className="text-gray-900 dark:text-white font-bold flex items-center gap-2 text-lg">
+            <h2 className="text-white font-bold flex items-center gap-2 text-lg">
               Conversas <ChevronDown size={14} className="text-gray-500" />
             </h2>
             <div className="flex gap-2">
               <button
                 onClick={() => setIsAddingContact(!isAddingContact)}
-                className={`p-1.5 rounded-md transition-colors ${isAddingContact ? "bg-[#CCA761] text-black" : "hover:bg-gray-100 dark:bg-white/5 text-gray-400"}`}
+                className={`p-1.5 rounded-md transition-colors ${isAddingContact ? "bg-[#CCA761] text-black" : "hover:bg-white/5 text-gray-400"}`}
                 title="Nova Conversa"
               >
                  <Plus size={16} />
               </button>
-              <button className="p-1.5 hover:bg-gray-100 dark:bg-white/5 rounded-md text-gray-400">
+              <button className="p-1.5 hover:bg-white/5 rounded-md text-gray-400">
                  <Filter size={16} />
               </button>
             </div>
@@ -363,7 +363,7 @@ export default function TodasConversasPage() {
                  value={newContactPhone}
                  onChange={(e) => setNewContactPhone(e.target.value)}
                  onKeyDown={(e) => e.key === 'Enter' && handleCreateContact()}
-                 className="flex-1 bg-gray-100 dark:bg-[#111] border border-[#CCA761]/30 rounded text-xs px-3 py-2 text-gray-900 dark:text-white outline-none focus:border-[#CCA761]"
+                 className="flex-1 bg-[#111] border border-[#CCA761]/30 rounded text-xs px-3 py-2 text-white outline-none focus:border-[#CCA761]"
                />
                <button
                  onClick={handleCreateContact}
@@ -374,7 +374,7 @@ export default function TodasConversasPage() {
             </div>
           )}
 
-          <div className="flex gap-4 border-b border-gray-200 dark:border-white/5 pb-0">
+          <div className="flex gap-4 border-b border-white/5 pb-0">
              <button className="pb-2 text-xs font-bold uppercase tracking-widest relative text-[#CCA761]">
                 Minhas <span className="bg-[#CCA761]/20 text-[#CCA761] px-1.5 py-0.5 rounded ml-1 text-[9px]">{contacts.length}</span>
                 <div className="absolute bottom-0 left-0 w-full h-[2px] bg-[#CCA761]" />
@@ -388,10 +388,10 @@ export default function TodasConversasPage() {
              <div
                key={contact.id}
                onClick={() => setActiveContact(contact)}
-               className={`flex items-start gap-3 p-3 rounded-lg cursor-pointer transition-colors ${activeContact?.id === contact.id ? "bg-[#CCA761]/10 border border-[#CCA761]/30 shadow-[inset_0_0_20px_rgba(204,167,97,0.05)]" : "hover:bg-gray-100 dark:bg-white/5 border border-transparent"}`}
+               className={`flex items-start gap-3 p-3 rounded-lg cursor-pointer transition-colors ${activeContact?.id === contact.id ? "bg-[#CCA761]/10 border border-[#CCA761]/30 shadow-[inset_0_0_20px_rgba(204,167,97,0.05)]" : "hover:bg-white/5 border border-transparent"}`}
              >
                 <div className="relative">
-                   <div className="w-10 h-10 rounded-full border border-gray-700 bg-gray-100 dark:bg-[#111] flex items-center justify-center text-gray-400 font-bold text-lg overflow-hidden">
+                   <div className="w-10 h-10 rounded-full border border-gray-700 bg-[#111] flex items-center justify-center text-gray-400 font-bold text-lg overflow-hidden">
                       {contact.profile_pic_url ? (
                          <img src={contact.profile_pic_url} alt={contact.name} className="w-full h-full object-cover" />
                       ) : (
@@ -399,12 +399,12 @@ export default function TodasConversasPage() {
                       )}
                    </div>
                    <div className="absolute -bottom-1 -right-1 w-4 h-4 bg-[#25D366] rounded-full flex items-center justify-center border border-[#0a0a0a]">
-                      <MessageCircle size={10} className="text-gray-900 dark:text-white fill-current" />
+                      <MessageCircle size={10} className="text-white fill-current" />
                    </div>
                 </div>
                 <div className="flex-1 min-w-0">
                    <div className="flex justify-between items-center mb-1">
-                      <h4 className={`font-bold truncate text-sm ${activeContact?.id === contact.id ? "text-gray-900 dark:text-white" : "text-gray-700 dark:text-gray-300"}`}>{contact.name || contact.phone_number}</h4>
+                      <h4 className={`font-bold truncate text-sm ${activeContact?.id === contact.id ? "text-white" : "text-gray-300"}`}>{contact.name || contact.phone_number}</h4>
                       <span className="text-[10px] text-gray-500">{contact.last_message_at ? formatTime(contact.last_message_at) : ''}</span>
                    </div>
                    <p className="text-gray-400 text-xs truncate">Toque para ver histÃ³rico</p>
@@ -414,7 +414,7 @@ export default function TodasConversasPage() {
 
           {contacts.length === 0 && (
             <div className="text-center p-6 mt-10">
-               <div className="w-16 h-16 mx-auto bg-gray-100 dark:bg-[#111] border border-gray-200 dark:border-white/5 rounded-full flex items-center justify-center mb-4">
+               <div className="w-16 h-16 mx-auto bg-[#111] border border-white/5 rounded-full flex items-center justify-center mb-4">
                   <Bot size={24} className="text-gray-500" />
                </div>
                <p className="text-gray-400 text-sm font-bold">Nenhuma conversa encontrada</p>
@@ -425,15 +425,15 @@ export default function TodasConversasPage() {
       </div>
 
       {/* ----------------- PAINEL CENTRAL (CHAT ATIVO) ----------------- */}
-      <div className="flex-1 flex flex-col min-w-[400px] h-full relative bg-white dark:bg-[#0a0a0a]/50">
+      <div className="flex-1 flex flex-col min-w-[400px] h-full relative bg-[#0a0a0a]/50">
          <div className="absolute inset-0 opacity-5 pointer-events-none" style={{ backgroundImage: 'radial-gradient(circle at 50% 50%, #CCA761 0%, transparent 60%)' }} />
 
           {(activeContact || messages.length > 0) ? (
              <>
                 {/* Header Central */}
-                <div className="h-16 border-b border-gray-200 dark:border-white/5 flex items-center justify-between px-6 bg-white dark:bg-[#0a0a0a] z-10">
+                <div className="h-16 border-b border-white/5 flex items-center justify-between px-6 bg-[#0a0a0a] z-10">
                    <div className="flex items-center gap-3">
-                      <div className="w-8 h-8 rounded-full bg-gray-100 dark:bg-[#111] border border-gray-200 dark:border-white/10 flex items-center justify-center text-gray-900 dark:text-white font-bold overflow-hidden">
+                      <div className="w-8 h-8 rounded-full bg-[#111] border border-white/10 flex items-center justify-center text-white font-bold overflow-hidden">
                          {activeContact?.profile_pic_url ? (
                             <img src={activeContact.profile_pic_url} alt={activeContact.name} className="w-full h-full object-cover" />
                          ) : (
@@ -441,7 +441,7 @@ export default function TodasConversasPage() {
                          )}
                       </div>
                       <div>
-                        <h2 className="text-gray-900 dark:text-white font-bold tracking-wide flex items-center gap-2">
+                        <h2 className="text-white font-bold tracking-wide flex items-center gap-2">
                            {activeContact?.name || activeContact?.phone_number || "Lead de Teste"}
                            <span className="bg-[#25D366]/20 text-[#25D366] text-[9px] px-1.5 py-0.5 rounded font-black uppercase tracking-widest border border-[#25D366]/30">
                               {activeContact ? "WhatsApp" : "SimulaÃ§Ã£o"}
@@ -471,7 +471,7 @@ export default function TodasConversasPage() {
                      return (
                         <div key={msg.id || idx} className={`flex gap-4 ${isMe ? 'justify-end' : 'justify-start'} animate-in fade-in slide-in-from-bottom-2 duration-300`}>
                            {!isMe && (
-                              <div className="w-8 h-8 rounded-full bg-gray-100 dark:bg-[#111] border border-gray-200 dark:border-white/10 shrink-0 flex items-center justify-center text-xs font-bold text-gray-400">
+                              <div className="w-8 h-8 rounded-full bg-[#111] border border-white/10 shrink-0 flex items-center justify-center text-xs font-bold text-gray-400">
                                  {activeContact.name ? activeContact.name.substring(0, 2).toUpperCase() : "WA"}
                               </div>
                            )}
@@ -480,7 +480,7 @@ export default function TodasConversasPage() {
                               <div className={`p-3 rounded-2xl text-sm shadow-md whitespace-pre-wrap ${
                                  isMe
                                  ? 'bg-[#CCA761] text-black font-medium border border-[#b89552] rounded-tr-sm'
-                                 : 'bg-gray-100 dark:bg-[#1a1a1a] border border-gray-200 dark:border-white/5 text-gray-800 dark:text-gray-200 rounded-tl-sm'
+                                 : 'bg-[#1a1a1a] border border-white/5 text-gray-200 rounded-tl-sm'
                               }`}>
                                  {msg.content}
                               </div>
@@ -490,7 +490,7 @@ export default function TodasConversasPage() {
                            </div>
 
                            {isMe && (
-                              <div className="w-8 h-8 rounded-full bg-white dark:bg-[#050505] border border-gray-200 dark:border-white/10 shrink-0 flex items-center justify-center text-xs font-bold text-[#CCA761]">
+                              <div className="w-8 h-8 rounded-full bg-white dark:bg-[#050505] border border-white/10 shrink-0 flex items-center justify-center text-xs font-bold text-[#CCA761]">
                                  EU
                               </div>
                            )}
@@ -501,7 +501,7 @@ export default function TodasConversasPage() {
                </div>
 
                {/* COMPOSER SLIM - DESIGN ULTRA COMPACTO E FUNCIONAL */}
-               <div className="p-3 pb-4 bg-white dark:bg-[#0a0a0a]/95 backdrop-blur-3xl border-t border-gray-200 dark:border-white/5 z-10">
+               <div className="p-3 pb-4 bg-[#0a0a0a]/95 backdrop-blur-3xl border-t border-white/5 z-10">
                    {/* Linha Fina de Controles Superiores */}
                    <div className="flex justify-between items-center mb-2 px-3">
                        <div className="flex gap-4">
@@ -516,15 +516,15 @@ export default function TodasConversasPage() {
                        </div>
                        <label className="flex items-center gap-2 cursor-pointer group">
                            <input type="checkbox" checked={showSignature} onChange={() => setShowSignature(!showSignature)} className="hidden" />
-                           <div className={`w-6 h-3 rounded-full transition-all relative ${showSignature ? "bg-[#CCA761]" : "bg-gray-100 dark:bg-white/10"}`}>
+                           <div className={`w-6 h-3 rounded-full transition-all relative ${showSignature ? "bg-[#CCA761]" : "bg-white/10"}`}>
                              <div className={`absolute top-0.5 w-2 h-2 rounded-full bg-white transition-all ${showSignature ? "right-0.5" : "left-0.5"}`} />
                            </div>
-                           <span className="text-[8px] font-black text-gray-500 uppercase tracking-widest group-hover:text-gray-900 dark:text-white transition-colors">Assinatura</span>
+                           <span className="text-[8px] font-black text-gray-500 uppercase tracking-widest group-hover:text-white transition-colors">Assinatura</span>
                        </label>
                    </div>
 
                    {/* Ãrea Principal de Input - Estilo Barra */}
-                   <div className={`rounded-xl border transition-all flex flex-col shadow-lg relative ${inputMode === "nota" ? "bg-orange-500/[0.02] border-orange-500/30" : "bg-gray-200 dark:bg-black/40 border-gray-200 dark:border-white/10 focus-within:border-[#CCA761]/40"} ${isRecording ? 'border-red-500 ring-1 ring-red-500/20' : ''}`}>
+                   <div className={`rounded-xl border transition-all flex flex-col shadow-lg relative ${inputMode === "nota" ? "bg-orange-500/[0.02] border-orange-500/30" : "bg-gray-200 dark:bg-black/40 border-white/10 focus-within:border-[#CCA761]/40"} ${isRecording ? 'border-red-500 ring-1 ring-red-500/20' : ''}`}>
                        {isRecording ? (
                          <div className="w-full flex items-center justify-between px-4 py-3 bg-red-500/5 rounded-xl animate-pulse">
                              <div className="flex items-center gap-3">
@@ -538,13 +538,13 @@ export default function TodasConversasPage() {
                              <div className="flex gap-2">
                                <button
                                  onClick={(e) => { e.preventDefault(); e.stopPropagation(); stopRecording(); }}
-                                 className="bg-red-500 hover:bg-red-600 text-gray-900 dark:text-white px-4 py-1.5 rounded-lg font-black text-[8px] uppercase shadow-lg transition-all active:scale-95 z-20"
+                                 className="bg-red-500 hover:bg-red-600 text-white px-4 py-1.5 rounded-lg font-black text-[8px] uppercase shadow-lg transition-all active:scale-95 z-20"
                                >
                                  Enviar
                                </button>
                                <button
                                  onClick={(e) => { e.preventDefault(); e.stopPropagation(); setIsRecording(false); mediaRecorderRef.current?.stop(); }}
-                                 className="bg-gray-100 dark:bg-white/5 text-gray-400 px-4 py-1.5 rounded-lg font-black text-[8px] uppercase border border-gray-200 dark:border-white/10 hover:bg-gray-100 dark:bg-white/10 transition-all z-20"
+                                 className="bg-white/5 text-gray-400 px-4 py-1.5 rounded-lg font-black text-[8px] uppercase border border-white/10 hover:bg-white/10 transition-all z-20"
                                >
                                  Cancelar
                                </button>
@@ -554,13 +554,13 @@ export default function TodasConversasPage() {
                          <div className="flex flex-col">
                             {/* Preview de Anexo */}
                             {selectedFile && (
-                              <div className="px-4 py-2 bg-gray-200 dark:bg-black/40 border-t border-gray-200 dark:border-white/10 flex items-center justify-between animate-in slide-in-from-bottom-2">
+                              <div className="px-4 py-2 bg-gray-200 dark:bg-black/40 border-t border-white/10 flex items-center justify-between animate-in slide-in-from-bottom-2">
                                 <div className="flex items-center gap-2">
                                   <FileText size={16} className="text-[#CCA761]" />
-                                  <span className="text-[11px] text-gray-700 dark:text-gray-300 font-medium">{selectedFile.name}</span>
+                                  <span className="text-[11px] text-gray-300 font-medium">{selectedFile.name}</span>
                                   <span className="text-[9px] text-gray-600">({(selectedFile.size / 1024).toFixed(1)} KB)</span>
                                 </div>
-                                <button onClick={() => setSelectedFile(null)} className="text-gray-500 hover:text-gray-900 dark:text-white"><X size={14} /></button>
+                                <button onClick={() => setSelectedFile(null)} className="text-gray-500 hover:text-white"><X size={14} /></button>
                               </div>
                             )}
 
@@ -576,7 +576,7 @@ export default function TodasConversasPage() {
                                   }
                                 }}
                                 placeholder={inputMode === "nota" ? "Escreva uma nota interna..." : "Digite sua mensagem..."}
-                                className="flex-1 bg-transparent border-none text-gray-900 dark:text-white text-[13px] px-3 py-2 outline-none resize-none min-h-[42px] max-h-[150px] placeholder:text-gray-700 transition-all font-medium scrollbar-none"
+                                className="flex-1 bg-transparent border-none text-white text-[13px] px-3 py-2 outline-none resize-none min-h-[42px] max-h-[150px] placeholder:text-gray-700 transition-all font-medium scrollbar-none"
                               />
 
                               {/* Preview da Assinatura Minimalista */}
@@ -591,7 +591,7 @@ export default function TodasConversasPage() {
                                 onClick={(e) => { e.preventDefault(); handleSendMessage(); }}
                                 disabled={isSending || (!inputText.trim() && !isRecording && !selectedFile)}
                                 className={`ml-2 mb-1 shrink-0 h-9 px-4 rounded-lg font-black uppercase text-[9px] tracking-wider transition-all flex items-center gap-2 ${
-                                  isSending ? 'bg-gray-100 dark:bg-white/10 text-gray-400' : 'bg-[#CCA761] text-black hover:bg-white active:scale-95 shadow-lg shadow-[#CCA761]/10'
+                                  isSending ? 'bg-white/10 text-gray-400' : 'bg-[#CCA761] text-black hover:bg-white active:scale-95 shadow-lg shadow-[#CCA761]/10'
                                 }`}
                               >
                                 {isSending ? <Loader2 className="animate-spin" size={12} /> : <><Send size={12} /> ENVIAR</>}
@@ -655,21 +655,21 @@ export default function TodasConversasPage() {
             </>
          ) : (
             <div className="flex-1 flex flex-col items-center justify-center text-center p-8 z-10">
-               <div className="w-24 h-24 bg-gray-100 dark:bg-[#111] border border-gray-200 dark:border-white/10 rounded-full flex items-center justify-center mb-6 shadow-2xl">
+               <div className="w-24 h-24 bg-[#111] border border-white/10 rounded-full flex items-center justify-center mb-6 shadow-2xl">
                   <Bot size={40} className="text-[#CCA761] opacity-50" />
                </div>
-               <h2 className="text-2xl font-bold text-gray-900 dark:text-white mb-2 font-serif italic">Nenhum Contato Ativo</h2>
+               <h2 className="text-2xl font-bold text-white mb-2 font-serif italic">Nenhum Contato Ativo</h2>
                <p className="text-gray-500 max-w-sm">Mande uma mensagem do seu celular para a Evolution API ou aguarde um Lead entrar em contato para o cÃ³rtex interceptar.</p>
             </div>
          )}
       </div>
 
       {/* ----------------- PAINEL DIREITO (INFO DO CONTATO) ----------------- */}
-      <div className="w-[320px] flex-shrink-0 border-l border-gray-200 dark:border-white/5 bg-white dark:bg-[#0a0a0a] flex flex-col h-full z-10 overflow-y-auto hide-scrollbar">
+      <div className="w-[320px] flex-shrink-0 border-l border-white/5 bg-[#0a0a0a] flex flex-col h-full z-10 overflow-y-auto hide-scrollbar">
          {activeContact && (
             <>
-               <div className="p-6 border-b border-gray-200 dark:border-white/5 flex flex-col items-center">
-                  <div className="w-20 h-20 rounded-full border-2 border-[#CCA761] bg-gray-100 dark:bg-[#1a1a1a] flex items-center justify-center text-2xl font-black text-gray-900 dark:text-white relative mb-4 overflow-hidden">
+               <div className="p-6 border-b border-white/5 flex flex-col items-center">
+                  <div className="w-20 h-20 rounded-full border-2 border-[#CCA761] bg-[#1a1a1a] flex items-center justify-center text-2xl font-black text-white relative mb-4 overflow-hidden">
                      {activeContact.profile_pic_url ? (
                         <img src={activeContact.profile_pic_url} alt="Profile" className="w-full h-full object-cover" />
                      ) : (
@@ -677,7 +677,7 @@ export default function TodasConversasPage() {
                      )}
                      <div className="absolute bottom-0 right-0 w-5 h-5 bg-[#25D366] rounded-full border-4 border-[#0a0a0a]" title="Online"></div>
                   </div>
-                  <h3 className="text-xl font-bold text-gray-900 dark:text-white tracking-tight text-center">{activeContact.name || activeContact.phone_number}</h3>
+                  <h3 className="text-xl font-bold text-white tracking-tight text-center">{activeContact.name || activeContact.phone_number}</h3>
                   <span className="text-gray-500 text-[10px] font-black tracking-[0.2em] uppercase mt-1">Contato Externo</span>
 
                   <div className="w-full mt-6 space-y-3">
@@ -691,8 +691,8 @@ export default function TodasConversasPage() {
                   {rightPanels.map((panel, idx) => {
                      const Icon = panel.icon;
                      return (
-                        <div key={idx} className="border border-gray-200 dark:border-white/5 rounded-lg bg-white dark:bg-[#050505] hover:border-gray-200 dark:border-white/10 transition-colors cursor-pointer group">
-                           <div className="p-3 flex justify-between items-center text-gray-700 dark:text-gray-300 group-hover:text-gray-900 dark:text-white">
+                        <div key={idx} className="border border-white/5 rounded-lg bg-white dark:bg-[#050505] hover:border-white/10 transition-colors cursor-pointer group">
+                           <div className="p-3 flex justify-between items-center text-gray-300 group-hover:text-white">
                               <div className="flex items-center gap-3">
                                  <Icon size={16} className={`text-gray-500 group-hover:text-[#CCA761] transition-colors`} />
                                  <span className="text-[11px] font-black uppercase tracking-wider">{panel.name}</span>

@@ -327,11 +327,11 @@ export default function ConfiguracoesJuridicoPage() {
   };
 
   return (
-    <div className={`flex-1 min-h-screen bg-white dark:bg-[#050505] text-gray-900 dark:text-white p-6 sm:p-10 ${montserrat.className}`}>
+    <div className={`flex-1 min-h-screen bg-white dark:bg-[#050505] text-white p-6 sm:p-10 ${montserrat.className}`}>
       <div className="max-w-[1280px] mx-auto space-y-10">
         <div className="flex flex-col lg:flex-row lg:items-end lg:justify-between gap-6">
           <div className="space-y-3">
-            <Link href="/dashboard/documentos/acervo" className="text-[#CCA761] text-[10px] uppercase tracking-[0.3em] font-black flex items-center gap-2 hover:text-gray-900 dark:text-white transition-colors w-fit mb-4">
+            <Link href="/dashboard/documentos/acervo" className="text-[#CCA761] text-[10px] uppercase tracking-[0.3em] font-black flex items-center gap-2 hover:text-white transition-colors w-fit mb-4">
               <ArrowLeft size={14} /> Voltar ao Acervo MAYUS
             </Link>
             <p className="text-[#CCA761] text-xs uppercase tracking-[0.35em] font-black">Motor Jurídico</p>
@@ -340,7 +340,7 @@ export default function ConfiguracoesJuridicoPage() {
                 <BookOpenText size={26} className="text-[#CCA761]" />
               </div>
               <div>
-                <h1 className={`text-4xl text-gray-900 dark:text-white tracking-wide ${cormorant.className}`}>
+                <h1 className={`text-4xl text-white tracking-wide ${cormorant.className}`}>
                   Jurídico & <span className="text-[#CCA761]">Modelos</span>
                 </h1>
                 <p className="text-sm text-gray-400 max-w-3xl leading-relaxed">
@@ -351,7 +351,7 @@ export default function ConfiguracoesJuridicoPage() {
           </div>
 
           <div className="flex flex-wrap gap-3">
-            <Link href="/dashboard/documentos/acervo" className="px-4 py-3 rounded-xl border border-[#CCA761]/15 bg-gray-100 dark:bg-white/5 hover:bg-gray-100 dark:bg-white/10 text-xs font-black uppercase tracking-widest text-gray-900 dark:text-white flex items-center gap-2">
+            <Link href="/dashboard/documentos/acervo" className="px-4 py-3 rounded-xl border border-[#CCA761]/15 bg-white/5 hover:bg-white/10 text-xs font-black uppercase tracking-widest text-white flex items-center gap-2">
               <Wand2 size={14} /> Preview Jurídico
             </Link>
             <button
@@ -377,15 +377,15 @@ export default function ConfiguracoesJuridicoPage() {
                 <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
                   <div className="space-y-1.5 md:col-span-2">
                     <label className="text-[10px] uppercase tracking-[0.25em] text-gray-500 font-black">Nome exibido do escritório</label>
-                    <input value={profile.office_display_name} onChange={(event) => updateProfile("office_display_name", event.target.value)} className="w-full bg-white dark:bg-[#080808] border border-[#CCA761]/20 rounded-xl px-4 py-3 text-sm text-gray-900 dark:text-white focus:outline-none focus:border-[#CCA761]/45" placeholder="Ex.: Dutra Advocacia" />
+                    <input value={profile.office_display_name} onChange={(event) => updateProfile("office_display_name", event.target.value)} className="w-full bg-white dark:bg-[#080808] border border-[#CCA761]/20 rounded-xl px-4 py-3 text-sm text-white focus:outline-none focus:border-[#CCA761]/45" placeholder="Ex.: Dutra Advocacia" />
                   </div>
                   <div className="space-y-1.5">
                     <label className="text-[10px] uppercase tracking-[0.25em] text-gray-500 font-black">Fonte padrão</label>
-                    <input value={profile.default_font_family} onChange={(event) => updateProfile("default_font_family", event.target.value)} className="w-full bg-white dark:bg-[#080808] border border-[#CCA761]/20 rounded-xl px-4 py-3 text-sm text-gray-900 dark:text-white focus:outline-none focus:border-[#CCA761]/45" />
+                    <input value={profile.default_font_family} onChange={(event) => updateProfile("default_font_family", event.target.value)} className="w-full bg-white dark:bg-[#080808] border border-[#CCA761]/20 rounded-xl px-4 py-3 text-sm text-white focus:outline-none focus:border-[#CCA761]/45" />
                   </div>
                   <div className="space-y-1.5">
                     <label className="text-[10px] uppercase tracking-[0.25em] text-gray-500 font-black">Tom padrão</label>
-                    <select value={profile.default_tone} onChange={(event) => updateProfile("default_tone", event.target.value)} className="w-full bg-white dark:bg-[#080808] border border-[#CCA761]/20 rounded-xl px-4 py-3 text-sm text-gray-900 dark:text-white focus:outline-none focus:border-[#CCA761]/45">
+                    <select value={profile.default_tone} onChange={(event) => updateProfile("default_tone", event.target.value)} className="w-full bg-white dark:bg-[#080808] border border-[#CCA761]/20 rounded-xl px-4 py-3 text-sm text-white focus:outline-none focus:border-[#CCA761]/45">
                       <option value="tecnico_persuasivo">Técnico persuasivo</option>
                       <option value="tecnico_objetivo">Técnico objetivo</option>
                       <option value="humanizado">Humanizado</option>
@@ -394,23 +394,23 @@ export default function ConfiguracoesJuridicoPage() {
                   </div>
                   <div className="space-y-1.5">
                     <label className="text-[10px] uppercase tracking-[0.25em] text-gray-500 font-black">Tamanho do corpo</label>
-                    <input type="number" step="0.5" value={profile.body_font_size} onChange={(event) => updateProfile("body_font_size", Number(event.target.value))} className="w-full bg-white dark:bg-[#080808] border border-[#CCA761]/20 rounded-xl px-4 py-3 text-sm text-gray-900 dark:text-white focus:outline-none focus:border-[#CCA761]/45" />
+                    <input type="number" step="0.5" value={profile.body_font_size} onChange={(event) => updateProfile("body_font_size", Number(event.target.value))} className="w-full bg-white dark:bg-[#080808] border border-[#CCA761]/20 rounded-xl px-4 py-3 text-sm text-white focus:outline-none focus:border-[#CCA761]/45" />
                   </div>
                   <div className="space-y-1.5">
                     <label className="text-[10px] uppercase tracking-[0.25em] text-gray-500 font-black">Tamanho dos títulos</label>
-                    <input type="number" step="0.5" value={profile.title_font_size} onChange={(event) => updateProfile("title_font_size", Number(event.target.value))} className="w-full bg-white dark:bg-[#080808] border border-[#CCA761]/20 rounded-xl px-4 py-3 text-sm text-gray-900 dark:text-white focus:outline-none focus:border-[#CCA761]/45" />
+                    <input type="number" step="0.5" value={profile.title_font_size} onChange={(event) => updateProfile("title_font_size", Number(event.target.value))} className="w-full bg-white dark:bg-[#080808] border border-[#CCA761]/20 rounded-xl px-4 py-3 text-sm text-white focus:outline-none focus:border-[#CCA761]/45" />
                   </div>
                   <div className="space-y-1.5">
                     <label className="text-[10px] uppercase tracking-[0.25em] text-gray-500 font-black">Espaço entre parágrafos</label>
-                    <input type="number" value={profile.paragraph_spacing} onChange={(event) => updateProfile("paragraph_spacing", Number(event.target.value))} className="w-full bg-white dark:bg-[#080808] border border-[#CCA761]/20 rounded-xl px-4 py-3 text-sm text-gray-900 dark:text-white focus:outline-none focus:border-[#CCA761]/45" />
+                    <input type="number" value={profile.paragraph_spacing} onChange={(event) => updateProfile("paragraph_spacing", Number(event.target.value))} className="w-full bg-white dark:bg-[#080808] border border-[#CCA761]/20 rounded-xl px-4 py-3 text-sm text-white focus:outline-none focus:border-[#CCA761]/45" />
                   </div>
                   <div className="space-y-1.5">
                     <label className="text-[10px] uppercase tracking-[0.25em] text-gray-500 font-black">Entrelinhamento</label>
-                    <input type="number" step="0.1" value={profile.line_spacing} onChange={(event) => updateProfile("line_spacing", Number(event.target.value))} className="w-full bg-white dark:bg-[#080808] border border-[#CCA761]/20 rounded-xl px-4 py-3 text-sm text-gray-900 dark:text-white focus:outline-none focus:border-[#CCA761]/45" />
+                    <input type="number" step="0.1" value={profile.line_spacing} onChange={(event) => updateProfile("line_spacing", Number(event.target.value))} className="w-full bg-white dark:bg-[#080808] border border-[#CCA761]/20 rounded-xl px-4 py-3 text-sm text-white focus:outline-none focus:border-[#CCA761]/45" />
                   </div>
                   <div className="space-y-1.5">
                     <label className="text-[10px] uppercase tracking-[0.25em] text-gray-500 font-black">Alinhamento</label>
-                    <select value={profile.text_alignment} onChange={(event) => updateProfile("text_alignment", event.target.value)} className="w-full bg-white dark:bg-[#080808] border border-[#CCA761]/20 rounded-xl px-4 py-3 text-sm text-gray-900 dark:text-white focus:outline-none focus:border-[#CCA761]/45">
+                    <select value={profile.text_alignment} onChange={(event) => updateProfile("text_alignment", event.target.value)} className="w-full bg-white dark:bg-[#080808] border border-[#CCA761]/20 rounded-xl px-4 py-3 text-sm text-white focus:outline-none focus:border-[#CCA761]/45">
                       <option value="justified">Justificado</option>
                       <option value="left">Esquerda</option>
                       <option value="center">Centralizado</option>
@@ -418,7 +418,7 @@ export default function ConfiguracoesJuridicoPage() {
                   </div>
                   <div className="space-y-1.5">
                     <label className="text-[10px] uppercase tracking-[0.25em] text-gray-500 font-black">Estilo de citação</label>
-                    <select value={profile.citation_style} onChange={(event) => updateProfile("citation_style", event.target.value)} className="w-full bg-white dark:bg-[#080808] border border-[#CCA761]/20 rounded-xl px-4 py-3 text-sm text-gray-900 dark:text-white focus:outline-none focus:border-[#CCA761]/45">
+                    <select value={profile.citation_style} onChange={(event) => updateProfile("citation_style", event.target.value)} className="w-full bg-white dark:bg-[#080808] border border-[#CCA761]/20 rounded-xl px-4 py-3 text-sm text-white focus:outline-none focus:border-[#CCA761]/45">
                       <option value="tribunal_numero_data_link">Tribunal + número + data + link</option>
                       <option value="ementa_curta">Ementa curta</option>
                       <option value="sem_link">Sem link</option>
@@ -435,14 +435,14 @@ export default function ConfiguracoesJuridicoPage() {
                   ].map(([key, label]) => (
                     <div key={key} className="space-y-1.5">
                       <label className="text-[10px] uppercase tracking-[0.25em] text-gray-500 font-black">{label}</label>
-                      <input type="number" value={profile[key as keyof LegalProfile] as number} onChange={(event) => updateProfile(key as keyof LegalProfile, Number(event.target.value) as never)} className="w-full bg-white dark:bg-[#080808] border border-[#CCA761]/20 rounded-xl px-4 py-3 text-sm text-gray-900 dark:text-white focus:outline-none focus:border-[#CCA761]/45" />
+                      <input type="number" value={profile[key as keyof LegalProfile] as number} onChange={(event) => updateProfile(key as keyof LegalProfile, Number(event.target.value) as never)} className="w-full bg-white dark:bg-[#080808] border border-[#CCA761]/20 rounded-xl px-4 py-3 text-sm text-white focus:outline-none focus:border-[#CCA761]/45" />
                     </div>
                   ))}
                 </div>
 
                 <div className="space-y-1.5">
                   <label className="text-[10px] uppercase tracking-[0.25em] text-gray-500 font-black">Bloco de assinatura</label>
-                  <textarea value={profile.signature_block} onChange={(event) => updateProfile("signature_block", event.target.value)} rows={4} className="w-full bg-white dark:bg-[#080808] border border-[#CCA761]/20 rounded-xl px-4 py-3 text-sm text-gray-900 dark:text-white focus:outline-none focus:border-[#CCA761]/45" />
+                  <textarea value={profile.signature_block} onChange={(event) => updateProfile("signature_block", event.target.value)} rows={4} className="w-full bg-white dark:bg-[#080808] border border-[#CCA761]/20 rounded-xl px-4 py-3 text-sm text-white focus:outline-none focus:border-[#CCA761]/45" />
                 </div>
 
                 <div className="grid grid-cols-1 md:grid-cols-3 gap-3">
@@ -458,7 +458,7 @@ export default function ConfiguracoesJuridicoPage() {
                   ))}
                 </div>
 
-                <div className="rounded-2xl border border-[#CCA761]/20 bg-white dark:bg-[#0a0a0a] p-4 space-y-3">
+                <div className="rounded-2xl border border-[#CCA761]/20 bg-[#0a0a0a] p-4 space-y-3">
                   <div>
                     <p className="text-[10px] uppercase tracking-[0.25em] text-gray-500 font-black">Automação da Draft Factory</p>
                     <p className="text-sm text-gray-400 leading-relaxed mt-2">
@@ -469,7 +469,7 @@ export default function ConfiguracoesJuridicoPage() {
                   <button
                     type="button"
                     onClick={() => updateProfileMetadata("auto_draft_factory_on_case_brain_ready", !getBooleanMetadata(profile, "auto_draft_factory_on_case_brain_ready"))}
-                    className={`w-full rounded-2xl border px-4 py-4 text-left ${getBooleanMetadata(profile, "auto_draft_factory_on_case_brain_ready") ? "border-[#CCA761]/35 bg-[#CCA761]/10 text-gray-900 dark:text-white" : "border-[#CCA761]/20 bg-white dark:bg-[#080808] text-gray-400"}`}
+                    className={`w-full rounded-2xl border px-4 py-4 text-left ${getBooleanMetadata(profile, "auto_draft_factory_on_case_brain_ready") ? "border-[#CCA761]/35 bg-[#CCA761]/10 text-white" : "border-[#CCA761]/20 bg-white dark:bg-[#080808] text-gray-400"}`}
                   >
                     <p className="text-[10px] uppercase tracking-[0.25em] font-black mb-1">Auto-disparo da primeira minuta</p>
                     <p className="text-sm font-semibold">{getBooleanMetadata(profile, "auto_draft_factory_on_case_brain_ready") ? "Ativado" : "Desativado"}</p>
@@ -479,7 +479,7 @@ export default function ConfiguracoesJuridicoPage() {
                   </button>
                 </div>
 
-                <div className="rounded-2xl border border-[#CCA761]/20 bg-white dark:bg-[#0a0a0a] p-4 space-y-4">
+                <div className="rounded-2xl border border-[#CCA761]/20 bg-[#0a0a0a] p-4 space-y-4">
                   <div>
                     <p className="text-[10px] uppercase tracking-[0.25em] text-gray-500 font-black">Validação externa jurídica</p>
                     <p className="text-sm text-gray-400 leading-relaxed mt-2">
@@ -493,7 +493,7 @@ export default function ConfiguracoesJuridicoPage() {
                       value={validatedLawReferencesInput}
                       onChange={(event) => setValidatedLawReferencesInput(event.target.value)}
                       rows={5}
-                      className="w-full bg-white dark:bg-[#080808] border border-[#CCA761]/20 rounded-xl px-4 py-3 text-sm text-gray-900 dark:text-white focus:outline-none focus:border-[#CCA761]/45"
+                      className="w-full bg-white dark:bg-[#080808] border border-[#CCA761]/20 rounded-xl px-4 py-3 text-sm text-white focus:outline-none focus:border-[#CCA761]/45"
                       placeholder="* | CPC, art. 300 | Tutela de urgência - probabilidade do direito e perigo de dano | https://..."
                     />
                   </div>
@@ -504,7 +504,7 @@ export default function ConfiguracoesJuridicoPage() {
                       value={validatedCaseLawReferencesInput}
                       onChange={(event) => setValidatedCaseLawReferencesInput(event.target.value)}
                       rows={5}
-                      className="w-full bg-white dark:bg-[#080808] border border-[#CCA761]/20 rounded-xl px-4 py-3 text-sm text-gray-900 dark:text-white focus:outline-none focus:border-[#CCA761]/45"
+                      className="w-full bg-white dark:bg-[#080808] border border-[#CCA761]/20 rounded-xl px-4 py-3 text-sm text-white focus:outline-none focus:border-[#CCA761]/45"
                       placeholder="Previdenciário | Tema 1102/STJ | Revisão da vida toda | https://..."
                     />
                   </div>
@@ -526,12 +526,12 @@ export default function ConfiguracoesJuridicoPage() {
                   ["footer", "Rodapé"],
                   ["logo", "Logo do escritório"],
                 ].map(([assetType, label]) => (
-                  <div key={assetType} className="rounded-2xl border border-[#CCA761]/20 bg-white dark:bg-[#0a0a0a] p-4 space-y-3">
+                  <div key={assetType} className="rounded-2xl border border-[#CCA761]/20 bg-[#0a0a0a] p-4 space-y-3">
                     <p className="text-[10px] uppercase tracking-[0.25em] text-gray-500 font-black">{label}</p>
-                    <input value={assets[assetType]?.file_url || ""} onChange={(event) => updateAsset(assetType, "file_url", event.target.value)} className="w-full bg-white dark:bg-[#050505] border border-[#CCA761]/20 rounded-xl px-4 py-3 text-sm text-gray-900 dark:text-white focus:outline-none focus:border-[#CCA761]/45" placeholder={`URL do asset de ${label.toLowerCase()}`} />
+                    <input value={assets[assetType]?.file_url || ""} onChange={(event) => updateAsset(assetType, "file_url", event.target.value)} className="w-full bg-white dark:bg-[#050505] border border-[#CCA761]/20 rounded-xl px-4 py-3 text-sm text-white focus:outline-none focus:border-[#CCA761]/45" placeholder={`URL do asset de ${label.toLowerCase()}`} />
                     <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
-                      <input value={assets[assetType]?.file_name || ""} onChange={(event) => updateAsset(assetType, "file_name", event.target.value)} className="w-full bg-white dark:bg-[#050505] border border-[#CCA761]/20 rounded-xl px-4 py-3 text-sm text-gray-900 dark:text-white focus:outline-none focus:border-[#CCA761]/45" placeholder="Nome do arquivo" />
-                      <input value={assets[assetType]?.mime_type || ""} onChange={(event) => updateAsset(assetType, "mime_type", event.target.value)} className="w-full bg-white dark:bg-[#050505] border border-[#CCA761]/20 rounded-xl px-4 py-3 text-sm text-gray-900 dark:text-white focus:outline-none focus:border-[#CCA761]/45" placeholder="Mime type (opcional)" />
+                      <input value={assets[assetType]?.file_name || ""} onChange={(event) => updateAsset(assetType, "file_name", event.target.value)} className="w-full bg-white dark:bg-[#050505] border border-[#CCA761]/20 rounded-xl px-4 py-3 text-sm text-white focus:outline-none focus:border-[#CCA761]/45" placeholder="Nome do arquivo" />
+                      <input value={assets[assetType]?.mime_type || ""} onChange={(event) => updateAsset(assetType, "mime_type", event.target.value)} className="w-full bg-white dark:bg-[#050505] border border-[#CCA761]/20 rounded-xl px-4 py-3 text-sm text-white focus:outline-none focus:border-[#CCA761]/45" placeholder="Mime type (opcional)" />
                     </div>
                   </div>
                 ))}
@@ -541,7 +541,7 @@ export default function ConfiguracoesJuridicoPage() {
             <section className="bg-[#0f0f0f] border border-[#CCA761]/12 rounded-3xl p-6 space-y-6">
               <div className="flex items-center justify-between gap-4">
                 <h2 className={cardTitleClass()}><Files size={18} /> Modelos por Tipo de Peça</h2>
-                <Link href="/dashboard/documentos/acervo" className="text-[10px] uppercase tracking-[0.25em] font-black text-[#CCA761] hover:text-gray-900 dark:text-white transition-colors">
+                <Link href="/dashboard/documentos/acervo" className="text-[10px] uppercase tracking-[0.25em] font-black text-[#CCA761] hover:text-white transition-colors">
                   Abrir preview jurídico
                 </Link>
               </div>
@@ -550,29 +550,29 @@ export default function ConfiguracoesJuridicoPage() {
                 {PIECE_TYPES.map((piece) => {
                   const template = templates[piece.value];
                   return (
-                    <div key={piece.value} className="rounded-2xl border border-[#CCA761]/20 bg-white dark:bg-[#0a0a0a] p-5 space-y-4">
+                    <div key={piece.value} className="rounded-2xl border border-[#CCA761]/20 bg-[#0a0a0a] p-5 space-y-4">
                       <div>
                         <p className="text-[10px] uppercase tracking-[0.25em] text-gray-500 font-black mb-2">{piece.label}</p>
                         <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
-                          <select value={template.template_mode} onChange={(event) => updateTemplate(piece.value, "template_mode", event.target.value)} className="w-full bg-white dark:bg-[#050505] border border-[#CCA761]/20 rounded-xl px-4 py-3 text-sm text-gray-900 dark:text-white focus:outline-none focus:border-[#CCA761]/45">
+                          <select value={template.template_mode} onChange={(event) => updateTemplate(piece.value, "template_mode", event.target.value)} className="w-full bg-white dark:bg-[#050505] border border-[#CCA761]/20 rounded-xl px-4 py-3 text-sm text-white focus:outline-none focus:border-[#CCA761]/45">
                             <option value="visual_profile">Somente perfil visual</option>
                             <option value="docx_template">Somente modelo .docx</option>
                             <option value="hybrid">Híbrido</option>
                           </select>
-                          <input value={template.template_name || ""} onChange={(event) => updateTemplate(piece.value, "template_name", event.target.value)} className="w-full bg-white dark:bg-[#050505] border border-[#CCA761]/20 rounded-xl px-4 py-3 text-sm text-gray-900 dark:text-white focus:outline-none focus:border-[#CCA761]/45" placeholder="Nome interno do modelo" />
+                          <input value={template.template_name || ""} onChange={(event) => updateTemplate(piece.value, "template_name", event.target.value)} className="w-full bg-white dark:bg-[#050505] border border-[#CCA761]/20 rounded-xl px-4 py-3 text-sm text-white focus:outline-none focus:border-[#CCA761]/45" placeholder="Nome interno do modelo" />
                         </div>
                       </div>
 
-                      <input value={template.template_docx_url || ""} onChange={(event) => updateTemplate(piece.value, "template_docx_url", event.target.value)} className="w-full bg-white dark:bg-[#050505] border border-[#CCA761]/20 rounded-xl px-4 py-3 text-sm text-gray-900 dark:text-white focus:outline-none focus:border-[#CCA761]/45" placeholder="URL do template .docx (opcional)" />
+                      <input value={template.template_docx_url || ""} onChange={(event) => updateTemplate(piece.value, "template_docx_url", event.target.value)} className="w-full bg-white dark:bg-[#050505] border border-[#CCA761]/20 rounded-xl px-4 py-3 text-sm text-white focus:outline-none focus:border-[#CCA761]/45" placeholder="URL do template .docx (opcional)" />
 
                       <div className="space-y-2">
                         <label className="text-[10px] uppercase tracking-[0.25em] text-gray-500 font-black">Estrutura base</label>
-                        <textarea value={template.structure_markdown || ""} onChange={(event) => updateTemplate(piece.value, "structure_markdown", event.target.value)} rows={5} className="w-full bg-white dark:bg-[#050505] border border-[#CCA761]/20 rounded-xl px-4 py-3 text-sm text-gray-900 dark:text-white focus:outline-none focus:border-[#CCA761]/45" />
+                        <textarea value={template.structure_markdown || ""} onChange={(event) => updateTemplate(piece.value, "structure_markdown", event.target.value)} rows={5} className="w-full bg-white dark:bg-[#050505] border border-[#CCA761]/20 rounded-xl px-4 py-3 text-sm text-white focus:outline-none focus:border-[#CCA761]/45" />
                       </div>
 
                       <div className="space-y-2">
                         <label className="text-[10px] uppercase tracking-[0.25em] text-gray-500 font-black">Notas e regras do escritório</label>
-                        <textarea value={template.guidance_notes || ""} onChange={(event) => updateTemplate(piece.value, "guidance_notes", event.target.value)} rows={4} className="w-full bg-white dark:bg-[#050505] border border-[#CCA761]/20 rounded-xl px-4 py-3 text-sm text-gray-900 dark:text-white focus:outline-none focus:border-[#CCA761]/45" />
+                        <textarea value={template.guidance_notes || ""} onChange={(event) => updateTemplate(piece.value, "guidance_notes", event.target.value)} rows={4} className="w-full bg-white dark:bg-[#050505] border border-[#CCA761]/20 rounded-xl px-4 py-3 text-sm text-white focus:outline-none focus:border-[#CCA761]/45" />
                       </div>
                     </div>
                   );

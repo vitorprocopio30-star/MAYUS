@@ -3,10 +3,9 @@
 import { useState, useCallback, useEffect } from "react";
 import { useRouter } from "next/navigation";
 import Image from "next/image";
-import { Playfair_Display, Inter, Cormorant_Garamond, Montserrat } from "next/font/google";
+import { Inter, Cormorant_Garamond, Montserrat } from "next/font/google";
 import { createClient } from "@/lib/supabase/client";
 
-// Gravando e Padronizando as Tipografias Principais do MAYUS
 const cormorant = Cormorant_Garamond({ 
   subsets: ["latin"], 
   weight: ["300", "400", "500", "600", "700"],
@@ -18,31 +17,7 @@ const montserrat = Montserrat({
   weight: ["300", "400", "500", "600", "700"],
 });
 
-const playfair = Playfair_Display({ subsets: ["latin"], style: ["normal", "italic"] });
 const inter = Inter({ subsets: ["latin"] });
-
-const PARTICLES = [
-  { id: 1, left: 15, delay: 0, duration: 18, size: 4 },
-  { id: 2, left: 35, delay: 2, duration: 22, size: 6 },
-  { id: 3, left: 55, delay: 4, duration: 20, size: 5 },
-  { id: 4, left: 85, delay: 1, duration: 25, size: 7 },
-  { id: 5, left: 90, delay: 5, duration: 19, size: 5 },
-  { id: 6, left: 10, delay: 3, duration: 21, size: 4 },
-  { id: 7, left: 25, delay: 6, duration: 24, size: 8 },
-  { id: 8, left: 45, delay: 8, duration: 17, size: 6 },
-  { id: 9, left: 65, delay: 7, duration: 26, size: 5 },
-  { id: 10, left: 75, delay: 9, duration: 23, size: 9 },
-  { id: 11, left: 5, delay: 11, duration: 16, size: 4 },
-  { id: 12, left: 20, delay: 10, duration: 20, size: 5 },
-  { id: 13, left: 40, delay: 13, duration: 22, size: 7 },
-  { id: 14, left: 60, delay: 12, duration: 18, size: 6 },
-  { id: 15, left: 80, delay: 14, duration: 25, size: 8 },
-  { id: 16, left: 95, delay: 15, duration: 19, size: 5 },
-  { id: 17, left: 50, delay: 1.5, duration: 21, size: 4 },
-  { id: 18, left: 30, delay: 4.5, duration: 24, size: 6 },
-  { id: 19, left: 70, delay: 2.5, duration: 20, size: 7 },
-  { id: 20, left: 12, delay: 8.5, duration: 17, size: 5 },
-];
 
 export default function LoginPage() {
   const router = useRouter();
@@ -53,7 +28,6 @@ export default function LoginPage() {
   const [totpCode, setTotpCode] = useState("");
   const [resetEmail, setResetEmail] = useState("");
   
-  // Controle de Etapa: 'password' (Normal), 'totp' (Desafio 2FA), ou 'forgot' (Esqueci Senha)
   const [step, setStep] = useState<"password" | "totp" | "forgot">("password");
   const [factorId, setFactorId] = useState<string | null>(null);
 
@@ -62,7 +36,6 @@ export default function LoginPage() {
   const [successMsg, setSuccessMsg] = useState("");
   const [lockMinutes, setLockMinutes] = useState(0);
 
-  // Detecta redirecionamento por conta desativada
   useEffect(() => {
     if (typeof window !== "undefined") {
       const params = new URLSearchParams(window.location.search);
@@ -78,7 +51,6 @@ export default function LoginPage() {
     setErrorMsg("");
     setLockMinutes(0);
 
-    // ── Rate Limiting: Verifica bloqueio ANTES de tentar autenticar ──
     try {
       const lockRes = await fetch(`/api/auth/check-lock?email=${encodeURIComponent(email)}`);
       if (lockRes.ok) {
@@ -91,7 +63,7 @@ export default function LoginPage() {
         }
       }
     } catch {
-      // Se a checagem falhar, permite o login (fail-open)
+      // fail-open
     }
 
     const { data, error } = await supabase.auth.signInWithPassword({
@@ -188,327 +160,248 @@ export default function LoginPage() {
 
   return (
     <div
-      className={`relative min-h-screen flex items-center justify-center overflow-hidden ${montserrat.className} bg-[#0a0a0a]`}
+      className={`relative min-h-screen flex items-center justify-center overflow-hidden ${inter.className} bg-[#050505]`}
     >
-      {/* Imagem de Fundo Premium */}
+      <style dangerouslySetInnerHTML={{ __html: `
+        @keyframes shimmer {
+          0% { transform: translateX(-100%) skewX(-15deg); }
+          100% { transform: translateX(200%) skewX(-15deg); }
+        }
+        @keyframes fadeUp {
+          from { opacity: 0; transform: translateY(20px); }
+          to { opacity: 1; transform: translateY(0); }
+        }
+      `}} />
+
+      {/* BACKGROUND ELEMENTS */}
       <div className="absolute inset-0 z-0 pointer-events-none">
         <Image
           src="/bg_office.png"
-          alt="Office Background"
+          alt="Office"
           fill
-          className="object-cover opacity-25"
+          className="object-cover opacity-[0.16] grayscale"
           priority
-          quality={100}
         />
-        <div className="absolute inset-0 bg-[#0a0a0a]/70 backdrop-blur-[2px]" />
-      </div>
-
-      {/* Bolas Douradas Animadas */}
-      <div className="absolute inset-0 z-0 overflow-hidden pointer-events-none">
-        {PARTICLES.map((particle) => (
-          <div
-            key={particle.id}
-            className="absolute bottom-[-20px] rounded-full bg-gradient-to-tr from-[#CCA761] to-[#f1d58d] opacity-0 animate-particles"
-            style={{
-              width: `${particle.size}px`,
-              height: `${particle.size}px`,
-              left: `${particle.left}%`,
-              animationDelay: `${particle.delay}s`,
-              animationDuration: `${particle.duration}s`,
-              boxShadow: "0 0 10px rgba(204,167,97,0.5), 0 0 20px rgba(204,167,97,0.3)"
-            }}
-          />
-        ))}
+        <div className="absolute inset-0 bg-gradient-to-br from-[#020202]/95 via-[#050505]/88 to-[#0A0A0A]/96" />
+        <div className="absolute left-[-15%] top-[10%] h-[420px] w-[420px] rounded-full bg-[#CCA761]/[0.06] blur-[140px]" />
+        <div className="absolute right-[-10%] bottom-[-10%] h-[360px] w-[360px] rounded-full bg-[#CCA761]/[0.04] blur-[120px]" />
       </div>
       
-      {/* ======= CONTAINER PRINCIPAL ======= */}
-      <div className="relative z-10 w-full max-w-3xl xl:max-w-4xl animate-fade-in-up my-auto mx-4 flex items-center justify-center">
+      {/* LOGIN CARD */}
+      <div className="relative z-10 w-full max-w-4xl mx-4 my-auto animate-[fadeUp_1s_ease-out]">
         <div 
-          className="relative w-full rounded-3xl overflow-hidden p-[2px] animate-float"
-          style={{
-            boxShadow: "0 40px 100px -10px rgba(0, 0, 0, 0.95)"
-          }}
+          className="relative w-full rounded-[2.5rem] overflow-hidden border border-white/10 bg-white/[0.03] shadow-[0_50px_100px_-20px_rgba(0,0,0,0.85)] backdrop-blur-2xl"
         >
-        {/* Feixe de Luz Giratório (Border Beam) */}
-        <div 
-          className="absolute inset-[-100%] animate-[spin_4s_linear_infinite] opacity-60"
-          style={{
-            background: "conic-gradient(from 0deg, transparent 75%, #B8975E 100%)"
-          }}
-        />
+          <div className="absolute inset-0 rounded-[2.5rem] border border-[#CCA761]/10 pointer-events-none" />
 
-        {/* Quadro Escuro Real */}
-        <div className="relative w-full h-full flex flex-col md:flex-row bg-[#0C0C0C] rounded-[22px] overflow-hidden">
-          
-          {/* Painel Esquerdo ("Quadro de Boas Vindas") */}
-          <div className="w-full md:w-1/2 p-6 md:p-8 flex flex-col items-center justify-center border-b md:border-b-0 md:border-r border-[#222222] relative overflow-hidden group">
-            
-            {/* Adicionado margin negativa superior maior para subir o bloco mais um pouco */}
-            <div className="relative text-center w-full flex flex-col items-center -mt-8 md:-mt-12">
-              {/* Logo MAYUS com tamanho extra */}
-              <div className="relative w-[20rem] h-[20rem] md:w-[28rem] md:h-[28rem] mb-[-30px] hover:scale-105 transition-transform duration-700">
-                <Image
-                  src="/mayus_logo.png"
-                  alt="MAYUS Logo"
-                  fill
-                  className="object-contain"
-                  priority
-                  quality={100}
-                />
+          <div className="relative w-full h-full flex flex-col md:flex-row bg-[#0A0A0A]/95 rounded-[2.5rem] overflow-hidden">
+            {/* LEFT PANEL: BRANDING */}
+            <div className="w-full md:w-[45%] p-8 flex flex-col items-center justify-center border-b md:border-b-0 md:border-r border-white/5 bg-gradient-to-br from-white/[0.03] to-transparent relative overflow-hidden">
+              <div className="absolute top-0 left-0 w-full h-full opacity-5 pointer-events-none">
+                 <div className="absolute top-[-50%] left-[-50%] w-[200%] h-[200%] bg-[#CCA761] blur-[150px] rounded-full" />
               </div>
-              
-              {/* Frase com destaque final de tamanho */}
-              <div className="mt-[-20px] md:mt-[-50px] text-center z-10 px-4">
-                <p className={`text-[#d4d4d4] text-[1.3rem] md:text-[1.6rem] font-medium max-w-sm leading-snug mx-auto tracking-wide ${cormorant.className}`}>
-                  Sua plataforma premium para <br className="hidden md:block" />
-                  <strong className="text-[#CCA761] font-bold">excelência</strong> e soluções jurídicas.
-                </p>
+
+              <div className="relative z-10 text-center -mt-10">
+                <div className="relative w-64 h-64 md:w-80 md:h-80 mx-auto hover:scale-105 transition-transform duration-1000 ease-out">
+                  <Image
+                    src="/mayus_logo.png"
+                    alt="MAYUS"
+                    fill
+                    className="object-contain drop-shadow-[0_0_30px_rgba(204,167,97,0.2)]"
+                    priority
+                  />
+                </div>
+
+                <div className="mt-[-2rem] px-6">
+                  <p className={`text-gray-300 text-xl md:text-2xl font-light leading-snug tracking-wide ${cormorant.className}`}>
+                    Sua plataforma premium para <br />
+                    <span className="text-[#CCA761] font-bold italic">excelência jurídica.</span>
+                  </p>
+                </div>
               </div>
             </div>
-          </div>
 
-          {/* Painel Direito (Formulário) */}
-          <div className="w-full md:w-1/2 p-6 md:p-10 flex flex-col bg-[#111111]">
-            
-            <div className="w-full max-w-sm mx-auto flex flex-col h-full">
-              
-              {/* Headline Luxuosa */}
-              <div className="text-left mb-6">
-                <h1 className={`text-[#e0e0e0] text-2xl md:text-3xl leading-tight tracking-wider ${montserrat.className} font-light mb-4`}>
-                  Bem-vindo ao <strong className="text-[#CCA761] font-bold">MAYUS.</strong>
-                </h1>
+            {/* RIGHT PANEL: AUTH FORM */}
+            <div className="w-full md:w-[55%] p-8 md:p-14 flex flex-col bg-[#0d0d0d]">
+              <div className="w-full max-w-sm mx-auto h-full flex flex-col justify-center">
                 
-                {/* Header Subtítulo Form */}
-                <h2 className="text-[#ffffff] text-xs md:text-sm font-bold mb-[4px] tracking-[0.2em] uppercase">Acesso Restrito</h2>
-                <p className="text-gray-500 text-[10px] md:text-xs uppercase tracking-widest">{step === 'totp' ? 'Verificação de Segurança' : step === 'forgot' ? 'Recuperação de Conta' : 'Faça o login seguro'}</p>
-              </div>
+                <header className="mb-10">
+                  <h1 className={`text-white text-3xl md:text-4xl font-bold tracking-tight mb-4 ${montserrat.className}`}>
+                    Portal <span className="text-[#CCA761]">MAYUS</span>
+                  </h1>
+                  <div className="flex items-center gap-3">
+                    <div className="h-[1px] w-8 bg-[#CCA761]/40" />
+                    <p className="text-[10px] text-gray-500 uppercase tracking-[0.3em] font-black">
+                      {step === 'totp' ? 'Verificação MFA' : step === 'forgot' ? 'Recuperação' : 'Segurança de Acesso'}
+                    </p>
+                  </div>
+                </header>
 
-              <div className="flex-grow flex flex-col gap-2">
-                {/* Mensagem de Erro */}
                 {errorMsg && (
-                  <div className="bg-red-900/20 border border-red-800/40 rounded-xl px-4 py-3 flex items-center gap-3">
-                    <svg className="w-5 h-5 text-red-400 flex-shrink-0" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
-                      <path strokeLinecap="round" strokeLinejoin="round" d="M12 9v2m0 4h.01m-6.938 4h13.856c1.54 0 2.502-1.667 1.732-2.5L13.732 4c-.77-.833-1.964-.833-2.732 0L3.732 16.5c-.77.833.192 2.5 1.732 2.5z" />
-                    </svg>
-                    <p className="text-red-300 text-sm font-medium">{errorMsg}</p>
+                  <div className="mb-8 rounded-2xl bg-red-500/5 border border-red-500/20 p-4 animate-[fadeUp_0.3s_ease-out]">
+                    <p className="text-red-400 text-xs font-bold uppercase tracking-widest text-center">{errorMsg}</p>
                   </div>
                 )}
 
-                {/* Renderização Condicional do Formulário com base no `step` */}
-                {step === 'password' ? (
-                  <form onSubmit={handleLogin} className="flex flex-col gap-4 h-full">
-                    <div className="space-y-1 animate-fade-in-up">
-                      <label className="block text-xs font-semibold text-gray-200" htmlFor="email">
-                        E-mail corporativo
-                      </label>
+                {successMsg && (
+                  <div className="mb-8 rounded-2xl bg-emerald-500/5 border border-emerald-500/20 p-4 animate-[fadeUp_0.3s_ease-out]">
+                    <p className="text-emerald-400 text-xs font-bold uppercase tracking-widest text-center">{successMsg}</p>
+                  </div>
+                )}
+
+                {step === 'password' && (
+                  <form onSubmit={handleLogin} className="space-y-6">
+                    <div className="space-y-2">
+                      <label className="text-[10px] font-black uppercase tracking-widest text-gray-500 ml-1">E-mail Corporativo</label>
                       <input
-                        id="email"
                         type="email"
                         value={email}
                         onChange={(e) => setEmail(e.target.value)}
-                        placeholder="admin@mayus.com.br"
+                        placeholder="seu@email.com.br"
                         required
-                        className="w-full bg-[#0a0a0a] border border-[#2a2a2a] text-white rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-1 focus:ring-[#d4af37] focus:border-[#d4af37] transition-all placeholder:text-[#555]"
+                        className="w-full bg-black/40 border border-white/5 text-white rounded-xl px-4 py-3.5 text-sm outline-none transition-all focus:border-[#CCA761]/50 focus:bg-black/60 placeholder:text-gray-800"
                       />
                     </div>
 
-                    <div className="space-y-1 animate-fade-in-up" style={{ animationDelay: '0.1s'}}>
-                      <div className="flex justify-between items-end">
-                        <label className="block text-xs font-semibold text-gray-200" htmlFor="password">
-                          Senha
-                        </label>
+                    <div className="space-y-2">
+                      <div className="flex justify-between items-center">
+                        <label className="text-[10px] font-black uppercase tracking-widest text-gray-500 ml-1">Senha de Acesso</label>
                         <button 
                           type="button"
-                          onClick={() => { setStep('forgot'); setErrorMsg(''); setSuccessMsg(''); setResetEmail(email); }}
-                          className="text-[10px] text-[#a0832c] hover:text-[#d4af37] transition-colors underline-offset-4 hover:underline"
+                          onClick={() => setStep('forgot')}
+                          className="text-[9px] text-[#CCA761]/60 hover:text-[#CCA761] uppercase font-black tracking-widest transition-colors"
                         >
-                          Esqueci minha senha
+                          Esqueci a senha
                         </button>
                       </div>
                       <input
-                        id="password"
                         type="password"
                         value={password}
                         onChange={(e) => setPassword(e.target.value)}
                         placeholder="••••••••"
                         required
-                        className="w-full bg-[#0a0a0a] border border-[#2a2a2a] text-white rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-1 focus:ring-[#d4af37] focus:border-[#d4af37] transition-all placeholder:text-[#555] tracking-widest text-base"
+                        className="w-full bg-black/40 border border-white/5 text-white rounded-xl px-4 py-3.5 text-sm outline-none transition-all focus:border-[#CCA761]/50 focus:bg-black/60 placeholder:text-gray-800 tracking-widest"
                       />
                     </div>
 
-                    <div className="mt-auto animate-fade-in-up" style={{ animationDelay: '0.2s'}}>
-                      <button
-                        type="submit"
-                        disabled={isLoading}
-                        className={`relative w-full bg-gradient-to-r from-[#CCA761] via-[#f1d58d] to-[#CCA761] hover:from-[#e3c27e] hover:via-[#ffe8ad] hover:to-[#e3c27e] text-[#111111] font-bold rounded-lg px-4 py-3 text-xs flex items-center justify-center transition-all duration-300 transform active:scale-95 shadow-none overflow-hidden ${
-                          isLoading ? "opacity-70 cursor-not-allowed transform-none" : "hover:-translate-y-[1px]"
-                        }`}
-                      >
-                        <div className="absolute inset-0 -translate-x-full animate-[shimmer_2.5s_infinite] bg-gradient-to-r from-transparent via-white/40 to-transparent skew-x-12" />
-                        
-                        {isLoading ? (
-                          <svg className="animate-spin -ml-1 mr-3 h-5 w-5 text-[#111111]" xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24">
-                            <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4"></circle>
-                            <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z"></path>
-                          </svg>
-                        ) : null}
-                        <span className="relative z-10 tracking-widest font-[800] text-sm">
-                          {isLoading ? "ACESSANDO..." : "ACESSAR PLATAFORMA"}
+                    <button
+                      type="submit"
+                      disabled={isLoading}
+                      className="group relative w-full overflow-hidden rounded-xl bg-gradient-to-r from-[#CCA761] to-[#e3c27e] p-[1px] transition-all hover:scale-[1.02] active:scale-[0.98] disabled:opacity-50"
+                    >
+                      <div className="relative flex items-center justify-center gap-3 bg-gradient-to-r from-[#CCA761] to-[#e3c27e] px-6 py-4 rounded-[calc(0.75rem-1px)] transition-all group-hover:bg-transparent">
+                        <div className="absolute inset-0 -translate-x-full group-hover:animate-[shimmer_2s_infinite] bg-gradient-to-r from-transparent via-white/40 to-transparent" />
+                        <span className="relative z-10 text-[11px] font-black uppercase tracking-[0.3em] text-black">
+                          {isLoading ? "Validando..." : "Entrar na MAYUS"}
                         </span>
-                      </button>
-                    </div>
+                      </div>
+                    </button>
 
-                    <div className="text-center pt-3">
-                      <button 
+                    <div className="text-center pt-4">
+                      <button
                         type="button" 
                         onClick={() => router.push('/signup')}
-                        className="text-xs text-[#555] hover:text-[#d4af37] transition-colors uppercase tracking-wider"
+                        className="text-[10px] text-gray-600 hover:text-[#CCA761] transition-colors uppercase font-black tracking-[0.2em]"
                       >
-                        Primeiro acesso? → Criar conta
+                        Novo por aqui? Criar Conta
                       </button>
                     </div>
                   </form>
-                ) : step === 'totp' ? (
-                  <form onSubmit={handleVerifyTotp} className="flex flex-col gap-4 animate-fade-in-up h-full">
-                    <div className="space-y-2">
-                      <p className="text-xs text-gray-400 font-medium">Conta protegida por Autenticação de 2 Fatores.</p>
-                      <label className="block text-xs font-semibold text-[#CCA761]" htmlFor="totpCode">
-                        Código do Autenticador (6 dígitos)
-                      </label>
+                )}
+
+                {step === 'totp' && (
+                  <form onSubmit={handleVerifyTotp} className="space-y-8 animate-[fadeUp_0.4s_ease-out]">
+                    <div className="space-y-4">
+                      <p className="text-xs text-gray-500 font-medium leading-relaxed">Código de 6 dígitos gerado pelo seu app autenticador.</p>
                       <input
-                        id="totpCode"
                         type="text"
-                        inputMode="numeric"
-                        pattern="[0-9]*"
-                        autoComplete="one-time-code"
                         maxLength={6}
                         value={totpCode}
                         onChange={(e) => setTotpCode(e.target.value)}
-                        placeholder="123456"
+                        placeholder="000000"
                         required
-                        className="w-full bg-[#0a0a0a] border border-[#2a2a2a] text-white rounded-lg px-3 py-2 focus:outline-none focus:ring-1 focus:ring-[#d4af37] focus:border-[#d4af37] transition-all placeholder:text-[#333] tracking-[0.5em] text-center text-lg font-mono"
+                        className="w-full bg-black/40 border border-white/5 text-[#CCA761] rounded-2xl px-6 py-5 text-4xl font-mono text-center outline-none focus:border-[#CCA761]/50 tracking-[0.3em]"
                       />
                     </div>
 
-                    <div className="mt-auto pb-4">
-                      <button
-                        type="submit"
-                        disabled={isLoading || totpCode.length !== 6}
-                        className={`relative w-full bg-gradient-to-r from-[#CCA761] via-[#f1d58d] to-[#CCA761] hover:from-[#e3c27e] hover:via-[#ffe8ad] hover:to-[#e3c27e] text-[#111111] font-bold rounded-lg px-4 py-3 text-xs flex items-center justify-center transition-all duration-300 transform active:scale-95 shadow-none overflow-hidden ${
-                          (isLoading || totpCode.length !== 6) ? "opacity-70 cursor-not-allowed transform-none" : "hover:-translate-y-[1px]"
-                        }`}
-                      >
-                        <div className="absolute inset-0 -translate-x-full animate-[shimmer_2.5s_infinite] bg-gradient-to-r from-transparent via-white/40 to-transparent skew-x-12" />
-                        
-                        {isLoading ? (
-                          <svg className="animate-spin -ml-1 mr-3 h-5 w-5 text-[#111111]" xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24">
-                            <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4"></circle>
-                            <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z"></path>
-                          </svg>
-                        ) : null}
-                        <span className="relative z-10 tracking-widest font-[800] text-sm">
-                          {isLoading ? "VERIFICANDO..." : "CONFIRMAR CÓDIGO"}
-                        </span>
-                      </button>
-                    </div>
+                    <button
+                      type="submit"
+                      disabled={isLoading || totpCode.length !== 6}
+                      className="group relative w-full overflow-hidden rounded-xl bg-gradient-to-r from-[#CCA761] to-[#e3c27e] p-[1px] transition-all hover:scale-[1.02] active:scale-[0.98] disabled:opacity-50"
+                    >
+                      <div className="relative flex items-center justify-center gap-3 bg-gradient-to-r from-[#CCA761] to-[#e3c27e] px-6 py-4 rounded-[calc(0.75rem-1px)]">
+                        <span className="relative z-10 text-[11px] font-black uppercase tracking-[0.3em] text-black">Verificar</span>
+                      </div>
+                    </button>
 
-                    <div className="text-center pt-4">
-                      <button 
-                         type="button" 
-                         onClick={() => setStep('password')}
-                         className="text-xs text-[#555] hover:text-[#d4af37] transition-colors uppercase tracking-wider"
+                    <div className="text-center">
+                      <button
+                        type="button"
+                        onClick={() => setStep('password')}
+                        className="text-[10px] text-gray-600 hover:text-[#CCA761] transition-colors uppercase font-black tracking-[0.2em]"
                       >
-                        Voltar para Senha
+                        Voltar para Login
                       </button>
                     </div>
                   </form>
-                ) : step === 'forgot' ? (
+                )}
+
+                {step === 'forgot' && (
                   <form onSubmit={async (e) => {
                     e.preventDefault();
                     setIsLoading(true);
-                    setErrorMsg('');
-                    setSuccessMsg('');
                     try {
                       const res = await fetch('/api/auth/reset-password', {
                         method: 'POST',
                         headers: { 'Content-Type': 'application/json' },
                         body: JSON.stringify({ email: resetEmail }),
                       });
-                      const data = await res.json();
-                      if (!res.ok) {
-                        setErrorMsg(data.error || 'Erro ao enviar link de recuperação.');
-                      } else {
-                        setSuccessMsg('Se o e-mail existir, um link de recuperação foi enviado. Verifique sua caixa de entrada.');
-                      }
-                    } catch (err) {
-                      setErrorMsg('Erro inesperado. Tente novamente.');
-                    } finally {
-                      setIsLoading(false);
-                    }
-                  }} className="flex flex-col gap-4 animate-fade-in-up h-full">
-                    <div className="space-y-2">
-                      <p className="text-xs text-gray-400 font-medium">Insira seu e-mail corporativo e enviaremos um link para redefinir sua senha.</p>
-                      <label className="block text-xs font-semibold text-[#CCA761]" htmlFor="resetEmail">
-                        E-mail de Recuperação
-                      </label>
-                      <input
-                        id="resetEmail"
-                        type="email"
-                        value={resetEmail}
-                        onChange={(e) => setResetEmail(e.target.value)}
-                        placeholder="admin@mayus.com.br"
-                        required
-                        className="w-full bg-[#0a0a0a] border border-[#2a2a2a] text-white rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-1 focus:ring-[#d4af37] focus:border-[#d4af37] transition-all placeholder:text-[#555]"
-                      />
-                    </div>
-
-                    {successMsg && (
-                      <div className="bg-green-900/20 border border-green-800/40 rounded-xl px-4 py-3 flex items-center gap-3">
-                        <svg className="w-5 h-5 text-green-400 flex-shrink-0" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
-                          <path strokeLinecap="round" strokeLinejoin="round" d="M5 13l4 4L19 7" />
-                        </svg>
-                        <p className="text-green-300 text-sm font-medium">{successMsg}</p>
+                      if (res.ok) setSuccessMsg('Instruções enviadas para seu e-mail.');
+                      else setErrorMsg('Erro ao solicitar recuperação.');
+                    } catch { setErrorMsg('Falha na conexão.'); }
+                    finally { setIsLoading(false); }
+                  }} className="space-y-8 animate-[fadeUp_0.4s_ease-out]">
+                    <div className="space-y-4">
+                      <p className="text-xs text-gray-500 font-medium leading-relaxed">Enviaremos um link seguro para redefinir sua senha.</p>
+                      <div className="space-y-2">
+                         <label className="text-[10px] font-black uppercase tracking-widest text-gray-500 ml-1">E-mail Corporativo</label>
+                         <input
+                           type="email"
+                           value={resetEmail}
+                           onChange={(e) => setResetEmail(e.target.value)}
+                           placeholder="seu@email.com.br"
+                           required
+                           className="w-full bg-black/40 border border-white/5 text-white rounded-xl px-4 py-3.5 text-sm outline-none focus:border-[#CCA761]/50"
+                         />
                       </div>
-                    )}
-
-                    <div className="mt-auto pb-4">
-                      <button
-                        type="submit"
-                        disabled={isLoading}
-                        className={`relative w-full bg-gradient-to-r from-[#CCA761] via-[#f1d58d] to-[#CCA761] hover:from-[#e3c27e] hover:via-[#ffe8ad] hover:to-[#e3c27e] text-[#111111] font-bold rounded-lg px-4 py-3 text-xs flex items-center justify-center transition-all duration-300 transform active:scale-95 shadow-none overflow-hidden ${
-                          isLoading ? "opacity-70 cursor-not-allowed transform-none" : "hover:-translate-y-[1px]"
-                        }`}
-                      >
-                        <div className="absolute inset-0 -translate-x-full animate-[shimmer_2.5s_infinite] bg-gradient-to-r from-transparent via-white/40 to-transparent skew-x-12" />
-                        {isLoading ? (
-                          <svg className="animate-spin -ml-1 mr-3 h-5 w-5 text-[#111111]" xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24">
-                            <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4"></circle>
-                            <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z"></path>
-                          </svg>
-                        ) : null}
-                        <span className="relative z-10 tracking-widest font-[800] text-sm">
-                          {isLoading ? "ENVIANDO..." : "ENVIAR LINK DE RECUPERAÇÃO"}
-                        </span>
-                      </button>
                     </div>
 
-                    <div className="text-center pt-4">
+                    <button
+                      type="submit"
+                      disabled={isLoading}
+                      className="group relative w-full overflow-hidden rounded-xl bg-gradient-to-r from-[#CCA761] to-[#e3c27e] p-[1px] transition-all hover:scale-[1.02]"
+                    >
+                      <div className="relative flex items-center justify-center gap-3 bg-gradient-to-r from-[#CCA761] to-[#e3c27e] px-6 py-4 rounded-[calc(0.75rem-1px)]">
+                        <span className="relative z-10 text-[11px] font-black uppercase tracking-[0.3em] text-black">Enviar Link</span>
+                      </div>
+                    </button>
+
+                    <div className="text-center">
                       <button 
                         type="button" 
-                        onClick={() => { setStep('password'); setErrorMsg(''); setSuccessMsg(''); }}
-                        className="text-xs text-[#555] hover:text-[#d4af37] transition-colors uppercase tracking-wider"
+                        onClick={() => setStep('password')}
+                        className="text-[10px] text-gray-600 hover:text-[#CCA761] transition-colors uppercase font-black tracking-[0.2em]"
                       >
                         Voltar para Login
                       </button>
                     </div>
                   </form>
-                ) : null}
+                )}
               </div>
             </div>
           </div>
         </div>
       </div>
     </div>
-  </div>
   );
 }

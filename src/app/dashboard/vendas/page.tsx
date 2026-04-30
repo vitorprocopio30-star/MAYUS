@@ -91,7 +91,7 @@ export default function VendasPage() {
       {/* Header */}
       <div className="flex flex-col md:flex-row md:items-center justify-between gap-4">
         <div>
-          <h1 className={`text-3xl md:text-4xl text-gray-900 dark:text-white ${cormorant.className} italic font-bold`}>
+          <h1 className={`text-3xl md:text-4xl text-white ${cormorant.className} italic font-bold`}>
             Gestão de <span className="text-[#CCA761]">Vendas</span>
           </h1>
           <p className="text-gray-500 text-sm mt-1 uppercase tracking-widest font-bold">Resumo Financeiro & Resultados</p>
@@ -109,16 +109,16 @@ export default function VendasPage() {
 
       {/* Overview Cards */}
       <div className="grid grid-cols-1 md:grid-cols-3 gap-6">
-        <div className="bg-gray-100 dark:bg-[#111] border border-[#222] p-6 rounded-2xl relative overflow-hidden">
+        <div className="bg-[#111] border border-[#222] p-6 rounded-2xl relative overflow-hidden">
           <div className="absolute top-0 right-0 w-32 h-32 bg-[#CCA761]/5 rounded-bl-full pointer-events-none" />
           <div className="flex items-center gap-3 text-gray-400 mb-2">
             <DollarSign size={18} className="text-[#CCA761]" />
             <h3 className="text-xs uppercase tracking-widest font-bold">Total Fechado</h3>
           </div>
-          <p className="text-3xl font-black text-gray-900 dark:text-white">{formatMoney(totalTicket)}</p>
+          <p className="text-3xl font-black text-white">{formatMoney(totalTicket)}</p>
           <p className="text-xs text-emerald-400 mt-2 flex items-center gap-1"><TrendingUp size={12}/> Global este mês</p>
         </div>
-        <div className="bg-gray-100 dark:bg-[#111] border border-[#222] p-6 rounded-2xl relative overflow-hidden">
+        <div className="bg-[#111] border border-[#222] p-6 rounded-2xl relative overflow-hidden">
           <div className="absolute top-0 right-0 w-32 h-32 bg-emerald-500/5 rounded-bl-full pointer-events-none" />
           <div className="flex items-center gap-3 text-gray-400 mb-2">
             <TrendingUp size={18} className="text-emerald-500" />
@@ -127,22 +127,22 @@ export default function VendasPage() {
           <p className="text-3xl font-black text-emerald-400">{formatMoney(totalCommissions)}</p>
           <p className="text-xs text-emerald-500 mt-2">Valor da força de vendas</p>
         </div>
-        <div className="bg-gray-100 dark:bg-[#111] border border-[#222] p-6 rounded-2xl relative overflow-hidden">
+        <div className="bg-[#111] border border-[#222] p-6 rounded-2xl relative overflow-hidden">
           <div className="flex items-center gap-3 text-gray-400 mb-2">
             <Briefcase size={18} className="text-blue-500" />
             <h3 className="text-xs uppercase tracking-widest font-bold">Contratos Ativos</h3>
           </div>
-          <p className="text-3xl font-black text-gray-900 dark:text-white">{sales.filter(s => s.status === 'Fechado').length}</p>
+          <p className="text-3xl font-black text-white">{sales.filter(s => s.status === 'Fechado').length}</p>
           <p className="text-xs text-blue-400 mt-2">Fechamentos Concluídos</p>
         </div>
       </div>
 
       {/* Main Container */}
-      <div className="bg-gray-50 dark:bg-white/[0.02] border border-gray-200 dark:border-white/5 rounded-2xl p-6 backdrop-blur-sm">
+      <div className="bg-white/[0.02] border border-white/5 rounded-2xl p-6 backdrop-blur-sm">
         
         {/* Toolbar */}
         <div className="flex flex-col sm:flex-row gap-4 justify-between items-center mb-6">
-          <div className="flex bg-white dark:bg-[#0a0a0a] rounded-xl p-1.5 w-max border border-gray-200 dark:border-white/5 shadow-inner hidden sm:flex">
+          <div className="flex bg-[#0a0a0a] rounded-xl p-1.5 w-max border border-white/5 shadow-inner hidden sm:flex">
              <button 
                onClick={() => setActiveTab("vendas")} 
                className={`px-6 py-2.5 text-[10px] uppercase tracking-widest font-bold rounded-lg transition-all ${activeTab === 'vendas' ? 'bg-[#CCA761] text-[#0a0a0a] shadow-lg' : 'text-gray-500 hover:text-white'}`}
@@ -163,7 +163,7 @@ export default function VendasPage() {
               placeholder="Buscar por cliente ou profissional..."
               value={searchTerm}
               onChange={(e) => setSearchTerm(e.target.value)}
-              className="w-full bg-white dark:bg-[#0a0a0a] border border-[#2a2a2a] text-gray-900 dark:text-white rounded-xl pl-10 pr-4 py-2.5 text-sm focus:outline-none focus:border-[#CCA761]/50 transition-colors"
+              className="w-full bg-[#0a0a0a] border border-[#2a2a2a] text-white rounded-xl pl-10 pr-4 py-2.5 text-sm focus:outline-none focus:border-[#CCA761]/50 transition-colors"
             />
           </div>
         </div>
@@ -172,7 +172,7 @@ export default function VendasPage() {
         <div className="overflow-x-auto">
           <table className="w-full text-left border-collapse min-w-[800px]">
             <thead>
-              <tr className="border-b border-gray-200 dark:border-white/5">
+              <tr className="border-b border-white/5">
                 <th className="pb-4 pt-2 text-[10px] font-bold text-gray-500 uppercase tracking-widest pl-4">Cliente</th>
                 <th className="pb-4 pt-2 text-[10px] font-bold text-gray-500 uppercase tracking-widest">Profissional</th>
                 <th className="pb-4 pt-2 text-[10px] font-bold text-gray-500 uppercase tracking-widest">Valor do Contrato</th>
@@ -181,7 +181,7 @@ export default function VendasPage() {
                 <th className="pb-4 pt-2 text-[10px] font-bold text-gray-500 uppercase tracking-widest text-right pr-4">Ação</th>
               </tr>
             </thead>
-            <tbody className="divide-y divide-gray-200 dark:divide-white/5">
+            <tbody className="divide-y divide-white/5">
               {isLoading ? (
                 <tr>
                   <td colSpan={6} className="py-12 text-center text-gray-500">
@@ -197,16 +197,16 @@ export default function VendasPage() {
                 </tr>
               ) : (
                 filteredSales.map((sale) => (
-                  <tr key={sale.id} className="group hover:bg-gray-50 dark:bg-white/[0.02] transition-colors">
+                  <tr key={sale.id} className="group hover:bg-white/[0.02] transition-colors">
                     <td className="py-4 pl-4">
-                      <p className="font-semibold text-gray-900 dark:text-white text-sm">{sale.client_name}</p>
+                      <p className="font-semibold text-white text-sm">{sale.client_name}</p>
                     </td>
                     <td className="py-4 whitespace-nowrap">
                       {(() => {
                          const prof = team.find(p => p.name === sale.professional_name);
                          return (
                            <div className="flex items-center gap-2">
-                             <div className="w-8 h-8 rounded-full bg-gray-100 dark:bg-[#1a1a1a] border border-[#333] flex items-center justify-center text-[10px] font-bold text-[#CCA761] overflow-hidden">
+                             <div className="w-8 h-8 rounded-full bg-[#1a1a1a] border border-[#333] flex items-center justify-center text-[10px] font-bold text-[#CCA761] overflow-hidden">
                                 {prof?.avatarUrl ? (
                                    <img src={prof.avatarUrl} alt={sale.professional_name} className="w-full h-full object-cover" />
                                 ) : (
@@ -214,7 +214,7 @@ export default function VendasPage() {
                                 )}
                              </div>
                              <div className="flex flex-col">
-                               <span className="text-gray-800 dark:text-gray-200 text-sm font-semibold tracking-wide">{sale.professional_name || "SDR"}</span>
+                               <span className="text-gray-200 text-sm font-semibold tracking-wide">{sale.professional_name || "SDR"}</span>
                                {prof?.role && <span className="text-[9px] text-gray-500 uppercase font-bold tracking-widest">{prof.role}</span>}
                              </div>
                            </div>
@@ -222,7 +222,7 @@ export default function VendasPage() {
                       })()}
                     </td>
                     <td className="py-4 whitespace-nowrap">
-                      <p className="font-bold text-gray-900 dark:text-white text-sm">{formatMoney(sale.ticket_total)}</p>
+                      <p className="font-bold text-white text-sm">{formatMoney(sale.ticket_total)}</p>
                       <p className="text-[10px] text-[#CCA761]">Comissão: {formatMoney(sale.commission_value)}</p>
                     </td>
                     <td className="py-4 whitespace-nowrap">

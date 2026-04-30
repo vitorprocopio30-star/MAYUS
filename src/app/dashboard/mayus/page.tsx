@@ -129,7 +129,7 @@ function getTrackedTaskIds(messages: Message[]): string[] {
 function getMissionBadge(status: string) {
   switch (status) {
     case "queued":
-      return { label: "Na fila", className: "text-gray-700 dark:text-gray-300 border-gray-200 dark:border-white/10 bg-gray-100 dark:bg-white/5" };
+      return { label: "Na fila", className: "text-gray-300 border-white/10 bg-white/5" };
     case "planning":
       return { label: "Planejando", className: "text-blue-300 border-blue-500/30 bg-blue-500/10" };
     case "executing":
@@ -143,11 +143,11 @@ function getMissionBadge(status: string) {
     case "completed_with_warnings":
       return { label: "Concluída com alertas", className: "text-yellow-300 border-yellow-500/30 bg-yellow-500/10" };
     case "cancelled":
-      return { label: "Cancelada", className: "text-gray-700 dark:text-gray-300 border-gray-200 dark:border-white/10 bg-gray-100 dark:bg-white/5" };
+      return { label: "Cancelada", className: "text-gray-300 border-white/10 bg-white/5" };
     case "failed":
       return { label: "Falhou", className: "text-red-300 border-red-500/30 bg-red-500/10" };
     default:
-      return { label: status || "Desconhecido", className: "text-gray-700 dark:text-gray-300 border-gray-200 dark:border-white/10 bg-gray-100 dark:bg-white/5" };
+      return { label: status || "Desconhecido", className: "text-gray-300 border-white/10 bg-white/5" };
   }
 }
 
@@ -654,7 +654,7 @@ function MissionStatusCard({ snapshot }: { snapshot: BrainTaskSnapshot }) {
       <div className="flex items-center justify-between gap-3">
         <div>
           <p className="text-[10px] text-gray-500 uppercase tracking-widest">Missão</p>
-          <p className="text-xs text-gray-900 dark:text-white font-semibold">{snapshot.task.module} · {snapshot.task.channel}</p>
+          <p className="text-xs text-white font-semibold">{snapshot.task.module} · {snapshot.task.channel}</p>
         </div>
         <span className={`text-[10px] px-2.5 py-1 rounded-full border font-bold uppercase tracking-widest ${badge.className}`}>
           {badge.label}
@@ -670,10 +670,10 @@ function MissionStatusCard({ snapshot }: { snapshot: BrainTaskSnapshot }) {
       {visibleSteps.length > 0 && (
         <div className="space-y-2">
           {visibleSteps.map((step) => (
-            <div key={step.id} className="flex items-start gap-2 text-[11px] text-gray-700 dark:text-gray-300">
+            <div key={step.id} className="flex items-start gap-2 text-[11px] text-gray-300">
               <span className={`mt-1.5 h-2 w-2 rounded-full ${getStepAccent(step.status)}`} />
               <div className="min-w-0 flex-1">
-                <p className="truncate text-gray-900 dark:text-white/90">{step.order_index}. {step.title}</p>
+                <p className="truncate text-white/90">{step.order_index}. {step.title}</p>
                 <p className="text-[10px] text-gray-500 uppercase tracking-widest">{step.status.replaceAll("_", " ")}</p>
               </div>
             </div>
@@ -689,10 +689,10 @@ function MissionStatusCard({ snapshot }: { snapshot: BrainTaskSnapshot }) {
             const highlights = getArtifactHighlights(artifact);
 
             return (
-              <div data-testid={`mayus-artifact-${artifact.id}`} key={artifact.id} className="rounded-lg border border-gray-200 dark:border-white/5 bg-gray-200 dark:bg-black/20 p-2.5 text-[11px] text-gray-700 dark:text-gray-300">
+              <div data-testid={`mayus-artifact-${artifact.id}`} key={artifact.id} className="rounded-lg border border-white/5 bg-gray-200 dark:bg-black/20 p-2.5 text-[11px] text-gray-300">
                 <div className="flex items-center justify-between gap-2">
                   <div className="min-w-0">
-                    <p className="truncate text-gray-900 dark:text-white/90">{artifact.title || getArtifactTypeLabel(artifact.artifact_type)}</p>
+                    <p className="truncate text-white/90">{artifact.title || getArtifactTypeLabel(artifact.artifact_type)}</p>
                     <p className="text-[10px] uppercase tracking-widest text-gray-500">{getArtifactTypeLabel(artifact.artifact_type)}</p>
                   </div>
                   <span className="text-[10px] uppercase tracking-widest text-gray-500">{dayjs(artifact.created_at).fromNow()}</span>
@@ -701,7 +701,7 @@ function MissionStatusCard({ snapshot }: { snapshot: BrainTaskSnapshot }) {
                 {highlights.length > 0 && (
                   <div className="mt-2 flex flex-wrap gap-1.5">
                     {highlights.map((highlight) => (
-                      <span key={highlight} className="rounded-full border border-gray-200 dark:border-white/10 bg-gray-100 dark:bg-white/5 px-2 py-1 text-[9px] uppercase tracking-widest text-gray-400">
+                      <span key={highlight} className="rounded-full border border-white/10 bg-white/5 px-2 py-1 text-[9px] uppercase tracking-widest text-gray-400">
                         {highlight}
                       </span>
                     ))}
@@ -733,9 +733,9 @@ function MissionStatusCard({ snapshot }: { snapshot: BrainTaskSnapshot }) {
             const preview = getEventPreview(event);
 
             return (
-               <div data-testid={`mayus-event-${event.id}`} key={event.id} className="rounded-lg border border-gray-200 dark:border-white/5 bg-gray-200 dark:bg-black/20 p-2.5 text-[11px] text-gray-700 dark:text-gray-300">
+               <div data-testid={`mayus-event-${event.id}`} key={event.id} className="rounded-lg border border-white/5 bg-gray-200 dark:bg-black/20 p-2.5 text-[11px] text-gray-300">
                 <div className="flex items-center justify-between gap-2">
-                  <p className="truncate text-gray-900 dark:text-white/90">{getEventLabel(event.event_type)}</p>
+                  <p className="truncate text-white/90">{getEventLabel(event.event_type)}</p>
                   <span className="text-[10px] uppercase tracking-widest text-gray-500">{dayjs(event.created_at).fromNow()}</span>
                 </div>
                 {preview && <p className="mt-2 text-gray-400 line-clamp-2">{preview}</p>}
@@ -855,7 +855,7 @@ function ApprovalCard({
           <p className="text-[10px] text-[#CCA761] uppercase tracking-widest font-bold mb-1 flex items-center gap-1.5">
             <ShieldAlert size={11} /> Aprovação necessária
           </p>
-          <p className="text-gray-900 dark:text-white font-semibold text-sm">{awaitingPayload.skillName}</p>
+          <p className="text-white font-semibold text-sm">{awaitingPayload.skillName}</p>
         </div>
         <span className={`text-[10px] font-bold uppercase tracking-widest px-2.5 py-1 rounded-full border whitespace-nowrap ${badgeClass}`}>
           {awaitingPayload.riskLevel ?? "desconhecido"}
@@ -870,7 +870,7 @@ function ApprovalCard({
             Object.entries(awaitingPayload.entities).map(([key, value]) => (
               <div key={key} className="flex gap-2 text-xs">
                 <span className="text-gray-500 min-w-[130px] shrink-0">{key}:</span>
-                <span className="text-gray-800 dark:text-gray-200 break-all">{value || "—"}</span>
+                <span className="text-gray-200 break-all">{value || "—"}</span>
               </div>
             ))
           ) : (
@@ -1476,7 +1476,7 @@ export default function MAYUSPlayground() {
         <div className="w-24 h-24 mx-auto bg-[#CCA761]/10 rounded-full flex items-center justify-center border border-[#CCA761]/30 mb-6">
           <KeyRound size={40} className="text-[#CCA761]" />
         </div>
-        <h1 className={`text-5xl text-gray-900 dark:text-white mb-4 ${cormorant.className}`}>O MAYUS está Adormecido</h1>
+        <h1 className={`text-5xl text-white mb-4 ${cormorant.className}`}>O MAYUS está Adormecido</h1>
         <p className="text-gray-400 mb-8 max-w-lg mx-auto leading-relaxed">
           Nenhuma chave de IA foi encontrada no seu cofre seguro. Vá para a página de integrações e conecte uma mente de Inteligência Artificial para dar vida ao MAYUS.
         </p>
@@ -1502,11 +1502,11 @@ export default function MAYUSPlayground() {
       <aside className={`
         ${isSidebarOpen ? 'w-80' : 'w-0'} 
         ${isMobileMenuOpen ? 'translate-x-0 w-80' : '-translate-x-full md:translate-x-0'}
-        transition-all duration-300 border-r border-[#CCA761]/20 bg-white dark:bg-[#0a0a0a] flex flex-col hide-scrollbar absolute md:relative z-40 h-full
+        transition-all duration-300 border-r border-[#CCA761]/20 bg-[#0a0a0a] flex flex-col hide-scrollbar absolute md:relative z-40 h-full
       `}>
         {isSidebarOpen && (
           <div className="flex flex-col h-full w-80">
-            <div className="p-4 border-b border-gray-200 dark:border-white/5">
+            <div className="p-4 border-b border-white/5">
               <button 
                 onClick={createNewChat}
                 className="w-full flex items-center gap-2 bg-[#CCA761]/10 text-[#CCA761] hover:bg-[#CCA761]/20 border border-[#CCA761]/30 rounded-xl px-4 py-3 font-semibold text-sm transition-colors uppercase tracking-widest"
@@ -1529,12 +1529,12 @@ export default function MAYUSPlayground() {
                     className={`group relative flex items-center gap-3 p-3 rounded-lg cursor-pointer transition-colors ${
                       currentConversationId === conv.id 
                         ? 'bg-[#CCA761]/10 border border-[#CCA761]/30' 
-                        : 'hover:bg-gray-100 dark:bg-white/5 border border-transparent'
+                        : 'hover:bg-white/5 border border-transparent'
                     }`}
                   >
                     <MessageSquare size={15} className={currentConversationId === conv.id ? "text-[#CCA761]" : "text-gray-500"} />
                     <div className="flex-1 min-w-0">
-                      <p className={`text-sm tracking-wide truncate ${currentConversationId === conv.id ? 'text-[#CCA761]' : 'text-gray-700 dark:text-gray-300'}`}>
+                      <p className={`text-sm tracking-wide truncate ${currentConversationId === conv.id ? 'text-[#CCA761]' : 'text-gray-300'}`}>
                         {conv.title}
                       </p>
                       <p className="text-[10px] text-gray-600 mt-0.5">
@@ -1563,7 +1563,7 @@ export default function MAYUSPlayground() {
           <div className="flex items-center gap-4 pl-12 md:pl-0">
             <button 
               onClick={() => setIsSidebarOpen(!isSidebarOpen)}
-              className="hidden md:flex p-2 hover:bg-gray-100 dark:bg-white/5 text-gray-400 rounded-lg transition-colors border border-transparent hover:border-gray-200 dark:border-white/10"
+              className="hidden md:flex p-2 hover:bg-white/5 text-gray-400 rounded-lg transition-colors border border-transparent hover:border-white/10"
               title={isSidebarOpen ? "Recolher Histórico" : "Expandir Histórico"}
             >
                {isSidebarOpen ? <ChevronLeft size={18} /> : <History size={18} />}
@@ -1599,7 +1599,7 @@ export default function MAYUSPlayground() {
               className={`flex items-center gap-2 px-4 py-2 rounded-xl border transition-all text-[10px] font-black uppercase tracking-[0.2em] ${
                 isConversationMode 
                   ? 'bg-[#CCA761] border-[#CCA761] text-black shadow-[0_0_20px_rgba(204,167,97,0.4)] animate-pulse' 
-                  : 'bg-gray-100 dark:bg-white/5 border-gray-200 dark:border-white/10 text-gray-500 hover:border-[#CCA761]/40'
+                  : 'bg-white/5 border-white/10 text-gray-500 hover:border-[#CCA761]/40'
               }`}
             >
               <Sparkles size={14} /> {isConversationMode ? 'Modo Conversa Ativo' : 'Ativar Modo Conversa'}
@@ -1617,7 +1617,7 @@ export default function MAYUSPlayground() {
           {messages.length === 0 && (
             <div className="h-full flex flex-col items-center justify-center text-center opacity-70">
               <Bot size={50} className="text-[#CCA761] mb-5 animate-pulse" />
-              <p className={`text-3xl text-gray-900 dark:text-white ${cormorant.className}`}>Bem-vindo ao Córtex.</p>
+              <p className={`text-3xl text-white ${cormorant.className}`}>Bem-vindo ao Córtex.</p>
               <p className="text-gray-400 mt-2 text-sm max-w-sm">Tudo o que for decidido e acordado aqui ficará gravado no seu banco de dados institucional.</p>
             </div>
           )}
@@ -1667,7 +1667,7 @@ export default function MAYUSPlayground() {
               <div key={idx} className={`flex gap-4 animate-in fade-in slide-in-from-bottom-2 ${msg.role === 'user' ? 'flex-row-reverse' : ''}`}>
                 <div className={`w-8 h-8 rounded-full flex items-center justify-center shrink-0 ${
                   msg.role === 'user'
-                    ? 'bg-gray-100 dark:bg-white/10 text-white'
+                    ? 'bg-white/10 text-white'
                     : msg.role === 'model'
                     ? 'bg-[#CCA761]/20 text-[#CCA761] border border-[#CCA761]/30 shadow-[0_0_15px_rgba(204,167,97,0.2)]'
                     : 'bg-red-500/10 text-red-400'
@@ -1676,9 +1676,9 @@ export default function MAYUSPlayground() {
                 </div>
                 <div className={`p-4 rounded-2xl max-w-[85%] text-sm leading-relaxed whitespace-pre-wrap relative group/msg ${
                   msg.role === 'user'
-                    ? 'bg-gray-100 dark:bg-white/10 text-gray-800 dark:text-gray-200 rounded-tr-sm'
+                    ? 'bg-white/10 text-gray-200 rounded-tr-sm'
                     : msg.role === 'model'
-                    ? 'bg-gray-100 dark:bg-[#111] text-gray-700 dark:text-gray-300 rounded-tl-sm border border-gray-200 dark:border-white/5'
+                    ? 'bg-[#111] text-gray-300 rounded-tl-sm border border-white/5'
                     : 'bg-red-500/10 text-red-400 border border-red-500/30'
                 }`}>
                   <ReactMarkdown
@@ -1708,7 +1708,7 @@ export default function MAYUSPlayground() {
                       className={`absolute -right-10 top-2 p-2 rounded-full transition-all ${
                         playingMessageId === (msg.id || idx) 
                           ? 'bg-[#CCA761] text-black scale-110' 
-                          : 'bg-gray-100 dark:bg-white/5 text-gray-500 hover:text-[#CCA761] opacity-0 group-hover/msg:opacity-100'
+                          : 'bg-white/5 text-gray-500 hover:text-[#CCA761] opacity-0 group-hover/msg:opacity-100'
                       }`}
                       title="Ouvir Resposta"
                     >
@@ -1725,7 +1725,7 @@ export default function MAYUSPlayground() {
               <div className="w-8 h-8 rounded-full flex items-center justify-center shrink-0 bg-[#CCA761]/20 text-[#CCA761] border border-[#CCA761]/30">
                 <Loader2 size={16} className="animate-spin" />
               </div>
-              <div className="bg-gray-100 dark:bg-[#111] text-gray-400 p-4 rounded-2xl text-xs rounded-tl-sm border border-gray-200 dark:border-white/5">
+              <div className="bg-[#111] text-gray-400 p-4 rounded-2xl text-xs rounded-tl-sm border border-white/5">
                 MAYUS está analisando...
               </div>
             </div>
@@ -1748,10 +1748,10 @@ export default function MAYUSPlayground() {
                 value={input}
                 onChange={(e) => setInput(e.target.value)}
                 placeholder={isConversationMode ? "Ouvindo... Pode falar." : "Sua instrução para a IA..."}
-                className={`w-full bg-gray-50 dark:bg-[#141414] border rounded-2xl pl-6 pr-14 py-4 focus:outline-none transition-all text-sm text-gray-800 dark:text-gray-200 shadow-xl ${
+                className={`w-full bg-gray-50 dark:bg-[#141414] border rounded-2xl pl-6 pr-14 py-4 focus:outline-none transition-all text-sm text-gray-200 shadow-xl ${
                   isConversationMode 
                     ? 'border-[#CCA761]/40 shadow-[#CCA761]/5' 
-                    : 'border-gray-200 dark:border-white/10 focus:border-[#CCA761]/50'
+                    : 'border-white/10 focus:border-[#CCA761]/50'
                 }`}
                 disabled={isLoading}
               />

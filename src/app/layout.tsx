@@ -9,10 +9,21 @@ export const metadata: Metadata = {
   description: "O Sistema Operacional do Advogado Moderno",
 };
 
-import { Inter } from "next/font/google";
+import { Inter, Montserrat, Cormorant_Garamond } from "next/font/google";
 import { ThemeProvider } from "@/components/ThemeProvider";
 
-const inter = Inter({ subsets: ["latin"] });
+const inter = Inter({ subsets: ["latin"], variable: "--font-inter" });
+const montserrat = Montserrat({
+  subsets: ["latin"],
+  variable: "--font-montserrat",
+  weight: ["300", "400", "500", "600", "700", "800", "900"]
+});
+const cormorant = Cormorant_Garamond({
+  subsets: ["latin"],
+  variable: "--font-cormorant",
+  weight: ["300", "400", "500", "600", "700"],
+  style: ["normal", "italic"]
+});
 
 export default function RootLayout({
   children,
@@ -21,7 +32,7 @@ export default function RootLayout({
 }>) {
   return (
     <html lang="pt-BR" className="dark" suppressHydrationWarning>
-      <body className={`${inter.className} min-h-screen bg-background text-foreground transition-colors duration-500 antialiased`} suppressHydrationWarning>
+      <body className={`${inter.variable} ${montserrat.variable} ${cormorant.variable} font-sans min-h-screen bg-background text-foreground transition-colors duration-500 antialiased`} suppressHydrationWarning>
         <ThemeProvider>
           <NotificationsListener />
           {children}

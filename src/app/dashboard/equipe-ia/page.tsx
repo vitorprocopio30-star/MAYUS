@@ -242,7 +242,7 @@ export default function EquipeNeuralPage() {
               />
               
               {/* O Card Interno (Vidro Preto) */}
-              <div className="relative bg-white dark:bg-[#050505]/95 backdrop-blur-3xl rounded-[23px] p-8 flex flex-col items-center h-full border border-gray-200 dark:border-white/5 mx-[1px] my-[1px] shadow-[inset_0_0_60px_rgba(0,0,0,0.9)]">
+              <div className="relative bg-white dark:bg-[#050505]/95 backdrop-blur-3xl rounded-[23px] p-8 flex flex-col items-center h-full border border-white/5 mx-[1px] my-[1px] shadow-[inset_0_0_60px_rgba(0,0,0,0.9)]">
                 
                 {/* Lanterna de Fundo (Backlight) */}
                 <div 
@@ -253,8 +253,8 @@ export default function EquipeNeuralPage() {
                 />
 
                 <div className="w-full flex justify-between items-center mb-4 z-10 relative">
-                  <span className={`text-gray-900 dark:text-white font-black tracking-[0.4em] text-[10px] uppercase transition-colors duration-700 ${isActive ? '' : 'text-gray-600'}`}>AGENTE</span>
-                  <button className={`w-8 h-8 rounded-full flex items-center justify-center transition-all ${isActive ? 'bg-gray-100 dark:bg-white/10 shadow-[0_0_15px_currentColor]' : 'bg-transparent border border-gray-200 dark:border-white/10'}`} style={{ color: isActive ? color : '' }}>
+                  <span className={`text-white font-black tracking-[0.4em] text-[10px] uppercase transition-colors duration-700 ${isActive ? '' : 'text-gray-600'}`}>AGENTE</span>
+                  <button className={`w-8 h-8 rounded-full flex items-center justify-center transition-all ${isActive ? 'bg-white/10 shadow-[0_0_15px_currentColor]' : 'bg-transparent border border-white/10'}`} style={{ color: isActive ? color : '' }}>
                     <Power size={14} color={isActive ? color : '#666'} />
                   </button>
                 </div>
@@ -268,7 +268,7 @@ export default function EquipeNeuralPage() {
                     background: isActive ? `linear-gradient(135deg, ${color}, transparent, ${color})` : '#333' 
                   }}
                 >
-                  <div className="w-full h-full rounded-full bg-white dark:bg-[#0a0a0a] flex items-center justify-center overflow-hidden border-[4px] border-[#0a0a0a] relative">
+                  <div className="w-full h-full rounded-full bg-[#0a0a0a] flex items-center justify-center overflow-hidden border-[4px] border-[#0a0a0a] relative">
                     {/* Linhas de grade sci-fi sutis dentro do círculo */}
                     <div className="absolute inset-0 opacity-10 bg-[linear-gradient(transparent_49%,#fff_50%,transparent_51%),linear-gradient(90deg,transparent_49%,#fff_50%,transparent_51%)] bg-[length:20px_20px]" />
                     
@@ -281,8 +281,8 @@ export default function EquipeNeuralPage() {
 
                     {/* Overlay de Edição de Imagem */}
                     <div className="absolute inset-0 bg-gray-200 dark:bg-black/60 flex flex-col items-center justify-center opacity-0 group-hover/avatar:opacity-100 transition-opacity duration-300">
-                      <Upload size={24} className="text-gray-900 dark:text-white mb-1" />
-                      <span className="text-[9px] text-gray-900 dark:text-white font-bold tracking-widest uppercase">Mudar</span>
+                      <Upload size={24} className="text-white mb-1" />
+                      <span className="text-[9px] text-white font-bold tracking-widest uppercase">Mudar</span>
                     </div>
                   </div>
                 </div>
@@ -295,11 +295,11 @@ export default function EquipeNeuralPage() {
                           type="text" 
                           value={editName}
                           onChange={(e) => setEditName(e.target.value)}
-                          className="bg-gray-200 dark:bg-black/50 border border-gray-300 dark:border-white/20 text-gray-900 dark:text-white font-bold text-3xl px-3 py-1 rounded w-40 text-center focus:outline-none focus:border-[#CCA761]"
+                          className="bg-gray-200 dark:bg-black/50 border border-white/20 text-white font-bold text-3xl px-3 py-1 rounded w-40 text-center focus:outline-none focus:border-[#CCA761]"
                           autoFocus
                           maxLength={15}
                         />
-                        <button type="submit" className="text-green-400 hover:text-green-300 transition-colors p-2 bg-gray-100 dark:bg-white/5 rounded-full">
+                        <button type="submit" className="text-green-400 hover:text-green-300 transition-colors p-2 bg-white/5 rounded-full">
                            <Check size={20} />
                         </button>
                       </form>
@@ -346,7 +346,7 @@ export default function EquipeNeuralPage() {
                          e.stopPropagation();
                          setSelectedAgentInfo(agent);
                        }}
-                       className={`flex items-center gap-1.5 px-3 py-1.5 rounded-full transition-colors border text-[9px] font-black uppercase tracking-widest ${isActive ? 'bg-gray-100 dark:bg-white/5 border-gray-200 dark:border-white/10 hover:bg-gray-100 dark:bg-white/10' : 'bg-transparent border-[#222] text-[#444]'} hover:text-gray-900 dark:text-white group/info`}
+                       className={`flex items-center gap-1.5 px-3 py-1.5 rounded-full transition-colors border text-[9px] font-black uppercase tracking-widest ${isActive ? 'bg-white/5 border-white/10 hover:bg-white/10' : 'bg-transparent border-[#222] text-[#444]'} hover:text-white group/info`}
                      >
                        <Info size={12} className={isActive ? 'text-[#CCA761]' : ''} /> Dossiê Técnico
                      </button>
@@ -363,7 +363,7 @@ export default function EquipeNeuralPage() {
         <div className="fixed inset-0 z-50 flex items-center justify-center p-4">
           <div className="absolute inset-0 bg-gray-200 dark:bg-black/60 backdrop-blur-sm" onClick={() => setSelectedAgentInfo(null)} />
           <div 
-            className="relative bg-white dark:bg-[#050505] border border-gray-200 dark:border-white/10 rounded-2xl w-full max-w-lg p-8 shadow-[0_0_80px_rgba(0,0,0,0.8)] animate-in fade-in zoom-in duration-300"
+            className="relative bg-white dark:bg-[#050505] border border-white/10 rounded-2xl w-full max-w-lg p-8 shadow-[0_0_80px_rgba(0,0,0,0.8)] animate-in fade-in zoom-in duration-300"
             style={{ 
               boxShadow: `0 0 60px ${activeAgents.includes(selectedAgentInfo.id) ? selectedAgentInfo.glowColor + '20' : 'rgba(0,0,0,0.8)'}`,
               borderColor: activeAgents.includes(selectedAgentInfo.id) ? selectedAgentInfo.glowColor + '40' : undefined
@@ -372,14 +372,14 @@ export default function EquipeNeuralPage() {
             {/* Fechar Modal */}
             <button 
               onClick={() => setSelectedAgentInfo(null)}
-              className="absolute top-6 right-6 text-gray-400 hover:text-gray-900 dark:text-white transition-colors"
+              className="absolute top-6 right-6 text-gray-400 hover:text-white transition-colors"
             >
               <X size={24} />
             </button>
 
             <div className="flex flex-col items-center text-center">
               <div 
-                className="w-24 h-24 rounded-full bg-gray-100 dark:bg-[#111] border-2 flex items-center justify-center mb-6 overflow-hidden"
+                className="w-24 h-24 rounded-full bg-[#111] border-2 flex items-center justify-center mb-6 overflow-hidden"
                 style={{ borderColor: activeAgents.includes(selectedAgentInfo.id) ? selectedAgentInfo.glowColor : '#333' }}
               >
                 {selectedAgentInfo.avatarUrl ? (
@@ -389,7 +389,7 @@ export default function EquipeNeuralPage() {
                 )}
               </div>
               
-              <h2 className={`text-4xl font-bold text-gray-900 dark:text-white mb-2 ${cormorant.className}`}>{selectedAgentInfo.name}</h2>
+              <h2 className={`text-4xl font-bold text-white mb-2 ${cormorant.className}`}>{selectedAgentInfo.name}</h2>
               <p className="text-xs font-black uppercase tracking-widest px-4 py-1.5 rounded-full border mb-8"
                 style={{ 
                   color: selectedAgentInfo.glowColor, 
@@ -399,8 +399,8 @@ export default function EquipeNeuralPage() {
                 {selectedAgentInfo.role}
               </p>
 
-              <div className="w-full text-left bg-gray-100 dark:bg-white/5 rounded-xl p-6 border border-gray-200 dark:border-white/5">
-                 <h3 className="text-gray-900 dark:text-white text-sm font-bold uppercase tracking-widest mb-4 flex items-center gap-2">
+              <div className="w-full text-left bg-white/5 rounded-xl p-6 border border-white/5">
+                 <h3 className="text-white text-sm font-bold uppercase tracking-widest mb-4 flex items-center gap-2">
                    <BrainCircuit size={16} style={{ color: selectedAgentInfo.glowColor }} />
                    Matriz de Competência
                  </h3>

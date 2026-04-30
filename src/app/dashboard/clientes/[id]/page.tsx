@@ -146,12 +146,12 @@ export default function ClienteDetalhesPage() {
       {/* Header */}
       <div className="flex flex-col md:flex-row md:items-center justify-between gap-4">
         <div className="flex items-center gap-4">
-          <button onClick={() => router.push("/dashboard/clientes")} className="p-2 bg-gray-100 dark:bg-[#111] hover:bg-gray-100 dark:bg-white/5 border border-[#222] rounded-xl transition-colors">
+          <button onClick={() => router.push("/dashboard/clientes")} className="p-2 bg-[#111] hover:bg-white/5 border border-[#222] rounded-xl transition-colors">
             <ArrowLeft size={20} className="text-gray-400" />
           </button>
           <div>
             <div className="flex items-center gap-3">
-              <h1 className={`text-2xl md:text-3xl text-gray-900 dark:text-white ${cormorant.className} italic font-bold`}>
+              <h1 className={`text-2xl md:text-3xl text-white ${cormorant.className} italic font-bold`}>
                 {client.name}
               </h1>
               <span className={`text-[10px] px-3 py-1 rounded-full border uppercase tracking-widest ${
@@ -175,34 +175,34 @@ export default function ClienteDetalhesPage() {
         {/* Coluna Esquerda: Detalhes do Cliente */}
         <div className="lg:col-span-1 space-y-6">
           
-          <div className="bg-gray-50 dark:bg-white/[0.02] border border-gray-200 dark:border-white/5 rounded-2xl p-6 backdrop-blur-sm">
+          <div className="bg-white/[0.02] border border-white/5 rounded-2xl p-6 backdrop-blur-sm">
             <h3 className="text-[#CCA761] font-bold text-xs uppercase tracking-widest mb-4 flex items-center gap-2">
               <User size={14} /> Informações de Contato
             </h3>
             <div className="space-y-4 text-sm">
               <div>
                 <span className="text-gray-500 text-[10px] uppercase block mb-1">E-mail Principal</span>
-                <span className="text-gray-900 dark:text-white">{client.email || 'Não informado'}</span>
+                <span className="text-white">{client.email || 'Não informado'}</span>
               </div>
               <div>
                 <span className="text-gray-500 text-[10px] uppercase block mb-1">Telefone / WhatsApp</span>
-                <span className="text-gray-900 dark:text-white font-mono">{client.phone || 'Não informado'}</span>
+                <span className="text-white font-mono">{client.phone || 'Não informado'}</span>
               </div>
               <div>
                 <span className="text-gray-500 text-[10px] uppercase block mb-1">Responsável Interno</span>
-                <span className="text-gray-900 dark:text-white bg-gray-100 dark:bg-white/5 py-1 px-3 rounded-full text-xs border border-gray-200 dark:border-white/10 inline-block">
+                <span className="text-white bg-white/5 py-1 px-3 rounded-full text-xs border border-white/10 inline-block">
                   {client.responsible?.full_name || 'Nenhum associado'}
                 </span>
               </div>
             </div>
           </div>
 
-          <div className="bg-gray-50 dark:bg-white/[0.02] border border-gray-200 dark:border-white/5 rounded-2xl p-6 backdrop-blur-sm">
+          <div className="bg-white/[0.02] border border-white/5 rounded-2xl p-6 backdrop-blur-sm">
             <h3 className="text-[#CCA761] font-bold text-xs uppercase tracking-widest mb-4 flex items-center gap-2">
               <MapPin size={14} /> Endereço
             </h3>
             {client.address?.cep ? (
-              <div className="text-sm text-gray-700 dark:text-gray-300 space-y-1">
+              <div className="text-sm text-gray-300 space-y-1">
                 <p>{client.address.logradouro}, {client.address.numero} {client.address.complemento}</p>
                 <p>{client.address.bairro}</p>
                 <p>{client.address.cidade} - {client.address.uf}</p>
@@ -213,12 +213,12 @@ export default function ClienteDetalhesPage() {
             )}
           </div>
 
-          <div className="bg-gray-50 dark:bg-white/[0.02] border border-gray-200 dark:border-white/5 rounded-2xl p-6 backdrop-blur-sm">
+          <div className="bg-white/[0.02] border border-white/5 rounded-2xl p-6 backdrop-blur-sm">
             <h3 className="text-[#CCA761] font-bold text-xs uppercase tracking-widest mb-4 flex items-center gap-2">
               <Landmark size={14} /> Dados Bancários (Reembolso)
             </h3>
             {client.bank_details?.banco || client.bank_details?.chave_pix ? (
-              <div className="text-sm text-gray-700 dark:text-gray-300 space-y-3">
+              <div className="text-sm text-gray-300 space-y-3">
                 {client.bank_details?.banco && (
                    <div className="grid grid-cols-2 gap-2">
                      <div>
@@ -248,7 +248,7 @@ export default function ClienteDetalhesPage() {
         {/* Coluna Direita: Timeline Unificada */}
         <div className="lg:col-span-2 space-y-6">
           
-          <div className="bg-gray-100 dark:bg-[#111111] border border-[#222] rounded-2xl p-6 shadow-xl relative z-10 overflow-hidden">
+          <div className="bg-[#111111] border border-[#222] rounded-2xl p-6 shadow-xl relative z-10 overflow-hidden">
              
              {/* Input Area */}
              <div className="flex gap-4 mb-8 relative">
@@ -260,11 +260,11 @@ export default function ClienteDetalhesPage() {
                     value={newEventText}
                     onChange={(e) => setNewEventText(e.target.value)}
                     placeholder="Adicionar nota de atendimento, registro de ligação ou observação..."
-                    className="w-full bg-white dark:bg-[#0a0a0a] border border-[#2a2a2a] text-gray-900 dark:text-white rounded-xl px-4 py-3 text-sm focus:outline-none focus:border-[#CCA761]/50 transition-colors min-h-[100px] resize-y placeholder:text-gray-600"
+                    className="w-full bg-[#0a0a0a] border border-[#2a2a2a] text-white rounded-xl px-4 py-3 text-sm focus:outline-none focus:border-[#CCA761]/50 transition-colors min-h-[100px] resize-y placeholder:text-gray-600"
                   />
                   <div className="flex items-center justify-between mt-2">
                     <div className="flex gap-2">
-                      <label className="cursor-pointer flex items-center gap-2 text-xs font-semibold text-gray-400 hover:text-gray-900 dark:text-white px-3 py-2 rounded-lg bg-gray-100 dark:bg-white/5 hover:bg-gray-100 dark:bg-white/10 transition-colors">
+                      <label className="cursor-pointer flex items-center gap-2 text-xs font-semibold text-gray-400 hover:text-white px-3 py-2 rounded-lg bg-white/5 hover:bg-white/10 transition-colors">
                         {isUploading ? <Loader2 size={14} className="animate-spin" /> : <Upload size={14} />}
                         Anexar Arquivo
                         <input type="file" className="hidden" onChange={handleFileUpload} disabled={isUploading} />
@@ -294,12 +294,12 @@ export default function ClienteDetalhesPage() {
                ) : (
                  events.map((ev) => (
                    <div key={ev.id} className="relative flex items-start justify-between md:justify-normal md:odd:flex-row-reverse group is-active">
-                     <div className="flex items-center justify-center w-10 h-10 rounded-full border-2 border-[#111] bg-white dark:bg-[#0a0a0a] text-[#CCA761] shadow z-10 shrink-0 md:order-1 md:group-odd:-translate-x-1/2 md:group-even:translate-x-1/2">
+                     <div className="flex items-center justify-center w-10 h-10 rounded-full border-2 border-[#111] bg-[#0a0a0a] text-[#CCA761] shadow z-10 shrink-0 md:order-1 md:group-odd:-translate-x-1/2 md:group-even:translate-x-1/2">
                        {ev.event_type === 'nota' ? <FileText size={16} /> : <FileText size={16} />}
                      </div>
-                     <div className="w-[calc(100%-3rem)] md:w-[calc(50%-2rem)] p-4 rounded-xl border border-gray-200 dark:border-white/5 bg-white dark:bg-[#0a0a0a] shadow-md group-hover:border-[#CCA761]/30 transition-colors">
+                     <div className="w-[calc(100%-3rem)] md:w-[calc(50%-2rem)] p-4 rounded-xl border border-white/5 bg-[#0a0a0a] shadow-md group-hover:border-[#CCA761]/30 transition-colors">
                        <div className="flex items-center justify-between mb-2">
-                         <span className="font-bold text-gray-800 dark:text-gray-200 text-xs flex items-center gap-2">
+                         <span className="font-bold text-gray-200 text-xs flex items-center gap-2">
                            {ev.author?.full_name || 'Sistema'}
                          </span>
                          <span className="text-[10px] text-gray-500 flex items-center gap-1">
@@ -313,17 +313,17 @@ export default function ClienteDetalhesPage() {
                            {ev.content.text}
                          </div>
                        ) : ev.event_type === 'anexo' ? (
-                         <div className="flex items-center justify-between mt-3 p-3 bg-gray-100 dark:bg-white/5 rounded-lg border border-gray-200 dark:border-white/5">
+                         <div className="flex items-center justify-between mt-3 p-3 bg-white/5 rounded-lg border border-white/5">
                            <div className="flex items-center gap-3 overflow-hidden">
                              <div className="p-2 bg-[#CCA761]/10 rounded-lg shrink-0">
                                <FileText size={16} className="text-[#CCA761]" />
                              </div>
                              <div className="truncate text-sm">
-                               <p className="text-gray-900 dark:text-white truncate font-medium">{ev.content.fileName}</p>
+                               <p className="text-white truncate font-medium">{ev.content.fileName}</p>
                                <span className="text-[10px] text-gray-500 uppercase">{(ev.content.size / 1024 / 1024).toFixed(2)} MB</span>
                              </div>
                            </div>
-                           <a href={ev.content.fileUrl} target="_blank" rel="noopener noreferrer" className="p-2 hover:bg-gray-100 dark:bg-white/10 rounded-lg text-gray-400 hover:text-[#CCA761] transition-colors shrink-0">
+                           <a href={ev.content.fileUrl} target="_blank" rel="noopener noreferrer" className="p-2 hover:bg-white/10 rounded-lg text-gray-400 hover:text-[#CCA761] transition-colors shrink-0">
                              <Download size={16} />
                            </a>
                          </div>

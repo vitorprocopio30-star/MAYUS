@@ -259,7 +259,7 @@ export default function DepartamentosPage() {
   const resetForm = () => { setIsCreating(false); setEditingId(null); setDraftName(""); setDraftColor("#CCA761"); setDraftDesc(""); };
 
   return (
-    <div className={`flex-1 overflow-auto bg-white dark:bg-[#050505] min-h-screen text-gray-900 dark:text-white p-6 sm:p-10 hide-scrollbar ${montserrat.className}`}>
+    <div className={`flex-1 overflow-auto bg-white dark:bg-[#050505] min-h-screen text-white p-6 sm:p-10 hide-scrollbar ${montserrat.className}`}>
       <div className="max-w-4xl mx-auto">
         
         {/* HEADER */}
@@ -269,14 +269,14 @@ export default function DepartamentosPage() {
               <Building2 size={28} className="text-[#CCA761]" />
             </div>
             <div>
-              <h1 className={`text-3xl font-bold tracking-wider uppercase text-gray-900 dark:text-white ${cormorant.className} drop-shadow-md`}>
+              <h1 className={`text-3xl font-bold tracking-wider uppercase text-white ${cormorant.className} drop-shadow-md`}>
                 Escritório & <span className="text-[#CCA761]">Departamentos</span>
               </h1>
               <p className="text-gray-400 text-[10px] uppercase font-black tracking-widest mt-1">Configurações Estruturais e Institucionais</p>
             </div>
           </div>
 
-          <div className="flex items-center gap-2 bg-gray-100 dark:bg-[#111] p-1 rounded-xl border border-gray-200 dark:border-white/5 shadow-inner">
+          <div className="flex items-center gap-2 bg-[#111] p-1 rounded-xl border border-white/5 shadow-inner">
              <button onClick={() => setActiveTab("departamentos")} className={`px-6 py-2.5 rounded-lg text-[10px] font-black uppercase tracking-widest transition-all ${activeTab === 'departamentos' ? 'bg-[#CCA761] text-black shadow-lg shadow-[#CCA761]/20 scale-105' : 'text-gray-500 hover:text-white'}`}>Departamentos</button>
              <button onClick={() => setActiveTab("escritorio")} className={`px-6 py-2.5 rounded-lg text-[10px] font-black uppercase tracking-widest transition-all ${activeTab === 'escritorio' ? 'bg-[#CCA761] text-black shadow-lg shadow-[#CCA761]/20 scale-105' : 'text-gray-500 hover:text-white'}`}>Dados Escritório</button>
           </div>
@@ -297,20 +297,20 @@ export default function DepartamentosPage() {
             {(isCreating || editingId) && (
               <div className="bg-gradient-to-br from-[#111] to-[#0a0a0a] border border-[#CCA761]/20 p-6 rounded-2xl shadow-xl mb-8 animate-in slide-in-from-top-4 duration-500">
                 <div className="flex items-center justify-between mb-6">
-                  <h3 className="text-lg font-bold flex items-center gap-2 text-gray-900 dark:text-white">
+                  <h3 className="text-lg font-bold flex items-center gap-2 text-white">
                     <div className="w-3 h-3 rounded-full" style={{ backgroundColor: draftColor }} />
                     {editingId ? "Editar Departamento" : "Novo Departamento"}
                   </h3>
-                  <button onClick={resetForm} className="text-gray-500 hover:text-gray-900 dark:text-white transition-colors"><X size={20} /></button>
+                  <button onClick={resetForm} className="text-gray-500 hover:text-white transition-colors"><X size={20} /></button>
                 </div>
                 <div className="grid grid-cols-1 md:grid-cols-2 gap-4 mb-4">
                   <div>
                     <label className="text-[10px] font-black uppercase tracking-widest text-[#CCA761] mb-2 block">Nome</label>
-                    <input value={draftName} onChange={(e) => setDraftName(e.target.value)} placeholder="Ex: Comercial..." className="w-full bg-gray-100 dark:bg-[#111] border border-gray-200 dark:border-white/10 rounded-lg px-4 py-3 text-sm text-gray-900 dark:text-white focus:outline-none focus:border-[#CCA761]/50 placeholder:text-gray-600" />
+                    <input value={draftName} onChange={(e) => setDraftName(e.target.value)} placeholder="Ex: Comercial..." className="w-full bg-[#111] border border-white/10 rounded-lg px-4 py-3 text-sm text-white focus:outline-none focus:border-[#CCA761]/50 placeholder:text-gray-600" />
                   </div>
                   <div>
                     <label className="text-[10px] font-black uppercase tracking-widest text-[#CCA761] mb-2 block">Descrição</label>
-                    <input value={draftDesc} onChange={(e) => setDraftDesc(e.target.value)} placeholder="Ex: Vendas de leads..." className="w-full bg-gray-100 dark:bg-[#111] border border-gray-200 dark:border-white/10 rounded-lg px-4 py-3 text-sm text-gray-900 dark:text-white focus:outline-none focus:border-[#CCA761]/50 placeholder:text-gray-600" />
+                    <input value={draftDesc} onChange={(e) => setDraftDesc(e.target.value)} placeholder="Ex: Vendas de leads..." className="w-full bg-[#111] border border-white/10 rounded-lg px-4 py-3 text-sm text-white focus:outline-none focus:border-[#CCA761]/50 placeholder:text-gray-600" />
                   </div>
                 </div>
                 <div className="mb-6">
@@ -321,8 +321,8 @@ export default function DepartamentosPage() {
                     ))}
                   </div>
                 </div>
-                <div className="flex justify-end gap-3 pt-4 border-t border-gray-200 dark:border-white/5">
-                  <button onClick={resetForm} className="text-xs font-bold px-4 py-2 text-gray-500 hover:text-gray-900 dark:text-white">Cancelar</button>
+                <div className="flex justify-end gap-3 pt-4 border-t border-white/5">
+                  <button onClick={resetForm} className="text-xs font-bold px-4 py-2 text-gray-500 hover:text-white">Cancelar</button>
                   <button onClick={() => editingId ? handleUpdate(editingId) : handleCreate()} disabled={isSaving} className="flex items-center gap-2 px-6 py-2.5 bg-[#CCA761] text-black rounded-lg font-black uppercase text-[10px] tracking-widest hover:scale-105 transition-all disabled:opacity-50">
                     {isSaving ? <Loader2 size={14} className="animate-spin" /> : <Save size={14} />} {editingId ? "Salvar Alterações" : "Criar Departamento"}
                   </button>
@@ -333,21 +333,21 @@ export default function DepartamentosPage() {
             <div className="space-y-4">
               {isLoading ? ( <div className="flex items-center justify-center h-40 opacity-30"><Loader2 className="animate-spin" size={32} /></div>
               ) : departments.length === 0 ? (
-                <div className="bg-gray-100 dark:bg-[#111]/50 border border-gray-200 dark:border-white/5 p-10 rounded-2xl text-center"><Building2 size={36} className="text-gray-700 mx-auto mb-4" /><p className="text-gray-500 text-sm">Nenhum setor cadastrado.</p></div>
+                <div className="bg-[#111]/50 border border-white/5 p-10 rounded-2xl text-center"><Building2 size={36} className="text-gray-700 mx-auto mb-4" /><p className="text-gray-500 text-sm">Nenhum setor cadastrado.</p></div>
               ) : (
                 departments.map((dept) => (
-                  <div key={dept.id} className="bg-gradient-to-br from-[#111] to-[#0a0a0a] border border-gray-200 dark:border-white/5 p-5 rounded-2xl shadow-xl flex items-center justify-between group hover:border-[#CCA761]/30 transition-all">
+                  <div key={dept.id} className="bg-gradient-to-br from-[#111] to-[#0a0a0a] border border-white/5 p-5 rounded-2xl shadow-xl flex items-center justify-between group hover:border-[#CCA761]/30 transition-all">
                     <div className="flex items-center gap-4">
                       <div className="w-12 h-12 rounded-xl flex items-center justify-center border font-black text-lg" style={{ backgroundColor: `${dept.color}15`, borderColor: `${dept.color}40`, color: dept.color }}>{dept.name.substring(0, 2).toUpperCase()}</div>
                       <div>
-                        <h4 className="font-bold text-gray-900 dark:text-white flex items-center gap-2">{dept.name} <div className="w-2.5 h-2.5 rounded-full" style={{ backgroundColor: dept.color }} /></h4>
+                        <h4 className="font-bold text-white flex items-center gap-2">{dept.name} <div className="w-2.5 h-2.5 rounded-full" style={{ backgroundColor: dept.color }} /></h4>
                         <p className="text-gray-500 text-xs mt-0.5">{dept.description || "Sem descrição"}</p>
                         <div className="flex items-center gap-3 mt-1.5"><span className="text-[9px] text-gray-600 font-bold uppercase tracking-widest flex items-center gap-1"><Users size={10} /> {memberCounts[dept.id] || 0} membros</span></div>
                       </div>
                     </div>
                     <div className="flex items-center gap-2 opacity-0 group-hover:opacity-100 transition-opacity">
-                      <button onClick={() => { setEditingId(dept.id); setDraftName(dept.name); setDraftColor(dept.color); setDraftDesc(dept.description || ""); setIsCreating(false); }} className="p-2 bg-gray-100 dark:bg-white/5 hover:bg-gray-100 dark:bg-white/10 rounded-lg text-gray-400 hover:text-[#CCA761] transition-colors border border-transparent hover:border-gray-200 dark:border-white/10"><Edit3 size={16} /></button>
-                      <button onClick={() => handleDelete(dept)} className="p-2 bg-gray-100 dark:bg-white/5 hover:bg-red-500/10 rounded-lg text-gray-400 hover:text-red-500 transition-colors border border-transparent hover:border-red-500/10"><Trash2 size={16} /></button>
+                      <button onClick={() => { setEditingId(dept.id); setDraftName(dept.name); setDraftColor(dept.color); setDraftDesc(dept.description || ""); setIsCreating(false); }} className="p-2 bg-white/5 hover:bg-white/10 rounded-lg text-gray-400 hover:text-[#CCA761] transition-colors border border-transparent hover:border-white/10"><Edit3 size={16} /></button>
+                      <button onClick={() => handleDelete(dept)} className="p-2 bg-white/5 hover:bg-red-500/10 rounded-lg text-gray-400 hover:text-red-500 transition-colors border border-transparent hover:border-red-500/10"><Trash2 size={16} /></button>
                     </div>
                   </div>
                 ))
@@ -368,18 +368,18 @@ export default function DepartamentosPage() {
                      <label className="text-[9px] text-gray-500 uppercase tracking-widest font-black ml-1">Nome Fantasia / Razão Social</label>
                      <div className="relative">
                         <Briefcase size={16} className="absolute left-4 top-1/2 -translate-y-1/2 text-gray-700" />
-                        <input type="text" value={officeData.name} onChange={e => setOfficeData({...officeData, name: e.target.value})} className="w-full bg-white dark:bg-[#0a0a0a] border border-[#222] text-gray-900 dark:text-white pl-12 pr-4 py-4 rounded-xl text-sm font-bold focus:border-[#CCA761]/50 focus:outline-none transition-all" placeholder="Nome do Escritório" />
+                        <input type="text" value={officeData.name} onChange={e => setOfficeData({...officeData, name: e.target.value})} className="w-full bg-[#0a0a0a] border border-[#222] text-white pl-12 pr-4 py-4 rounded-xl text-sm font-bold focus:border-[#CCA761]/50 focus:outline-none transition-all" placeholder="Nome do Escritório" />
                      </div>
                    </div>
 
                    <div className="grid grid-cols-2 gap-4">
                       <div className="space-y-2">
                         <label className="text-[9px] text-gray-500 uppercase tracking-widest font-black ml-1">CNPJ / CPF</label>
-                        <input type="text" value={officeData.cnpj} onChange={e => setOfficeData({...officeData, cnpj: e.target.value})} className="w-full bg-white dark:bg-[#0a0a0a] border border-[#222] text-gray-900 dark:text-white px-4 py-4 rounded-xl text-sm font-bold focus:border-[#CCA761]/50 focus:outline-none transition-all placeholder:text-gray-800" placeholder="00.000.000/0001-00" />
+                        <input type="text" value={officeData.cnpj} onChange={e => setOfficeData({...officeData, cnpj: e.target.value})} className="w-full bg-[#0a0a0a] border border-[#222] text-white px-4 py-4 rounded-xl text-sm font-bold focus:border-[#CCA761]/50 focus:outline-none transition-all placeholder:text-gray-800" placeholder="00.000.000/0001-00" />
                       </div>
                       <div className="space-y-2">
                         <label className="text-[9px] text-gray-500 uppercase tracking-widest font-black ml-1">Registro OAB / Registro</label>
-                        <input type="text" value={officeData.oab} onChange={e => setOfficeData({...officeData, oab: e.target.value})} className="w-full bg-white dark:bg-[#0a0a0a] border border-[#222] text-gray-900 dark:text-white px-4 py-4 rounded-xl text-sm font-bold focus:border-[#CCA761]/50 focus:outline-none transition-all placeholder:text-gray-800" placeholder="OAB/UF 000.000" />
+                        <input type="text" value={officeData.oab} onChange={e => setOfficeData({...officeData, oab: e.target.value})} className="w-full bg-[#0a0a0a] border border-[#222] text-white px-4 py-4 rounded-xl text-sm font-bold focus:border-[#CCA761]/50 focus:outline-none transition-all placeholder:text-gray-800" placeholder="OAB/UF 000.000" />
                       </div>
                    </div>
 
@@ -387,7 +387,7 @@ export default function DepartamentosPage() {
                      <label className="text-[9px] text-gray-500 uppercase tracking-widest font-black ml-1">E-mail de Contato</label>
                      <div className="relative">
                         <Mail size={16} className="absolute left-4 top-1/2 -translate-y-1/2 text-gray-700" />
-                        <input type="email" value={officeData.email} onChange={e => setOfficeData({...officeData, email: e.target.value})} className="w-full bg-white dark:bg-[#0a0a0a] border border-[#222] text-gray-900 dark:text-white pl-12 pr-4 py-4 rounded-xl text-sm font-bold focus:border-[#CCA761]/50 focus:outline-none transition-all placeholder:text-gray-800" placeholder="contato@escritorio.com" />
+                        <input type="email" value={officeData.email} onChange={e => setOfficeData({...officeData, email: e.target.value})} className="w-full bg-[#0a0a0a] border border-[#222] text-white pl-12 pr-4 py-4 rounded-xl text-sm font-bold focus:border-[#CCA761]/50 focus:outline-none transition-all placeholder:text-gray-800" placeholder="contato@escritorio.com" />
                      </div>
                    </div>
 
@@ -395,7 +395,7 @@ export default function DepartamentosPage() {
                      <label className="text-[9px] text-gray-500 uppercase tracking-widest font-black ml-1">Telefone / WhatsApp</label>
                      <div className="relative">
                         <Phone size={16} className="absolute left-4 top-1/2 -translate-y-1/2 text-gray-700" />
-                        <input type="text" value={officeData.phone} onChange={e => setOfficeData({...officeData, phone: e.target.value})} className="w-full bg-white dark:bg-[#0a0a0a] border border-[#222] text-gray-900 dark:text-white pl-12 pr-4 py-4 rounded-xl text-sm font-bold focus:border-[#CCA761]/50 focus:outline-none transition-all placeholder:text-gray-800" placeholder="(00) 00000-0000" />
+                        <input type="text" value={officeData.phone} onChange={e => setOfficeData({...officeData, phone: e.target.value})} className="w-full bg-[#0a0a0a] border border-[#222] text-white pl-12 pr-4 py-4 rounded-xl text-sm font-bold focus:border-[#CCA761]/50 focus:outline-none transition-all placeholder:text-gray-800" placeholder="(00) 00000-0000" />
                      </div>
                    </div>
 
@@ -403,7 +403,7 @@ export default function DepartamentosPage() {
                      <label className="text-[9px] text-gray-500 uppercase tracking-widest font-black ml-1">Endereço Físico</label>
                      <div className="relative">
                         <MapPin size={16} className="absolute left-4 top-1/2 -translate-y-1/2 text-gray-700" />
-                        <input type="text" value={officeData.address} onChange={e => setOfficeData({...officeData, address: e.target.value})} className="w-full bg-white dark:bg-[#0a0a0a] border border-[#222] text-gray-900 dark:text-white pl-12 pr-4 py-4 rounded-xl text-sm font-bold focus:border-[#CCA761]/50 focus:outline-none transition-all placeholder:text-gray-800" placeholder="Rua, Número, Bairro, Cidade - UF" />
+                        <input type="text" value={officeData.address} onChange={e => setOfficeData({...officeData, address: e.target.value})} className="w-full bg-[#0a0a0a] border border-[#222] text-white pl-12 pr-4 py-4 rounded-xl text-sm font-bold focus:border-[#CCA761]/50 focus:outline-none transition-all placeholder:text-gray-800" placeholder="Rua, Número, Bairro, Cidade - UF" />
                      </div>
                    </div>
 
@@ -411,12 +411,12 @@ export default function DepartamentosPage() {
                      <label className="text-[9px] text-gray-500 uppercase tracking-widest font-black ml-1">Site / Landing Page</label>
                      <div className="relative">
                         <Globe size={16} className="absolute left-4 top-1/2 -translate-y-1/2 text-gray-700" />
-                        <input type="text" value={officeData.website} onChange={e => setOfficeData({...officeData, website: e.target.value})} className="w-full bg-white dark:bg-[#0a0a0a] border border-[#222] text-gray-900 dark:text-white pl-12 pr-4 py-4 rounded-xl text-sm font-bold focus:border-[#CCA761]/50 focus:outline-none transition-all placeholder:text-gray-800" placeholder="https://www.meuescritorio.com.br" />
+                        <input type="text" value={officeData.website} onChange={e => setOfficeData({...officeData, website: e.target.value})} className="w-full bg-[#0a0a0a] border border-[#222] text-white pl-12 pr-4 py-4 rounded-xl text-sm font-bold focus:border-[#CCA761]/50 focus:outline-none transition-all placeholder:text-gray-800" placeholder="https://www.meuescritorio.com.br" />
                      </div>
                    </div>
                 </div>
 
-                <div className="mt-12 pt-8 border-t border-gray-200 dark:border-white/5 flex justify-end">
+                <div className="mt-12 pt-8 border-t border-white/5 flex justify-end">
                    <button 
                      onClick={handleSaveOffice}
                      disabled={isSaving}

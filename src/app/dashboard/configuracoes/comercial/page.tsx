@@ -150,12 +150,12 @@ export default function ConfigComercialPage() {
       {/* Header Premium Global */}
       <div className="flex flex-col md:flex-row justify-between items-start md:items-end gap-6 pb-6 border-b border-[#CCA761]/20 relative z-40">
         <div className="flex items-start gap-4">
-          <button onClick={() => router.back()} className="p-2.5 bg-gray-200 dark:bg-black/40 hover:bg-gray-100 dark:bg-white/5 border border-[#CCA761]/30 hover:border-[#CCA761] rounded-xl transition-colors mt-2">
+          <button onClick={() => router.back()} className="p-2.5 bg-gray-200 dark:bg-black/40 hover:bg-white/5 border border-[#CCA761]/30 hover:border-[#CCA761] rounded-xl transition-colors mt-2">
             <ArrowLeft size={20} className="text-[#CCA761]" />
           </button>
           <div className="flex flex-col">
             <h1 className={`text-4xl lg:text-5xl text-[#CCA761] font-bold tracking-tight ${cormorant.className} italic drop-shadow-[0_0_15px_rgba(204,167,97,0.3)] leading-none mb-1`}>
-              Metas & <span className="text-gray-900 dark:text-white">Performance</span>
+              Metas & <span className="text-white">Performance</span>
             </h1>
             <p className="text-[10px] text-gray-400 font-bold uppercase tracking-[0.3em]">CONFIGURE INDICADORES E PLANOS DE CARREIRA</p>
           </div>
@@ -188,7 +188,7 @@ export default function ConfigComercialPage() {
                    <select
                       value={progressionType}
                       onChange={e => setProgressionType(e.target.value)}
-                      className="w-full bg-white dark:bg-[#0a0a0a] border border-[#222] text-gray-900 dark:text-white pl-12 pr-4 py-4 rounded-xl text-sm font-bold focus:border-[#CCA761]/50 focus:outline-none transition-all appearance-none"
+                      className="w-full bg-[#0a0a0a] border border-[#222] text-white pl-12 pr-4 py-4 rounded-xl text-sm font-bold focus:border-[#CCA761]/50 focus:outline-none transition-all appearance-none"
                    >
                      <option>Por Meses Batendo a Meta</option>
                      <option>Por Volume Financeiro Agregado</option>
@@ -206,19 +206,19 @@ export default function ConfigComercialPage() {
                       type="number"
                       value={monthsPromo}
                       onChange={e => setMonthsPromo(e.target.value)}
-                      className="w-full bg-white dark:bg-[#0a0a0a] border border-[#222] text-gray-900 dark:text-white pl-12 pr-4 py-4 rounded-xl text-sm font-bold focus:border-[#CCA761]/50 focus:outline-none transition-all"
+                      className="w-full bg-[#0a0a0a] border border-[#222] text-white pl-12 pr-4 py-4 rounded-xl text-sm font-bold focus:border-[#CCA761]/50 focus:outline-none transition-all"
                    />
                  </div>
                </div>
 
                <div className="flex items-center lg:pt-6">
-                 <label className="flex items-center gap-3 cursor-pointer group bg-gray-200 dark:bg-black/20 p-4 rounded-xl border border-gray-200 dark:border-white/5 hover:border-[#CCA761]/30 transition-all w-full">
+                 <label className="flex items-center gap-3 cursor-pointer group bg-gray-200 dark:bg-black/20 p-4 rounded-xl border border-white/5 hover:border-[#CCA761]/30 transition-all w-full">
                     <div className={`w-5 h-5 rounded border flex items-center justify-center transition-colors ${enableEvolution ? 'bg-[#CCA761] border-[#CCA761] shadow-[0_0_10px_rgba(204,167,97,0.3)]' : 'border-gray-600 bg-transparent'}`}>
                        {enableEvolution && <CheckCircle size={14} className="text-[#0a0a0a] stroke-[3]" />}
                     </div>
                     <input type="checkbox" className="hidden" checked={enableEvolution} onChange={() => setEnableEvolution(!enableEvolution)} />
                     <div className="flex flex-col">
-                      <span className="text-[10px] text-gray-700 dark:text-gray-300 group-hover:text-gray-900 dark:text-white uppercase tracking-widest font-black transition-colors">Modo GamificaÃ§Ã£o Ativo</span>
+                      <span className="text-[10px] text-gray-300 group-hover:text-white uppercase tracking-widest font-black transition-colors">Modo GamificaÃ§Ã£o Ativo</span>
                       <span className="text-[8px] text-gray-600 font-bold uppercase tracking-tight">EvoluÃ§Ã£o visual no painel</span>
                     </div>
                  </label>
@@ -241,10 +241,10 @@ export default function ConfigComercialPage() {
                     <div
                       key={p.id}
                       onClick={() => setActivePlanId(p.id)}
-                      className={`p-4 rounded-xl border transition-all cursor-pointer relative group flex justify-between items-center ${activePlanId === p.id ? 'bg-[#CCA761]/10 border-[#CCA761]/50 shadow-[0_0_15px_rgba(204,167,97,0.1)]' : 'bg-white dark:bg-[#0a0a0a] border-[#222] hover:border-gray-300 dark:border-white/20'}`}
+                      className={`p-4 rounded-xl border transition-all cursor-pointer relative group flex justify-between items-center ${activePlanId === p.id ? 'bg-[#CCA761]/10 border-[#CCA761]/50 shadow-[0_0_15px_rgba(204,167,97,0.1)]' : 'bg-[#0a0a0a] border-[#222] hover:border-white/20'}`}
                     >
                       <div className="flex flex-col">
-                        <span className={`text-xs font-black uppercase tracking-widest mb-1 ${activePlanId === p.id ? 'text-white' : 'text-gray-700 dark:text-gray-300'}`}>{p.name}</span>
+                        <span className={`text-xs font-black uppercase tracking-widest mb-1 ${activePlanId === p.id ? 'text-white' : 'text-gray-300'}`}>{p.name}</span>
                         <span className="text-[9px] text-gray-500 font-medium">Meta: {p.monthlyGoal} {p.unit} â€¢ Sal: R$ {p.salary}</span>
                       </div>
                       <button onClick={(e) => handleDeletePlan(p.id, e)} className="text-gray-600 hover:text-red-500 transition-colors p-1">
@@ -254,7 +254,7 @@ export default function ConfigComercialPage() {
                   ))}
                   <button
                     onClick={() => handleCreatePlan(cat)}
-                    className="w-full py-2.5 bg-gray-100 dark:bg-white/5 border border-gray-200 dark:border-white/5 hover:border-gray-300 dark:border-white/20 rounded-xl flex items-center justify-center gap-2 transition-all group"
+                    className="w-full py-2.5 bg-white/5 border border-white/5 hover:border-white/20 rounded-xl flex items-center justify-center gap-2 transition-all group"
                   >
                     <Plus size={12} className="text-gray-500 group-hover:rotate-90 transition-transform" />
                     <span className="text-[9px] text-gray-500 font-bold uppercase tracking-widest italic">Novo NÃ­vel de {cat}</span>
@@ -274,15 +274,15 @@ export default function ConfigComercialPage() {
             {/* Direita: Editor de Planos */}
             {activePlan && (
               <div className="lg:col-span-9">
-                <div className="glass-card-premium p-6 lg:p-8 rounded-2xl border border-gray-200 dark:border-white/10 bg-white dark:bg-[#0a0a0a] shadow-xl relative min-h-full">
-                  <div className="flex justify-between items-center mb-8 pb-4 border-b border-gray-200 dark:border-white/5">
+                <div className="glass-card-premium p-6 lg:p-8 rounded-2xl border border-white/10 bg-[#0a0a0a] shadow-xl relative min-h-full">
+                  <div className="flex justify-between items-center mb-8 pb-4 border-b border-white/5">
                      <div className="flex items-center gap-4">
                         <h2 className="text-[10px] text-gray-400 font-black uppercase tracking-[0.2em]">ConfiguraÃ§Ã£o de Performance</h2>
                         <input
                           type="text"
                           value={activePlan.type}
                           onChange={(e) => handleUpdateActivePlan("type", e.target.value)}
-                          className="bg-transparent border-b border-gray-200 dark:border-white/10 text-[#CCA761] text-[10px] font-black uppercase tracking-widest focus:border-[#CCA761] focus:outline-none px-2 py-0.5"
+                          className="bg-transparent border-b border-white/10 text-[#CCA761] text-[10px] font-black uppercase tracking-widest focus:border-[#CCA761] focus:outline-none px-2 py-0.5"
                           placeholder="CATEGORIA"
                         />
                      </div>
@@ -298,7 +298,7 @@ export default function ConfigComercialPage() {
                          type="text"
                          value={activePlan.name}
                          onChange={(e) => handleUpdateActivePlan("name", e.target.value)}
-                         className="w-full bg-gray-100 dark:bg-[#111] border border-[#333] text-gray-900 dark:text-white px-4 py-3 rounded-xl text-sm focus:border-[#CCA761]/50 focus:outline-none transition-colors font-semibold"
+                         className="w-full bg-[#111] border border-[#333] text-white px-4 py-3 rounded-xl text-sm focus:border-[#CCA761]/50 focus:outline-none transition-colors font-semibold"
                        />
                      </div>
                      <div className="space-y-2">
@@ -307,7 +307,7 @@ export default function ConfigComercialPage() {
                           <select
                             value={activePlan.metricType}
                             onChange={(e) => handleUpdateActivePlan("metricType", e.target.value)}
-                            className="bg-gray-100 dark:bg-[#111] border border-[#333] text-gray-900 dark:text-white px-3 py-3 rounded-xl text-[10px] font-black focus:border-[#CCA761] focus:outline-none appearance-none"
+                            className="bg-[#111] border border-[#333] text-white px-3 py-3 rounded-xl text-[10px] font-black focus:border-[#CCA761] focus:outline-none appearance-none"
                           >
                             <option value="currency">R$</option>
                             <option value="numeric">QTD</option>
@@ -316,7 +316,7 @@ export default function ConfigComercialPage() {
                             type="text"
                             value={activePlan.unit}
                             onChange={(e) => handleUpdateActivePlan("unit", e.target.value)}
-                            className="flex-1 bg-gray-100 dark:bg-[#111] border border-[#333] text-gray-900 dark:text-white px-4 py-3 rounded-xl text-xs focus:border-[#CCA761] focus:outline-none font-black uppercase tracking-widest"
+                            className="flex-1 bg-[#111] border border-[#333] text-white px-4 py-3 rounded-xl text-xs focus:border-[#CCA761] focus:outline-none font-black uppercase tracking-widest"
                             placeholder="SÃ­mbolo (Ex: CTR, AGD)"
                           />
                        </div>
@@ -327,7 +327,7 @@ export default function ConfigComercialPage() {
                          type="number"
                          value={activePlan.salary}
                          onChange={(e) => handleUpdateActivePlan("salary", e.target.value === '' ? '' : Number(e.target.value))}
-                         className="w-full bg-gray-100 dark:bg-[#111] border border-[#333] text-gray-900 dark:text-white px-4 py-3 rounded-xl text-sm focus:border-[#4ade80]/50 focus:outline-none transition-colors font-mono"
+                         className="w-full bg-[#111] border border-[#333] text-white px-4 py-3 rounded-xl text-sm focus:border-[#4ade80]/50 focus:outline-none transition-colors font-mono"
                        />
                      </div>
                      <div className="space-y-2">
@@ -336,7 +336,7 @@ export default function ConfigComercialPage() {
                          type="number"
                          value={activePlan.monthlyGoal}
                          onChange={(e) => handleUpdateActivePlan("monthlyGoal", e.target.value === '' ? '' : Number(e.target.value))}
-                         className="w-full bg-gray-100 dark:bg-[#111] border border-[#333] text-gray-900 dark:text-white px-4 py-3 rounded-xl text-sm focus:border-[#CCA761]/50 focus:outline-none transition-colors font-mono"
+                         className="w-full bg-[#111] border border-[#333] text-white px-4 py-3 rounded-xl text-sm focus:border-[#CCA761]/50 focus:outline-none transition-colors font-mono"
                        />
                      </div>
                      <div className="space-y-2">
@@ -345,7 +345,7 @@ export default function ConfigComercialPage() {
                          type="number"
                          value={activePlan.minSalesForLevel}
                          onChange={(e) => handleUpdateActivePlan("minSalesForLevel", e.target.value === '' ? '' : Number(e.target.value))}
-                         className="w-full bg-gray-100 dark:bg-[#111] border border-[#333] text-gray-900 dark:text-white px-4 py-3 rounded-xl text-sm focus:border-[#CCA761]/50 focus:outline-none transition-colors font-mono"
+                         className="w-full bg-[#111] border border-[#333] text-white px-4 py-3 rounded-xl text-sm focus:border-[#CCA761]/50 focus:outline-none transition-colors font-mono"
                        />
                      </div>
                      <div className="space-y-2">
@@ -353,7 +353,7 @@ export default function ConfigComercialPage() {
                        <select
                          value={activePlan.commissionType || "fixed"}
                          onChange={(e) => handleUpdateActivePlan("commissionType", e.target.value)}
-                         className="w-full bg-gray-100 dark:bg-[#111] border border-[#333] text-gray-900 dark:text-white px-4 py-3 rounded-xl text-sm focus:border-[#CCA761]/50 focus:outline-none appearance-none"
+                         className="w-full bg-[#111] border border-[#333] text-white px-4 py-3 rounded-xl text-sm focus:border-[#CCA761]/50 focus:outline-none appearance-none"
                        >
                          <option value="fixed">Fixo por Unidade (R$)</option>
                          <option value="percentage">Porcentagem sobre Venda (%)</option>
@@ -366,20 +366,20 @@ export default function ConfigComercialPage() {
                   </h3>
 
                   <div className="space-y-4 mb-6">
-                     <div className="grid grid-cols-12 gap-4 border-b border-gray-200 dark:border-white/5 pb-2 text-[9px] text-gray-500 font-bold uppercase tracking-widest px-2">
+                     <div className="grid grid-cols-12 gap-4 border-b border-white/5 pb-2 text-[9px] text-gray-500 font-bold uppercase tracking-widest px-2">
                         <div className="col-span-5">Volume AlcanÃ§ado ({activePlan.unit})</div>
                         <div className="col-span-6">Valor da ComissÃ£o</div>
                         <div className="col-span-1"></div>
                      </div>
 
                      {activePlan.brackets.map((bracket) => (
-                       <div key={bracket.id} className="grid grid-cols-12 gap-4 items-center group bg-gray-100 dark:bg-[#111]/50 p-2 rounded-xl border border-transparent hover:border-gray-200 dark:border-white/5 transition-colors">
+                       <div key={bracket.id} className="grid grid-cols-12 gap-4 items-center group bg-[#111]/50 p-2 rounded-xl border border-transparent hover:border-white/5 transition-colors">
                           <div className="col-span-5">
                              <input
                                type="number"
                                value={bracket.minSales}
                                onChange={(e) => handleUpdateBracket(bracket.id, "minSales", e.target.value === '' ? '' : Number(e.target.value))}
-                               className="w-full bg-transparent border border-[#333] text-gray-900 dark:text-white px-4 py-2 rounded-lg text-sm focus:border-[#CCA761]/50 focus:outline-none transition-colors font-mono"
+                               className="w-full bg-transparent border border-[#333] text-white px-4 py-2 rounded-lg text-sm focus:border-[#CCA761]/50 focus:outline-none transition-colors font-mono"
                              />
                           </div>
                           <div className="col-span-6 relative">
@@ -404,7 +404,7 @@ export default function ConfigComercialPage() {
 
                   <button
                      onClick={handleAddBracket}
-                     className="px-5 py-2.5 bg-gray-100 dark:bg-white/5 border border-gray-200 dark:border-white/10 hover:border-[#CCA761]/30 hover:bg-[#CCA761]/5 rounded-xl flex items-center justify-center gap-2 transition-all mt-6"
+                     className="px-5 py-2.5 bg-white/5 border border-white/10 hover:border-[#CCA761]/30 hover:bg-[#CCA761]/5 rounded-xl flex items-center justify-center gap-2 transition-all mt-6"
                    >
                      <Plus size={14} className="text-[#CCA761]" />
                      <span className="text-[10px] text-[#CCA761] font-bold uppercase tracking-widest">Adicionar Nova Faixa de BÃ´nus</span>

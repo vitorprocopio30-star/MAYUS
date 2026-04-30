@@ -136,11 +136,11 @@ export default function NovoClientePage() {
       {/* Header */}
       <div className="flex flex-col md:flex-row md:items-center justify-between gap-4">
         <div className="flex items-center gap-4">
-          <button onClick={() => router.push("/dashboard/clientes")} className="p-2 bg-gray-100 dark:bg-[#111] hover:bg-gray-100 dark:bg-white/5 border border-[#222] rounded-xl transition-colors">
+          <button onClick={() => router.push("/dashboard/clientes")} className="p-2 bg-[#111] hover:bg-white/5 border border-[#222] rounded-xl transition-colors">
             <ArrowLeft size={20} className="text-gray-400" />
           </button>
           <div>
-            <h1 className={`text-2xl md:text-3xl text-gray-900 dark:text-white ${cormorant.className} italic font-bold`}>
+            <h1 className={`text-2xl md:text-3xl text-white ${cormorant.className} italic font-bold`}>
               Novo <span className="text-[#CCA761]">Cliente</span>
             </h1>
             <p className="text-gray-500 text-sm mt-1">Prencha os dados para iniciar a jornada deste lead ou cliente.</p>
@@ -162,17 +162,17 @@ export default function NovoClientePage() {
         <div className="md:col-span-2 space-y-6">
           
           {/* Card: Dados Principais */}
-          <div className="bg-gray-50 dark:bg-white/[0.02] border border-gray-200 dark:border-white/5 rounded-2xl p-6 backdrop-blur-sm">
-            <div className="flex items-center gap-2 mb-6 border-b border-gray-200 dark:border-white/5 pb-4">
+          <div className="bg-white/[0.02] border border-white/5 rounded-2xl p-6 backdrop-blur-sm">
+            <div className="flex items-center gap-2 mb-6 border-b border-white/5 pb-4">
               <User size={18} className="text-[#CCA761]" />
-              <h2 className="text-lg font-semibold tracking-wide text-gray-900 dark:text-white">Dados Principais</h2>
+              <h2 className="text-lg font-semibold tracking-wide text-white">Dados Principais</h2>
             </div>
             
-            <div className="flex bg-gray-100 dark:bg-[#111] border border-[#222] rounded-xl p-1 w-full max-w-[240px] mb-6">
-              <button onClick={() => setType("PF")} className={`flex-1 py-2 text-xs font-semibold rounded-lg transition-all flex items-center justify-center gap-2 ${type === "PF" ? "bg-[#CCA761]/10 text-[#CCA761]" : "text-gray-500 hover:text-gray-700 dark:text-gray-300"}`}>
+            <div className="flex bg-[#111] border border-[#222] rounded-xl p-1 w-full max-w-[240px] mb-6">
+              <button onClick={() => setType("PF")} className={`flex-1 py-2 text-xs font-semibold rounded-lg transition-all flex items-center justify-center gap-2 ${type === "PF" ? "bg-[#CCA761]/10 text-[#CCA761]" : "text-gray-500 hover:text-gray-300"}`}>
                 <User size={14} /> Pessoa Física
               </button>
-              <button onClick={() => setType("PJ")} className={`flex-1 py-2 text-xs font-semibold rounded-lg transition-all flex items-center justify-center gap-2 ${type === "PJ" ? "bg-[#CCA761]/10 text-[#CCA761]" : "text-gray-500 hover:text-gray-700 dark:text-gray-300"}`}>
+              <button onClick={() => setType("PJ")} className={`flex-1 py-2 text-xs font-semibold rounded-lg transition-all flex items-center justify-center gap-2 ${type === "PJ" ? "bg-[#CCA761]/10 text-[#CCA761]" : "text-gray-500 hover:text-gray-300"}`}>
                 <Building2 size={14} /> Pessoa Jurídica
               </button>
             </div>
@@ -180,70 +180,70 @@ export default function NovoClientePage() {
             <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
               <div className="space-y-1.5 md:col-span-2">
                 <label className="text-[11px] font-semibold text-gray-400 uppercase tracking-wider">{type === 'PF' ? 'Nome Completo' : 'Razão Social'}</label>
-                <input type="text" value={name} onChange={e => setName(e.target.value)} className="w-full bg-white dark:bg-[#0a0a0a] border border-[#2a2a2a] text-gray-900 dark:text-white rounded-lg px-4 py-3 text-sm focus:outline-none focus:border-[#CCA761]/50 transition-colors" />
+                <input type="text" value={name} onChange={e => setName(e.target.value)} className="w-full bg-[#0a0a0a] border border-[#2a2a2a] text-white rounded-lg px-4 py-3 text-sm focus:outline-none focus:border-[#CCA761]/50 transition-colors" />
               </div>
 
               <div className="space-y-1.5">
                 <label className="text-[11px] font-semibold text-gray-400 uppercase tracking-wider">{type === 'PF' ? 'CPF' : 'CNPJ'}</label>
-                <input type="text" value={document} onChange={e => handleDocumentChange(e.target.value)} className="w-full bg-white dark:bg-[#0a0a0a] border border-[#2a2a2a] text-gray-900 dark:text-white rounded-lg px-4 py-3 text-sm focus:outline-none focus:border-[#CCA761]/50 transition-colors" />
+                <input type="text" value={document} onChange={e => handleDocumentChange(e.target.value)} className="w-full bg-[#0a0a0a] border border-[#2a2a2a] text-white rounded-lg px-4 py-3 text-sm focus:outline-none focus:border-[#CCA761]/50 transition-colors" />
               </div>
               
               <div className="space-y-1.5">
                 <label className="text-[11px] font-semibold text-gray-400 uppercase tracking-wider">{type === 'PF' ? 'RG' : 'Inscrição Estadual'}</label>
-                <input type="text" value={rgIe} onChange={e => setRgIe(e.target.value)} className="w-full bg-white dark:bg-[#0a0a0a] border border-[#2a2a2a] text-gray-900 dark:text-white rounded-lg px-4 py-3 text-sm focus:outline-none focus:border-[#CCA761]/50 transition-colors" />
+                <input type="text" value={rgIe} onChange={e => setRgIe(e.target.value)} className="w-full bg-[#0a0a0a] border border-[#2a2a2a] text-white rounded-lg px-4 py-3 text-sm focus:outline-none focus:border-[#CCA761]/50 transition-colors" />
               </div>
 
               <div className="space-y-1.5">
                 <label className="text-[11px] font-semibold text-gray-400 uppercase tracking-wider">E-mail</label>
-                <input type="email" value={email} onChange={e => setEmail(e.target.value)} className="w-full bg-white dark:bg-[#0a0a0a] border border-[#2a2a2a] text-gray-900 dark:text-white rounded-lg px-4 py-3 text-sm focus:outline-none focus:border-[#CCA761]/50 transition-colors" />
+                <input type="email" value={email} onChange={e => setEmail(e.target.value)} className="w-full bg-[#0a0a0a] border border-[#2a2a2a] text-white rounded-lg px-4 py-3 text-sm focus:outline-none focus:border-[#CCA761]/50 transition-colors" />
               </div>
 
               <div className="space-y-1.5">
                 <label className="text-[11px] font-semibold text-gray-400 uppercase tracking-wider">Telefone / WhatsApp</label>
-                <input type="text" value={phone} onChange={e => handlePhoneChange(e.target.value)} className="w-full bg-white dark:bg-[#0a0a0a] border border-[#2a2a2a] text-gray-900 dark:text-white rounded-lg px-4 py-3 text-sm focus:outline-none focus:border-[#CCA761]/50 transition-colors" />
+                <input type="text" value={phone} onChange={e => handlePhoneChange(e.target.value)} className="w-full bg-[#0a0a0a] border border-[#2a2a2a] text-white rounded-lg px-4 py-3 text-sm focus:outline-none focus:border-[#CCA761]/50 transition-colors" />
               </div>
             </div>
           </div>
 
           {/* Card: Endereço */}
-          <div className="bg-gray-50 dark:bg-white/[0.02] border border-gray-200 dark:border-white/5 rounded-2xl p-6 backdrop-blur-sm">
-            <div className="flex items-center gap-2 mb-6 border-b border-gray-200 dark:border-white/5 pb-4">
+          <div className="bg-white/[0.02] border border-white/5 rounded-2xl p-6 backdrop-blur-sm">
+            <div className="flex items-center gap-2 mb-6 border-b border-white/5 pb-4">
               <MapPin size={18} className="text-[#CCA761]" />
-              <h2 className="text-lg font-semibold tracking-wide text-gray-900 dark:text-white">Endereço</h2>
+              <h2 className="text-lg font-semibold tracking-wide text-white">Endereço</h2>
             </div>
             
             <div className="grid grid-cols-1 md:grid-cols-4 gap-4">
               <div className="space-y-1.5 md:col-span-1 relative">
                 <label className="text-[11px] font-semibold text-gray-400 uppercase tracking-wider">CEP</label>
-                <input type="text" value={cep} onChange={e => handleCepChange(e.target.value)} className="w-full bg-white dark:bg-[#0a0a0a] border border-[#2a2a2a] text-gray-900 dark:text-white rounded-lg px-4 py-3 text-sm focus:outline-none focus:border-[#CCA761]/50 transition-colors" />
+                <input type="text" value={cep} onChange={e => handleCepChange(e.target.value)} className="w-full bg-[#0a0a0a] border border-[#2a2a2a] text-white rounded-lg px-4 py-3 text-sm focus:outline-none focus:border-[#CCA761]/50 transition-colors" />
                 {fetchingCep && <Loader2 size={16} className="absolute right-3 top-9 animate-spin text-[#CCA761]" />}
               </div>
               
               <div className="space-y-1.5 md:col-span-3">
                 <label className="text-[11px] font-semibold text-gray-400 uppercase tracking-wider">Logradouro</label>
-                <input type="text" value={street} onChange={e => setStreet(e.target.value)} className="w-full bg-white dark:bg-[#0a0a0a] border border-[#2a2a2a] text-gray-900 dark:text-white rounded-lg px-4 py-3 text-sm focus:outline-none focus:border-[#CCA761]/50 transition-colors" />
+                <input type="text" value={street} onChange={e => setStreet(e.target.value)} className="w-full bg-[#0a0a0a] border border-[#2a2a2a] text-white rounded-lg px-4 py-3 text-sm focus:outline-none focus:border-[#CCA761]/50 transition-colors" />
               </div>
 
               <div className="space-y-1.5 md:col-span-1">
                 <label className="text-[11px] font-semibold text-gray-400 uppercase tracking-wider">Número</label>
-                <input type="text" value={number} onChange={e => setNumber(e.target.value)} className="w-full bg-white dark:bg-[#0a0a0a] border border-[#2a2a2a] text-gray-900 dark:text-white rounded-lg px-4 py-3 text-sm focus:outline-none focus:border-[#CCA761]/50 transition-colors" />
+                <input type="text" value={number} onChange={e => setNumber(e.target.value)} className="w-full bg-[#0a0a0a] border border-[#2a2a2a] text-white rounded-lg px-4 py-3 text-sm focus:outline-none focus:border-[#CCA761]/50 transition-colors" />
               </div>
 
               <div className="space-y-1.5 md:col-span-1">
                 <label className="text-[11px] font-semibold text-gray-400 uppercase tracking-wider">Complemento</label>
-                <input type="text" value={complement} onChange={e => setComplement(e.target.value)} className="w-full bg-white dark:bg-[#0a0a0a] border border-[#2a2a2a] text-gray-900 dark:text-white rounded-lg px-4 py-3 text-sm focus:outline-none focus:border-[#CCA761]/50 transition-colors" />
+                <input type="text" value={complement} onChange={e => setComplement(e.target.value)} className="w-full bg-[#0a0a0a] border border-[#2a2a2a] text-white rounded-lg px-4 py-3 text-sm focus:outline-none focus:border-[#CCA761]/50 transition-colors" />
               </div>
 
               <div className="space-y-1.5 md:col-span-1">
                 <label className="text-[11px] font-semibold text-gray-400 uppercase tracking-wider">Bairro</label>
-                <input type="text" value={neighborhood} onChange={e => setNeighborhood(e.target.value)} className="w-full bg-white dark:bg-[#0a0a0a] border border-[#2a2a2a] text-gray-900 dark:text-white rounded-lg px-4 py-3 text-sm focus:outline-none focus:border-[#CCA761]/50 transition-colors" />
+                <input type="text" value={neighborhood} onChange={e => setNeighborhood(e.target.value)} className="w-full bg-[#0a0a0a] border border-[#2a2a2a] text-white rounded-lg px-4 py-3 text-sm focus:outline-none focus:border-[#CCA761]/50 transition-colors" />
               </div>
 
               <div className="space-y-1.5 md:col-span-1">
                 <label className="text-[11px] font-semibold text-gray-400 uppercase tracking-wider">Cidade / UF</label>
                 <div className="flex gap-2">
-                  <input type="text" value={city} onChange={e => setCity(e.target.value)} className="w-full bg-white dark:bg-[#0a0a0a] border border-[#2a2a2a] text-gray-900 dark:text-white rounded-lg px-4 py-3 text-sm focus:outline-none focus:border-[#CCA761]/50 transition-colors" />
-                  <input type="text" value={stateUF} onChange={e => setStateUF(e.target.value)} placeholder="UF" className="w-16 bg-white dark:bg-[#0a0a0a] border border-[#2a2a2a] text-gray-900 dark:text-white rounded-lg px-3 py-3 text-sm text-center focus:outline-none focus:border-[#CCA761]/50 transition-colors" maxLength={2} />
+                  <input type="text" value={city} onChange={e => setCity(e.target.value)} className="w-full bg-[#0a0a0a] border border-[#2a2a2a] text-white rounded-lg px-4 py-3 text-sm focus:outline-none focus:border-[#CCA761]/50 transition-colors" />
+                  <input type="text" value={stateUF} onChange={e => setStateUF(e.target.value)} placeholder="UF" className="w-16 bg-[#0a0a0a] border border-[#2a2a2a] text-white rounded-lg px-3 py-3 text-sm text-center focus:outline-none focus:border-[#CCA761]/50 transition-colors" maxLength={2} />
                 </div>
               </div>
             </div>
@@ -257,13 +257,13 @@ export default function NovoClientePage() {
             <div className="absolute top-0 right-0 w-32 h-32 bg-[#CCA761]/5 rounded-bl-full pointer-events-none" />
             <div className="flex items-center gap-2 mb-6 border-b border-[#222] pb-4">
               <Briefcase size={18} className="text-[#CCA761]" />
-              <h2 className="text-lg font-semibold tracking-wide text-gray-900 dark:text-white">Status & Gestão</h2>
+              <h2 className="text-lg font-semibold tracking-wide text-white">Status & Gestão</h2>
             </div>
             
             <div className="space-y-4">
               <div className="space-y-1.5">
                 <label className="text-[11px] font-semibold text-gray-400 uppercase tracking-wider">Status Atual</label>
-                <select value={status} onChange={e => setStatus(e.target.value)} className="w-full bg-white dark:bg-[#0a0a0a] border border-[#2a2a2a] text-gray-900 dark:text-white rounded-lg px-4 py-3 text-sm focus:outline-none focus:border-[#CCA761]/50 appearance-none">
+                <select value={status} onChange={e => setStatus(e.target.value)} className="w-full bg-[#0a0a0a] border border-[#2a2a2a] text-white rounded-lg px-4 py-3 text-sm focus:outline-none focus:border-[#CCA761]/50 appearance-none">
                   <option value="Prospecção">Prospecção (Lead)</option>
                   <option value="Qualificado">Qualificado (Oportunidade)</option>
                   <option value="Cliente">Cliente Ativo</option>
@@ -273,18 +273,18 @@ export default function NovoClientePage() {
 
               <div className="space-y-1.5">
                 <label className="text-[11px] font-semibold text-gray-400 uppercase tracking-wider">Origem do Lead</label>
-                <input type="text" value={origin} onChange={e => setOrigin(e.target.value)} placeholder="Ex: Instagram, Indicação..." className="w-full bg-white dark:bg-[#0a0a0a] border border-[#2a2a2a] text-gray-900 dark:text-white rounded-lg px-4 py-3 text-sm focus:outline-none focus:border-[#CCA761]/50 transition-colors" />
+                <input type="text" value={origin} onChange={e => setOrigin(e.target.value)} placeholder="Ex: Instagram, Indicação..." className="w-full bg-[#0a0a0a] border border-[#2a2a2a] text-white rounded-lg px-4 py-3 text-sm focus:outline-none focus:border-[#CCA761]/50 transition-colors" />
               </div>
 
               <div className="space-y-1.5">
                 <label className="text-[11px] font-semibold text-gray-400 uppercase tracking-wider">{type === 'PF' ? 'Data de Nascimento' : 'Data de Fundação'}</label>
-                <input type="date" value={birthOrFoundation} onChange={e => setBirthOrFoundation(e.target.value)} className="w-full bg-white dark:bg-[#0a0a0a] border border-[#2a2a2a] text-gray-900 dark:text-white rounded-lg px-4 py-3 text-sm focus:outline-none focus:border-[#CCA761]/50 transition-colors [color-scheme:dark]" />
+                <input type="date" value={birthOrFoundation} onChange={e => setBirthOrFoundation(e.target.value)} className="w-full bg-[#0a0a0a] border border-[#2a2a2a] text-white rounded-lg px-4 py-3 text-sm focus:outline-none focus:border-[#CCA761]/50 transition-colors [color-scheme:dark]" />
               </div>
               
               {type === 'PF' && (
                 <div className="space-y-1.5">
                   <label className="text-[11px] font-semibold text-gray-400 uppercase tracking-wider">Estado Civil</label>
-                  <select value={maritalStatus} onChange={e => setMaritalStatus(e.target.value)} className="w-full bg-white dark:bg-[#0a0a0a] border border-[#2a2a2a] text-gray-900 dark:text-white rounded-lg px-4 py-3 text-sm focus:outline-none focus:border-[#CCA761]/50 appearance-none">
+                  <select value={maritalStatus} onChange={e => setMaritalStatus(e.target.value)} className="w-full bg-[#0a0a0a] border border-[#2a2a2a] text-white rounded-lg px-4 py-3 text-sm focus:outline-none focus:border-[#CCA761]/50 appearance-none">
                     <option value="">Selecione...</option>
                     <option value="Solteiro">Solteiro(a)</option>
                     <option value="Casado">Casado(a)</option>
@@ -297,36 +297,36 @@ export default function NovoClientePage() {
 
               <div className="space-y-1.5">
                 <label className="text-[11px] font-semibold text-gray-400 uppercase tracking-wider">{type === 'PF' ? 'Profissão' : 'Ramo de Atividade'}</label>
-                <input type="text" value={profession} onChange={e => setProfession(e.target.value)} className="w-full bg-white dark:bg-[#0a0a0a] border border-[#2a2a2a] text-gray-900 dark:text-white rounded-lg px-4 py-3 text-sm focus:outline-none focus:border-[#CCA761]/50 transition-colors" />
+                <input type="text" value={profession} onChange={e => setProfession(e.target.value)} className="w-full bg-[#0a0a0a] border border-[#2a2a2a] text-white rounded-lg px-4 py-3 text-sm focus:outline-none focus:border-[#CCA761]/50 transition-colors" />
               </div>
             </div>
           </div>
 
           {/* Card: Dados Bancários */}
-          <div className="bg-gray-50 dark:bg-white/[0.02] border border-gray-200 dark:border-white/5 rounded-2xl p-6 backdrop-blur-sm">
-            <div className="flex items-center gap-2 mb-6 border-b border-gray-200 dark:border-white/5 pb-4">
+          <div className="bg-white/[0.02] border border-white/5 rounded-2xl p-6 backdrop-blur-sm">
+            <div className="flex items-center gap-2 mb-6 border-b border-white/5 pb-4">
               <Landmark size={18} className="text-[#CCA761]" />
-              <h2 className="text-lg font-semibold tracking-wide text-gray-900 dark:text-white">Reembolso / Faturamento</h2>
+              <h2 className="text-lg font-semibold tracking-wide text-white">Reembolso / Faturamento</h2>
             </div>
 
             <div className="space-y-4">
               <div className="space-y-1.5">
                 <label className="text-[11px] font-semibold text-gray-400 uppercase tracking-wider">Banco</label>
-                <input type="text" value={bank} onChange={e => setBank(e.target.value)} placeholder="Ex: Itaú, Nubank..." className="w-full bg-white dark:bg-[#0a0a0a] border border-[#2a2a2a] text-gray-900 dark:text-white rounded-lg px-4 py-3 text-sm focus:outline-none focus:border-[#CCA761]/50 transition-colors" />
+                <input type="text" value={bank} onChange={e => setBank(e.target.value)} placeholder="Ex: Itaú, Nubank..." className="w-full bg-[#0a0a0a] border border-[#2a2a2a] text-white rounded-lg px-4 py-3 text-sm focus:outline-none focus:border-[#CCA761]/50 transition-colors" />
               </div>
               <div className="grid grid-cols-2 gap-4">
                 <div className="space-y-1.5">
                   <label className="text-[11px] font-semibold text-gray-400 uppercase tracking-wider">Agência</label>
-                  <input type="text" value={agency} onChange={e => setAgency(e.target.value)} className="w-full bg-white dark:bg-[#0a0a0a] border border-[#2a2a2a] text-gray-900 dark:text-white rounded-lg px-4 py-3 text-sm focus:outline-none focus:border-[#CCA761]/50 transition-colors" />
+                  <input type="text" value={agency} onChange={e => setAgency(e.target.value)} className="w-full bg-[#0a0a0a] border border-[#2a2a2a] text-white rounded-lg px-4 py-3 text-sm focus:outline-none focus:border-[#CCA761]/50 transition-colors" />
                 </div>
                 <div className="space-y-1.5">
                   <label className="text-[11px] font-semibold text-gray-400 uppercase tracking-wider">Conta</label>
-                  <input type="text" value={account} onChange={e => setAccount(e.target.value)} className="w-full bg-white dark:bg-[#0a0a0a] border border-[#2a2a2a] text-gray-900 dark:text-white rounded-lg px-4 py-3 text-sm focus:outline-none focus:border-[#CCA761]/50 transition-colors" />
+                  <input type="text" value={account} onChange={e => setAccount(e.target.value)} className="w-full bg-[#0a0a0a] border border-[#2a2a2a] text-white rounded-lg px-4 py-3 text-sm focus:outline-none focus:border-[#CCA761]/50 transition-colors" />
                 </div>
               </div>
               <div className="space-y-1.5">
                 <label className="text-[11px] font-semibold text-gray-400 uppercase tracking-wider">Chave PIX</label>
-                <input type="text" value={pix} onChange={e => setPix(e.target.value)} className="w-full bg-white dark:bg-[#0a0a0a] border border-[#2a2a2a] text-gray-900 dark:text-white rounded-lg px-4 py-3 text-sm focus:outline-none focus:border-[#CCA761]/50 transition-colors" />
+                <input type="text" value={pix} onChange={e => setPix(e.target.value)} className="w-full bg-[#0a0a0a] border border-[#2a2a2a] text-white rounded-lg px-4 py-3 text-sm focus:outline-none focus:border-[#CCA761]/50 transition-colors" />
               </div>
             </div>
           </div>

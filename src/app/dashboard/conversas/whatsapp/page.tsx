@@ -498,19 +498,19 @@ export default function WhatsAppChatPremiumPage() {
 
 
   return (
-    <div className={`h-[calc(100vh-6rem)] w-full flex bg-[#020104] rounded-tl-3xl border-t border-l border-gray-200 dark:border-white/5 overflow-hidden ${montserrat.className} text-sm`}>
+    <div className={`h-[calc(100vh-6rem)] w-full flex bg-[#020104] rounded-tl-3xl border-t border-l border-white/5 overflow-hidden ${montserrat.className} text-sm`}>
 
       {/* 1. BARRA LATERAL ESQUERDA (LISTAGEM) */}
-      <div className="w-[360px] flex-shrink-0 border-r border-gray-200 dark:border-white/10 bg-white dark:bg-[#050505] flex flex-col h-full z-10 transition-all">
-        <div className="p-6 border-b border-gray-200 dark:border-white/10 flex flex-col gap-4">
+      <div className="w-[360px] flex-shrink-0 border-r border-white/10 bg-white dark:bg-[#050505] flex flex-col h-full z-10 transition-all">
+        <div className="p-6 border-b border-white/10 flex flex-col gap-4">
            <div className="flex justify-between items-center">
               <div className="flex items-center gap-2">
                  <div className="w-8 h-8 rounded-lg bg-[#CCA761]/10 flex items-center justify-center border border-[#CCA761]/30 shadow-[0_0_15px_rgba(204,167,97,0.1)]">
                     <MessageCircle size={18} className="text-[#CCA761]" />
                  </div>
-                 <h2 className={`text-xl font-black text-gray-900 dark:text-white italic tracking-tighter ${cormorant.className}`}>Conversas</h2>
+                 <h2 className={`text-xl font-black text-white italic tracking-tighter ${cormorant.className}`}>Conversas</h2>
               </div>
-              <button onClick={() => setIsAddingContact(!isAddingContact)} className="bg-gray-100 dark:bg-white/5 p-2 rounded-lg border border-gray-200 dark:border-white/5 hover:bg-[#CCA761] hover:text-black transition-all">
+              <button onClick={() => setIsAddingContact(!isAddingContact)} className="bg-white/5 p-2 rounded-lg border border-white/5 hover:bg-[#CCA761] hover:text-black transition-all">
                  <Plus size={18} />
               </button>
            </div>
@@ -523,12 +523,12 @@ export default function WhatsAppChatPremiumPage() {
                 value={searchQuery}
                 onChange={(e) => setSearchQuery(e.target.value)}
                 placeholder="Buscar por nome ou telefone..."
-                className="w-full bg-gray-200 dark:bg-black/40 border border-gray-200 dark:border-white/5 rounded-xl pl-9 pr-3 py-2.5 text-xs text-gray-900 dark:text-white placeholder:text-gray-700 outline-none focus:border-[#CCA761]/30 transition-colors"
+                className="w-full bg-gray-200 dark:bg-black/40 border border-white/5 rounded-xl pl-9 pr-3 py-2.5 text-xs text-white placeholder:text-gray-700 outline-none focus:border-[#CCA761]/30 transition-colors"
               />
            </div>
 
            {/* Filtros de Aba Estilo Premium */}
-           <div className="flex p-1 bg-gray-200 dark:bg-black/40 rounded-xl border border-gray-200 dark:border-white/5">
+           <div className="flex p-1 bg-gray-200 dark:bg-black/40 rounded-xl border border-white/5">
               {[
                 { id: "minhas", label: "Minhas", icon: UserCheck },
                 { id: "aguardando", label: "Espera", icon: Clock },
@@ -537,7 +537,7 @@ export default function WhatsAppChatPremiumPage() {
                 <button
                   key={tab.id}
                   onClick={() => setActiveTab(tab.id)}
-                  className={`flex-1 flex items-center justify-center gap-2 py-2 rounded-lg text-[10px] font-black uppercase tracking-widest transition-all ${activeTab === tab.id ? "bg-[#CCA761] text-black shadow-lg" : "text-gray-500 hover:text-gray-700 dark:text-gray-300"}`}
+                  className={`flex-1 flex items-center justify-center gap-2 py-2 rounded-lg text-[10px] font-black uppercase tracking-widest transition-all ${activeTab === tab.id ? "bg-[#CCA761] text-black shadow-lg" : "text-gray-500 hover:text-gray-300"}`}
                 >
                    <tab.icon size={12} /> {tab.label}
                 </button>
@@ -550,7 +550,7 @@ export default function WhatsAppChatPremiumPage() {
                <button
                  onClick={() => setFilterDeptId(null)}
                  className={`text-[8px] font-black uppercase tracking-widest px-2.5 py-1 rounded-full border transition-all ${
-                   !filterDeptId ? 'bg-gray-100 dark:bg-white/10 border-gray-300 dark:border-white/20 text-white' : 'border-gray-200 dark:border-white/5 text-gray-600 hover:text-gray-400'
+                   !filterDeptId ? 'bg-white/10 border-white/20 text-white' : 'border-white/5 text-gray-600 hover:text-gray-400'
                  }`}
                >
                  Todos
@@ -560,7 +560,7 @@ export default function WhatsAppChatPremiumPage() {
                    key={dept.id}
                    onClick={() => setFilterDeptId(filterDeptId === dept.id ? null : dept.id)}
                    className={`text-[8px] font-black uppercase tracking-widest px-2.5 py-1 rounded-full border transition-all flex items-center gap-1 ${
-                     filterDeptId === dept.id ? 'border-gray-300 dark:border-white/20 text-white' : 'border-gray-200 dark:border-white/5 text-gray-600 hover:text-gray-400'
+                     filterDeptId === dept.id ? 'border-white/20 text-white' : 'border-white/5 text-gray-600 hover:text-gray-400'
                    }`}
                    style={filterDeptId === dept.id ? { backgroundColor: `${dept.color}20`, borderColor: `${dept.color}40` } : {}}
                  >
@@ -573,7 +573,7 @@ export default function WhatsAppChatPremiumPage() {
 
            {isAddingContact && (
               <div className="animate-in slide-in-from-top-2 flex flex-col gap-2 p-4 bg-[#CCA761]/5 border border-[#CCA761]/20 rounded-2xl">
-                 <input type="text" placeholder="DDD + Numero" value={newContactPhone} onChange={(e) => setNewContactPhone(e.target.value)} className="bg-gray-200 dark:bg-black border border-gray-200 dark:border-white/10 rounded-lg text-xs px-3 py-2 text-gray-900 dark:text-white" />
+                 <input type="text" placeholder="DDD + Numero" value={newContactPhone} onChange={(e) => setNewContactPhone(e.target.value)} className="bg-gray-200 dark:bg-black border border-white/10 rounded-lg text-xs px-3 py-2 text-white" />
                  <button onClick={handleCreateContact} className="bg-[#CCA761] text-black py-2 rounded-lg font-black text-[10px] uppercase">Iniciar Atendimento</button>
               </div>
            )}
@@ -583,13 +583,13 @@ export default function WhatsAppChatPremiumPage() {
            {isLoading ? (
               <div className="flex flex-col items-center justify-center h-40 opacity-20"><Loader2 className="animate-spin" /></div>
            ) : filteredContacts.map((contact) => (
-              <div key={contact.id} onClick={() => setActiveContact(contact)} className={`group relative flex items-start gap-4 p-4 rounded-2xl cursor-pointer transition-all border ${activeContact?.id === contact.id ? "bg-gray-100 dark:bg-[#111] border-[#CCA761]/30" : "hover:bg-gray-100 dark:bg-white/5 border-transparent opacity-80 hover:opacity-100"}`}>
+              <div key={contact.id} onClick={() => setActiveContact(contact)} className={`group relative flex items-start gap-4 p-4 rounded-2xl cursor-pointer transition-all border ${activeContact?.id === contact.id ? "bg-[#111] border-[#CCA761]/30" : "hover:bg-white/5 border-transparent opacity-80 hover:opacity-100"}`}>
                  <div className="w-12 h-12 rounded-full border border-[#CCA761]/20 bg-gray-200 dark:bg-black flex flex-shrink-0 items-center justify-center text-[#CCA761] font-black shadow-inner overflow-hidden">
                     {contact.avatar_url ? <img src={contact.avatar_url} className="w-full h-full object-cover" /> : contact.name?.substring(0, 2).toUpperCase()}
                  </div>
                  <div className="flex-1 min-w-0">
                     <div className="flex justify-between items-center mb-1">
-                       <h4 className="font-bold truncate text-sm text-gray-800 dark:text-gray-200">{contact.name || contact.phone_number}</h4>
+                       <h4 className="font-bold truncate text-sm text-gray-200">{contact.name || contact.phone_number}</h4>
                        <span className="text-[9px] text-gray-600 font-bold uppercase">{contact.last_message_at ? formatTime(contact.last_message_at) : ''}</span>
                     </div>
                     <p className="text-gray-500 text-[10px] truncate italic font-medium">Sincronizado via Meta Cloud</p>
@@ -607,13 +607,13 @@ export default function WhatsAppChatPremiumPage() {
           <div className="flex-1 flex flex-col min-h-0">
             {(activeContact || messages.length > 0) ? (
               <>
-                <div className="h-20 border-b border-gray-200 dark:border-white/5 flex items-center justify-between px-8 bg-white dark:bg-[#0a0a0a]/90 backdrop-blur-3xl z-10 flex-shrink-0">
+                <div className="h-20 border-b border-white/5 flex items-center justify-between px-8 bg-[#0a0a0a]/90 backdrop-blur-3xl z-10 flex-shrink-0">
                     <div className="flex items-center gap-5">
                        <div className="w-11 h-11 rounded-full border border-[#CCA761]/50 bg-gray-200 dark:bg-black flex items-center justify-center text-[#CCA761] font-black text-lg shadow-[0_0_20px_rgba(204,167,97,0.1)] overflow-hidden">
                           {activeContact?.avatar_url ? <img src={activeContact.avatar_url} className="w-full h-full object-cover" /> : (activeContact?.name?.substring(0, 2).toUpperCase() || "TS")}
                        </div>
                        <div>
-                         <h2 className={`text-2xl font-bold text-gray-900 dark:text-white tracking-wide flex items-center gap-3 ${cormorant.className} italic`}>
+                         <h2 className={`text-2xl font-bold text-white tracking-wide flex items-center gap-3 ${cormorant.className} italic`}>
                             {activeContact?.name || activeContact?.phone_number || "Lead de Teste (Simulado)"}
                             <div className="flex gap-1.5 translate-y-[-1px]">
                                <span className={`text-[8px] px-2.5 py-1 rounded-full font-black uppercase tracking-widest border ${activeContact ? 'bg-[#25D366]/10 text-[#25D366] border-[#25D366]/20' : 'bg-[#CCA761]/10 text-[#CCA761] border-[#CCA761]/20'}`}>
@@ -629,7 +629,7 @@ export default function WhatsAppChatPremiumPage() {
                     </div>
 
                     <div className="flex items-center gap-3">
-                       <button onClick={() => setShowTransferModal(true)} className="flex items-center gap-2 bg-gray-100 dark:bg-white/5 border border-gray-200 dark:border-white/10 text-gray-400 px-4 py-2 rounded-xl text-[10px] font-black uppercase tracking-widest hover:bg-[#CCA761]/10 hover:text-[#CCA761] transition-all">
+                       <button onClick={() => setShowTransferModal(true)} className="flex items-center gap-2 bg-white/5 border border-white/10 text-gray-400 px-4 py-2 rounded-xl text-[10px] font-black uppercase tracking-widest hover:bg-[#CCA761]/10 hover:text-[#CCA761] transition-all">
                           <Share2 size={14} /> Transferir Atendimento
                        </button>
                        <button className="bg-[#CCA761] text-black px-6 py-2.5 rounded-xl text-[10px] font-black uppercase tracking-widest shadow-[0_0_25px_rgba(204,167,97,0.3)] hover:scale-105 transition-all">
@@ -653,7 +653,7 @@ export default function WhatsAppChatPremiumPage() {
                             </span>
                           )}
                         </div>
-                        <p className="text-[12px] leading-relaxed text-gray-700 dark:text-gray-300 line-clamp-2">
+                        <p className="text-[12px] leading-relaxed text-gray-300 line-clamp-2">
                           {isLoadingMayusDraft
                             ? "Carregando rascunho consultivo..."
                             : mayusDraft?.suggested_reply || mayusDraft?.internal_note || "Sem rascunho disponivel para este contato."}
@@ -697,7 +697,7 @@ export default function WhatsAppChatPremiumPage() {
                                 <div className={`p-5 rounded-2xl text-[14px] leading-relaxed shadow-2xl relative border ${
                                    isMe
                                    ? 'bg-gradient-to-br from-[#CCA761] to-[#b89552] text-black font-semibold rounded-tr-sm border-[#b89552]/40'
-                                   : 'bg-[#121212] border-gray-200 dark:border-white/10 text-gray-800 dark:text-gray-200 rounded-tl-sm'
+                                   : 'bg-[#121212] border-white/10 text-gray-200 rounded-tl-sm'
                                 }`}>
                                    {msg.content}
                                 </div>
@@ -713,19 +713,19 @@ export default function WhatsAppChatPremiumPage() {
               </>
             ) : (
                 <div className="flex-1 flex flex-col items-center justify-center p-20 z-10 min-h-0">
-                  <div className="w-28 h-28 bg-white dark:bg-[#0a0a0a] border border-[#CCA761]/30 rounded-full flex items-center justify-center mb-10 shadow-[0_0_80px_rgba(204,167,97,0.1)] relative overflow-hidden">
+                  <div className="w-28 h-28 bg-[#0a0a0a] border border-[#CCA761]/30 rounded-full flex items-center justify-center mb-10 shadow-[0_0_80px_rgba(204,167,97,0.1)] relative overflow-hidden">
                       <div className="absolute inset-0 bg-[conic-gradient(from_0deg,#CCA761,transparent,transparent,#CCA761)] animate-spin opacity-20" />
                       <Bot size={44} className="text-[#CCA761] relative z-10" />
                   </div>
-                  <h2 className={`text-4xl font-bold text-gray-900 dark:text-white mb-4 ${cormorant.className} italic`}>CÃ³rtex de Mensagens Ativo</h2>
+                  <h2 className={`text-4xl font-bold text-white mb-4 ${cormorant.className} italic`}>CÃ³rtex de Mensagens Ativo</h2>
                   <p className="text-gray-500 max-w-sm text-sm font-medium leading-relaxed mb-12">O sistema estÃ¡ pronto. Escolha um lead que aguarda retorno ou comece uma prospecÃ§Ã£o de ouro agora.</p>
-                  <button onClick={() => setIsAddingContact(true)} className="bg-gray-100 dark:bg-white/5 border border-gray-200 dark:border-white/10 text-gray-900 dark:text-white px-10 py-5 rounded-2xl font-black uppercase text-[11px] tracking-[0.3em] hover:bg-[#CCA761] hover:text-black transition-all">Novo Atendimento</button>
+                  <button onClick={() => setIsAddingContact(true)} className="bg-white/5 border border-white/10 text-white px-10 py-5 rounded-2xl font-black uppercase text-[11px] tracking-[0.3em] hover:bg-[#CCA761] hover:text-black transition-all">Novo Atendimento</button>
                 </div>
             )}
           </div>
 
           {/* COMPOSER SLIM - DESIGN ULTRA COMPACTO E FUNCIONAL */}
-          <div className="p-3 pb-4 bg-white dark:bg-[#0a0a0a]/95 backdrop-blur-3xl border-t border-gray-200 dark:border-white/10 z-10 flex-shrink-0">
+          <div className="p-3 pb-4 bg-[#0a0a0a]/95 backdrop-blur-3xl border-t border-white/10 z-10 flex-shrink-0">
               {/* Linha Fina de Controles Superiores */}
               <div className="flex justify-between items-center mb-2 px-3">
                   <div className="flex gap-4">
@@ -748,21 +748,21 @@ export default function WhatsAppChatPremiumPage() {
                         value={signatureName}
                         onChange={(e) => setSignatureName(e.target.value)}
                         placeholder={profile?.full_name || 'Seu nome'}
-                        className="bg-transparent border-b border-gray-200 dark:border-white/10 text-[10px] text-gray-700 dark:text-gray-300 px-1 py-0.5 w-24 outline-none focus:border-[#CCA761] placeholder:text-gray-700 font-bold transition-colors"
+                        className="bg-transparent border-b border-white/10 text-[10px] text-gray-300 px-1 py-0.5 w-24 outline-none focus:border-[#CCA761] placeholder:text-gray-700 font-bold transition-colors"
                       />
                     )}
                     <label className="flex items-center gap-2 cursor-pointer group">
                         <input type="checkbox" checked={showSignature} onChange={() => setShowSignature(!showSignature)} className="hidden" />
-                        <div className={`w-6 h-3 rounded-full transition-all relative ${showSignature ? "bg-[#CCA761]" : "bg-gray-100 dark:bg-white/10"}`}>
+                        <div className={`w-6 h-3 rounded-full transition-all relative ${showSignature ? "bg-[#CCA761]" : "bg-white/10"}`}>
                           <div className={`absolute top-0.5 w-2 h-2 rounded-full bg-white transition-all ${showSignature ? "right-0.5" : "left-0.5"}`} />
                         </div>
-                        <span className="text-[8px] font-black text-gray-500 uppercase tracking-widest group-hover:text-gray-900 dark:text-white transition-colors">Assinatura</span>
+                        <span className="text-[8px] font-black text-gray-500 uppercase tracking-widest group-hover:text-white transition-colors">Assinatura</span>
                     </label>
                   </div>
               </div>
 
               {/* Ãrea Principal de Input - Estilo Barra */}
-              <div className={`rounded-xl border transition-all flex flex-col shadow-lg relative ${inputMode === "nota" ? "bg-orange-500/[0.02] border-orange-500/30" : "bg-gray-200 dark:bg-black/40 border-gray-200 dark:border-white/10 focus-within:border-[#CCA761]/40"} ${isRecording ? 'border-red-500 ring-1 ring-red-500/20' : ''}`}>
+              <div className={`rounded-xl border transition-all flex flex-col shadow-lg relative ${inputMode === "nota" ? "bg-orange-500/[0.02] border-orange-500/30" : "bg-gray-200 dark:bg-black/40 border-white/10 focus-within:border-[#CCA761]/40"} ${isRecording ? 'border-red-500 ring-1 ring-red-500/20' : ''}`}>
                   {isRecording ? (
                     <div className="w-full flex items-center justify-between px-4 py-3 bg-red-500/5 rounded-xl animate-pulse">
                         <div className="flex items-center gap-3">
@@ -776,13 +776,13 @@ export default function WhatsAppChatPremiumPage() {
                         <div className="flex gap-2">
                           <button
                             onClick={(e) => { e.preventDefault(); e.stopPropagation(); stopRecording(); }}
-                            className="bg-red-500 hover:bg-red-600 text-gray-900 dark:text-white px-4 py-1.5 rounded-lg font-black text-[8px] uppercase shadow-lg transition-all active:scale-95 z-20"
+                            className="bg-red-500 hover:bg-red-600 text-white px-4 py-1.5 rounded-lg font-black text-[8px] uppercase shadow-lg transition-all active:scale-95 z-20"
                           >
                             Enviar
                           </button>
                           <button
                             onClick={(e) => { e.preventDefault(); e.stopPropagation(); setIsRecording(false); mediaRecorderRef.current?.stop(); }}
-                            className="bg-gray-100 dark:bg-white/5 text-gray-400 px-4 py-1.5 rounded-lg font-black text-[8px] uppercase border border-gray-200 dark:border-white/10 hover:bg-gray-100 dark:bg-white/10 transition-all z-20"
+                            className="bg-white/5 text-gray-400 px-4 py-1.5 rounded-lg font-black text-[8px] uppercase border border-white/10 hover:bg-white/10 transition-all z-20"
                           >
                             Cancelar
                           </button>
@@ -792,13 +792,13 @@ export default function WhatsAppChatPremiumPage() {
                        <div className="flex flex-col">
                          {/* Preview de Anexo */}
                          {selectedFile && (
-                           <div className="px-4 py-2 bg-gray-200 dark:bg-black/40 border-t border-gray-200 dark:border-white/10 flex items-center justify-between animate-in slide-in-from-bottom-2">
+                           <div className="px-4 py-2 bg-gray-200 dark:bg-black/40 border-t border-white/10 flex items-center justify-between animate-in slide-in-from-bottom-2">
                              <div className="flex items-center gap-2">
                                <FileText size={16} className="text-[#CCA761]" />
-                               <span className="text-[11px] text-gray-700 dark:text-gray-300 font-medium">{selectedFile.name}</span>
+                               <span className="text-[11px] text-gray-300 font-medium">{selectedFile.name}</span>
                                <span className="text-[9px] text-gray-600">({(selectedFile.size / 1024).toFixed(1)} KB)</span>
                              </div>
-                             <button onClick={() => setSelectedFile(null)} className="text-gray-500 hover:text-gray-900 dark:text-white"><X size={14} /></button>
+                             <button onClick={() => setSelectedFile(null)} className="text-gray-500 hover:text-white"><X size={14} /></button>
                            </div>
                          )}
 
@@ -814,7 +814,7 @@ export default function WhatsAppChatPremiumPage() {
                                }
                              }}
                              placeholder={inputMode === "nota" ? "Nota interna..." : "Mensagem..."}
-                             className="flex-1 bg-transparent border-none text-gray-900 dark:text-white text-[13px] px-3 py-2 outline-none resize-none min-h-[42px] max-h-[150px] placeholder:text-gray-700 transition-all font-medium scrollbar-none"
+                             className="flex-1 bg-transparent border-none text-white text-[13px] px-3 py-2 outline-none resize-none min-h-[42px] max-h-[150px] placeholder:text-gray-700 transition-all font-medium scrollbar-none"
                            />
 
                            {/* Preview da Assinatura Minimalista */}
@@ -829,7 +829,7 @@ export default function WhatsAppChatPremiumPage() {
                              onClick={(e) => { e.preventDefault(); handleSendMessage(); }}
                              disabled={isSending || (!inputText.trim() && !isRecording && !selectedFile)}
                              className={`ml-2 mb-1 shrink-0 h-9 px-4 rounded-lg font-black uppercase text-[9px] tracking-wider transition-all flex items-center gap-2 ${
-                               isSending ? 'bg-gray-100 dark:bg-white/10 text-gray-400' : 'bg-[#CCA761] text-black hover:bg-white active:scale-95 shadow-lg shadow-[#CCA761]/10'
+                               isSending ? 'bg-white/10 text-gray-400' : 'bg-[#CCA761] text-black hover:bg-white active:scale-95 shadow-lg shadow-[#CCA761]/10'
                              }`}
                            >
                              {isSending ? <Loader2 className="animate-spin" size={12} /> : <><Send size={12} /> ENVIAR</>}
@@ -895,7 +895,7 @@ export default function WhatsAppChatPremiumPage() {
       </div>
 
       {/* 3. INFO E KANBAN (BARRA DIREITA) */}
-      <div className="w-[340px] flex-shrink-0 border-l border-gray-200 dark:border-white/10 bg-white dark:bg-[#050505] flex flex-col h-full z-10 overflow-y-auto no-scrollbar">
+      <div className="w-[340px] flex-shrink-0 border-l border-white/10 bg-white dark:bg-[#050505] flex flex-col h-full z-10 overflow-y-auto no-scrollbar">
          {activeContact && (
             <div className="p-8 space-y-10 animate-in slide-in-from-right-4 duration-700">
                {/* Header Perfil */}
@@ -910,17 +910,17 @@ export default function WhatsAppChatPremiumPage() {
                      )}
                      <div className="absolute bottom-2 right-2 w-5 h-5 bg-[#25D366] rounded-full border-4 border-[#050505] shadow-[0_0_10px_#22c55e]" />
                   </div>
-                  <h3 className="text-2xl font-bold text-gray-900 dark:text-white text-center italic group-hover:text-[#CCA761] transition-colors">{activeContact.name}</h3>
+                  <h3 className="text-2xl font-bold text-white text-center italic group-hover:text-[#CCA761] transition-colors">{activeContact.name}</h3>
                   <div className="bg-[#CCA761]/10 border border-[#CCA761]/20 text-[#CCA761] px-4 py-1.5 rounded-full text-[9px] font-black uppercase mt-3 tracking-widest">Lead Qualificado</div>
                </div>
 
                {/* MÃ³dulo KANBAN (FUNCIONALIDADE SOLICITADA) */}
                <div className="space-y-4">
                   <div className="flex items-center gap-2 text-gray-500 font-black uppercase text-[10px] tracking-widest"><ClipboardList size={14} className="text-[#CCA761]" /> GestÃ£o Pipeline</div>
-                  <div className="p-5 bg-gray-200 dark:bg-black rounded-2xl border border-gray-200 dark:border-white/5 space-y-4">
+                  <div className="p-5 bg-gray-200 dark:bg-black rounded-2xl border border-white/5 space-y-4">
                      <div>
                         <label className="text-[9px] font-black text-gray-600 uppercase tracking-widest block mb-2">Etapa Atual</label>
-                        <select className="w-full bg-gray-100 dark:bg-[#111] border border-gray-200 dark:border-white/10 rounded-xl px-4 py-3 text-xs text-gray-900 dark:text-white outline-none focus:border-[#CCA761]">
+                        <select className="w-full bg-[#111] border border-white/10 rounded-xl px-4 py-3 text-xs text-white outline-none focus:border-[#CCA761]">
                            <option>â­ Novo Lead</option>
                            <option>ðŸ“ž Chamada em Aberto</option>
                            <option>ðŸ’¼ NegociaÃ§Ã£o</option>
@@ -929,9 +929,9 @@ export default function WhatsAppChatPremiumPage() {
                      </div>
                      <div>
                         <label className="text-[9px] font-black text-gray-600 uppercase tracking-widest block mb-2">Agente ResponsÃ¡vel</label>
-                        <div className="flex items-center gap-3 bg-gray-100 dark:bg-[#111] p-3 rounded-xl border border-gray-200 dark:border-white/5">
+                        <div className="flex items-center gap-3 bg-[#111] p-3 rounded-xl border border-white/5">
                            <div className="w-6 h-6 rounded-full bg-[#CCA761] flex items-center justify-center text-[10px] font-black text-black">VP</div>
-                           <span className="text-gray-900 dark:text-white text-xs font-bold">Vitor ProcÃ³pio</span>
+                           <span className="text-white text-xs font-bold">Vitor ProcÃ³pio</span>
                         </div>
                      </div>
                   </div>
@@ -949,10 +949,10 @@ export default function WhatsAppChatPremiumPage() {
                        Gerar Contrato (Um Clique)
                     </button>
                   )}
-                  <button className="w-full py-5 bg-gray-100 dark:bg-white/5 border border-gray-200 dark:border-white/10 rounded-2xl font-black uppercase text-[10px] tracking-[0.2em] flex items-center justify-center gap-3 hover:bg-gray-100 dark:bg-white/10 transition-all group">
+                  <button className="w-full py-5 bg-white/5 border border-white/10 rounded-2xl font-black uppercase text-[10px] tracking-[0.2em] flex items-center justify-center gap-3 hover:bg-white/10 transition-all group">
                      <FileText size={16} className="group-hover:-rotate-6 transition-transform" /> DossiÃª Completo
                   </button>
-                  <button className="w-full py-5 bg-gray-200 dark:bg-black border border-red-500/20 text-red-500 rounded-2xl font-black uppercase text-[10px] tracking-[0.2em] flex items-center justify-center gap-3 hover:bg-red-500 hover:text-gray-900 dark:text-white transition-all">
+                  <button className="w-full py-5 bg-gray-200 dark:bg-black border border-red-500/20 text-red-500 rounded-2xl font-black uppercase text-[10px] tracking-[0.2em] flex items-center justify-center gap-3 hover:bg-red-500 hover:text-white transition-all">
                      <X size={16} /> Encerrar Caso
                   </button>
                </div>
@@ -963,18 +963,18 @@ export default function WhatsAppChatPremiumPage() {
       {/* MODAL DE TRANSFERÃŠNCIA DE ATENDIMENTO */}
       {showTransferModal && (
         <div className="fixed inset-0 bg-gray-200 dark:bg-black/70 backdrop-blur-sm z-50 flex items-center justify-center p-4 animate-in fade-in duration-200">
-          <div className="bg-white dark:bg-[#0a0a0a] border border-gray-200 dark:border-white/10 rounded-2xl p-8 w-full max-w-md shadow-2xl animate-in zoom-in-95 duration-300">
+          <div className="bg-[#0a0a0a] border border-white/10 rounded-2xl p-8 w-full max-w-md shadow-2xl animate-in zoom-in-95 duration-300">
             <div className="flex items-center justify-between mb-6">
-              <h3 className={`text-2xl font-bold text-gray-900 dark:text-white italic ${cormorant.className}`}>
+              <h3 className={`text-2xl font-bold text-white italic ${cormorant.className}`}>
                 Transferir <span className="text-[#CCA761]">Atendimento</span>
               </h3>
-              <button onClick={() => setShowTransferModal(false)} className="text-gray-500 hover:text-gray-900 dark:text-white transition-colors">
+              <button onClick={() => setShowTransferModal(false)} className="text-gray-500 hover:text-white transition-colors">
                 <X size={20} />
               </button>
             </div>
 
             <p className="text-xs text-gray-500 mb-6">
-              Transfira a conversa com <strong className="text-gray-900 dark:text-white">{activeContact?.name || activeContact?.phone_number}</strong> para outro departamento e/ou agente.
+              Transfira a conversa com <strong className="text-white">{activeContact?.name || activeContact?.phone_number}</strong> para outro departamento e/ou agente.
             </p>
 
             <div className="space-y-5">
@@ -985,7 +985,7 @@ export default function WhatsAppChatPremiumPage() {
                 <select
                   value={transferDeptId}
                   onChange={(e) => setTransferDeptId(e.target.value)}
-                  className="w-full bg-gray-100 dark:bg-[#111] border border-gray-200 dark:border-white/10 rounded-xl px-4 py-3 text-sm text-gray-900 dark:text-white outline-none focus:border-[#CCA761]/50 appearance-none"
+                  className="w-full bg-[#111] border border-white/10 rounded-xl px-4 py-3 text-sm text-white outline-none focus:border-[#CCA761]/50 appearance-none"
                 >
                   <option value="">â€” Selecione o departamento â€”</option>
                   {departments.map(dept => (
@@ -1001,7 +1001,7 @@ export default function WhatsAppChatPremiumPage() {
                 <select
                   value={transferUserId}
                   onChange={(e) => setTransferUserId(e.target.value)}
-                  className="w-full bg-gray-100 dark:bg-[#111] border border-gray-200 dark:border-white/10 rounded-xl px-4 py-3 text-sm text-gray-900 dark:text-white outline-none focus:border-[#CCA761]/50 appearance-none"
+                  className="w-full bg-[#111] border border-white/10 rounded-xl px-4 py-3 text-sm text-white outline-none focus:border-[#CCA761]/50 appearance-none"
                 >
                   <option value="">â€” Selecione o agente â€”</option>
                   {teamMembers.map(member => (
@@ -1014,7 +1014,7 @@ export default function WhatsAppChatPremiumPage() {
             <div className="flex gap-3 mt-8">
               <button
                 onClick={() => setShowTransferModal(false)}
-                className="flex-1 py-3 text-xs font-bold uppercase text-gray-500 hover:text-gray-900 dark:text-white border border-gray-200 dark:border-white/10 rounded-xl transition-colors"
+                className="flex-1 py-3 text-xs font-bold uppercase text-gray-500 hover:text-white border border-white/10 rounded-xl transition-colors"
               >
                 Cancelar
               </button>

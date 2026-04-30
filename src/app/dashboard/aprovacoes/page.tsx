@@ -34,7 +34,7 @@ function getRiskBadge(riskLevel: string | null | undefined) {
     case "low":
       return "text-emerald-300 border-emerald-500/30 bg-emerald-500/10";
     default:
-      return "text-gray-700 dark:text-gray-300 border-gray-200 dark:border-white/10 bg-gray-100 dark:bg-white/5";
+      return "text-gray-300 border-white/10 bg-white/5";
   }
 }
 
@@ -53,9 +53,9 @@ function getTaskBadge(status: string) {
     case "failed":
       return "text-red-300 border-red-500/30 bg-red-500/10";
     case "cancelled":
-      return "text-gray-700 dark:text-gray-300 border-gray-200 dark:border-white/10 bg-gray-100 dark:bg-white/5";
+      return "text-gray-300 border-white/10 bg-white/5";
     default:
-      return "text-gray-700 dark:text-gray-300 border-gray-200 dark:border-white/10 bg-gray-100 dark:bg-white/5";
+      return "text-gray-300 border-white/10 bg-white/5";
   }
 }
 
@@ -118,11 +118,11 @@ function ApprovalActions({
 
 function ApprovalCard({ approval, onRefresh }: { approval: BrainInboxApprovalItem; onRefresh: () => Promise<void> }) {
   return (
-    <div className="rounded-2xl border border-gray-200 dark:border-white/10 bg-[#0f0f0f] p-5 space-y-4">
+    <div className="rounded-2xl border border-white/10 bg-[#0f0f0f] p-5 space-y-4">
       <div className="flex items-start justify-between gap-3">
         <div>
           <p className="text-[10px] uppercase tracking-[0.2em] text-gray-500">Approval pendente</p>
-          <h3 className="text-gray-900 dark:text-white font-semibold text-base mt-1">
+          <h3 className="text-white font-semibold text-base mt-1">
             {approval.awaiting_payload?.skillName || approval.step?.title || approval.task?.title || "Acao do cerebro"}
           </h3>
           <p className="text-xs text-gray-500 mt-1">
@@ -135,9 +135,9 @@ function ApprovalCard({ approval, onRefresh }: { approval: BrainInboxApprovalIte
       </div>
 
       {approval.task && (
-        <div className="rounded-xl border border-gray-200 dark:border-white/5 bg-gray-200 dark:bg-black/30 p-3 text-sm text-gray-700 dark:text-gray-300">
+        <div className="rounded-xl border border-white/5 bg-gray-200 dark:bg-black/30 p-3 text-sm text-gray-300">
           <p className="text-[10px] uppercase tracking-[0.18em] text-gray-500">Missao</p>
-          <p className="mt-1 text-gray-900 dark:text-white/90">{approval.task.title || approval.task.goal}</p>
+          <p className="mt-1 text-white/90">{approval.task.title || approval.task.goal}</p>
           <div className="mt-2 flex items-center gap-2 text-[10px] uppercase tracking-widest text-gray-500">
             <span className={`rounded-full border px-2 py-1 ${getTaskBadge(approval.task.status)}`}>{approval.task.status.replaceAll("_", " ")}</span>
             <span>{approval.task.module}</span>
@@ -146,13 +146,13 @@ function ApprovalCard({ approval, onRefresh }: { approval: BrainInboxApprovalIte
       )}
 
       {approval.awaiting_payload?.entities && Object.keys(approval.awaiting_payload.entities).length > 0 && (
-        <div className="rounded-xl border border-gray-200 dark:border-white/5 bg-gray-200 dark:bg-black/30 p-3 space-y-2">
+        <div className="rounded-xl border border-white/5 bg-gray-200 dark:bg-black/30 p-3 space-y-2">
           <p className="text-[10px] uppercase tracking-[0.18em] text-gray-500">Dados que serao executados</p>
           <div className="space-y-1.5 text-xs">
             {Object.entries(approval.awaiting_payload.entities).map(([key, value]) => (
               <div key={key} className="flex gap-2">
                 <span className="w-32 shrink-0 text-gray-500">{key}:</span>
-                <span className="text-gray-800 dark:text-gray-200 break-all">{value || "—"}</span>
+                <span className="text-gray-200 break-all">{value || "—"}</span>
               </div>
             ))}
           </div>
@@ -169,7 +169,7 @@ function ActivityCard({ task }: { task: BrainInboxTaskItem }) {
     <div className="rounded-xl border border-white/8 bg-[#0f0f0f] p-4">
       <div className="flex items-start justify-between gap-3">
         <div>
-          <p className="text-sm text-gray-900 dark:text-white font-medium">{task.title || task.goal}</p>
+          <p className="text-sm text-white font-medium">{task.title || task.goal}</p>
           <p className="text-xs text-gray-500 mt-1">{task.module} · {task.channel} · {dayjs(task.updated_at).fromNow()}</p>
         </div>
         <span className={`rounded-full border px-2 py-1 text-[10px] uppercase tracking-widest ${getTaskBadge(task.status)}`}>
@@ -199,7 +199,7 @@ function ArtifactCard({ artifact }: { artifact: BrainInboxArtifactItem }) {
     <div className="rounded-xl border border-white/8 bg-[#0f0f0f] p-4">
       <div className="flex items-start justify-between gap-3">
         <div>
-          <p className="text-sm text-gray-900 dark:text-white font-medium">{artifact.title || artifact.artifact_type}</p>
+          <p className="text-sm text-white font-medium">{artifact.title || artifact.artifact_type}</p>
           <p className="text-xs text-gray-500 mt-1">{artifact.source_module || artifact.task?.module || "core"} · {dayjs(artifact.created_at).fromNow()}</p>
         </div>
         <FileText size={16} className="text-[#CCA761] shrink-0" />
@@ -299,7 +299,7 @@ function EventCard({ event }: { event: BrainInboxEventItem }) {
     <div className="rounded-xl border border-white/8 bg-[#0f0f0f] p-4">
       <div className="flex items-start justify-between gap-3">
         <div>
-          <p className="text-sm text-gray-900 dark:text-white font-medium">{getEventTitle(event)}</p>
+          <p className="text-sm text-white font-medium">{getEventTitle(event)}</p>
           <p className="text-xs text-gray-500 mt-1">
             {(event.source_module || event.task?.module || "core")} · {dayjs(event.created_at).fromNow()}
           </p>
@@ -352,7 +352,7 @@ export default function BrainApprovalsPage() {
     return (
       <div className="max-w-4xl mx-auto mt-12 rounded-3xl border border-red-500/20 bg-red-500/5 p-8 text-center">
         <ShieldAlert className="mx-auto text-red-300 mb-4" size={42} />
-        <h1 className="text-2xl text-gray-900 dark:text-white font-semibold">Acesso restrito</h1>
+        <h1 className="text-2xl text-white font-semibold">Acesso restrito</h1>
         <p className="text-gray-400 mt-3">A inbox global de approvals do MAYUS fica disponivel apenas para perfis executivos do escritorio.</p>
       </div>
     );
@@ -363,7 +363,7 @@ export default function BrainApprovalsPage() {
       <div className="flex flex-col gap-3 md:flex-row md:items-end md:justify-between">
         <div>
           <p className="text-[11px] uppercase tracking-[0.25em] text-[#CCA761] font-bold">MAYUS Brain</p>
-          <h1 className="text-3xl text-gray-900 dark:text-white font-semibold mt-1">Inbox de Aprovações</h1>
+          <h1 className="text-3xl text-white font-semibold mt-1">Inbox de Aprovações</h1>
           <p className="text-sm text-gray-400 mt-2">O que o cerebro precisa que um socio ou administrador decida agora.</p>
         </div>
 
@@ -376,45 +376,45 @@ export default function BrainApprovalsPage() {
       </div>
 
       <div className="grid gap-4 md:grid-cols-2 xl:grid-cols-4">
-        <div className="rounded-2xl border border-gray-200 dark:border-white/10 bg-[#0f0f0f] p-5">
+        <div className="rounded-2xl border border-white/10 bg-[#0f0f0f] p-5">
           <p className="text-[10px] uppercase tracking-[0.18em] text-gray-500">Pendentes</p>
           <div className="mt-3 flex items-end gap-2">
-            <span className="text-3xl font-semibold text-gray-900 dark:text-white">{inbox?.pending_count ?? 0}</span>
+            <span className="text-3xl font-semibold text-white">{inbox?.pending_count ?? 0}</span>
             <ShieldAlert className="text-orange-300 mb-1" size={18} />
           </div>
         </div>
-        <div className="rounded-2xl border border-gray-200 dark:border-white/10 bg-[#0f0f0f] p-5">
+        <div className="rounded-2xl border border-white/10 bg-[#0f0f0f] p-5">
           <p className="text-[10px] uppercase tracking-[0.18em] text-gray-500">Aprovações recentes</p>
           <div className="mt-3 flex items-end gap-2">
-            <span className="text-3xl font-semibold text-gray-900 dark:text-white">{inbox?.recent_approvals.length ?? 0}</span>
+            <span className="text-3xl font-semibold text-white">{inbox?.recent_approvals.length ?? 0}</span>
             <CheckCircle2 className="text-emerald-300 mb-1" size={18} />
           </div>
         </div>
-          <div className="rounded-2xl border border-gray-200 dark:border-white/10 bg-[#0f0f0f] p-5">
+          <div className="rounded-2xl border border-white/10 bg-[#0f0f0f] p-5">
             <p className="text-[10px] uppercase tracking-[0.18em] text-gray-500">Atividade recente</p>
             <div className="mt-3 flex items-end gap-2">
-              <span className="text-3xl font-semibold text-gray-900 dark:text-white">{inbox?.recent_tasks.length ?? 0}</span>
+              <span className="text-3xl font-semibold text-white">{inbox?.recent_tasks.length ?? 0}</span>
               <ShieldCheck className="text-[#CCA761] mb-1" size={18} />
             </div>
           </div>
-          <div className="rounded-2xl border border-gray-200 dark:border-white/10 bg-[#0f0f0f] p-5">
+          <div className="rounded-2xl border border-white/10 bg-[#0f0f0f] p-5">
             <p className="text-[10px] uppercase tracking-[0.18em] text-gray-500">Artifacts recentes</p>
             <div className="mt-3 flex items-end gap-2">
-              <span className="text-3xl font-semibold text-gray-900 dark:text-white">{inbox?.recent_artifacts.length ?? 0}</span>
+              <span className="text-3xl font-semibold text-white">{inbox?.recent_artifacts.length ?? 0}</span>
               <FileText className="text-[#CCA761] mb-1" size={18} />
             </div>
           </div>
-          <div className="rounded-2xl border border-gray-200 dark:border-white/10 bg-[#0f0f0f] p-5">
+          <div className="rounded-2xl border border-white/10 bg-[#0f0f0f] p-5">
             <p className="text-[10px] uppercase tracking-[0.18em] text-gray-500">Eventos recentes</p>
             <div className="mt-3 flex items-end gap-2">
-              <span className="text-3xl font-semibold text-gray-900 dark:text-white">{inbox?.recent_events.length ?? 0}</span>
+              <span className="text-3xl font-semibold text-white">{inbox?.recent_events.length ?? 0}</span>
               <Cpu className="text-[#CCA761] mb-1" size={18} />
             </div>
           </div>
         </div>
 
       {isLoading ? (
-        <div className="rounded-2xl border border-gray-200 dark:border-white/10 bg-[#0f0f0f] p-8 flex items-center justify-center gap-3 text-gray-400">
+        <div className="rounded-2xl border border-white/10 bg-[#0f0f0f] p-8 flex items-center justify-center gap-3 text-gray-400">
           <Loader2 size={18} className="animate-spin text-[#CCA761]" />
           Carregando inbox do cerebro...
         </div>
@@ -422,7 +422,7 @@ export default function BrainApprovalsPage() {
         <div className="grid gap-8 xl:grid-cols-[1.35fr_0.95fr]">
           <section className="space-y-4">
             <div className="flex items-center justify-between">
-              <h2 className="text-lg text-gray-900 dark:text-white font-semibold">Aprovações pendentes</h2>
+              <h2 className="text-lg text-white font-semibold">Aprovações pendentes</h2>
               <span className="text-xs uppercase tracking-widest text-gray-500">{inbox?.pending_count ?? 0} aguardando decisao</span>
             </div>
 
@@ -433,7 +433,7 @@ export default function BrainApprovalsPage() {
                 ))}
               </div>
             ) : (
-              <div className="rounded-2xl border border-gray-200 dark:border-white/10 bg-[#0f0f0f] p-8 text-center text-gray-400">
+              <div className="rounded-2xl border border-white/10 bg-[#0f0f0f] p-8 text-center text-gray-400">
                 Nenhuma aprovacao pendente. O cerebro esta operando dentro das politicas atuais.
               </div>
             )}
@@ -441,14 +441,14 @@ export default function BrainApprovalsPage() {
 
           <section className="space-y-6">
             <div>
-              <h2 className="text-lg text-gray-900 dark:text-white font-semibold">Aprovações recentes</h2>
+              <h2 className="text-lg text-white font-semibold">Aprovações recentes</h2>
               <div className="mt-3 space-y-3">
                 {inbox?.recent_approvals.length ? (
                   inbox.recent_approvals.map((approval) => (
                     <div key={approval.id} className="rounded-xl border border-white/8 bg-[#0f0f0f] p-4 text-sm">
                       <div className="flex items-start justify-between gap-3">
                         <div>
-                          <p className="text-gray-900 dark:text-white font-medium">{approval.awaiting_payload?.skillName || approval.step?.title || "Acao do cerebro"}</p>
+                          <p className="text-white font-medium">{approval.awaiting_payload?.skillName || approval.step?.title || "Acao do cerebro"}</p>
                           <p className="text-xs text-gray-500 mt-1">{approval.task?.module || "core"} · {dayjs(approval.approved_at || approval.created_at).fromNow()}</p>
                         </div>
                         <span className={`rounded-full border px-2 py-1 text-[10px] uppercase tracking-widest ${approval.status === "approved" ? "text-emerald-300 border-emerald-500/30 bg-emerald-500/10" : "text-red-300 border-red-500/30 bg-red-500/10"}`}>
@@ -466,7 +466,7 @@ export default function BrainApprovalsPage() {
             </div>
 
             <div>
-              <h2 className="text-lg text-gray-900 dark:text-white font-semibold">Artifacts recentes</h2>
+              <h2 className="text-lg text-white font-semibold">Artifacts recentes</h2>
               <div className="mt-3 space-y-3">
                 {inbox?.recent_artifacts.length ? (
                   inbox.recent_artifacts.map((artifact) => <ArtifactCard key={artifact.id} artifact={artifact} />)
@@ -479,7 +479,7 @@ export default function BrainApprovalsPage() {
             </div>
 
             <div>
-              <h2 className="text-lg text-gray-900 dark:text-white font-semibold">Feed canônico do cérebro</h2>
+              <h2 className="text-lg text-white font-semibold">Feed canônico do cérebro</h2>
               <div className="mt-3 space-y-3">
                 {inbox?.recent_events.length ? (
                   inbox.recent_events.map((event) => <EventCard key={event.id} event={event} />)
@@ -492,7 +492,7 @@ export default function BrainApprovalsPage() {
             </div>
 
             <div>
-              <h2 className="text-lg text-gray-900 dark:text-white font-semibold">Atividade do cérebro</h2>
+              <h2 className="text-lg text-white font-semibold">Atividade do cérebro</h2>
               <div className="mt-3 space-y-3">
                 {inbox?.recent_tasks.length ? (
                   inbox.recent_tasks.map((task) => <ActivityCard key={task.id} task={task} />)

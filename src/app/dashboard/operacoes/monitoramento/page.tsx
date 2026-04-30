@@ -249,7 +249,7 @@ function BillingBar({ billing }: { billing: Billing }) {
     <div className="bg-card dark:bg-zinc-900/50 border border-border dark:border-zinc-800 rounded-2xl p-6 shadow-sm dark:shadow-none flex flex-col md:flex-row items-center justify-between gap-6">
       <div className="space-y-1 text-center md:text-left">
         <p className="text-[10px] text-zinc-500 uppercase font-black tracking-widest leading-none">Capacidade do Plano</p>
-        <p className="text-gray-900 dark:text-white font-black text-lg">{monitorados} <span className="text-zinc-600">/</span> {limitePlano} <span className="text-zinc-600 text-[10px] uppercase ml-2 tracking-tighter">Processos</span></p>
+        <p className="text-white font-black text-lg">{monitorados} <span className="text-zinc-600">/</span> {limitePlano} <span className="text-zinc-600 text-[10px] uppercase ml-2 tracking-tighter">Processos</span></p>
       </div>
       <div className="flex-1 w-full max-w-md h-3 bg-muted dark:bg-zinc-950 rounded-full border border-border dark:border-zinc-800 p-0.5 overflow-hidden">
         <div className="h-full bg-gradient-to-r from-yellow-600 to-yellow-400 rounded-full shadow-[0_0_12px_rgba(234,179,8,0.3)] transition-all duration-1000" style={{ width: `${percent}%` }} />
@@ -271,13 +271,13 @@ function ModalConfirmacaoCusto({ dados, onConfirmar, onCancelar, loading }: { da
           <Zap size={32} fill="currentColor" />
         </div>
         <div className="text-center space-y-2">
-           <h3 className="text-gray-900 dark:text-white font-black text-xl uppercase tracking-tighter">Investimento Requerido</h3>
+           <h3 className="text-white font-black text-xl uppercase tracking-tighter">Investimento Requerido</h3>
            <p className="text-zinc-500 text-xs leading-relaxed font-medium">A monitoraÃ§Ã£o desses {dados.novos} novos processos requer o uso de crÃ©ditos da busca externa.</p>
         </div>
         <div className="bg-muted dark:bg-zinc-950 rounded-2xl p-6 border border-border dark:border-zinc-800 grid grid-cols-2 gap-4 divide-x divide-border dark:divide-zinc-900">
           <div className="text-center">
              <p className="text-[9px] text-muted-foreground font-black uppercase mb-1">Processos</p>
-             <p className="text-gray-900 dark:text-white font-black text-lg">+{dados.novos}</p>
+             <p className="text-white font-black text-lg">+{dados.novos}</p>
           </div>
           <div className="text-center pl-4">
              <p className="text-[9px] text-muted-foreground font-black uppercase mb-1">Custo Estimado</p>
@@ -362,18 +362,18 @@ function ProcessoCard({ p, onSelect, selecionado, onAction, onRemover, onArquiva
           <div className="flex flex-col md:flex-row gap-8 items-start">
              <div className="flex-1 space-y-1.5">
                 <span className="text-[9px] text-muted-foreground font-black uppercase tracking-widest">Ativo</span>
-                <p className="text-gray-900 dark:text-white text-[13px] font-bold leading-none">{p.polo_ativo}</p>
+                <p className="text-white text-[13px] font-bold leading-none">{p.polo_ativo}</p>
              </div>
              <div className="flex-1 space-y-1.5">
                 <span className="text-[9px] text-muted-foreground font-black uppercase tracking-widest">Passivo</span>
-                <p className="text-gray-900 dark:text-white text-[13px] font-bold leading-none">{p.polo_passivo}</p>
+                <p className="text-white text-[13px] font-bold leading-none">{p.polo_passivo}</p>
              </div>
           </div>
 
           {/* Ãrea de Resumo Preview */}
           {p.resumo_curto && (
             <div className="relative group/resumo cursor-pointer" onClick={() => onAbrirResumo(p.resumo_curto!)}>
-              <div className="bg-gray-100 dark:bg-white/5 border border-gray-200 dark:border-white/10 rounded-2xl p-4 transition-all group-hover/resumo:bg-gray-100 dark:bg-white/10">
+              <div className="bg-white/5 border border-white/10 rounded-2xl p-4 transition-all group-hover/resumo:bg-white/10">
                  <p className="text-muted-foreground dark:text-zinc-400 text-[11px] leading-relaxed italic line-clamp-3">
                     {p.resumo_curto}
                  </p>
@@ -439,7 +439,7 @@ function ProcessoCard({ p, onSelect, selecionado, onAction, onRemover, onArquiva
                 <button
                  onClick={onOrganizar}
                 disabled={organizandoState === 'loading'}
-                className="h-11 bg-secondary dark:bg-zinc-900 hover:bg-accent dark:hover:bg-zinc-800 border border-border dark:border-zinc-800 text-muted-foreground dark:text-zinc-400 hover:text-gray-900 dark:text-white text-[10px] font-black uppercase rounded-2xl transition-all flex items-center justify-center gap-2"
+                className="h-11 bg-secondary dark:bg-zinc-900 hover:bg-accent dark:hover:bg-zinc-800 border border-border dark:border-zinc-800 text-muted-foreground dark:text-zinc-400 hover:text-white text-[10px] font-black uppercase rounded-2xl transition-all flex items-center justify-center gap-2"
                >
                  <Sparkles size={14} /> Organizar IA
                </button>
@@ -1015,7 +1015,7 @@ function MonitoramentoContent() {
                 <Shield size={22} className="text-yellow-500" />
               </div>
               <div>
-                <h1 className="text-2xl font-bold text-gray-900 dark:text-white tracking-tight" style={{ fontFamily: 'Cormorant Garamond, serif' }}>Monitoramento EstratÃ©gico</h1>
+                <h1 className="text-2xl font-bold text-white tracking-tight" style={{ fontFamily: 'Cormorant Garamond, serif' }}>Monitoramento EstratÃ©gico</h1>
                 <p className="text-[10px] text-zinc-500 uppercase tracking-widest font-black opacity-60">Varredura Judicial em Tempo Real</p>
               </div>
            </div>
@@ -1029,7 +1029,7 @@ function MonitoramentoContent() {
                   <div className="flex items-center gap-4">
                     <div className="flex flex-col border-l border-border dark:border-zinc-800 pl-4">
                        <span className="text-[9px] text-zinc-500 uppercase font-black tracking-widest leading-none mb-1">Processos</span>
-                       <span className="text-gray-900 dark:text-white font-black text-sm leading-none">{totalProcessosBase}</span>
+                       <span className="text-white font-black text-sm leading-none">{totalProcessosBase}</span>
                     </div>
                     <div className="flex flex-col border-l border-border dark:border-zinc-800 pl-4">
                        <span className="text-[9px] text-zinc-500 uppercase font-black tracking-widest leading-none mb-1">Ativos</span>
@@ -1058,7 +1058,7 @@ function MonitoramentoContent() {
             <span className="text-foreground dark:text-zinc-200 text-[11px] font-black uppercase tracking-[0.2em]">Pesquisar OAB</span>
             <button
               onClick={() => setImportarAberto((prev) => !prev)}
-              className="text-[10px] font-black uppercase text-zinc-400 hover:text-gray-900 dark:text-white transition-colors"
+              className="text-[10px] font-black uppercase text-zinc-400 hover:text-white transition-colors"
             >
               {importarAberto ? 'Ocultar opÃ§Ãµes' : 'Mais opÃ§Ãµes'}
             </button>
@@ -1195,7 +1195,7 @@ function MonitoramentoContent() {
           <div className="text-center py-32 space-y-8 animate-in fade-in zoom-in-95 duration-700">
              <div className="relative w-24 h-24 bg-muted dark:bg-zinc-950 border border-primary/10 dark:border-yellow-500/10 rounded-3xl flex items-center justify-center mx-auto shadow-lg dark:shadow-2xl"><Shield size={40} className="text-yellow-500/30" /></div>
              <div className="space-y-3">
-                <h3 className="text-gray-900 dark:text-white font-black text-2xl" style={{ fontFamily: 'Cormorant Garamond, serif' }}>Inicie a Varredura JurÃ­dica</h3>
+                <h3 className="text-white font-black text-2xl" style={{ fontFamily: 'Cormorant Garamond, serif' }}>Inicie a Varredura JurÃ­dica</h3>
                 <p className="text-zinc-600 text-xs max-w-sm mx-auto font-black uppercase tracking-tighter">Insira os credenciais acima para conectar-se aos tribunais.</p>
              </div>
           </div>
@@ -1207,7 +1207,7 @@ function MonitoramentoContent() {
                <div className="absolute inset-0 border-2 border-yellow-500 border-t-transparent border-l-transparent rounded-3xl animate-spin" />
                <div className="absolute inset-6 border border-zinc-800 rounded-2xl flex items-center justify-center"><RefreshCw size={24} className="text-yellow-500/40 animate-spin" /></div>
             </div>
-            <p className="text-gray-900 dark:text-white font-black text-xs uppercase tracking-[0.4em] animate-pulse">Sincronizando Canais Oficiais</p>
+            <p className="text-white font-black text-xs uppercase tracking-[0.4em] animate-pulse">Sincronizando Canais Oficiais</p>
           </div>
         )}
 
@@ -1271,7 +1271,7 @@ function MonitoramentoContent() {
             className="absolute inset-0 bg-gray-200 dark:bg-black/90 backdrop-blur-xl animate-in fade-in duration-500"
             onClick={() => setResumoModal(null)}
           />
-          <div className="relative bg-white dark:bg-[#0a0a0a] border border-[#CCA761]/30 rounded-3xl w-full max-w-4xl z-10 max-h-[90vh] overflow-hidden flex flex-col shadow-[0_0_100px_rgba(204,167,97,0.1)] animate-in zoom-in-95 duration-500">
+          <div className="relative bg-[#0a0a0a] border border-[#CCA761]/30 rounded-3xl w-full max-w-4xl z-10 max-h-[90vh] overflow-hidden flex flex-col shadow-[0_0_100px_rgba(204,167,97,0.1)] animate-in zoom-in-95 duration-500">
             {/* CabeÃ§alho do Documento */}
             <div className="p-6 border-b border-border dark:border-zinc-900 bg-muted dark:bg-zinc-950/50 flex items-center justify-between">
               <div className="flex items-center gap-4">
@@ -1279,7 +1279,7 @@ function MonitoramentoContent() {
                   <Shield size={20} className="text-[#CCA761]" />
                 </div>
                 <div>
-                  <h2 className="text-gray-900 dark:text-white font-black text-sm uppercase tracking-widest">AnÃ¡lise EstratÃ©gica MAYUS</h2>
+                  <h2 className="text-white font-black text-sm uppercase tracking-widest">AnÃ¡lise EstratÃ©gica MAYUS</h2>
                   <p className="text-[#CCA761] text-[10px] font-bold uppercase tracking-tighter opacity-60">RelatÃ³rio Consolidado de InteligÃªncia</p>
                 </div>
               </div>
@@ -1302,7 +1302,7 @@ function MonitoramentoContent() {
                  <div className="relative">
                     <Quote size={40} className="absolute -top-6 -left-8 text-[#CCA761]/5" />
                     <p
-                      className="text-gray-900 dark:text-white/90 text-xl leading-relaxed font-medium"
+                      className="text-white/90 text-xl leading-relaxed font-medium"
                       style={{ fontFamily: 'Cormorant Garamond, serif' }}
                     >
                       {resumoModal}

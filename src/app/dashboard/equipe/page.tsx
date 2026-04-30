@@ -266,7 +266,7 @@ export default function EquipePage() {
       <div className={`min-h-[60vh] flex items-center justify-center ${montserrat.className}`}>
         <div className="text-center">
           <AlertTriangle size={48} className="text-red-400 mx-auto mb-4" />
-          <h2 className={`text-2xl text-gray-900 dark:text-white mb-2 ${cormorant.className} italic font-bold`}>Acesso Restrito</h2>
+          <h2 className={`text-2xl text-white mb-2 ${cormorant.className} italic font-bold`}>Acesso Restrito</h2>
           <p className="text-gray-500 text-sm">Apenas Administradores podem gerenciar profissionais.</p>
         </div>
       </div>
@@ -282,7 +282,7 @@ export default function EquipePage() {
            <button onClick={() => router.back()} className="mb-4 flex items-center gap-2 text-gray-500 hover:text-[#CCA761] transition-colors text-[10px] font-bold uppercase tracking-widest group">
              <ArrowLeft size={14} className="group-hover:-translate-x-1 transition-transform" /> Voltar
            </button>
-          <h1 className={`text-3xl md:text-4xl text-gray-900 dark:text-white ${cormorant.className} italic font-bold`}>
+          <h1 className={`text-3xl md:text-4xl text-white ${cormorant.className} italic font-bold`}>
             Gestão de <span className="text-[#CCA761]">Profissionais</span>
           </h1>
           <p className="text-gray-500 text-sm mt-1">Defina cargos, departamentos e remunerações da sua equipe.</p>
@@ -311,14 +311,14 @@ export default function EquipePage() {
            {isLoading ? (
              <div className="col-span-full flex items-center justify-center py-20"><Loader2 size={32} className="text-[#CCA761] animate-spin" /></div>
             ) : professionals.length === 0 ? (
-              <div className="col-span-full py-20 text-center bg-gray-50 dark:bg-white/[0.02] border border-dashed border-gray-200 dark:border-white/10 rounded-2xl">
+              <div className="col-span-full py-20 text-center bg-white/[0.02] border border-dashed border-white/10 rounded-2xl">
                 <Users size={40} className="mx-auto mb-4 text-gray-700" />
                 <p className="text-gray-500 text-sm">Nenhum profissional cadastrado.</p>
                 <button onClick={() => router.push("/dashboard/configuracoes/usuarios")} className="mt-4 text-[#CCA761] text-[10px] font-black uppercase tracking-widest hover:underline">+ Convidar Primeiro Membro</button>
               </div>
            ) : (
              professionals.map((prof) => (
-               <div key={prof.id} className="bg-[#0C0C0C] border border-gray-200 dark:border-white/5 hover:border-[#CCA761]/30 transition-all rounded-2xl p-6 relative group shadow-2xl">
+               <div key={prof.id} className="bg-[#0C0C0C] border border-white/5 hover:border-[#CCA761]/30 transition-all rounded-2xl p-6 relative group shadow-2xl">
                   <div className="absolute top-4 right-4 z-20">
                      <button onClick={() => handleDeleteProfessional(prof.id)} className="text-gray-600 hover:text-red-500 hover:bg-red-500/10 p-1.5 rounded-lg transition-all">
                         <Trash2 size={14} />
@@ -326,7 +326,7 @@ export default function EquipePage() {
                   </div>
 
                   <div className="flex items-center gap-4 mb-8">
-                     <label className="w-16 h-16 rounded-2xl bg-gradient-to-br from-[#111] to-[#1a1a1a] border border-gray-200 dark:border-white/5 flex items-center justify-center shrink-0 cursor-pointer overflow-hidden hover:border-[#CCA761]/50 transition-all relative group/photo">
+                     <label className="w-16 h-16 rounded-2xl bg-gradient-to-br from-[#111] to-[#1a1a1a] border border-white/5 flex items-center justify-center shrink-0 cursor-pointer overflow-hidden hover:border-[#CCA761]/50 transition-all relative group/photo">
                         <input type="file" className="hidden" accept="image/*" onChange={(e) => handlePhotoUpload(prof.id, e.target.files?.[0] || null)} />
                         {prof.avatarUrl ? (
                           <img 
@@ -368,7 +368,7 @@ export default function EquipePage() {
                           value={prof.name}
                           onChange={(e) => handleUpdateProfessional(prof.id, "name", e.target.value)}
                           placeholder="NOME COMPLETO"
-                          className="w-full bg-transparent border-b border-gray-200 dark:border-white/5 hover:border-[#CCA761]/30 focus:border-[#CCA761] text-gray-900 dark:text-white py-1.5 text-sm font-black uppercase tracking-widest focus:outline-none transition-all placeholder:text-gray-800"
+                          className="w-full bg-transparent border-b border-white/5 hover:border-[#CCA761]/30 focus:border-[#CCA761] text-white py-1.5 text-sm font-black uppercase tracking-widest focus:outline-none transition-all placeholder:text-gray-800"
                         />
                         <p className="text-[9px] text-gray-500 font-bold uppercase tracking-widest mt-1">DADOS PROFISSIONAIS</p>
                      </div>
@@ -383,7 +383,7 @@ export default function EquipePage() {
                            <select 
                              value={prof.department_id || ""} 
                              onChange={(e) => handleUpdateProfessional(prof.id, "department_id", e.target.value)}
-                             className="w-full bg-white dark:bg-[#050505] border border-gray-200 dark:border-white/5 text-gray-900 dark:text-white px-4 py-3 rounded-xl text-[11px] font-bold uppercase tracking-widest focus:border-[#CCA761]/50 focus:outline-none transition-all appearance-none"
+                             className="w-full bg-white dark:bg-[#050505] border border-white/5 text-white px-4 py-3 rounded-xl text-[11px] font-bold uppercase tracking-widest focus:border-[#CCA761]/50 focus:outline-none transition-all appearance-none"
                            >
                               <option value="">Sem Setor</option>
                               {departments.map(d => (
@@ -400,7 +400,7 @@ export default function EquipePage() {
                              <select 
                                value={prof.role} 
                                onChange={(e) => handleUpdateProfessional(prof.id, "role", e.target.value)}
-                               className="w-full bg-white dark:bg-[#050505] border border-gray-200 dark:border-white/5 text-gray-900 dark:text-white px-4 py-3 rounded-xl text-[11px] font-bold uppercase tracking-widest focus:border-[#CCA761]/50 focus:outline-none transition-all appearance-none"
+                               className="w-full bg-white dark:bg-[#050505] border border-white/5 text-white px-4 py-3 rounded-xl text-[11px] font-bold uppercase tracking-widest focus:border-[#CCA761]/50 focus:outline-none transition-all appearance-none"
                              >
                                 <option value="">Selecione...</option>
                                 <option value="Closer / Vendedor">Closer / Vendedor</option>
@@ -418,7 +418,7 @@ export default function EquipePage() {
                                  value={prof.customRole || ""}
                                  onChange={(e) => handleUpdateProfessional(prof.id, "customRole", e.target.value)}
                                  placeholder="NOME DA FUNÇÃO..."
-                                 className="w-full bg-gray-200 dark:bg-black/40 border border-[#CCA761]/30 text-gray-900 dark:text-white px-4 py-3 rounded-xl text-[11px] font-bold uppercase tracking-widest focus:border-[#CCA761] focus:outline-none animate-fade-in-up"
+                                 className="w-full bg-gray-200 dark:bg-black/40 border border-[#CCA761]/30 text-white px-4 py-3 rounded-xl text-[11px] font-bold uppercase tracking-widest focus:border-[#CCA761] focus:outline-none animate-fade-in-up"
                                />
                              )}
                            </div>
@@ -432,17 +432,17 @@ export default function EquipePage() {
                              type="number" 
                              value={prof.baseSalary}
                              onChange={(e) => handleUpdateProfessional(prof.id, "baseSalary", e.target.value === '' ? '' : Number(e.target.value))}
-                             className="w-full bg-white dark:bg-[#050505] border border-gray-200 dark:border-white/5 text-[#CCA761] px-4 py-3 rounded-xl text-sm font-mono font-bold focus:border-[#CCA761]/50 focus:outline-none transition-all"
+                             className="w-full bg-white dark:bg-[#050505] border border-white/5 text-[#CCA761] px-4 py-3 rounded-xl text-sm font-mono font-bold focus:border-[#CCA761]/50 focus:outline-none transition-all"
                            />
                         </div>
                      </div>
 
-                     <div className="flex items-center justify-center gap-3 py-3 border-y border-gray-200 dark:border-white/5 bg-white/[0.01] rounded-xl hover:bg-gray-50 dark:bg-white/[0.03] transition-colors group/comm cursor-pointer"
+                     <div className="flex items-center justify-center gap-3 py-3 border-y border-white/5 bg-white/[0.01] rounded-xl hover:bg-gray-50 dark:bg-white/[0.03] transition-colors group/comm cursor-pointer"
                           onClick={() => handleUpdateProfessional(prof.id, "receivesCommissionByLevel", !prof.receivesCommissionByLevel)}>
-                        <div className={`w-5 h-5 rounded-lg border flex flex-shrink-0 items-center justify-center transition-all ${prof.receivesCommissionByLevel ? 'bg-[#CCA761] border-[#CCA761] shadow-[0_0_10px_rgba(204,167,97,0.4)]' : 'bg-white dark:bg-[#0a0a0a] border-gray-700'}`}>
+                        <div className={`w-5 h-5 rounded-lg border flex flex-shrink-0 items-center justify-center transition-all ${prof.receivesCommissionByLevel ? 'bg-[#CCA761] border-[#CCA761] shadow-[0_0_10px_rgba(204,167,97,0.4)]' : 'bg-[#0a0a0a] border-gray-700'}`}>
                            {prof.receivesCommissionByLevel && <Check size={12} className="text-[#0a0a0a] stroke-[4]" />}
                         </div>
-                        <span className="text-[10px] text-gray-400 font-black uppercase tracking-widest group-hover/comm:text-gray-900 dark:text-white transition-colors">
+                        <span className="text-[10px] text-gray-400 font-black uppercase tracking-widest group-hover/comm:text-white transition-colors">
                            Vincular Plano de Metas
                         </span>
                      </div>
@@ -454,7 +454,7 @@ export default function EquipePage() {
                         <select 
                           value={prof.careerPlanId} 
                           onChange={(e) => handleUpdateProfessional(prof.id, "careerPlanId", e.target.value)}
-                          className="w-full bg-white dark:bg-[#050505] border border-[#CCA761]/30 text-gray-900 dark:text-white px-4 py-3 rounded-xl text-[11px] font-bold uppercase tracking-widest focus:border-[#CCA761] focus:outline-none transition-all appearance-none"
+                          className="w-full bg-white dark:bg-[#050505] border border-[#CCA761]/30 text-white px-4 py-3 rounded-xl text-[11px] font-bold uppercase tracking-widest focus:border-[#CCA761] focus:outline-none transition-all appearance-none"
                         >
                            <option value="">Selecione um plano...</option>
                            {plans.map(p => (

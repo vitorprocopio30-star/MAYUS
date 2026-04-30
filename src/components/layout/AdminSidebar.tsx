@@ -229,14 +229,14 @@ export function AdminSidebar() {
 
       {isOpen && (
         <div
-          className="fixed inset-0 bg-gray-200 dark:bg-black/60 z-40 md:hidden backdrop-blur-sm transition-opacity"
+          className="fixed inset-0 bg-black/80 z-40 md:hidden backdrop-blur-md transition-opacity"
           onClick={toggleSidebar}
         />
       )}
 
       <aside className={`
         fixed top-0 left-0 h-full z-40 transition-all duration-300 ease-in-out
-        bg-card backdrop-blur-3xl border-r border-border
+        bg-[#0a0a0a]/90 backdrop-blur-3xl border-r border-white/5
         flex flex-col
         ${isOpen ? "translate-x-0" : "-translate-x-full md:translate-x-0"}
         ${sidebarMode === "mini" ? "w-[80px]" : sidebarMode === "hidden" ? "w-0 -translate-x-full opacity-0" : "w-[280px]"}
@@ -244,7 +244,7 @@ export function AdminSidebar() {
         {/* Toggle Button for Desktop */}
         <button 
           onClick={toggleSidebarMode}
-          className="hidden md:flex absolute top-6 -right-3 z-50 w-6 h-6 items-center justify-center bg-[#CCA761] text-black rounded-full shadow-lg border border-gray-300 dark:border-white/20 hover:scale-110 transition-transform"
+          className="hidden md:flex absolute top-6 -right-3 z-50 w-6 h-6 items-center justify-center bg-[#CCA761] text-black rounded-full shadow-[0_0_15px_rgba(204,167,97,0.3)] border border-white/10 hover:scale-110 transition-transform"
           title="Alternar Modo de Exibição"
         >
           {sidebarMode === "mini" ? <ChevronRight size={14} /> : sidebarMode === "expanded" ? <ChevronLeft size={14} /> : <Plus size={14} />}
@@ -282,7 +282,7 @@ export function AdminSidebar() {
               </div>
             ) : (
               <div className="w-8 h-8 rounded-full bg-gradient-to-br from-[#CCA761] to-[#8B7340] flex items-center justify-center shadow-[0_0_10px_rgba(204,167,97,0.3)] hover:scale-110 transition-transform duration-300">
-                <span className="text-gray-900 dark:text-white text-xs font-bold">M</span>
+                <span className="text-black text-xs font-bold">M</span>
               </div>
             )}
           </div>
@@ -307,7 +307,7 @@ export function AdminSidebar() {
                   {!isMini && (
                     <button
                       onClick={() => section.collapsible && toggleSection(section.title)}
-                      className={`w-full text-[13px] md:text-[14px] text-gray-500 dark:text-white font-black uppercase tracking-[0.25em] mb-4 flex items-center justify-between ${montserrat.className} ${section.collapsible ? 'cursor-pointer hover:text-gray-800 dark:hover:text-[#CCA761]' : 'cursor-default'} transition-colors`}
+                      className={`w-full text-[13px] md:text-[14px] text-white/50 font-black uppercase tracking-[0.25em] mb-4 flex items-center justify-between ${montserrat.className} ${section.collapsible ? 'cursor-pointer hover:text-[#CCA761]' : 'cursor-default'} transition-colors`}
                     >
                       {section.title}
                       {section.collapsible && (
@@ -332,8 +332,8 @@ export function AdminSidebar() {
                                 ${cormorant.className} italic font-bold
                                 ${isMini ? "justify-center p-3" : "px-3 py-3"}
                                 ${isActive
-                                  ? "bg-primary/10 text-primary border-l-2 border-primary shadow-[inset_0_0_20px_rgba(204,167,97,0.05)]"
-                                  : "text-muted-foreground hover:bg-accent hover:text-primary"
+                                  ? "bg-[#CCA761]/10 text-[#CCA761] border-l-2 border-[#CCA761] shadow-[inset_0_0_20px_rgba(204,167,97,0.05)]"
+                                  : "text-white/70 hover:bg-white/5 hover:text-white"
                                 }
                               `}
                             >
@@ -351,21 +351,11 @@ export function AdminSidebar() {
           </div>
         </div>
 
-        <div className={`p-5 flex items-center justify-between bg-gray-50 dark:bg-white/5 border-t border-gray-200 dark:border-white/10 ${montserrat.className} ${sidebarMode === "mini" ? 'flex-col gap-4' : ''}`}>
+        <div className={`p-5 flex items-center justify-between bg-[#050505]/50 backdrop-blur-md border-t border-white/5 ${montserrat.className} ${sidebarMode === "mini" ? 'flex-col gap-4' : ''}`}>
           <div className={`items-center gap-2 ${sidebarMode === "mini" ? 'hidden' : 'flex'}`}>
             <div className="w-2 h-2 rounded-full bg-green-500 animate-pulse shadow-[0_0_8px_rgba(34,197,94,0.6)]" />
-            <span className={`text-[12px] text-gray-500 dark:text-gray-400 italic ${cormorant.className} tracking-wide font-bold`}>Sistema Online</span>
+            <span className={`text-[12px] text-white/50 italic ${cormorant.className} tracking-wide font-bold`}>Sistema Online</span>
           </div>
-
-          {mounted && (
-            <button
-              onClick={() => setTheme(resolvedTheme === 'dark' ? 'light' : 'dark')}
-              className="p-2 rounded-md hover:bg-gray-200 dark:hover:bg-gray-100 dark:bg-[#222] text-gray-500 dark:text-gray-400 transition-colors"
-              title="Alternar Tema"
-            >
-              {resolvedTheme === 'dark' ? <Sun size={20} /> : <Moon size={20} />}
-            </button>
-          )}
         </div>
 
       </aside>
