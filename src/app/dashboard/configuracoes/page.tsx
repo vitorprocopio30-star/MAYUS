@@ -148,14 +148,6 @@ function normalizeDailyPlaybookPreferences(value: any): DailyPlaybookPreferences
   const scope = ["executive", "growth", "legal", "full"].includes(String(value?.scope))
     ? String(value.scope) as DailyPlaybookPreferences["scope"]
     : DEFAULT_DAILY_PLAYBOOK.scope;
-  const normalizeAuthorizedPhone = (phone: unknown) => {
-    const digits = String(phone || "").replace(/\D/g, "");
-    if (!digits) return "";
-    if (digits.length === 11) return `55${digits}`;
-    if (digits.length >= 13 && digits.startsWith("55")) return digits.slice(0, 13);
-    return digits.slice(0, 13);
-  };
-
   const authorizedPhones = Array.isArray(value?.authorizedPhones)
     ? value.authorizedPhones.map(normalizeAuthorizedPhone).filter(Boolean).slice(0, 10)
     : Array.isArray(value?.authorized_phones)
@@ -174,12 +166,20 @@ function normalizeDailyPlaybookPreferences(value: any): DailyPlaybookPreferences
   };
 }
 
-function normalizeAuthorizedPhoneInput(value: string) {
-  const digits = value.replace(/\D/g, "");
+function normalizeAuthorizedPhone(value: unknown) {
+  const digits = String(value || "").replace(/\D/g, "");
   if (!digits) return "";
-  if (digits.length === 11) return `55${digits}`;
-  if (digits.length >= 13 && digits.startsWith("55")) return digits.slice(0, 13);
+  if (digits.length === 10 || digits.length === 11) return `55${digits}`;
+  if (digits.startsWith("55")) return digits.slice(0, 13);
   return digits.slice(0, 13);
+}
+
+function parseAuthorizedPhonesInput(value: string) {
+  return value
+    .split(/\n|,|;/)
+    .map((phone) => normalizeAuthorizedPhone(phone))
+    .filter(Boolean)
+    .slice(0, 10);
 }
 
 const CATALOG: IntegrationDef[] = [
@@ -579,6 +579,7 @@ function ConfiguracoesContent() {
   const [isDoctorFixing, setIsDoctorFixing] = useState(false);
   const [salesProfile, setSalesProfile] = useState<SalesConsultationProfile>(EMPTY_SALES_PROFILE);
   const [dailyPlaybook, setDailyPlaybook] = useState<DailyPlaybookPreferences>(DEFAULT_DAILY_PLAYBOOK);
+  const [authorizedPhonesInput, setAuthorizedPhonesInput] = useState("");
   const [isPreviewingPlaybook, setIsPreviewingPlaybook] = useState(false);
   const [playbookPreview, setPlaybookPreview] = useState<string | null>(null);
 
@@ -655,7 +656,9 @@ function ConfiguracoesContent() {
       if (settings?.ai_features?.default_department_id) setDefaultDeptId(settings.ai_features.default_department_id);
       if (settings?.ai_features) setAiFeatures(settings.ai_features);
       setSalesProfile(normalizeSalesProfile(settings?.ai_features?.sales_consultation_profile));
-      setDailyPlaybook(normalizeDailyPlaybookPreferences(settings?.ai_features?.daily_playbook));
+      const normalizedPlaybook = normalizeDailyPlaybookPreferences(settings?.ai_features?.daily_playbook);
+      setDailyPlaybook(normalizedPlaybook);
+      setAuthorizedPhonesInput(normalizedPlaybook.authorizedPhones.join("\n"));
       if (settings?.strategic_goals) setOfficeGoals(settings.strategic_goals);
 
       const { data: depts } = await supabase.from('departments').select('id, name').eq('tenant_id', tenantId);
@@ -712,6 +715,11 @@ function ConfiguracoesContent() {
     setDailyPlaybook((prev) => ({ ...prev, ...patch }));
     setHasUnsavedChanges(true);
     setPlaybookPreview(null);
+  };
+
+  const updateAuthorizedPhonesInput = (value: string) => {
+    setAuthorizedPhonesInput(value);
+    updateDailyPlaybook({ authorizedPhones: parseAuthorizedPhonesInput(value) });
   };
 
   const toggleDailyPlaybookChannel = (channel: DailyPlaybookPreferences["channels"][number]) => {
@@ -811,6 +819,11 @@ function ConfiguracoesContent() {
           : "draft",
         updated_at: new Date().toISOString(),
       };
+      const normalizedDailyPlaybook = {
+        ...dailyPlaybook,
+        authorizedPhones: parseAuthorizedPhonesInput(authorizedPhonesInput),
+        updated_at: new Date().toISOString(),
+      };
       
       const payload = { 
         tenant_id: tenantId, 
@@ -821,10 +834,7 @@ function ConfiguracoesContent() {
           contract_flow_mode: aiFeatures.contract_flow_mode || 'hybrid',
           zapsign_template_id: aiFeatures.zapsign_template_id || '',
           sales_consultation_profile: normalizedSalesProfile,
-          daily_playbook: {
-            ...dailyPlaybook,
-            updated_at: new Date().toISOString(),
-          },
+          daily_playbook: normalizedDailyPlaybook,
         },
         strategic_goals: officeGoals,
         updated_at: new Date().toISOString()
@@ -836,6 +846,8 @@ function ConfiguracoesContent() {
       setSuccess(true);
       setHasUnsavedChanges(false);
       setSalesProfile(normalizeSalesProfile(normalizedSalesProfile));
+      setDailyPlaybook(normalizeDailyPlaybookPreferences(normalizedDailyPlaybook));
+      setAuthorizedPhonesInput(normalizedDailyPlaybook.authorizedPhones.join("\n"));
       await loadDoctorReport();
       toast.success("Tudo atualizado com sucesso!");
       setTimeout(() => setSuccess(false), 3000);
@@ -1167,17 +1179,12 @@ function ConfiguracoesContent() {
                     <Smartphone size={13} className="text-[#CCA761]" /> Telefones autorizados para comandar o MAYUS
                   </span>
                   <textarea
-                    value={dailyPlaybook.authorizedPhones.join("\n")}
-                    onChange={(event) => updateDailyPlaybook({
-                      authorizedPhones: event.target.value
-                        .split(/\n|,|;/)
-                        .map((phone) => normalizeAuthorizedPhoneInput(phone))
-                        .filter(Boolean)
-                        .slice(0, 10),
-                    })}
+                    value={authorizedPhonesInput}
+                    onChange={(event) => updateAuthorizedPhonesInput(event.target.value)}
+                    onBlur={() => setAuthorizedPhonesInput(dailyPlaybook.authorizedPhones.join("\n"))}
                     rows={3}
                     className="w-full rounded-2xl border border-white/10 bg-black/30 p-4 text-sm text-white focus:outline-none focus:border-[#CCA761]/60"
-                    placeholder="Ex: 5521999990000"
+                    placeholder="Ex: 21999990000 ou 5521999990000"
                   />
                   <p className="text-[10px] text-gray-500 leading-relaxed">
                     Use um numero por linha. O MAYUS normaliza para DDI 55 e aceita telefone com DDD, por exemplo 5521999990000.

@@ -33,17 +33,19 @@ export async function POST(req: Request) {
     }
 
     const payload = JSON.parse(rawBody);
+    const eventName = String(payload.event || "").toLowerCase().replace(/_/g, ".");
     console.log("Evolution Webhook:", { event: payload.event, instance: payload.instance });
 
     // A Evolution dispara vários eventos. Só nos importamos com novas mensagens.
-    if (payload.event === "messages.upsert" || payload.event === "messages.update") {
-      const messageData = payload.data?.message || payload.data?.messages?.[0];
-      if (!messageData) return NextResponse.json({ success: true, reason: "No message data" });
+    if (eventName === "messages.upsert" || eventName === "messages.update") {
+      const messageEnvelope = payload.data?.messages?.[0] || payload.data;
+      const messagePayload = messageEnvelope?.message || payload.data?.message;
+      if (!messagePayload) return NextResponse.json({ success: true, reason: "No message data" });
 
-      const remoteJid = payload.data?.key?.remoteJid || messageData?.key?.remoteJid;
-      const fromMe = payload.data?.key?.fromMe || messageData?.key?.fromMe;
-      const messageId = payload.data?.key?.id || messageData?.key?.id;
-      const pushName = payload.data?.pushName || messageData?.pushName || "Desconhecido";
+      const remoteJid = messageEnvelope?.key?.remoteJid || payload.data?.key?.remoteJid;
+      const fromMe = Boolean(messageEnvelope?.key?.fromMe || payload.data?.key?.fromMe);
+      const messageId = messageEnvelope?.key?.id || payload.data?.key?.id;
+      const pushName = messageEnvelope?.pushName || payload.data?.pushName || "Desconhecido";
       
       // Ignoring status broadcasts
       if (remoteJid === "status@broadcast") {
@@ -52,13 +54,13 @@ export async function POST(req: Request) {
 
       // Extrair o conteúdo em texto (Seja texto puro, extended text, etc)
       let content = "";
-      if (messageData?.message?.conversation) {
-        content = messageData.message.conversation;
-      } else if (messageData?.message?.extendedTextMessage?.text) {
-        content = messageData.message.extendedTextMessage.text;
-      } else if (messageData?.message?.imageMessage?.caption) {
-        content = messageData.message.imageMessage.caption || "[Imagem enviada]";
-      } else if (messageData?.message?.audioMessage) {
+      if (messagePayload?.conversation) {
+        content = messagePayload.conversation;
+      } else if (messagePayload?.extendedTextMessage?.text) {
+        content = messagePayload.extendedTextMessage.text;
+      } else if (messagePayload?.imageMessage?.caption) {
+        content = messagePayload.imageMessage.caption || "[Imagem enviada]";
+      } else if (messagePayload?.audioMessage) {
         content = "[Áudio enviado]";
       } else {
         content = "[Mensagem não suportada/Mídia]";

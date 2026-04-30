@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from "next/server";
 import { createClient } from "@supabase/supabase-js";
 import { prepareWhatsAppSalesReplyForContact } from "@/lib/growth/whatsapp-sales-reply-runtime";
+import { handleWhatsAppInternalCommand } from "@/lib/mayus/whatsapp-command-runtime";
 
 // ==============================================================================
 // 🚀 MAYUS - WEBHOOK OFICIAL META CLOUD API (WhatsApp Business Platform)
@@ -262,6 +263,28 @@ export async function POST(req: NextRequest) {
         }
 
         console.log(`[Meta Webhook] ✅ Mensagem de ${senderPhone} (${pushName}) salva no tenant ${tenantId}`);
+
+        try {
+          const internalCommand = await handleWhatsAppInternalCommand({
+            supabase,
+            tenantId,
+            senderPhone,
+            content,
+            contactId,
+            source: "meta_webhook",
+          });
+
+          if (internalCommand.handled) {
+            console.log("[Meta Webhook] Comando interno MAYUS processado:", {
+              tenantId,
+              intent: internalCommand.intent,
+              sent: internalCommand.sent,
+            });
+            continue;
+          }
+        } catch (commandError) {
+          console.error("[Meta Webhook] Erro ao processar comando interno MAYUS:", commandError);
+        }
 
         // 5. Disparar Notificação Interna no MAYUS
         await supabase.from("notifications").insert([{

@@ -20,6 +20,7 @@ const aiFeatures = {
 describe("whatsapp command center", () => {
   it("normaliza telefones para autorizacao", () => {
     expect(normalizeWhatsAppPhone("(21) 99999-0000")).toBe("5521999990000");
+    expect(normalizeWhatsAppPhone("(55) 99999-0000")).toBe("5555999990000");
     expect(normalizeWhatsAppPhone("5521999990000@s.whatsapp.net")).toBe("5521999990000");
   });
 

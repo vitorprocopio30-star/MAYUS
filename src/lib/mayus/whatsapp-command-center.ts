@@ -34,7 +34,9 @@ function cleanText(value?: string | null) {
 export function normalizeWhatsAppPhone(value?: string | null) {
   const digits = String(value || "").replace(/\D/g, "");
   if (!digits) return "";
-  return digits.startsWith("55") ? digits : `55${digits}`;
+  if (digits.length === 10 || digits.length === 11) return `55${digits}`;
+  if (digits.startsWith("55")) return digits.slice(0, 13);
+  return digits;
 }
 
 function normalize(value?: string | null) {
