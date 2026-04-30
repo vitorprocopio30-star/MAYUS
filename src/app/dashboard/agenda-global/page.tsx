@@ -497,12 +497,13 @@ export default function AgendaGlobalPage() {
       {/* Header e Ranking Podium Top 3 */}
       <div className="flex flex-col xl:flex-row justify-between items-start xl:items-end pb-8 border-b border-[#CCA761]/20 relative z-40 gap-8">
         <div>
-          <h1 className={`text-5xl lg:text-7xl text-[#CCA761] mb-1 font-bold tracking-tight ${cormorant.className} italic drop-shadow-[0_0_20px_rgba(204,167,97,0.3)]`}>
+          <h1 className={`text-4xl lg:text-5xl text-[#CCA761] font-cormorant italic tracking-tight drop-shadow-[0_0_20px_rgba(204,167,97,0.3)]`}>
             Agenda Global
           </h1>
-          <div className="mt-6 relative bg-gradient-to-r from-[#CCA761]/15 via-transparent to-transparent pl-6 py-4 border-l-[4px] border-[#CCA761] max-w-3xl overflow-hidden group rounded-r-2xl">
-             <div className="absolute inset-0 bg-white/20 translate-x-[-100%] group-hover:opacity-100 transition-opacity duration-1000 pointer-events-none" />
-             <p className={`text-[#eadd87] text-xl lg:text-3xl font-semibold tracking-wide ${cormorant.className} italic drop-shadow-md leading-relaxed`}>
+          <div className="mt-2 h-[1px] w-full bg-gradient-to-r from-[#CCA761]/40 to-transparent" />
+          <div className="mt-6 relative bg-gradient-to-r from-[#CCA761]/10 via-transparent to-transparent pl-6 py-4 border-l-[3px] border-[#CCA761]/60 max-w-3xl overflow-hidden group rounded-r-2xl backdrop-blur-sm">
+             <div className="absolute inset-0 bg-white/5 translate-x-[-100%] group-hover:opacity-100 transition-opacity duration-1000 pointer-events-none" />
+             <p className={`text-[#eadd87]/90 text-lg lg:text-2xl font-medium tracking-wide ${cormorant.className} italic drop-shadow-md leading-relaxed`}>
                 &quot;{dailyQuote}&quot;
              </p>
           </div>
@@ -536,7 +537,7 @@ export default function AgendaGlobalPage() {
                    avatarText: "text-[#CCA761]",
                    avatarShadow: "shadow-[inset_0_0_10px_rgba(204,167,97,0.5)]",
                    cardShadow: "shadow-[0_0_20px_rgba(204,167,97,0.2)]",
-                   nameText: "text-gray-900 dark:text-white",
+                   nameText: "text-white",
                    scoreText: "text-[#CCA761]"
                  };
                  
@@ -547,10 +548,10 @@ export default function AgendaGlobalPage() {
                      tagBg: "bg-gradient-to-r from-gray-300 to-gray-500",
                      tagText: "text-[#0a0a0a]",
                      avatarBorder: "border-gray-400",
-                     avatarText: "text-gray-700 dark:text-gray-300",
+                     avatarText: "text-gray-300",
                      avatarShadow: "shadow-[inset_0_0_10px_rgba(156,163,175,0.4)]",
                      cardShadow: "",
-                     nameText: "text-gray-800 dark:text-gray-200",
+                     nameText: "text-gray-200",
                      scoreText: "text-gray-400"
                    };
                  } else if (isThird) {
@@ -558,20 +559,20 @@ export default function AgendaGlobalPage() {
                      bg: "from-[#cd7f32]/20 to-[#0a0a0a]",
                      border: "border-[#cd7f32]/30",
                      tagBg: "bg-gradient-to-r from-[#cd7f32] to-[#a05a1f]",
-                     tagText: "text-gray-900 dark:text-white",
+                     tagText: "text-white",
                      avatarBorder: "border-[#cd7f32]",
                      avatarText: "text-[#cd7f32]",
                      avatarShadow: "shadow-[inset_0_0_10px_rgba(205,127,50,0.4)]",
                      cardShadow: "",
-                     nameText: "text-gray-700 dark:text-gray-300",
+                     nameText: "text-gray-300",
                      scoreText: "text-[#cd7f32]"
                    };
                  }
                  
                  return (
                    <div key={index} className={`flex flex-col items-center bg-gradient-to-b ${colors.bg} border ${colors.border} rounded-xl p-3 w-[22vw] min-w-[90px] max-w-[110px] sm:w-auto ${colors.cardShadow} relative hover:-translate-y-2 transition-transform cursor-pointer`}>
-                      <div className={`absolute -top-3.5 ${colors.tagBg} ${colors.tagText} text-[10px] font-black px-3 py-0.5 rounded-full shadow-lg border border-gray-300 dark:border-white/20 whitespace-nowrap`}>{index + 1}º LUGAR</div>
-                      <div className={`w-9 h-9 sm:w-10 sm:h-10 rounded-full bg-white dark:bg-[#0a0a0a] border-[2px] sm:border-[3px] ${colors.avatarBorder} mt-2 flex items-center justify-center font-black ${colors.avatarText} ${colors.avatarShadow} text-lg`}>{String(player.name || '').charAt(0)}</div>
+                      <div className={`absolute -top-3.5 ${colors.tagBg} ${colors.tagText} text-[10px] font-black px-3 py-0.5 rounded-full shadow-lg border border-white/20 whitespace-nowrap`}>{index + 1}º LUGAR</div>
+                      <div className={`w-9 h-9 sm:w-10 sm:h-10 rounded-full bg-[#0a0a0a] border-[2px] sm:border-[3px] ${colors.avatarBorder} mt-2 flex items-center justify-center font-black ${colors.avatarText} ${colors.avatarShadow} text-lg`}>{String(player.name || '').charAt(0)}</div>
                       <span className={`${colors.nameText} text-[10px] sm:text-[11px] font-bold mt-2 uppercase text-center truncate w-full px-1 sm:px-2`} title={player.name}>{String(player.name)}</span>
                       <span className={`${colors.scoreText} text-[10px] sm:text-[11px] font-black italic mt-0.5 tracking-tighter`}>{Number(player.score)} MC</span>
                    </div>
@@ -647,7 +648,7 @@ export default function AgendaGlobalPage() {
         </div>
 
         {/* Seletor de Semana Premium */}
-        <div className="flex justify-between items-center gap-2 p-1 bg-gray-100 dark:bg-white/5 rounded-2xl border border-gray-200 dark:border-white/10 shadow-inner overflow-x-auto hide-scrollbar">
+        <div className="flex justify-between items-center gap-2 p-1 bg-white/5 rounded-2xl border border-white/10 shadow-inner overflow-x-auto hide-scrollbar">
            {WEEK_DAYS.map((d, i) => {
             const active = d.dateKey === selectedDate;
             const hasReminder = reminderDateKeys.includes(d.dateKey);
@@ -655,12 +656,12 @@ export default function AgendaGlobalPage() {
               <button
                 key={i}
                 onClick={() => setSelectedDate(d.dateKey)}
-                className={`min-w-[70px] flex-1 flex flex-col items-center py-4 rounded-xl transition-all ${active ? 'bg-[#CCA761] text-[#0a0a0a] shadow-[0_0_20px_rgba(204,167,97,0.3)]' : 'hover:bg-gray-100 dark:bg-white/5 text-gray-500 hover:text-white'}`}
+                className={`min-w-[70px] flex-1 flex flex-col items-center py-4 rounded-xl transition-all ${active ? 'bg-[#CCA761] text-[#0a0a0a] shadow-[0_0_20px_rgba(204,167,97,0.3)]' : 'hover:bg-white/5 text-gray-500 hover:text-white'}`}
               >
                 <span className="text-[10px] font-black uppercase tracking-tighter mb-1">{d.day}</span>
                 <span className="text-xl font-black italic">{d.date}</span>
                 {active ? (
-                  <div className="w-1 h-1 bg-white dark:bg-[#0a0a0a] rounded-full mt-2" />
+                  <div className="w-1 h-1 bg-[#0a0a0a] rounded-full mt-2" />
                 ) : hasReminder ? (
                   <div className="w-1.5 h-1.5 bg-[#CCA761] rounded-full mt-2 shadow-[0_0_8px_rgba(204,167,97,0.8)]" />
                 ) : (
@@ -691,18 +692,18 @@ export default function AgendaGlobalPage() {
                          <span className="flex items-center justify-center md:justify-start gap-1.5 text-[9px] sm:text-[10px] font-black uppercase tracking-[0.2em] text-[#ef4444] bg-[#ef4444]/10 px-3 py-1 rounded w-fit border border-[#ef4444]/30 shadow-[0_0_15px_rgba(239,68,68,0.3)]">
                             <Target size={12} className="animate-[ping_2s_cubic-bezier(0,0,0.2,1)_infinite]" /> OPORTUNIDADE ESPECIAL
                           </span>
-                         <h3 className="text-gray-900 dark:text-white text-lg md:text-xl font-bold tracking-tight">{activeMission.title}</h3>
+                         <h3 className="text-white text-lg md:text-xl font-bold tracking-tight">{activeMission.title}</h3>
                          <p className="text-xs sm:text-sm text-gray-400 font-medium leading-relaxed italic"><strong className="text-[#CCA761]">Aviso do MAYUS:</strong> &quot;{activeMission.description || 'Missao operacional ativa para acelerar a execucao da equipe.'}&quot;</p>
                        </div>
   
-                      <div className="w-full md:w-1/4 flex flex-col items-center justify-center gap-3 border-t md:border-t-0 md:border-l border-gray-200 dark:border-white/10 pt-4 md:pt-0 pl-0 md:pl-4">
+                      <div className="w-full md:w-1/4 flex flex-col items-center justify-center gap-3 border-t md:border-t-0 md:border-l border-white/10 pt-4 md:pt-0 pl-0 md:pl-4">
                         <div className="flex flex-col items-center">
                           <span className="text-[10px] font-black uppercase text-gray-500 tracking-widest mb-1">Recompensa</span>
                           <div className="flex items-center gap-2 text-[#CCA761] font-black text-2xl h-8 drop-shadow-[0_0_10px_rgba(204,167,97,0.5)]">
                             +{activeMission.reward_coins ?? 1000} <Coins size={20} className="animate-pulse text-[#FFD700]" />
                           </div>
                         </div>
-                        <button className="w-full bg-gradient-to-r from-[#ef4444] to-[#b91c1c] text-gray-900 dark:text-white text-[10px] sm:text-xs font-black uppercase tracking-widest py-2.5 rounded-lg hover:scale-105 transition-transform shadow-[0_0_20px_rgba(239,68,68,0.4)] border border-[#fca5a5]/30 mt-2">
+                        <button className="w-full bg-gradient-to-r from-[#ef4444] to-[#b91c1c] text-white text-[10px] sm:text-xs font-black uppercase tracking-widest py-2.5 rounded-lg hover:scale-105 transition-transform shadow-[0_0_20px_rgba(239,68,68,0.4)] border border-[#fca5a5]/30 mt-2">
                           Assumir Missão
                         </button>
                       </div>
@@ -729,14 +730,14 @@ export default function AgendaGlobalPage() {
 
               {/* BARRA DE PROGRESSO ANIMADA */}
               {showProgressBar && (
-                <div className="mb-6 p-4 rounded-xl border border-gray-200 dark:border-white/5 bg-gradient-to-r from-[#111] to-[#0a0a0a] flex flex-col gap-3 relative overflow-hidden group animate-fade-in-up">
+                <div className="mb-6 p-4 rounded-xl border border-white/5 bg-gradient-to-r from-[#111] to-[#0a0a0a] flex flex-col gap-3 relative overflow-hidden group animate-fade-in-up">
                   <div className={`absolute top-0 right-0 w-32 h-32 rounded-full blur-3xl -translate-y-1/2 translate-x-1/4 transition-colors duration-1000 ${isKilled ? 'bg-[#4ade80]/20' : 'bg-[#CCA761]/10'}`}></div>
 
                   <div className="flex justify-between items-center relative z-10">
                     <div>
                       <span className="text-[10px] text-gray-400 font-bold uppercase tracking-widest">Aproveitamento Diário</span>
                       <div className="flex items-center gap-2 mt-1">
-                        <span className="text-2xl font-black text-gray-900 dark:text-white">{completedTasks} <span className="text-sm text-gray-500 font-normal">/ {totalTasks}</span></span>
+                        <span className="text-2xl font-black text-white">{completedTasks} <span className="text-sm text-gray-500 font-normal">/ {totalTasks}</span></span>
                         {/* MENSAGEM DE PARABÉNS QUANDO 100% */}
                         {isKilled && (
                           <span className="flex items-center gap-1.5 bg-[#4ade80]/10 text-[#4ade80] text-[11px] font-black uppercase px-3 py-1 rounded border border-[#4ade80]/50 shadow-[0_0_15px_rgba(74,222,128,0.3)] animate-bounce">
@@ -751,7 +752,7 @@ export default function AgendaGlobalPage() {
                   </div>
 
                   {/* BARRA COM ANIMAÇÃO DE LOADING */}
-                  <div className="w-full h-2 bg-gray-100 dark:bg-[#111] rounded-full overflow-hidden border border-gray-200 dark:border-white/5 relative z-10 transition-all">
+                  <div className="w-full h-2 bg-[#111] rounded-full overflow-hidden border border-white/5 relative z-10 transition-all">
                     <div
                       className={`absolute top-0 left-0 bottom-0 transition-all duration-1000 ease-out ${isKilled ? 'bg-[#4ade80] shadow-[0_0_15px_rgba(74,222,128,0.8)]' : 'bg-[#CCA761]'}`}
                       style={{ width: `${progress}%` }}
@@ -779,7 +780,7 @@ export default function AgendaGlobalPage() {
                     ? 'bg-[#140909] hover:bg-[#1a0b0b] opacity-95 hover:opacity-100 border-red-500/40 shadow-[0_0_20px_rgba(239,68,68,0.15)]'
                     : isExternalCalendar
                       ? 'bg-[#4285F4]/5 hover:bg-[#4285F4]/10 opacity-95 hover:opacity-100 border-[#4285F4]/40 shadow-[0_0_18px_rgba(66,133,244,0.08)]'
-                    : 'bg-white dark:bg-[#050505] hover:bg-white dark:bg-[#0a0a0a] opacity-80 hover:opacity-100';
+                    : 'bg-white dark:bg-[#050505] hover:bg-[#0a0a0a] opacity-80 hover:opacity-100';
 
                   return (
                     <div key={`pend-${i}`} className={`group relative transition-all duration-500`}>
@@ -846,7 +847,7 @@ export default function AgendaGlobalPage() {
                                </div>
                              )}
                            </div>
-                           <h4 className={`text-sm font-bold tracking-wide transition-colors duration-500 text-gray-900 dark:text-white line-clamp-3 leading-snug break-words pr-2 mt-1 ${ev.stolen ? 'text-[#ef4444]' : ''}`}>{ev.title}</h4>
+                           <h4 className={`text-sm font-bold tracking-wide transition-colors duration-500 text-white line-clamp-3 leading-snug break-words pr-2 mt-1 ${ev.stolen ? 'text-[#ef4444]' : ''}`}>{ev.title}</h4>
                            {Array.isArray(ev.tags) && ev.tags.length > 0 && (
                              <div className="mt-1.5 flex flex-wrap gap-1">
                                {ev.tags.map((tag: string) => (
@@ -857,7 +858,7 @@ export default function AgendaGlobalPage() {
                              </div>
                            )}
                             {ev.responsible_notes && (
-                             <div className="mt-1.5 p-2 rounded border border-gray-200 dark:border-white/10 bg-gray-200 dark:bg-black/20">
+                             <div className="mt-1.5 p-2 rounded border border-white/10 bg-gray-200 dark:bg-black/20">
                                <div className="flex items-center justify-between gap-2 mb-1">
                                  <span className="text-[8px] uppercase tracking-widest text-zinc-500 font-black">Anotações</span>
                                  <button
@@ -891,7 +892,7 @@ export default function AgendaGlobalPage() {
                         
                         {/* Steal Task Overlay System */}
                         {ev.person !== "Você" && ev.status === "Em andamento" && (
-                          <div className="absolute top-2 right-2 p-1.5 bg-white dark:bg-[#0a0a0a]/90 backdrop-blur-md rounded-lg border border-[#CCA761]/50 flex items-center gap-1.5 shadow-[0_0_15px_rgba(204,167,97,0.3)] z-50 group-hover:bg-[#CCA761]/10 transition-colors tooltip-group">
+                          <div className="absolute top-2 right-2 p-1.5 bg-[#0a0a0a]/90 backdrop-blur-md rounded-lg border border-[#CCA761]/50 flex items-center gap-1.5 shadow-[0_0_15px_rgba(204,167,97,0.3)] z-50 group-hover:bg-[#CCA761]/10 transition-colors tooltip-group">
                              <Lock size={12} className="text-[#CCA761]" />
                              <span className="text-[9px] font-black uppercase text-[#CCA761] tracking-widest hidden group-hover:block transition-all max-w-[120px] text-right leading-tight drop-shadow-md">Trabalho em Desenvolvimento</span>
                           </div>
@@ -902,7 +903,7 @@ export default function AgendaGlobalPage() {
                             <button 
                               onClick={(e) => stealTask(e, ev)}
                               title="Assumir tarefa pendente"
-                              className="flex items-center gap-1.5 bg-gradient-to-r from-[#ef4444] to-[#b91c1c] text-gray-900 dark:text-white px-3 py-1.5 rounded-lg border border-[#fca5a5]/50 shadow-[0_0_15px_rgba(239,68,68,0.5)] hover:scale-105 hover:-translate-y-1 transition-all group/btn"
+                              className="flex items-center gap-1.5 bg-gradient-to-r from-[#ef4444] to-[#b91c1c] text-white px-3 py-1.5 rounded-lg border border-[#fca5a5]/50 shadow-[0_0_15px_rgba(239,68,68,0.5)] hover:scale-105 hover:-translate-y-1 transition-all group/btn"
                             >
                               <Sword size={12} className="group-hover/btn:animate-[bounce_0.5s_ease-in-out_infinite]" />
                               <span className="text-[8px] font-black tracking-widest uppercase">Roubar</span>
@@ -930,7 +931,7 @@ export default function AgendaGlobalPage() {
                       const active = ev.active || false;
                       const normalizedUrgency = String(ev.urgency || "").normalize("NFD").replace(/[\u0300-\u036f]/g, "").toUpperCase();
                       const bdgColor = normalizedUrgency === "URGENTE" ? "#f87171" : normalizedUrgency === "ATENCAO" ? "#CCA761" : "#9ca3af";
-                      const cardBgClass = 'border-[#4ade80]/30 bg-gray-100 dark:bg-[#111] hover:bg-[#151515] shadow-[0_0_20px_rgba(74,222,128,0.05)]';
+                      const cardBgClass = 'border-[#4ade80]/30 bg-[#111] hover:bg-[#151515] shadow-[0_0_20px_rgba(74,222,128,0.05)]';
 
                       return (
                         <div key={`done-${i}`} className={`group relative flex items-center gap-4 transition-all duration-500 -translate-y-0.5`}>
@@ -952,7 +953,7 @@ export default function AgendaGlobalPage() {
                                   {/* BADGE DE RECOMPENSA (MAYUS COINS) Concluída */}
                                   {gamificationEnabled && (
                                     <div className="flex">
-                                      <span className="text-[9px] font-black uppercase tracking-widest flex items-center gap-1 border rounded px-2 py-0.5 text-gray-500 border-gray-600 bg-gray-100 dark:bg-white/5 shadow-none">
+                                      <span className="text-[9px] font-black uppercase tracking-widest flex items-center gap-1 border rounded px-2 py-0.5 text-gray-500 border-gray-600 bg-white/5 shadow-none">
                                         +{getReward(ev)} <Coins size={10} />
                                       </span>
                                     </div>
@@ -964,7 +965,7 @@ export default function AgendaGlobalPage() {
                             
                             <div className="text-right hidden sm:block relative z-10 flex-col items-end opacity-20 hover:opacity-100 transition-opacity duration-300">
                               <p className="text-[9px] font-bold uppercase tracking-widest mb-1 border-b pb-0.5 text-[#4ade80] border-[#4ade80]/30 inline-block text-right w-auto ml-auto">Herói da Tarefa</p>
-                              <p className="text-xs font-black tracking-widest text-gray-900 dark:text-white uppercase mt-0.5">{ev.person}</p>
+                              <p className="text-xs font-black tracking-widest text-white uppercase mt-0.5">{ev.person}</p>
                             </div>
 
                             <div className="absolute right-0 top-1/2 -translate-y-1/2 translate-x-1/4 opacity-10">
@@ -987,14 +988,14 @@ export default function AgendaGlobalPage() {
                 </h4>
                 <div className="space-y-4">
                   {criticalDeadlines.length === 0 ? (
-                    <div className="p-4 bg-gray-200 dark:bg-black/40 rounded-xl border border-gray-200 dark:border-white/5 text-[11px] text-gray-500">
+                    <div className="p-4 bg-gray-200 dark:bg-black/40 rounded-xl border border-white/5 text-[11px] text-gray-500">
                       Nenhum prazo critico real encontrado para a selecao atual.
                     </div>
                   ) : (
                     criticalDeadlines.map((p, i) => (
-                      <div key={i} className="p-4 bg-gray-200 dark:bg-black/40 rounded-xl border border-gray-200 dark:border-white/5 hover:border-gray-200 dark:border-white/10 transition-colors">
+                      <div key={i} className="p-4 bg-gray-200 dark:bg-black/40 rounded-xl border border-white/5 hover:border-white/10 transition-colors">
                         <div className="flex justify-between items-start mb-2">
-                          <span className="text-xs font-bold text-gray-900 dark:text-white">{p.title}</span>
+                          <span className="text-xs font-bold text-white">{p.title}</span>
                           <span className="text-[8px] font-black text-[#0a0a0a] px-2 py-0.5 rounded-sm uppercase" style={{ backgroundColor: p.color || '#f87171' }}>{p.time_text}</span>
                         </div>
                         <p className="text-[10px] text-gray-500 font-semibold tracking-wide">Cliente: {p.client_name || '-'}</p>
@@ -1006,7 +1007,7 @@ export default function AgendaGlobalPage() {
 
               <div className="p-6 rounded-2xl border border-[#CCA761]/30 bg-gradient-to-br from-[#CCA761]/20 to-transparent">
                 <Star className="text-[#CCA761] mb-4" size={24} />
-                <h5 className="text-sm font-bold text-gray-900 dark:text-white mb-2 tracking-wide">Insight da Inteligência (MAYUS)</h5>
+                <h5 className="text-sm font-bold text-white mb-2 tracking-wide">Insight da Inteligência (MAYUS)</h5>
                 <p className="text-[11px] text-gray-400 leading-relaxed italic font-medium">&quot;{buildInsightText}&quot;</p>
               </div>
             </div>

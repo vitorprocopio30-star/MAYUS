@@ -102,7 +102,7 @@ function getDraftFactoryBadge(memory?: ProcessDraftMemory | null) {
         label: stale && memory.first_draft_artifact_id ? "Atualizando minuta" : "Minuta em fila",
         detail: pieceLabel,
         icon: ArrowRight,
-        className: "border-gray-200 dark:border-white/10 bg-gray-100 dark:bg-white/5 text-gray-700 dark:text-gray-300",
+        className: "border-white/10 bg-white/5 text-gray-300",
       };
     case "running":
       return {
@@ -174,7 +174,7 @@ function getDraftFactoryQuickAction(taskId: string, memory?: ProcessDraftMemory 
 // Dynamic import for ReactQuill to avoid SSR issues
 const ReactQuill = dynamic(() => import("react-quill"), { 
   ssr: false,
-  loading: () => <div className="h-[250px] w-full bg-gray-100 dark:bg-white/5 animate-pulse rounded-lg" />
+  loading: () => <div className="h-[250px] w-full bg-white/5 animate-pulse rounded-lg" />
 });
 
 function normalizarNomeEtapa(nome?: string | null) {
@@ -555,24 +555,35 @@ const [pendingMove, setPendingMove] = useState<{
 
   if (isLoading && stages.length === 0) {
     return (
-      <div className="flex-1 flex items-center justify-center min-h-screen bg-white dark:bg-[#050505]">
+      <div className="flex-1 flex items-center justify-center min-h-screen bg-[#050505]">
         <div className="w-8 h-8 border-4 border-[#CCA761] border-t-transparent rounded-full animate-spin" />
       </div>
     );
   }
 
   return (
-    <div className="flex flex-col h-screen bg-white dark:bg-[#050505] overflow-hidden">
-      {/* Sempre monta a animação do Neon */}
+    <div className="flex flex-col h-screen bg-[#050505] overflow-hidden">
+      {/* Animações Premium MAYUS */}
       <style dangerouslySetInnerHTML={{ __html: `
-        @keyframes neonBeam {
-          0% { transform: translateX(-150px); }
-          100% { transform: translateX(400px); }
+        @keyframes shimmerBeam {
+          0% { transform: translateX(-100%) skewX(-15deg); opacity: 0; }
+          30% { opacity: 1; }
+          100% { transform: translateX(250%) skewX(-15deg); opacity: 0; }
         }
+        .kanban-card { transition: transform 0.25s cubic-bezier(.22,.68,0,1.2), box-shadow 0.25s ease, border-color 0.25s ease; }
+        .kanban-card:hover { transform: translateY(-3px); box-shadow: 0 0 0 1px rgba(204,167,97,0.22), 0 12px 40px rgba(0,0,0,0.9), 0 0 36px rgba(204,167,97,0.12); border-color: rgba(204,167,97,0.3) !important; }
+        .kanban-card:hover .card-shimmer { animation: shimmerBeam 0.85s ease forwards; }
+        @keyframes neonSweep {
+          0% { transform: translateX(-100%); opacity: 0; }
+          10% { opacity: 1; }
+          90% { opacity: 1; }
+          100% { transform: translateX(100%); opacity: 0; }
+        }
+        .col-neon-line { animation: neonSweep 3s ease-in-out infinite; animation-delay: var(--sweep-delay, 0s); }
       `}} />
-      
+
       {/* HEADER */}
-      <header className="flex-none bg-white dark:bg-[#0a0a0a]/90 backdrop-blur-xl border-b border-gray-200 dark:border-white/5 z-20">
+      <header className="flex-none bg-[#080808]/98 backdrop-blur-2xl border-b border-[#CCA761]/10 z-20 shadow-[0_1px_0_rgba(204,167,97,0.07),0_4px_32px_rgba(0,0,0,0.6)]">
         <div className="px-6 py-4 flex flex-col md:flex-row md:items-center justify-start gap-8">
           <div className="flex items-center gap-4">
             <div className="flex flex-col relative">
@@ -580,19 +591,20 @@ const [pendingMove, setPendingMove] = useState<{
                 className="flex items-center gap-2 cursor-pointer group"
                 onClick={() => setIsDropdownOpen(!isDropdownOpen)}
               >
-                <h1 className="text-2xl font-bold bg-gradient-to-r from-white to-gray-400 bg-clip-text text-transparent flex items-center gap-2 transition-opacity group-hover:opacity-80">
+                <h1 className="text-3xl lg:text-4xl font-cormorant italic text-[#CCA761] tracking-tight flex items-center gap-3 drop-shadow-[0_0_15px_rgba(204,167,97,0.2)]">
                   {pipeline?.name || "Carregando..."}
-                  <svg className={`w-5 h-5 text-gray-400 transition-transform ${isDropdownOpen ? 'rotate-180' : ''}`} fill="none" viewBox="0 0 24 24" stroke="currentColor"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 9l-7 7-7-7" /></svg>
-                  <span className="text-xs bg-gray-100 dark:bg-white/10 text-gray-700 dark:text-gray-300 px-2.5 py-1 rounded-full">{tasks.length}</span>
+                  <svg className={`w-5 h-5 text-[#CCA761]/40 transition-transform ${isDropdownOpen ? 'rotate-180' : ''}`} fill="none" viewBox="0 0 24 24" stroke="currentColor"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 9l-7 7-7-7" /></svg>
+                  <span className="text-[10px] font-black font-montserrat bg-[#CCA761]/10 text-[#CCA761]/80 border border-[#CCA761]/20 px-2 py-0.5 rounded-full">{tasks.length}</span>
                 </h1>
+                <div className="mt-1.5 h-[1px] w-full bg-gradient-to-r from-[#CCA761]/40 to-transparent" />
               </div>
 
               {/* Dropdown de processos */}
               {isDropdownOpen && (
                 <>
                   <div className="fixed inset-0 z-40" onClick={() => setIsDropdownOpen(false)}></div>
-                  <div className="absolute top-10 left-0 mt-2 w-64 bg-gray-100 dark:bg-[#111] border border-gray-200 dark:border-white/10 rounded-xl shadow-2xl py-2 z-50">
-                    <div className="px-3 pb-2 mb-2 border-b border-gray-200 dark:border-white/5 text-xs font-bold text-gray-500 uppercase tracking-wider">
+                  <div className="absolute top-10 left-0 mt-2 w-64 bg-[#111] border border-white/10 rounded-xl shadow-2xl py-2 z-50">
+                    <div className="px-3 pb-2 mb-2 border-b border-white/5 text-xs font-bold text-gray-500 uppercase tracking-wider">
                       Seus processos (Setores)
                     </div>
                     {allPipelines.map(p => (
@@ -602,13 +614,13 @@ const [pendingMove, setPendingMove] = useState<{
                           setIsDropdownOpen(false);
                           if (p.id !== pipelineId) router.push(`/dashboard/processos/${p.id}`);
                         }}
-                        className={`w-full text-left px-4 py-2 text-sm transition-colors flex items-center justify-between ${p.id === pipelineId ? 'bg-[#CCA761]/10 text-[#CCA761]' : 'text-gray-700 dark:text-gray-300 hover:bg-gray-100 dark:bg-white/5 hover:text-white'}`}
+                        className={`w-full text-left px-4 py-2 text-sm transition-colors flex items-center justify-between ${p.id === pipelineId ? 'bg-[#CCA761]/10 text-[#CCA761]' : 'text-gray-300 hover:bg-white/5 hover:text-white'}`}
                       >
                         {p.name}
                         {p.id === pipelineId && <CheckCircle2 size={14} />}
                       </button>
                     ))}
-                    <div className="px-3 pt-2 mt-2 border-t border-gray-200 dark:border-white/5">
+                    <div className="px-3 pt-2 mt-2 border-t border-white/5">
                       <button 
                         onClick={() => {
                           setIsDropdownOpen(false);
@@ -624,28 +636,28 @@ const [pendingMove, setPendingMove] = useState<{
               )}
 
               <div className="flex items-center gap-3 mt-1.5">
-                {pipeline?.description && <p className="text-sm text-gray-500">{pipeline.description}</p>}
+                {pipeline?.description && <p className="text-xs font-bold tracking-[0.15em] uppercase text-[#CCA761]/50">{pipeline.description}</p>}
               </div>
             </div>
           </div>
 
           <div className="flex items-center gap-3 flex-wrap md:justify-start">
-            <div className="flex items-center bg-gray-100 dark:bg-[#111] border border-gray-200 dark:border-white/5 rounded-lg p-1">
+            <div className="flex items-center bg-[#111] border border-white/5 rounded-lg p-1">
               <button 
                 onClick={() => setViewMode("board")}
-                className={`p-2 rounded-md flex items-center gap-2 transition-all ${viewMode === "board" ? "bg-gray-100 dark:bg-white/10 text-gray-900 dark:text-white shadow-sm" : "text-gray-500 hover:text-gray-900 dark:text-white hover:bg-gray-100 dark:bg-white/5"}`}
+                className={`p-2 rounded-md flex items-center gap-2 transition-all ${viewMode === "board" ? "bg-white/10 text-white shadow-sm" : "text-gray-500 hover:text-white hover:bg-white/5"}`}
               >
                 <LayoutTemplate size={16} /> <span className="text-xs font-bold uppercase hidden sm:inline">Board</span>
               </button>
               <button 
                 onClick={() => setViewMode("list")}
-                className={`p-2 rounded-md flex items-center gap-2 transition-all ${viewMode === "list" ? "bg-gray-100 dark:bg-white/10 text-gray-900 dark:text-white shadow-sm" : "text-gray-500 hover:text-gray-900 dark:text-white hover:bg-gray-100 dark:bg-white/5"}`}
+                className={`p-2 rounded-md flex items-center gap-2 transition-all ${viewMode === "list" ? "bg-white/10 text-white shadow-sm" : "text-gray-500 hover:text-white hover:bg-white/5"}`}
               >
                 <List size={16} /> <span className="text-xs font-bold uppercase hidden sm:inline">Lista</span>
               </button>
             </div>
 
-            <Link href={`/dashboard/processos/config/${pipelineId}`} className="flex items-center gap-2 p-2.5 bg-gray-100 dark:bg-[#111] hover:bg-[#CCA761]/10 text-gray-400 hover:text-[#CCA761] border border-gray-200 dark:border-white/5 rounded-lg transition-colors" title="Configurações do Processo">
+            <Link href={`/dashboard/processos/config/${pipelineId}`} className="flex items-center gap-2 p-2.5 bg-[#111] hover:bg-[#CCA761]/10 text-gray-400 hover:text-[#CCA761] border border-white/5 rounded-lg transition-colors" title="Configurações do Processo">
               <Settings size={18} /> <span className="text-xs font-bold hidden sm:inline">Configurar</span>
             </Link>
           </div>
@@ -654,7 +666,7 @@ const [pendingMove, setPendingMove] = useState<{
 
       {/* MAIN CONTENT */}
       <main className="flex-1 overflow-hidden relative flex flex-col">
-        <div className="px-6 pt-4 pb-3 border-b border-gray-200 dark:border-white/5 bg-[#090909]/90 backdrop-blur-md">
+        <div className="px-6 pt-4 pb-3 border-b border-white/5 bg-[#090909]/90 backdrop-blur-md">
           <div className="flex flex-wrap items-center gap-2">
             <span className="text-[10px] uppercase tracking-[0.22em] text-gray-500 font-black mr-2">Filtro da Draft Factory</span>
             {DRAFT_FACTORY_FILTER_OPTIONS.map((option) => {
@@ -664,10 +676,10 @@ const [pendingMove, setPendingMove] = useState<{
                   key={option.value}
                   type="button"
                   onClick={() => setDraftFactoryFilter(option.value)}
-                  className={`inline-flex items-center gap-2 rounded-lg border px-3 py-2 text-[10px] font-black uppercase tracking-[0.18em] transition-colors ${active ? "border-[#CCA761]/35 bg-[#CCA761]/10 text-[#CCA761]" : "border-gray-200 dark:border-white/10 bg-gray-100 dark:bg-[#111] text-gray-400 hover:text-gray-900 dark:text-white hover:bg-gray-100 dark:bg-white/5"}`}
+                  className={`inline-flex items-center gap-2 rounded-lg border px-3 py-2 text-[10px] font-black uppercase tracking-[0.18em] transition-colors ${active ? "border-[#CCA761]/35 bg-[#CCA761]/10 text-[#CCA761]" : "border-white/10 bg-[#111] text-gray-400 hover:text-white hover:bg-white/5"}`}
                 >
                   <span>{option.label}</span>
-                  <span className={`rounded-full px-1.5 py-0.5 text-[9px] ${active ? "bg-[#CCA761]/10 text-[#CCA761]" : "bg-gray-100 dark:bg-white/5 text-gray-500"}`}>
+                  <span className={`rounded-full px-1.5 py-0.5 text-[9px] ${active ? "bg-[#CCA761]/10 text-[#CCA761]" : "bg-white/5 text-gray-500"}`}>
                     {draftFactoryFilterCounts[option.value]}
                   </span>
                 </button>
@@ -691,20 +703,16 @@ const [pendingMove, setPendingMove] = useState<{
                   const stageTasks = filteredTasks.filter(t => t.stage_id === stage.id).sort((a,b) => a.position_index - b.position_index);
                   
                   return (
-                    <div key={stage.id} className="flex flex-col flex-none w-[340px] h-full max-h-full bg-[#090909] rounded-2xl border border-zinc-800 overflow-hidden">
-                      <div className="p-3.5 relative flex flex-row items-center justify-between z-10 border-b border-zinc-800/80 overflow-hidden rounded-t-2xl">
-                        <div className="absolute inset-0 opacity-[0.09] rounded-t-2xl" style={{ backgroundColor: stage.color }} />
-                        <div className="flex items-center gap-2 relative z-10 w-full justify-between">
-                          <div className="flex items-center gap-3">
-                            <h3 className="font-black text-gray-900 dark:text-white text-[11px] tracking-widest uppercase">{stage.name}</h3>
-                            <div className="relative inline-flex items-center justify-center">
-                               <span className="text-[10px] font-bold px-2 py-0.5 rounded-lg border bg-gray-200 dark:bg-black/30 relative z-10 text-gray-900 dark:text-white" style={{ borderColor: `${stage.color}88` }}>
-                                 {stageTasks.length}
-                               </span>
-                               <div className="absolute inset-0 rounded-lg opacity-10" style={{ backgroundColor: stage.color }} />
-                             </div>
-                          </div>
-                          <button onClick={() => openNewTaskModal(stage.id)} className="text-gray-400 hover:text-gray-900 dark:text-white p-1 hover:bg-gray-100 dark:bg-white/10 rounded-lg transition-colors"><Plus size={16} /></button>
+                    <div key={stage.id} className="flex flex-col flex-none w-[340px] h-full max-h-full rounded-2xl overflow-hidden" style={{ background: '#0a0a0a', border: `1px solid ${stage.color}25`, boxShadow: `0 8px 32px rgba(0,0,0,0.7), 0 0 0 1px ${stage.color}10`, "--sweep-delay": `${visibleStages.indexOf(stage) * 0.6}s` } as React.CSSProperties}>
+                      <div className="p-3.5 relative flex flex-row items-center justify-between z-10 border-b overflow-hidden rounded-t-2xl" style={{ borderColor: `${stage.color}50` }}>
+                        <div className="absolute inset-0 rounded-t-2xl" style={{ background: `linear-gradient(180deg, ${stage.color}90 0%, ${stage.color}70 100%)`, backdropFilter: 'blur(20px)' }} />
+                        <div className="absolute top-0 left-0 right-0 h-[2px] overflow-hidden rounded-t-2xl">
+                          <div className="col-neon-line h-full w-1/2" style={{ background: `linear-gradient(90deg, transparent, ${stage.color}cc, #fff, ${stage.color}cc, transparent)`, boxShadow: `0 0 10px 2px ${stage.color}` }} />
+                        </div>
+                        <div className="flex items-center relative z-10 w-full">
+                          <span className="text-[10px] font-black px-2 py-0.5 rounded-lg border" style={{ color: stage.color, borderColor: `${stage.color}55`, background: `${stage.color}15`, boxShadow: `0 0 8px ${stage.color}20` }}>{stageTasks.length}</span>
+                          <h3 className="flex-1 text-center font-black text-white text-[11px] tracking-[0.25em] uppercase font-sans">{stage.name}</h3>
+                          <button onClick={() => openNewTaskModal(stage.id)} className="text-gray-600 hover:text-[#CCA761] p-1 hover:bg-[#CCA761]/10 rounded-lg transition-all"><Plus size={15} /></button>
                         </div>
                       </div>
 
@@ -739,7 +747,7 @@ const [pendingMove, setPendingMove] = useState<{
                                       {...provided.draggableProps}
                                       {...provided.dragHandleProps}
                                       onClick={() => openEditTaskModal(task)}
-                                      className={`group relative overflow-hidden px-3.5 py-3 rounded-xl border bg-[#0c0c0c] hover:bg-gray-100 dark:bg-[#111] transition-all duration-150 ${dragDisabled ? 'cursor-pointer' : 'cursor-grab active:cursor-grabbing'} ${showIdleAlert || isUrgent ? 'border-red-500/40' : hasFatalDeadline && fatalMeta ? fatalMeta.borderClass : 'border-zinc-800'}`}
+                                      className={`kanban-card group relative overflow-hidden px-3.5 py-3.5 rounded-xl border ${dragDisabled ? 'cursor-pointer' : 'cursor-grab active:cursor-grabbing'} ${showIdleAlert || isUrgent ? 'border-red-500/40 bg-red-500/[0.03]' : hasFatalDeadline && fatalMeta ? fatalMeta.borderClass + ' bg-white/[0.02]' : 'border-white/[0.08] bg-white/[0.03]'}`}
                                       style={{ ...provided.draggableProps.style }}
                                     >
                                       {(isUrgent || hasFatalDeadline) && (
@@ -751,9 +759,11 @@ const [pendingMove, setPendingMove] = useState<{
                                          </div>
                                       )}
                                       
-                                       <div className="absolute top-3 bottom-3 left-0 w-[2px] opacity-70 rounded-r-full" style={{ backgroundColor: stage.color, color: stage.color }} />
+                                       <div className="absolute top-2 bottom-2 left-0 w-[3px] rounded-r-full" style={{ backgroundColor: stage.color, boxShadow: `0 0 10px ${stage.color}70` }} />
                                        {task.client_name && <div className="text-[#CCA761] text-[10px] font-black uppercase tracking-widest mb-1 line-clamp-1 flex items-center gap-1"><UserIcon size={10} /> {task.client_name}</div>}
-                                       <h4 className="text-gray-900 dark:text-white text-[14px] font-bold tracking-wide mb-1.5 line-clamp-2 group-hover:text-[#CCA761] transition-colors">{task.title}</h4>
+                                       <div className="card-shimmer absolute inset-0 pointer-events-none" style={{ background: 'linear-gradient(105deg, transparent 30%, rgba(255,255,255,0.045) 50%, transparent 70%)', willChange: 'transform' }} />
+                                      <div className="absolute top-0 left-6 right-6 h-px opacity-0 group-hover:opacity-100 transition-opacity duration-500 pointer-events-none" style={{ background: `linear-gradient(90deg, transparent, 55, transparent)` }} />
+                                      <h4 className="relative text-[#e2e2e2] text-[13px] font-bold tracking-wide mb-2 line-clamp-2 group-hover:text-[#CCA761] transition-colors duration-300 pl-2">{task.title}</h4>
 
                                         {draftBadge && (
                                           <div className="mb-2 flex flex-wrap items-center gap-2">
@@ -828,7 +838,7 @@ const [pendingMove, setPendingMove] = useState<{
                                           {(() => {
                                             const [name, color] = task.sector.includes('|') ? task.sector.split('|') : [task.sector, '#60a5fa'];
                                             return (
-                                              <span className="text-[9px] font-black uppercase tracking-widest px-2 py-1 rounded bg-gray-100 dark:bg-[#111] border" style={{ color: color, borderColor: color }}>
+                                              <span className="text-[9px] font-black uppercase tracking-widest px-2 py-1 rounded bg-[#111] border" style={{ color: color, borderColor: color }}>
                                                 {name}
                                               </span>
                                             );
@@ -836,7 +846,7 @@ const [pendingMove, setPendingMove] = useState<{
                                         </div>
                                       )}
 
-                                       <div className="flex items-center justify-between text-[11px] text-zinc-500 mt-auto pt-2 border-t border-zinc-800/70">
+                                       <div className="flex items-center justify-between text-[11px] text-zinc-600 mt-auto pt-2.5 border-t border-white/[0.06]">
                                         <div className="flex items-center gap-1.5">
                                           <Calendar size={12} />
                                           {new Date(safeTaskDate).toLocaleDateString('pt-BR', { day: '2-digit', month: 'short' })}
@@ -848,12 +858,12 @@ const [pendingMove, setPendingMove] = useState<{
                                         </div>
                                         
                                         {assignee && (
-                                          <div className="flex items-center gap-1.5 bg-gray-100 dark:bg-white/5 pl-2 pr-1 py-0.5 rounded-full border border-gray-200 dark:border-white/5">
+                                          <div className="flex items-center gap-1.5 bg-white/[0.04] pl-2 pr-1 py-0.5 rounded-full border border-white/[0.08] group-hover:border-[#CCA761]/20 transition-colors">
                                             <span className="max-w-[60px] truncate">{assignee.full_name.split(' ')[0]}</span>
                                             {assignee.avatar_url ? (
                                               <img src={assignee.avatar_url} alt="" className="w-4 h-4 rounded-full object-cover" />
                                             ) : (
-                                              <div className="w-4 h-4 rounded-full bg-[#CCA761] flex items-center justify-center text-[10px] text-black font-bold">
+                                              <div className="w-4 h-4 rounded-full bg-[#CCA761] flex items-center justify-center text-[10px] text-black font-black shadow-[0_0_6px_rgba(204,167,97,0.5)]">
                                                 {assignee.full_name.charAt(0)}
                                               </div>
                                             )}
@@ -878,9 +888,9 @@ const [pendingMove, setPendingMove] = useState<{
           </div>
         ) : (
           <div className="flex-1 p-6 overflow-y-auto no-scrollbar">
-            <div className="max-w-6xl mx-auto bg-gray-100 dark:bg-[#111] border border-gray-200 dark:border-white/5 rounded-xl overflow-hidden shadow-lg">
+            <div className="max-w-6xl mx-auto bg-[#111] border border-white/5 rounded-xl overflow-hidden shadow-lg">
               <table className="w-full text-left border-collapse">
-                <thead className="bg-gray-100 dark:bg-white/5 border-b border-gray-200 dark:border-white/5 text-xs uppercase tracking-wider text-gray-400 font-bold">
+                <thead className="bg-white/5 border-b border-white/5 text-xs uppercase tracking-wider text-gray-400 font-bold">
                   <tr>
                     <th className="p-4">Processo</th>
                     <th className="p-4">Etapa</th>
@@ -888,7 +898,7 @@ const [pendingMove, setPendingMove] = useState<{
                     <th className="p-4">Criação</th>
                   </tr>
                 </thead>
-                <tbody className="divide-y divide-gray-200 dark:divide-white/5 text-sm text-gray-700 dark:text-gray-300">
+                <tbody className="divide-y divide-white/5 text-sm text-gray-300">
                   {filteredTasks.length === 0 ? (
                     <tr><td colSpan={4} className="p-8 text-center text-gray-500">Nenhuma tarefa encontrada.</td></tr>
                   ) : filteredTasks.map(task => {
@@ -899,10 +909,10 @@ const [pendingMove, setPendingMove] = useState<{
                     const draftBadge = getDraftFactoryBadge(draftMemory);
                     const draftQuickAction = getDraftFactoryQuickAction(task.id, draftMemory);
                     return (
-                      <tr key={task.id} onClick={() => openEditTaskModal(task)} className="hover:bg-gray-100 dark:bg-white/5 cursor-pointer transition-colors group">
+                      <tr key={task.id} onClick={() => openEditTaskModal(task)} className="hover:bg-white/5 cursor-pointer transition-colors group">
                         <td className="p-4">
                           {task.client_name && <div className="text-[#CCA761] text-[10px] font-black uppercase tracking-widest mb-0.5">{task.client_name}</div>}
-                          <div className="font-semibold text-gray-900 dark:text-white mb-1 group-hover:text-[#CCA761] transition-colors flex items-center gap-2">
+                          <div className="font-semibold text-white mb-1 group-hover:text-[#CCA761] transition-colors flex items-center gap-2">
                              {task.title}
                              {task.drive_link && (
                                 <a href={task.drive_link} target="_blank" rel="noopener noreferrer" className="text-[#4285F4] hover:brightness-125 transition-all" title="Google Drive" onClick={e => e.stopPropagation()}>
@@ -958,7 +968,7 @@ const [pendingMove, setPendingMove] = useState<{
                                const [name, color] = task.sector.includes('|') ? task.sector.split('|') : [task.sector, '#60a5fa'];
                                return (
                                  <span 
-                                   className="text-[9px] font-black uppercase tracking-widest px-1.5 py-0.5 rounded bg-gray-100 dark:bg-[#111] border shadow-sm"
+                                   className="text-[9px] font-black uppercase tracking-widest px-1.5 py-0.5 rounded bg-[#111] border shadow-sm"
                                    style={{ color: color, borderColor: color, boxShadow: `0 0 4px ${color}30` }}
                                  >
                                    {name}
@@ -970,7 +980,7 @@ const [pendingMove, setPendingMove] = useState<{
                               return (
                                 <span 
                                   key={tag} 
-                                  className="text-[9px] font-black uppercase tracking-widest px-1.5 py-0.5 rounded bg-gray-100 dark:bg-[#111] border shadow-sm"
+                                  className="text-[9px] font-black uppercase tracking-widest px-1.5 py-0.5 rounded bg-[#111] border shadow-sm"
                                   style={{ color: color, borderColor: color, boxShadow: `0 0 4px ${color}30` }}
                                 >
                                   {name}
@@ -980,7 +990,7 @@ const [pendingMove, setPendingMove] = useState<{
                           </div>
                         </td>
                         <td className="p-4">
-                          <span className="inline-flex items-center gap-2 px-2.5 py-1 rounded-md text-xs font-bold bg-gray-100 dark:bg-[#1a1a1a] border border-[#2a2a2a]">
+                          <span className="inline-flex items-center gap-2 px-2.5 py-1 rounded-md text-xs font-bold bg-[#1a1a1a] border border-[#2a2a2a]">
                             <span className="w-2 h-2 rounded-full" style={{ backgroundColor: stage?.color || "#fff" }} />
                             {stage?.name}
                           </span>

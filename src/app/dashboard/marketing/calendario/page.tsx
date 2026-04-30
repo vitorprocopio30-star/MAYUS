@@ -1,7 +1,8 @@
 "use client";
 
 import Link from "next/link";
-import { ArrowLeft, CalendarDays, Wand2 } from "lucide-react";
+import { Cormorant_Garamond, Montserrat } from "next/font/google";
+import { ArrowLeft, CalendarDays, Wand2, Sparkles, CheckCircle2, AlertCircle, Clock, Zap, Target } from "lucide-react";
 import { useEffect, useState } from "react";
 import { buildAgendaPayloadFromManualTask } from "@/lib/agenda/userTasks";
 import {
@@ -24,6 +25,9 @@ import {
   shouldUseRemoteMarketingState,
 } from "@/lib/marketing/local-persistence";
 import { createClient } from "@/lib/supabase/client";
+
+const cormorant = Cormorant_Garamond({ subsets: ["latin"], weight: ["400", "500", "600", "700"], style: ["normal", "italic"] });
+const montserrat = Montserrat({ subsets: ["latin"], weight: ["300", "400", "500", "600", "700", "800", "900"] });
 
 const channels: MarketingChannel[] = ["blog", "linkedin", "instagram", "email", "whatsapp"];
 const frequencies: MarketingFrequency[] = ["weekly", "biweekly", "monthly"];
@@ -75,7 +79,7 @@ export default function CalendarioMarketingPage() {
   const [creatingTaskItemId, setCreatingTaskItemId] = useState<string | null>(null);
   const [agendaMessage, setAgendaMessage] = useState<string | null>(null);
   const [profileDefaultsApplied, setProfileDefaultsApplied] = useState(false);
-  const [storageLabel, setStorageLabel] = useState("Carregando");
+  const [storageLabel, setStorageLabel] = useState("Sincronizando");
 
   useEffect(() => {
     let cancelled = false;
@@ -108,7 +112,7 @@ export default function CalendarioMarketingPage() {
         audiences: defaults.audiences.join(", "),
       }));
       setProfileDefaultsApplied(hasSavedProfile);
-      setStorageLabel(useRemote ? "Servidor" : "Local com fallback");
+      setStorageLabel(useRemote ? "Servidor" : "Local");
       setIsLoaded(true);
     }
 
@@ -140,7 +144,7 @@ export default function CalendarioMarketingPage() {
   useEffect(() => {
     if (!isLoaded) return;
     saveMarketingCalendar(calendar);
-    void saveRemoteMarketingState({ calendar }).then((saved) => setStorageLabel(saved ? "Servidor" : "Local com fallback"));
+    void saveRemoteMarketingState({ calendar }).then((saved) => setStorageLabel(saved ? "Servidor" : "Local"));
   }, [calendar, isLoaded]);
 
   function updateForm<K extends keyof CalendarForm>(key: K, value: CalendarForm[K]) {
@@ -162,7 +166,7 @@ export default function CalendarioMarketingPage() {
       }));
       setError(null);
     } catch (err) {
-      setError(err instanceof Error ? err.message : "Nao foi possivel gerar o calendario.");
+      setError(err instanceof Error ? err.message : "Não foi possível gerar o calendário.");
     }
   }
 
@@ -203,303 +207,217 @@ export default function CalendarioMarketingPage() {
       setCalendar((current) => updateEditorialCalendarItem(current, item.id, {
         notes: item.notes.includes("marketing_editorial_calendar") ? item.notes : `${item.notes}\n${taskNote}`.trim(),
       }));
-      setAgendaMessage("Tarefa interna criada na agenda. Nenhuma publicacao externa foi feita.");
+      setAgendaMessage("Tarefa interna criada na agenda. Nenhuma publicação externa foi feita.");
     } catch (err) {
-      setAgendaMessage(err instanceof Error ? err.message : "Nao foi possivel criar a tarefa interna.");
+      setAgendaMessage(err instanceof Error ? err.message : "Não foi possível criar a tarefa interna.");
     } finally {
       setCreatingTaskItemId(null);
     }
   }
 
   return (
-    <main className="min-h-screen bg-background px-6 py-8 text-foreground lg:px-10">
-      <Link href="/dashboard/marketing" className="inline-flex items-center gap-2 text-sm text-muted-foreground transition-colors hover:text-[#CCA761]">
-        <ArrowLeft size={16} />
-        Voltar para Marketing
-      </Link>
+    <main className={`min-h-screen bg-[#050505] px-6 py-8 text-foreground lg:px-10 ${montserrat.className}`}>
 
-      <section className="mt-6 rounded-3xl border border-border bg-card p-8">
-        <div className="flex h-12 w-12 items-center justify-center rounded-xl border border-[#CCA761]/25 bg-[#CCA761]/10 text-[#CCA761]">
-          <CalendarDays size={22} />
+      {/* HEADER */}
+      <header className="mb-12">
+        <Link href="/dashboard/marketing" className="inline-flex items-center gap-2 text-xs font-black uppercase tracking-[0.2em] text-gray-500 hover:text-[#CCA761] transition-colors mb-6 group">
+          <ArrowLeft size={14} className="group-hover:-translate-x-1 transition-transform" />
+          Voltar
+        </Link>
+        <div className="flex items-center gap-2 mb-1">
+          <CalendarDays size={16} className="text-[#CCA761]" />
+          <span className="text-[10px] font-black uppercase tracking-[0.3em] text-[#CCA761]/60">Planejamento Estratégico</span>
         </div>
-        <p className="mt-6 text-xs font-bold uppercase tracking-[0.24em] text-[#CCA761]">Planejamento</p>
-        <h1 className="mt-3 text-3xl font-semibold tracking-tight md:text-4xl">Calendario Editorial</h1>
-        <p className="mt-4 max-w-2xl text-sm leading-7 text-muted-foreground">
-          Gere uma grade editorial local com frequencia, estilo, canais, area juridica, objetivo, tom, publico, data inicial e periodos. Quando houver perfil de marketing salvo, ele vira o briefing inicial.
-        </p>
-      </section>
+        <h1 className={`text-4xl lg:text-5xl text-[#CCA761] ${cormorant.className} italic tracking-tight drop-shadow-[0_0_20px_rgba(204,167,97,0.3)]`}>
+          Calendário Editorial
+        </h1>
+        <div className="mt-2 h-[1px] w-64 bg-gradient-to-r from-[#CCA761]/50 to-transparent" />
+      </header>
 
-      <section className="mt-8 grid gap-6 xl:grid-cols-[minmax(0,420px)_1fr]">
-        <div className="rounded-3xl border border-border bg-card p-6">
-          <div className="flex items-center justify-between gap-4">
-            <div>
-              <p className="text-xs font-bold uppercase tracking-[0.22em] text-[#CCA761]">Briefing</p>
-              <h2 className="mt-2 text-xl font-semibold">Parametros do calendario</h2>
-            </div>
-            <span className="rounded-full border border-border px-3 py-1 text-xs text-muted-foreground">{storageLabel}</span>
-          </div>
+      <section className="grid gap-12 xl:grid-cols-[420px_1fr]">
 
-          {profileDefaultsApplied ? (
-            <p className="mt-4 rounded-2xl border border-[#CCA761]/20 bg-[#CCA761]/10 p-3 text-xs leading-5 text-muted-foreground">
-              Defaults carregados de Perfil e Canais. Ajuste o briefing se quiser variar campanha, publico ou canal.
-            </p>
-          ) : null}
+        {/* COLUNA ESQUERDA - CONFIGURAÇÃO */}
+        <div className="space-y-8">
+          <div className="rounded-3xl border border-white/5 bg-[#0a0a0a] p-8 shadow-2xl relative overflow-hidden">
+            <div className="absolute top-0 right-0 w-32 h-32 bg-[#CCA761]/5 rounded-full blur-2xl" />
 
-          <div className="mt-6 grid gap-4">
-            <div className="grid gap-4 sm:grid-cols-2">
-              <label className="grid gap-2 text-sm font-medium">
-                Frequencia
-                <select
-                  value={form.frequency}
-                  onChange={(event) => updateForm("frequency", event.target.value as MarketingFrequency)}
-                  className="rounded-xl border border-border bg-background px-3 py-2 text-sm outline-none transition-colors focus:border-[#CCA761]"
+            <div className="relative z-10 space-y-6">
+              <div className="flex items-center justify-between">
+                <h2 className="text-lg font-bold text-white">Configurar Grade</h2>
+                <span className="text-[10px] font-black uppercase tracking-widest text-[#CCA761]/60">{storageLabel}</span>
+              </div>
+
+              {profileDefaultsApplied && (
+                <div className="flex items-start gap-3 p-4 rounded-2xl bg-[#CCA761]/5 border border-[#CCA761]/20">
+                  <Sparkles size={16} className="text-[#CCA761] shrink-0 mt-0.5" />
+                  <p className="text-[10px] text-[#CCA761]/80 leading-relaxed font-medium">
+                    Briefing carregado automaticamente com base no seu Perfil de Marca.
+                  </p>
+                </div>
+              )}
+
+              <div className="space-y-4">
+                <div className="grid grid-cols-2 gap-4">
+                  <div className="space-y-2">
+                    <label className="text-[10px] font-black uppercase tracking-widest text-gray-500">Frequência</label>
+                    <select
+                      value={form.frequency}
+                      onChange={(event) => updateForm("frequency", event.target.value as MarketingFrequency)}
+                      className="w-full rounded-xl border border-white/5 bg-[#050505] px-3 py-3 text-sm text-white outline-none focus:border-[#CCA761]/50"
+                    >
+                      {frequencies.map((f) => <option key={f} value={f}>{f}</option>)}
+                    </select>
+                  </div>
+                  <div className="space-y-2">
+                    <label className="text-[10px] font-black uppercase tracking-widest text-gray-500">Períodos</label>
+                    <input
+                      type="number"
+                      value={form.periods}
+                      onChange={(event) => updateForm("periods", event.target.value)}
+                      className="w-full rounded-xl border border-white/5 bg-white/[0.02] px-4 py-3 text-sm text-white outline-none focus:border-[#CCA761]/50"
+                    />
+                  </div>
+                </div>
+
+                <div className="space-y-2">
+                  <label className="text-[10px] font-black uppercase tracking-widest text-gray-500">Data Inicial</label>
+                  <input
+                    type="date"
+                    value={form.startDate}
+                    onChange={(event) => updateForm("startDate", event.target.value)}
+                    className="w-full rounded-xl border border-white/5 bg-white/[0.02] px-4 py-3 text-sm text-white outline-none focus:border-[#CCA761]/50 transition-all"
+                  />
+                </div>
+
+                <div className="space-y-2">
+                  <label className="text-[10px] font-black uppercase tracking-widest text-gray-500">Áreas Jurídicas</label>
+                  <input
+                    value={form.legalAreas}
+                    onChange={(event) => updateForm("legalAreas", event.target.value)}
+                    placeholder="Trabalhista, Cível..."
+                    className="w-full rounded-xl border border-white/5 bg-white/[0.02] px-4 py-3 text-sm text-white outline-none focus:border-[#CCA761]/50 transition-all"
+                  />
+                </div>
+
+                <div className="space-y-4 pt-2">
+                  <p className="text-[10px] font-black uppercase tracking-widest text-gray-500">Canais Selecionados</p>
+                  <div className="flex flex-wrap gap-2">
+                    {channels.map((c) => (
+                      <button
+                        key={c}
+                        onClick={() => updateForm("channels", toggleValue(form.channels, c))}
+                        className={`px-3 py-1.5 rounded-full border text-[9px] font-black uppercase tracking-widest transition-all ${form.channels.includes(c) ? 'border-[#CCA761] bg-[#CCA761]/20 text-[#CCA761]' : 'border-white/5 bg-white/[0.02] text-gray-600 hover:border-white/20'}`}
+                      >
+                        {c}
+                      </button>
+                    ))}
+                  </div>
+                </div>
+
+                {error && <p className="text-[10px] font-bold text-red-400 bg-red-500/10 p-3 rounded-xl border border-red-500/20">{error}</p>}
+
+                <button
+                  onClick={generateCalendar}
+                  className="w-full flex items-center justify-center gap-3 rounded-xl bg-[#CCA761] py-4 text-xs font-black uppercase tracking-[0.2em] text-black hover:bg-[#d1b06d] transition-all shadow-[0_0_20px_rgba(204,167,97,0.3)] active:scale-95 mt-4"
                 >
-                  {frequencies.map((frequency) => <option key={frequency} value={frequency}>{frequency}</option>)}
-                </select>
-              </label>
-              <label className="grid gap-2 text-sm font-medium">
-                Periodos
-                <input
-                  type="number"
-                  min="1"
-                  max="24"
-                  value={form.periods}
-                  onChange={(event) => updateForm("periods", event.target.value)}
-                  className="rounded-xl border border-border bg-background px-3 py-2 text-sm outline-none transition-colors focus:border-[#CCA761]"
-                />
-              </label>
+                  <Wand2 size={18} />
+                  Gerar Calendário
+                </button>
+              </div>
             </div>
-
-            <label className="grid gap-2 text-sm font-medium">
-              Data inicial
-              <input
-                type="date"
-                value={form.startDate}
-                onChange={(event) => updateForm("startDate", event.target.value)}
-                className="rounded-xl border border-border bg-background px-3 py-2 text-sm outline-none transition-colors focus:border-[#CCA761]"
-              />
-            </label>
-
-            <label className="grid gap-2 text-sm font-medium">
-              Estilo
-              <input
-                value={form.style}
-                onChange={(event) => updateForm("style", event.target.value)}
-                placeholder="Ex: premium consultivo"
-                className="rounded-xl border border-border bg-background px-3 py-2 text-sm outline-none transition-colors focus:border-[#CCA761]"
-              />
-            </label>
-
-            <label className="grid gap-2 text-sm font-medium">
-              Areas juridicas
-              <input
-                value={form.legalAreas}
-                onChange={(event) => updateForm("legalAreas", event.target.value)}
-                placeholder="Separadas por virgula"
-                className="rounded-xl border border-border bg-background px-3 py-2 text-sm outline-none transition-colors focus:border-[#CCA761]"
-              />
-            </label>
-
-            <label className="grid gap-2 text-sm font-medium">
-              Publicos
-              <input
-                value={form.audiences}
-                onChange={(event) => updateForm("audiences", event.target.value)}
-                placeholder="Separados por virgula"
-                className="rounded-xl border border-border bg-background px-3 py-2 text-sm outline-none transition-colors focus:border-[#CCA761]"
-              />
-            </label>
-
-            <fieldset className="grid gap-2">
-              <legend className="text-sm font-medium">Canais</legend>
-              <div className="flex flex-wrap gap-2">
-                {channels.map((channel) => (
-                  <button
-                    key={channel}
-                    type="button"
-                    onClick={() => updateForm("channels", toggleValue(form.channels, channel))}
-                    className={`rounded-full border px-3 py-1 text-xs font-bold uppercase tracking-[0.14em] transition-colors ${form.channels.includes(channel) ? "border-[#CCA761] bg-[#CCA761]/10 text-[#CCA761]" : "border-border text-muted-foreground"}`}
-                  >
-                    {channel}
-                  </button>
-                ))}
-              </div>
-            </fieldset>
-
-            <fieldset className="grid gap-2">
-              <legend className="text-sm font-medium">Objetivos</legend>
-              <div className="flex flex-wrap gap-2">
-                {objectives.map((objective) => (
-                  <button
-                    key={objective}
-                    type="button"
-                    onClick={() => updateForm("objectives", toggleValue(form.objectives, objective))}
-                    className={`rounded-full border px-3 py-1 text-xs font-bold uppercase tracking-[0.14em] transition-colors ${form.objectives.includes(objective) ? "border-[#CCA761] bg-[#CCA761]/10 text-[#CCA761]" : "border-border text-muted-foreground"}`}
-                  >
-                    {objective}
-                  </button>
-                ))}
-              </div>
-            </fieldset>
-
-            <fieldset className="grid gap-2">
-              <legend className="text-sm font-medium">Tom</legend>
-              <div className="flex flex-wrap gap-2">
-                {tones.map((tone) => (
-                  <button
-                    key={tone}
-                    type="button"
-                    onClick={() => updateForm("tones", toggleValue(form.tones, tone))}
-                    className={`rounded-full border px-3 py-1 text-xs font-bold uppercase tracking-[0.14em] transition-colors ${form.tones.includes(tone) ? "border-[#CCA761] bg-[#CCA761]/10 text-[#CCA761]" : "border-border text-muted-foreground"}`}
-                  >
-                    {tone}
-                  </button>
-                ))}
-              </div>
-            </fieldset>
-
-            {error ? <p className="rounded-xl border border-destructive/30 bg-destructive/10 p-3 text-sm text-destructive">{error}</p> : null}
-
-            <button
-              type="button"
-              onClick={generateCalendar}
-              className="inline-flex items-center justify-center gap-2 rounded-xl bg-[#CCA761] px-4 py-3 text-sm font-bold text-black transition-opacity hover:opacity-90"
-            >
-              <Wand2 size={16} />
-              Gerar calendario
-            </button>
           </div>
         </div>
 
-        <section className="rounded-3xl border border-border bg-card p-6">
-          <div className="flex items-center justify-between gap-4">
-            <div>
-              <p className="text-xs font-bold uppercase tracking-[0.22em] text-[#CCA761]">Draft calendar</p>
-              <h2 className="mt-2 text-xl font-semibold">Itens editaveis</h2>
+        {/* COLUNA DIREITA - ITENS DO CALENDÁRIO */}
+        <div className="space-y-8">
+
+          <div className="flex items-center justify-between mb-2">
+            <div className="flex items-center gap-3">
+              <Clock size={16} className="text-[#CCA761]" />
+              <h2 className="text-xs font-black uppercase tracking-[0.3em] text-white">Grade de Publicação</h2>
             </div>
-            <span className="text-sm text-muted-foreground">{calendar.length} pautas salvas - {storageLabel.toLowerCase()}</span>
+            <span className="text-[10px] font-bold text-gray-600 uppercase tracking-widest">{calendar.length} Pautas Agendadas</span>
           </div>
 
-          <div className="mt-6 grid gap-4">
-            {agendaMessage ? <p className="rounded-2xl border border-border bg-background/60 p-4 text-sm text-muted-foreground">{agendaMessage}</p> : null}
+          {agendaMessage && (
+            <div className="p-4 rounded-2xl bg-emerald-500/10 border border-emerald-500/20 flex items-center gap-3 text-emerald-400">
+              <CheckCircle2 size={16} />
+              <p className="text-xs font-bold uppercase tracking-widest">{agendaMessage}</p>
+            </div>
+          )}
 
+          <div className="grid gap-6">
             {calendar.length === 0 ? (
-              <p className="rounded-2xl border border-dashed border-border p-5 text-sm text-muted-foreground">
-                Gere o calendario para editar titulos, datas, status, canal, objetivo, tom, publico, area e notas.
-              </p>
+              <div className="py-24 text-center rounded-3xl border border-dashed border-white/5 bg-white/[0.01]">
+                <p className="text-sm text-gray-700 font-medium italic">Configure o briefing e gere o calendário para começar.</p>
+              </div>
             ) : calendar.map((item) => (
-              <article key={item.id} className="rounded-2xl border border-border bg-background/50 p-4">
-                <div className="grid gap-4 lg:grid-cols-[1fr_160px_160px]">
-                  <label className="grid gap-2 text-sm font-medium">
-                    Titulo
+              <div key={item.id} className="rounded-3xl border border-white/5 bg-[#0a0a0a] p-6 hover:border-[#CCA761]/20 transition-all group overflow-hidden relative">
+                <div className={`absolute top-0 left-0 w-1 h-full ${item.status === 'approved' ? 'bg-emerald-500 shadow-[0_0_10px_rgba(16,185,129,0.5)]' : item.status === 'rejected' ? 'bg-red-500' : 'bg-gray-800'}`} />
+
+                <div className="grid gap-6 lg:grid-cols-[1fr_200px]">
+                  <div className="space-y-4">
+                    <div className="flex items-center gap-3">
+                      <span className="px-2 py-0.5 rounded-md border border-[#CCA761]/30 bg-[#CCA761]/5 text-[9px] font-black uppercase tracking-widest text-[#CCA761]">{item.channel}</span>
+                      <span className="text-gray-700">•</span>
+                      <span className="text-[10px] font-bold text-gray-400">{item.date}</span>
+                    </div>
+
                     <input
                       value={item.title}
-                      onChange={(event) => setCalendar((current) => updateEditorialCalendarItem(current, item.id, { title: event.target.value }))}
-                      className="rounded-xl border border-border bg-background px-3 py-2 text-sm outline-none transition-colors focus:border-[#CCA761]"
+                      onChange={(e) => setCalendar((curr) => updateEditorialCalendarItem(curr, item.id, { title: e.target.value }))}
+                      className="w-full bg-transparent text-lg font-bold text-white outline-none focus:text-[#CCA761] transition-colors"
                     />
-                  </label>
-                  <label className="grid gap-2 text-sm font-medium">
-                    Data
-                    <input
-                      type="date"
-                      value={item.date}
-                      onChange={(event) => setCalendar((current) => updateEditorialCalendarItem(current, item.id, { date: event.target.value }))}
-                      className="rounded-xl border border-border bg-background px-3 py-2 text-sm outline-none transition-colors focus:border-[#CCA761]"
-                    />
-                  </label>
-                  <label className="grid gap-2 text-sm font-medium">
-                    Status
-                    <select
-                      value={item.status}
-                      onChange={(event) => setCalendar((current) => updateEditorialCalendarItem(current, item.id, { status: event.target.value as EditorialCalendarItem["status"] }))}
-                      className="rounded-xl border border-border bg-background px-3 py-2 text-sm outline-none transition-colors focus:border-[#CCA761]"
-                    >
-                      <option value="draft">draft</option>
-                      <option value="approved">approved</option>
-                      <option value="rejected">rejected</option>
-                      <option value="published">published</option>
-                    </select>
-                  </label>
+
+                    <div className="flex flex-wrap gap-4 text-[10px] font-black uppercase tracking-widest text-gray-600">
+                      <span className="flex items-center gap-1.5"><Target size={12} className="text-gray-800" /> {item.objective}</span>
+                      <span className="flex items-center gap-1.5"><Zap size={12} className="text-gray-800" /> {item.tone}</span>
+                      <span className="flex items-center gap-1.5"><AlertCircle size={12} className="text-gray-800" /> {item.legalArea}</span>
+                    </div>
+                  </div>
+
+                  <div className="flex flex-col gap-3 justify-center lg:border-l lg:border-white/5 lg:pl-6">
+                    <div className="flex gap-2">
+                      <button
+                        onClick={() => setCalendar((curr) => updateEditorialCalendarItem(curr, item.id, { status: "approved" }))}
+                        className={`flex-1 py-2 rounded-xl border text-[9px] font-black uppercase tracking-widest transition-all ${item.status === 'approved' ? 'bg-emerald-500 text-black border-emerald-500 shadow-[0_0_15px_rgba(16,185,129,0.3)]' : 'bg-white/[0.02] border-white/5 text-gray-600 hover:border-emerald-500/30'}`}
+                      >
+                        Aprovar
+                      </button>
+                      <button
+                        onClick={() => setCalendar((curr) => updateEditorialCalendarItem(curr, item.id, { status: "rejected" }))}
+                        className={`flex-1 py-2 rounded-xl border text-[9px] font-black uppercase tracking-widest transition-all ${item.status === 'rejected' ? 'bg-red-500 text-black border-red-500 shadow-[0_0_15px_rgba(239,68,68,0.3)]' : 'bg-white/[0.02] border-white/5 text-gray-600 hover:border-red-500/30'}`}
+                      >
+                        Recusar
+                      </button>
+                    </div>
+
+                    {item.status === 'approved' && (
+                      <button
+                        onClick={() => createAgendaTaskFromItem(item)}
+                        disabled={creatingTaskItemId === item.id || item.notes.includes("marketing_editorial_calendar")}
+                        className="w-full py-2.5 rounded-xl bg-[#CCA761]/10 text-[#CCA761] border border-[#CCA761]/30 text-[9px] font-black uppercase tracking-widest hover:bg-[#CCA761] hover:text-black transition-all disabled:opacity-50"
+                      >
+                        {item.notes.includes("marketing_editorial_calendar") ? "Na Agenda" : creatingTaskItemId === item.id ? "Criando..." : "Mandar para Agenda"}
+                      </button>
+                    )}
+                  </div>
                 </div>
 
-                <div className="mt-4 flex flex-wrap gap-2">
-                  <button
-                    type="button"
-                    onClick={() => setCalendar((current) => updateEditorialCalendarItem(current, item.id, { status: "approved" }))}
-                    className="rounded-full border border-emerald-500/30 bg-emerald-500/10 px-3 py-1 text-xs font-bold uppercase tracking-[0.14em] text-emerald-500 transition-opacity hover:opacity-80"
-                  >
-                    Aprovar
-                  </button>
-                  <button
-                    type="button"
-                    onClick={() => setCalendar((current) => updateEditorialCalendarItem(current, item.id, { status: "rejected" }))}
-                    className="rounded-full border border-destructive/30 bg-destructive/10 px-3 py-1 text-xs font-bold uppercase tracking-[0.14em] text-destructive transition-opacity hover:opacity-80"
-                  >
-                    Recusar
-                  </button>
-                  <button
-                    type="button"
-                    onClick={() => setCalendar((current) => updateEditorialCalendarItem(current, item.id, { status: "draft" }))}
-                    className="rounded-full border border-border px-3 py-1 text-xs font-bold uppercase tracking-[0.14em] text-muted-foreground transition-colors hover:text-foreground"
-                  >
-                    Voltar para rascunho
-                  </button>
-                  {item.status === "approved" ? (
-                    <button
-                      type="button"
-                      disabled={creatingTaskItemId === item.id}
-                      onClick={() => createAgendaTaskFromItem(item)}
-                      className="rounded-full border border-[#CCA761]/40 bg-[#CCA761]/10 px-3 py-1 text-xs font-bold uppercase tracking-[0.14em] text-[#CCA761] transition-opacity hover:opacity-80 disabled:cursor-not-allowed disabled:opacity-50"
-                    >
-                      {creatingTaskItemId === item.id ? "Criando tarefa..." : "Criar tarefa na agenda"}
-                    </button>
-                  ) : null}
-                </div>
-
-                <div className="mt-4 grid gap-4 md:grid-cols-2 xl:grid-cols-5">
-                  <label className="grid gap-2 text-xs font-bold uppercase tracking-[0.14em] text-muted-foreground">
-                    Canal
-                    <select value={item.channel} onChange={(event) => setCalendar((current) => updateEditorialCalendarItem(current, item.id, { channel: event.target.value as MarketingChannel }))} className="rounded-xl border border-border bg-background px-3 py-2 text-sm font-normal tracking-normal text-foreground outline-none transition-colors focus:border-[#CCA761]">
-                      {channels.map((channel) => <option key={channel} value={channel}>{channel}</option>)}
-                    </select>
-                  </label>
-                  <label className="grid gap-2 text-xs font-bold uppercase tracking-[0.14em] text-muted-foreground">
-                    Area
-                    <input value={item.legalArea} onChange={(event) => setCalendar((current) => updateEditorialCalendarItem(current, item.id, { legalArea: event.target.value }))} className="rounded-xl border border-border bg-background px-3 py-2 text-sm font-normal tracking-normal text-foreground outline-none transition-colors focus:border-[#CCA761]" />
-                  </label>
-                  <label className="grid gap-2 text-xs font-bold uppercase tracking-[0.14em] text-muted-foreground">
-                    Objetivo
-                    <select value={item.objective} onChange={(event) => setCalendar((current) => updateEditorialCalendarItem(current, item.id, { objective: event.target.value as MarketingObjective }))} className="rounded-xl border border-border bg-background px-3 py-2 text-sm font-normal tracking-normal text-foreground outline-none transition-colors focus:border-[#CCA761]">
-                      {objectives.map((objective) => <option key={objective} value={objective}>{objective}</option>)}
-                    </select>
-                  </label>
-                  <label className="grid gap-2 text-xs font-bold uppercase tracking-[0.14em] text-muted-foreground">
-                    Tom
-                    <select value={item.tone} onChange={(event) => setCalendar((current) => updateEditorialCalendarItem(current, item.id, { tone: event.target.value as MarketingTone }))} className="rounded-xl border border-border bg-background px-3 py-2 text-sm font-normal tracking-normal text-foreground outline-none transition-colors focus:border-[#CCA761]">
-                      {tones.map((tone) => <option key={tone} value={tone}>{tone}</option>)}
-                    </select>
-                  </label>
-                  <label className="grid gap-2 text-xs font-bold uppercase tracking-[0.14em] text-muted-foreground">
-                    Publico
-                    <input value={item.audience} onChange={(event) => setCalendar((current) => updateEditorialCalendarItem(current, item.id, { audience: event.target.value }))} className="rounded-xl border border-border bg-background px-3 py-2 text-sm font-normal tracking-normal text-foreground outline-none transition-colors focus:border-[#CCA761]" />
-                  </label>
-                </div>
-
-                <label className="mt-4 grid gap-2 text-sm font-medium">
-                  Notas
+                <div className="mt-6 pt-6 border-t border-white/5">
                   <textarea
                     value={item.notes}
-                    onChange={(event) => setCalendar((current) => updateEditorialCalendarItem(current, item.id, { notes: event.target.value }))}
+                    onChange={(e) => setCalendar((curr) => updateEditorialCalendarItem(curr, item.id, { notes: e.target.value }))}
+                    placeholder="Notas e diretrizes para esta pauta..."
                     rows={2}
-                    className="rounded-xl border border-border bg-background px-3 py-2 text-sm outline-none transition-colors focus:border-[#CCA761]"
+                    className="w-full bg-white/[0.01] border border-white/5 rounded-xl px-4 py-3 text-xs text-gray-500 outline-none focus:border-[#CCA761]/20 transition-all resize-none"
                   />
-                </label>
-
-                <p className="mt-4 text-xs leading-5 text-muted-foreground">Angulo: {item.angle}</p>
-              </article>
+                  <p className="mt-3 text-[10px] text-gray-700 italic font-medium">Ângulo: {item.angle}</p>
+                </div>
+              </div>
             ))}
           </div>
-        </section>
+        </div>
       </section>
     </main>
   );

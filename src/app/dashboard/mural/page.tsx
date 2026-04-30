@@ -1,4 +1,4 @@
-﻿"use client";
+"use client";
 
 import { useState, useEffect, useCallback } from "react";
 import { Cormorant_Garamond, Montserrat } from "next/font/google";
@@ -231,12 +231,13 @@ export default function MuralFeedbacksPage() {
       {/* Header Premium */}
       <div className="flex flex-col xl:flex-row justify-between items-start xl:items-end pb-8 border-b border-[#CCA761]/20 relative z-40 gap-8">
         <div>
-          <h1 className={`text-5xl lg:text-7xl text-[#CCA761] mb-1 font-bold tracking-tight ${cormorant.className} italic drop-shadow-[0_0_20px_rgba(204,167,97,0.3)] flex items-center gap-4`}>
-             <MessageSquare size={48} className="text-[#CCA761]" /> O Mural
+          <h1 className={`text-4xl lg:text-5xl text-[#CCA761] font-cormorant italic tracking-tight drop-shadow-[0_0_20px_rgba(204,167,97,0.3)]`}>
+             O Mural
           </h1>
-          <div className="mt-6 relative bg-gradient-to-r from-[#CCA761]/15 via-transparent to-transparent pl-6 py-4 border-l-[4px] border-[#CCA761] max-w-3xl overflow-hidden group rounded-r-2xl">
-             <div className="absolute inset-0 bg-white/20 translate-x-[-100%] group-hover:opacity-100 transition-opacity duration-1000 pointer-events-none" />
-             <p className={`text-[#eadd87] text-xl lg:text-3xl font-semibold tracking-wide ${cormorant.className} italic drop-shadow-md leading-relaxed`}>
+          <div className="mt-2 h-[1px] w-full bg-gradient-to-r from-[#CCA761]/40 to-transparent" />
+          <div className="mt-6 relative bg-gradient-to-r from-[#CCA761]/10 via-transparent to-transparent pl-6 py-4 border-l-[3px] border-[#CCA761]/60 max-w-3xl overflow-hidden group rounded-r-2xl backdrop-blur-sm">
+             <div className="absolute inset-0 bg-white/5 translate-x-[-100%] group-hover:opacity-100 transition-opacity duration-1000 pointer-events-none" />
+             <p className={`text-[#eadd87]/90 text-lg lg:text-2xl font-medium tracking-wide ${cormorant.className} italic drop-shadow-md leading-relaxed`}>
                 &ldquo;Tudo que Ã© escrito aqui se autodestrÃ³i em 24 horas. Seja transparente. Seja Ã©tico.&rdquo;
              </p>
           </div>
@@ -276,7 +277,7 @@ export default function MuralFeedbacksPage() {
                 <button
                   type="button"
                   onClick={() => setShowEmojiPicker(!showEmojiPicker)}
-                  className="text-gray-400 hover:text-[#CCA761] transition-colors duration-200 cursor-pointer flex items-center justify-center p-2 rounded-full hover:bg-gray-100 dark:bg-white/5"
+                  className="text-gray-400 hover:text-[#CCA761] transition-colors duration-200 cursor-pointer flex items-center justify-center p-2 rounded-full hover:bg-white/5"
                   title="Inserir Emoji"
                 >
                   <Smile size={24} />
@@ -311,8 +312,8 @@ export default function MuralFeedbacksPage() {
                 onClick={() => setIsAnonymous(!isAnonymous)}
                 className={`flex items-center gap-2 px-4 py-2 rounded-lg text-xs font-bold tracking-widest uppercase transition-all border ${
                   isAnonymous
-                    ? 'bg-gray-100 dark:bg-white/10 text-gray-900 dark:text-white border-gray-300 dark:border-white/20'
-                    : 'bg-transparent text-gray-500 border-transparent hover:bg-gray-100 dark:bg-white/5'
+                    ? 'bg-white/10 text-white border-white/20'
+                    : 'bg-transparent text-gray-500 border-transparent hover:bg-white/5'
                 }`}
                 disabled={isLoading}
               >
@@ -364,7 +365,7 @@ export default function MuralFeedbacksPage() {
                return (
                  <div
                    key={fb.id}
-                   className={`relative p-6 rounded-2xl flex flex-col bg-gradient-to-br from-white/90 dark:from-[#111111]/90 to-gray-50/90 dark:to-[#050505]/90 border border-gray-200 dark:border-white/5 shadow-[0_5px_15px_rgba(0,0,0,0.5)] hover:shadow-[0_10px_30px_rgba(204,167,97,0.15)] transition-all duration-500 group hover:-translate-y-2`}
+                   className={`relative p-6 rounded-2xl flex flex-col bg-gradient-to-br from-[#111] to-[#050505] border border-white/5 shadow-[0_5px_15px_rgba(0,0,0,0.5)] hover:shadow-[0_10px_30px_rgba(204,167,97,0.15)] transition-all duration-500 group hover:-translate-y-2`}
                  >
                    {/* Alfinete Colorido */}
                    <div className="absolute -top-3 left-1/2 -translate-x-1/2 z-20 drop-shadow-[0_4px_4px_rgba(0,0,0,0.6)]">
@@ -374,14 +375,14 @@ export default function MuralFeedbacksPage() {
                    <Quote size={44} className="absolute top-4 right-4 text-[#CCA761]/40 group-hover:text-[#CCA761] group-hover:scale-110 transition-all duration-500 drop-shadow-[0_0_10px_rgba(204,167,97,0.3)] group-hover:drop-shadow-[0_0_20px_rgba(204,167,97,0.8)] z-0" />
 
                    {/* Corpo do Feedback com Padding Right (pr-12) para nÃ£o atropelar as aspas */}
-                   <div className="text-gray-700 dark:text-gray-300 text-sm leading-relaxed whitespace-pre-wrap pt-4 pb-6 pr-12 min-h-[80px] relative z-10 font-medium">
+                   <div className="text-gray-300 text-sm leading-relaxed whitespace-pre-wrap pt-4 pb-6 pr-12 min-h-[80px] relative z-10 font-medium">
                      {fb.content}
                    </div>
 
                  {/* RodapÃ© do Post-It */}
-                 <div className="mt-auto pt-4 border-t border-gray-200 dark:border-white/5 flex items-end justify-between">
+                 <div className="mt-auto pt-4 border-t border-white/5 flex items-end justify-between">
                     <div className="flex items-center gap-3">
-                      <div className={`w-8 h-8 rounded-full flex items-center justify-center ${fb.is_anonymous ? 'bg-gray-100 dark:bg-white/5 text-gray-500' : 'bg-[#CCA761]/20 text-[#CCA761] border border-[#CCA761]/30'}`}>
+                      <div className={`w-8 h-8 rounded-full flex items-center justify-center ${fb.is_anonymous ? 'bg-white/5 text-gray-500' : 'bg-[#CCA761]/20 text-[#CCA761] border border-[#CCA761]/30'}`}>
                          {fb.is_anonymous ? <EyeOff size={14} /> : <User size={14} />}
                       </div>
                       <div className="flex flex-col">

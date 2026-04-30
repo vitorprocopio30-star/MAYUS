@@ -38,6 +38,19 @@ function etapaOcultaNoBoard(nome?: string | null) {
   return n.includes('movimentac')
 }
 
+function formatCrmPlanDate(value: string) {
+  const date = new Date(value);
+  if (Number.isNaN(date.getTime())) return "horario a confirmar";
+
+  return date.toLocaleString("pt-BR", {
+    weekday: "short",
+    day: "2-digit",
+    month: "2-digit",
+    hour: "2-digit",
+    minute: "2-digit",
+  });
+}
+
 // Dynamic import for ReactQuill to avoid SSR issues
 const ReactQuill = dynamic(() => import("react-quill"), { 
   ssr: false,
@@ -296,20 +309,31 @@ export default function PipelinePage() {
 
   if (isLoading && stages.length === 0) {
     return (
-      <div className="flex-1 flex items-center justify-center min-h-screen bg-white dark:bg-[#050505]">
+      <div className="flex-1 flex items-center justify-center min-h-screen bg-[#050505]">
         <div className="w-8 h-8 border-4 border-[#CCA761] border-t-transparent rounded-full animate-spin" />
       </div>
     );
   }
 
   return (
-    <div className="flex flex-col h-screen bg-white dark:bg-[#050505] overflow-hidden">
-      {/* Sempre monta a animação do Neon */}
+    <div className="flex flex-col h-screen bg-[#050505] overflow-hidden">
+      {/* Animacoes Premium MAYUS */}
       <style dangerouslySetInnerHTML={{ __html: `
-        @keyframes neonBeam {
-          0% { transform: translateX(-150px); }
-          100% { transform: translateX(400px); }
+        @keyframes shimmerBeam {
+          0% { transform: translateX(-100%) skewX(-15deg); opacity: 0; }
+          30% { opacity: 1; }
+          100% { transform: translateX(250%) skewX(-15deg); opacity: 0; }
         }
+        @keyframes neonSweep {
+          0% { transform: translateX(-100%); opacity: 0; }
+          10% { opacity: 1; }
+          90% { opacity: 1; }
+          100% { transform: translateX(100%); opacity: 0; }
+        }
+        .kanban-card { transition: transform 0.25s cubic-bezier(.22,.68,0,1.2), box-shadow 0.25s ease, border-color 0.25s ease; }
+        .kanban-card:hover { transform: translateY(-3px); box-shadow: 0 0 0 1px rgba(204,167,97,0.22), 0 12px 40px rgba(0,0,0,0.9), 0 0 36px rgba(204,167,97,0.12); border-color: rgba(204,167,97,0.3) !important; }
+        .kanban-card:hover .card-shimmer { animation: shimmerBeam 0.85s ease forwards; }
+        .col-neon-line { animation: neonSweep 3s ease-in-out infinite; animation-delay: var(--sweep-delay, 0s); }
       `}} />
       
       {/* HEADER */}
@@ -321,11 +345,12 @@ export default function PipelinePage() {
                 className="flex items-center gap-2 cursor-pointer group"
                 onClick={() => setIsDropdownOpen(!isDropdownOpen)}
               >
-                <h1 className="text-2xl font-bold bg-gradient-to-r from-white to-gray-400 bg-clip-text text-transparent flex items-center gap-2 transition-opacity group-hover:opacity-80">
+                <h1 className="text-3xl lg:text-4xl font-cormorant italic text-[#CCA761] tracking-tight flex items-center gap-3 drop-shadow-[0_0_15px_rgba(204,167,97,0.2)]">
                   {pipeline?.name || "Carregando..."}
-                  <svg className={`w-5 h-5 text-gray-400 transition-transform ${isDropdownOpen ? 'rotate-180' : ''}`} fill="none" viewBox="0 0 24 24" stroke="currentColor"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 9l-7 7-7-7" /></svg>
-                  <span className="text-xs bg-gray-100 dark:bg-white/10 text-gray-700 dark:text-gray-300 px-2.5 py-1 rounded-full">{tasks.length}</span>
+                  <svg className={`w-5 h-5 text-[#CCA761]/40 transition-transform ${isDropdownOpen ? 'rotate-180' : ''}`} fill="none" viewBox="0 0 24 24" stroke="currentColor"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 9l-7 7-7-7" /></svg>
+                  <span className="text-[10px] font-black font-montserrat bg-[#CCA761]/10 text-[#CCA761]/80 border border-[#CCA761]/20 px-2 py-0.5 rounded-full">{tasks.length}</span>
                 </h1>
+                <div className="mt-1.5 h-[1px] w-full bg-gradient-to-r from-[#CCA761]/40 to-transparent" />
               </div>
 
               {/* Dropdown de Funis */}
@@ -365,7 +390,7 @@ export default function PipelinePage() {
               )}
 
               <div className="flex items-center gap-3 mt-1.5">
-                {pipeline?.description && <p className="text-sm text-gray-500">{pipeline.description}</p>}
+                {pipeline?.description && <p className="text-xs font-bold tracking-[0.15em] uppercase text-[#CCA761]/50">{pipeline.description}</p>}
               </div>
             </div>
           </div>
@@ -429,20 +454,16 @@ export default function PipelinePage() {
                   const stageTasks = tasks.filter(t => t.stage_id === stage.id).sort((a,b) => a.position_index - b.position_index);
                   
                   return (
-                    <div key={stage.id} className="flex flex-col flex-none w-[340px] h-full max-h-full bg-[#090909] rounded-2xl border border-zinc-800 overflow-hidden">
-                      <div className="p-3.5 relative flex flex-row items-center justify-between z-10 border-b border-zinc-800/80 overflow-hidden rounded-t-2xl">
-                        <div className="absolute inset-0 opacity-[0.09] rounded-t-2xl" style={{ backgroundColor: stage.color }} />
-                        <div className="flex items-center gap-2 relative z-10 w-full justify-between">
-                          <div className="flex items-center gap-3">
-                            <h3 className="font-black text-gray-900 dark:text-white text-[11px] tracking-widest uppercase">{stage.name}</h3>
-                            <div className="relative inline-flex items-center justify-center">
-                               <span className="text-[10px] font-bold px-2 py-0.5 rounded-lg border bg-gray-200 dark:bg-black/30 relative z-10 text-gray-900 dark:text-white" style={{ borderColor: `${stage.color}88` }}>
-                                 {stageTasks.length}
-                               </span>
-                               <div className="absolute inset-0 rounded-lg opacity-10" style={{ backgroundColor: stage.color }} />
-                             </div>
-                          </div>
-                          <button onClick={() => openNewTaskModal(stage.id)} className="text-gray-400 hover:text-gray-900 dark:text-white p-1 hover:bg-gray-100 dark:bg-white/10 rounded-lg transition-colors"><Plus size={16} /></button>
+                    <div key={stage.id} className="flex flex-col flex-none w-[340px] h-full max-h-full rounded-2xl overflow-hidden" style={{ background: '#0a0a0a', border: `1px solid ${stage.color}25`, boxShadow: `0 8px 32px rgba(0,0,0,0.7), 0 0 0 1px ${stage.color}10`, "--sweep-delay": `${visibleStages.indexOf(stage) * 0.6}s` } as React.CSSProperties}>
+                      <div className="p-3.5 relative flex flex-row items-center justify-between z-10 border-b overflow-hidden rounded-t-2xl" style={{ borderColor: `${stage.color}50` }}>
+                        <div className="absolute inset-0 rounded-t-2xl" style={{ background: `linear-gradient(180deg, ${stage.color}90 0%, ${stage.color}70 100%)`, backdropFilter: 'blur(20px)' }} />
+                        <div className="absolute top-0 left-0 right-0 h-[2px] overflow-hidden">
+                          <div className="col-neon-line h-full w-1/2" style={{ background: `linear-gradient(90deg, transparent, ${stage.color}, white, ${stage.color}, transparent)`, boxShadow: `0 0 12px 2px ${stage.color}` }} />
+                        </div>
+                        <div className="flex items-center relative z-10 w-full">
+                          <span className="text-[10px] font-black px-2 py-0.5 rounded-lg border" style={{ color: stage.color, borderColor: `${stage.color}55`, background: `${stage.color}15`, boxShadow: `0 0 8px ${stage.color}20` }}>{stageTasks.length}</span>
+                          <h3 className="flex-1 text-center font-black text-white text-[11px] tracking-[0.25em] uppercase">{stage.name}</h3>
+                          <button onClick={() => openNewTaskModal(stage.id)} className="text-gray-600 hover:text-[#CCA761] p-1 hover:bg-[#CCA761]/10 rounded-lg transition-all"><Plus size={15} /></button>
                         </div>
                       </div>
 
@@ -460,81 +481,93 @@ export default function PipelinePage() {
                                 description: task.description,
                                 tags: task.tags,
                                 stageName: stage.name,
+                                legalArea: task.sector?.split("|")[0],
+                                phone: task.phone,
+                                assignedName: assignee?.full_name,
                                 isWin: stage.is_win,
                                 isLoss: stage.is_loss,
                                 lastMovedAt: task.data_ultima_movimentacao,
                                 createdAt: task.created_at,
                               });
-
-                              // Check 48h Idleness
                               const timeSinceMove = new Date().getTime() - new Date(task.data_ultima_movimentacao || task.created_at).getTime();
-                              const isIdle = timeSinceMove > (48 * 60 * 60 * 1000); // 48 horas em ms
-                              // Ociosidade só é perigosa se não estiver ganho nem perdido
+                              const isIdle = timeSinceMove > (48 * 60 * 60 * 1000);
                               const showIdleAlert = isIdle && !stage.is_win && !stage.is_loss;
 
                               return (
                                 <Draggable key={task.id} draggableId={task.id} index={index}>
-                                  {(provided, snapshot) => (
+                                  {(provided) => (
                                     <div
                                       ref={provided.innerRef}
                                       {...provided.draggableProps}
                                       {...provided.dragHandleProps}
-                                       onClick={() => openEditTaskModal(task)}
-                                      className={`group relative overflow-hidden px-3.5 py-3 rounded-xl border bg-[#0c0c0c] hover:bg-gray-100 dark:bg-[#111] cursor-grab active:cursor-grabbing transition-all duration-150 ${showIdleAlert ? 'border-red-500/35' : nextStepStatus.needsNextStep ? 'border-amber-500/35' : 'border-zinc-800'}`}
+                                      onClick={() => openEditTaskModal(task)}
+                                      className={`kanban-card group relative overflow-hidden px-3.5 py-3.5 rounded-xl border cursor-grab active:cursor-grabbing ${showIdleAlert ? 'border-red-500/40 bg-red-500/[0.03]' : nextStepStatus.needsNextStep ? 'border-amber-500/35 bg-amber-500/[0.03]' : 'border-white/[0.08] bg-white/[0.03]'}`}
                                       style={{ ...provided.draggableProps.style }}
                                     >
                                       {showIdleAlert && (
-                                         <div className="absolute top-0 right-0 px-2 py-0.5 bg-red-500/10 text-red-500 border-b border-l border-red-500/20 rounded-bl-lg text-[9px] font-black uppercase flex items-center gap-1 shadow-sm">
-                                           <AlertTriangle size={10} /> Parado {Math.floor(timeSinceMove / (1000 * 60 * 60 * 24))}d
-                                         </div>
+                                        <div className="absolute top-0 right-0 px-2 py-0.5 bg-red-500/10 text-red-500 border-b border-l border-red-500/20 rounded-bl-lg text-[9px] font-black uppercase flex items-center gap-1 shadow-sm">
+                                          <AlertTriangle size={10} /> Parado {Math.floor(timeSinceMove / (1000 * 60 * 60 * 24))}d
+                                        </div>
                                       )}
-                                      
-                                      <div className="absolute top-3 bottom-3 left-0 w-[2px] opacity-70 rounded-r-full" style={{ backgroundColor: stage.color, color: stage.color }} />
-                                      <h4 className="text-gray-900 dark:text-white text-[14px] font-bold tracking-wide mb-1.5 line-clamp-2 group-hover:text-[#CCA761] transition-colors">{task.title}</h4>
-                                      
-                                       {task.description && (
-                                         <div className="text-zinc-400 text-[12px] mb-2.5 line-clamp-1 leading-relaxed">
-                                           {task.description.replace(/(<([^>]+)>)/gi, "")}
-                                         </div>
-                                       )}
 
-                                       {nextStepStatus.needsNextStep && (
-                                         <div className="mb-2.5 rounded-lg border border-amber-500/20 bg-amber-500/10 px-2.5 py-2 text-[10px] leading-4 text-amber-100">
-                                           <div className="mb-1 flex items-center gap-1.5 font-black uppercase tracking-widest text-amber-300">
-                                             <AlertTriangle size={10} /> Sem proximo passo
-                                           </div>
-                                           {nextStepStatus.suggestedNextStep}
-                                         </div>
-                                       )}
+                                      <div className="absolute top-2 bottom-2 left-0 w-[3px] rounded-r-full" style={{ backgroundColor: stage.color, boxShadow: `0 0 10px ${stage.color}70` }} />
+                                      <div className="card-shimmer absolute inset-0 pointer-events-none" style={{ background: 'linear-gradient(105deg, transparent 30%, rgba(255,255,255,0.045) 50%, transparent 70%)', willChange: 'transform' }} />
 
-                                        {task.sector && (
-                                         <div className="mb-3">
-                                           {(() => {
-                                             const [name, color] = task.sector.includes('|') ? task.sector.split('|') : [task.sector, '#60a5fa'];
+                                      <h4 className="relative z-10 text-white text-[14px] font-bold tracking-wide mb-1.5 line-clamp-2 group-hover:text-[#CCA761] transition-colors">{task.title}</h4>
+
+                                      {task.description && (
+                                        <div className="relative z-10 text-zinc-400 text-[12px] mb-2.5 line-clamp-1 leading-relaxed">
+                                          {task.description.replace(/(<([^>]+)>)/gi, "")}
+                                        </div>
+                                      )}
+
+                                      {nextStepStatus.needsNextStep && (
+                                        <div className="relative z-10 mb-2.5 rounded-lg border border-amber-500/20 bg-amber-500/10 px-2.5 py-2 text-[10px] leading-4 text-amber-100">
+                                          <div className="mb-1 flex items-center gap-1.5 font-black uppercase tracking-widest text-amber-300">
+                                            <AlertTriangle size={10} /> MAYUS organizou
+                                          </div>
+                                          <div className="space-y-1">
+                                            <p>{nextStepStatus.organizedPlan.objective}</p>
+                                            <div className="flex flex-wrap gap-1.5 pt-1 text-[9px] font-bold uppercase tracking-widest text-amber-100/80">
+                                              <span className="inline-flex items-center gap-1 rounded-md border border-amber-500/20 bg-black/20 px-1.5 py-0.5">
+                                                <Calendar size={9} /> {formatCrmPlanDate(nextStepStatus.organizedPlan.dueAt)}
+                                              </span>
+                                              <span className="rounded-md border border-amber-500/20 bg-black/20 px-1.5 py-0.5">
+                                                {nextStepStatus.organizedPlan.ownerLabel}
+                                              </span>
+                                            </div>
+                                          </div>
+                                        </div>
+                                      )}
+
+                                      {task.sector && (
+                                        <div className="relative z-10 mb-3">
+                                          {(() => {
+                                            const [name, color] = task.sector.includes('|') ? task.sector.split('|') : [task.sector, '#60a5fa'];
                                             return (
                                               <span className="text-[9px] font-black uppercase tracking-widest px-2 py-1 rounded bg-gray-100 dark:bg-[#111] border" style={{ color: color, borderColor: color }}>
                                                 {name}
                                               </span>
                                             );
-                                           })()}
-                                         </div>
-                                       )}
+                                          })()}
+                                        </div>
+                                      )}
 
-                                      <div className="mb-2.5" onClick={(event) => event.stopPropagation()}>
-                                         <CallAnalysisAction
-                                           crmTaskId={task.id}
-                                           leadName={task.title}
-                                           legalArea={task.sector?.split('|')[0] || null}
-                                           currentStage={stage.name}
+                                      <div className="relative z-10 mb-2.5" onClick={(event) => event.stopPropagation()}>
+                                        <CallAnalysisAction
+                                          crmTaskId={task.id}
+                                          leadName={task.title}
+                                          legalArea={task.sector?.split('|')[0] || null}
+                                          currentStage={stage.name}
                                         />
                                       </div>
 
-                                      <div className="flex items-center justify-between text-[11px] text-zinc-500 mt-auto pt-2 border-t border-zinc-800/70">
+                                      <div className="relative z-10 flex items-center justify-between text-[11px] text-zinc-600 mt-auto pt-2.5 border-t border-white/[0.06]">
                                         <div className="flex items-center gap-1.5">
                                           <Calendar size={12} />
                                           {new Date(task.created_at).toLocaleDateString('pt-BR', { day: '2-digit', month: 'short' })}
                                         </div>
-                                        
+
                                         {assignee && (
                                           <div className="flex items-center gap-1.5 bg-gray-100 dark:bg-white/5 pl-2 pr-1 py-0.5 rounded-full border border-gray-200 dark:border-white/5">
                                             <span className="max-w-[60px] truncate">{assignee.full_name.split(' ')[0]}</span>

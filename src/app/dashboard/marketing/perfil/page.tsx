@@ -1,7 +1,8 @@
 "use client";
 
 import Link from "next/link";
-import { ArrowLeft, Building2, Plus, Save, Trash2 } from "lucide-react";
+import { Cormorant_Garamond, Montserrat } from "next/font/google";
+import { ArrowLeft, Building2, Plus, Save, Trash2, Globe, Share2, Shield, UserCheck, MessageSquare } from "lucide-react";
 import { useEffect, useState } from "react";
 import type { MarketingChannel, MarketingProfile, MarketingTone } from "@/lib/marketing/editorial-calendar";
 import {
@@ -14,17 +15,20 @@ import {
   shouldUseRemoteMarketingState,
 } from "@/lib/marketing/local-persistence";
 
+const cormorant = Cormorant_Garamond({ subsets: ["latin"], weight: ["400", "500", "600", "700"], style: ["normal", "italic"] });
+const montserrat = Montserrat({ subsets: ["latin"], weight: ["300", "400", "500", "600", "700", "800", "900"] });
+
 const channels: MarketingChannel[] = ["blog", "linkedin", "instagram", "email", "whatsapp"];
 const tones: MarketingTone[] = ["educational", "direct", "empathetic", "premium", "conversational"];
 
 const listFields = [
-  { key: "legalAreas", label: "Areas juridicas", placeholder: "Previdenciario" },
-  { key: "audiences", label: "Publicos prioritarios", placeholder: "Segurados do INSS" },
-  { key: "websites", label: "Sites e blogs", placeholder: "https://escritorio.com.br" },
-  { key: "socialProfiles", label: "Redes sociais", placeholder: "https://linkedin.com/company/escritorio" },
-  { key: "admiredReferences", label: "Referencias admiradas", placeholder: "Concorrente, criador ou portal de referencia" },
-  { key: "ethicsGuardrails", label: "Guardrails eticos", placeholder: "Nao prometer resultado juridico" },
-] satisfies Array<{ key: keyof Pick<MarketingProfile, "legalAreas" | "audiences" | "websites" | "socialProfiles" | "admiredReferences" | "ethicsGuardrails">; label: string; placeholder: string }>;
+  { key: "legalAreas", label: "Áreas Jurídicas", placeholder: "Ex: Previdenciário", icon: Globe },
+  { key: "audiences", label: "Públicos Prioritários", placeholder: "Ex: Segurados do INSS", icon: UserCheck },
+  { key: "websites", label: "Sites e Blogs", placeholder: "https://escritorio.com.br", icon: Globe },
+  { key: "socialProfiles", label: "Redes Sociais", placeholder: "https://linkedin.com/company/escritorio", icon: Share2 },
+  { key: "admiredReferences", label: "Referências Admiradas", placeholder: "Concorrente ou portal de referência", icon: MessageSquare },
+  { key: "ethicsGuardrails", label: "Guardrails Éticos", placeholder: "Ex: Não prometer resultado jurídico", icon: Shield },
+] satisfies Array<{ key: keyof Pick<MarketingProfile, "legalAreas" | "audiences" | "websites" | "socialProfiles" | "admiredReferences" | "ethicsGuardrails">; label: string; placeholder: string; icon: any }>;
 
 function clean(value: string) {
   return value.replace(/\s+/g, " ").trim();
@@ -39,7 +43,7 @@ export default function MarketingProfilePage() {
   const [drafts, setDrafts] = useState<Record<string, string>>({});
   const [isLoaded, setIsLoaded] = useState(false);
   const [message, setMessage] = useState<string | null>(null);
-  const [storageLabel, setStorageLabel] = useState("Carregando");
+  const [storageLabel, setStorageLabel] = useState("Sincronizando");
 
   useEffect(() => {
     let cancelled = false;
@@ -53,7 +57,7 @@ export default function MarketingProfilePage() {
 
       setProfile(sourceState.profile);
       saveLocalMarketingState({ profile: sourceState.profile });
-      setStorageLabel(useRemote ? "Servidor" : "Local com fallback");
+      setStorageLabel(useRemote ? "Servidor" : "Local");
       setIsLoaded(true);
     }
 
@@ -93,150 +97,166 @@ export default function MarketingProfilePage() {
   function saveNow() {
     saveMarketingProfile(profile);
     void saveRemoteMarketingState({ profile }).then((saved) => {
-      setStorageLabel(saved ? "Servidor" : "Local com fallback");
+      setStorageLabel(saved ? "Servidor" : "Local");
       setMessage(saved
-        ? "Perfil salvo no servidor do escritorio. Nenhuma publicacao externa foi feita."
-        : "Perfil salvo localmente. O servidor nao respondeu e nenhuma publicacao externa foi feita."
+        ? "Perfil sincronizado com o servidor MAYUS."
+        : "Salvo localmente (Servidor offline)."
       );
     });
   }
 
   return (
-    <main className="min-h-screen bg-background px-6 py-8 text-foreground lg:px-10">
-      <Link href="/dashboard/marketing" className="inline-flex items-center gap-2 text-sm text-muted-foreground transition-colors hover:text-[#CCA761]">
-        <ArrowLeft size={16} />
-        Voltar para Marketing
-      </Link>
-
-      <section className="mt-6 rounded-3xl border border-border bg-card p-8">
-        <div className="flex h-12 w-12 items-center justify-center rounded-xl border border-[#CCA761]/25 bg-[#CCA761]/10 text-[#CCA761]">
-          <Building2 size={22} />
+    <main className={`min-h-screen bg-[#050505] px-6 py-8 text-foreground lg:px-10 ${montserrat.className}`}>
+      
+      {/* HEADER */}
+      <header className="mb-12">
+        <Link href="/dashboard/marketing" className="inline-flex items-center gap-2 text-xs font-black uppercase tracking-[0.2em] text-gray-500 hover:text-[#CCA761] transition-colors mb-6 group">
+          <ArrowLeft size={14} className="group-hover:-translate-x-1 transition-transform" />
+          Voltar
+        </Link>
+        <div className="flex items-center gap-2 mb-1">
+          <Building2 size={16} className="text-[#CCA761]" />
+          <span className="text-[10px] font-black uppercase tracking-[0.3em] text-[#CCA761]/60">Estratégia de Marca</span>
         </div>
-        <p className="mt-6 text-xs font-bold uppercase tracking-[0.24em] text-[#CCA761]">Perfil operacional</p>
-        <h1 className="mt-3 text-3xl font-semibold tracking-tight md:text-4xl">Perfil e Canais</h1>
-        <p className="mt-4 max-w-2xl text-sm leading-7 text-muted-foreground">
-          Cadastre posicionamento, canais, redes, sites e referencias admiradas para orientar o calendario editorial sem copiar conteudo e sem publicar automaticamente.
-        </p>
-      </section>
+        <h1 className={`text-4xl lg:text-5xl text-[#CCA761] ${cormorant.className} italic tracking-tight drop-shadow-[0_0_20px_rgba(204,167,97,0.3)]`}>
+          Perfil e Canais
+        </h1>
+        <div className="mt-2 h-[1px] w-64 bg-gradient-to-r from-[#CCA761]/50 to-transparent" />
+      </header>
 
-      <section className="mt-8 grid gap-6 xl:grid-cols-[minmax(0,440px)_1fr]">
-        <div className="rounded-3xl border border-border bg-card p-6">
-          <div className="flex items-center justify-between gap-4">
-            <div>
-              <p className="text-xs font-bold uppercase tracking-[0.22em] text-[#CCA761]">Base da marca</p>
-              <h2 className="mt-2 text-xl font-semibold">Dados principais</h2>
-            </div>
-            <span className="rounded-full border border-border px-3 py-1 text-xs text-muted-foreground">{storageLabel}</span>
-          </div>
-
-          <div className="mt-6 grid gap-4">
-            <label className="grid gap-2 text-sm font-medium">
-              Nome da marca/escritorio
-              <input
-                value={profile.firmName}
-                onChange={(event) => updateProfile("firmName", event.target.value)}
-                placeholder="MAYUS Advocacia"
-                className="rounded-xl border border-border bg-background px-3 py-2 text-sm outline-none transition-colors focus:border-[#CCA761]"
-              />
-            </label>
-
-            <label className="grid gap-2 text-sm font-medium">
-              Posicionamento / estilo editorial
-              <textarea
-                value={profile.positioning}
-                onChange={(event) => updateProfile("positioning", event.target.value)}
-                placeholder="Ex: autoridade acessivel para explicar riscos juridicos com clareza e postura premium"
-                rows={4}
-                className="rounded-xl border border-border bg-background px-3 py-2 text-sm outline-none transition-colors focus:border-[#CCA761]"
-              />
-            </label>
-
-            <label className="grid gap-2 text-sm font-medium">
-              Tom principal
-              <select
-                value={profile.voiceTone}
-                onChange={(event) => updateProfile("voiceTone", event.target.value as MarketingTone)}
-                className="rounded-xl border border-border bg-background px-3 py-2 text-sm outline-none transition-colors focus:border-[#CCA761]"
-              >
-                {tones.map((tone) => <option key={tone} value={tone}>{tone}</option>)}
-              </select>
-            </label>
-
-            <fieldset className="grid gap-2">
-              <legend className="text-sm font-medium">Canais ativos</legend>
-              <div className="flex flex-wrap gap-2">
-                {channels.map((channel) => (
-                  <button
-                    key={channel}
-                    type="button"
-                    onClick={() => updateProfile("channels", toggleValue(profile.channels, channel))}
-                    className={`rounded-full border px-3 py-1 text-xs font-bold uppercase tracking-[0.14em] transition-colors ${profile.channels.includes(channel) ? "border-[#CCA761] bg-[#CCA761]/10 text-[#CCA761]" : "border-border text-muted-foreground"}`}
-                  >
-                    {channel}
-                  </button>
-                ))}
+      <section className="grid gap-12 lg:grid-cols-[450px_1fr]">
+        
+        {/* COLUNA ESQUERDA - DADOS TÉCNICOS */}
+        <div className="space-y-8">
+          <div className="rounded-3xl border border-white/5 bg-[#0a0a0a] p-8 relative overflow-hidden shadow-2xl">
+            <div className="absolute top-0 right-0 w-32 h-32 bg-[#CCA761]/5 rounded-full blur-2xl" />
+            
+            <div className="relative z-10 space-y-6">
+              <div className="flex items-center justify-between">
+                <h2 className="text-lg font-bold text-white">Base da Identidade</h2>
+                <span className="text-[10px] font-black uppercase tracking-widest text-[#CCA761]/60 px-2 py-1 bg-[#CCA761]/10 rounded-lg">{storageLabel}</span>
               </div>
-            </fieldset>
 
-            {message ? <p className="rounded-xl border border-emerald-500/20 bg-emerald-500/10 p-3 text-sm text-emerald-300">{message}</p> : null}
+              <div className="space-y-4">
+                <div className="space-y-2">
+                  <label className="text-[10px] font-black uppercase tracking-widest text-gray-500">Nome do Escritório</label>
+                  <input
+                    value={profile.firmName}
+                    onChange={(event) => updateProfile("firmName", event.target.value)}
+                    placeholder="MAYUS Advocacia"
+                    className="w-full rounded-xl border border-white/5 bg-white/[0.02] px-4 py-3 text-sm text-white outline-none focus:border-[#CCA761]/50 focus:bg-white/[0.04] transition-all"
+                  />
+                </div>
 
-            <button
-              type="button"
-              onClick={saveNow}
-              className="inline-flex items-center justify-center gap-2 rounded-xl bg-[#CCA761] px-4 py-3 text-sm font-bold text-black transition-opacity hover:opacity-90"
-            >
-              <Save size={16} />
-              Salvar perfil
-            </button>
-          </div>
-        </div>
+                <div className="space-y-2">
+                  <label className="text-[10px] font-black uppercase tracking-widest text-gray-500">Tom de Voz Principal</label>
+                  <div className="grid grid-cols-2 gap-2">
+                    {tones.map((tone) => (
+                      <button
+                        key={tone}
+                        onClick={() => updateProfile("voiceTone", tone)}
+                        className={`px-3 py-2 rounded-xl border text-[10px] font-bold uppercase tracking-widest transition-all ${profile.voiceTone === tone ? 'border-[#CCA761] bg-[#CCA761]/10 text-[#CCA761]' : 'border-white/5 bg-white/[0.02] text-gray-500 hover:border-white/20'}`}
+                      >
+                        {tone}
+                      </button>
+                    ))}
+                  </div>
+                </div>
 
-        <div className="grid gap-6">
-          {listFields.map((field) => (
-            <section key={field.key} className="rounded-3xl border border-border bg-card p-6">
-              <div className="flex items-center justify-between gap-4">
-                <div>
-                  <p className="text-xs font-bold uppercase tracking-[0.22em] text-[#CCA761]">{field.label}</p>
-                  <h2 className="mt-2 text-xl font-semibold">{profile[field.key].length} itens</h2>
+                <div className="space-y-2 pt-2">
+                  <label className="text-[10px] font-black uppercase tracking-widest text-gray-500">Canais de Atuação</label>
+                  <div className="flex flex-wrap gap-2">
+                    {channels.map((channel) => (
+                      <button
+                        key={channel}
+                        onClick={() => updateProfile("channels", toggleValue(profile.channels, channel))}
+                        className={`px-3 py-1.5 rounded-full border text-[9px] font-black uppercase tracking-widest transition-all ${profile.channels.includes(channel) ? 'border-[#CCA761] bg-[#CCA761]/20 text-[#CCA761]' : 'border-white/5 bg-white/[0.02] text-gray-600 hover:border-white/20'}`}
+                      >
+                        {channel}
+                      </button>
+                    ))}
+                  </div>
+                </div>
+
+                <div className="space-y-2 pt-2">
+                  <label className="text-[10px] font-black uppercase tracking-widest text-gray-500">Posicionamento Estratégico</label>
+                  <textarea
+                    value={profile.positioning}
+                    onChange={(event) => updateProfile("positioning", event.target.value)}
+                    placeholder="Descreva a essência do seu escritório..."
+                    rows={5}
+                    className="w-full rounded-xl border border-white/5 bg-white/[0.02] px-4 py-3 text-sm text-white outline-none focus:border-[#CCA761]/50 focus:bg-white/[0.04] transition-all resize-none"
+                  />
                 </div>
               </div>
 
-              <div className="mt-5 flex gap-2">
-                <input
-                  value={drafts[field.key] || ""}
-                  onChange={(event) => setDrafts((current) => ({ ...current, [field.key]: event.target.value }))}
-                  placeholder={field.placeholder}
-                  className="min-w-0 flex-1 rounded-xl border border-border bg-background px-3 py-2 text-sm outline-none transition-colors focus:border-[#CCA761]"
-                />
-                <button
-                  type="button"
-                  onClick={() => addListItem(field.key)}
-                  className="inline-flex items-center justify-center gap-2 rounded-xl border border-[#CCA761]/25 bg-[#CCA761]/10 px-3 py-2 text-sm font-bold text-[#CCA761] transition-colors hover:bg-[#CCA761]/20"
-                >
-                  <Plus size={16} />
-                  Adicionar
-                </button>
-              </div>
+              {message && <p className="text-[10px] font-bold text-emerald-400 bg-emerald-500/10 p-3 rounded-xl border border-emerald-500/20">{message}</p>}
 
-              <div className="mt-4 grid gap-2">
-                {profile[field.key].length === 0 ? (
-                  <p className="rounded-2xl border border-dashed border-border p-4 text-sm text-muted-foreground">Nenhum item cadastrado.</p>
-                ) : profile[field.key].map((item) => (
-                  <div key={item} className="flex items-center justify-between gap-3 rounded-2xl border border-border bg-background/50 px-4 py-3">
-                    <span className="min-w-0 truncate text-sm text-muted-foreground">{item}</span>
-                    <button
-                      type="button"
-                      onClick={() => removeListItem(field.key, item)}
-                      className="rounded-lg p-2 text-muted-foreground transition-colors hover:bg-destructive/10 hover:text-destructive"
-                      aria-label={`Remover ${item}`}
-                    >
-                      <Trash2 size={16} />
-                    </button>
+              <button
+                onClick={saveNow}
+                className="w-full flex items-center justify-center gap-2 rounded-xl bg-[#CCA761] py-4 text-xs font-black uppercase tracking-[0.2em] text-black hover:bg-[#d1b06d] transition-all shadow-[0_0_20px_rgba(204,167,97,0.3)] active:scale-95"
+              >
+                <Save size={16} />
+                Sincronizar Perfil
+              </button>
+            </div>
+          </div>
+        </div>
+
+        {/* COLUNA DIREITA - LISTAS DINÂMICAS */}
+        <div className="grid gap-6 md:grid-cols-2">
+          {listFields.map((field) => {
+            const Icon = field.icon;
+            return (
+              <section key={field.key} className="rounded-3xl border border-white/5 bg-[#0a0a0a] p-6 group hover:border-[#CCA761]/20 transition-all">
+                <div className="flex items-center justify-between mb-6">
+                  <div className="flex items-center gap-3">
+                    <div className="h-10 w-10 flex items-center justify-center rounded-xl border border-white/10 bg-white/[0.02] text-[#CCA761] group-hover:bg-[#CCA761]/10 transition-all">
+                      <Icon size={20} />
+                    </div>
+                    <div>
+                      <p className="text-[10px] font-black uppercase tracking-widest text-gray-500">{field.label}</p>
+                      <h3 className="text-white font-bold">{profile[field.key].length} Registrados</h3>
+                    </div>
                   </div>
-                ))}
-              </div>
-            </section>
-          ))}
+                </div>
+
+                <div className="flex gap-2 mb-6">
+                  <input
+                    value={drafts[field.key] || ""}
+                    onChange={(event) => setDrafts((current) => ({ ...current, [field.key]: event.target.value }))}
+                    placeholder={field.placeholder}
+                    className="flex-1 bg-white/[0.02] border border-white/5 rounded-xl px-4 py-2 text-sm text-white outline-none focus:border-[#CCA761]/30 transition-all"
+                    onKeyDown={(e) => e.key === 'Enter' && addListItem(field.key)}
+                  />
+                  <button
+                    onClick={() => addListItem(field.key)}
+                    className="h-10 w-10 flex items-center justify-center rounded-xl bg-[#CCA761]/10 text-[#CCA761] border border-[#CCA761]/20 hover:bg-[#CCA761] hover:text-black transition-all"
+                  >
+                    <Plus size={20} />
+                  </button>
+                </div>
+
+                <div className="space-y-2 max-h-[300px] overflow-y-auto pr-2 no-scrollbar">
+                  {profile[field.key].length === 0 ? (
+                    <div className="py-8 text-center rounded-2xl border border-dashed border-white/5">
+                      <p className="text-[10px] font-bold uppercase tracking-widest text-gray-700 italic">Vazio</p>
+                    </div>
+                  ) : profile[field.key].map((item) => (
+                    <div key={item} className="flex items-center justify-between gap-3 p-3 rounded-xl bg-white/[0.02] border border-white/5 hover:border-white/10 transition-all group/item">
+                      <span className="text-xs text-gray-400 group-hover/item:text-white transition-colors truncate">{item}</span>
+                      <button
+                        onClick={() => removeListItem(field.key, item)}
+                        className="opacity-0 group-hover/item:opacity-100 p-1.5 text-gray-600 hover:text-red-400 hover:bg-red-500/10 rounded-lg transition-all"
+                      >
+                        <Trash2 size={14} />
+                      </button>
+                    </div>
+                  ))}
+                </div>
+              </section>
+            );
+          })}
         </div>
       </section>
     </main>

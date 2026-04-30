@@ -1185,7 +1185,7 @@ export default function AgendaDiariaPage() {
         <div className="flex items-start gap-4 md:gap-5 w-full">
           <div className="relative shrink-0 mt-11 md:mt-16 mb-0">
             <div className="w-20 h-20 md:w-24 md:h-24 rounded-2xl border border-[#CCA761]/35 bg-gradient-to-br from-[#CCA761]/20 to-gray-200 dark:to-[#0a0a0a] p-[2px] shadow-[0_0_25px_rgba(204,167,97,0.2)]">
-              <div className="w-full h-full rounded-[14px] overflow-hidden bg-white dark:bg-[#0a0a0a] flex items-center justify-center">
+              <div className="w-full h-full rounded-[14px] overflow-hidden bg-[#0a0a0a] flex items-center justify-center">
                 {userAvatarUrl ? (
                   <img src={userAvatarUrl} alt={userName} className="w-full h-full object-cover" />
                 ) : (
@@ -1195,11 +1195,12 @@ export default function AgendaDiariaPage() {
             </div>
           </div>
           <div className="pt-5 md:pt-6">
-             <h1 className={`text-5xl lg:text-7xl text-[#CCA761] mb-1 font-bold tracking-tight ${cormorant.className} italic drop-shadow-[0_0_20px_rgba(204,167,97,0.3)]`}>
+             <h1 className={`text-4xl lg:text-5xl text-[#CCA761] font-cormorant italic tracking-tight drop-shadow-[0_0_20px_rgba(204,167,97,0.3)]`}>
                Sua Agenda
              </h1>
-             <div className="flex items-center gap-3 mt-2 flex-wrap">
-               <p className="text-[#CCA761] text-lg font-bold tracking-widest uppercase">{greeting}, {userName}</p>
+             <div className="mt-2 h-[1px] w-full bg-gradient-to-r from-[#CCA761]/40 to-transparent" />
+             <div className="flex items-center gap-3 mt-4 flex-wrap">
+               <p className="text-[#CCA761]/80 text-lg font-bold tracking-widest uppercase">{greeting}, {userName}</p>
                {/* Badge Privado de Ranking do Usuário */}
                {gamificationEnabled && (
                  <div title="Sua posição de produtividade nesta sprint" className="flex items-center gap-2 bg-[#CCA761]/10 border border-[#CCA761]/40 px-3 py-0.5 rounded-full shadow-[0_0_15px_rgba(204,167,97,0.2)] animate-[pulse_3s_ease-in-out_infinite] group hover:bg-[#CCA761]/20 transition-all cursor-default relative overflow-hidden">
@@ -1209,13 +1210,13 @@ export default function AgendaDiariaPage() {
                  </div>
                )}
              </div>
-             <p className="text-[#a1a1aa] text-[11px] mt-2 font-semibold italic border-l-2 border-[#CCA761] pl-3 max-w-lg tracking-wide bg-gradient-to-r from-[#CCA761]/5 to-transparent py-1 pr-2 rounded-r-md">&quot;{dailyQuote}&quot;</p>
+             <p className="text-[#a1a1aa] text-[11px] mt-2 font-semibold italic border-l-2 border-[#CCA761]/60 pl-3 max-w-lg tracking-wide bg-gradient-to-r from-[#CCA761]/5 to-transparent py-1 pr-2 rounded-r-md">&quot;{dailyQuote}&quot;</p>
           </div>
         </div>
         <div className="flex flex-col items-end gap-3 w-full md:w-auto">
           {/* A Carteira (Wallet) */}
           {gamificationEnabled && (
-            <div className="flex items-center gap-4 bg-white dark:bg-[#0a0a0a] border border-[#CCA761]/30 p-2 rounded-xl shadow-[inset_0_0_15px_rgba(204,167,97,0.1)] relative overflow-hidden">
+            <div className="flex items-center gap-4 bg-[#0a0a0a] border border-[#CCA761]/30 p-2 rounded-xl shadow-[inset_0_0_15px_rgba(204,167,97,0.1)] relative overflow-hidden">
                {showCoinAnim && <div className="absolute inset-0 bg-[#CCA761]/20 animate-pulse pointer-events-none" />}
                <div className="flex flex-col items-end pr-3 border-r border-[#CCA761]/20">
                  <span className="text-[#a1a1aa] text-[8px] font-black uppercase tracking-widest leading-tight">Saldo Atual</span>
@@ -1227,9 +1228,9 @@ export default function AgendaDiariaPage() {
                <div className="flex flex-col items-center px-1 cursor-pointer group" onClick={handleDonateCoins} title="Semanada de Agradecimento (Gaste até sexta!)">
                  <span className="text-[#a1a1aa] text-[8px] font-black uppercase tracking-widest mb-0.5">Livre p/ Doar</span>
                  <div className="flex gap-1 group-hover:scale-110 transition-transform">
-                   <div className={`w-2 h-2 rounded-full ${donated ? 'bg-gray-100 dark:bg-white/10' : 'bg-gradient-to-r from-[#CCA761] to-[#FFD700] shadow-[0_0_8px_rgba(204,167,97,0.8)] animate-pulse'}`} />
-                   <div className={`w-2 h-2 rounded-full ${donated ? 'bg-gray-100 dark:bg-white/10' : 'bg-gradient-to-r from-[#CCA761] to-[#FFD700] shadow-[0_0_8px_rgba(204,167,97,0.8)] animate-pulse'}`} style={{ animationDelay: '75ms' }} />
-                   <div className={`w-2 h-2 rounded-full ${donated ? 'bg-gray-100 dark:bg-white/10' : 'bg-gradient-to-r from-[#CCA761] to-[#FFD700] shadow-[0_0_8px_rgba(204,167,97,0.8)] animate-pulse'}`} style={{ animationDelay: '150ms' }} />
+                   <div className={`w-2 h-2 rounded-full ${donated ? 'bg-white/10' : 'bg-gradient-to-r from-[#CCA761] to-[#FFD700] shadow-[0_0_8px_rgba(204,167,97,0.8)] animate-pulse'}`} />
+                   <div className={`w-2 h-2 rounded-full ${donated ? 'bg-white/10' : 'bg-gradient-to-r from-[#CCA761] to-[#FFD700] shadow-[0_0_8px_rgba(204,167,97,0.8)] animate-pulse'}`} style={{ animationDelay: '75ms' }} />
+                   <div className={`w-2 h-2 rounded-full ${donated ? 'bg-white/10' : 'bg-gradient-to-r from-[#CCA761] to-[#FFD700] shadow-[0_0_8px_rgba(204,167,97,0.8)] animate-pulse'}`} style={{ animationDelay: '150ms' }} />
                  </div>
                </div>
             </div>
@@ -1238,12 +1239,12 @@ export default function AgendaDiariaPage() {
           <div className="flex gap-2">
             <button
               onClick={openCreateTaskModal}
-              className="flex items-center gap-2 whitespace-nowrap bg-gray-100 dark:bg-[#111] border border-[#CCA761]/30 text-[#CCA761] font-black uppercase tracking-[0.14em] px-5 py-2.5 rounded-xl hover:bg-[#CCA761]/10 transition-colors text-xs"
+              className="flex items-center gap-2 whitespace-nowrap bg-[#111] border border-[#CCA761]/30 text-[#CCA761] font-black uppercase tracking-[0.14em] px-5 py-2.5 rounded-xl hover:bg-[#CCA761]/10 transition-colors text-xs"
             >
               <Plus size={14} /> Nova tarefa
             </button>
             {gamificationEnabled && (
-              <button onClick={handleDonateCoins} className={`flex items-center gap-2 border font-bold uppercase tracking-widest px-4 py-2.5 rounded-xl transition-all shadow-sm text-xs ${donated ? 'bg-white dark:bg-[#0a0a0a] border-gray-200 dark:border-white/5 text-gray-500 cursor-not-allowed opacity-50' : 'bg-gray-100 dark:bg-[#111] border-[#CCA761]/30 text-[#CCA761] hover:bg-[#CCA761]/10 hover:-translate-y-0.5 shadow-[0_5px_15px_rgba(204,167,97,0.15)]'}`}>
+              <button onClick={handleDonateCoins} className={`flex items-center gap-2 border font-bold uppercase tracking-widest px-4 py-2.5 rounded-xl transition-all shadow-sm text-xs ${donated ? 'bg-[#0a0a0a] border-white/5 text-gray-500 cursor-not-allowed opacity-50' : 'bg-[#111] border-[#CCA761]/30 text-[#CCA761] hover:bg-[#CCA761]/10 hover:-translate-y-0.5 shadow-[0_5px_15px_rgba(204,167,97,0.15)]'}`}>
                 <Gift size={14} /> Reconhecer
               </button>
             )}
@@ -1276,13 +1277,13 @@ export default function AgendaDiariaPage() {
           <button
             type="button"
             onClick={() => shiftSelectedDateByDays(-7)}
-            className="shrink-0 w-10 h-10 rounded-xl border border-gray-200 dark:border-white/10 bg-gray-100 dark:bg-white/5 text-gray-700 dark:text-gray-300 hover:text-gray-900 dark:text-white hover:bg-gray-100 dark:bg-white/10 transition-colors inline-flex items-center justify-center"
+            className="shrink-0 w-10 h-10 rounded-xl border border-white/10 bg-white/5 text-gray-300 hover:text-white hover:bg-white/10 transition-colors inline-flex items-center justify-center"
             title="Semana anterior"
           >
             <ChevronLeft size={18} />
           </button>
 
-          <div className="flex-1 flex justify-between items-center gap-2 p-1 bg-gray-100 dark:bg-white/5 rounded-2xl border border-gray-200 dark:border-white/10 shadow-inner overflow-x-auto hide-scrollbar">
+          <div className="flex-1 flex justify-between items-center gap-2 p-1 bg-white/5 rounded-2xl border border-white/10 shadow-inner overflow-x-auto hide-scrollbar">
             {WEEK_DAYS.map((d, i) => {
               const active = d.dateKey === selectedDate;
               const hasReminder = reminderDateKeys.includes(d.dateKey);
@@ -1290,12 +1291,12 @@ export default function AgendaDiariaPage() {
                 <button
                   key={i}
                   onClick={() => setSelectedDate(d.dateKey)}
-                  className={`min-w-[70px] flex-1 flex flex-col items-center py-4 rounded-xl transition-all ${active ? 'bg-[#CCA761] text-[#0a0a0a] shadow-[0_0_20px_rgba(204,167,97,0.3)]' : 'hover:bg-gray-100 dark:bg-white/5 text-gray-500 hover:text-white'}`}
+                  className={`min-w-[70px] flex-1 flex flex-col items-center py-4 rounded-xl transition-all ${active ? 'bg-[#CCA761] text-[#0a0a0a] shadow-[0_0_20px_rgba(204,167,97,0.3)]' : 'hover:bg-white/5 text-gray-500 hover:text-white'}`}
                 >
                   <span className="text-[10px] font-black uppercase tracking-tighter mb-1">{d.day}</span>
                   <span className="text-xl font-black italic">{d.date}</span>
                   {active ? (
-                    <div className="w-1 h-1 bg-white dark:bg-[#0a0a0a] rounded-full mt-2" />
+                    <div className="w-1 h-1 bg-[#0a0a0a] rounded-full mt-2" />
                   ) : hasReminder ? (
                     <div className="w-1.5 h-1.5 bg-[#CCA761] rounded-full mt-2 shadow-[0_0_8px_rgba(204,167,97,0.8)]" />
                   ) : (
@@ -1309,7 +1310,7 @@ export default function AgendaDiariaPage() {
           <button
             type="button"
             onClick={() => shiftSelectedDateByDays(7)}
-            className="shrink-0 w-10 h-10 rounded-xl border border-gray-200 dark:border-white/10 bg-gray-100 dark:bg-white/5 text-gray-700 dark:text-gray-300 hover:text-gray-900 dark:text-white hover:bg-gray-100 dark:bg-white/10 transition-colors inline-flex items-center justify-center"
+            className="shrink-0 w-10 h-10 rounded-xl border border-white/10 bg-white/5 text-gray-300 hover:text-white hover:bg-white/10 transition-colors inline-flex items-center justify-center"
             title="Próxima semana"
           >
             <ChevronRight size={18} />
@@ -1334,11 +1335,11 @@ export default function AgendaDiariaPage() {
                         <span className="flex items-center justify-center md:justify-start gap-1.5 text-[9px] sm:text-[10px] font-black uppercase tracking-[0.2em] text-[#ef4444] bg-[#ef4444]/10 px-3 py-1 rounded w-fit border border-[#ef4444]/30 shadow-[0_0_15px_rgba(239,68,68,0.3)]">
                           <Target size={12} /> Oportunidade Especial
                         </span>
-                        <h3 className="text-gray-900 dark:text-white text-lg md:text-xl font-bold tracking-tight">{activeMission.title}</h3>
+                        <h3 className="text-white text-lg md:text-xl font-bold tracking-tight">{activeMission.title}</h3>
                         <p className="text-xs sm:text-sm text-gray-400 font-medium leading-relaxed italic">{activeMission.description || "Missao operacional ativa para acelerar os resultados do dia."}</p>
                       </div>
 
-                      <div className="w-full md:w-1/4 flex flex-col items-center justify-center gap-3 border-t md:border-t-0 md:border-l border-gray-200 dark:border-white/10 pt-4 md:pt-0 pl-0 md:pl-4">
+                      <div className="w-full md:w-1/4 flex flex-col items-center justify-center gap-3 border-t md:border-t-0 md:border-l border-white/10 pt-4 md:pt-0 pl-0 md:pl-4">
                         <div className="flex flex-col items-center">
                           <span className="text-[10px] font-black uppercase text-gray-500 tracking-widest mb-1">Recompensa</span>
                           <div className="flex items-center gap-2 text-[#CCA761] font-black text-2xl h-8 drop-shadow-[0_0_10px_rgba(204,167,97,0.5)]">
@@ -1347,7 +1348,7 @@ export default function AgendaDiariaPage() {
                         </div>
                         <button
                           onClick={handleClaimMission}
-                          className="w-full bg-gradient-to-r from-[#ef4444] to-[#b91c1c] text-gray-900 dark:text-white text-[10px] sm:text-xs font-black uppercase tracking-widest py-2.5 rounded-lg hover:scale-105 transition-transform shadow-[0_0_20px_rgba(239,68,68,0.4)] border border-[#fca5a5]/30 mt-2"
+                          className="w-full bg-gradient-to-r from-[#ef4444] to-[#b91c1c] text-white text-[10px] sm:text-xs font-black uppercase tracking-widest py-2.5 rounded-lg hover:scale-105 transition-transform shadow-[0_0_20px_rgba(239,68,68,0.4)] border border-[#fca5a5]/30 mt-2"
                         >
                           Assumir Missao
                         </button>
@@ -1381,7 +1382,7 @@ export default function AgendaDiariaPage() {
               </div>
 
               {showFilters && (
-                <div className="mb-4 p-3 rounded-xl border border-gray-200 dark:border-white/10 bg-gray-100 dark:bg-white/5 flex flex-col gap-3">
+                <div className="mb-4 p-3 rounded-xl border border-white/10 bg-white/5 flex flex-col gap-3">
                   <div className="flex flex-wrap gap-2">
                     {[
                       ["all", "Todos"],
@@ -1392,7 +1393,7 @@ export default function AgendaDiariaPage() {
                       <button
                         key={value}
                         onClick={() => setStatusFilter(value as any)}
-                        className={`text-[10px] font-black uppercase tracking-widest px-3 py-1 rounded-lg border ${statusFilter === value ? "bg-[#CCA761] text-black border-[#CCA761]" : "border-gray-200 dark:border-white/10 text-gray-400 hover:text-gray-900 dark:text-white"}`}
+                        className={`text-[10px] font-black uppercase tracking-widest px-3 py-1 rounded-lg border ${statusFilter === value ? "bg-[#CCA761] text-black border-[#CCA761]" : "border-white/10 text-gray-400 hover:text-white"}`}
                       >
                         {label}
                       </button>
@@ -1408,7 +1409,7 @@ export default function AgendaDiariaPage() {
                       <button
                         key={value}
                         onClick={() => setTypeFilter(value as any)}
-                        className={`text-[10px] font-black uppercase tracking-widest px-3 py-1 rounded-lg border ${typeFilter === value ? "bg-[#CCA761] text-black border-[#CCA761]" : "border-gray-200 dark:border-white/10 text-gray-400 hover:text-gray-900 dark:text-white"}`}
+                        className={`text-[10px] font-black uppercase tracking-widest px-3 py-1 rounded-lg border ${typeFilter === value ? "bg-[#CCA761] text-black border-[#CCA761]" : "border-white/10 text-gray-400 hover:text-white"}`}
                       >
                         {label}
                       </button>
@@ -1419,14 +1420,14 @@ export default function AgendaDiariaPage() {
 
               {/* BARRA DE PROGRESSO ANIMADA */}
               {showProgressBar && (
-                <div className="mb-6 p-4 rounded-xl border border-gray-200 dark:border-white/5 bg-gradient-to-r from-gray-50 to-white dark:from-[#111] dark:to-[#0a0a0a] flex flex-col gap-3 relative overflow-hidden group animate-fade-in-up">
+                <div className="mb-6 p-4 rounded-xl border border-white/5 bg-gradient-to-r from-gray-50 to-white dark:from-[#111] dark:to-[#0a0a0a] flex flex-col gap-3 relative overflow-hidden group animate-fade-in-up">
                   <div className={`absolute top-0 right-0 w-32 h-32 rounded-full blur-3xl -translate-y-1/2 translate-x-1/4 transition-colors duration-1000 ${isKilled ? 'bg-[#4ade80]/20' : 'bg-[#CCA761]/10'}`}></div>
 
                   <div className="flex justify-between items-center relative z-10">
                     <div>
                       <span className="text-[10px] text-gray-400 font-bold uppercase tracking-widest">Aproveitamento Diário</span>
                       <div className="flex items-center gap-2 mt-1">
-                        <span className="text-2xl font-black text-gray-900 dark:text-white">{completedTasks} <span className="text-sm text-gray-500 font-normal">/ {totalTasks}</span></span>
+                        <span className="text-2xl font-black text-white">{completedTasks} <span className="text-sm text-gray-500 font-normal">/ {totalTasks}</span></span>
                         {/* MENSAGEM DE PARABÉNS QUANDO 100% */}
                         {isKilled && (
                           <span className="flex items-center gap-1.5 bg-[#4ade80]/10 text-[#4ade80] text-[11px] font-black uppercase px-3 py-1 rounded border border-[#4ade80]/50 shadow-[0_0_15px_rgba(74,222,128,0.3)] animate-bounce">
@@ -1441,7 +1442,7 @@ export default function AgendaDiariaPage() {
                   </div>
 
                   {/* BARRA COM ANIMAÇÃO DE LOADING */}
-                  <div className="w-full h-2 bg-gray-100 dark:bg-[#111] rounded-full overflow-hidden border border-gray-200 dark:border-white/5 relative z-10 transition-all">
+                  <div className="w-full h-2 bg-[#111] rounded-full overflow-hidden border border-white/5 relative z-10 transition-all">
                     <div
                       className={`absolute top-0 left-0 bottom-0 transition-all duration-1000 ease-out ${isKilled ? 'bg-[#4ade80] shadow-[0_0_15px_rgba(74,222,128,0.8)]' : 'bg-[#CCA761]'}`}
                       style={{ width: `${progress}%` }}
@@ -1468,12 +1469,12 @@ export default function AgendaDiariaPage() {
 
                   // Lógica Visual: Escura quando pendente, Verde + Vibrante quando concluída. Cor do badge mantém.
                   const cardBgClass = isDone
-                    ? 'border-[#4ade80]/30 bg-gray-100 dark:bg-[#111] hover:bg-gray-50 dark:hover:bg-[#151515] shadow-[0_0_20px_rgba(74,222,128,0.05)]'
+                    ? 'border-[#4ade80]/30 bg-[#111] hover:bg-gray-50 dark:hover:bg-[#151515] shadow-[0_0_20px_rgba(74,222,128,0.05)]'
                     : isExternalCalendar
                       ? 'border-[#4285F4]/30 bg-[#4285F4]/5 hover:bg-[#4285F4]/10 opacity-95 hover:opacity-100 shadow-[0_0_18px_rgba(66,133,244,0.08)]'
                     : isUrgentTask
                       ? 'border-red-500/40 bg-red-50 dark:bg-[#140909] hover:bg-red-100 dark:hover:bg-[#1a0b0b] opacity-95 hover:opacity-100 shadow-[0_0_20px_rgba(239,68,68,0.15)]'
-                      : 'border-gray-200 dark:border-white/5 bg-white dark:bg-[#050505] hover:bg-gray-50 dark:hover:bg-[#0a0a0a] opacity-80 hover:opacity-100';
+                      : 'border-white/5 bg-white dark:bg-[#050505] hover:bg-gray-50 dark:hover:bg-[#0a0a0a] opacity-80 hover:opacity-100';
 
                   const leftLineColor = isDone ? '#4ade80' : isExternalCalendar ? '#4285F4' : isUrgentTask ? '#ef4444' : 'rgba(204,167,97,0.3)';
                   const leftGlaow = isDone ? '0 0 10px rgba(74,222,128,0.5)' : isUrgentTask ? '0 0 10px rgba(239,68,68,0.5)' : 'none';
@@ -1507,11 +1508,11 @@ export default function AgendaDiariaPage() {
                                 <span className={`text-[9px] font-bold uppercase tracking-widest ${isExternalCalendar ? 'text-[#8ab4ff]' : isDone ? 'text-gray-500' : 'text-gray-400'}`}>• {ev.type}</span>
                                 
                                 {ev.created_by_agent && (
-                                  <span className="text-[8px] bg-gray-100 dark:bg-white/5 border border-gray-200 dark:border-white/10 text-gray-700 dark:text-gray-300 font-bold px-1.5 py-0.5 rounded flex items-center gap-1"><Wand2 size={10} /> {ev.created_by_agent}</span>
+                                  <span className="text-[8px] bg-white/5 border border-white/10 text-gray-300 font-bold px-1.5 py-0.5 rounded flex items-center gap-1"><Wand2 size={10} /> {ev.created_by_agent}</span>
                                 )}
 
                                 {ev.assigned_name_snapshot && (
-                                  <span className="inline-flex items-center gap-1.5 text-[9px] text-gray-700 dark:text-gray-300 border border-gray-200 dark:border-white/10 bg-gray-100 dark:bg-white/5 rounded-full px-2 py-0.5">
+                                  <span className="inline-flex items-center gap-1.5 text-[9px] text-gray-300 border border-white/10 bg-white/5 rounded-full px-2 py-0.5">
                                     {ev.assigned_avatar_url ? (
                                       <img src={ev.assigned_avatar_url} alt={ev.assigned_name_snapshot} className="w-4 h-4 rounded-full object-cover" />
                                     ) : (
@@ -1527,7 +1528,7 @@ export default function AgendaDiariaPage() {
                               <div className="flex">
                                 {/* BADGE DE RECOMPENSA (MAYUS COINS) */}
                                   {gamificationEnabled && !isExternalCalendar && (
-                                   <span className={`text-[9px] font-black uppercase tracking-widest flex items-center gap-1 border rounded px-2 py-0.5 ${isDone ? 'text-gray-500 border-gray-600 bg-gray-100 dark:bg-white/5' : 'text-[#CCA761] border-[#CCA761]/30 bg-[#CCA761]/10 shadow-[0_0_10px_rgba(204,167,97,0.2)]'}`}>
+                                   <span className={`text-[9px] font-black uppercase tracking-widest flex items-center gap-1 border rounded px-2 py-0.5 ${isDone ? 'text-gray-500 border-gray-600 bg-white/5' : 'text-[#CCA761] border-[#CCA761]/30 bg-[#CCA761]/10 shadow-[0_0_10px_rgba(204,167,97,0.2)]'}`}>
                                     +{getReward(ev)} <Coins size={10} className={isDone ? '' : 'text-[#FFD700]'} />
                                    </span>
                                  )}
@@ -1535,7 +1536,7 @@ export default function AgendaDiariaPage() {
                             </div>
 
                              {/* TÍTULO DA TAREFA */}
-                             <h4 className={`text-sm font-bold tracking-wide transition-colors duration-500 mt-1 ${isDone ? 'text-[#4ade80] line-through decoration-[#4ade80]/50' : 'text-gray-900 dark:text-white'
+                             <h4 className={`text-sm font-bold tracking-wide transition-colors duration-500 mt-1 ${isDone ? 'text-[#4ade80] line-through decoration-[#4ade80]/50' : 'text-white'
                                }`}>{ev.title}</h4>
 
                               {ev.process_number && (
@@ -1600,7 +1601,7 @@ export default function AgendaDiariaPage() {
                               event.stopPropagation();
                               toggleStatus(ev);
                             }}
-                            className={`mb-2 p-2 rounded-lg transition-colors border shadow-sm backdrop-blur-sm ${ev.status === 'Concluído' ? 'bg-[#4ade80]/20 text-[#4ade80] border-[#4ade80]/40 hover:bg-[#4ade80]/30' : 'bg-gray-100 dark:bg-[#111] text-[#CCA761] border-[#CCA761]/20 hover:bg-[#CCA761]/10'}`}
+                            className={`mb-2 p-2 rounded-lg transition-colors border shadow-sm backdrop-blur-sm ${ev.status === 'Concluído' ? 'bg-[#4ade80]/20 text-[#4ade80] border-[#4ade80]/40 hover:bg-[#4ade80]/30' : 'bg-[#111] text-[#CCA761] border-[#CCA761]/20 hover:bg-[#CCA761]/10'}`}
                             title={ev.status === 'Concluído' ? 'Desmarcar tarefa' : 'Concluir tarefa'}
                           >
                             <Check size={14} />
@@ -1608,7 +1609,7 @@ export default function AgendaDiariaPage() {
                           {gamificationEnabled && ev.status !== 'Concluído' && (
                             <button 
                               onClick={(e) => lockTask(e, ev)}
-                              className={`p-2 rounded-lg transition-colors border shadow-sm backdrop-blur-sm ${ev.status === 'Em andamento' ? 'bg-[#CCA761] text-[#0a0a0a] border-[#eadd87] drop-shadow-[0_0_10px_rgba(204,167,97,0.8)]' : 'bg-gray-100 dark:bg-[#111] text-gray-400 border-gray-200 dark:border-white/5 hover:text-gray-900 dark:text-white hover:bg-gray-100 dark:bg-white/5 hover:border-gray-300 dark:border-white/20'}`}
+                              className={`p-2 rounded-lg transition-colors border shadow-sm backdrop-blur-sm ${ev.status === 'Em andamento' ? 'bg-[#CCA761] text-[#0a0a0a] border-[#eadd87] drop-shadow-[0_0_10px_rgba(204,167,97,0.8)]' : 'bg-[#111] text-gray-400 border-white/5 hover:text-white hover:bg-white/5 hover:border-white/20'}`}
                               title={ev.status === 'Em andamento' ? "Destrancar tarefa" : "Trancar tarefa (Em Andamento)"}
                             >
                               {ev.status === 'Em andamento' ? <Lock size={14} /> : <Unlock size={14} />}
@@ -1637,15 +1638,15 @@ export default function AgendaDiariaPage() {
                   <AlertCircle size={14} /> Prazos Críticos (Escritório)
                 </h4>
                 <div className="grid grid-cols-2 gap-3">
-                  <div className="p-4 bg-gray-200 dark:bg-black/40 rounded-xl border border-gray-200 dark:border-white/5">
+                  <div className="p-4 bg-gray-200 dark:bg-black/40 rounded-xl border border-white/5">
                     <p className="text-[10px] uppercase tracking-widest text-gray-500 font-black">Compromissos exibidos</p>
-                    <p className="mt-1 text-2xl font-black text-gray-900 dark:text-white">{visibleEvents.length}</p>
+                    <p className="mt-1 text-2xl font-black text-white">{visibleEvents.length}</p>
                   </div>
                   <div className="p-4 bg-gray-200 dark:bg-black/40 rounded-xl border border-[#f87171]/30">
                     <p className="text-[10px] uppercase tracking-widest text-[#f87171] font-black">Críticos abertos</p>
                     <p className="mt-1 text-2xl font-black text-[#f87171]">{deadlineStats.criticalOpen}</p>
                   </div>
-                  <div className="p-4 bg-gray-200 dark:bg-black/40 rounded-xl border border-gray-200 dark:border-white/5 col-span-2">
+                  <div className="p-4 bg-gray-200 dark:bg-black/40 rounded-xl border border-white/5 col-span-2">
                     <p className="text-[10px] uppercase tracking-widest text-gray-500 font-black">Abertos com você</p>
                     <p className="mt-1 text-xl font-black text-[#CCA761]">{deadlineStats.mine} <span className="text-sm font-semibold text-gray-500">de {deadlineStats.open}</span></p>
                   </div>
@@ -1654,7 +1655,7 @@ export default function AgendaDiariaPage() {
 
               <div className="p-6 rounded-2xl border border-[#CCA761]/30 bg-gradient-to-br from-[#CCA761]/20 to-transparent">
                 <Star className="text-[#CCA761] mb-4" size={24} />
-                <h5 className="text-sm font-bold text-gray-900 dark:text-white mb-2 tracking-wide">Insight da Inteligência (MAYUS)</h5>
+                <h5 className="text-sm font-bold text-white mb-2 tracking-wide">Insight da Inteligência (MAYUS)</h5>
                 <p className="text-[11px] text-gray-400 leading-relaxed italic font-medium">&quot;{buildInsightText}&quot;</p>
               </div>
 
@@ -1722,24 +1723,24 @@ export default function AgendaDiariaPage() {
       {showCreateTaskModal && (
         <div className="fixed inset-0 z-50 flex items-center justify-center p-4">
           <div className="absolute inset-0 bg-gray-200 dark:bg-black/70 backdrop-blur-sm" onClick={() => { setShowCreateTaskModal(false); setEditingTaskId(null); }} />
-          <div className="relative w-full max-w-xl rounded-2xl border border-[#CCA761]/30 bg-white dark:bg-[#0a0a0a] p-6 shadow-[0_0_30px_rgba(0,0,0,0.6)]">
-            <button onClick={() => { setShowCreateTaskModal(false); setEditingTaskId(null); }} className="absolute top-4 right-4 p-2 rounded-lg bg-gray-100 dark:bg-white/5 text-gray-400 hover:text-gray-900 dark:text-white">
+          <div className="relative w-full max-w-xl rounded-2xl border border-[#CCA761]/30 bg-[#0a0a0a] p-6 shadow-[0_0_30px_rgba(0,0,0,0.6)]">
+            <button onClick={() => { setShowCreateTaskModal(false); setEditingTaskId(null); }} className="absolute top-4 right-4 p-2 rounded-lg bg-white/5 text-gray-400 hover:text-white">
               <X size={16} />
             </button>
-            <h4 className="text-lg font-bold text-gray-900 dark:text-white mb-4">{editingTaskId ? "Editar tarefa" : "Nova tarefa"}</h4>
+            <h4 className="text-lg font-bold text-white mb-4">{editingTaskId ? "Editar tarefa" : "Nova tarefa"}</h4>
             <div className="space-y-3">
               <input
                 value={newTaskTitle}
                 onChange={(e) => setNewTaskTitle(e.target.value)}
                 placeholder="Titulo da tarefa"
-                className="w-full bg-gray-50 dark:bg-[#151515] border border-gray-200 dark:border-white/10 rounded-lg px-3 py-2 text-sm text-gray-900 dark:text-white"
+                className="w-full bg-gray-50 dark:bg-[#151515] border border-white/10 rounded-lg px-3 py-2 text-sm text-white"
               />
               <div className="relative">
                 <textarea
                   value={newTaskResponsibleNotes}
                   onChange={(e) => setNewTaskResponsibleNotes(e.target.value)}
                   placeholder="Anotações do responsável"
-                  className="w-full bg-gray-50 dark:bg-[#151515] border border-gray-200 dark:border-white/10 rounded-lg px-3 py-2 pr-10 text-sm text-gray-900 dark:text-white min-h-[90px]"
+                  className="w-full bg-gray-50 dark:bg-[#151515] border border-white/10 rounded-lg px-3 py-2 pr-10 text-sm text-white min-h-[90px]"
                 />
                 <button
                   type="button"
@@ -1755,7 +1756,7 @@ export default function AgendaDiariaPage() {
                   value={newTaskProcessNumber}
                   onChange={(e) => setNewTaskProcessNumber(e.target.value)}
                   placeholder="Número do processo (opcional)"
-                  className="w-full bg-gray-50 dark:bg-[#151515] border border-gray-200 dark:border-white/10 rounded-lg px-3 py-2 pr-10 text-sm text-gray-900 dark:text-white"
+                  className="w-full bg-gray-50 dark:bg-[#151515] border border-white/10 rounded-lg px-3 py-2 pr-10 text-sm text-white"
                 />
                 <button
                   type="button"
@@ -1778,7 +1779,7 @@ export default function AgendaDiariaPage() {
                       }
                     }}
                     placeholder="Criar etiqueta"
-                    className="bg-gray-50 dark:bg-[#151515] border border-gray-200 dark:border-white/10 rounded-lg px-3 py-2 text-sm text-gray-900 dark:text-white"
+                    className="bg-gray-50 dark:bg-[#151515] border border-white/10 rounded-lg px-3 py-2 text-sm text-white"
                   />
                   <button
                     type="button"
@@ -1798,7 +1799,7 @@ export default function AgendaDiariaPage() {
                           <button
                             type="button"
                             onClick={() => toggleKnownTag(tag)}
-                            className={`px-2 py-1 rounded text-[9px] uppercase tracking-widest border transition-colors ${selected ? "text-[#CCA761] border-[#CCA761]/40 bg-[#CCA761]/10" : "text-gray-400 border-gray-200 dark:border-white/10 hover:border-gray-300 dark:border-white/20"}`}
+                            className={`px-2 py-1 rounded text-[9px] uppercase tracking-widest border transition-colors ${selected ? "text-[#CCA761] border-[#CCA761]/40 bg-[#CCA761]/10" : "text-gray-400 border-white/10 hover:border-white/20"}`}
                           >
                             {tag}
                           </button>
@@ -1834,22 +1835,22 @@ export default function AgendaDiariaPage() {
                 )}
               </div>
               <div className="grid grid-cols-1 sm:grid-cols-3 gap-3">
-                <select value={newTaskUrgency} onChange={(e) => setNewTaskUrgency(e.target.value as any)} className="bg-gray-50 dark:bg-[#151515] border border-gray-200 dark:border-white/10 rounded-lg px-3 py-2 text-sm text-gray-900 dark:text-white">
+                <select value={newTaskUrgency} onChange={(e) => setNewTaskUrgency(e.target.value as any)} className="bg-gray-50 dark:bg-[#151515] border border-white/10 rounded-lg px-3 py-2 text-sm text-white">
                   <option value="URGENTE">Urgente</option>
                   <option value="ATENCAO">Atencao</option>
                   <option value="ROTINA">Rotina</option>
                 </select>
-                <select value={newTaskType} onChange={(e) => setNewTaskType(e.target.value as any)} className="bg-gray-50 dark:bg-[#151515] border border-gray-200 dark:border-white/10 rounded-lg px-3 py-2 text-sm text-gray-900 dark:text-white">
+                <select value={newTaskType} onChange={(e) => setNewTaskType(e.target.value as any)} className="bg-gray-50 dark:bg-[#151515] border border-white/10 rounded-lg px-3 py-2 text-sm text-white">
                   <option value="Tarefa">Tarefa</option>
                   <option value="Prazo">Prazo</option>
                   <option value="Processo">Processo</option>
                   <option value="CRM">CRM</option>
                 </select>
-                <input type="date" value={newTaskScheduledFor} onChange={(e) => setNewTaskScheduledFor(e.target.value)} className="bg-gray-50 dark:bg-[#151515] border border-gray-200 dark:border-white/10 rounded-lg px-3 py-2 text-sm text-gray-900 dark:text-white" />
+                <input type="date" value={newTaskScheduledFor} onChange={(e) => setNewTaskScheduledFor(e.target.value)} className="bg-gray-50 dark:bg-[#151515] border border-white/10 rounded-lg px-3 py-2 text-sm text-white" />
               </div>
 
               <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
-                <select value={newTaskVisibility} onChange={(e) => setNewTaskVisibility(e.target.value as any)} className="bg-gray-50 dark:bg-[#151515] border border-gray-200 dark:border-white/10 rounded-lg px-3 py-2 text-sm text-gray-900 dark:text-white">
+                <select value={newTaskVisibility} onChange={(e) => setNewTaskVisibility(e.target.value as any)} className="bg-gray-50 dark:bg-[#151515] border border-white/10 rounded-lg px-3 py-2 text-sm text-white">
                   <option value="private">Pessoal (nao vai para global)</option>
                   {canAssignGlobalTask && (
                     <option value="global">Global (vai para agenda global)</option>
@@ -1859,7 +1860,7 @@ export default function AgendaDiariaPage() {
                   value={newTaskVisibility === "private" ? currentUserId || "" : newTaskAssignedTo}
                   onChange={(e) => setNewTaskAssignedTo(e.target.value)}
                   disabled={newTaskVisibility === "private" || teamMembers.length === 0}
-                  className="bg-gray-50 dark:bg-[#151515] border border-gray-200 dark:border-white/10 rounded-lg px-3 py-2 text-sm text-gray-900 dark:text-white disabled:opacity-50 disabled:cursor-not-allowed"
+                  className="bg-gray-50 dark:bg-[#151515] border border-white/10 rounded-lg px-3 py-2 text-sm text-white disabled:opacity-50 disabled:cursor-not-allowed"
                 >
                   <option value={currentUserId || ""}>Responsável: você</option>
                   {teamMembers.map((member) => (
@@ -1871,7 +1872,7 @@ export default function AgendaDiariaPage() {
               </div>
 
               <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
-                <label className="flex items-center gap-2 text-sm text-gray-700 dark:text-gray-300 bg-gray-50 dark:bg-[#151515] border border-gray-200 dark:border-white/10 rounded-lg px-3 py-2">
+                <label className="flex items-center gap-2 text-sm text-gray-300 bg-gray-50 dark:bg-[#151515] border border-white/10 rounded-lg px-3 py-2">
                   <input
                     type="checkbox"
                     checked={newTaskReminderOnly}
@@ -1880,7 +1881,7 @@ export default function AgendaDiariaPage() {
                   Mostrar somente na data marcada (lembrete)
                 </label>
                 {newTaskReminderOnly && (
-                  <label className="flex items-center gap-2 text-sm text-gray-700 dark:text-gray-300 bg-gray-50 dark:bg-[#151515] border border-gray-200 dark:border-white/10 rounded-lg px-3 py-2 min-w-0">
+                  <label className="flex items-center gap-2 text-sm text-gray-300 bg-gray-50 dark:bg-[#151515] border border-white/10 rounded-lg px-3 py-2 min-w-0">
                     <span className="text-xs sm:text-sm whitespace-nowrap">Aparecer antes por</span>
                     <input
                       type="number"
@@ -1889,7 +1890,7 @@ export default function AgendaDiariaPage() {
                       inputMode="numeric"
                       value={newTaskReminderDaysBefore}
                       onChange={(e) => setNewTaskReminderDaysBefore(e.target.value)}
-                      className="w-12 shrink-0 text-center bg-gray-200 dark:bg-black/20 border border-gray-200 dark:border-white/10 rounded-lg px-1.5 py-1 text-sm text-gray-900 dark:text-white"
+                      className="w-12 shrink-0 text-center bg-gray-200 dark:bg-black/20 border border-white/10 rounded-lg px-1.5 py-1 text-sm text-white"
                     />
                     <span className="text-xs sm:text-sm whitespace-nowrap">dia(s)</span>
                   </label>
@@ -1925,18 +1926,18 @@ export default function AgendaDiariaPage() {
       {notesOnlyTask && (
         <div className="fixed inset-0 z-50 flex items-center justify-center p-4">
           <div className="absolute inset-0 bg-gray-200 dark:bg-black/70 backdrop-blur-sm" onClick={() => { setNotesOnlyTask(null); setNotesOnlyValue(""); }} />
-          <div className="relative w-full max-w-lg rounded-2xl border border-[#CCA761]/30 bg-white dark:bg-[#0a0a0a] p-6 shadow-[0_0_30px_rgba(0,0,0,0.6)]">
-            <button onClick={() => { setNotesOnlyTask(null); setNotesOnlyValue(""); }} className="absolute top-4 right-4 p-2 rounded-lg bg-gray-100 dark:bg-white/5 text-gray-400 hover:text-gray-900 dark:text-white">
+          <div className="relative w-full max-w-lg rounded-2xl border border-[#CCA761]/30 bg-[#0a0a0a] p-6 shadow-[0_0_30px_rgba(0,0,0,0.6)]">
+            <button onClick={() => { setNotesOnlyTask(null); setNotesOnlyValue(""); }} className="absolute top-4 right-4 p-2 rounded-lg bg-white/5 text-gray-400 hover:text-white">
               <X size={16} />
             </button>
-            <h4 className="text-lg font-bold text-gray-900 dark:text-white mb-3">Anotações do responsável</h4>
+            <h4 className="text-lg font-bold text-white mb-3">Anotações do responsável</h4>
             <p className="text-[11px] text-gray-500 mb-3">Nesta tarefa você pode editar somente as anotações.</p>
             <div className="relative">
               <textarea
                 value={notesOnlyValue}
                 onChange={(e) => setNotesOnlyValue(e.target.value)}
                 placeholder="Escreva suas anotações"
-                className="w-full min-h-[140px] bg-gray-50 dark:bg-[#151515] border border-gray-200 dark:border-white/10 rounded-lg px-3 py-2 pr-10 text-sm text-gray-900 dark:text-white"
+                className="w-full min-h-[140px] bg-gray-50 dark:bg-[#151515] border border-white/10 rounded-lg px-3 py-2 pr-10 text-sm text-white"
               />
               <button
                 type="button"
