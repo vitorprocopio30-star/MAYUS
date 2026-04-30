@@ -1,14 +1,210 @@
 "use client";
 
-import { useEffect, useState, useCallback } from "react";
-import { useRouter } from "next/navigation";
+import { useEffect, useState, useCallback, useMemo } from "react";
 import { createClient } from "@/lib/supabase/client";
 import { Montserrat, Cormorant_Garamond } from "next/font/google";
-import { Target, TrendingUp, TrendingDown, AlertCircle, ShieldCheck, ArrowDownRight, Users, Briefcase, Clock, Calendar, BarChart2, Star, CheckCircle, CheckCircle2, Smartphone, Mail, Instagram, Globe, Activity, ChevronDown, User as UserIcon, Wand2 } from "lucide-react";
-import type { User } from "@supabase/supabase-js";
+import { Target, TrendingUp, AlertCircle, Users, Clock, Calendar, Star, Instagram, Globe, Activity, ChevronDown, User as UserIcon, Wand2 } from "lucide-react";
 
 const montserrat = Montserrat({ subsets: ["latin"], weight: ["300", "400", "500", "600", "700"] });
 const cormorant = Cormorant_Garamond({ subsets: ["latin"], weight: ["400", "600", "700"], style: ["normal", "italic"] });
+
+const FINANCIAL_PAID_STATUSES = new Set(["Pago", "Recebido", "Confirmado", "PAYMENT_RECEIVED", "PAYMENT_CONFIRMED"]);
+
+type SalesProfessionalMetrics = {
+  name: string;
+  closedCount: number;
+  investment: number;
+  revenue: number;
+  share: number;
+  roi: number;
+};
+
+type LeadSourceMetrics = {
+  instagram: number;
+  google: number;
+  referral: number;
+};
+
+type ProcessTypeMetric = {
+  label: string;
+  count: number;
+  percentage: number;
+};
+
+type DashboardMetrics = {
+  totalRevenue: number;
+  activeContracts: number;
+  averageTicket: number;
+  totalCommissions: number;
+  processActive: number;
+  openPipeline: number;
+  revenueReceived: number;
+  clientCount: number;
+  estimatedLtv: number;
+  delinquencyAmount: number;
+  delinquencyCount: number;
+  fixedCosts: number;
+  marketingSpend: number;
+  leadCount: number;
+  costPerLead: number;
+  leadConversionRate: number;
+  marketingRoas: number;
+  processRecoveryValue: number;
+  legalSuccessRevenue: number;
+  pendingContracts: number;
+  staleProcesses: number;
+  commercialScheduled: number;
+  commercialCompleted: number;
+  leadToScheduleRate: number;
+  scheduleCompletionRate: number;
+  noShowRate: number;
+  operationRate: number;
+  closerRoi: number;
+  legalSuccessRate: number;
+  salesByProfessional: SalesProfessionalMetrics[];
+  leadSources: LeadSourceMetrics;
+  processTypeDistribution: ProcessTypeMetric[];
+};
+
+type OfficeGoal = {
+  id?: string;
+  name?: string;
+  unit?: string;
+  value?: number | string;
+  source?: string;
+  currentValue?: number | string;
+};
+
+type FinancialRow = {
+  amount?: number | string | null;
+  status?: string | null;
+  due_date?: string | null;
+  type?: string | null;
+  description?: string | null;
+  source?: string | null;
+  reference_date?: string | null;
+  metadata?: Record<string, unknown> | null;
+};
+
+type CrmTaskRow = {
+  source?: string | null;
+};
+
+type ProcessTaskRow = {
+  title?: string | null;
+  description?: string | null;
+  valor_causa?: number | string | null;
+  value?: number | string | null;
+  data_ultima_movimentacao?: string | null;
+  demanda?: string | null;
+  sector?: string | null;
+  tags?: string[] | null;
+  sentenca?: string | null;
+  andamento_1grau?: string | null;
+  andamento_2grau?: string | null;
+};
+
+const normalizeMetricText = (value: unknown) =>
+  String(value || "")
+    .normalize("NFD")
+    .replace(/[\u0300-\u036f]/g, "")
+    .toLowerCase();
+
+const rowText = (row: FinancialRow) =>
+  normalizeMetricText(`${row.type || ""} ${row.description || ""} ${row.source || ""} ${JSON.stringify(row.metadata || {})}`);
+
+const isExpenseRow = (row: FinancialRow) => {
+  const type = normalizeMetricText(row.type);
+  return ["despesa", "expense", "saida", "custo", "cost"].some((keyword) => type.includes(keyword)) || Number(row.amount) < 0;
+};
+
+const isMarketingExpense = (row: FinancialRow) => {
+  const text = rowText(row);
+  return isExpenseRow(row) && /(marketing|ads|meta|facebook|instagram|google|trafego|campanha|anuncio)/.test(text);
+};
+
+const isReceivedRevenue = (row: FinancialRow) => {
+  if (isExpenseRow(row)) return false;
+  if (FINANCIAL_PAID_STATUSES.has(String(row.status || ""))) return true;
+
+  const type = normalizeMetricText(row.type);
+  const source = normalizeMetricText(row.source);
+  return type.includes("receita") && Boolean(row.reference_date || source.includes("asaas"));
+};
+
+const classifyLeadSource = (source?: string | null): keyof LeadSourceMetrics | null => {
+  const value = normalizeMetricText(source);
+  if (!value) return null;
+  if (/(instagram|insta|meta|facebook|fb)/.test(value)) return "instagram";
+  if (/(google|search|gads|adwords)/.test(value)) return "google";
+  if (/(indicacao|referral|recomendacao|parceiro)/.test(value)) return "referral";
+  return null;
+};
+
+const processText = (task: ProcessTaskRow) =>
+  normalizeMetricText(`${task.title || ""} ${task.description || ""} ${task.demanda || ""} ${task.sector || ""} ${(task.tags || []).join(" ")} ${task.sentenca || ""} ${task.andamento_1grau || ""} ${task.andamento_2grau || ""}`);
+
+const classifyProcessType = (task: ProcessTaskRow) => {
+  const explicit = String(task.demanda || task.sector || task.tags?.[0] || "").trim();
+  if (explicit) return explicit.slice(0, 48);
+
+  const text = processText(task);
+  if (/rmc|cartao|cartoes|reserva de margem/.test(text)) return "RMC / Cartoes";
+  if (/gram|margem consignavel|consignado/.test(text)) return "GRAM";
+  if (/inventario|sucessao|partilha/.test(text)) return "Inventarios";
+  if (/trabalh|verba|rescis/.test(text)) return "Trabalhista";
+  return "Outros";
+};
+
+const isFavorableProcess = (task: ProcessTaskRow) => {
+  const text = processText(task);
+  return /(parcialmente procedente|procedente|deferid|favoravel|acordo homologado|homologad)/.test(text)
+    && !/(improcedente|indeferid|desfavoravel)/.test(text);
+};
+
+const isUnfavorableProcess = (task: ProcessTaskRow) => {
+  const text = processText(task);
+  return /(improcedente|indeferid|desfavoravel|extint[ao])/.test(text);
+};
+
+const INITIAL_DASHBOARD_METRICS: DashboardMetrics = {
+  totalRevenue: 0,
+  activeContracts: 0,
+  averageTicket: 0,
+  totalCommissions: 0,
+  processActive: 0,
+  openPipeline: 0,
+  revenueReceived: 0,
+  clientCount: 0,
+  estimatedLtv: 0,
+  delinquencyAmount: 0,
+  delinquencyCount: 0,
+  fixedCosts: 0,
+  marketingSpend: 0,
+  leadCount: 0,
+  costPerLead: 0,
+  leadConversionRate: 0,
+  marketingRoas: 0,
+  processRecoveryValue: 0,
+  legalSuccessRevenue: 0,
+  pendingContracts: 0,
+  staleProcesses: 0,
+  commercialScheduled: 0,
+  commercialCompleted: 0,
+  leadToScheduleRate: 0,
+  scheduleCompletionRate: 0,
+  noShowRate: 0,
+  operationRate: 100,
+  closerRoi: 0,
+  legalSuccessRate: 0,
+  salesByProfessional: [],
+  leadSources: {
+    instagram: 0,
+    google: 0,
+    referral: 0,
+  },
+  processTypeDistribution: [],
+};
 
 /**
  * Hook de animação simples para os números do Dashboard
@@ -178,7 +374,7 @@ const ElegantResumoChart = () => (
   </div>
 );
 
-const ResumoView = ({ metrics, officeGoals = [] }: { metrics: any, officeGoals?: any[] }) => {
+const ResumoView = ({ metrics, officeGoals = [] }: { metrics: DashboardMetrics, officeGoals?: OfficeGoal[] }) => {
   // Buscar metas dinâmicas configuradas
   const targetRevenueGoal = officeGoals.find(g => g.unit === 'R$');
   const targetContractsGoal = officeGoals.find(g => g.unit === 'CTR');
@@ -256,9 +452,9 @@ const ResumoView = ({ metrics, officeGoals = [] }: { metrics: any, officeGoals?:
           } else if (goal.source === 'vendas') {
             realValue = metrics.activeContracts; // Contratos fechados reais
           } else if (goal.source === 'leads') {
-            realValue = 0; // Futuro: Count from leads table
+            realValue = metrics.leadCount;
           } else if (goal.source === 'agendamentos' || goal.unit === 'AGD') {
-            realValue = 0; // Futuro: Count from agenda
+            realValue = metrics.commercialScheduled;
           }
 
           const targetValue = Number(goal.value) || 1;
@@ -320,7 +516,7 @@ const ResumoView = ({ metrics, officeGoals = [] }: { metrics: any, officeGoals?:
             </div>
             <div className="flex flex-col">
               <span className="text-[10px] text-gray-400 font-black tracking-widest uppercase mb-1">ROI de Ads</span>
-              <span className="text-3xl font-black text-gray-900 dark:text-white"><AnimatedNumber value={4.8} floating />x</span>
+              <span className="text-3xl font-black text-white"><AnimatedNumber value={metrics.marketingRoas} floating />x</span>
             </div>
           </div>
           <div className="text-right">
@@ -335,7 +531,7 @@ const ResumoView = ({ metrics, officeGoals = [] }: { metrics: any, officeGoals?:
             </div>
             <div className="flex flex-col">
               <span className="text-[10px] text-gray-400 font-black tracking-widest uppercase mb-1">ROI Closer</span>
-              <span className="text-3xl font-black text-gray-900 dark:text-white"><AnimatedNumber value={8.4} floating />x</span>
+              <span className="text-3xl font-black text-white"><AnimatedNumber value={metrics.closerRoi} floating />x</span>
             </div>
           </div>
           <div className="text-right">
@@ -345,12 +541,12 @@ const ResumoView = ({ metrics, officeGoals = [] }: { metrics: any, officeGoals?:
 
         <GlassCard className="flex items-center justify-between p-5 border border-border">
           <div className="flex items-center gap-4">
-            <div className="w-12 h-12 rounded-xl bg-gray-100 dark:bg-white/5 flex items-center justify-center border border-gray-200 dark:border-white/10">
+            <div className="w-12 h-12 rounded-xl bg-white/5 flex items-center justify-center border border-white/10">
               <Activity size={20} className="text-gray-400" />
             </div>
             <div className="flex flex-col">
               <span className="text-[10px] text-gray-500 font-black tracking-widest uppercase mb-1">Operação</span>
-              <span className="text-3xl font-black text-gray-900 dark:text-white">96%</span>
+              <span className="text-3xl font-black text-white">{metrics.operationRate}%</span>
             </div>
           </div>
         </GlassCard>
@@ -365,18 +561,18 @@ const ResumoView = ({ metrics, officeGoals = [] }: { metrics: any, officeGoals?:
           <ElegantResumoChart />
         </GlassCard>
 
-        <GlassCard className="border border-gray-200 dark:border-white/5">
+        <GlassCard className="border border-white/5">
           <h4 className="text-[10px] text-gray-400 font-bold uppercase tracking-widest mb-6 flex items-center gap-2">
             <AlertCircle size={14} className="text-[#f87171]" /> Radar de Atenção
           </h4>
           <div className="space-y-4">
             <div className="p-3.5 bg-[#f87171]/10 rounded-lg border border-[#f87171]/20">
               <span className="text-xs font-bold text-[#f87171]">Inadimplência Elevada</span>
-              <p className="text-[10px] text-gray-400 mt-1">12 parcelas vencidas totalizando R$ 1.400,00.</p>
+              <p className="text-[10px] text-gray-400 mt-1">{metrics.delinquencyCount} parcelas vencidas totalizando R$ {metrics.delinquencyAmount.toLocaleString('pt-BR')}.</p>
             </div>
             <div className="p-3.5 bg-[#CCA761]/10 rounded-lg border border-[#CCA761]/20">
               <span className="text-xs font-bold text-[#CCA761]">Alto No-Show</span>
-              <p className="text-[10px] text-gray-400 mt-1">Ausências nas reuniões em 29%.</p>
+              <p className="text-[10px] text-gray-400 mt-1">Ausências nas reuniões em {metrics.noShowRate}%.</p>
             </div>
           </div>
         </GlassCard>
@@ -389,15 +585,15 @@ const ResumoView = ({ metrics, officeGoals = [] }: { metrics: any, officeGoals?:
 // GRAFICOS CUSTOMIZADOS (SVG/CSS)
 // ==========================================
 
-const ElegantAreaChart = () => (
+const ElegantAreaChart = ({ metrics, targetValue }: { metrics: DashboardMetrics; targetValue: number }) => (
   <GlassCard className="lg:col-span-3 border border-[#CCA761]/30 hover:border-[#CCA761]/50 transition-colors">
     <div className="flex justify-between items-start mb-6 relative z-20">
       <h4 className="text-[10px] text-[#CCA761] font-bold uppercase tracking-widest flex items-center gap-2">
         <TrendingUp size={14} /> Histórico de Receita (14 Dias)
       </h4>
       <div className="text-right">
-        <p className="text-3xl font-black text-[#4ade80] tracking-tighter drop-shadow-[0_0_15px_rgba(74,222,128,0.2)]">R$ <AnimatedNumber value={42500} /></p>
-        <p className="text-[9px] text-[#CCA761] uppercase tracking-widest">+18% contra período anterior</p>
+        <p className="text-3xl font-black text-[#4ade80] tracking-tighter drop-shadow-[0_0_15px_rgba(74,222,128,0.2)]">R$ <AnimatedNumber value={metrics.totalRevenue} /></p>
+        <p className="text-[9px] text-[#CCA761] uppercase tracking-widest">{Math.floor(((metrics.totalRevenue / Math.max(1, targetValue)) * 100) || 0)}% da meta ativa</p>
       </div>
     </div>
 
@@ -438,15 +634,22 @@ const ElegantAreaChart = () => (
   </GlassCard>
 );
 
-const ComercialView = ({ metrics, officeGoals = [] }: { metrics: any, officeGoals?: any[] }) => {
+const ComercialView = ({ metrics, officeGoals = [] }: { metrics: DashboardMetrics, officeGoals?: OfficeGoal[] }) => {
   const targetRevenueGoal = officeGoals.find(g => g.unit === 'R$');
   const targetVal = targetRevenueGoal ? Number(targetRevenueGoal.value) : 50000;
+  const closerRows = Array.isArray(metrics.salesByProfessional) ? metrics.salesByProfessional.slice(0, 2) : [];
+  const getInitials = (name: string) => name
+    .split(" ")
+    .map((part) => part[0])
+    .join("")
+    .slice(0, 2)
+    .toUpperCase();
 
   return (
     <div className="space-y-6 animate-fade-in-up">
       {/* Alta Gestão de KPIs */}
       <div className="grid grid-cols-1 md:grid-cols-4 gap-4">
-        <GlassCard shadow-lg>
+        <GlassCard className="shadow-lg">
           <p className="text-[10px] text-gray-500 uppercase tracking-widest font-bold mb-1">Receita Fechada vs. Meta</p>
           <h3 className="text-3xl font-bold text-[#4ade80] tracking-wide mt-2">
             R$ <AnimatedNumber value={metrics.totalRevenue} />
@@ -482,7 +685,7 @@ const ComercialView = ({ metrics, officeGoals = [] }: { metrics: any, officeGoal
 
     {/* Grid de Alta Performance */}
     <div className="grid grid-cols-1 lg:grid-cols-4 gap-4">
-      <ElegantAreaChart />
+      <ElegantAreaChart metrics={metrics} targetValue={targetVal} />
 
       {/* Funnel Fatiado Lateral */}
       <GlassCard className="lg:col-span-1 border border-[#CCA761]/20">
@@ -491,24 +694,24 @@ const ComercialView = ({ metrics, officeGoals = [] }: { metrics: any, officeGoal
         </h4>
         <div className="flex flex-col items-center gap-1.5 w-full">
           <div className="w-[100%] bg-[#22d3ee]/20 border border-[#22d3ee]/50 text-center py-3 rounded-t-lg relative">
-            <span className="text-sm font-bold text-gray-900 dark:text-white relative z-10"><AnimatedNumber value={320} /> Leads</span>
+            <span className="text-sm font-bold text-white relative z-10"><AnimatedNumber value={metrics.leadCount} /> Leads</span>
           </div>
           <div className="w-[85%] bg-[#b4a0f8]/20 border border-[#b4a0f8]/50 text-center py-3 rounded-sm relative">
-            <span className="text-sm font-bold text-gray-900 dark:text-white relative z-10"><AnimatedNumber value={155} /> Agendamentos</span>
-            <span className="absolute -right-2 top-1/2 -translate-y-1/2 translate-x-full text-[9px] text-gray-400 font-bold bg-gray-200 dark:bg-black px-1 rounded">48%</span>
+            <span className="text-sm font-bold text-white relative z-10"><AnimatedNumber value={metrics.commercialScheduled} /> Agendamentos</span>
+            <span className="absolute -right-2 top-1/2 -translate-y-1/2 translate-x-full text-[9px] text-gray-400 font-bold bg-gray-200 dark:bg-black px-1 rounded">{metrics.leadToScheduleRate}%</span>
           </div>
           <div className="w-[70%] bg-[#CCA761]/20 border border-[#CCA761]/50 text-center py-3 rounded-sm relative shadow-[0_0_10px_rgba(204,167,97,0.2)]">
-            <span className="text-sm font-bold text-[#f1d58d] relative z-10"><AnimatedNumber value={110} /> Realizadas</span>
-            <span className="absolute -right-2 top-1/2 -translate-y-1/2 translate-x-full text-[9px] text-[#CCA761] font-bold bg-gray-200 dark:bg-black px-1 rounded border border-[#CCA761]/30">71%</span>
+            <span className="text-sm font-bold text-[#f1d58d] relative z-10"><AnimatedNumber value={metrics.commercialCompleted} /> Realizadas</span>
+            <span className="absolute -right-2 top-1/2 -translate-y-1/2 translate-x-full text-[9px] text-[#CCA761] font-bold bg-gray-200 dark:bg-black px-1 rounded border border-[#CCA761]/30">{metrics.scheduleCompletionRate}%</span>
           </div>
           <div className="w-[50%] bg-[#4ade80]/20 border border-[#4ade80]/50 text-center py-3 rounded-b-lg relative">
-            <span className="text-sm font-bold text-gray-900 dark:text-white relative z-10"><AnimatedNumber value={metrics.activeContracts} /> Fechamentos</span>
+            <span className="text-sm font-bold text-white relative z-10"><AnimatedNumber value={metrics.activeContracts} /> Fechamentos</span>
             <span className="absolute -right-2 top-1/2 -translate-y-1/2 translate-x-full text-[9px] text-[#4ade80] font-bold bg-gray-200 dark:bg-black px-1 rounded">16%</span>
           </div>
         </div>
-        <div className="mt-8 pt-4 border-t border-gray-200 dark:border-white/5 flex flex-col justify-between text-xs gap-2">
-          <div className="flex justify-between items-center"><span className="text-gray-500">Ticket Médio:</span><span className="text-gray-900 dark:text-white font-bold">R$ {metrics.averageTicket.toLocaleString('pt-BR')}</span></div>
-          <div className="flex justify-between items-center"><span className="text-gray-500">Taxa de No-Show:</span><span className="text-[#f87171] font-bold">29%</span></div>
+        <div className="mt-8 pt-4 border-t border-white/5 flex flex-col justify-between text-xs gap-2">
+          <div className="flex justify-between items-center"><span className="text-gray-500">Ticket Médio:</span><span className="text-white font-bold">R$ {metrics.averageTicket.toLocaleString('pt-BR')}</span></div>
+          <div className="flex justify-between items-center"><span className="text-gray-500">Taxa de No-Show:</span><span className="text-[#f87171] font-bold">{metrics.noShowRate}%</span></div>
         </div>
       </GlassCard>
     </div>
@@ -520,7 +723,7 @@ const ComercialView = ({ metrics, officeGoals = [] }: { metrics: any, officeGoal
           <UserIcon size={14} className="text-[#CCA761]" /> ROI de Vendas por Executivo (Closer)
         </h4>
         <div className="w-full text-sm text-left overflow-x-auto">
-          <div className="grid grid-cols-6 min-w-[700px] text-[10px] text-gray-500 font-bold uppercase tracking-wider mb-2 pb-2 border-b border-gray-200 dark:border-white/5">
+          <div className="grid grid-cols-6 min-w-[700px] text-[10px] text-gray-500 font-bold uppercase tracking-wider mb-2 pb-2 border-b border-white/5">
             <span className="col-span-2">Closer (Executivo)</span>
             <span>Investimento (Custo/Mês)</span>
             <span>Receita Gerada</span>
@@ -528,41 +731,32 @@ const ComercialView = ({ metrics, officeGoals = [] }: { metrics: any, officeGoal
             <span className="text-right">R.O.I.</span>
           </div>
 
-          {/* Closer 1 */}
-          <div className="grid grid-cols-6 min-w-[700px] py-4 border-b border-gray-200 dark:border-white/5 items-center group hover:bg-gray-100 dark:bg-white/5 transition-colors px-2 rounded-lg">
-            <div className="col-span-2 flex items-center gap-3">
-              <div className="w-8 h-8 rounded border border-[#CCA761] flex items-center justify-center bg-[#CCA761]/10 text-[#CCA761] font-bold text-xs shadow-[0_0_10px_rgba(204,167,97,0.2)]">AS</div>
-              <div>
-                <p className="text-gray-800 dark:text-gray-200 font-bold text-sm uppercase tracking-wide">Ana S. <span className="text-[9px] text-[#CCA761] font-normal border border-[#CCA761]/30 rounded px-1 ml-1 bg-[#CCA761]/10">SÊNIOR</span></p>
-                <p className="text-[10px] text-gray-500 font-mono mt-0.5"><AnimatedNumber value={85} /> Leads trabalhados</p>
+          {closerRows.length === 0 ? (
+            <div className="min-w-[700px] py-8 text-center text-xs text-gray-500 border-b border-white/5">
+              Nenhum fechamento com profissional registrado ainda.
+            </div>
+          ) : closerRows.map((closer, index) => (
+            <div key={closer.name} className="grid grid-cols-6 min-w-[700px] py-4 border-b border-white/5 items-center group hover:bg-white/5 transition-colors px-2 rounded-lg">
+              <div className="col-span-2 flex items-center gap-3">
+                <div className={`w-8 h-8 rounded flex items-center justify-center font-bold text-xs ${index === 0 ? "border border-[#CCA761] bg-[#CCA761]/10 text-[#CCA761] shadow-[0_0_10px_rgba(204,167,97,0.2)]" : "border border-white/10 bg-[#111] text-gray-500"}`}>
+                  {getInitials(closer.name)}
+                </div>
+                <div>
+                  <p className="text-gray-200 font-bold text-sm uppercase tracking-wide">{closer.name}</p>
+                  <p className="text-[10px] text-gray-500 font-mono mt-0.5"><AnimatedNumber value={closer.closedCount} /> fechamentos</p>
+                </div>
               </div>
-            </div>
-            <span className="text-[#f87171] font-mono text-xs">R$ 4.500,00</span>
-            <span className="text-[#4ade80] font-mono font-bold text-sm">R$ 38.000,00</span>
-            <div className="flex gap-2 items-center">
-              <span className="text-gray-900 dark:text-white text-xs font-bold">42%</span>
-              <div className="w-12 h-1.5 bg-gray-100 dark:bg-[#111] rounded-full"><div className="bg-[#CCA761] h-full rounded-full" style={{ width: '42%' }}></div></div>
-            </div>
-            <span className="text-[#CCA761] font-black italic text-2xl text-right drop-shadow-[0_0_15px_rgba(204,167,97,0.5)]"><AnimatedNumber value={8.4} floating />x</span>
-          </div>
-
-          {/* Closer 2 */}
-          <div className="grid grid-cols-6 min-w-[700px] py-4 border-b border-gray-200 dark:border-white/5 items-center group hover:bg-gray-100 dark:bg-white/5 transition-colors px-2 rounded-lg">
-            <div className="col-span-2 flex items-center gap-3">
-              <div className="w-8 h-8 rounded border border-gray-200 dark:border-white/10 flex items-center justify-center bg-gray-100 dark:bg-[#111] text-gray-500 font-bold text-xs">RV</div>
-              <div>
-                <p className="text-gray-400 font-bold text-sm uppercase tracking-wide">Roberto V.</p>
-                <p className="text-[10px] text-gray-500 font-mono mt-0.5"><AnimatedNumber value={62} /> Leads trabalhados</p>
+              <span className="text-[#f87171] font-mono text-xs">R$ {closer.investment.toLocaleString('pt-BR')}</span>
+              <span className="text-[#4ade80] font-mono font-bold text-sm">R$ {closer.revenue.toLocaleString('pt-BR')}</span>
+              <div className="flex gap-2 items-center">
+                <span className="text-white text-xs font-bold">{closer.share}%</span>
+                <div className="w-12 h-1.5 bg-[#111] rounded-full"><div className="bg-[#CCA761] h-full rounded-full" style={{ width: `${Math.min(100, closer.share)}%` }}></div></div>
               </div>
+              <span className={`${index === 0 ? "text-[#CCA761] font-black italic text-2xl drop-shadow-[0_0_15px_rgba(204,167,97,0.5)]" : "text-gray-300 font-bold text-xl"} text-right`}>
+                <AnimatedNumber value={closer.roi} floating />x
+              </span>
             </div>
-            <span className="text-[#f87171] font-mono text-xs">R$ 2.800,00</span>
-            <span className="text-[#4ade80] font-mono font-bold text-sm">R$ 15.200,00</span>
-            <div className="flex gap-2 items-center">
-              <span className="text-gray-400 text-xs font-bold">28%</span>
-              <div className="w-12 h-1.5 bg-gray-100 dark:bg-[#111] rounded-full"><div className="bg-gray-500 h-full rounded-full" style={{ width: '28%' }}></div></div>
-            </div>
-            <span className="text-gray-700 dark:text-gray-300 font-bold text-xl text-right"><AnimatedNumber value={5.4} floating />x</span>
-          </div>
+          ))}
 
         </div>
       </GlassCard>
@@ -571,7 +765,7 @@ const ComercialView = ({ metrics, officeGoals = [] }: { metrics: any, officeGoal
   );
 };
 
-const FinanceiroView = ({ metrics }: { metrics: any }) => (
+const FinanceiroView = ({ metrics }: { metrics: DashboardMetrics }) => (
   <div className="space-y-6 animate-fade-in-up">
     <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-4">
       <GlassCard>
@@ -591,16 +785,16 @@ const FinanceiroView = ({ metrics }: { metrics: any }) => (
       <GlassCard>
         <p className="text-[10px] text-gray-500 uppercase tracking-widest font-bold mb-1">LTV Estimado (Por Cliente)</p>
         <h3 className="text-3xl font-bold text-[#22d3ee] tracking-wide mt-2">
-          R$ <AnimatedNumber value={12400} />
+          R$ <AnimatedNumber value={metrics.estimatedLtv} />
         </h3>
-        <p className="text-[10px] text-gray-400 mt-2">Média da carteira inteira</p>
+        <p className="text-[10px] text-gray-400 mt-2">{metrics.clientCount} clientes na carteira</p>
       </GlassCard>
       <GlassCard>
         <p className="text-[10px] text-gray-500 uppercase tracking-widest font-bold mb-1">Inadimplência</p>
         <h3 className="text-3xl font-bold text-[#f87171] tracking-wide mt-2">
-          R$ <AnimatedNumber value={1400} />
+          R$ <AnimatedNumber value={metrics.delinquencyAmount} />
         </h3>
-        <p className="text-[10px] text-[#f87171] mt-2">12 parcelas vencidas</p>
+        <p className="text-[10px] text-[#f87171] mt-2">{metrics.delinquencyCount} parcelas vencidas</p>
       </GlassCard>
     </div>
 
@@ -610,7 +804,7 @@ const FinanceiroView = ({ metrics }: { metrics: any }) => (
           <div>
             <p className="text-[10px] text-gray-500 uppercase tracking-widest mb-3 font-bold">Resumo de Caixa</p>
             <div className="flex justify-between items-center text-sm font-medium mb-2">
-              <span className="text-gray-700 dark:text-gray-300">Entradas (Parcelas Recebidas)</span>
+              <span className="text-gray-300">Entradas (Parcelas Recebidas)</span>
               <span className="text-[#4ade80]">R$ {metrics.revenueReceived.toLocaleString('pt-BR')}</span>
             </div>
           </div>
@@ -618,8 +812,8 @@ const FinanceiroView = ({ metrics }: { metrics: any }) => (
             <p className="text-[10px] text-gray-500 uppercase tracking-widest mb-3 font-bold">Saídas (Operacional)</p>
             <div className="space-y-2 text-sm">
               <div className="flex justify-between items-center">
-                <span className="text-gray-400">Salários Base</span>
-                <span className="text-[#f87171]">- R$ 10.500,00</span>
+                <span className="text-gray-400">Custos Fixos Cadastrados</span>
+                <span className="text-[#f87171]">- R$ {metrics.fixedCosts.toLocaleString('pt-BR')}</span>
               </div>
               <div className="flex justify-between items-center">
                 <span className="text-gray-400">Comissões Pagas</span>
@@ -627,13 +821,13 @@ const FinanceiroView = ({ metrics }: { metrics: any }) => (
               </div>
               <div className="flex justify-between items-center">
                 <span className="text-gray-400">Marketing (Ads Google/Meta)</span>
-                <span className="text-gray-500">- R$ 3.000,00</span>
+                <span className="text-gray-500">- R$ {metrics.marketingSpend.toLocaleString('pt-BR')}</span>
               </div>
             </div>
           </div>
-          <div className="pt-4 border-t border-gray-200 dark:border-white/5 flex justify-between items-center font-bold">
-            <span className="text-gray-700 dark:text-gray-300">Lucro Operacional Estimado</span>
-            <span className="text-[#4ade80]">R$ {(metrics.revenueReceived - metrics.totalCommissions - 13500).toLocaleString('pt-BR')}</span>
+          <div className="pt-4 border-t border-white/5 flex justify-between items-center font-bold">
+            <span className="text-gray-300">Lucro Operacional Estimado</span>
+            <span className="text-[#4ade80]">R$ {(metrics.revenueReceived - metrics.totalCommissions - metrics.fixedCosts - metrics.marketingSpend).toLocaleString('pt-BR')}</span>
           </div>
         </div>
       </GlassCard>
@@ -644,13 +838,13 @@ const FinanceiroView = ({ metrics }: { metrics: any }) => (
           <Calendar size={14} className="text-[#CCA761]" /> Projeção de Caixa
         </h4>
         <div className="flex items-end gap-2 h-32 relative z-10">
-          <div className="flex-1 bg-gray-100 dark:bg-[#1a1a1a] rounded-t-md relative group-hover:bg-[#22d3ee]/10 transition-colors h-[40%]" title="Mês Atual">
+          <div className="flex-1 bg-[#1a1a1a] rounded-t-md relative group-hover:bg-[#22d3ee]/10 transition-colors h-[40%]" title="Mês Atual">
             <span className="absolute -top-6 left-1/2 -translate-x-1/2 text-[10px] text-gray-500">Hoje</span>
           </div>
-          <div className="flex-1 bg-gray-100 dark:bg-[#1a1a1a] rounded-t-md relative group-hover:bg-[#22d3ee]/20 transition-colors h-[60%]" title="Mês +1">
+          <div className="flex-1 bg-[#1a1a1a] rounded-t-md relative group-hover:bg-[#22d3ee]/20 transition-colors h-[60%]" title="Mês +1">
             <span className="absolute -top-6 left-1/2 -translate-x-1/2 text-[10px] text-gray-500">+30d</span>
           </div>
-          <div className="flex-1 bg-gray-100 dark:bg-[#1a1a1a] rounded-t-md relative group-hover:bg-[#22d3ee]/30 transition-colors h-[75%]" title="Mês +2">
+          <div className="flex-1 bg-[#1a1a1a] rounded-t-md relative group-hover:bg-[#22d3ee]/30 transition-colors h-[75%]" title="Mês +2">
             <span className="absolute -top-6 left-1/2 -translate-x-1/2 text-[10px] text-gray-500">+60d</span>
           </div>
           <div className="flex-1 bg-gradient-to-t from-[#CCA761]/20 to-[#CCA761]/80 rounded-t-md relative shadow-[0_0_20px_rgba(204,167,97,0.2)] h-[100%]" title="Mês +3">
@@ -658,43 +852,43 @@ const FinanceiroView = ({ metrics }: { metrics: any }) => (
           </div>
         </div>
         <div className="mt-8 text-center relative z-10">
-          <p className="text-xs text-gray-400">Projeção considerando parcelas Assas e acordos caindo nos próximos 90 dias.</p>
+          <p className="text-xs text-gray-400">Projeção considerando parcelas Asaas e acordos caindo nos próximos 90 dias.</p>
         </div>
       </div>
     </div>
   </div>
 );
 
-const MarketingView = () => (
+const MarketingView = ({ metrics }: { metrics: DashboardMetrics }) => (
   <div className="space-y-6 animate-fade-in-up">
     <div className="grid grid-cols-1 md:grid-cols-4 gap-4">
       <GlassCard>
         <p className="text-[10px] text-gray-500 uppercase tracking-widest font-bold mb-1">Custo por Lead (CPL)</p>
         <h3 className="text-3xl font-bold text-[#f87171] tracking-wide mt-2">
-          R$ <AnimatedNumber value={18.5} floating />
+          R$ <AnimatedNumber value={metrics.costPerLead} floating />
         </h3>
-        <p className="text-[10px] text-gray-400 mt-2">Média da semana</p>
+        <p className="text-[10px] text-gray-400 mt-2">Baseado em gasto cadastrado</p>
       </GlassCard>
       <GlassCard>
         <p className="text-[10px] text-gray-500 uppercase tracking-widest font-bold mb-1">Volume de Leads</p>
         <h3 className="text-3xl font-bold text-[#CCA761] tracking-wide mt-2">
-          <AnimatedNumber value={840} />
+          <AnimatedNumber value={metrics.leadCount} />
         </h3>
-        <p className="text-[10px] text-[#4ade80] mt-2">Nas últimas 4 semanas</p>
+        <p className="text-[10px] text-[#4ade80] mt-2">Leads registrados</p>
       </GlassCard>
       <GlassCard>
-        <p className="text-[10px] text-gray-500 uppercase tracking-widest font-bold mb-1">Taxa Abertura Wpp/Mail</p>
+        <p className="text-[10px] text-gray-500 uppercase tracking-widest font-bold mb-1">Conversão Lead / Contrato</p>
         <h3 className="text-3xl font-bold text-[#22d3ee] tracking-wide mt-2">
-          68.4%
+          {metrics.leadConversionRate}%
         </h3>
-        <p className="text-[10px] text-gray-400 mt-2">Disparos engajados</p>
+        <p className="text-[10px] text-gray-400 mt-2">Contratos fechados sobre leads</p>
       </GlassCard>
       <GlassCard>
         <p className="text-[10px] text-gray-500 uppercase tracking-widest font-bold mb-1">ROAS (Retorno em Ads)</p>
         <h3 className="text-3xl font-bold text-[#4ade80] tracking-wide mt-2">
-          4.8x
+          {metrics.marketingRoas.toFixed(1)}x
         </h3>
-        <p className="text-[10px] text-gray-400 mt-2">Para cada R$1, volta R$4,80</p>
+        <p className="text-[10px] text-gray-400 mt-2">Receita recebida / gasto de ads</p>
       </GlassCard>
     </div>
 
@@ -703,19 +897,19 @@ const MarketingView = () => (
         <Target size={14} className="text-[#CCA761]" /> Origem dos Leads (Canais)
       </h4>
       <div className="flex gap-4 mb-4">
-        <div className="flex-1 bg-gray-100 dark:bg-[#111] border border-gray-200 dark:border-white/5 rounded-lg p-4 flex flex-col items-center justify-center">
+        <div className="flex-1 bg-[#111] border border-white/5 rounded-lg p-4 flex flex-col items-center justify-center">
           <Instagram size={24} className="text-pink-500 mb-2" />
-          <span className="text-2xl font-bold text-gray-900 dark:text-white"><AnimatedNumber value={420} /></span>
+          <span className="text-2xl font-bold text-white"><AnimatedNumber value={metrics.leadSources.instagram} /></span>
           <span className="text-[10px] text-gray-500 uppercase mt-1">Instagram</span>
         </div>
-        <div className="flex-1 bg-gray-100 dark:bg-[#111] border border-gray-200 dark:border-white/5 rounded-lg p-4 flex flex-col items-center justify-center">
+        <div className="flex-1 bg-[#111] border border-white/5 rounded-lg p-4 flex flex-col items-center justify-center">
           <Globe size={24} className="text-blue-500 mb-2" />
-          <span className="text-2xl font-bold text-gray-900 dark:text-white"><AnimatedNumber value={280} /></span>
+          <span className="text-2xl font-bold text-white"><AnimatedNumber value={metrics.leadSources.google} /></span>
           <span className="text-[10px] text-gray-500 uppercase mt-1">Google Search</span>
         </div>
-        <div className="flex-1 bg-gray-100 dark:bg-[#111] border border-gray-200 dark:border-white/5 rounded-lg p-4 flex flex-col items-center justify-center">
+        <div className="flex-1 bg-[#111] border border-white/5 rounded-lg p-4 flex flex-col items-center justify-center">
           <Users size={24} className="text-green-500 mb-2" />
-          <span className="text-2xl font-bold text-gray-900 dark:text-white"><AnimatedNumber value={140} /></span>
+          <span className="text-2xl font-bold text-white"><AnimatedNumber value={metrics.leadSources.referral} /></span>
           <span className="text-[10px] text-gray-500 uppercase mt-1">Indicação</span>
         </div>
       </div>
@@ -723,7 +917,13 @@ const MarketingView = () => (
   </div>
 );
 
-const ProcessosView = ({ metrics }: { metrics: any }) => (
+const ProcessosView = ({ metrics }: { metrics: DashboardMetrics }) => {
+  const processTypeRows = metrics.processTypeDistribution.length > 0
+    ? metrics.processTypeDistribution
+    : [{ label: "Sem classificacao", count: 0, percentage: 0 }];
+  const barColors = ["#22d3ee", "#CCA761", "#71717a"];
+
+  return (
   <div className="space-y-6 animate-fade-in-up">
     <div className="grid grid-cols-1 md:grid-cols-4 gap-4">
       <GlassCard>
@@ -736,23 +936,23 @@ const ProcessosView = ({ metrics }: { metrics: any }) => (
       <GlassCard>
         <p className="text-[10px] text-gray-500 uppercase tracking-widest font-bold mb-1">Taxa de Êxito Histórica</p>
         <h3 className="text-3xl font-bold text-[#CCA761] tracking-wide mt-2">
-          92%
+          {metrics.legalSuccessRate}%
         </h3>
         <p className="text-[10px] text-gray-400 mt-2">Decisões favoráveis</p>
       </GlassCard>
       <GlassCard>
         <p className="text-[10px] text-gray-500 uppercase tracking-widest font-bold mb-1">Valor em Recuperação</p>
         <h3 className="text-3xl font-bold text-[#b4a0f8] tracking-wide mt-2">
-          R$ 2.4<span className="text-xl">M</span>
+          R$ <AnimatedNumber value={metrics.processRecoveryValue} />
         </h3>
         <p className="text-[10px] text-gray-400 mt-2">Volume potencial de causas</p>
       </GlassCard>
       <GlassCard>
-        <p className="text-[10px] text-gray-500 uppercase tracking-widest font-bold mb-1">Receita de Êxito (Retida)</p>
+        <p className="text-[10px] text-gray-500 uppercase tracking-widest font-bold mb-1">Exito Potencial</p>
         <h3 className="text-3xl font-bold text-[#4ade80] tracking-wide mt-2">
-          R$ <AnimatedNumber value={12500} />
+          R$ <AnimatedNumber value={metrics.legalSuccessRevenue} />
         </h3>
-        <p className="text-[10px] text-gray-400 mt-2">Média 30% no último mês</p>
+        <p className="text-[10px] text-gray-400 mt-2">30% sobre causas favoraveis identificadas</p>
       </GlassCard>
     </div>
 
@@ -760,18 +960,17 @@ const ProcessosView = ({ metrics }: { metrics: any }) => (
       <GlassCard>
         <h4 className="text-[10px] text-gray-400 font-bold uppercase tracking-widest mb-6">Distribuição por Tipo</h4>
         <div className="space-y-3">
-          <div>
-            <div className="flex justify-between text-xs mb-1"><span className="text-gray-700 dark:text-gray-300">RMC / Cartões</span><span className="text-[#22d3ee] font-bold">55%</span></div>
-            <div className="w-full bg-gray-100 dark:bg-[#111] h-2 rounded"><div className="bg-[#22d3ee] h-full w-[55%] rounded"></div></div>
-          </div>
-          <div>
-            <div className="flex justify-between text-xs mb-1"><span className="text-gray-700 dark:text-gray-300">GRAM</span><span className="text-[#CCA761] font-bold">30%</span></div>
-            <div className="w-full bg-gray-100 dark:bg-[#111] h-2 rounded"><div className="bg-[#CCA761] h-full w-[30%] rounded"></div></div>
-          </div>
-          <div>
-            <div className="flex justify-between text-xs mb-1"><span className="text-gray-700 dark:text-gray-300">Inventários / Outros</span><span className="text-gray-400 font-bold">15%</span></div>
-            <div className="w-full bg-gray-100 dark:bg-[#111] h-2 rounded"><div className="bg-gray-500 h-full w-[15%] rounded"></div></div>
-          </div>
+          {processTypeRows.slice(0, 3).map((row, index) => (
+            <div key={row.label}>
+              <div className="flex justify-between text-xs mb-1">
+                <span className="text-gray-300">{row.label}</span>
+                <span className="font-bold" style={{ color: barColors[index] || "#71717a" }}>{row.percentage}%</span>
+              </div>
+              <div className="w-full bg-[#111] h-2 rounded">
+                <div className="h-full rounded" style={{ width: `${row.percentage}%`, backgroundColor: barColors[index] || "#71717a" }} />
+              </div>
+            </div>
+          ))}
         </div>
       </GlassCard>
 
@@ -779,36 +978,44 @@ const ProcessosView = ({ metrics }: { metrics: any }) => (
         <h4 className="text-[10px] text-[#f87171] font-bold uppercase tracking-widest mb-6 flex items-center gap-2">
           <AlertCircle size={14} /> Backlog & Atrasos
         </h4>
-        <ul className="space-y-4 text-sm text-gray-700 dark:text-gray-300">
-          <li className="flex justify-between items-center pb-2 border-b border-gray-200 dark:border-white/5">
+        <ul className="space-y-4 text-sm text-gray-300">
+          <li className="flex justify-between items-center pb-2 border-b border-white/5">
             <span>Contratos pendentes de assinatura</span>
-            <span className="bg-[#f87171]/20 text-[#f87171] px-2 py-0.5 rounded text-xs font-bold">12</span>
+            <span className="bg-[#f87171]/20 text-[#f87171] px-2 py-0.5 rounded text-xs font-bold">{metrics.pendingContracts}</span>
           </li>
-          <li className="flex justify-between items-center pb-2 border-b border-gray-200 dark:border-white/5">
+          <li className="flex justify-between items-center pb-2 border-b border-white/5">
             <span>Processos Sem Movimentação (+60d)</span>
-            <span className="bg-[#CCA761]/20 text-[#CCA761] px-2 py-0.5 rounded text-xs font-bold">8</span>
+            <span className="bg-[#CCA761]/20 text-[#CCA761] px-2 py-0.5 rounded text-xs font-bold">{metrics.staleProcesses}</span>
           </li>
         </ul>
       </GlassCard>
     </div>
   </div>
-);
+  );
+};
 
 const AgendaView = () => {
   const [events, setEvents] = useState<any[]>([]);
   const [criticalDeadlines, setCriticalDeadlines] = useState<any[]>([]);
   const [isLoading, setIsLoading] = useState(true);
-  const supabase = createClient();
+  const supabase = useMemo(() => createClient(), []);
 
-  const WEEK_DAYS = [
-    { day: "Seg", date: "20", active: true },
-    { day: "Ter", date: "21", active: false },
-    { day: "Qua", date: "22", active: false },
-    { day: "Qui", date: "23", active: false },
-    { day: "Sex", date: "24", active: false },
-    { day: "Sáb", date: "25", active: false },
-    { day: "Dom", date: "26", active: false },
-  ];
+  const today = new Date();
+  const currentDay = today.getDay();
+  const mondayOffset = currentDay === 0 ? -6 : 1 - currentDay;
+  const weekStart = new Date(today);
+  weekStart.setDate(today.getDate() + mondayOffset);
+
+  const WEEK_DAYS = ["Seg", "Ter", "Qua", "Qui", "Sex", "Sáb", "Dom"].map((day, index) => {
+    const date = new Date(weekStart);
+    date.setDate(weekStart.getDate() + index);
+
+    return {
+      day,
+      date: String(date.getDate()).padStart(2, "0"),
+      active: date.toDateString() === today.toDateString(),
+    };
+  });
 
   const fetchTasks = useCallback(async () => {
     const { data: { user } } = await supabase.auth.getUser();
@@ -822,19 +1029,9 @@ const AgendaView = () => {
         .eq('tenant_id', tenantId)
         .order('time_text', { ascending: true });
 
-      if (userTasks) {
-        setEvents(userTasks.filter(t => !t.is_critical));
-        setCriticalDeadlines(userTasks.filter(t => t.is_critical));
-      } else {
-        // Fallback Mock se a tabela não tiver dados ainda
-        setEvents([
-          { id: 1, time_text: "09:00", title: "Review de Leads Marketing", category: "Comercial", person: "Equipe SDR", type: "Reunião", color: "#CCA761", status: "Concluído" },
-          { id: 2, time_text: "10:30", title: "Fechamento: Empresa Alpha S.A.", category: "Vendas", person: "Ana S. (Closer)", type: "Vídeo Chamada", color: "#4ade80", active: true },
-          { id: 3, time_text: "14:00", title: "Audiência Virtual (TJSP)", category: "Judicial", person: "Dr. Marcos T.", type: "Audiência", color: "#22d3ee" },
-          { id: 4, time_text: "16:30", title: "Alinhamento DRE Semanal", category: "Financeiro", person: "Sócios", type: "Interno", color: "#b4a0f8" },
-          { id: 5, time_text: "18:00", title: "Follow-up leads frios", category: "CRM", person: "Equipe", type: "Automático", color: "#9ca3af" },
-        ]);
-      }
+      const tasks = userTasks || [];
+      setEvents(tasks.filter(t => !t.is_critical));
+      setCriticalDeadlines(tasks.filter(t => t.is_critical));
     }
     setIsLoading(false);
   }, [supabase]);
@@ -861,7 +1058,7 @@ const AgendaView = () => {
   }, [fetchTasks, supabase]);
 
   const toggleStatus = async (task: any) => {
-    if (!task.id || typeof task.id === 'number') return; // ignora os mocks limitados
+    if (!task.id || typeof task.id === 'number') return; // ignora ids inválidos
     const newStatus = task.status === 'Concluído' ? 'Pendente' : 'Concluído';
     // Fazemos um fallback otimista (UI instantânea)
     setEvents(prev => prev.map(e => e.id === task.id ? { ...e, status: newStatus } : e));
@@ -872,15 +1069,15 @@ const AgendaView = () => {
     <div className="space-y-8 animate-fade-in-up">
 
       {/* Seletor de Semana Premium */}
-      <div className="flex justify-between items-center gap-2 p-1 bg-gray-100 dark:bg-white/5 rounded-2xl border border-gray-200 dark:border-white/10 shadow-inner">
+      <div className="flex justify-between items-center gap-2 p-1 bg-white/5 rounded-2xl border border-white/10 shadow-inner">
         {WEEK_DAYS.map((d, i) => (
           <button
             key={i}
-            className={`flex-1 flex flex-col items-center py-4 rounded-xl transition-all ${d.active ? 'bg-[#CCA761] text-[#0a0a0a] shadow-[0_0_20px_rgba(204,167,97,0.3)]' : 'hover:bg-gray-100 dark:bg-white/5 text-gray-500 hover:text-white'}`}
+            className={`flex-1 flex flex-col items-center py-4 rounded-xl transition-all ${d.active ? 'bg-[#CCA761] text-[#0a0a0a] shadow-[0_0_20px_rgba(204,167,97,0.3)]' : 'hover:bg-white/5 text-gray-500 hover:text-white'}`}
           >
             <span className="text-[10px] font-black uppercase tracking-tighter mb-1">{d.day}</span>
             <span className="text-xl font-black italic">{d.date}</span>
-            {d.active && <div className="w-1 h-1 bg-white dark:bg-[#0a0a0a] rounded-full mt-2" />}
+            {d.active && <div className="w-1 h-1 bg-[#0a0a0a] rounded-full mt-2" />}
           </button>
         ))}
       </div>
@@ -899,7 +1096,7 @@ const AgendaView = () => {
                 <Clock size={18} className="text-[#CCA761] drop-shadow-[0_0_8px_rgba(204,167,97,0.8)]" /> Cronograma do Dia
               </h3>
               <div className="flex gap-2">
-                <button className="text-[10px] text-gray-400 font-bold uppercase tracking-widest bg-gray-100 dark:bg-white/5 px-3 py-1 rounded-lg border border-gray-200 dark:border-white/5 whitespace-nowrap">Ao Vivo (Realtime)</button>
+                <button className="text-[10px] text-gray-400 font-bold uppercase tracking-widest bg-white/5 px-3 py-1 rounded-lg border border-white/5 whitespace-nowrap">Ao Vivo (Realtime)</button>
                 <button className="text-[10px] text-[#CCA761] font-bold uppercase tracking-widest border border-[#CCA761]/30 hover:bg-[#CCA761]/10 transition-colors px-3 py-1 rounded-lg">Filtros</button>
               </div>
             </div>
@@ -922,7 +1119,7 @@ const AgendaView = () => {
                       onClick={() => toggleStatus(ev)}
                       className={`flex-1 flex items-center justify-between p-5 rounded-2xl border transition-all duration-500 cursor-pointer overflow-hidden relative shadow-lg ${ev.active
                           ? 'border-[#CCA761]/60 bg-gradient-to-r from-[#CCA761]/10 to-[#111] shadow-[0_0_30px_rgba(204,167,97,0.15)] ring-1 ring-[#CCA761]/20'
-                          : 'border-gray-200 dark:border-white/5 bg-gradient-to-r from-[#111] to-[#0a0a0a] hover:border-gray-300 dark:border-white/20 hover:bg-[#151515]'
+                          : 'border-white/5 bg-gradient-to-r from-[#111] to-[#0a0a0a] hover:border-white/20 hover:bg-[#151515]'
                         } ${isDone ? 'opacity-60 grayscale' : 'opacity-100'}`}
                     >
                       {/* Borda de Destaque Colorida */}
@@ -942,7 +1139,7 @@ const AgendaView = () => {
                             </span>
                             <span className="text-[9px] text-gray-500 font-bold uppercase tracking-widest">• {ev.type}</span>
                             {ev.created_by_agent && (
-                              <span className="text-[8px] bg-gray-100 dark:bg-white/10 text-gray-900 dark:text-white font-bold px-2 py-0.5 rounded ml-2 flex items-center gap-1"><Wand2 size={10} /> Criada por {ev.created_by_agent}</span>
+                              <span className="text-[8px] bg-white/10 text-white font-bold px-2 py-0.5 rounded ml-2 flex items-center gap-1"><Wand2 size={10} /> Criada por {ev.created_by_agent}</span>
                             )}
                           </div>
                           <h4 className={`text-base font-bold tracking-wide transition-colors ${isDone ? 'text-gray-600 line-through decoration-gray-700' : 'text-gray-100 group-hover:text-white'
@@ -950,8 +1147,8 @@ const AgendaView = () => {
                         </div>
                       </div>
                       <div className="text-right hidden sm:block relative z-10 flex-col items-end">
-                        <p className="text-[10px] text-gray-500 font-bold uppercase tracking-widest mb-1 border-b border-gray-200 dark:border-white/5 pb-1 inline-block">Responsável</p>
-                        <p className={`text-sm font-semibold tracking-wide ${ev.active ? 'text-[#CCA761]' : 'text-gray-700 dark:text-gray-300'}`}>{ev.person}</p>
+                        <p className="text-[10px] text-gray-500 font-bold uppercase tracking-widest mb-1 border-b border-white/5 pb-1 inline-block">Responsável</p>
+                        <p className={`text-sm font-semibold tracking-wide ${ev.active ? 'text-[#CCA761]' : 'text-gray-300'}`}>{ev.person}</p>
                       </div>
                     </div>
 
@@ -971,14 +1168,14 @@ const AgendaView = () => {
               </h4>
               <div className="space-y-4">
                 {criticalDeadlines.length === 0 ? (
-                  <div className="p-4 bg-gray-200 dark:bg-black/40 rounded-xl border border-gray-200 dark:border-white/5 text-[11px] text-gray-500">
+                  <div className="p-4 bg-gray-200 dark:bg-black/40 rounded-xl border border-white/5 text-[11px] text-gray-500">
                     Nenhum prazo critico real encontrado para a selecao atual.
                   </div>
                 ) : (
                   criticalDeadlines.map((p, i) => (
-                    <div key={i} className="p-4 bg-gray-200 dark:bg-black/40 rounded-xl border border-gray-200 dark:border-white/5 hover:border-gray-200 dark:border-white/10 transition-colors">
+                    <div key={i} className="p-4 bg-gray-200 dark:bg-black/40 rounded-xl border border-white/5 hover:border-white/10 transition-colors">
                       <div className="flex justify-between items-start mb-2">
-                        <span className="text-xs font-bold text-gray-900 dark:text-white">{p.title}</span>
+                        <span className="text-xs font-bold text-white">{p.title}</span>
                         <span className="text-[8px] font-black text-[#0a0a0a] px-2 py-0.5 rounded-sm uppercase" style={{ backgroundColor: p.color || '#f87171' }}>{p.time_text}</span>
                       </div>
                       <p className="text-[10px] text-gray-500 font-semibold tracking-wide">Cliente: {p.client_name || '-'}</p>
@@ -990,7 +1187,7 @@ const AgendaView = () => {
 
             <div className="p-6 rounded-2xl border border-[#CCA761]/30 bg-gradient-to-br from-[#CCA761]/20 to-transparent">
               <Star className="text-[#CCA761] mb-4" size={24} />
-              <h5 className="text-sm font-bold text-gray-900 dark:text-white mb-2 tracking-wide">Insight da Inteligência (MAYUS)</h5>
+              <h5 className="text-sm font-bold text-white mb-2 tracking-wide">Insight da Inteligência (MAYUS)</h5>
               <p className="text-[11px] text-gray-400 leading-relaxed italic font-medium">&quot;Doutor, você tem 3 audiências seguidas na quarta-feira. Recomendo revisar os relatórios de pauta agora para evitar sobrecarga operativa.&quot;</p>
             </div>
           </div>
@@ -1002,33 +1199,24 @@ const AgendaView = () => {
 };
 
 const UniversalView = ({ title }: { title: string }) => (
-  <div className="flex flex-col items-center justify-center p-12 text-center animate-fade-in-up border border-gray-200 dark:border-white/5 rounded-2xl bg-white dark:bg-[#0a0a0a] min-h-[400px]">
+  <div className="flex flex-col items-center justify-center p-12 text-center animate-fade-in-up border border-white/5 rounded-2xl bg-[#0a0a0a] min-h-[400px]">
     <Activity size={48} className="text-[#CCA761] opacity-20 mb-4" />
-    <h2 className="text-xl text-gray-900 dark:text-white font-bold tracking-widest uppercase mb-2">Módulo em Integração</h2>
+    <h2 className="text-xl text-white font-bold tracking-widest uppercase mb-2">Módulo em Integração</h2>
     <p className="text-gray-500 max-w-sm text-sm">Os painéis analíticos do módulo <strong>{title}</strong> estão sendo conectados à nova estrutura DRE do seu banco de dados.</p>
   </div>
 );
 
 export default function DashboardHomePage() {
-  const router = useRouter();
-  const supabase = createClient();
+  const supabase = useMemo(() => createClient(), []);
   const [loading, setLoading] = useState(true);
 
   // Aba Ativa (Filtro de Visualização)
   const [activeView, setActiveView] = useState("resumo");
   const [isDropdownOpen, setIsDropdownOpen] = useState(false);
 
-  const [metrics, setMetrics] = useState({
-    totalRevenue: 25400,
-    activeContracts: 18,
-    averageTicket: 4250,
-    totalCommissions: 2100,
-    processActive: 145,
-    openPipeline: 125000,
-    revenueReceived: 15800,
-  });
+  const [metrics, setMetrics] = useState<DashboardMetrics>(INITIAL_DASHBOARD_METRICS);
 
-  const [officeGoals, setOfficeGoals] = useState<any[]>([]);
+  const [officeGoals, setOfficeGoals] = useState<OfficeGoal[]>([]);
 
   const TABS = [
     { id: "resumo", label: "Resumo Executivo" },
@@ -1046,6 +1234,9 @@ export default function DashboardHomePage() {
 
   useEffect(() => {
     const fetchDashboardData = async () => {
+      setLoading(true);
+      const nextMetrics: DashboardMetrics = { ...INITIAL_DASHBOARD_METRICS };
+
       const { data: { user } } = await supabase.auth.getUser();
       if (!user) {
         setLoading(false);
@@ -1059,7 +1250,7 @@ export default function DashboardHomePage() {
       }
 
       // Buscar Configurações e Metas Estratégicas
-      const { data: settings, error: settingsError } = await supabase
+      const { data: settings } = await supabase
         .from('tenant_settings')
         .select('strategic_goals')
         .eq('tenant_id', tenantId)
@@ -1070,36 +1261,208 @@ export default function DashboardHomePage() {
         setOfficeGoals(settings.strategic_goals);
       } else {
         console.warn("⚠️ MAYUS BI: Nenhuma meta estratégica encontrada para este tenant");
+        setOfficeGoals([]);
       }
 
       // Buscar Vendas
       const { data: sales } = await supabase.from('sales').select('*').eq('tenant_id', tenantId);
 
-      if (sales) {
+      if (Array.isArray(sales)) {
         const closedSales = sales.filter(s => s.status === 'Fechado');
         const totalRev = closedSales.reduce((acc, curr) => acc + (Number(curr.ticket_total) || 0), 0);
         const activeCtr = closedSales.length;
         const avgTicket = activeCtr > 0 ? totalRev / activeCtr : 0;
         const commissions = closedSales.reduce((acc, curr) => acc + (Number(curr.commission_value) || 0), 0);
+        const fixedSalaryInvestment = closedSales.reduce((acc, curr) => acc + (Number(curr.fixed_salary) || 0), 0);
+        const totalCommercialInvestment = commissions + fixedSalaryInvestment;
 
         const openSales = sales.filter(s => s.status === 'Pendente');
         const openPipe = openSales.reduce((acc, curr) => acc + (Number(curr.ticket_total) || 0), 0);
+        const pendingContracts = openSales.length;
+        const professionalMap = new Map<string, {
+          name: string;
+          closedCount: number;
+          investment: number;
+          revenue: number;
+        }>();
 
-        setMetrics(prev => ({
-          ...prev,
-          totalRevenue: totalRev > 0 ? totalRev : prev.totalRevenue,
-          activeContracts: activeCtr > 0 ? activeCtr : prev.activeContracts,
-          averageTicket: avgTicket > 0 ? avgTicket : prev.averageTicket,
-          totalCommissions: commissions > 0 ? commissions : prev.totalCommissions,
-          openPipeline: openPipe > 0 ? openPipe : prev.openPipeline,
-          revenueReceived: totalRev > 0 ? totalRev : prev.revenueReceived, // Temporário
-        }));
+        closedSales.forEach((sale) => {
+          const name = sale.professional_name || "Sem responsável";
+          const current = professionalMap.get(name) || {
+            name,
+            closedCount: 0,
+            investment: 0,
+            revenue: 0,
+          };
+
+          current.closedCount += 1;
+          current.investment += (Number(sale.commission_value) || 0) + (Number(sale.fixed_salary) || 0);
+          current.revenue += Number(sale.ticket_total) || 0;
+          professionalMap.set(name, current);
+        });
+
+        const salesByProfessional = Array.from(professionalMap.values())
+          .map((item) => ({
+            ...item,
+            share: totalRev > 0 ? Math.round((item.revenue / totalRev) * 100) : 0,
+            roi: item.investment > 0 ? item.revenue / item.investment : 0,
+          }))
+          .sort((a, b) => b.revenue - a.revenue);
+
+        nextMetrics.totalRevenue = totalRev;
+        nextMetrics.activeContracts = activeCtr;
+        nextMetrics.averageTicket = activeCtr > 0 ? totalRev / activeCtr : 0;
+        nextMetrics.totalCommissions = commissions;
+        nextMetrics.openPipeline = openPipe;
+        nextMetrics.pendingContracts = pendingContracts;
+        nextMetrics.salesByProfessional = salesByProfessional;
+        nextMetrics.closerRoi = totalCommercialInvestment > 0 ? totalRev / totalCommercialInvestment : 0;
+        nextMetrics.revenueReceived = totalRev;
       }
 
+      const [
+        { count: clientCount },
+        { count: leadCount },
+        { data: financialRows },
+        { data: commercialTasks },
+        { data: crmTasks },
+      ] = await Promise.all([
+        supabase
+          .from('clients')
+          .select('id', { count: 'exact', head: true })
+          .eq('tenant_id', tenantId),
+        supabase
+          .from('leads')
+          .select('id', { count: 'exact', head: true })
+          .eq('tenant_id', tenantId),
+        supabase
+          .from('financials')
+          .select('amount, status, due_date, type, description, source, reference_date, metadata')
+          .eq('tenant_id', tenantId),
+        supabase
+          .from('user_tasks')
+          .select('status, category, type')
+          .eq('tenant_id', tenantId),
+        supabase
+          .from('crm_tasks')
+          .select('source')
+          .eq('tenant_id', tenantId),
+      ]);
+
+      const normalizedClientCount = clientCount || 0;
+      const crmLeadRows = Array.isArray(crmTasks) ? crmTasks as CrmTaskRow[] : [];
+      const normalizedLeadCount = Math.max(leadCount || 0, crmLeadRows.length);
+      const today = new Date();
+      today.setHours(0, 0, 0, 0);
+      const financials = Array.isArray(financialRows) ? financialRows as FinancialRow[] : [];
+      const receivedRevenue = financials
+        .filter(isReceivedRevenue)
+        .reduce((acc, row) => acc + (Number(row.amount) || 0), 0);
+      const overdueRows = financials.filter((row) => {
+        if (!row.due_date || isReceivedRevenue(row) || isExpenseRow(row)) return false;
+        const dueDate = new Date(`${row.due_date}T00:00:00`);
+        return !Number.isNaN(dueDate.getTime()) && dueDate < today;
+      });
+      const delinquencyAmount = overdueRows.reduce((acc, row) => acc + (Number(row.amount) || 0), 0);
+      const marketingSpend = financials
+        .filter(isMarketingExpense)
+        .reduce((acc, row) => acc + Math.abs(Number(row.amount) || 0), 0);
+      const fixedCosts = financials
+        .filter((row) => isExpenseRow(row) && !isMarketingExpense(row))
+        .reduce((acc, row) => acc + Math.abs(Number(row.amount) || 0), 0);
+      const leadSources = crmLeadRows.reduce<LeadSourceMetrics>((acc, task) => {
+        const key = classifyLeadSource(task.source);
+        if (key) acc[key] += 1;
+        return acc;
+      }, { instagram: 0, google: 0, referral: 0 });
+      const commercialTaskRows = Array.isArray(commercialTasks)
+        ? commercialTasks.filter((task) => {
+            const haystack = `${task.category || ''} ${task.type || ''}`.toLowerCase();
+            return haystack.includes('comercial') || haystack.includes('venda') || haystack.includes('crm') || haystack.includes('lead');
+          })
+        : [];
+      const commercialScheduled = commercialTaskRows.length;
+      const commercialCompleted = commercialTaskRows.filter((task) => task.status === 'Concluído').length;
+
+      const revenueBase = receivedRevenue > 0 ? receivedRevenue : nextMetrics.revenueReceived;
+      const leadToScheduleRate = normalizedLeadCount > 0 ? Math.round((commercialScheduled / normalizedLeadCount) * 100) : 0;
+      const scheduleCompletionRate = commercialScheduled > 0 ? Math.round((commercialCompleted / commercialScheduled) * 100) : 0;
+      const noShowRate = commercialScheduled > 0 ? Math.max(0, 100 - scheduleCompletionRate) : 0;
+
+      nextMetrics.clientCount = normalizedClientCount;
+      nextMetrics.estimatedLtv = normalizedClientCount > 0 ? revenueBase / normalizedClientCount : 0;
+      nextMetrics.delinquencyAmount = delinquencyAmount;
+      nextMetrics.delinquencyCount = overdueRows.length;
+      nextMetrics.fixedCosts = fixedCosts;
+      nextMetrics.marketingSpend = marketingSpend;
+      nextMetrics.leadCount = normalizedLeadCount;
+      nextMetrics.costPerLead = normalizedLeadCount > 0 ? nextMetrics.marketingSpend / normalizedLeadCount : 0;
+      nextMetrics.leadConversionRate = normalizedLeadCount > 0 ? Math.round((nextMetrics.activeContracts / normalizedLeadCount) * 1000) / 10 : 0;
+      nextMetrics.marketingRoas = nextMetrics.marketingSpend > 0 ? revenueBase / nextMetrics.marketingSpend : 0;
+      nextMetrics.commercialScheduled = commercialScheduled;
+      nextMetrics.commercialCompleted = commercialCompleted;
+      nextMetrics.leadToScheduleRate = leadToScheduleRate;
+      nextMetrics.scheduleCompletionRate = scheduleCompletionRate;
+      nextMetrics.noShowRate = noShowRate;
+      nextMetrics.operationRate = Math.max(0, 100 - noShowRate);
+      nextMetrics.revenueReceived = receivedRevenue > 0 ? receivedRevenue : nextMetrics.revenueReceived;
+      nextMetrics.leadSources = leadSources;
+
+      const { data: processTasks, error: processTasksError } = await supabase
+        .from('process_tasks')
+        .select('id, title, description, valor_causa, value, data_ultima_movimentacao, demanda, sector, tags, sentenca, andamento_1grau, andamento_2grau')
+        .eq('tenant_id', tenantId);
+
+      if (!processTasksError && Array.isArray(processTasks)) {
+        const processTaskRows = processTasks as ProcessTaskRow[];
+        const staleCutoff = new Date();
+        staleCutoff.setDate(staleCutoff.getDate() - 60);
+
+        const processRecoveryValue = processTaskRows.reduce((acc, task) => {
+          const value = Number(task.valor_causa ?? task.value ?? 0);
+          return acc + (Number.isFinite(value) ? value : 0);
+        }, 0);
+
+        const staleProcesses = processTaskRows.filter((task) => {
+          if (!task.data_ultima_movimentacao) return false;
+          const lastMovement = new Date(task.data_ultima_movimentacao);
+          return !Number.isNaN(lastMovement.getTime()) && lastMovement < staleCutoff;
+        }).length;
+        const typeCounts = processTaskRows.reduce<Map<string, number>>((acc, task) => {
+          const label = classifyProcessType(task);
+          acc.set(label, (acc.get(label) || 0) + 1);
+          return acc;
+        }, new Map());
+        const favorableProcesses = processTaskRows.filter(isFavorableProcess);
+        const unfavorableProcesses = processTaskRows.filter(isUnfavorableProcess);
+        const decidedProcesses = favorableProcesses.length + unfavorableProcesses.length;
+        const legalSuccessRevenue = favorableProcesses.reduce((acc, task) => {
+          const value = Number(task.valor_causa ?? task.value ?? 0);
+          return acc + (Number.isFinite(value) ? value * 0.3 : 0);
+        }, 0);
+
+        nextMetrics.processActive = processTaskRows.length;
+        nextMetrics.processRecoveryValue = processRecoveryValue;
+        nextMetrics.staleProcesses = staleProcesses;
+        nextMetrics.legalSuccessRate = decidedProcesses > 0 ? Math.round((favorableProcesses.length / decidedProcesses) * 100) : 0;
+        nextMetrics.legalSuccessRevenue = legalSuccessRevenue;
+        nextMetrics.processTypeDistribution = Array.from(typeCounts.entries())
+          .map(([label, count]) => ({
+            label,
+            count,
+            percentage: processTaskRows.length > 0 ? Math.round((count / processTaskRows.length) * 100) : 0,
+          }))
+          .sort((a, b) => b.count - a.count || a.label.localeCompare(b.label));
+      }
+
+      setMetrics(nextMetrics);
       setLoading(false);
     };
 
-    fetchDashboardData();
+    fetchDashboardData().catch((error) => {
+      console.error("MAYUS BI: Falha ao carregar metricas do dashboard", error);
+      setLoading(false);
+    });
   }, [supabase]);
 
   if (loading) {
@@ -1112,7 +1475,6 @@ export default function DashboardHomePage() {
 
   return (
     <div className={`w-full max-w-7xl mx-auto space-y-4 pb-24 ${montserrat.className}`}>
-
       {/* Header Premium (Título na Esquerda, Controles na Direita) */}
       <div className="flex flex-col md:flex-row justify-between items-start md:items-end pb-4 mb-10 border-b border-[#CCA761]/20 relative z-40 gap-6">
 
@@ -1126,7 +1488,7 @@ export default function DashboardHomePage() {
           <div className="relative">
             <button
               onClick={() => setIsDropdownOpen(!isDropdownOpen)}
-              className="flex items-center justify-between gap-4 bg-white dark:bg-[#0a0a0a] border border-[#CCA761]/40 hover:border-[#CCA761] text-gray-900 dark:text-white px-5 py-2.5 rounded-xl transition-all shadow-[0_0_20px_rgba(204,167,97,0.15)] group min-w-[240px]"
+              className="flex items-center justify-between gap-4 bg-[#0a0a0a] border border-[#CCA761]/40 hover:border-[#CCA761] text-white px-5 py-2.5 rounded-xl transition-all shadow-[0_0_20px_rgba(204,167,97,0.15)] group min-w-[240px]"
             >
               <div className="flex flex-col items-start gap-1">
                 <span className="text-[9px] font-bold uppercase tracking-widest text-[#CCA761] leading-none">Módulo Ativo</span>
@@ -1136,12 +1498,12 @@ export default function DashboardHomePage() {
             </button>
 
             {isDropdownOpen && (
-              <div className="absolute top-14 right-0 w-[240px] bg-white dark:bg-[#0a0a0a] border border-[#CCA761]/30 rounded-xl shadow-2xl py-2 flex flex-col overflow-hidden z-[100]">
+              <div className="absolute top-14 right-0 w-[240px] bg-[#0a0a0a] border border-[#CCA761]/30 rounded-xl shadow-2xl py-2 flex flex-col overflow-hidden z-[100]">
                 {TABS.map((tab) => (
                   <button
                     key={tab.id}
                     onClick={() => { setActiveView(tab.id); setIsDropdownOpen(false); }}
-                    className={`text-right px-6 py-3.5 text-[11px] font-bold uppercase tracking-widest transition-all hover:bg-gray-100 dark:bg-white/5 border-l-2 ${activeView === tab.id ? "text-[#0a0a0a] bg-[#CCA761] hover:bg-[#b58e46] border-transparent" : "text-gray-400 hover:text-[#CCA761] border-transparent"
+                    className={`text-right px-6 py-3.5 text-[11px] font-bold uppercase tracking-widest transition-all hover:bg-white/5 border-l-2 ${activeView === tab.id ? "text-[#0a0a0a] bg-[#CCA761] hover:bg-[#b58e46] border-transparent" : "text-gray-400 hover:text-[#CCA761] border-transparent"
                       }`}
                   >
                     {tab.label}
@@ -1152,7 +1514,7 @@ export default function DashboardHomePage() {
           </div>
 
           {/* Selecionador de Mês Minimizado */}
-          <select className="bg-gray-100 dark:bg-[#111] border border-gray-200 dark:border-white/10 text-[10px] px-3 py-1.5 rounded-lg text-gray-700 dark:text-gray-300 outline-none shadow-xl cursor-pointer hover:border-[#CCA761]/50 transition-all font-bold uppercase tracking-widest min-w-[140px] text-right">
+          <select className="bg-[#111] border border-white/10 text-[10px] px-3 py-1.5 rounded-lg text-gray-300 outline-none shadow-xl cursor-pointer hover:border-[#CCA761]/50 transition-all font-bold uppercase tracking-widest min-w-[140px] text-right">
             <option>Todos os Meses</option>
             <option>Mês Atual</option>
             <option>Mês Passado</option>
@@ -1164,7 +1526,7 @@ export default function DashboardHomePage() {
       {/* Renderização Condicional da View Selecionada */}
       {activeView === "resumo" && <ResumoView metrics={metrics} officeGoals={officeGoals} />}
       {activeView === "comercial" && <ComercialView metrics={metrics} officeGoals={officeGoals} />}
-      {activeView === "marketing" && <MarketingView />}
+      {activeView === "marketing" && <MarketingView metrics={metrics} />}
       {activeView === "processos" && <ProcessosView metrics={metrics} />}
       {activeView === "financeiro" && <FinanceiroView metrics={metrics} />}
       {activeView === "agenda" && <AgendaView />}

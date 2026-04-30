@@ -145,6 +145,8 @@ async function processAsaas(
     type: "receita",
     description: payment.description || "Pagamento via Asaas",
     amount: payment.netValue ?? payment.value,
+    status: event,
+    due_date: payment.paymentDate || payment.confirmedDate || null,
     reference_date: payment.paymentDate || payment.confirmedDate || new Date().toISOString(),
     source: "asaas",
     external_id: payment.id,
