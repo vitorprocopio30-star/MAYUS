@@ -16,7 +16,7 @@ import EmojiPicker, { Theme as EmojiTheme } from "emoji-picker-react";
 const montserrat = Montserrat({ subsets: ["latin"], weight: ["300", "400", "500", "600", "700"] });
 const cormorant = Cormorant_Garamond({ subsets: ["latin"], weight: ["400", "500", "600", "700"], style: ["normal", "italic"] });
 
-// FunÃ§Ãµes UtilitÃ¡rias de FormataÃ§Ã£o
+// Funções Utilitárias de Formatação
 const formatTime = (dateString: string) => {
   if (!dateString) return "";
   const date = new Date(dateString);
@@ -43,7 +43,7 @@ export default function TodasConversasPage() {
   const [selectedFile, setSelectedFile] = useState<File | null>(null);
   const fileInputRef = useRef<HTMLInputElement>(null);
 
-  // Estados de Ãudio
+  // Estados de Áudio
   const [isRecording, setIsRecording] = useState(false);
   const [recordingDuration, setRecordingDuration] = useState(0);
   const mediaRecorderRef = useRef<MediaRecorder | null>(null);
@@ -59,7 +59,7 @@ export default function TodasConversasPage() {
   const [messages, setMessages] = useState<any[]>([]);
   const tenantId = profile?.tenant_id;
 
-  // 1. Carregar ConfiguraÃ§Ãµes e Contatos Iniciais
+  // 1. Carregar Configurações e Contatos Iniciais
   const fetchContacts = useCallback(async () => {
      if (!tenantId) return;
 
@@ -72,7 +72,7 @@ export default function TodasConversasPage() {
      if (data) {
         setContacts(data);
         if (data.length > 0 && !activeContact) {
-           setActiveContact(data[0]); // Seleciona o primeiro por padrÃ£o
+           setActiveContact(data[0]); // Seleciona o primeiro por padrão
         }
      }
   }, [activeContact, supabase, tenantId]);
@@ -102,7 +102,7 @@ export default function TodasConversasPage() {
 
     fetchMessages();
 
-    // 3. OUVINTE SUPABASE REALTIME (Magia CÃ³rtex)
+    // 3. OUVINTE SUPABASE REALTIME (Magia Córtex)
     const channel = supabase
        .channel(`chat_${activeContact.id}`)
        .on(
@@ -124,7 +124,7 @@ export default function TodasConversasPage() {
     }, 100);
   };
 
-  // 4. LÃ“GICA DE ÃUDIO (REALTIME REC)
+  // 4. LÓGICA DE ÁUDIO (REALTIME REC)
   const startRecording = async () => {
     try {
       const stream = await navigator.mediaDevices.getUserMedia({ audio: true });
@@ -147,11 +147,11 @@ export default function TodasConversasPage() {
       setIsRecording(true);
       setRecordingDuration(0);
     } catch (err) {
-      console.error("Erro real de microfone, iniciando modo simulaÃ§Ã£o:", err);
-      // Fallback de SimulaÃ§Ã£o para Teste de UI
+      console.error("Erro real de microfone, iniciando modo simulação:", err);
+      // Fallback de Simulação para Teste de UI
       setIsRecording(true);
       setRecordingDuration(0);
-      toast.info("Modo SimulaÃ§Ã£o: Usando hardware virtual para teste de UI");
+      toast.info("Modo Simulação: Usando hardware virtual para teste de UI");
     }
   };
 
@@ -175,7 +175,7 @@ export default function TodasConversasPage() {
 
     if (!activeContact) {
       setIsAddingContact(true);
-      toast.info("Selecione um contato para enviar o Ã¡udio.");
+      toast.info("Selecione um contato para enviar o áudio.");
       return;
     }
 
@@ -201,11 +201,11 @@ export default function TodasConversasPage() {
         })
       });
 
-      if (!response.ok) throw new Error("Erro ao enviar Ã¡udio");
-      toast.success("Ãudio enviado com sucesso!");
+      if (!response.ok) throw new Error("Erro ao enviar áudio");
+      toast.success("Áudio enviado com sucesso!");
       fetchContacts();
     } catch (e: any) {
-      toast.error("Falha ao enviar Ã¡udio: " + e.message);
+      toast.error("Falha ao enviar áudio: " + e.message);
     } finally {
       setIsSending(false);
     }
@@ -216,10 +216,10 @@ export default function TodasConversasPage() {
     if ((!inputText.trim() && !selectedFile) || isSending) return;
 
     // Aplicar Assinatura (Negrito Oficial)
-    const signature = showSignature ? `\n\nâ€” *${profile?.full_name || 'Equipe MAYUS'}*` : "";
+    const signature = showSignature ? `\n\n— *${profile?.full_name || 'Equipe MAYUS'}*` : "";
     const textToSend = inputText + signature;
 
-    // MODO SIMULAÃ‡ÃƒO (Liberado para Teste)
+    // MODO SIMULAÇÃO (Liberado para Teste)
     if (!activeContact) {
       const simulatedMsg = {
         id: `sim-${Date.now()}`,
@@ -234,7 +234,7 @@ export default function TodasConversasPage() {
       setInputText("");
       setSelectedFile(null);
       scrollToBottom();
-      toast.success("Mensagem Simulada com Sucesso! ðŸš€");
+      toast.success("Mensagem Simulada com Sucesso! 🚀");
       return;
     }
 
@@ -261,8 +261,8 @@ export default function TodasConversasPage() {
        const resData = await response.json();
        if (!response.ok) throw new Error(resData.error || "Erro ao disparar");
 
-       toast.success("Disparo de Ouro! ðŸŸ¢");
-       setSelectedFile(null); // Limpar arquivo apÃ³s envio real
+       toast.success("Disparo de Ouro! 🟢");
+       setSelectedFile(null); // Limpar arquivo após envio real
        fetchContacts();
     } catch (error: any) {
        toast.error("Falha : " + error.message);
@@ -273,22 +273,22 @@ export default function TodasConversasPage() {
   };
 
   const handleCreateContact = async () => {
-     let cleanPhone = newContactPhone.replace(/\D/g, ''); // Remover nÃ£o-nÃºmeros
+     let cleanPhone = newContactPhone.replace(/\D/g, ''); // Remover não-números
      if (cleanPhone.length < 10) {
-        toast.error("Insira um nÃºmero vÃ¡lido com DDD e PaÃ­s (Ex: 551199999999)");
+        toast.error("Insira um número válido com DDD e País (Ex: 551199999999)");
         return;
      }
 
-     // O padrÃ£o Baileys Evolution Ã© 551199999999@s.whatsapp.net
+     // O padrão Baileys Evolution é 551199999999@s.whatsapp.net
      const fullJid = `${cleanPhone}@s.whatsapp.net`;
 
-     // Checar se jÃ¡ existe no banco
+     // Checar se já existe no banco
      const existente = contacts.find(c => c.phone_number === fullJid || c.phone_number === cleanPhone);
      if (existente) {
         setActiveContact(existente);
         setIsAddingContact(false);
         setNewContactPhone("");
-        toast.info("Contato jÃ¡ existe na sua base.");
+        toast.info("Contato já existe na sua base.");
         return;
      }
 
@@ -299,7 +299,7 @@ export default function TodasConversasPage() {
        .insert([{
           tenant_id: profile!.tenant_id,
           phone_number: fullJid,
-          name: cleanPhone // Usando o nÃºmero como nome provisÃ³rio
+          name: cleanPhone // Usando o número como nome provisório
        }])
        .select()
        .single();
@@ -314,7 +314,7 @@ export default function TodasConversasPage() {
      setActiveContact(newContact);
      setIsAddingContact(false);
      setNewContactPhone("");
-     setInputText((prev) => !prev ? "OlÃ¡! Aqui Ã© da equipe MAYUS." : prev); // Helper initial message
+     setInputText((prev) => !prev ? "Olá! Aqui é da equipe MAYUS." : prev); // Helper initial message
   };
 
 
@@ -323,7 +323,7 @@ export default function TodasConversasPage() {
     { name: "Kanban (CRM)", icon: Briefcase },
     { name: "Insights da Equipe Neural", icon: Bot },
     { name: "Mensagens Agendadas", icon: Clock },
-    { name: "AÃ§Ãµes da Conversa", icon: Zap },
+    { name: "Ações da Conversa", icon: Zap },
     { name: "Atributos do Contato", icon: Info },
     { name: "Notas do Contato", icon: FileText },
   ];
@@ -407,7 +407,7 @@ export default function TodasConversasPage() {
                       <h4 className={`font-bold truncate text-sm ${activeContact?.id === contact.id ? "text-white" : "text-gray-300"}`}>{contact.name || contact.phone_number}</h4>
                       <span className="text-[10px] text-gray-500">{contact.last_message_at ? formatTime(contact.last_message_at) : ''}</span>
                    </div>
-                   <p className="text-gray-400 text-xs truncate">Toque para ver histÃ³rico</p>
+                   <p className="text-gray-400 text-xs truncate">Toque para ver histórico</p>
                 </div>
              </div>
           ))}
@@ -444,7 +444,7 @@ export default function TodasConversasPage() {
                         <h2 className="text-white font-bold tracking-wide flex items-center gap-2">
                            {activeContact?.name || activeContact?.phone_number || "Lead de Teste"}
                            <span className="bg-[#25D366]/20 text-[#25D366] text-[9px] px-1.5 py-0.5 rounded font-black uppercase tracking-widest border border-[#25D366]/30">
-                              {activeContact ? "WhatsApp" : "SimulaÃ§Ã£o"}
+                              {activeContact ? "WhatsApp" : "Simulação"}
                            </span>
                         </h2>
                       </div>
@@ -456,12 +456,12 @@ export default function TodasConversasPage() {
                    </div>
                 </div>
 
-                {/* Ãrea de Mensagens */}
+                {/* Área de Mensagens */}
                 <div className="flex-1 overflow-y-auto p-6 flex flex-col gap-6 z-10 scroll-smooth">
                    {activeContact && messages.length === 0 && (
                       <div className="flex justify-center my-10 animate-fade-in-up">
                          <span className="bg-[#CCA761]/10 border border-[#CCA761]/20 text-[#CCA761] px-4 py-2 rounded-full text-xs font-bold tracking-wide shadow-[0_0_15px_rgba(204,167,97,0.1)]">
-                            Novo contato detectado. Diga olÃ¡!
+                            Novo contato detectado. Diga olá!
                          </span>
                       </div>
                    )}
@@ -523,7 +523,7 @@ export default function TodasConversasPage() {
                        </label>
                    </div>
 
-                   {/* Ãrea Principal de Input - Estilo Barra */}
+                   {/* Área Principal de Input - Estilo Barra */}
                    <div className={`rounded-xl border transition-all flex flex-col shadow-lg relative ${inputMode === "nota" ? "bg-orange-500/[0.02] border-orange-500/30" : "bg-gray-200 dark:bg-black/40 border-white/10 focus-within:border-[#CCA761]/40"} ${isRecording ? 'border-red-500 ring-1 ring-red-500/20' : ''}`}>
                        {isRecording ? (
                          <div className="w-full flex items-center justify-between px-4 py-3 bg-red-500/5 rounded-xl animate-pulse">
@@ -586,7 +586,7 @@ export default function TodasConversasPage() {
                                 </div>
                               )}
 
-                              {/* BotÃ£o de Envio Compacto */}
+                              {/* Botão de Envio Compacto */}
                               <button
                                 onClick={(e) => { e.preventDefault(); handleSendMessage(); }}
                                 disabled={isSending || (!inputText.trim() && !isRecording && !selectedFile)}
@@ -598,7 +598,7 @@ export default function TodasConversasPage() {
                               </button>
                             </div>
 
-                            {/* Barra de Ferramentas Inferior - ORGANIZAÃ‡ÃƒO SOLICITADA */}
+                            {/* Barra de Ferramentas Inferior - ORGANIZAÇÃO SOLICITADA */}
                             <div className="flex gap-4 px-3 py-2 border-t border-gray-100 dark:border-white/[0.03] bg-gray-200 dark:bg-black/20 rounded-b-xl relative items-center">
                                 {/* Input de Arquivo Oculto */}
                                 <input
@@ -619,7 +619,7 @@ export default function TodasConversasPage() {
                                   <button
                                     onClick={(e) => { e.preventDefault(); startRecording(); }}
                                     className="text-gray-500 hover:text-red-500 transition-all p-1"
-                                    title="Gravar Ãudio"
+                                    title="Gravar Áudio"
                                   >
                                     <Mic size={18} />
                                   </button>
@@ -646,7 +646,7 @@ export default function TodasConversasPage() {
                                   <button onClick={() => toast.info("Modelos de resposta em breve")} className="text-gray-500 hover:text-[#CCA761] transition-all p-1" title="Modelos"><LayoutPanelLeft size={18} /></button>
                                 </div>
 
-                                <span className="ml-auto text-[7px] text-gray-700 font-black tracking-tighter uppercase self-center hidden sm:block">Focado na ExperiÃªncia MAYUS</span>
+                                <span className="ml-auto text-[7px] text-gray-700 font-black tracking-tighter uppercase self-center hidden sm:block">Focado na Experiência MAYUS</span>
                             </div>
                          </div>
                        )}
@@ -659,7 +659,7 @@ export default function TodasConversasPage() {
                   <Bot size={40} className="text-[#CCA761] opacity-50" />
                </div>
                <h2 className="text-2xl font-bold text-white mb-2 font-serif italic">Nenhum Contato Ativo</h2>
-               <p className="text-gray-500 max-w-sm">Mande uma mensagem do seu celular para a Evolution API ou aguarde um Lead entrar em contato para o cÃ³rtex interceptar.</p>
+               <p className="text-gray-500 max-w-sm">Mande uma mensagem do seu celular para a Evolution API ou aguarde um Lead entrar em contato para o córtex interceptar.</p>
             </div>
          )}
       </div>

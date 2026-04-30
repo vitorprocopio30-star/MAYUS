@@ -16,7 +16,7 @@ import EmojiPicker, { Theme as EmojiTheme } from "emoji-picker-react";
 const montserrat = Montserrat({ subsets: ["latin"], weight: ["300", "400", "500", "600", "700"] });
 const cormorant = Cormorant_Garamond({ subsets: ["latin"], weight: ["400", "500", "600", "700"], style: ["normal", "italic"] });
 
-// FunÃ§Ãµes UtilitÃ¡rias de FormataÃ§Ã£o
+// Funções Utilitárias de Formatação
 const formatTime = (dateString: string) => {
   if (!dateString) return "";
   const date = new Date(dateString);
@@ -56,7 +56,7 @@ export default function WhatsAppChatPremiumPage() {
   const [departments, setDepartments] = useState<any[]>([]);
   const [filterDeptId, setFilterDeptId] = useState<string | null>(null);
 
-  // Modal de TransferÃªncia
+  // Modal de Transferência
   const [showTransferModal, setShowTransferModal] = useState(false);
   const [transferDeptId, setTransferDeptId] = useState("");
   const [transferUserId, setTransferUserId] = useState("");
@@ -69,8 +69,8 @@ export default function WhatsAppChatPremiumPage() {
   const [contractFlowMode, setContractFlowMode] = useState<'ia_only' | 'human_only' | 'hybrid'>('hybrid');
   const [zapsignTemplateId, setZapsignTemplateId] = useState<string>("");
 
-  // PermissÃµes
-  const isAdmin = profile?.role === 'Administrador' || profile?.role === 'mayus_admin' || profile?.role === 'SÃ³cio';
+  // Permissões
+  const isAdmin = profile?.role === 'Administrador' || profile?.role === 'mayus_admin' || profile?.role === 'Sócio';
 
   // Carregar Departamentos e Membros
   useEffect(() => {
@@ -83,7 +83,7 @@ export default function WhatsAppChatPremiumPage() {
       const { data: members } = await supabase.from('profiles').select('id, full_name, role').eq('tenant_id', profile!.tenant_id).eq('is_active', true);
       if (members) setTeamMembers(members);
 
-      // Carregar ConfiguraÃ§Ãµes de GovernanÃ§a
+      // Carregar Configurações de Governança
       const { data: settings } = await supabase.from('tenant_settings').select('ai_features').eq('tenant_id', profile!.tenant_id).maybeSingle();
       if (settings?.ai_features) {
         if (settings.ai_features.contract_flow_mode) setContractFlowMode(settings.ai_features.contract_flow_mode);
@@ -107,7 +107,7 @@ export default function WhatsAppChatPremiumPage() {
        .eq("tenant_id", profile!.tenant_id)
        .order("last_message_at", { ascending: false });
 
-     // PERMISSÃ•ES: SDR/Advogado vÃª sÃ³ as suas; Admin vÃª tudo
+     // PERMISSÕES: SDR/Advogado vê só as suas; Admin vê tudo
      if (!isAdmin) {
        if (activeTab === "minhas" || activeTab === "todas") {
          query = query.eq("assigned_user_id", profile!.id);
@@ -143,7 +143,7 @@ export default function WhatsAppChatPremiumPage() {
     const updates: any = {};
 
     // Se selecionou departamento, atualiza.
-    // Se transferir para departamento SEM usuÃ¡rio, remove o assigned_user_id para cair na fila "Aguardando"
+    // Se transferir para departamento SEM usuário, remove o assigned_user_id para cair na fila "Aguardando"
     if (transferDeptId) {
       updates.department_id = transferDeptId;
       if (!transferUserId) updates.assigned_user_id = null;
@@ -154,13 +154,13 @@ export default function WhatsAppChatPremiumPage() {
     const { error } = await supabase.from('whatsapp_contacts').update(updates).eq('id', activeContact.id);
 
     if (error) {
-       console.error("Erro na transferÃªncia:", error);
+       console.error("Erro na transferência:", error);
        toast.error('Erro: ' + error.message);
     } else {
       toast.success('Conversa transferida com sucesso!');
       setShowTransferModal(false);
 
-      // LÃ³gica de visibilidade: se o contato "sumiu" da visÃ£o do usuÃ¡rio atual
+      // Lógica de visibilidade: se o contato "sumiu" da visão do usuário atual
       const movedAway = !isAdmin && (
         (updates.assigned_user_id && updates.assigned_user_id !== profile?.id) ||
         (activeTab === 'aguardando' && updates.assigned_user_id)
@@ -169,7 +169,7 @@ export default function WhatsAppChatPremiumPage() {
       if (movedAway) {
         setActiveContact(null);
       } else {
-        // Atualiza localmente o contato ativo para refletir a mudanÃ§a
+        // Atualiza localmente o contato ativo para refletir a mudança
         setActiveContact(prev => prev ? { ...prev, ...updates } : null);
       }
 
@@ -263,11 +263,11 @@ export default function WhatsAppChatPremiumPage() {
       setIsRecording(true);
       setRecordingDuration(0);
     } catch (err) {
-      console.error("Erro real de microfone no WhatsApp, iniciando modo simulaÃ§Ã£o:", err);
-      // Fallback de SimulaÃ§Ã£o
+      console.error("Erro real de microfone no WhatsApp, iniciando modo simulação:", err);
+      // Fallback de Simulação
       setIsRecording(true);
       setRecordingDuration(0);
-      toast.info("Modo SimulaÃ§Ã£o: Validando interface de Ã¡udio...");
+      toast.info("Modo Simulação: Validando interface de áudio...");
     }
   };
 
@@ -276,14 +276,14 @@ export default function WhatsAppChatPremiumPage() {
       mediaRecorderRef.current.stop();
       setIsRecording(false);
     } else if (isRecording) {
-      // Modo SimulaÃ§Ã£o â€” enviar mensagem de Ã¡udio simulada
+      // Modo Simulação — enviar mensagem de áudio simulada
       setIsRecording(false);
       setRecordingDuration(0);
       const displayName = signatureName || profile?.full_name || 'Equipe MAYUS';
       const audioMsg = {
         id: `sim-audio-${Date.now()}`,
         contact_id: activeContact?.id || 'test-wa',
-        content: `ðŸŽ™ï¸ Ãudio (${formatDuration(recordingDuration)})${showSignature ? `\nâ€” *${displayName}*` : ''}`,
+        content: `🎙️ Áudio (${formatDuration(recordingDuration)})${showSignature ? `\n— *${displayName}*` : ''}`,
         direction: 'outbound',
         message_type: 'audio',
         status: 'sent',
@@ -292,7 +292,7 @@ export default function WhatsAppChatPremiumPage() {
       };
       setMessages(prev => [...prev, audioMsg]);
       scrollToBottom();
-      toast.success("Ãudio simulado enviado!");
+      toast.success("Áudio simulado enviado!");
     }
   };
 
@@ -309,7 +309,7 @@ export default function WhatsAppChatPremiumPage() {
 
     if (!activeContact) {
       setIsAddingContact(true);
-      toast.info("Selecione um contato para enviar o Ã¡udio.");
+      toast.info("Selecione um contato para enviar o áudio.");
       return;
     }
 
@@ -335,10 +335,10 @@ export default function WhatsAppChatPremiumPage() {
         })
       });
 
-      if (!response.ok) throw new Error("Erro ao enviar Ã¡udio");
-      toast.success("Ãudio enviado");
+      if (!response.ok) throw new Error("Erro ao enviar áudio");
+      toast.success("Áudio enviado");
     } catch (e: any) {
-      toast.error("Falha ao enviar Ã¡udio: " + e.message);
+      toast.error("Falha ao enviar áudio: " + e.message);
     } finally {
       setIsSending(false);
     }
@@ -349,10 +349,10 @@ export default function WhatsAppChatPremiumPage() {
 
     // Aplicar Assinatura ACIMA da mensagem
     const displayName = signatureName || profile?.full_name || 'Equipe MAYUS';
-    const signature = showSignature ? `â€” *${displayName}*\n\n` : "";
+    const signature = showSignature ? `— *${displayName}*\n\n` : "";
     const textToSend = signature + inputText;
 
-    // MODO SIMULAÃ‡ÃƒO (Liberado para Teste)
+    // MODO SIMULAÇÃO (Liberado para Teste)
     if (!activeContact) {
       const simulatedMsg = {
         id: `sim-wa-${Date.now()}`,
@@ -367,7 +367,7 @@ export default function WhatsAppChatPremiumPage() {
       setInputText("");
       setSelectedFile(null);
       scrollToBottom();
-      toast.success("Mensagem de Teste Enviada! ðŸš€");
+      toast.success("Mensagem de Teste Enviada! 🚀");
       return;
     }
 
@@ -384,7 +384,7 @@ export default function WhatsAppChatPremiumPage() {
        });
        if (!response.ok) throw new Error("Erro no motor Meta");
 
-       toast.success("Mensagem disparada com sucesso! ðŸŸ¢");
+       toast.success("Mensagem disparada com sucesso! 🟢");
        setSelectedFile(null);
        fetchContacts();
     } catch (e: any) {
@@ -439,7 +439,7 @@ export default function WhatsAppChatPremiumPage() {
 
   const handleCreateContact = async () => {
      let cleanPhone = newContactPhone.replace(/\D/g, '');
-     if (cleanPhone.length < 10) return toast.error("NÃºmero invÃ¡lido.");
+     if (cleanPhone.length < 10) return toast.error("Número inválido.");
      const fullJid = cleanPhone;
      const { data: newContact, error } = await supabase
        .from("whatsapp_contacts")
@@ -469,7 +469,7 @@ export default function WhatsAppChatPremiumPage() {
           tenant_id: profile?.tenant_id,
           contact_id: activeContact.id,
           template_id: zapsignTemplateId || "default",
-          doc_name: `Contrato de HonorÃ¡rios - ${activeContact.name || 'Cliente'}`
+          doc_name: `Contrato de Honorários - ${activeContact.name || 'Cliente'}`
         })
       });
 
@@ -480,7 +480,7 @@ export default function WhatsAppChatPremiumPage() {
 
       const contractMsg = {
         id: `contract-${Date.now()}`,
-        content: `ðŸ“„ *Contrato Gerado!* \n\nLink para assinatura: ${data.sign_url}`,
+        content: `📄 *Contrato Gerado!* \n\nLink para assinatura: ${data.sign_url}`,
         direction: 'outbound',
         message_type: 'text',
         created_at: new Date().toISOString()
@@ -617,7 +617,7 @@ export default function WhatsAppChatPremiumPage() {
                             {activeContact?.name || activeContact?.phone_number || "Lead de Teste (Simulado)"}
                             <div className="flex gap-1.5 translate-y-[-1px]">
                                <span className={`text-[8px] px-2.5 py-1 rounded-full font-black uppercase tracking-widest border ${activeContact ? 'bg-[#25D366]/10 text-[#25D366] border-[#25D366]/20' : 'bg-[#CCA761]/10 text-[#CCA761] border-[#CCA761]/20'}`}>
-                                  {activeContact ? 'WhatsApp' : 'SimulaÃ§Ã£o'}
+                                  {activeContact ? 'WhatsApp' : 'Simulação'}
                                 </span>
                             </div>
                          </h2>
@@ -702,7 +702,7 @@ export default function WhatsAppChatPremiumPage() {
                                    {msg.content}
                                 </div>
                                 <span className="text-[9px] text-gray-600 font-bold uppercase tracking-widest px-2">
-                                   {formatTime(msg.created_at)} {isMe ? 'â€” Vitor P.' : ''}
+                                   {formatTime(msg.created_at)} {isMe ? '— Vitor P.' : ''}
                                 </span>
                              </div>
                           </div>
@@ -717,8 +717,8 @@ export default function WhatsAppChatPremiumPage() {
                       <div className="absolute inset-0 bg-[conic-gradient(from_0deg,#CCA761,transparent,transparent,#CCA761)] animate-spin opacity-20" />
                       <Bot size={44} className="text-[#CCA761] relative z-10" />
                   </div>
-                  <h2 className={`text-4xl font-bold text-white mb-4 ${cormorant.className} italic`}>CÃ³rtex de Mensagens Ativo</h2>
-                  <p className="text-gray-500 max-w-sm text-sm font-medium leading-relaxed mb-12">O sistema estÃ¡ pronto. Escolha um lead que aguarda retorno ou comece uma prospecÃ§Ã£o de ouro agora.</p>
+                  <h2 className={`text-4xl font-bold text-white mb-4 ${cormorant.className} italic`}>Córtex de Mensagens Ativo</h2>
+                  <p className="text-gray-500 max-w-sm text-sm font-medium leading-relaxed mb-12">O sistema está pronto. Escolha um lead que aguarda retorno ou comece uma prospecção de ouro agora.</p>
                   <button onClick={() => setIsAddingContact(true)} className="bg-white/5 border border-white/10 text-white px-10 py-5 rounded-2xl font-black uppercase text-[11px] tracking-[0.3em] hover:bg-[#CCA761] hover:text-black transition-all">Novo Atendimento</button>
                 </div>
             )}
@@ -761,7 +761,7 @@ export default function WhatsAppChatPremiumPage() {
                   </div>
               </div>
 
-              {/* Ãrea Principal de Input - Estilo Barra */}
+              {/* Área Principal de Input - Estilo Barra */}
               <div className={`rounded-xl border transition-all flex flex-col shadow-lg relative ${inputMode === "nota" ? "bg-orange-500/[0.02] border-orange-500/30" : "bg-gray-200 dark:bg-black/40 border-white/10 focus-within:border-[#CCA761]/40"} ${isRecording ? 'border-red-500 ring-1 ring-red-500/20' : ''}`}>
                   {isRecording ? (
                     <div className="w-full flex items-center justify-between px-4 py-3 bg-red-500/5 rounded-xl animate-pulse">
@@ -824,7 +824,7 @@ export default function WhatsAppChatPremiumPage() {
                              </div>
                            )}
 
-                           {/* BotÃ£o de Envio Compacto */}
+                           {/* Botão de Envio Compacto */}
                            <button
                              onClick={(e) => { e.preventDefault(); handleSendMessage(); }}
                              disabled={isSending || (!inputText.trim() && !isRecording && !selectedFile)}
@@ -836,7 +836,7 @@ export default function WhatsAppChatPremiumPage() {
                            </button>
                          </div>
 
-                         {/* Barra de Ferramentas Inferior - ORGANIZAÃ‡ÃƒO SOLICITADA */}
+                         {/* Barra de Ferramentas Inferior - ORGANIZAÇÃO SOLICITADA */}
                          <div className="flex gap-4 px-3 py-2 border-t border-gray-100 dark:border-white/[0.03] bg-gray-200 dark:bg-black/20 rounded-b-xl relative items-center">
                              {/* Input de Arquivo Oculto */}
                              <input
@@ -857,7 +857,7 @@ export default function WhatsAppChatPremiumPage() {
                                <button
                                  onClick={(e) => { e.preventDefault(); startRecording(); }}
                                  className="text-gray-500 hover:text-red-500 transition-all p-1"
-                                 title="Gravar Ãudio"
+                                 title="Gravar Áudio"
                                >
                                  <Mic size={18} />
                                </button>
@@ -886,7 +886,7 @@ export default function WhatsAppChatPremiumPage() {
                                <button onClick={() => toast.info("Modelos de resposta em breve")} className="text-gray-500 hover:text-[#CCA761] transition-all p-1" title="Modelos de Resposta"><LayoutPanelLeft size={18} /></button>
                              </div>
 
-                             <span className="ml-auto text-[7px] text-gray-700 font-black tracking-tighter uppercase self-center hidden sm:block">Gerado pelo CÃ³rtex MAYUS</span>
+                             <span className="ml-auto text-[7px] text-gray-700 font-black tracking-tighter uppercase self-center hidden sm:block">Gerado pelo Córtex MAYUS</span>
                          </div>
                       </div>
                   )}
@@ -914,30 +914,30 @@ export default function WhatsAppChatPremiumPage() {
                   <div className="bg-[#CCA761]/10 border border-[#CCA761]/20 text-[#CCA761] px-4 py-1.5 rounded-full text-[9px] font-black uppercase mt-3 tracking-widest">Lead Qualificado</div>
                </div>
 
-               {/* MÃ³dulo KANBAN (FUNCIONALIDADE SOLICITADA) */}
+               {/* Módulo KANBAN (FUNCIONALIDADE SOLICITADA) */}
                <div className="space-y-4">
-                  <div className="flex items-center gap-2 text-gray-500 font-black uppercase text-[10px] tracking-widest"><ClipboardList size={14} className="text-[#CCA761]" /> GestÃ£o Pipeline</div>
+                  <div className="flex items-center gap-2 text-gray-500 font-black uppercase text-[10px] tracking-widest"><ClipboardList size={14} className="text-[#CCA761]" /> Gestão Pipeline</div>
                   <div className="p-5 bg-gray-200 dark:bg-black rounded-2xl border border-white/5 space-y-4">
                      <div>
                         <label className="text-[9px] font-black text-gray-600 uppercase tracking-widest block mb-2">Etapa Atual</label>
                         <select className="w-full bg-[#111] border border-white/10 rounded-xl px-4 py-3 text-xs text-white outline-none focus:border-[#CCA761]">
-                           <option>â­ Novo Lead</option>
-                           <option>ðŸ“ž Chamada em Aberto</option>
-                           <option>ðŸ’¼ NegociaÃ§Ã£o</option>
-                           <option>âœï¸ Contrato Emitido</option>
+                           <option>⭐ Novo Lead</option>
+                           <option>📞 Chamada em Aberto</option>
+                           <option>💼 Negociação</option>
+                           <option>✍️ Contrato Emitido</option>
                         </select>
                      </div>
                      <div>
-                        <label className="text-[9px] font-black text-gray-600 uppercase tracking-widest block mb-2">Agente ResponsÃ¡vel</label>
+                        <label className="text-[9px] font-black text-gray-600 uppercase tracking-widest block mb-2">Agente Responsável</label>
                         <div className="flex items-center gap-3 bg-[#111] p-3 rounded-xl border border-white/5">
                            <div className="w-6 h-6 rounded-full bg-[#CCA761] flex items-center justify-center text-[10px] font-black text-black">VP</div>
-                           <span className="text-white text-xs font-bold">Vitor ProcÃ³pio</span>
+                           <span className="text-white text-xs font-bold">Vitor Procópio</span>
                         </div>
                      </div>
                   </div>
                </div>
 
-                {/* AÃ§Ãµes RÃ¡pidas */}
+                {/* Ações Rápidas */}
                <div className="space-y-3">
                   {contractFlowMode !== 'ia_only' && (
                     <button
@@ -950,7 +950,7 @@ export default function WhatsAppChatPremiumPage() {
                     </button>
                   )}
                   <button className="w-full py-5 bg-white/5 border border-white/10 rounded-2xl font-black uppercase text-[10px] tracking-[0.2em] flex items-center justify-center gap-3 hover:bg-white/10 transition-all group">
-                     <FileText size={16} className="group-hover:-rotate-6 transition-transform" /> DossiÃª Completo
+                     <FileText size={16} className="group-hover:-rotate-6 transition-transform" /> Dossiê Completo
                   </button>
                   <button className="w-full py-5 bg-gray-200 dark:bg-black border border-red-500/20 text-red-500 rounded-2xl font-black uppercase text-[10px] tracking-[0.2em] flex items-center justify-center gap-3 hover:bg-red-500 hover:text-white transition-all">
                      <X size={16} /> Encerrar Caso
@@ -960,7 +960,7 @@ export default function WhatsAppChatPremiumPage() {
          )}
       </div>
 
-      {/* MODAL DE TRANSFERÃŠNCIA DE ATENDIMENTO */}
+      {/* MODAL DE TRANSFERÊNCIA DE ATENDIMENTO */}
       {showTransferModal && (
         <div className="fixed inset-0 bg-gray-200 dark:bg-black/70 backdrop-blur-sm z-50 flex items-center justify-center p-4 animate-in fade-in duration-200">
           <div className="bg-[#0a0a0a] border border-white/10 rounded-2xl p-8 w-full max-w-md shadow-2xl animate-in zoom-in-95 duration-300">
@@ -987,7 +987,7 @@ export default function WhatsAppChatPremiumPage() {
                   onChange={(e) => setTransferDeptId(e.target.value)}
                   className="w-full bg-[#111] border border-white/10 rounded-xl px-4 py-3 text-sm text-white outline-none focus:border-[#CCA761]/50 appearance-none"
                 >
-                  <option value="">â€” Selecione o departamento â€”</option>
+                  <option value="">— Selecione o departamento —</option>
                   {departments.map(dept => (
                     <option key={dept.id} value={dept.id}>{dept.name}</option>
                   ))}
@@ -996,14 +996,14 @@ export default function WhatsAppChatPremiumPage() {
 
               <div>
                 <label className="text-[10px] font-black uppercase tracking-widest text-[#CCA761] mb-2 block">
-                  <Users size={12} className="inline mr-1" /> Agente ResponsÃ¡vel
+                  <Users size={12} className="inline mr-1" /> Agente Responsável
                 </label>
                 <select
                   value={transferUserId}
                   onChange={(e) => setTransferUserId(e.target.value)}
                   className="w-full bg-[#111] border border-white/10 rounded-xl px-4 py-3 text-sm text-white outline-none focus:border-[#CCA761]/50 appearance-none"
                 >
-                  <option value="">â€” Selecione o agente â€”</option>
+                  <option value="">— Selecione o agente —</option>
                   {teamMembers.map(member => (
                     <option key={member.id} value={member.id}>{member.full_name} ({member.role})</option>
                   ))}
