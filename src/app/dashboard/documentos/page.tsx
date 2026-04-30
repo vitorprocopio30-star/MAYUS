@@ -25,6 +25,7 @@ import {
   File as FileIcon,
   X,
   ChevronRight,
+  ShieldAlert,
 } from "lucide-react";
 import { toast } from "sonner";
 import { motion, AnimatePresence } from "framer-motion";
@@ -274,6 +275,101 @@ type DraftFactoryQueueHealth = {
   alerts: DraftQueueHealthAlert[];
 };
 
+type DriveScanCounters = {
+  filesScanned?: number;
+  foldersScanned?: number;
+  matchedFiles?: number;
+  highConfidence?: number;
+  mediumConfidence?: number;
+  lowConfidence?: number;
+  needsReview?: number;
+  duplicates?: number;
+  proposedActions?: number;
+  applied?: number;
+  skipped?: number;
+  failed?: number;
+};
+
+type DriveScanRunRecord = {
+  id: string;
+  root_folder_name?: string | null;
+  root_folder_url?: string | null;
+  status: string;
+  counters?: DriveScanCounters | null;
+  error_message?: string | null;
+  brain_artifact_id?: string | null;
+  created_at: string;
+  completed_at?: string | null;
+};
+
+type DriveScanActionRecord = {
+  id: string;
+  scan_run_id: string;
+  scan_item_id?: string | null;
+  action_type: string;
+  target_process_task_id?: string | null;
+  target_folder_label?: string | null;
+  confidence?: string | null;
+  reason?: string | null;
+  status: string;
+  error_message?: string | null;
+  pendingCategory?: string | null;
+  pendingLabel?: string | null;
+  created_at?: string | null;
+  applied_at?: string | null;
+  file?: {
+    name?: string | null;
+    parent_path?: string | null;
+    web_view_link?: string | null;
+    candidate_process_number?: string | null;
+    candidate_client_name?: string | null;
+    review_reason?: string | null;
+  } | null;
+  scanRun?: DriveScanRunRecord | null;
+  targetProcess?: {
+    title?: string | null;
+    client_name?: string | null;
+    process_number?: string | null;
+    processo_1grau?: string | null;
+  } | null;
+};
+
+type DriveScanRunDetail = {
+  run: DriveScanRunRecord;
+  summary: {
+    totalActions: number;
+    pendingReview: number;
+    approved: number;
+    applied: number;
+    failed: number;
+    skipped: number;
+    duplicates: number;
+    withoutProcess: number;
+    lowOrMediumConfidence: number;
+    scannedItems: number;
+  };
+  actions: DriveScanActionRecord[];
+  items: Array<{
+    id: string;
+    name?: string | null;
+    status?: string | null;
+    parent_path?: string | null;
+    web_view_link?: string | null;
+    review_reason?: string | null;
+  }>;
+};
+
+type DriveScanReviewSummary = {
+  total: number;
+  movable: number;
+  duplicates: number;
+  unmatched: number;
+  lowOrMediumConfidence?: number;
+  failedOperations?: number;
+  byConfidence?: Record<string, number>;
+  byActionType?: Record<string, number>;
+};
+
 const DOCUMENT_FOLDER_OPTIONS = [
   "01-Documentos do Cliente",
   "02-Inicial",
@@ -317,12 +413,12 @@ function getExtractionBadge(status?: string | null) {
     case "skipped":
       return {
         label: "Indexado",
-        className: "bg-gray-100 dark:bg-white/5 border-gray-200 dark:border-white/10 text-gray-700 dark:text-gray-300",
+        className: "bg-white/5 border-white/10 text-gray-300",
       };
     default:
       return {
         label: "Pendente",
-        className: "bg-gray-100 dark:bg-white/5 border-gray-200 dark:border-white/10 text-gray-400",
+        className: "bg-white/5 border-white/10 text-gray-400",
       };
   }
 }
@@ -336,6 +432,80 @@ function formatDateTime(value?: string | null) {
   const date = new Date(value);
   if (Number.isNaN(date.getTime())) return "Nunca sincronizado";
   return date.toLocaleString("pt-BR", { dateStyle: "short", timeStyle: "short" });
+}
+
+function getDriveScanCounter(counters: DriveScanCounters | null | undefined, key: keyof DriveScanCounters) {
+  const value = counters?.[key];
+  return typeof value === "number" && Number.isFinite(value) ? value : 0;
+}
+
+function sanitizeDriveScanMessage(message?: string | null) {
+  const raw = String(message || "").trim();
+  if (!raw) return "Nao foi possivel carregar a analise do Drive agora.";
+  const lower = raw.toLowerCase();
+  if (
+    lower.includes("token")
+    || lower.includes("api key")
+    || lower.includes("apikey")
+    || lower.includes("secret")
+    || lower.includes("http://")
+    || lower.includes("https://")
+    || lower.includes("stack")
+    || lower.includes("endpoint")
+    || lower.includes("drive_move_failed")
+  ) {
+    return "O MAYUS encontrou uma pendencia de configuracao ou permissao no Drive/IA. Revise a integracao antes de tentar novamente.";
+  }
+  return raw;
+}
+
+function getDriveScanStatusLabel(status?: string | null) {
+  switch (status) {
+    case "preview_ready":
+      return "Preview pronto";
+    case "applying":
+      return "Aplicando";
+    case "completed":
+      return "Concluida";
+    case "completed_with_warnings":
+      return "Concluida com avisos";
+    case "failed":
+      return "Falhou";
+    case "scanning":
+      return "Analisando";
+    default:
+      return status || "Registrada";
+  }
+}
+
+function getDriveActionTypeLabel(type?: string | null) {
+  switch (type) {
+    case "move_to_process_folder":
+      return "Mover para processo";
+    case "create_process_folder":
+      return "Criar pasta de processo";
+    case "mark_duplicate":
+      return "Duplicado";
+    case "request_review":
+      return "Revisar vinculo";
+    case "ignore":
+      return "Ignorar";
+    default:
+      return type || "Acao";
+  }
+}
+
+function getConfidenceLabel(confidence?: string | null) {
+  switch (confidence) {
+    case "high":
+      return "Alta";
+    case "medium":
+      return "Media";
+    case "low":
+      return "Baixa";
+    default:
+      return "Sem confianca";
+  }
 }
 
 function isRecord(value: unknown): value is Record<string, unknown> {
@@ -593,7 +763,7 @@ function getDraftFactoryCardBadge(card: Pick<ProcessDocumentCard, "draftPlan" | 
     case "queued":
       return {
         label: stale && card.firstDraftArtifactId ? "Atualizando minuta" : "Minuta em fila",
-        className: "border-gray-200 dark:border-white/10 bg-gray-100 dark:bg-white/5 text-gray-700 dark:text-gray-300",
+        className: "border-white/10 bg-white/5 text-gray-300",
         dotClassName: "bg-gray-400",
       };
     case "running":
@@ -679,6 +849,14 @@ export default function DocumentosPage() {
   const [draftWorkflowBusyKey, setDraftWorkflowBusyKey] = useState<string | null>(null);
   const [draftRevisionBusyKey, setDraftRevisionBusyKey] = useState<string | null>(null);
   const [draftQueueHealth, setDraftQueueHealth] = useState<DraftFactoryQueueHealth | null>(null);
+  const [driveScanRuns, setDriveScanRuns] = useState<DriveScanRunRecord[]>([]);
+  const [driveScanDetail, setDriveScanDetail] = useState<DriveScanRunDetail | null>(null);
+  const [driveReviewItems, setDriveReviewItems] = useState<DriveScanActionRecord[]>([]);
+  const [driveReviewSummary, setDriveReviewSummary] = useState<DriveScanReviewSummary | null>(null);
+  const [selectedDriveRunId, setSelectedDriveRunId] = useState<string | null>(null);
+  const [driveScanBusy, setDriveScanBusy] = useState(false);
+  const [driveScanLoading, setDriveScanLoading] = useState(false);
+  const [driveScanWarning, setDriveScanWarning] = useState<string | null>(null);
 
   const selectedCard = useMemo(() => cards.find(c => c.id === selectedCardId), [cards, selectedCardId]);
   const selectedCardDraftStale = useMemo(() => (selectedCard ? isDraftFactoryCardStale(selectedCard) : false), [selectedCard]);
@@ -1478,7 +1656,7 @@ export default function DocumentosPage() {
   };
 
   return (
-      <div className={`flex-1 min-h-screen relative text-gray-900 dark:text-white p-6 sm:p-10 ${montserrat.className} overflow-hidden`}>
+      <div className={`flex-1 min-h-screen relative text-white p-6 sm:p-10 ${montserrat.className} overflow-hidden`}>
       <datalist id="legal-piece-suggestions">
         {LEGAL_PIECE_SUGGESTIONS.map((option) => (
           <option key={option.value} value={option.value} />
@@ -1500,17 +1678,17 @@ export default function DocumentosPage() {
             <div className="flex items-center gap-6">
               <div className="relative group">
                 <div className="absolute inset-0 bg-gradient-to-tr from-[#4285F4]/20 to-[#CCA761]/20 rounded-2xl blur-xl group-hover:opacity-100 opacity-60 transition-opacity duration-700" />
-                <div className="w-16 h-16 rounded-2xl border border-gray-200 dark:border-white/10 bg-[#0a0f1a]/80 backdrop-blur-xl flex items-center justify-center relative shadow-[0_0_30px_rgba(0,0,0,0.5)] overflow-hidden">
+                <div className="w-16 h-16 rounded-2xl border border-white/10 bg-[#0a0f1a]/80 backdrop-blur-xl flex items-center justify-center relative shadow-[0_0_30px_rgba(0,0,0,0.5)] overflow-hidden">
                   <div className="absolute inset-0 bg-gradient-to-br from-white/5 to-transparent pointer-events-none" />
                   <GoogleDriveLogo size={32} className="h-[32px] w-[32px] relative z-10 drop-shadow-[0_0_15px_rgba(66,133,244,0.3)]" />
                 </div>
               </div>
               <div>
-                <h1 className={`text-4xl md:text-5xl text-gray-900 dark:text-white tracking-widest ${cormorant.className} drop-shadow-xl font-bold`}>
+                <h1 className={`text-4xl md:text-5xl text-white tracking-widest ${cormorant.className} drop-shadow-xl font-bold`}>
                   Repositório de <span className="text-transparent bg-clip-text bg-gradient-to-r from-[#CCA761] via-[#e2c78d] to-[#CCA761] animate-[pulse_4s_ease-in-out_infinite]">Documentos</span>
                 </h1>
                 <p className="text-gray-400 text-sm max-w-2xl leading-relaxed mt-2 font-medium">
-                  Visualize a estrutura documental de cada processo, orquestre o Google Drive oficial do caso e sincronize a memória mínima que alimenta o cérebro jurídico do <span className="text-gray-900 dark:text-white font-bold tracking-widest">MAYUS</span>.
+                  Visualize a estrutura documental de cada processo, orquestre o Google Drive oficial do caso e sincronize a memória mínima que alimenta o cérebro jurídico do <span className="text-white font-bold tracking-widest">MAYUS</span>.
                 </p>
               </div>
             </div>
@@ -1524,13 +1702,13 @@ export default function DocumentosPage() {
                 value={search}
                 onChange={(event) => setSearch(event.target.value)}
                 placeholder="Buscar cliente, processo ou pipeline..."
-                className="relative w-full bg-white dark:bg-[#0a0a0a]/80 backdrop-blur-md border border-gray-200 dark:border-white/10 hover:border-gray-300 dark:border-white/20 rounded-xl pl-12 pr-4 py-3.5 text-sm text-gray-900 dark:text-white focus:outline-none focus:border-[#CCA761]/40 focus:bg-gray-100 dark:bg-[#111]/90 focus:shadow-[0_0_20px_rgba(204,167,97,0.08)] transition-all placeholder:text-gray-600 font-medium"
+                className="relative w-full bg-[#0a0a0a]/80 backdrop-blur-md border border-white/10 hover:border-white/20 rounded-xl pl-12 pr-4 py-3.5 text-sm text-white focus:outline-none focus:border-[#CCA761]/40 focus:bg-[#111]/90 focus:shadow-[0_0_20px_rgba(204,167,97,0.08)] transition-all placeholder:text-gray-600 font-medium"
               />
             </div>
             <button
               type="button"
               onClick={loadRepository}
-              className="relative overflow-hidden group px-6 py-3.5 rounded-xl border border-gray-200 dark:border-white/10 bg-white dark:bg-[#0a0a0a]/80 backdrop-blur-md hover:bg-gray-100 dark:bg-white/5 hover:border-[#CCA761]/30 text-xs font-black uppercase tracking-[0.2em] text-gray-900 dark:text-white flex items-center justify-center gap-3 transition-all duration-300"
+              className="relative overflow-hidden group px-6 py-3.5 rounded-xl border border-white/10 bg-[#0a0a0a]/80 backdrop-blur-md hover:bg-white/5 hover:border-[#CCA761]/30 text-xs font-black uppercase tracking-[0.2em] text-white flex items-center justify-center gap-3 transition-all duration-300"
             >
               <div className="absolute inset-0 bg-[#CCA761] opacity-0 group-hover:opacity-[0.03] transition-opacity duration-300" />
               <RefreshCw size={14} className="group-hover:rotate-180 transition-transform duration-700 text-[#CCA761]" /> Atualizar
@@ -1553,10 +1731,10 @@ export default function DocumentosPage() {
                 key={option.value}
                 type="button"
                 onClick={() => setDraftFactoryFilter(option.value as DraftFactoryDocumentFilter)}
-                className={`inline-flex items-center gap-2 rounded-lg border px-3 py-2 text-[10px] font-black uppercase tracking-[0.18em] transition-colors ${active ? "border-[#CCA761]/35 bg-[#CCA761]/10 text-[#CCA761]" : "border-gray-200 dark:border-white/10 bg-gray-100 dark:bg-[#111] text-gray-400 hover:text-gray-900 dark:text-white hover:bg-gray-100 dark:bg-white/5"}`}
+                className={`inline-flex items-center gap-2 rounded-lg border px-3 py-2 text-[10px] font-black uppercase tracking-[0.18em] transition-colors ${active ? "border-[#CCA761]/35 bg-[#CCA761]/10 text-[#CCA761]" : "border-white/10 bg-[#111] text-gray-400 hover:text-white hover:bg-white/5"}`}
               >
                 <span>{option.label}</span>
-                <span className={`rounded-full px-1.5 py-0.5 text-[9px] ${active ? "bg-[#CCA761]/10 text-[#CCA761]" : "bg-gray-100 dark:bg-white/5 text-gray-500"}`}>
+                <span className={`rounded-full px-1.5 py-0.5 text-[9px] ${active ? "bg-[#CCA761]/10 text-[#CCA761]" : "bg-white/5 text-gray-500"}`}>
                   {option.count}
                 </span>
               </button>
@@ -1566,21 +1744,21 @@ export default function DocumentosPage() {
 
         {/* Dashboard Metrics */}
         <div className="grid grid-cols-1 md:grid-cols-2 xl:grid-cols-4 gap-5">
-          <div className="group relative overflow-hidden bg-gradient-to-b from-[#0f0f0f] to-[#080808] border border-gray-200 dark:border-white/5 hover:border-[#CCA761]/20 rounded-2xl p-6 transition-all duration-500 hover:shadow-[0_0_30px_rgba(204,167,97,0.05)]">
+          <div className="group relative overflow-hidden bg-gradient-to-b from-[#0f0f0f] to-[#080808] border border-white/5 hover:border-[#CCA761]/20 rounded-2xl p-6 transition-all duration-500 hover:shadow-[0_0_30px_rgba(204,167,97,0.05)]">
             <div className="absolute top-0 right-0 w-32 h-32 bg-[#CCA761]/5 blur-[50px] rounded-full group-hover:bg-[#CCA761]/10 transition-colors duration-500" />
             <div className="relative z-10">
               <div className="flex items-center gap-3 mb-4">
-                <div className="w-8 h-8 rounded-lg bg-gray-100 dark:bg-white/5 border border-gray-200 dark:border-white/10 flex items-center justify-center group-hover:border-[#CCA761]/30 transition-colors">
+                <div className="w-8 h-8 rounded-lg bg-white/5 border border-white/10 flex items-center justify-center group-hover:border-[#CCA761]/30 transition-colors">
                   <FolderTree size={14} className="text-[#CCA761]" />
                 </div>
                 <p className="text-[10px] uppercase tracking-[0.3em] text-gray-400 font-black">Processos</p>
               </div>
-              <p className="text-4xl font-black text-gray-900 dark:text-white tracking-tight">{cards.length}</p>
+              <p className="text-4xl font-black text-white tracking-tight">{cards.length}</p>
               <p className="text-xs text-gray-500 mt-2 font-medium">Monitorados no sistema</p>
             </div>
           </div>
 
-          <div className="group relative overflow-hidden bg-gradient-to-b from-[#0f0f0f] to-[#080808] border border-gray-200 dark:border-white/5 hover:border-[#4285F4]/20 rounded-2xl p-6 transition-all duration-500 hover:shadow-[0_0_30px_rgba(66,133,244,0.05)]">
+          <div className="group relative overflow-hidden bg-gradient-to-b from-[#0f0f0f] to-[#080808] border border-white/5 hover:border-[#4285F4]/20 rounded-2xl p-6 transition-all duration-500 hover:shadow-[0_0_30px_rgba(66,133,244,0.05)]">
             <div className="absolute top-0 right-0 w-32 h-32 bg-[#4285F4]/5 blur-[50px] rounded-full group-hover:bg-[#4285F4]/10 transition-colors duration-500" />
             <div className="relative z-10">
               <div className="flex items-center gap-3 mb-4">
@@ -1589,12 +1767,12 @@ export default function DocumentosPage() {
                 </div>
                 <p className="text-[10px] uppercase tracking-[0.3em] text-[#8ab4ff] font-black">Estruturas do Drive</p>
               </div>
-              <p className="text-4xl font-black text-gray-900 dark:text-white tracking-tight">{cards.filter((card) => card.drive_structure_ready).length}</p>
+              <p className="text-4xl font-black text-white tracking-tight">{cards.filter((card) => card.drive_structure_ready).length}</p>
               <p className="text-xs text-gray-500 mt-2 font-medium">Prontas para sincronização</p>
             </div>
           </div>
 
-          <div className="group relative overflow-hidden bg-gradient-to-b from-[#0f0f0f] to-[#080808] border border-gray-200 dark:border-white/5 hover:border-[#CCA761]/20 rounded-2xl p-6 transition-all duration-500 hover:shadow-[0_0_30px_rgba(204,167,97,0.05)]">
+          <div className="group relative overflow-hidden bg-gradient-to-b from-[#0f0f0f] to-[#080808] border border-white/5 hover:border-[#CCA761]/20 rounded-2xl p-6 transition-all duration-500 hover:shadow-[0_0_30px_rgba(204,167,97,0.05)]">
             <div className="absolute top-0 right-0 w-32 h-32 bg-[#CCA761]/5 blur-[50px] rounded-full group-hover:bg-[#CCA761]/10 transition-colors duration-500" />
             <div className="relative z-10">
               <div className="flex items-center gap-3 mb-4">
@@ -1603,12 +1781,12 @@ export default function DocumentosPage() {
                 </div>
                 <p className="text-[10px] uppercase tracking-[0.3em] text-[#e2c78d] font-black">Documentos</p>
               </div>
-              <p className="text-4xl font-black text-gray-900 dark:text-white tracking-tight">{cards.reduce((acc, card) => acc + card.documentCount, 0)}</p>
+              <p className="text-4xl font-black text-white tracking-tight">{cards.reduce((acc, card) => acc + card.documentCount, 0)}</p>
               <p className="text-xs text-gray-500 mt-2 font-medium">Sincronizados com a IA</p>
             </div>
           </div>
 
-          <div className="group relative overflow-hidden bg-gradient-to-b from-[#0f0f0f] to-[#080808] border border-gray-200 dark:border-white/5 hover:border-emerald-500/20 rounded-2xl p-6 transition-all duration-500 hover:shadow-[0_0_30px_rgba(16,185,129,0.05)]">
+          <div className="group relative overflow-hidden bg-gradient-to-b from-[#0f0f0f] to-[#080808] border border-white/5 hover:border-emerald-500/20 rounded-2xl p-6 transition-all duration-500 hover:shadow-[0_0_30px_rgba(16,185,129,0.05)]">
             <div className="absolute top-0 right-0 w-32 h-32 bg-emerald-500/5 blur-[50px] rounded-full group-hover:bg-emerald-500/10 transition-colors duration-500" />
             <div className="relative z-10">
               <div className="flex items-center gap-3 mb-4">
@@ -1617,7 +1795,7 @@ export default function DocumentosPage() {
                 </div>
                 <p className="text-[10px] uppercase tracking-[0.3em] text-emerald-200 font-black">Draft Factory</p>
               </div>
-              <p className="text-4xl font-black text-gray-900 dark:text-white tracking-tight">{Math.max(draftFactoryCounts.completed - draftFactoryCounts.stale, 0)}</p>
+              <p className="text-4xl font-black text-white tracking-tight">{Math.max(draftFactoryCounts.completed - draftFactoryCounts.stale, 0)}</p>
               <p className="text-xs text-gray-500 mt-2 font-medium">
                 {draftFactoryCounts.running + draftFactoryCounts.queued} em fluxo • {draftFactoryCounts.stale} desatualizadas • {draftFactoryCounts.failed} com falha
               </p>
@@ -1631,7 +1809,7 @@ export default function DocumentosPage() {
               <div className="flex items-start justify-between gap-4">
                 <div>
                   <p className="text-[10px] uppercase tracking-[0.25em] text-gray-500 font-black">Saúde da fila headless</p>
-                  <p className="text-sm text-gray-700 dark:text-gray-300 mt-2 leading-relaxed">
+                  <p className="text-sm text-gray-300 mt-2 leading-relaxed">
                     Telemetria operacional da Draft Factory com alertas de backlog, travamento e falhas repetidas.
                   </p>
                 </div>
@@ -1642,7 +1820,7 @@ export default function DocumentosPage() {
 
               <div className="grid grid-cols-2 md:grid-cols-4 gap-3">
                 {[
-                  { label: "Em fila", value: draftQueueHealth.counts.queued, tone: "text-gray-900 dark:text-white border-gray-200 dark:border-white/10 bg-gray-100 dark:bg-white/5" },
+                  { label: "Em fila", value: draftQueueHealth.counts.queued, tone: "text-white border-white/10 bg-white/5" },
                   { label: "Gerando", value: draftQueueHealth.counts.running, tone: "text-[#CCA761] border-[#CCA761]/20 bg-[#CCA761]/10" },
                   { label: "Travadas", value: draftQueueHealth.stuckRunningCount, tone: "text-red-200 border-red-500/20 bg-red-500/10" },
                   { label: "Falhas 24h", value: draftQueueHealth.repeatedFailureCount, tone: "text-amber-200 border-amber-500/20 bg-amber-500/10" },
@@ -1655,14 +1833,14 @@ export default function DocumentosPage() {
               </div>
 
               <div className="grid grid-cols-1 md:grid-cols-3 gap-3 text-xs text-gray-400">
-                <div className="rounded-xl border border-gray-200 dark:border-white/5 bg-gray-200 dark:bg-black/20 px-4 py-3">
-                  Fila mais antiga: <span className="text-gray-900 dark:text-white font-semibold">{draftQueueHealth.oldestQueuedMinutes !== null ? `${draftQueueHealth.oldestQueuedMinutes} min` : "sem backlog"}</span>
+                <div className="rounded-xl border border-white/5 bg-gray-200 dark:bg-black/20 px-4 py-3">
+                  Fila mais antiga: <span className="text-white font-semibold">{draftQueueHealth.oldestQueuedMinutes !== null ? `${draftQueueHealth.oldestQueuedMinutes} min` : "sem backlog"}</span>
                 </div>
-                <div className="rounded-xl border border-gray-200 dark:border-white/5 bg-gray-200 dark:bg-black/20 px-4 py-3">
-                  Running mais antigo: <span className="text-gray-900 dark:text-white font-semibold">{draftQueueHealth.oldestRunningMinutes !== null ? `${draftQueueHealth.oldestRunningMinutes} min` : "sem execuções"}</span>
+                <div className="rounded-xl border border-white/5 bg-gray-200 dark:bg-black/20 px-4 py-3">
+                  Running mais antigo: <span className="text-white font-semibold">{draftQueueHealth.oldestRunningMinutes !== null ? `${draftQueueHealth.oldestRunningMinutes} min` : "sem execuções"}</span>
                 </div>
-                <div className="rounded-xl border border-gray-200 dark:border-white/5 bg-gray-200 dark:bg-black/20 px-4 py-3">
-                  Minutas stale: <span className="text-gray-900 dark:text-white font-semibold">{draftQueueHealth.counts.staleCompleted}</span>
+                <div className="rounded-xl border border-white/5 bg-gray-200 dark:bg-black/20 px-4 py-3">
+                  Minutas stale: <span className="text-white font-semibold">{draftQueueHealth.counts.staleCompleted}</span>
                 </div>
               </div>
 
@@ -1691,7 +1869,7 @@ export default function DocumentosPage() {
               <div className="flex items-center justify-between gap-3">
                 <div>
                   <p className="text-[10px] uppercase tracking-[0.25em] text-gray-500 font-black">Falhas recentes</p>
-                  <p className="text-sm text-gray-700 dark:text-gray-300 mt-2">Últimos processos que pedem retry ou investigação.</p>
+                  <p className="text-sm text-gray-300 mt-2">Últimos processos que pedem retry ou investigação.</p>
                 </div>
                 <AlertTriangle size={16} className="text-amber-300" />
               </div>
@@ -1699,8 +1877,8 @@ export default function DocumentosPage() {
               {draftQueueHealth.recentFailures.length > 0 ? (
                 <div className="space-y-3">
                   {draftQueueHealth.recentFailures.map((failure) => (
-                    <div key={failure.processTaskId} className="rounded-xl border border-gray-200 dark:border-white/5 bg-gray-200 dark:bg-black/20 px-4 py-3">
-                      <p className="text-sm font-semibold text-gray-900 dark:text-white">{failure.title}</p>
+                    <div key={failure.processTaskId} className="rounded-xl border border-white/5 bg-gray-200 dark:bg-black/20 px-4 py-3">
+                      <p className="text-sm font-semibold text-white">{failure.title}</p>
                       <p className="mt-1 text-xs text-gray-500">
                         {failure.clientName || "Cliente não identificado"}
                         {failure.updatedAt ? ` · ${formatDateTime(failure.updatedAt)}` : ""}
@@ -1713,7 +1891,7 @@ export default function DocumentosPage() {
                   ))}
                 </div>
               ) : (
-                <div className="rounded-xl border border-dashed border-gray-200 dark:border-white/10 bg-gray-200 dark:bg-black/20 px-4 py-3 text-xs text-gray-500 leading-relaxed">
+                <div className="rounded-xl border border-dashed border-white/10 bg-gray-200 dark:bg-black/20 px-4 py-3 text-xs text-gray-500 leading-relaxed">
                   Nenhuma falha recente registrada para a Draft Factory deste tenant.
                 </div>
               )}
@@ -1731,18 +1909,18 @@ export default function DocumentosPage() {
             <div className="flex items-center gap-6 mb-6 md:mb-0">
               <div className="relative">
                 <div className="absolute inset-0 bg-[#CCA761] blur-md opacity-20 group-hover:opacity-40 transition-opacity duration-500" />
-                <div className="w-16 h-16 rounded-full bg-white dark:bg-[#0a0a0a] border border-[#CCA761]/40 flex items-center justify-center relative shadow-[0_0_20px_rgba(204,167,97,0.15)] group-hover:border-[#CCA761] transition-colors">
+                <div className="w-16 h-16 rounded-full bg-[#0a0a0a] border border-[#CCA761]/40 flex items-center justify-center relative shadow-[0_0_20px_rgba(204,167,97,0.15)] group-hover:border-[#CCA761] transition-colors">
                   <Sparkles size={24} className="text-[#CCA761]" />
                 </div>
               </div>
               <div>
-                <h3 className={`text-3xl text-gray-900 dark:text-white ${cormorant.className} flex items-center gap-3 font-bold tracking-wide`}>
+                <h3 className={`text-3xl text-white ${cormorant.className} flex items-center gap-3 font-bold tracking-wide`}>
                   Acessar Acervo <span className="text-transparent bg-clip-text bg-gradient-to-r from-[#CCA761] to-[#f4dca6] font-black uppercase tracking-[0.2em] ml-1">MAYUS</span>
                 </h3>
                 <p className="text-sm text-[#CCA761]/70 mt-1 font-medium tracking-wide">Modelos processuais premium, base de conhecimento e diretrizes da IA Jurídica especializada.</p>
               </div>
             </div>
-            <div className="relative overflow-hidden group/btn px-8 py-4 bg-white dark:bg-[#0a0a0a] border border-[#CCA761]/30 hover:border-[#CCA761] text-[#CCA761] text-xs font-black uppercase tracking-[0.25em] rounded-xl transition-all duration-300 hover:shadow-[0_0_20px_rgba(204,167,97,0.2)]">
+            <div className="relative overflow-hidden group/btn px-8 py-4 bg-[#0a0a0a] border border-[#CCA761]/30 hover:border-[#CCA761] text-[#CCA761] text-xs font-black uppercase tracking-[0.25em] rounded-xl transition-all duration-300 hover:shadow-[0_0_20px_rgba(204,167,97,0.2)]">
               <div className="absolute inset-0 bg-[#CCA761]/10 -translate-x-full group-hover/btn:translate-x-0 transition-transform duration-500 ease-out" />
               <span className="relative z-10">Explorar Modelos</span>
             </div>
@@ -1750,7 +1928,7 @@ export default function DocumentosPage() {
         </Link>
 
         {isLoading ? (
-          <div className="bg-white dark:bg-[#0a0a0a]/80 backdrop-blur-md border border-gray-200 dark:border-white/5 rounded-3xl p-16 flex flex-col items-center justify-center gap-5">
+          <div className="bg-[#0a0a0a]/80 backdrop-blur-md border border-white/5 rounded-3xl p-16 flex flex-col items-center justify-center gap-5">
             <div className="relative">
               <div className="absolute inset-0 bg-[#CCA761]/20 blur-xl rounded-full animate-pulse" />
               <Loader2 size={32} className="animate-spin text-[#CCA761] relative z-10" />
@@ -1758,11 +1936,11 @@ export default function DocumentosPage() {
             <p className="text-sm text-[#CCA761] uppercase tracking-[0.3em] font-black animate-pulse">Carregando Acervo Operacional...</p>
           </div>
         ) : filteredCards.length === 0 ? (
-          <div data-testid="documents-empty-state" className="bg-white dark:bg-[#0a0a0a]/80 backdrop-blur-md border border-gray-200 dark:border-white/5 rounded-3xl p-16 text-center space-y-5 shadow-inner">
-            <div className="w-20 h-20 mx-auto rounded-full bg-gray-100 dark:bg-white/5 border border-gray-200 dark:border-white/10 flex items-center justify-center mb-4">
+          <div data-testid="documents-empty-state" className="bg-[#0a0a0a]/80 backdrop-blur-md border border-white/5 rounded-3xl p-16 text-center space-y-5 shadow-inner">
+            <div className="w-20 h-20 mx-auto rounded-full bg-white/5 border border-white/10 flex items-center justify-center mb-4">
               <FolderTree size={32} className="text-[#CCA761]/60" />
             </div>
-            <h2 className={`text-3xl text-gray-900 dark:text-white ${cormorant.className} font-bold`}>Nenhum processo encontrado no repositório</h2>
+            <h2 className={`text-3xl text-white ${cormorant.className} font-bold`}>Nenhum processo encontrado no repositório</h2>
             <p className="text-sm text-gray-400 max-w-xl mx-auto leading-relaxed">
               Crie ou salve processos no seu funil primeiro. Assim que o card existir, a plataforma <span className="text-[#CCA761] font-bold">MAYUS</span> poderá iniciar a gestão documental avançada no Google Drive.
             </p>
@@ -1779,7 +1957,7 @@ export default function DocumentosPage() {
                   key={card.id}
                   onClick={() => setSelectedCardId(card.id)}
                   data-testid={`documents-card-${card.id}`}
-                  className="group bg-white dark:bg-[#0a0a0a] border border-gray-200 dark:border-white/5 hover:border-[#CCA761]/30 rounded-2xl p-4 transition-all duration-300 hover:shadow-[0_10px_30px_rgba(204,167,97,0.05)] relative flex flex-col text-left"
+                  className="group bg-[#0a0a0a] border border-white/5 hover:border-[#CCA761]/30 rounded-2xl p-4 transition-all duration-300 hover:shadow-[0_10px_30px_rgba(204,167,97,0.05)] relative flex flex-col text-left"
                 >
                   <div className="flex items-center justify-between w-full mb-3">
                     <p className="text-[9px] uppercase tracking-[0.2em] text-[#CCA761] font-black flex items-center gap-1.5 truncate">
@@ -1788,7 +1966,7 @@ export default function DocumentosPage() {
                     <div className={`w-2 h-2 rounded-full shrink-0 ${hasStructure ? 'bg-[#4285F4] shadow-[0_0_8px_rgba(66,133,244,0.6)]' : 'bg-amber-500'}`} />
                   </div>
                   
-                  <h2 data-testid={`documents-card-title-${card.id}`} className={`text-base font-bold text-gray-900 dark:text-white leading-tight ${cormorant.className} tracking-wide truncate w-full mb-1 group-hover:text-[#CCA761] transition-colors`}>
+                  <h2 data-testid={`documents-card-title-${card.id}`} className={`text-base font-bold text-white leading-tight ${cormorant.className} tracking-wide truncate w-full mb-1 group-hover:text-[#CCA761] transition-colors`}>
                     {card.title}
                   </h2>
                   <p className="text-[10px] text-gray-500 font-medium tracking-wide truncate w-full mb-4">
@@ -1821,9 +1999,9 @@ export default function DocumentosPage() {
                     </div>
                   )}
 
-                  <div className="mt-auto flex items-center justify-between w-full pt-3 border-t border-gray-200 dark:border-white/5 group-hover:border-[#CCA761]/20 transition-colors">
+                  <div className="mt-auto flex items-center justify-between w-full pt-3 border-t border-white/5 group-hover:border-[#CCA761]/20 transition-colors">
                     <div className="flex items-center gap-2">
-                       <p className="text-[10px] font-bold text-gray-700 dark:text-gray-300 bg-gray-100 dark:bg-[#111] px-2 py-1 rounded-md border border-gray-200 dark:border-white/5">
+                       <p className="text-[10px] font-bold text-gray-300 bg-[#111] px-2 py-1 rounded-md border border-white/5">
                          {card.documentCount} docs
                        </p>
                        <p className="text-[9px] font-bold text-[#CCA761] uppercase tracking-wider hidden sm:block">
@@ -1857,12 +2035,12 @@ export default function DocumentosPage() {
               data-testid="documents-detail-modal"
               className="w-full max-w-[1380px] max-h-[92vh] overflow-y-auto no-scrollbar z-[101] outline-none"
             >
-              <div className="group/card bg-white dark:bg-[#0a0a0a] border border-[#CCA761]/30 rounded-[28px] p-6 sm:p-8 relative flex flex-col shadow-[0_20px_50px_rgba(0,0,0,0.8),0_0_0_1px_rgba(204,167,97,0.15)] m-1 sm:m-4">
+              <div className="group/card bg-[#0a0a0a] border border-[#CCA761]/30 rounded-[28px] p-6 sm:p-8 relative flex flex-col shadow-[0_20px_50px_rgba(0,0,0,0.8),0_0_0_1px_rgba(204,167,97,0.15)] m-1 sm:m-4">
                 {/* Modal close button */}
                 <button
                   onClick={() => setSelectedCardId(null)}
                   aria-label="Fechar detalhes do processo"
-                  className="absolute top-4 right-4 w-8 h-8 rounded-full bg-gray-100 dark:bg-white/5 hover:bg-gray-100 dark:bg-white/10 flex items-center justify-center text-gray-400 hover:text-gray-900 dark:text-white transition-colors z-20"
+                  className="absolute top-4 right-4 w-8 h-8 rounded-full bg-white/5 hover:bg-white/10 flex items-center justify-center text-gray-400 hover:text-white transition-colors z-20"
                 >
                   <X size={16} />
                 </button>
@@ -1876,7 +2054,7 @@ export default function DocumentosPage() {
                       {selectedCard.pipelineName || "Pipeline"}
                       {selectedCard.stageName ? <><span className="w-1 h-1 rounded-full bg-[#CCA761]/50" /> {selectedCard.stageName}</> : ""}
                     </p>
-                    <h2 data-testid="documents-detail-title" className={`text-2xl font-bold text-gray-900 dark:text-white leading-tight ${cormorant.className} tracking-wide`}>{selectedCard.title}</h2>
+                    <h2 data-testid="documents-detail-title" className={`text-2xl font-bold text-white leading-tight ${cormorant.className} tracking-wide`}>{selectedCard.title}</h2>
                     <p className="text-[12px] text-gray-400 font-medium tracking-wide">
                       {selectedCard.client_name || "Sem cliente"}
                       {selectedCard.process_number ? ` • ${selectedCard.process_number}` : ""}
@@ -1885,28 +2063,28 @@ export default function DocumentosPage() {
                 </div>
 
                 <div className="grid grid-cols-3 gap-2 sm:gap-3 mb-5">
-                  <div className="bg-gray-100 dark:bg-[#111] border border-gray-200 dark:border-white/5 rounded-xl p-3 sm:p-4">
+                  <div className="bg-[#111] border border-white/5 rounded-xl p-3 sm:p-4">
                     <p className="text-[9px] uppercase tracking-[0.2em] text-gray-500 font-black mb-1.5">Docs</p>
-                    <p className="text-xl sm:text-2xl font-black text-gray-900 dark:text-white">{selectedCard.documentCount}</p>
+                    <p className="text-xl sm:text-2xl font-black text-white">{selectedCard.documentCount}</p>
                   </div>
-                  <div className="bg-gray-100 dark:bg-[#111] border border-gray-200 dark:border-white/5 rounded-xl p-3 sm:p-4">
+                  <div className="bg-[#111] border border-white/5 rounded-xl p-3 sm:p-4">
                     <p className="text-[9px] uppercase tracking-[0.2em] text-gray-500 font-black mb-1.5">Status</p>
                     <p className="text-[11px] font-bold text-[#CCA761] capitalize truncate mt-1">{selectedCard.syncStatus}</p>
                   </div>
-                  <div className="bg-gray-100 dark:bg-[#111] border border-gray-200 dark:border-white/5 rounded-xl p-3 sm:p-4">
+                  <div className="bg-[#111] border border-white/5 rounded-xl p-3 sm:p-4">
                     <p className="text-[9px] uppercase tracking-[0.2em] text-gray-500 font-black mb-1.5">Sync</p>
-                    <p className="text-[10px] font-semibold text-gray-700 dark:text-gray-300 mt-1 uppercase truncate">{formatDateTime(selectedCard.lastSyncedAt).split(',')[0]}</p>
+                    <p className="text-[10px] font-semibold text-gray-300 mt-1 uppercase truncate">{formatDateTime(selectedCard.lastSyncedAt).split(',')[0]}</p>
                   </div>
                 </div>
 
                 <div className="grid grid-cols-1 xl:grid-cols-[420px_minmax(0,1fr)] gap-5 items-start">
                   <div className="space-y-5 xl:sticky xl:top-0">
-                    <div className="bg-gradient-to-br from-[#111] to-[#0a0a0a] border border-gray-200 dark:border-white/5 rounded-xl p-5 relative overflow-hidden">
+                    <div className="bg-gradient-to-br from-[#111] to-[#0a0a0a] border border-white/5 rounded-xl p-5 relative overflow-hidden">
                       <div className="absolute top-0 right-0 w-24 h-24 bg-[#CCA761]/10 blur-2xl rounded-full" />
                       <div className="flex items-center gap-2 text-[#CCA761] text-[10px] uppercase tracking-[0.3em] font-black mb-3 pr-2">
                         <Sparkles size={14} /> Memória Base
                       </div>
-                      <p className="text-sm text-gray-700 dark:text-gray-300 leading-relaxed font-medium relative z-10">
+                      <p className="text-sm text-gray-300 leading-relaxed font-medium relative z-10">
                         {selectedCard.summaryMaster || "Estrutura documental aguardando orquestração inicial. Sincronize o Drive para processar a taxonomia."}
                       </p>
                       {selectedCard.missingDocuments.length > 0 && (
@@ -1920,7 +2098,7 @@ export default function DocumentosPage() {
                       )}
                     </div>
 
-                    <div className="bg-[#0f0f0f] border border-gray-200 dark:border-white/5 rounded-xl p-5 space-y-4">
+                    <div className="bg-[#0f0f0f] border border-white/5 rounded-xl p-5 space-y-4">
                       <div className="flex items-center justify-between gap-3">
                         <div className="flex items-center gap-2 text-[#CCA761] text-[10px] uppercase tracking-[0.3em] font-black">
                           <Sparkles size={12} /> Orquestrador de Peças
@@ -1936,7 +2114,7 @@ export default function DocumentosPage() {
                         <div className="flex items-start justify-between gap-3">
                           <div>
                             <p className="text-[10px] uppercase tracking-[0.22em] text-[#CCA761] font-black">Draft Factory Juridica</p>
-                            <p className="text-xs text-gray-700 dark:text-gray-300 mt-2 leading-relaxed">
+                            <p className="text-xs text-gray-300 mt-2 leading-relaxed">
                               Usa o `draft plan` do Case Brain, reaproveita o motor jurídico atual e aplica controles de fonte antes da primeira minuta.
                             </p>
                           </div>
@@ -1949,9 +2127,9 @@ export default function DocumentosPage() {
                         </div>
 
                         {selectedCard.draftPlan ? (
-                          <div className="rounded-xl border border-gray-200 dark:border-white/10 bg-[#101010] p-4 space-y-2">
+                          <div className="rounded-xl border border-white/10 bg-[#101010] p-4 space-y-2">
                             <p className="text-[10px] uppercase tracking-[0.2em] text-gray-500 font-black">Peça sugerida pelo Case Brain</p>
-                            <p className="text-sm text-gray-900 dark:text-white font-semibold">
+                            <p className="text-sm text-white font-semibold">
                               {selectedCard.draftPlan.recommendedPieceLabel || selectedCard.draftPlan.recommendedPieceInput || "Peça não definida"}
                             </p>
 
@@ -1967,7 +2145,7 @@ export default function DocumentosPage() {
                               </p>
                             )}
 
-                            <div className="rounded-xl border border-gray-200 dark:border-white/5 bg-gray-200 dark:bg-black/20 px-3 py-3 text-[11px] text-gray-400 leading-relaxed space-y-1">
+                            <div className="rounded-xl border border-white/5 bg-gray-200 dark:bg-black/20 px-3 py-3 text-[11px] text-gray-400 leading-relaxed space-y-1">
                               <p>
                                 Validação externa: lei {selectedCard.draftPlan.readyForLawCitations ? "ok" : "pendente"} ({selectedCard.draftPlan.validatedLawReferenceCount}) · jurisprudência {selectedCard.draftPlan.readyForCaseLawCitations ? "ok" : "pendente"} ({selectedCard.draftPlan.validatedCaseLawReferenceCount})
                               </p>
@@ -1979,7 +2157,7 @@ export default function DocumentosPage() {
                             </div>
                           </div>
                         ) : (
-                          <div className="rounded-xl border border-dashed border-gray-200 dark:border-white/10 bg-[#101010] px-4 py-3 text-xs text-gray-500 leading-relaxed">
+                          <div className="rounded-xl border border-dashed border-white/10 bg-[#101010] px-4 py-3 text-xs text-gray-500 leading-relaxed">
                             O Case Brain ainda não publicou o `draft plan` deste processo. A Draft Factory automática só dispara depois dessa etapa.
                           </div>
                         )}
@@ -2003,7 +2181,7 @@ export default function DocumentosPage() {
                         )}
 
                         {selectedCard.firstDraftStatus === "queued" && (
-                          <div data-testid={`documents-first-draft-status-${selectedCard.id}`} className="rounded-xl border border-gray-200 dark:border-white/10 bg-gray-100 dark:bg-white/5 px-4 py-3 text-xs text-gray-700 dark:text-gray-300 leading-relaxed">
+                          <div data-testid={`documents-first-draft-status-${selectedCard.id}`} className="rounded-xl border border-white/10 bg-white/5 px-4 py-3 text-xs text-gray-300 leading-relaxed">
                             {selectedCardDraftStale && generatedPieceByTask[selectedCard.id]?.draftMarkdown
                               ? "A atualização da primeira minuta foi enfileirada e aguarda a próxima execução headless da Draft Factory."
                               : "A primeira minuta foi enfileirada e aguarda a próxima execução headless da Draft Factory."}
@@ -2025,7 +2203,7 @@ export default function DocumentosPage() {
                         )}
 
                         {(draftVersionsLoadingTaskId === selectedCard.id || selectedCardVersions.length > 0) && (
-                          <div className="rounded-xl border border-gray-200 dark:border-white/10 bg-[#0b0b0b] p-4 space-y-3">
+                          <div className="rounded-xl border border-white/10 bg-[#0b0b0b] p-4 space-y-3">
                             <div className="flex items-start justify-between gap-3">
                               <div>
                                 <p className="text-[10px] uppercase tracking-[0.2em] text-gray-500 font-black">Revisão jurídica formal</p>
@@ -2047,8 +2225,8 @@ export default function DocumentosPage() {
                               </div>
                             ) : selectedDraftVersion ? (
                               <>
-                                <div className="rounded-xl border border-gray-200 dark:border-white/5 bg-gray-200 dark:bg-black/30 p-3 text-xs text-gray-700 dark:text-gray-300 leading-relaxed">
-                                  <p className="text-gray-900 dark:text-white font-semibold">
+                                <div className="rounded-xl border border-white/5 bg-gray-200 dark:bg-black/30 p-3 text-xs text-gray-300 leading-relaxed">
+                                  <p className="text-white font-semibold">
                                     V{selectedDraftVersion.version_number} · {selectedDraftVersion.piece_label || selectedCard.draftPlan?.recommendedPieceLabel || "Minuta jurídica"}
                                   </p>
                                   <p className="mt-1 text-gray-400">
@@ -2057,7 +2235,7 @@ export default function DocumentosPage() {
                                     {selectedDraftVersion.published_at ? ` · publicada em ${formatDateTime(selectedDraftVersion.published_at)}` : ""}
                                   </p>
                                   {selectedDraftVersion.summary && (
-                                    <p className="mt-2 text-gray-700 dark:text-gray-300">{selectedDraftVersion.summary}</p>
+                                    <p className="mt-2 text-gray-300">{selectedDraftVersion.summary}</p>
                                   )}
                                 </div>
 
@@ -2138,7 +2316,7 @@ export default function DocumentosPage() {
                                       target="_blank"
                                       rel="noreferrer"
                                       data-testid={`documents-open-premium-${selectedDraftVersion.id}`}
-                                      className="inline-flex items-center justify-center gap-2 rounded-xl border border-gray-200 dark:border-white/15 bg-gray-100 dark:bg-white/5 px-4 py-2.5 text-[10px] font-black uppercase tracking-[0.18em] text-white/85"
+                                      className="inline-flex items-center justify-center gap-2 rounded-xl border border-gray-200 dark:border-white/15 bg-white/5 px-4 py-2.5 text-[10px] font-black uppercase tracking-[0.18em] text-white/85"
                                     >
                                       <ExternalLink size={12} />
                                       Abrir Artifact Premium
@@ -2164,7 +2342,7 @@ export default function DocumentosPage() {
                                 {selectedDraftVersion.workflow_status === "published" && selectedDraftLearningLoopCapture && (
                                   <div
                                     data-testid={`documents-learning-loop-capture-${selectedDraftVersion.id}`}
-                                    className={`rounded-xl px-4 py-3 text-xs leading-relaxed ${selectedDraftLearningLoopCapture.changed ? "border border-sky-500/20 bg-sky-500/10 text-sky-100" : "border border-gray-200 dark:border-white/10 bg-gray-100 dark:bg-white/5 text-gray-700 dark:text-gray-300"}`}
+                                    className={`rounded-xl px-4 py-3 text-xs leading-relaxed ${selectedDraftLearningLoopCapture.changed ? "border border-sky-500/20 bg-sky-500/10 text-sky-100" : "border border-white/10 bg-white/5 text-gray-300"}`}
                                   >
                                     <p className="font-semibold uppercase tracking-[0.18em] text-[10px] mb-2">Learning Loop Capture</p>
                                     <p>
@@ -2206,11 +2384,11 @@ export default function DocumentosPage() {
                                           type="button"
                                           onClick={() => handleSelectDraftVersion(selectedCard.id, version)}
                                           data-testid={`documents-draft-version-${version.id}`}
-                                          className={`w-full rounded-xl border px-3 py-3 text-left transition-colors ${isSelectedVersion ? "border-[#CCA761]/35 bg-[#CCA761]/10" : "border-gray-200 dark:border-white/5 bg-gray-200 dark:bg-black/20 hover:bg-gray-100 dark:bg-white/5"}`}
+                                          className={`w-full rounded-xl border px-3 py-3 text-left transition-colors ${isSelectedVersion ? "border-[#CCA761]/35 bg-[#CCA761]/10" : "border-white/5 bg-gray-200 dark:bg-black/20 hover:bg-white/5"}`}
                                         >
                                           <div className="flex items-center justify-between gap-3">
                                             <div>
-                                              <p className="text-xs font-semibold text-gray-900 dark:text-white">V{version.version_number} · {version.piece_label || "Minuta jurídica"}</p>
+                                              <p className="text-xs font-semibold text-white">V{version.version_number} · {version.piece_label || "Minuta jurídica"}</p>
                                               <p className="mt-1 text-[11px] text-gray-400">{formatDateTime(version.created_at)}</p>
                                             </div>
                                             <div className="flex items-center gap-2">
@@ -2229,7 +2407,7 @@ export default function DocumentosPage() {
                                 </div>
                               </>
                             ) : (
-                              <div className="rounded-xl border border-dashed border-gray-200 dark:border-white/10 bg-gray-200 dark:bg-black/20 px-4 py-3 text-xs text-gray-500 leading-relaxed">
+                              <div className="rounded-xl border border-dashed border-white/10 bg-gray-200 dark:bg-black/20 px-4 py-3 text-xs text-gray-500 leading-relaxed">
                                 O histórico formal ainda será criado quando a primeira minuta versionada for registrada.
                               </div>
                             )}
@@ -2290,13 +2468,13 @@ export default function DocumentosPage() {
                           value={pieceTypeByTask[selectedCard.id] || ""}
                           onChange={(event) => setPieceTypeByTask((current) => ({ ...current, [selectedCard.id]: event.target.value }))}
                           placeholder="Digite ou escolha a peca (ex: Replica, Embargos a Execucao, Memoriais)"
-                          className="w-full bg-gray-100 dark:bg-[#111] border border-[#CCA761]/20 rounded-xl px-4 py-3 text-sm text-gray-900 dark:text-white placeholder:text-gray-500 focus:outline-none focus:border-[#CCA761]/60 font-medium tracking-wide"
+                          className="w-full bg-[#111] border border-[#CCA761]/20 rounded-xl px-4 py-3 text-sm text-white placeholder:text-gray-500 focus:outline-none focus:border-[#CCA761]/60 font-medium tracking-wide"
                         />
 
                         <select
                           value={piecePracticeAreaByTask[selectedCard.id] || ""}
                           onChange={(event) => setPiecePracticeAreaByTask((current) => ({ ...current, [selectedCard.id]: event.target.value }))}
-                          className="bg-gray-100 dark:bg-[#111] border border-gray-200 dark:border-white/10 rounded-xl px-4 py-3 text-xs text-gray-900 dark:text-white focus:outline-none focus:border-[#CCA761]/40 font-medium tracking-wide appearance-none"
+                          className="bg-[#111] border border-white/10 rounded-xl px-4 py-3 text-xs text-white focus:outline-none focus:border-[#CCA761]/40 font-medium tracking-wide appearance-none"
                         >
                           <option value="">Área do Direito (opcional)</option>
                           {PRACTICE_AREA_OPTIONS.map((option) => (
@@ -2308,7 +2486,7 @@ export default function DocumentosPage() {
                           value={pieceObjectiveByTask[selectedCard.id] || ""}
                           onChange={(event) => setPieceObjectiveByTask((current) => ({ ...current, [selectedCard.id]: event.target.value }))}
                           placeholder="Objetivo do rascunho"
-                          className="w-full bg-gray-100 dark:bg-[#111] border border-gray-200 dark:border-white/10 rounded-xl px-4 py-3 text-sm text-gray-900 dark:text-white placeholder:text-gray-500 focus:outline-none focus:border-[#CCA761]/40"
+                          className="w-full bg-[#111] border border-white/10 rounded-xl px-4 py-3 text-sm text-white placeholder:text-gray-500 focus:outline-none focus:border-[#CCA761]/40"
                         />
                       </div>
 
@@ -2317,7 +2495,7 @@ export default function DocumentosPage() {
                         onChange={(event) => setPieceInstructionsByTask((current) => ({ ...current, [selectedCard.id]: event.target.value }))}
                         rows={3}
                         placeholder="Instruções adicionais para o orquestrador jurídico (opcional)."
-                        className="w-full bg-gray-100 dark:bg-[#111] border border-gray-200 dark:border-white/10 rounded-xl px-4 py-3 text-sm text-gray-900 dark:text-white placeholder:text-gray-500 focus:outline-none focus:border-[#CCA761]/40 resize-none"
+                        className="w-full bg-[#111] border border-white/10 rounded-xl px-4 py-3 text-sm text-white placeholder:text-gray-500 focus:outline-none focus:border-[#CCA761]/40 resize-none"
                       />
 
                       <button
@@ -2335,7 +2513,7 @@ export default function DocumentosPage() {
                       <div className="space-y-4">
                         <div className="rounded-2xl border border-[#CCA761]/20 bg-gradient-to-br from-[#0a0f0a] to-[#0a0a0a] p-5 shadow-[0_5px_20px_rgba(204,167,97,0.02)] relative overflow-hidden">
                           <div className="absolute top-0 right-0 w-32 h-32 bg-[#CCA761]/5 blur-3xl rounded-full" />
-                          <div className="flex items-center justify-between border-b border-gray-200 dark:border-white/5 pb-4 mb-4 relative z-10">
+                          <div className="flex items-center justify-between border-b border-white/5 pb-4 mb-4 relative z-10">
                             <div className="flex items-center gap-2">
                               <Sparkles size={14} className="text-[#CCA761]" />
                               <p className="text-[10px] uppercase tracking-[0.25em] text-[#CCA761] font-black">Inteligência Operacional</p>
@@ -2357,25 +2535,25 @@ export default function DocumentosPage() {
                           {generatedPieceByTask[selectedCard.id]!.generationMode === "draft_factory" && (
                             <div className="mb-4 rounded-xl border border-[#CCA761]/15 bg-[#CCA761]/[0.05] px-4 py-3 relative z-10">
                               <p className="text-[10px] uppercase tracking-[0.2em] text-[#CCA761] font-black">Origem da minuta</p>
-                              <p className="text-xs text-gray-700 dark:text-gray-300 mt-1 leading-relaxed">
+                              <p className="text-xs text-gray-300 mt-1 leading-relaxed">
                                 Primeira minuta sugerida pelo Case Brain com base em `draft plan`, `research pack` e `source pack` validados para este caso.
                               </p>
                             </div>
                           )}
                            
-                          <p className="text-[13px] text-gray-700 dark:text-gray-300 leading-relaxed italic mb-5 relative z-10">
+                          <p className="text-[13px] text-gray-300 leading-relaxed italic mb-5 relative z-10">
                             &ldquo;{generatedPieceByTask[selectedCard.id]!.confidenceNote}&rdquo;
                           </p>
 
                           <div className="grid grid-cols-2 gap-3 mb-5 relative z-10">
-                            <div className="rounded-xl border border-gray-200 dark:border-white/5 bg-gray-100 dark:bg-[#111] px-4 py-3">
+                            <div className="rounded-xl border border-white/5 bg-[#111] px-4 py-3">
                               <p className="text-[10px] uppercase tracking-[0.2em] text-gray-500 font-black mb-1">Peça / Família</p>
-                              <p className="text-sm text-gray-900 dark:text-white font-semibold">{generatedPieceByTask[selectedCard.id]!.pieceLabel}</p>
+                              <p className="text-sm text-white font-semibold">{generatedPieceByTask[selectedCard.id]!.pieceLabel}</p>
                               <p className="text-[11px] text-gray-500 mt-1">{generatedPieceByTask[selectedCard.id]!.pieceFamilyLabel}</p>
                             </div>
-                            <div className="rounded-xl border border-gray-200 dark:border-white/5 bg-gray-100 dark:bg-[#111] px-4 py-3">
+                            <div className="rounded-xl border border-white/5 bg-[#111] px-4 py-3">
                               <p className="text-[10px] uppercase tracking-[0.2em] text-gray-500 font-black mb-1">Área / Robustez</p>
-                              <p className="text-sm text-gray-900 dark:text-white font-semibold">{generatedPieceByTask[selectedCard.id]!.practiceArea || "Nao informada"}</p>
+                              <p className="text-sm text-white font-semibold">{generatedPieceByTask[selectedCard.id]!.practiceArea || "Nao informada"}</p>
                               <p className="text-[11px] text-gray-500 mt-1">
                                 {generatedPieceByTask[selectedCard.id]!.qualityMetrics.sectionCount} seções • {generatedPieceByTask[selectedCard.id]!.qualityMetrics.paragraphCount} parágrafos
                                 {generatedPieceByTask[selectedCard.id]!.expansionApplied ? " • expansão aplicada" : ""}
@@ -2384,12 +2562,12 @@ export default function DocumentosPage() {
                           </div>
 
                           {(generatedPieceByTask[selectedCard.id]!.missingDocuments.length > 0 || generatedPieceByTask[selectedCard.id]!.warnings.length > 0) && (
-                            <div className="flex flex-col mb-5 border border-gray-200 dark:border-white/5 rounded-xl overflow-hidden bg-gray-100 dark:bg-[#111] relative z-10">
+                            <div className="flex flex-col mb-5 border border-white/5 rounded-xl overflow-hidden bg-[#111] relative z-10">
                               {generatedPieceByTask[selectedCard.id]!.missingDocuments.length > 0 && (
-                                <div className="p-4 border-b border-gray-200 dark:border-white/5 bg-red-500/5 relative">
+                                <div className="p-4 border-b border-white/5 bg-red-500/5 relative">
                                   <div className="absolute left-0 top-0 bottom-0 w-1 bg-red-500/40" />
                                   <p className="text-[10px] uppercase tracking-[0.24em] text-red-400 font-black mb-1.5 flex items-center gap-2"><AlertTriangle size={12}/> Docs Faltantes</p>
-                                  <p className="text-xs text-gray-700 dark:text-gray-300">{generatedPieceByTask[selectedCard.id]!.missingDocuments.join(", ")}</p>
+                                  <p className="text-xs text-gray-300">{generatedPieceByTask[selectedCard.id]!.missingDocuments.join(", ")}</p>
                                 </div>
                               )}
                               {generatedPieceByTask[selectedCard.id]!.warnings.length > 0 && (
@@ -2414,12 +2592,12 @@ export default function DocumentosPage() {
                                     href={document.webViewLink || undefined}
                                     target="_blank"
                                     rel="noopener noreferrer"
-                                    className="group flex flex-col gap-1.5 rounded-lg border border-gray-200 dark:border-white/5 bg-gray-50 dark:bg-[#141414] hover:bg-gray-100 dark:bg-white/5 p-3 transition-colors text-left relative overflow-hidden"
+                                    className="group flex flex-col gap-1.5 rounded-lg border border-white/5 bg-gray-50 dark:bg-[#141414] hover:bg-white/5 p-3 transition-colors text-left relative overflow-hidden"
                                   >
                                     <div className="absolute left-0 top-0 bottom-0 w-0.5 bg-[#8ab4ff]/30 group-hover:bg-[#8ab4ff] transition-colors" />
-                                    <p className="text-xs text-gray-900 dark:text-white font-bold truncate group-hover:text-[#8ab4ff] transition-colors ml-1">{document.name}</p>
+                                    <p className="text-xs text-white font-bold truncate group-hover:text-[#8ab4ff] transition-colors ml-1">{document.name}</p>
                                     <div className="flex items-center gap-2 text-[10px] text-gray-500 ml-1">
-                                      <span className="bg-gray-100 dark:bg-white/5 border border-gray-200 dark:border-white/5 px-1.5 py-0.5 rounded">{getDocumentTypeLabel(document.documentType)}</span>
+                                      <span className="bg-white/5 border border-white/5 px-1.5 py-0.5 rounded">{getDocumentTypeLabel(document.documentType)}</span>
                                       {document.folderLabel && <span className="truncate">{document.folderLabel.replace(/^\d{2}-/, '')}</span>}
                                     </div>
                                   </a>
@@ -2432,23 +2610,23 @@ export default function DocumentosPage() {
                     )}
 
                     <div className="flex-1 flex flex-col min-h-0">
-                      <div className="bg-[#0f0f0f] border border-gray-200 dark:border-white/5 rounded-xl p-5 space-y-4">
+                      <div className="bg-[#0f0f0f] border border-white/5 rounded-xl p-5 space-y-4">
                         <div className="flex items-center justify-between gap-3">
-                          <div className="flex items-center gap-2 text-gray-900 dark:text-white text-[10px] uppercase tracking-[0.3em] font-black">
+                          <div className="flex items-center gap-2 text-white text-[10px] uppercase tracking-[0.3em] font-black">
                             <FileIcon size={12} className="text-[#8ab4ff]" /> Arquivos
                           </div>
                         </div>
 
                         {selectedCard.documents.length === 0 ? (
-                          <div className="rounded-xl border border-dashed border-gray-200 dark:border-white/10 bg-gray-100 dark:bg-[#111] px-5 py-6 text-xs text-center text-gray-500 uppercase tracking-widest font-medium">
+                          <div className="rounded-xl border border-dashed border-white/10 bg-[#111] px-5 py-6 text-xs text-center text-gray-500 uppercase tracking-widest font-medium">
                             Repositório Vazio
                           </div>
                         ) : (
                           <div className="space-y-2">
                             {selectedCard.documents.slice(0, 3).map((document, index) => (
-                              <div key={`${document.name}-${index}`} className="flex items-center justify-between gap-3 bg-gray-50 dark:bg-[#141414] border border-gray-200 dark:border-white/5 hover:border-gray-200 dark:border-white/10 rounded-xl px-4 py-3 transition-colors">
+                              <div key={`${document.name}-${index}`} className="flex items-center justify-between gap-3 bg-gray-50 dark:bg-[#141414] border border-white/5 hover:border-white/10 rounded-xl px-4 py-3 transition-colors">
                                 <div className="min-w-0 flex-1">
-                                  <p className="text-xs text-gray-800 dark:text-gray-200 font-bold truncate">{document.name}</p>
+                                  <p className="text-xs text-gray-200 font-bold truncate">{document.name}</p>
                                 </div>
                                 <div className="flex items-center gap-2 shrink-0">
                                   {document.web_view_link && (
@@ -2456,7 +2634,7 @@ export default function DocumentosPage() {
                                       href={document.web_view_link}
                                       target="_blank"
                                       rel="noopener noreferrer"
-                                      className="text-[10px] font-black uppercase tracking-[0.2em] text-[#8ab4ff] hover:text-gray-900 dark:text-white border border-[#4285F4]/20 rounded-md px-3 py-1.5 bg-[#4285F4]/5 hover:bg-[#4285F4]/10 transition-colors"
+                                      className="text-[10px] font-black uppercase tracking-[0.2em] text-[#8ab4ff] hover:text-white border border-[#4285F4]/20 rounded-md px-3 py-1.5 bg-[#4285F4]/5 hover:bg-[#4285F4]/10 transition-colors"
                                     >
                                       Ver Manual
                                     </a>
@@ -2483,7 +2661,7 @@ export default function DocumentosPage() {
                               <select
                                 value={uploadFolderByTask[selectedCard.id] || "auto"}
                                 onChange={(event) => setUploadFolderByTask((current) => ({ ...current, [selectedCard.id]: event.target.value }))}
-                                className="bg-white dark:bg-[#0a0a0a] border border-[#CCA761]/20 rounded-xl px-4 py-3 text-xs text-gray-900 dark:text-white focus:outline-none focus:border-[#CCA761]/60 font-medium tracking-wide appearance-none sm:w-[50%]"
+                                className="bg-[#0a0a0a] border border-[#CCA761]/20 rounded-xl px-4 py-3 text-xs text-white focus:outline-none focus:border-[#CCA761]/60 font-medium tracking-wide appearance-none sm:w-[50%]"
                               >
                                 <option value="auto">Organizar automaticamente</option>
                                 {DOCUMENT_FOLDER_OPTIONS.map((folderLabel) => (
@@ -2505,9 +2683,9 @@ export default function DocumentosPage() {
                                 />
                                 <label
                                   htmlFor={`modal-upload-input-${selectedCard.id}`}
-                                  className="w-full h-full min-h-[44px] bg-white dark:bg-[#0a0a0a] border border-[#CCA761]/20 rounded-xl pl-4 pr-3 py-1.5 text-xs text-gray-900 dark:text-white flex items-center justify-between gap-3 cursor-pointer hover:border-[#CCA761]/50 transition-colors group/upload"
+                                  className="w-full h-full min-h-[44px] bg-[#0a0a0a] border border-[#CCA761]/20 rounded-xl pl-4 pr-3 py-1.5 text-xs text-white flex items-center justify-between gap-3 cursor-pointer hover:border-[#CCA761]/50 transition-colors group/upload"
                                 >
-                                  <span className="truncate text-gray-400 group-hover/upload:text-gray-800 dark:text-gray-200 font-medium">
+                                  <span className="truncate text-gray-400 group-hover/upload:text-gray-200 font-medium">
                                     {(uploadFilesByTask[selectedCard.id] || []).length > 1
                                       ? `${(uploadFilesByTask[selectedCard.id] || []).length} arquivos selecionados`
                                       : (uploadFilesByTask[selectedCard.id] || [])[0]?.name || "Localizar..."}
@@ -2528,7 +2706,7 @@ export default function DocumentosPage() {
                           </div>
 
                           {selectedCard.organizationEvents.length > 0 ? (
-                            <div className="mt-5 rounded-xl border border-gray-200 dark:border-white/10 bg-white dark:bg-[#0a0a0a]/80 p-5">
+                            <div className="mt-5 rounded-xl border border-white/10 bg-[#0a0a0a]/80 p-5">
                               <div className="flex items-center gap-2 text-[10px] font-black uppercase tracking-[0.3em] text-gray-500 mb-3">
                                 <CheckCircle2 size={13} /> Historico de organizacao
                               </div>
@@ -2541,9 +2719,9 @@ export default function DocumentosPage() {
                                     ? `${uploaded} documento(s) importado(s)`
                                     : `${moved} arquivo(s) movido(s)`;
                                   return (
-                                    <div key={event.id} className="rounded-lg border border-gray-200 dark:border-white/5 bg-gray-50 dark:bg-[#111] px-3 py-2">
+                                    <div key={event.id} className="rounded-lg border border-white/5 bg-gray-50 dark:bg-[#111] px-3 py-2">
                                       <div className="flex items-center justify-between gap-3">
-                                        <p className="min-w-0 truncate text-xs font-bold text-gray-900 dark:text-white">{title}</p>
+                                        <p className="min-w-0 truncate text-xs font-bold text-white">{title}</p>
                                         <span className="shrink-0 text-[10px] text-gray-500">{formatDateTime(event.created_at)}</span>
                                       </div>
                                       <p className="mt-1 text-[11px] text-gray-500">
@@ -2567,7 +2745,7 @@ export default function DocumentosPage() {
                     </div>
                   </div>
 
-                  <div className="bg-white dark:bg-[#0a0a0a] border border-[#CCA761]/10 rounded-2xl flex flex-col relative overflow-hidden shadow-[0_0_40px_rgba(204,167,97,0.02)] min-h-[760px] xl:h-[86vh]">
+                  <div className="bg-[#0a0a0a] border border-[#CCA761]/10 rounded-2xl flex flex-col relative overflow-hidden shadow-[0_0_40px_rgba(204,167,97,0.02)] min-h-[760px] xl:h-[86vh]">
                     <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4 px-6 py-5 border-b border-[#CCA761]/10 bg-[#0f0f0f] shrink-0 sticky top-0 z-20">
                       <div className="flex items-center gap-3">
                         <div className="w-10 h-10 rounded-full bg-[#CCA761]/10 border border-[#CCA761]/20 flex items-center justify-center">
@@ -2588,7 +2766,7 @@ export default function DocumentosPage() {
                           <button
                             type="button"
                             onClick={() => handleCopyPiece(selectedCard.id)}
-                            className="px-4 py-2.5 rounded-xl border border-gray-200 dark:border-white/10 bg-gray-100 dark:bg-[#111] hover:bg-gray-100 dark:bg-white/10 text-[10px] font-black uppercase tracking-[0.2em] text-gray-900 dark:text-white flex items-center justify-center gap-2 transition-colors"
+                            className="px-4 py-2.5 rounded-xl border border-white/10 bg-[#111] hover:bg-white/10 text-[10px] font-black uppercase tracking-[0.2em] text-white flex items-center justify-center gap-2 transition-colors"
                           >
                             <Copy size={14} /> Copiar
                           </button>
@@ -2612,7 +2790,7 @@ export default function DocumentosPage() {
 
                     <div className="flex-1 overflow-y-auto no-scrollbar bg-white dark:bg-[#030303] p-3 sm:p-6 lg:p-10 relative">
                       {generatedPieceByTask[selectedCard.id] ? (
-                        <div className="max-w-[850px] mx-auto bg-white dark:bg-[#0d0d0d] border border-gray-200 dark:border-white/5 shadow-2xl rounded-xl min-h-full flex flex-col relative overflow-hidden">
+                        <div className="max-w-[850px] mx-auto bg-white dark:bg-[#0d0d0d] border border-white/5 shadow-2xl rounded-xl min-h-full flex flex-col relative overflow-hidden">
                           <div className="absolute top-0 left-0 w-full h-[3px] bg-gradient-to-r from-transparent via-[#CCA761]/50 to-transparent opacity-70" />
                           
                           <div className="absolute top-10 right-10 opacity-[0.03] pointer-events-none">
@@ -2621,7 +2799,7 @@ export default function DocumentosPage() {
 
                           <div className="p-8 sm:p-12 md:p-16 relative z-10 flex-1">
                             {selectedDraftVersion && canFormallyReviewDraft && (
-                              <div className="mb-8 rounded-2xl border border-[#CCA761]/15 bg-gray-100 dark:bg-[#111] p-5 space-y-4">
+                              <div className="mb-8 rounded-2xl border border-[#CCA761]/15 bg-[#111] p-5 space-y-4">
                                 <div className="flex flex-col gap-2 sm:flex-row sm:items-start sm:justify-between">
                                   <div>
                                     <p className="text-[10px] uppercase tracking-[0.24em] text-[#CCA761] font-black">Editor Formal do MAYUS</p>
@@ -2635,7 +2813,7 @@ export default function DocumentosPage() {
                                       onClick={() => handleResetDraftEditor(selectedDraftVersion)}
                                       data-testid={`documents-reset-reviewed-version-${selectedDraftVersion.id}`}
                                       disabled={!selectedDraftHasUnsavedChanges || draftRevisionBusyKey === `${selectedCard.id}:${selectedDraftVersion.id}`}
-                                      className="inline-flex items-center justify-center gap-2 rounded-xl border border-gray-200 dark:border-white/10 bg-gray-100 dark:bg-white/5 px-4 py-2.5 text-[10px] font-black uppercase tracking-[0.18em] text-white/85 disabled:opacity-50"
+                                      className="inline-flex items-center justify-center gap-2 rounded-xl border border-white/10 bg-white/5 px-4 py-2.5 text-[10px] font-black uppercase tracking-[0.18em] text-white/85 disabled:opacity-50"
                                     >
                                       <RefreshCw size={12} /> Descartar Alteracoes
                                     </button>
@@ -2667,7 +2845,7 @@ export default function DocumentosPage() {
                                   }))}
                                   readOnly={Boolean(selectedDraftEditorBlockedReason)}
                                   rows={18}
-                                  className="w-full rounded-2xl border border-gray-200 dark:border-white/10 bg-gray-200 dark:bg-black/30 px-4 py-4 text-sm leading-7 text-gray-100 focus:outline-none focus:border-[#CCA761]/40 resize-y"
+                                  className="w-full rounded-2xl border border-white/10 bg-gray-200 dark:bg-black/30 px-4 py-4 text-sm leading-7 text-gray-100 focus:outline-none focus:border-[#CCA761]/40 resize-y"
                                 />
                               </div>
                             )}
@@ -2676,13 +2854,13 @@ export default function DocumentosPage() {
                               className={`prose prose-invert max-w-none ${cormorant.className} 
                                 prose-headings:font-bold prose-headings:text-[#e2c78d] prose-headings:tracking-wide
                                 prose-h1:text-4xl prose-h1:text-center prose-h1:mb-10
-                                prose-h2:text-3xl prose-h2:mt-12 prose-h2:border-b prose-h2:border-gray-200 dark:border-white/5 prose-h2:pb-4
+                                prose-h2:text-3xl prose-h2:mt-12 prose-h2:border-b prose-h2:border-white/5 prose-h2:pb-4
                                 prose-h3:text-2xl prose-h3:text-[#CCA761]
-                                prose-p:text-gray-800 dark:text-gray-200 prose-p:leading-[2] prose-p:text-justify prose-p:text-[22px] prose-p:tracking-wide
-                                prose-li:text-gray-800 dark:text-gray-200 prose-li:text-[22px] prose-li:leading-[1.9]
-                                prose-strong:text-gray-900 dark:text-white prose-strong:font-bold
+                                prose-p:text-gray-200 prose-p:leading-[2] prose-p:text-justify prose-p:text-[22px] prose-p:tracking-wide
+                                prose-li:text-gray-200 prose-li:text-[22px] prose-li:leading-[1.9]
+                                prose-strong:text-white prose-strong:font-bold
                                 prose-blockquote:border-l-[3px] prose-blockquote:border-[#CCA761] prose-blockquote:bg-[#CCA761]/[0.03] prose-blockquote:py-4 prose-blockquote:px-6 prose-blockquote:text-gray-400 prose-blockquote:italic prose-blockquote:rounded-r-xl prose-blockquote:my-8 prose-blockquote:text-[20px]
-                                prose-hr:border-gray-200 dark:border-white/10 prose-hr:my-12
+                                prose-hr:border-white/10 prose-hr:my-12
                                 marker:text-[#CCA761]
                               `}
                             >
@@ -2691,8 +2869,8 @@ export default function DocumentosPage() {
                           </div>
                         </div>
                       ) : (
-                        <div className="h-full min-h-[500px] flex flex-col items-center justify-center text-center p-10 border-2 border-dashed border-[#CCA761]/10 rounded-2xl bg-white dark:bg-[#0a0a0a]/50 m-4 lg:m-10">
-                          <div className="w-24 h-24 rounded-full bg-gray-100 dark:bg-[#111] border border-gray-200 dark:border-white/5 flex items-center justify-center mb-6 relative group">
+                        <div className="h-full min-h-[500px] flex flex-col items-center justify-center text-center p-10 border-2 border-dashed border-[#CCA761]/10 rounded-2xl bg-[#0a0a0a]/50 m-4 lg:m-10">
+                          <div className="w-24 h-24 rounded-full bg-[#111] border border-white/5 flex items-center justify-center mb-6 relative group">
                             <div className="absolute inset-0 bg-[#CCA761]/10 rounded-full blur-xl animate-pulse" />
                             <FileText size={40} className="text-[#CCA761]/30 relative z-10" />
                           </div>
@@ -2741,7 +2919,7 @@ export default function DocumentosPage() {
                       type="button"
                       onClick={() => handleSync(selectedCard.id)}
                       disabled={busyTaskId === selectedCard.id || !Boolean(selectedCard.drive_structure_ready)}
-                      className="w-full py-3 rounded-xl border border-gray-200 dark:border-white/10 bg-gray-100 dark:bg-white/5 hover:bg-gray-100 dark:bg-white/10 text-[9px] font-black uppercase tracking-[0.1em] text-gray-900 dark:text-white flex items-center justify-center gap-1.5 disabled:opacity-50 transition-colors text-center"
+                      className="w-full py-3 rounded-xl border border-white/10 bg-white/5 hover:bg-white/10 text-[9px] font-black uppercase tracking-[0.1em] text-white flex items-center justify-center gap-1.5 disabled:opacity-50 transition-colors text-center"
                     >
                       {busyTaskId === selectedCard.id ? <Loader2 size={12} className="animate-spin shrink-0" /> : <RefreshCw size={12} className="shrink-0" />}
                       <span className="truncate">Sincronizar IA</span>

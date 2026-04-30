@@ -45,27 +45,63 @@ Ja existe:
 
 - conexao OAuth com Google Drive por tenant
 - definicao de pasta raiz do escritorio
-- criacao de pasta por processo prevista no fluxo
-- campo `drive_link` no card do processo
-- item de menu `Repositorio de Documentos`
-
-Ainda nao existe:
-
-- pagina real de `Repositorio de Documentos`
-- navegacao visual de pastas do Drive
+- criacao de pasta por processo
+- subpastas padrao por processo
+- campo `drive_link` e `drive_folder_id` no processo
+- pagina operacional de documentos
 - upload de documentos pelo MAYUS
+- upload multiplo com organizacao automatica inicial
 - listagem de documentos do processo
-- leitura/indexacao de PDFs e DOCX
-- memoria documental do processo
-- geracao de pecas com contexto vindo do Drive
-- automacao de subpastas padrao
-- sincronizacao documental continua
+- leitura/indexacao de PDFs, DOCX e TXT
+- memoria documental do processo em `process_document_memory`
+- inventario em `process_documents` e `process_document_contents`
+- geracao de pecas usando contexto documental
+- botao de organizar acervo por processo
+- historico operacional basico em `system_event_logs`
+- base agentica para artifacts, memorias e eventos
 
-Bloqueios atuais:
+Ainda falta:
 
-- erro ao salvar `process_tasks`
-- divergencia entre pagina de integracoes do menu e pagina nova do Google Drive
-- fluxo documental ainda nao conectado ao agente juridico
+- deduplicacao forte por hash/conteudo para acervos migrados
+- matching mais robusto entre documentos soltos, processos, OAB, cliente e partes
+- aplicacao supervisionada com registro reversivel do antes/depois
+- metricas historicas de aprovacao/rejeicao para aprendizado do matching
+- knowledge base interna global mais completa do MAYUS para orientar o agente sem expor codigo
+- fallback de IA aplicado nos outros fluxos agenticos sensiveis alem do organizar processo
+
+Bloqueios e riscos atuais:
+
+- validacao funcional real do Google Drive ainda depende de OAuth/credenciais validas no ambiente
+- scans grandes podem bater quota do Google sem paginacao, limites e retomada
+- documentos sensiveis nao devem ter texto bruto persistido antes de aprovacao
+- baixa confianca nunca deve mover documento automaticamente
+- alteracoes fisicas no Drive precisam de preview, aprovacao e trilha auditavel
+
+## Nova frente: Scanner Agentico de Acervo do Drive
+
+Documento executivo da frente:
+
+- `docs/brain/IMPLEMENTATION-PLAN-drive-document-scanner.md`
+
+Objetivo:
+
+Criar uma camada agentica acima da organizacao por processo, capaz de analisar uma pasta grande do Google Drive, reconhecer documentos antigos ou soltos, cruzar com processos/OAB, propor a organizacao correta, aplicar somente com aprovacao e alimentar o cerebro do MAYUS.
+
+Fluxo alvo:
+
+1. Usuario escolhe uma pasta raiz do Drive.
+2. MAYUS executa scan seguro sem mover nada.
+3. MAYUS cria preview com acoes propostas e nivel de confianca.
+4. Usuario revisa alta/media/baixa confianca.
+5. MAYUS aplica somente acoes aprovadas.
+6. MAYUS atualiza Drive, `process_documents`, `process_document_memory`, artifacts, learning events e memorias.
+7. Pendencias ficam numa fila inteligente de revisao.
+
+Percentual estimado:
+
+- Projeto MAYUS geral: 83% pronto, 17% faltante.
+- Cerebro documental por processo: 87% pronto, 13% faltante.
+- Nova frente Scanner Agentico de Acervo do Drive: 95% pronta, 5% faltante.
 
 ## Hipotese de produto
 
