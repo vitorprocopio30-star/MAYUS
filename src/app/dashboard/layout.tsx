@@ -19,7 +19,7 @@ export default function DashboardLayout({
       
       {/* Container Principal */}
       <div
-        className="flex flex-col min-h-screen min-w-0 transition-all duration-300 ease-in-out"
+        className="mayus-dashboard-shell flex flex-col min-h-screen min-w-0 transition-all duration-300 ease-in-out"
         style={{
           marginLeft: "var(--mayus-dashboard-sidebar-offset, 0px)",
           width: "calc(100vw - var(--mayus-dashboard-sidebar-offset, 0px))",
@@ -45,6 +45,18 @@ export default function DashboardLayout({
         @media (min-width: 768px) {
           :root {
             --mayus-dashboard-sidebar-offset: var(--mayus-sidebar-offset, 280px);
+          }
+          body[data-mayus-sidebar-mode="mini"] .mayus-dashboard-shell {
+            margin-left: 80px !important;
+            width: calc(100vw - 80px) !important;
+          }
+          body[data-mayus-sidebar-mode="hidden"] .mayus-dashboard-shell {
+            margin-left: 0 !important;
+            width: 100vw !important;
+          }
+          body[data-mayus-sidebar-mode="expanded"] .mayus-dashboard-shell {
+            margin-left: 280px !important;
+            width: calc(100vw - 280px) !important;
           }
         }
       `}</style>
