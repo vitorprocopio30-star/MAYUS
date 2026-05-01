@@ -45,6 +45,7 @@ const mergeMessage = (current: any[], nextMessage: any) => {
 };
 
 const DEFAULT_LEAD_TAGS = ["Urgente", "Aguardando documento", "Contrato", "Novo lead", "Retornar hoje", "MAYUS atendendo"];
+const LEAD_TAG_MESSAGE_TYPE = "lead_tags";
 const TAG_COLORS = [
   "border-red-400/30 bg-red-500/10 text-red-200",
   "border-amber-400/30 bg-amber-500/10 text-amber-100",
@@ -88,6 +89,16 @@ const suggestLeadTags = (contact: any, messages: any[]) => {
   if (suggestions.length === 0) suggestions.push("Novo lead");
 
   return Array.from(new Set(suggestions)).slice(0, 4);
+};
+
+const parseLeadTagsMessage = (message: any) => {
+  if (message?.message_type !== LEAD_TAG_MESSAGE_TYPE) return [];
+  try {
+    const parsed = JSON.parse(String(message.content || "{}"));
+    return normalizeLeadTags(parsed.lead_tags || parsed.tags);
+  } catch {
+    return [];
+  }
 };
 
 const renderFormattedText = (text: string, keyPrefix: string) => {
@@ -298,7 +309,8 @@ export default function WhatsAppChatPremiumPage() {
   });
 
   const internalNotes = messages.filter((message) => (
-    message.message_type === "internal_note" || message.status === "internal_note"
+    message.message_type !== LEAD_TAG_MESSAGE_TYPE
+    && (message.message_type === "internal_note" || message.status === "internal_note")
   ));
 
   const serviceStatusLabel = activeContact?.assigned_user_id
@@ -367,7 +379,18 @@ export default function WhatsAppChatPremiumPage() {
          .order("created_at", { ascending: true });
 
        if (data) {
-          setMessages(sortMessagesByCreatedAt(data));
+          const tagMessages = data.filter((message) => message.message_type === LEAD_TAG_MESSAGE_TYPE);
+          const latestTagMessage = tagMessages[tagMessages.length - 1];
+          const tagsFromHistory = parseLeadTagsMessage(latestTagMessage);
+
+          if (tagsFromHistory.length > 0) {
+            setLocalLeadTags((current) => ({ ...current, [contactId]: tagsFromHistory }));
+            setActiveContact((current) => (
+              current?.id === contactId ? { ...current, lead_tags: tagsFromHistory } : current
+            ));
+          }
+
+          setMessages(sortMessagesByCreatedAt(data.filter((message) => message.message_type !== LEAD_TAG_MESSAGE_TYPE)));
        }
     };
 
@@ -379,6 +402,16 @@ export default function WhatsAppChatPremiumPage() {
        .on("postgres_changes", { event: "INSERT", schema: "public", table: "whatsapp_messages", filter: `contact_id=eq.${contactId}` },
          (payload) => {
            if (payload.new?.tenant_id !== tenantId) return;
+           if (payload.new?.message_type === LEAD_TAG_MESSAGE_TYPE) {
+             const tagsFromHistory = parseLeadTagsMessage(payload.new);
+             if (tagsFromHistory.length > 0) {
+               setLocalLeadTags((current) => ({ ...current, [contactId]: tagsFromHistory }));
+               setActiveContact((current) => (
+                 current?.id === contactId ? { ...current, lead_tags: tagsFromHistory } : current
+               ));
+             }
+             return;
+           }
            setMessages((current) => mergeMessage(current, payload.new));
            if (payload.new?.direction === "inbound") {
              setShowTypingIndicator(true);
@@ -750,8 +783,21 @@ export default function WhatsAppChatPremiumPage() {
       toast.success(successMessage);
       void fetchContacts(false);
     } catch (error: any) {
-      toast.warning("Etiqueta aplicada na tela. O banco precisa receber a migration lead_tags para persistir entre usuarios.");
-      console.error("[WhatsApp] Falha ao persistir etiquetas do lead:", error);
+      const fallback = await supabase.from("whatsapp_messages").insert([{
+        tenant_id: profile.tenant_id,
+        contact_id: activeContact.id,
+        direction: "outbound",
+        message_type: LEAD_TAG_MESSAGE_TYPE,
+        content: JSON.stringify({ lead_tags: normalizedTags }),
+        status: "internal_note",
+      }]);
+
+      if (fallback.error) {
+        toast.warning("Etiqueta aplicada na tela, mas nao consegui persistir no banco.");
+        console.error("[WhatsApp] Falha ao persistir etiquetas do lead:", error, fallback.error);
+      } else {
+        toast.success(successMessage);
+      }
     } finally {
       setIsSavingLeadTags(false);
     }
