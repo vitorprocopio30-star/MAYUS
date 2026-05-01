@@ -585,7 +585,7 @@ export default function WhatsAppChatPremiumPage() {
            ) : filteredContacts.map((contact) => (
               <div key={contact.id} onClick={() => setActiveContact(contact)} className={`group relative flex items-start gap-4 p-4 rounded-2xl cursor-pointer transition-all border ${activeContact?.id === contact.id ? "bg-[#111] border-[#CCA761]/30" : "hover:bg-white/5 border-transparent opacity-80 hover:opacity-100"}`}>
                  <div className="w-12 h-12 rounded-full border border-[#CCA761]/20 bg-gray-200 dark:bg-black flex flex-shrink-0 items-center justify-center text-[#CCA761] font-black shadow-inner overflow-hidden">
-                    {contact.avatar_url ? <img src={contact.avatar_url} className="w-full h-full object-cover" /> : contact.name?.substring(0, 2).toUpperCase()}
+                    {contact.profile_pic_url ? <img src={contact.profile_pic_url} className="w-full h-full object-cover" /> : contact.name?.substring(0, 2).toUpperCase()}
                  </div>
                  <div className="flex-1 min-w-0">
                     <div className="flex justify-between items-center mb-1">
@@ -610,7 +610,7 @@ export default function WhatsAppChatPremiumPage() {
                 <div className="h-20 border-b border-white/5 flex items-center justify-between px-8 bg-[#0a0a0a]/90 backdrop-blur-3xl z-10 flex-shrink-0">
                     <div className="flex items-center gap-5">
                        <div className="w-11 h-11 rounded-full border border-[#CCA761]/50 bg-gray-200 dark:bg-black flex items-center justify-center text-[#CCA761] font-black text-lg shadow-[0_0_20px_rgba(204,167,97,0.1)] overflow-hidden">
-                          {activeContact?.avatar_url ? <img src={activeContact.avatar_url} className="w-full h-full object-cover" /> : (activeContact?.name?.substring(0, 2).toUpperCase() || "TS")}
+                          {activeContact?.profile_pic_url ? <img src={activeContact.profile_pic_url} className="w-full h-full object-cover" /> : (activeContact?.name?.substring(0, 2).toUpperCase() || "TS")}
                        </div>
                        <div>
                          <h2 className={`text-2xl font-bold text-white tracking-wide flex items-center gap-3 ${cormorant.className} italic`}>
@@ -901,8 +901,8 @@ export default function WhatsAppChatPremiumPage() {
                {/* Header Perfil */}
                <div className="flex flex-col items-center">
                   <div className="w-28 h-28 rounded-full border-2 border-[#CCA761] bg-gray-200 dark:bg-black p-1 mb-5 relative group">
-                     {activeContact.avatar_url ? (
-                        <img src={activeContact.avatar_url} className="w-full h-full object-cover rounded-full" />
+                     {activeContact.profile_pic_url ? (
+                        <img src={activeContact.profile_pic_url} className="w-full h-full object-cover rounded-full" />
                      ) : (
                         <div className="w-full h-full rounded-full flex items-center justify-center text-3xl font-black text-[#CCA761]">
                            {activeContact.name?.substring(0, 2).toUpperCase()}

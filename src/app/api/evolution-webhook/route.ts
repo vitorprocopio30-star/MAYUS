@@ -136,7 +136,7 @@ export async function POST(req: Request) {
       // 2. Verificar/Criar o Contato (Lead/Cliente)
       let { data: contact } = await supabase
         .from("whatsapp_contacts")
-        .select("id, avatar_url")
+        .select("id, profile_pic_url")
         .eq("tenant_id", tenantId)
         .eq("phone_number", remoteJid)
         .single();
@@ -151,7 +151,7 @@ export async function POST(req: Request) {
              tenant_id: tenantId, 
              phone_number: remoteJid, 
              name: pushName,
-             avatar_url: avatarUrl,
+             profile_pic_url: avatarUrl,
           }])
           .select("id")
           .single();
@@ -166,7 +166,7 @@ export async function POST(req: Request) {
          await supabase.from("whatsapp_contacts").update({
             last_message_at: new Date().toISOString(),
             unread_count: fromMe ? 0 : 1, // Se foi do cliente, marca 1 (simplificado)
-            ...(avatarUrl && !contact?.avatar_url ? { avatar_url: avatarUrl } : {}),
+            ...(avatarUrl && !contact?.profile_pic_url ? { profile_pic_url: avatarUrl } : {}),
          }).eq("id", contactId);
       }
 
