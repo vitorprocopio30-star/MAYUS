@@ -750,7 +750,7 @@ export default function TodasConversasPage() {
                               {/* Botão de Envio Compacto */}
                               <button
                                 onClick={(e) => { e.preventDefault(); handleSendMessage(); }}
-                                disabled={isSending || (!inputText.trim() && !isRecording && !selectedFile)}
+                                disabled={isSending || (inputMode === "nota" ? !inputText.trim() : (!inputText.trim() && !isRecording && !selectedFile))}
                                 className={`ml-2 mb-1 shrink-0 h-9 px-4 rounded-lg font-black uppercase text-[9px] tracking-wider transition-all flex items-center gap-2 ${
                                   isSending ? 'bg-white/10 text-gray-400' : 'bg-[#CCA761] text-black hover:bg-white active:scale-95 shadow-lg shadow-[#CCA761]/10'
                                 }`}
