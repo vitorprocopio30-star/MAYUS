@@ -10,7 +10,7 @@ const salesProfile = {
 };
 
 describe("buildWhatsAppSalesReply", () => {
-  it("gera resposta consultiva para WhatsApp sem permitir autoenvio", () => {
+  it("gera resposta consultiva para WhatsApp e permite primeiro autoenvio seguro", () => {
     const reply = buildWhatsAppSalesReply({
       contactName: "Maria Silva",
       messages: [
@@ -21,12 +21,13 @@ describe("buildWhatsAppSalesReply", () => {
 
     expect(reply.mode).toBe("suggested_reply");
     expect(reply.suggestedReply).toContain("Maria");
-    expect(reply.mayAutoSend).toBe(false);
-    expect(reply.externalSideEffectsBlocked).toBe(true);
-    expect(reply.requiresHumanReview).toBe(true);
+    expect(reply.mayAutoSend).toBe(true);
+    expect(reply.externalSideEffectsBlocked).toBe(false);
+    expect(reply.requiresHumanReview).toBe(false);
+    expect(reply.firstResponseSlaMinutes).toBe(5);
   });
 
-  it("bloqueia resposta ao lead quando falta perfil comercial do escritorio", () => {
+  it("usa playbook generico quando falta perfil comercial do escritorio", () => {
     const reply = buildWhatsAppSalesReply({
       contactName: "Carlos",
       messages: [
@@ -35,10 +36,11 @@ describe("buildWhatsAppSalesReply", () => {
       salesProfile: null,
     });
 
-    expect(reply.mode).toBe("internal_setup_required");
-    expect(reply.suggestedReply).toBeNull();
-    expect(reply.internalNote).toContain("configure o perfil comercial");
+    expect(reply.mode).toBe("suggested_reply");
+    expect(reply.suggestedReply).toContain("MAYUS");
+    expect(reply.internalNote).toContain("playbook generico");
     expect(reply.riskFlags).toContain("missing_firm_profile");
+    expect(reply.mayAutoSend).toBe(true);
   });
 
   it("exige revisao humana para preco, contrato ou urgencia juridica", () => {
@@ -52,9 +54,11 @@ describe("buildWhatsAppSalesReply", () => {
 
     expect(reply.mode).toBe("human_review_required");
     expect(reply.riskFlags).toEqual(expect.arrayContaining([
-      "commercial_commitment",
+      "price_question",
       "legal_result_risk",
       "legal_urgency",
     ]));
+    expect(reply.mayAutoSend).toBe(false);
+    expect(reply.requiresHumanReview).toBe(true);
   });
 });
