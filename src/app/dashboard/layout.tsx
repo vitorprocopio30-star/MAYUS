@@ -16,7 +16,7 @@ export default function DashboardLayout({
       <AdminSidebar />
       
       {/* Container Principal */}
-      <div className="flex-1 flex flex-col md:ml-[280px] min-h-screen">
+      <div className="flex-1 flex flex-col md:ml-[var(--mayus-sidebar-offset,280px)] min-h-screen transition-[margin] duration-300 ease-in-out">
         
         {/* Top Header */}
         <AdminHeader />

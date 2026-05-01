@@ -1,4 +1,4 @@
-﻿"use client";
+"use client";
 
 import { useState, useEffect, useRef } from "react";
 import { Cormorant_Garamond, Montserrat } from "next/font/google";
@@ -27,6 +27,41 @@ const formatDuration = (seconds: number) => {
   const mins = Math.floor(seconds / 60);
   const secs = seconds % 60;
   return `${mins}:${secs.toString().padStart(2, '0')}`;
+};
+const sortMessagesByCreatedAt = (items: any[]) => {
+  return [...items].sort((a, b) => {
+    const dateA = new Date(a.created_at || 0).getTime();
+    const dateB = new Date(b.created_at || 0).getTime();
+    return dateA - dateB;
+  });
+};
+
+const mergeMessage = (current: any[], nextMessage: any) => {
+  if (!nextMessage?.id || current.some((message) => message.id === nextMessage.id)) {
+    return current;
+  }
+  return sortMessagesByCreatedAt([...current, nextMessage]);
+};
+
+const renderWhatsAppContent = (content: string) => {
+  return String(content || "").split("\n").map((line, lineIndex, lines) => {
+    const parts = line.split(/(\*[^*\n]+\*)/g).filter(Boolean);
+    return (
+      <span key={`line-${lineIndex}`}>
+        {parts.map((part, partIndex) => {
+          const isBold = part.startsWith("*") && part.endsWith("*") && part.length > 2;
+          return isBold ? (
+            <strong key={`${lineIndex}-${partIndex}`} className="font-black">
+              {part.slice(1, -1)}
+            </strong>
+          ) : (
+            <span key={`${lineIndex}-${partIndex}`}>{part}</span>
+          );
+        })}
+        {lineIndex < lines.length - 1 && <br />}
+      </span>
+    );
+  });
 };
 
 export default function WhatsAppChatPremiumPage() {
@@ -99,8 +134,8 @@ export default function WhatsAppChatPremiumPage() {
     fetchContacts();
   }, [profile?.tenant_id, activeTab, filterDeptId]);
 
-  const fetchContacts = async () => {
-     setIsLoading(true);
+  const fetchContacts = async (showLoading = true) => {
+     if (showLoading) setIsLoading(true);
      let query = supabase
        .from("whatsapp_contacts")
        .select("*")
@@ -125,8 +160,32 @@ export default function WhatsAppChatPremiumPage() {
         setContacts(data);
         if (data.length > 0 && !activeContact) setActiveContact(data[0]);
      }
-     setIsLoading(false);
+     if (showLoading) setIsLoading(false);
   };
+
+  useEffect(() => {
+    if (!profile?.tenant_id) return;
+
+    const channel = supabase
+      .channel(`whatsapp_contacts_${profile.tenant_id}_${profile.id || "all"}`)
+      .on(
+        "postgres_changes",
+        { event: "*", schema: "public", table: "whatsapp_contacts", filter: `tenant_id=eq.${profile.tenant_id}` },
+        () => {
+          void fetchContacts(false);
+        }
+      )
+      .subscribe();
+
+    const intervalId = window.setInterval(() => {
+      void fetchContacts(false);
+    }, 12000);
+
+    return () => {
+      window.clearInterval(intervalId);
+      supabase.removeChannel(channel);
+    };
+  }, [profile?.tenant_id, profile?.id, activeTab, filterDeptId]);
 
   // Filtro local de busca por nome/telefone
   const filteredContacts = contacts.filter(c => {
@@ -183,38 +242,67 @@ export default function WhatsAppChatPremiumPage() {
   // Realtime Messages
   useEffect(() => {
     if (!profile?.tenant_id || !activeContact) return;
+    const tenantId = profile.tenant_id;
+    const contactId = activeContact.id;
 
     const fetchMessages = async () => {
        const { data } = await supabase
          .from("whatsapp_messages")
          .select("*")
-         .eq("tenant_id", profile.tenant_id)
-         .eq("contact_id", activeContact.id)
+         .eq("tenant_id", tenantId)
+         .eq("contact_id", contactId)
          .order("created_at", { ascending: true });
 
        if (data) {
-          setMessages(data);
-          scrollToBottom();
+          setMessages(sortMessagesByCreatedAt(data));
        }
     };
 
     fetchMessages();
-    loadLatestMayusDraft(activeContact.id);
+    loadLatestMayusDraft(contactId);
 
     const channel = supabase
-       .channel(`chat_ws_meta_${activeContact.id}`)
-       .on("postgres_changes", { event: "INSERT", schema: "public", table: "whatsapp_messages", filter: `contact_id=eq.${activeContact.id}` },
+       .channel(`chat_ws_meta_${contactId}`)
+       .on("postgres_changes", { event: "INSERT", schema: "public", table: "whatsapp_messages", filter: `contact_id=eq.${contactId}` },
          (payload) => {
-           setMessages((current) => [...current, payload.new]);
-           scrollToBottom();
+           if (payload.new?.tenant_id !== tenantId) return;
+           setMessages((current) => mergeMessage(current, payload.new));
            if (payload.new?.direction === "inbound") {
-             setTimeout(() => loadLatestMayusDraft(activeContact.id), 1200);
+             setTimeout(() => loadLatestMayusDraft(contactId), 1200);
            }
+         }
+       )
+       .on("postgres_changes", { event: "UPDATE", schema: "public", table: "whatsapp_messages", filter: `contact_id=eq.${contactId}` },
+         (payload) => {
+           if (payload.new?.tenant_id !== tenantId) return;
+           setMessages((current) => sortMessagesByCreatedAt(current.map((message) => (
+             message.id === payload.new.id ? payload.new : message
+           ))));
          }
        ).subscribe();
 
-    return () => { supabase.removeChannel(channel); };
-  }, [activeContact]);
+    const intervalId = window.setInterval(() => {
+      void fetchMessages();
+    }, 4000);
+
+    const handleVisibility = () => {
+      if (document.visibilityState === "visible") {
+        void fetchMessages();
+      }
+    };
+
+    document.addEventListener("visibilitychange", handleVisibility);
+
+    return () => {
+      window.clearInterval(intervalId);
+      document.removeEventListener("visibilitychange", handleVisibility);
+      supabase.removeChannel(channel);
+    };
+  }, [profile?.tenant_id, activeContact?.id]);
+
+  useEffect(() => {
+    scrollToBottom();
+  }, [messages.length, activeContact?.id]);
 
   const scrollToBottom = () => {
     setTimeout(() => messagesEndRef.current?.scrollIntoView({ behavior: "smooth" }), 100);
@@ -349,7 +437,7 @@ export default function WhatsAppChatPremiumPage() {
 
     // Aplicar Assinatura ACIMA da mensagem
     const displayName = signatureName || profile?.full_name || 'Equipe MAYUS';
-    const signature = showSignature ? `— *${displayName}*\n\n` : "";
+    const signature = showSignature ? `*${displayName}*\n\n` : "";
     const textToSend = signature + inputText;
 
     // MODO SIMULAÇÃO (Liberado para Teste)
@@ -699,7 +787,7 @@ export default function WhatsAppChatPremiumPage() {
                                    ? 'bg-gradient-to-br from-[#CCA761] to-[#b89552] text-black font-semibold rounded-tr-sm border-[#b89552]/40'
                                    : 'bg-[#121212] border-white/10 text-gray-200 rounded-tl-sm'
                                 }`}>
-                                   {msg.content}
+                                   {renderWhatsAppContent(msg.content)}
                                 </div>
                                 <span className="text-[9px] text-gray-600 font-bold uppercase tracking-widest px-2">
                                    {formatTime(msg.created_at)} {isMe ? '— Vitor P.' : ''}
