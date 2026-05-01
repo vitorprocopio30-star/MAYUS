@@ -182,6 +182,11 @@ describe("mayus daily playbook route", () => {
     expect(json.success).toBe(true);
     expect(json.playbook.title).toBe("Dutra Advocacia - Playbook do dia");
     expect(json.playbook.metrics.crmLeadsNeedingNextStep).toBe(1);
+    expect(json.playbook.htmlReport).toContain("<!DOCTYPE html>");
+    expect(json.metadata.report_menu).toEqual(expect.arrayContaining([
+      expect.objectContaining({ id: "frontdesk" }),
+      expect.objectContaining({ id: "calls" }),
+    ]));
     expect(json.metadata.persistence).toBe("brain_artifact_and_system_event_logs");
     expect(inserts.some((item) => item.table === "system_event_logs" && item.payload.event_name === "daily_playbook_prepared")).toBe(true);
     expect(inserts.some((item) => item.table === "brain_artifacts" && item.payload.artifact_type === "daily_playbook")).toBe(true);

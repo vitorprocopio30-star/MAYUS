@@ -3,6 +3,7 @@ import { createClient } from "@supabase/supabase-js";
 import crypto from "crypto";
 import { prepareWhatsAppSalesReplyForContact } from "@/lib/growth/whatsapp-sales-reply-runtime";
 import { handleWhatsAppInternalCommand } from "@/lib/mayus/whatsapp-command-runtime";
+import { listTenantIntegrationsResolved } from "@/lib/integrations/server";
 
 const supabase = createClient(
   process.env.NEXT_PUBLIC_SUPABASE_URL!,
@@ -19,6 +20,66 @@ function verifySignature(body: string, signature: string | null): boolean {
   const signatureBuf = Buffer.from(signature);
   if (expectedBuf.length !== signatureBuf.length) return false;
   return crypto.timingSafeEqual(expectedBuf, signatureBuf);
+}
+
+function cleanWhatsAppNumber(value: string | null | undefined) {
+  return String(value || "").split("@")[0].replace(/\D/g, "");
+}
+
+function isGroupJid(value: string | null | undefined) {
+  return String(value || "").includes("@g.us");
+}
+
+function getStringValue(value: unknown) {
+  return typeof value === "string" && value.trim().length > 0 ? value.trim() : null;
+}
+
+function getEvolutionMediaUrl(messagePayload: any) {
+  return getStringValue(messagePayload?.imageMessage?.url)
+    || getStringValue(messagePayload?.audioMessage?.url)
+    || getStringValue(messagePayload?.videoMessage?.url)
+    || getStringValue(messagePayload?.documentMessage?.url)
+    || null;
+}
+
+async function fetchEvolutionProfilePicture(params: {
+  tenantId: string;
+  instanceName: string;
+  remoteJid: string;
+}) {
+  try {
+    const integrations = await listTenantIntegrationsResolved(params.tenantId, ["evolution"]);
+    const provider = integrations.find((item) => item.provider === "evolution");
+    const [baseUrlRaw] = String(provider?.instance_name || "").split("|");
+    const apiKey = String(provider?.api_key || "").trim();
+    const baseUrl = String(baseUrlRaw || "").replace(/\/$/, "");
+    const number = cleanWhatsAppNumber(params.remoteJid);
+
+    if (!baseUrl || !apiKey || !number) return null;
+
+    const response = await fetch(`${baseUrl}/chat/fetchProfilePictureUrl/${encodeURIComponent(params.instanceName)}`, {
+      method: "POST",
+      headers: {
+        apikey: apiKey,
+        "Content-Type": "application/json",
+      },
+      body: JSON.stringify({ number }),
+    });
+
+    const data = await response.json().catch(() => null);
+    const url = typeof data?.profilePictureUrl === "string"
+      ? data.profilePictureUrl
+      : typeof data?.profilePicture === "string"
+        ? data.profilePicture
+        : typeof data?.url === "string"
+          ? data.url
+          : null;
+
+    return response.ok && url ? url : null;
+  } catch (error) {
+    console.warn("[Evolution Webhook] Nao foi possivel buscar foto do contato:", error);
+    return null;
+  }
 }
 
 export async function POST(req: Request) {
@@ -48,8 +109,12 @@ export async function POST(req: Request) {
       const pushName = messageEnvelope?.pushName || payload.data?.pushName || "Desconhecido";
       
       // Ignoring status broadcasts
-      if (remoteJid === "status@broadcast") {
-        return NextResponse.json({ success: true });
+      if (remoteJid === "status@broadcast" || isGroupJid(remoteJid)) {
+        return NextResponse.json({
+          success: true,
+          ignored: true,
+          reason: isGroupJid(remoteJid) ? "group_message_blocked" : "status_broadcast",
+        });
       }
 
       // Extrair o conteúdo em texto (Seja texto puro, extended text, etc)
@@ -64,6 +129,25 @@ export async function POST(req: Request) {
         content = "[Áudio enviado]";
       } else {
         content = "[Mensagem não suportada/Mídia]";
+      }
+
+      let messageType = "text";
+      let mediaUrl: string | null = null;
+      if (messagePayload?.imageMessage) {
+        messageType = "image";
+        mediaUrl = getEvolutionMediaUrl(messagePayload);
+        if (!getStringValue(messagePayload?.imageMessage?.caption)) content = "[Imagem recebida]";
+      } else if (messagePayload?.audioMessage) {
+        const transcript = getStringValue(messagePayload?.audioMessage?.transcription)
+          || getStringValue(messagePayload?.audioMessage?.speechToText)
+          || getStringValue(messageEnvelope?.speechToText)
+          || getStringValue(payload.data?.speechToText);
+        messageType = "audio";
+        mediaUrl = getEvolutionMediaUrl(messagePayload);
+        content = transcript ? `Audio transcrito: ${transcript}` : "[Audio recebido]";
+      } else if (!messagePayload?.conversation && !messagePayload?.extendedTextMessage?.text) {
+        messageType = "unsupported";
+        content = "[Mensagem nao suportada/Midia]";
       }
 
       const instanceName = payload.instance;
@@ -82,11 +166,16 @@ export async function POST(req: Request) {
       }
 
       const tenantId = matched.tenant_id;
+      const avatarUrl = await fetchEvolutionProfilePicture({
+        tenantId,
+        instanceName,
+        remoteJid,
+      });
 
       // 2. Verificar/Criar o Contato (Lead/Cliente)
       let { data: contact } = await supabase
         .from("whatsapp_contacts")
-        .select("id")
+        .select("id, profile_pic_url")
         .eq("tenant_id", tenantId)
         .eq("phone_number", remoteJid)
         .single();
@@ -100,7 +189,8 @@ export async function POST(req: Request) {
           .insert([{ 
              tenant_id: tenantId, 
              phone_number: remoteJid, 
-             name: pushName 
+             name: pushName,
+             profile_pic_url: avatarUrl,
           }])
           .select("id")
           .single();
@@ -114,7 +204,8 @@ export async function POST(req: Request) {
          // Atualizar data da última mensagem
          await supabase.from("whatsapp_contacts").update({
             last_message_at: new Date().toISOString(),
-            unread_count: fromMe ? 0 : 1 // Se foi do cliente, marca 1 (simplificado)
+            unread_count: fromMe ? 0 : 1, // Se foi do cliente, marca 1 (simplificado)
+            ...(avatarUrl && !contact?.profile_pic_url ? { profile_pic_url: avatarUrl } : {}),
          }).eq("id", contactId);
       }
 
@@ -126,6 +217,8 @@ export async function POST(req: Request) {
            contact_id: contactId,
            direction: fromMe ? 'outbound' : 'inbound',
            content: content,
+           message_type: messageType,
+           media_url: mediaUrl,
            message_id_from_evolution: messageId,
            status: 'delivered'
         }]);
@@ -167,6 +260,7 @@ export async function POST(req: Request) {
             contactId,
             trigger: "evolution_webhook",
             notify: true,
+            autoSendFirstResponse: true,
           });
         } catch (replyError) {
           console.error("[Evolution Webhook] Erro ao preparar resposta MAYUS:", replyError);

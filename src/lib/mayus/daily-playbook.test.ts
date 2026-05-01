@@ -71,8 +71,13 @@ describe("daily playbook", () => {
       ownerLabel: "Equipe Juridica",
     });
     expect(playbook.crm.leadsNeedingNextStep[0].organizedObjective).toContain("qualificar Maria Previdenciario em Previdenciario");
-    expect(playbook.whatsappSummary).toContain("MAYUS Playbook");
+    expect(playbook.whatsappSummary).toContain("*Dutra Advocacia - Playbook do dia*");
+    expect(playbook.whatsappSummary).toContain("*Placar agora:*");
+    expect(playbook.whatsappSummary).toContain("Minha recomendacao");
     expect(playbook.whatsappSummary).toContain("Nenhuma acao externa foi executada automaticamente.");
+    expect(playbook.reportMenu.map((item) => item.id)).toEqual(expect.arrayContaining(["executive", "crm", "frontdesk", "calls", "playbook"]));
+    expect(playbook.htmlReport).toContain("<nav class=\"sidebar\">");
+    expect(playbook.htmlReport).toContain("Front desk");
     expect(playbook.externalSideEffectsBlocked).toBe(true);
   });
 
@@ -87,8 +92,29 @@ describe("daily playbook", () => {
     const metadata = buildDailyPlaybookMetadata(playbook);
 
     expect(metadata.summary).toContain("operacao sem alerta prioritario");
+    expect(metadata.html_report_available).toBe(true);
+    expect(metadata.html_report_mime_type).toBe("text/html");
+    expect(metadata.html_report).toContain("<!DOCTYPE html>");
+    expect(metadata.report_menu).toEqual(expect.arrayContaining([
+      expect.objectContaining({ id: "frontdesk" }),
+      expect.objectContaining({ id: "calls" }),
+    ]));
     expect(metadata.external_side_effects_blocked).toBe(true);
     expect(JSON.stringify(metadata)).not.toContain("2199999");
+  });
+
+  it("gera briefing humano mesmo quando nao ha alerta prioritario", () => {
+    const playbook = buildDailyPlaybook({
+      firmName: "Dutra Advocacia",
+      now,
+      crmTasks: [],
+      userTasks: [],
+    });
+
+    expect(playbook.whatsappSummary).toContain("nao encontrei alerta critico");
+    expect(playbook.whatsappSummary).toContain("hoje da para operar com calma");
+    expect(playbook.whatsappSummary).toContain("use a primeira janela do dia");
+    expect(playbook.whatsappSummary).not.toContain("Acoes prioritarias:");
   });
 
   it("registra artifact e learning event do playbook", async () => {

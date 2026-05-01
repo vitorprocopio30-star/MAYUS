@@ -16,6 +16,10 @@ const supabase = createClient(
   process.env.SUPABASE_SERVICE_ROLE_KEY!
 );
 
+function isGroupSender(value: string | null | undefined) {
+  return String(value || "").includes("@g.us");
+}
+
 // ==============================================================================
 // GET — Verificação do Webhook (Meta envia na hora de cadastrar a URL)
 // ==============================================================================
@@ -132,6 +136,11 @@ export async function POST(req: NextRequest) {
         const messageType = msg.type || "text"; // text, image, audio, document, video, sticker, location, contacts
         const messageIdFromMeta = msg.id;
         const pushName = contactInfo?.profile?.name || "Desconhecido";
+
+        if (isGroupSender(senderPhone)) {
+          console.log("[Meta Webhook] Mensagem de grupo ignorada para impedir resposta automatica.", { tenantId });
+          continue;
+        }
 
         // Extrair conteúdo baseado no tipo
         let content = "";
@@ -290,7 +299,7 @@ export async function POST(req: NextRequest) {
         await supabase.from("notifications").insert([{
           tenant_id: tenantId,
           user_id: null, // Vai para todos do tenant
-          title: `📱 WhatsApp: ${pushName}`,
+          title: `WhatsApp: ${pushName}`,
           message: content.substring(0, 100),
           type: "info",
           link_url: "/dashboard/conversas/whatsapp",
@@ -303,6 +312,7 @@ export async function POST(req: NextRequest) {
             contactId,
             trigger: "meta_webhook",
             notify: true,
+            autoSendFirstResponse: true,
           });
         } catch (replyError) {
           console.error("[Meta Webhook] Erro ao preparar resposta MAYUS:", replyError);
