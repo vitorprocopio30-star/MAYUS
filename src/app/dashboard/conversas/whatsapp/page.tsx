@@ -100,6 +100,7 @@ export default function WhatsAppChatPremiumPage() {
   const [isSendingContract, setIsSendingContract] = useState(false);
   const [isGeneratingMayusReply, setIsGeneratingMayusReply] = useState(false);
   const [isLoadingMayusDraft, setIsLoadingMayusDraft] = useState(false);
+  const [showTypingIndicator, setShowTypingIndicator] = useState(false);
   const [mayusDraft, setMayusDraft] = useState<any | null>(null);
   const [contractFlowMode, setContractFlowMode] = useState<'ia_only' | 'human_only' | 'hybrid'>('hybrid');
   const [zapsignTemplateId, setZapsignTemplateId] = useState<string>("");
@@ -460,6 +461,7 @@ export default function WhatsAppChatPremiumPage() {
     }
 
     setIsSending(true);
+    setShowTypingIndicator(true);
     setInputText("");
 
     try {
@@ -480,6 +482,7 @@ export default function WhatsAppChatPremiumPage() {
        setInputText(inputText);
     } finally {
        setIsSending(false);
+       setShowTypingIndicator(false);
     }
   };
 
@@ -490,6 +493,7 @@ export default function WhatsAppChatPremiumPage() {
     }
 
     setIsGeneratingMayusReply(true);
+    setShowTypingIndicator(true);
     try {
       const response = await fetch('/api/whatsapp/ai-sales-reply', {
         method: 'POST',
@@ -515,6 +519,7 @@ export default function WhatsAppChatPremiumPage() {
       toast.error(error.message || "Falha ao gerar resposta MAYUS.");
     } finally {
       setIsGeneratingMayusReply(false);
+      setShowTypingIndicator(false);
     }
   };
 
@@ -796,6 +801,22 @@ export default function WhatsAppChatPremiumPage() {
                           </div>
                        );
                     })}
+                    {(showTypingIndicator || isSending || isGeneratingMayusReply) && (
+                      <div className="flex justify-start animate-in fade-in slide-in-from-bottom-2">
+                        <div className="max-w-[65%] rounded-2xl rounded-tl-sm border border-white/10 bg-[#121212] px-5 py-4 text-gray-300 shadow-2xl">
+                          <div className="flex items-center gap-3">
+                            <span className="text-[10px] font-black uppercase tracking-[0.2em] text-[#CCA761]">
+                              MAYUS digitando
+                            </span>
+                            <span className="flex items-center gap-1">
+                              <span className="h-1.5 w-1.5 animate-bounce rounded-full bg-[#CCA761]" />
+                              <span className="h-1.5 w-1.5 animate-bounce rounded-full bg-[#CCA761] [animation-delay:120ms]" />
+                              <span className="h-1.5 w-1.5 animate-bounce rounded-full bg-[#CCA761] [animation-delay:240ms]" />
+                            </span>
+                          </div>
+                        </div>
+                      </div>
+                    )}
                     <div ref={messagesEndRef} />
                 </div>
               </>

@@ -66,11 +66,19 @@ describe("/api/whatsapp/send", () => {
     expect(body.success).toBe(true);
     expect(body.motor).toBe("evolution");
     expect(global.fetch).toHaveBeenCalledWith(
+      "http://187.77.240.109:32768/chat/sendPresence/mayus-dutra",
+      expect.objectContaining({
+        method: "POST",
+        headers: expect.objectContaining({ apikey: "evolution-key" }),
+        body: expect.stringContaining("\"presence\":\"composing\""),
+      }),
+    );
+    expect(global.fetch).toHaveBeenCalledWith(
       "http://187.77.240.109:32768/message/sendText/mayus-dutra",
       expect.objectContaining({
         method: "POST",
         headers: expect.objectContaining({ apikey: "evolution-key" }),
-        body: JSON.stringify({ number: "5521999990000", text: "Mensagem teste MAYUS" }),
+        body: expect.stringContaining("\"text\":\"Mensagem teste MAYUS\""),
       }),
     );
     expect(messageInserts).toEqual([
@@ -95,7 +103,7 @@ describe("/api/whatsapp/send", () => {
     expect(global.fetch).toHaveBeenCalledWith(
       expect.any(String),
       expect.objectContaining({
-        body: JSON.stringify({ number: "5521999990000", text: "Teste com mascara" }),
+        body: expect.stringContaining("\"number\":\"5521999990000\""),
       }),
     );
   });

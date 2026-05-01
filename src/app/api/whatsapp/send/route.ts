@@ -18,6 +18,10 @@ function cleanWhatsAppNumber(value: string) {
   return String(value || "").split("@")[0].replace(/\D/g, "");
 }
 
+function getTypingDelay(text?: string) {
+  return Math.min(2200, Math.max(700, String(text || "").length * 15));
+}
+
 // Rota Segura (Server-Side) de Disparo do MAYUS
 export async function POST(req: NextRequest) {
   try {
@@ -94,7 +98,23 @@ export async function POST(req: NextRequest) {
           evoUrl = `${baseUrl}/message/sendWhatsAppAudio/${instanceName}`;
           evoPayload.audio = audio_url;
        } else {
+          const delay = getTypingDelay(text);
+          await fetch(`${baseUrl}/chat/sendPresence/${instanceName}`, {
+            method: 'POST',
+            headers: { 'apikey': provider.api_key, 'Content-Type': 'application/json' },
+            body: JSON.stringify({
+              number: cleanPhone,
+              delay,
+              presence: "composing",
+              options: { delay, presence: "composing" },
+            })
+          }).catch(() => null);
+
           evoPayload.text = text;
+          evoPayload.delay = delay;
+          evoPayload.presence = "composing";
+          evoPayload.linkPreview = false;
+          evoPayload.options = { delay, presence: "composing", linkPreview: false };
        }
        
        const evoRes = await fetch(evoUrl, {
