@@ -428,7 +428,7 @@ export default function ProcessosTaskModal({
     try {
       const { error } = await supabase.from("process_tasks").delete().eq("id", editingTask.id);
       if (error) throw error;
-      await deleteAgendaTaskBySource(supabase, "process_tasks", editingTask.id);
+      await deleteAgendaTaskBySource(supabase, profile!.tenant_id, "process_tasks", editingTask.id);
       onDeleteSuccess(editingTask.id);
       onClose();
     } catch (err) {

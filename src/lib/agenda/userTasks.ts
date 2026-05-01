@@ -148,6 +148,16 @@ export function toAgendaEvent(task: AgendaTaskRecord) {
   };
 }
 
+export const AGENDA_GLOBAL_PENDING_PERSON = "Equipe MAYUS";
+export const AGENDA_GLOBAL_UNKNOWN_HERO_PERSON = "Herói não registrado";
+
+export function getAgendaGlobalDisplayPerson(task: Pick<AgendaTaskRecord, "status" | "completed_by_name_snapshot">) {
+  if (normalizeAgendaStatus(task.status) !== "Concluído") return AGENDA_GLOBAL_PENDING_PERSON;
+
+  const completedByName = String(task.completed_by_name_snapshot || "").trim();
+  return completedByName || AGENDA_GLOBAL_UNKNOWN_HERO_PERSON;
+}
+
 function buildBasePayload(params: {
   tenantId: string;
   sourceTable: string;
@@ -432,9 +442,12 @@ export function buildAgendaPayloadFromMission(params: {
 }
 
 export async function syncAgendaTaskBySource(supabase: any, payload: Record<string, any>) {
+  if (!payload?.tenant_id) throw new Error("tenant_id_required_for_agenda_sync");
+
   const { data: existing, error: selectError } = await supabase
     .from(USER_TASKS_TABLE)
     .select("id, status, completed_at, completed_by, completed_by_name_snapshot")
+    .eq("tenant_id", payload.tenant_id)
     .eq("source_table", payload.source_table)
     .eq("source_id", payload.source_id)
     .maybeSingle();
@@ -442,9 +455,21 @@ export async function syncAgendaTaskBySource(supabase: any, payload: Record<stri
   if (selectError) throw selectError;
 
   if (existing?.id) {
+    const existingDone = normalizeAgendaStatus(existing.status) === "Concluído";
+    const incomingDone = normalizeAgendaStatus(payload.status) === "Concluído";
+    const updatePayload = existingDone && !incomingDone
+      ? {
+          ...payload,
+          status: existing.status || "Concluído",
+          completed_at: existing.completed_at || null,
+          completed_by: existing.completed_by || null,
+          completed_by_name_snapshot: existing.completed_by_name_snapshot || null,
+        }
+      : payload;
+
     const { error } = await supabase
       .from(USER_TASKS_TABLE)
-      .update(payload)
+      .update(updatePayload)
       .eq("id", existing.id);
     if (error) throw error;
     return existing.id;
@@ -468,10 +493,13 @@ export async function syncAgendaTaskBySource(supabase: any, payload: Record<stri
   return data?.id ?? null;
 }
 
-export async function deleteAgendaTaskBySource(supabase: any, sourceTable: string, sourceId: string) {
+export async function deleteAgendaTaskBySource(supabase: any, tenantId: string, sourceTable: string, sourceId: string) {
+  if (!tenantId) throw new Error("tenant_id_required_for_agenda_delete");
+
   const { error } = await supabase
     .from(USER_TASKS_TABLE)
     .delete()
+    .eq("tenant_id", tenantId)
     .eq("source_table", sourceTable)
     .eq("source_id", sourceId);
 
@@ -517,5 +545,77 @@ export function toDayRange(selectedDate: string) {
 }
 
 export function formatDateKey(date: Date) {
-  return date.toISOString().slice(0, 10);
+  const year = date.getFullYear();
+  const month = String(date.getMonth() + 1).padStart(2, "0");
+  const day = String(date.getDate()).padStart(2, "0");
+  return `${year}-${month}-${day}`;
+}
+
+export function normalizeAgendaReminderDaysBefore(value?: string | number | null) {
+  const parsed = Number(value ?? 0);
+  if (!Number.isFinite(parsed)) return 0;
+  return Math.max(0, Math.floor(parsed));
+}
+
+export function extractAgendaDateKey(value?: string | null) {
+  const raw = String(value || "").trim();
+  if (!raw) return "";
+
+  const dateMatch = raw.match(/\d{4}-\d{2}-\d{2}/);
+  if (dateMatch?.[0]) return dateMatch[0];
+
+  const parsed = new Date(raw);
+  if (Number.isNaN(parsed.getTime())) return "";
+  return formatDateKey(parsed);
+}
+
+export function getAgendaTaskDateKey(task: Pick<AgendaTaskRecord, "scheduled_for" | "created_at">) {
+  return extractAgendaDateKey(task.scheduled_for) || extractAgendaDateKey(task.created_at);
+}
+
+export function getAgendaTaskCompletedDateKey(task: Pick<AgendaTaskRecord, "completed_at">) {
+  return extractAgendaDateKey(task.completed_at);
+}
+
+export function getAgendaReminderWindowDateKeys(task: Pick<AgendaTaskRecord, "scheduled_for" | "created_at" | "reminder_days_before">) {
+  const taskDateKey = getAgendaTaskDateKey(task);
+  if (!taskDateKey) return [];
+
+  const targetDate = new Date(`${taskDateKey}T12:00:00`);
+  if (Number.isNaN(targetDate.getTime())) return [taskDateKey];
+
+  const daysBefore = normalizeAgendaReminderDaysBefore(task.reminder_days_before);
+  const keys: string[] = [];
+
+  for (let offset = daysBefore; offset >= 0; offset -= 1) {
+    const current = new Date(targetDate);
+    current.setDate(targetDate.getDate() - offset);
+    keys.push(formatDateKey(current));
+  }
+
+  return keys;
+}
+
+export function isAgendaTaskVisibleOnDate(task: AgendaTaskRecord, dateKey: string) {
+  const normalizedStatus = normalizeAgendaStatus(task.status);
+  const taskDateKey = getAgendaTaskDateKey(task);
+  const completedDateKey = getAgendaTaskCompletedDateKey(task);
+
+  if (Boolean(task.show_only_on_date)) {
+    const reminderWindow = getAgendaReminderWindowDateKeys(task);
+
+    if (normalizedStatus === "Concluído") {
+      const completionDisplayKey = completedDateKey || taskDateKey;
+      return Boolean(completionDisplayKey) && reminderWindow.includes(completionDisplayKey) && completionDisplayKey === dateKey;
+    }
+
+    return reminderWindow.includes(dateKey);
+  }
+
+  if (normalizedStatus === "Concluído") {
+    if (completedDateKey) return completedDateKey === dateKey;
+    if (taskDateKey) return taskDateKey === dateKey;
+  }
+
+  return true;
 }

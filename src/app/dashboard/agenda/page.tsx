@@ -6,7 +6,7 @@ import confetti from "canvas-confetti";
 import { Clock, AlertCircle, Star, Wand2, Calendar, CheckCircle2, Trophy, Coins, Gift, Lock, Unlock, Copy, Check, Plus, Target, X, ChevronLeft, ChevronRight, ExternalLink } from "lucide-react";
 import { Montserrat, Cormorant_Garamond } from "next/font/google";
 import { useGamification } from "@/hooks/useGamification";
-import { buildAgendaPayloadFromManualTask, filterExistingProcessPrazoTasks, getUrgencyLabel, inferUrgencyFromDeadline, sortAgendaTasks, toAgendaEvent } from "@/lib/agenda/userTasks";
+import { buildAgendaPayloadFromManualTask, filterExistingProcessPrazoTasks, formatDateKey, getAgendaReminderWindowDateKeys, getAgendaTaskDateKey, getUrgencyLabel, inferUrgencyFromDeadline, isAgendaTaskVisibleOnDate, normalizeAgendaReminderDaysBefore, sortAgendaTasks, toAgendaEvent } from "@/lib/agenda/userTasks";
 
 const TASK_META_PREFIX = "__MAYUS_TASK_META__";
 
@@ -79,12 +79,7 @@ export default function AgendaDiariaPage() {
   const [newTaskAssignedTo, setNewTaskAssignedTo] = useState<string>("");
   const [newTaskReminderOnly, setNewTaskReminderOnly] = useState(false);
   const [newTaskReminderDaysBefore, setNewTaskReminderDaysBefore] = useState("0");
-  const toLocalDateKey = useCallback((date: Date) => {
-    const year = date.getFullYear();
-    const month = String(date.getMonth() + 1).padStart(2, "0");
-    const day = String(date.getDate()).padStart(2, "0");
-    return `${year}-${month}-${day}`;
-  }, []);
+  const toLocalDateKey = useCallback((date: Date) => formatDateKey(date), []);
 
   const [newTaskScheduledFor, setNewTaskScheduledFor] = useState(toLocalDateKey(new Date()));
   const [isCreatingTask, setIsCreatingTask] = useState(false);
@@ -175,11 +170,7 @@ export default function AgendaDiariaPage() {
     return `${diffDays} dias`;
   };
 
-  const normalizeReminderDaysBefore = useCallback((value?: string | number | null) => {
-    const parsed = Number(value ?? 0);
-    if (!Number.isFinite(parsed)) return 0;
-    return Math.max(0, Math.floor(parsed));
-  }, []);
+  const normalizeReminderDaysBefore = useCallback((value?: string | number | null) => normalizeAgendaReminderDaysBefore(value), []);
 
   const normalizeTaskStatus = useCallback((value?: string | null) => {
     const normalized = String(value ?? "Pendente")
@@ -192,69 +183,11 @@ export default function AgendaDiariaPage() {
     return "Pendente";
   }, []);
 
-  const extractDateKey = useCallback((value?: string | null) => {
-    const raw = String(value || "").trim();
-    if (!raw) return "";
+  const getTaskDateKey = useCallback((task: any) => getAgendaTaskDateKey(task), []);
 
-    const dateMatch = raw.match(/\d{4}-\d{2}-\d{2}/);
-    if (dateMatch?.[0]) return dateMatch[0];
+  const getReminderWindowKeys = useCallback((task: any) => getAgendaReminderWindowDateKeys(task), []);
 
-    const parsed = new Date(raw);
-    if (!Number.isNaN(parsed.getTime())) return toLocalDateKey(parsed);
-    return "";
-  }, [toLocalDateKey]);
-
-  const getTaskDateKey = useCallback((task: any) => {
-    return extractDateKey(task.scheduled_for) || extractDateKey(task.created_at);
-  }, [extractDateKey]);
-
-  const getTaskCompletedDateKey = useCallback((task: any) => {
-    return extractDateKey(task.completed_at);
-  }, [extractDateKey]);
-
-  const getReminderWindowKeys = useCallback((task: any) => {
-    const taskDateKey = getTaskDateKey(task);
-    if (!taskDateKey) return [];
-
-    const targetDate = new Date(`${taskDateKey}T12:00:00`);
-    if (Number.isNaN(targetDate.getTime())) return [taskDateKey];
-
-    const daysBefore = normalizeReminderDaysBefore(task.reminder_days_before);
-    const keys: string[] = [];
-
-    for (let offset = daysBefore; offset >= 0; offset -= 1) {
-      const current = new Date(targetDate);
-      current.setDate(targetDate.getDate() - offset);
-      keys.push(toLocalDateKey(current));
-    }
-
-    return keys;
-  }, [getTaskDateKey, normalizeReminderDaysBefore, toLocalDateKey]);
-
-  const isTaskVisibleOnSelectedDate = useCallback((task: any, dateKey: string) => {
-    const normalizedStatus = normalizeTaskStatus(task.status);
-    const taskDateKey = getTaskDateKey(task);
-    const completedDateKey = getTaskCompletedDateKey(task);
-
-    if (Boolean(task.show_only_on_date)) {
-      const reminderWindow = getReminderWindowKeys(task);
-      if (!reminderWindow.includes(dateKey)) return false;
-
-      if (normalizedStatus === "Concluído") {
-        return Boolean(completedDateKey || taskDateKey) && (completedDateKey || taskDateKey) === dateKey;
-      }
-
-      return true;
-    }
-
-    if (normalizedStatus === "Concluído") {
-      if (completedDateKey) return completedDateKey === dateKey;
-      if (taskDateKey) return taskDateKey === dateKey;
-    }
-
-    return true;
-
-  }, [getReminderWindowKeys, getTaskCompletedDateKey, getTaskDateKey, normalizeTaskStatus]);
+  const isTaskVisibleOnSelectedDate = useCallback((task: any, dateKey: string) => isAgendaTaskVisibleOnDate(task, dateKey), []);
 
   const parseTaskMeta = (description?: string | null): LegacyTaskMeta => {
     const raw = String(description || "");
@@ -553,7 +486,6 @@ export default function AgendaDiariaPage() {
   }, []);
 
   useEffect(() => {
-    fetchTasks();
     if (typeof window !== 'undefined') {
        const savedCoins = localStorage.getItem('mayusCoins');
        if (savedCoins) setMyCoins(parseInt(savedCoins, 10));
@@ -576,7 +508,7 @@ export default function AgendaDiariaPage() {
     return () => {
       supabase.removeChannel(channel);
     };
-  }, [isRealtimeOn]);
+  }, [isRealtimeOn, selectedDate]);
 
   const handleConnectGoogleCalendar = () => {
     window.location.assign("/api/integrations/google-calendar/connect");
@@ -691,9 +623,7 @@ export default function AgendaDiariaPage() {
   };
 
   const visibleEvents = useMemo(() => {
-    const sourceEvents = showFilters
-      ? [...events]
-      : events.filter((ev) => isTaskVisibleOnSelectedDate(ev, selectedDate));
+    const sourceEvents = events.filter((ev) => isTaskVisibleOnSelectedDate(ev, selectedDate));
 
     let filtered = sourceEvents.filter((ev) => {
       const normalizedStatus = normalizeTaskStatus(ev.status);
@@ -717,7 +647,7 @@ export default function AgendaDiariaPage() {
       if (aDone !== bDone) return aDone ? 1 : -1;
       return 0;
     });
-  }, [events, isTaskVisibleOnSelectedDate, normalizeTaskStatus, selectedDate, showFilters, statusFilter, typeFilter]);
+  }, [events, isTaskVisibleOnSelectedDate, normalizeTaskStatus, selectedDate, statusFilter, typeFilter]);
 
   const progressEvents = useMemo(() => visibleEvents.filter((event) => !event.is_external_calendar), [visibleEvents]);
   const totalTasks = progressEvents.length;
@@ -842,9 +772,10 @@ export default function AgendaDiariaPage() {
   };
 
   const buildInsightText = useMemo(() => {
-    const pending = events.filter((task) => task.status !== "Concluído").length;
-    const urgent = events.filter((task) => String(task.urgency).toUpperCase() === "URGENTE" && task.status !== "Concluído").length;
-    const critical = criticalDeadlines.filter((task) => task.status !== "Concluído").length;
+    const visibleInternalEvents = visibleEvents.filter((task) => !task.is_external_calendar);
+    const pending = visibleInternalEvents.filter((task) => task.status !== "Concluído").length;
+    const urgent = visibleInternalEvents.filter((task) => String(task.urgency).toUpperCase() === "URGENTE" && task.status !== "Concluído").length;
+    const critical = visibleInternalEvents.filter((task) => task.is_critical && task.status !== "Concluído").length;
 
     if (urgent >= 3) {
       return `Voce possui ${urgent} tarefas urgentes abertas. Priorize as duas primeiras para reduzir risco de atraso operacional.`;
@@ -856,7 +787,7 @@ export default function AgendaDiariaPage() {
       return `Sua fila esta com ${pending} tarefas pendentes. Foque em blocos de 3 para aumentar o throughput da agenda.`;
     }
     return "Fluxo estavel. Mantenha o foco nas tarefas em andamento para fechar o dia com margem operacional.";
-  }, [events, criticalDeadlines]);
+  }, [visibleEvents]);
 
   const canAssignGlobalTask = currentUserRole === "Administrador" || currentUserRole === "mayus_admin" || currentUserRole === "admin" || currentUserRole === "socio" || currentUserRole === "Sócio";
 

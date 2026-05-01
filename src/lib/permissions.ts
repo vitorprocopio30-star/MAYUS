@@ -101,10 +101,16 @@ export const ROUTE_TO_MODULE: Record<string, AppModuleId> = {
   "/dashboard/configuracoes/usuarios": "config_agentes",
 };
 
+const FULL_ACCESS_ONLY_ROUTES = ["/dashboard/agenda-admin"];
+
 // -----------------------------------------------------------------------
 // Verifica se o array de permissões do usuário dá acesso à rota
 // -----------------------------------------------------------------------
 export function hasAccess(customPermissions: string[], pathname: string, role?: string): boolean {
+  if (FULL_ACCESS_ONLY_ROUTES.some(route => pathname === route || pathname.startsWith(`${route}/`))) {
+    return isFullAccessRole(role) || customPermissions.includes("ALL");
+  }
+
   // Administrador dono tem acesso total independente de chaves
   if (isFullAccessRole(role) || customPermissions.includes("ALL")) return true;
 

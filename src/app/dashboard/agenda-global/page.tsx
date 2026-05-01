@@ -6,7 +6,7 @@ import { Clock, AlertCircle, Star, Wand2, Calendar, CheckCircle2, Trophy, Sword,
 import Link from "next/link";
 import { Montserrat, Cormorant_Garamond } from "next/font/google";
 import { useGamification } from "@/hooks/useGamification";
-import { filterExistingProcessPrazoTasks, formatDateKey, getUrgencyLabel, inferUrgencyFromDeadline, sortAgendaTasks, toAgendaEvent } from "@/lib/agenda/userTasks";
+import { AGENDA_GLOBAL_PENDING_PERSON, AGENDA_GLOBAL_UNKNOWN_HERO_PERSON, filterExistingProcessPrazoTasks, formatDateKey, getAgendaGlobalDisplayPerson, getAgendaReminderWindowDateKeys, getAgendaTaskDateKey, getUrgencyLabel, inferUrgencyFromDeadline, isAgendaTaskVisibleOnDate, normalizeAgendaStatus, sortAgendaTasks, toAgendaEvent } from "@/lib/agenda/userTasks";
 
 const TASK_META_PREFIX = "__MAYUS_TASK_META__";
 
@@ -102,40 +102,11 @@ export default function AgendaGlobalPage() {
     return `${diffDays} dias`;
   };
 
-  const normalizeReminderDaysBefore = (value?: string | number | null) => {
-    const parsed = Number(value ?? 0);
-    if (!Number.isFinite(parsed)) return 0;
-    return Math.max(0, Math.floor(parsed));
-  };
+  const getTaskDateKey = (task: any) => getAgendaTaskDateKey(task);
 
-  const getTaskDateKey = (task: any) => String(task.scheduled_for || task.created_at || "").slice(0, 10);
+  const getReminderWindowKeys = (task: any) => getAgendaReminderWindowDateKeys(task);
 
-  const getReminderWindowKeys = (task: any) => {
-    const taskDateKey = getTaskDateKey(task);
-    if (!taskDateKey) return [];
-
-    const targetDate = new Date(`${taskDateKey}T12:00:00`);
-    if (Number.isNaN(targetDate.getTime())) return [taskDateKey];
-
-    const daysBefore = normalizeReminderDaysBefore(task.reminder_days_before);
-    const keys: string[] = [];
-
-    for (let offset = daysBefore; offset >= 0; offset -= 1) {
-      const current = new Date(targetDate);
-      current.setDate(targetDate.getDate() - offset);
-      keys.push(formatDateKey(current));
-    }
-
-    return keys;
-  };
-
-  const isTaskVisibleOnSelectedDate = (task: any, dateKey: string) => {
-    if (Boolean(task.show_only_on_date)) {
-      return getReminderWindowKeys(task).includes(dateKey);
-    }
-
-    return true;
-  };
+  const isTaskVisibleOnSelectedDate = (task: any, dateKey: string) => isAgendaTaskVisibleOnDate(task, dateKey);
   
   // Mock do departamento real do profissional logado
   const userDepartment: string = 'Comercial';
@@ -240,7 +211,7 @@ export default function AgendaGlobalPage() {
     const reminderKeys = Array.from(
       new Set(
         sourceSafeTasks
-          .filter((task: any) => Boolean(task.show_only_on_date) && String(task.status || "") !== "Concluído")
+          .filter((task: any) => Boolean(task.show_only_on_date) && normalizeAgendaStatus(task.status) !== "Concluído")
           .flatMap((task: any) => getReminderWindowKeys(task))
           .filter(Boolean)
       )
@@ -261,10 +232,10 @@ export default function AgendaGlobalPage() {
       };
     });
 
-    const normalizedTasks = sortAgendaTasks(enrichedTasks).map(toAgendaEvent).map((task: any) => {
-      if (task.status === 'Concluído') return task;
-      return { ...task, person: 'Equipe MAYUS' };
-    });
+    const normalizedTasks = sortAgendaTasks(enrichedTasks).map(toAgendaEvent).map((task: any) => ({
+      ...task,
+      person: getAgendaGlobalDisplayPerson(task),
+    }));
 
     const missions = normalizedTasks
       .filter((task: any) => task.task_kind === 'mission' && task.status !== 'Concluído')
@@ -309,8 +280,6 @@ export default function AgendaGlobalPage() {
   }, []);
 
   useEffect(() => {
-    fetchTasks();
-    
     const channel = supabase
       .channel('realtime_user_tasks')
       .on(
@@ -325,7 +294,7 @@ export default function AgendaGlobalPage() {
     return () => {
       supabase.removeChannel(channel);
     };
-  }, []);
+  }, [selectedDate]);
 
   const toggleStatus = async (task: any) => {
     if (task.is_external_calendar) return;
@@ -340,7 +309,7 @@ export default function AgendaGlobalPage() {
 
     await supabase.from('user_tasks').update(updatePayload).eq('id', task.id);
 
-    setEvents(prev => prev.map(e => e.id === task.id ? { ...e, ...updatePayload, status: newStatus, person: newStatus === 'Concluído' ? viewerName : e.person } : e));
+    setEvents(prev => prev.map(e => e.id === task.id ? { ...e, ...updatePayload, status: newStatus, person: newStatus === 'Concluído' ? viewerName : AGENDA_GLOBAL_PENDING_PERSON } : e));
   };
 
   const stealTask = async (e: React.MouseEvent, task: any) => {
@@ -353,7 +322,7 @@ export default function AgendaGlobalPage() {
       .update({ assigned_to: user?.id ?? null, assigned_name_snapshot: viewerName })
       .eq('id', task.id);
 
-    setEvents(prev => prev.map(ev => ev.id === task.id ? { ...ev, assigned_to: user?.id ?? null, assigned_name_snapshot: viewerName, person: viewerName, stolen: true } : ev));
+    setEvents(prev => prev.map(ev => ev.id === task.id ? { ...ev, assigned_to: user?.id ?? null, assigned_name_snapshot: viewerName, person: AGENDA_GLOBAL_PENDING_PERSON, stolen: true } : ev));
   };
 
   const handleConnectGoogleCalendarGlobal = () => {
@@ -443,16 +412,10 @@ export default function AgendaGlobalPage() {
       if (userDepartment === 'Jurídico' && !isJuridico) return acc;
       if (userDepartment === 'Marketing' && !isMarketing) return acc;
 
-      // Inicializa carteira se não existir
-      if (ev.person && acc[ev.person] === undefined) {
-        acc[ev.person] = 0;
-      }
-      
-      // Calcula moedas ganhas baseadas na categoria
-      if (ev.status === 'Concluído' && ev.person) {
-        const reward = getReward(ev);
-        acc[ev.person] += reward;
-      }
+      if (ev.status !== 'Concluído' || !ev.person || ev.person === AGENDA_GLOBAL_PENDING_PERSON || ev.person === AGENDA_GLOBAL_UNKNOWN_HERO_PERSON) return acc;
+
+      if (acc[ev.person] === undefined) acc[ev.person] = 0;
+      acc[ev.person] += getReward(ev);
       return acc;
     }, {});
   }, [events, userDepartment]);

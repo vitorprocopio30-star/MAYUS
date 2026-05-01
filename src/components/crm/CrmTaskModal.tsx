@@ -163,7 +163,7 @@ export default function CrmTaskModal({
     try {
       const { error } = await supabase.from("crm_tasks").delete().eq("id", editingTask.id);
       if (error) throw error;
-      await deleteAgendaTaskBySource(supabase, "crm_tasks", editingTask.id);
+      await deleteAgendaTaskBySource(supabase, profile!.tenant_id, "crm_tasks", editingTask.id);
       onDeleteSuccess(editingTask.id);
       onClose();
     } catch (err) {
