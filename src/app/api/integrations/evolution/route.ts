@@ -19,6 +19,39 @@ async function readJson(response: Response) {
   return response.json().catch(() => null);
 }
 
+function getWebhookUrl(request: NextRequest) {
+  return new URL("/api/evolution-webhook", request.url).toString();
+}
+
+async function configureWebhook(params: {
+  url: string;
+  key: string;
+  name: string;
+  webhookUrl: string;
+}) {
+  const webhookRes = await fetch(`${params.url}/webhook/set/${encodeURIComponent(params.name)}`, {
+    method: "POST",
+    headers: {
+      apikey: params.key,
+      "Content-Type": "application/json",
+    },
+    body: JSON.stringify({
+      webhook: {
+        enabled: true,
+        url: params.webhookUrl,
+        webhookByEvents: false,
+        webhookBase64: false,
+        events: ["MESSAGES_UPSERT", "MESSAGES_UPDATE", "CONNECTION_UPDATE"],
+      },
+    }),
+  });
+
+  return {
+    response: webhookRes,
+    data: await readJson(webhookRes),
+  };
+}
+
 export async function POST(request: NextRequest) {
   try {
     await getTenantSession();
@@ -103,7 +136,23 @@ export async function POST(request: NextRequest) {
       }, { status: 502 });
     }
 
-    return NextResponse.json({ ok: true, createData, connectData });
+    const webhook = await configureWebhook({
+      url,
+      key,
+      name,
+      webhookUrl: getWebhookUrl(request),
+    });
+
+    if (!webhook.response.ok) {
+      return NextResponse.json({
+        ok: false,
+        stage: "webhook",
+        error: webhook.data?.response?.message || webhook.data?.message || "Falha ao configurar webhook da Evolution.",
+        status: webhook.response.status,
+      }, { status: 502 });
+    }
+
+    return NextResponse.json({ ok: true, createData, connectData, webhookData: webhook.data });
   } catch (error: any) {
     return NextResponse.json({ ok: false, error: error?.message || "Falha ao falar com Evolution." }, { status: 500 });
   }
