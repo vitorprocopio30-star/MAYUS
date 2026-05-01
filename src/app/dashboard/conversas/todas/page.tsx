@@ -8,7 +8,7 @@ import {
   Search, ChevronDown, MoreVertical, Phone, Mail, Send, Paperclip,
   Smile, User, MessageCircle, Bot, Lock, CheckCircle2,
   MapPin, Briefcase, Zap, Info, Filter, FileText, Mic, Clock, Plus, X,
-  Loader2, LayoutPanelLeft, Users, UserCheck, ClipboardList
+  Loader2, LayoutPanelLeft, Users, UserCheck, ClipboardList, Building2, Share2
 } from "lucide-react";
 import { toast } from "sonner";
 import EmojiPicker, { Theme as EmojiTheme } from "emoji-picker-react";
@@ -16,7 +16,7 @@ import EmojiPicker, { Theme as EmojiTheme } from "emoji-picker-react";
 const montserrat = Montserrat({ subsets: ["latin"], weight: ["300", "400", "500", "600", "700"] });
 const cormorant = Cormorant_Garamond({ subsets: ["latin"], weight: ["400", "500", "600", "700"], style: ["normal", "italic"] });
 
-// FunÃ§Ãµes UtilitÃ¡rias de FormataÃ§Ã£o
+// Funções Utilitárias de Formatação
 const formatTime = (dateString: string) => {
   if (!dateString) return "";
   const date = new Date(dateString);
@@ -43,7 +43,7 @@ export default function TodasConversasPage() {
   const [selectedFile, setSelectedFile] = useState<File | null>(null);
   const fileInputRef = useRef<HTMLInputElement>(null);
 
-  // Estados de Ãudio
+  // Estados de Áudio
   const [isRecording, setIsRecording] = useState(false);
   const [recordingDuration, setRecordingDuration] = useState(0);
   const mediaRecorderRef = useRef<MediaRecorder | null>(null);
@@ -57,9 +57,14 @@ export default function TodasConversasPage() {
   const [contacts, setContacts] = useState<any[]>([]);
   const [activeContact, setActiveContact] = useState<any | null>(null);
   const [messages, setMessages] = useState<any[]>([]);
+  const [departments, setDepartments] = useState<any[]>([]);
+  const [teamMembers, setTeamMembers] = useState<any[]>([]);
+  const [transferDeptId, setTransferDeptId] = useState("");
+  const [transferUserId, setTransferUserId] = useState("");
+  const [isConversationActionPending, setIsConversationActionPending] = useState(false);
   const tenantId = profile?.tenant_id;
 
-  // 1. Carregar ConfiguraÃ§Ãµes e Contatos Iniciais
+  // 1. Carregar Configurações e Contatos Iniciais
   const fetchContacts = useCallback(async () => {
      if (!tenantId) return;
 
@@ -72,7 +77,7 @@ export default function TodasConversasPage() {
      if (data) {
         setContacts(data);
         if (data.length > 0 && !activeContact) {
-           setActiveContact(data[0]); // Seleciona o primeiro por padrÃ£o
+           setActiveContact(data[0]); // Seleciona o primeiro por padrão
         }
      }
   }, [activeContact, supabase, tenantId]);
@@ -81,6 +86,32 @@ export default function TodasConversasPage() {
     if (!tenantId) return;
     void fetchContacts();
   }, [fetchContacts, tenantId]);
+
+  useEffect(() => {
+    if (!tenantId) return;
+
+    const loadRoutingData = async () => {
+      const [{ data: depts }, { data: members }] = await Promise.all([
+        supabase.from("departments").select("id, name, color").eq("tenant_id", tenantId).order("name"),
+        supabase
+          .from("profiles")
+          .select("id, full_name, role, department_id")
+          .eq("tenant_id", tenantId)
+          .eq("is_active", true)
+          .order("full_name"),
+      ]);
+
+      if (depts) setDepartments(depts);
+      if (members) setTeamMembers(members);
+    };
+
+    void loadRoutingData();
+  }, [supabase, tenantId]);
+
+  useEffect(() => {
+    setTransferDeptId(activeContact?.department_id || "");
+    setTransferUserId(activeContact?.assigned_user_id || "");
+  }, [activeContact?.id, activeContact?.department_id, activeContact?.assigned_user_id]);
 
   // 2. Carregar Mensagens do Contato Ativo
   useEffect(() => {
@@ -102,14 +133,14 @@ export default function TodasConversasPage() {
 
     fetchMessages();
 
-    // 3. OUVINTE SUPABASE REALTIME (Magia CÃ³rtex)
+    // 3. OUVINTE SUPABASE REALTIME (Magia Córtex)
     const channel = supabase
        .channel(`chat_${activeContact.id}`)
        .on(
          "postgres_changes",
          { event: "INSERT", schema: "public", table: "whatsapp_messages", filter: `contact_id=eq.${activeContact.id}` },
          (payload) => {
-           setMessages((current) => [...current, payload.new]);
+           setMessages((current) => current.some((message) => message.id === payload.new.id) ? current : [...current, payload.new]);
            scrollToBottom();
          }
        )
@@ -124,7 +155,7 @@ export default function TodasConversasPage() {
     }, 100);
   };
 
-  // 4. LÃ“GICA DE ÃUDIO (REALTIME REC)
+  // 4. LÓGICA DE ÁUDIO (REALTIME REC)
   const startRecording = async () => {
     try {
       const stream = await navigator.mediaDevices.getUserMedia({ audio: true });
@@ -147,11 +178,11 @@ export default function TodasConversasPage() {
       setIsRecording(true);
       setRecordingDuration(0);
     } catch (err) {
-      console.error("Erro real de microfone, iniciando modo simulaÃ§Ã£o:", err);
-      // Fallback de SimulaÃ§Ã£o para Teste de UI
+      console.error("Erro real de microfone, iniciando modo simulação:", err);
+      // Fallback de Simulação para Teste de UI
       setIsRecording(true);
       setRecordingDuration(0);
-      toast.info("Modo SimulaÃ§Ã£o: Usando hardware virtual para teste de UI");
+      toast.info("Modo Simulação: Usando hardware virtual para teste de UI");
     }
   };
 
@@ -175,7 +206,7 @@ export default function TodasConversasPage() {
 
     if (!activeContact) {
       setIsAddingContact(true);
-      toast.info("Selecione um contato para enviar o Ã¡udio.");
+      toast.info("Selecione um contato para enviar o áudio.");
       return;
     }
 
@@ -201,11 +232,11 @@ export default function TodasConversasPage() {
         })
       });
 
-      if (!response.ok) throw new Error("Erro ao enviar Ã¡udio");
-      toast.success("Ãudio enviado com sucesso!");
+      if (!response.ok) throw new Error("Erro ao enviar áudio");
+      toast.success("Áudio enviado com sucesso!");
       fetchContacts();
     } catch (e: any) {
-      toast.error("Falha ao enviar Ã¡udio: " + e.message);
+      toast.error("Falha ao enviar áudio: " + e.message);
     } finally {
       setIsSending(false);
     }
@@ -213,13 +244,58 @@ export default function TodasConversasPage() {
 
   // 5. DISPARO DA ARMA (Enviar mensagem via Servidor MAYUS)
   const handleSendMessage = async () => {
-    if ((!inputText.trim() && !selectedFile) || isSending) return;
+    if (isSending) return;
 
-    // Aplicar Assinatura (Negrito Oficial)
-    const signature = showSignature ? `\n\nâ€” *${profile?.full_name || 'Equipe MAYUS'}*` : "";
-    const textToSend = inputText + signature;
+    const messageBody = inputText.trim();
 
-    // MODO SIMULAÃ‡ÃƒO (Liberado para Teste)
+    if (inputMode === "nota") {
+      if (!messageBody) return;
+
+      if (!activeContact || !tenantId) {
+        toast.info("Selecione uma conversa real para salvar a nota interna.");
+        return;
+      }
+
+      setIsSending(true);
+      setInputText("");
+
+      try {
+        const { data, error } = await supabase
+          .from("whatsapp_messages")
+          .insert([{
+            tenant_id: tenantId,
+            contact_id: activeContact.id,
+            direction: "outbound",
+            message_type: "internal_note",
+            content: messageBody,
+            status: "internal_note",
+          }])
+          .select()
+          .single();
+
+        if (error) throw error;
+
+        if (data) {
+          setMessages((current) => current.some((message) => message.id === data.id) ? current : [...current, data]);
+        }
+        scrollToBottom();
+        toast.success("Nota interna salva somente para a equipe.");
+      } catch (error: any) {
+        toast.error("Falha ao salvar nota interna: " + error.message);
+        setInputText(messageBody);
+      } finally {
+        setIsSending(false);
+      }
+      return;
+    }
+
+    if (!messageBody && !selectedFile) return;
+
+    // Assinatura oficial: somente o nome em negrito no topo.
+    const signature = showSignature ? `*${profile?.full_name || 'Equipe MAYUS'}*\n\n` : "";
+    const textToSend = signature + messageBody;
+
+    // MODO SIMULAÇÃO (Liberado para Teste)
     if (!activeContact) {
       const simulatedMsg = {
         id: `sim-${Date.now()}`,
@@ -234,7 +310,7 @@ export default function TodasConversasPage() {
       setInputText("");
       setSelectedFile(null);
       scrollToBottom();
-      toast.success("Mensagem Simulada com Sucesso! ðŸš€");
+      toast.success("Mensagem Simulada com Sucesso! 🚀");
       return;
     }
 
@@ -261,8 +337,8 @@ export default function TodasConversasPage() {
        const resData = await response.json();
        if (!response.ok) throw new Error(resData.error || "Erro ao disparar");
 
-       toast.success("Disparo de Ouro! ðŸŸ¢");
-       setSelectedFile(null); // Limpar arquivo apÃ³s envio real
+       toast.success("Disparo de Ouro! 🟢");
+       setSelectedFile(null); // Limpar arquivo após envio real
        fetchContacts();
     } catch (error: any) {
        toast.error("Falha : " + error.message);
@@ -273,22 +349,22 @@ export default function TodasConversasPage() {
   };
 
   const handleCreateContact = async () => {
-     let cleanPhone = newContactPhone.replace(/\D/g, ''); // Remover nÃ£o-nÃºmeros
+     let cleanPhone = newContactPhone.replace(/\D/g, ''); // Remover não-números
      if (cleanPhone.length < 10) {
-        toast.error("Insira um nÃºmero vÃ¡lido com DDD e PaÃ­s (Ex: 551199999999)");
+        toast.error("Insira um número válido com DDD e País (Ex: 551199999999)");
         return;
      }
 
-     // O padrÃ£o Baileys Evolution Ã© 551199999999@s.whatsapp.net
+     // O padrão Baileys Evolution é 551199999999@s.whatsapp.net
      const fullJid = `${cleanPhone}@s.whatsapp.net`;
 
-     // Checar se jÃ¡ existe no banco
+     // Checar se já existe no banco
      const existente = contacts.find(c => c.phone_number === fullJid || c.phone_number === cleanPhone);
      if (existente) {
         setActiveContact(existente);
         setIsAddingContact(false);
         setNewContactPhone("");
-        toast.info("Contato jÃ¡ existe na sua base.");
+        toast.info("Contato já existe na sua base.");
         return;
      }
 
@@ -299,7 +375,7 @@ export default function TodasConversasPage() {
        .insert([{
           tenant_id: profile!.tenant_id,
           phone_number: fullJid,
-          name: cleanPhone // Usando o nÃºmero como nome provisÃ³rio
+          name: cleanPhone // Usando o número como nome provisório
        }])
        .select()
        .single();
@@ -314,19 +390,92 @@ export default function TodasConversasPage() {
      setActiveContact(newContact);
      setIsAddingContact(false);
      setNewContactPhone("");
-     setInputText((prev) => !prev ? "OlÃ¡! Aqui Ã© da equipe MAYUS." : prev); // Helper initial message
+     setInputText((prev) => !prev ? "Olá! Aqui é da equipe MAYUS." : prev); // Helper initial message
   };
 
+  const updateActiveContactLocally = (updates: Record<string, any>) => {
+    if (!activeContact) return;
+    setActiveContact({ ...activeContact, ...updates });
+    setContacts((current) => current.map((contact) => (
+      contact.id === activeContact.id ? { ...contact, ...updates } : contact
+    )));
+  };
 
+  const updateActiveContact = async (updates: Record<string, any>, successMessage: string) => {
+    if (!activeContact || !tenantId) return;
 
-  const rightPanels = [
-    { name: "Kanban (CRM)", icon: Briefcase },
-    { name: "Insights da Equipe Neural", icon: Bot },
-    { name: "Mensagens Agendadas", icon: Clock },
-    { name: "AÃ§Ãµes da Conversa", icon: Zap },
-    { name: "Atributos do Contato", icon: Info },
-    { name: "Notas do Contato", icon: FileText },
-  ];
+    setIsConversationActionPending(true);
+    try {
+      const { error } = await supabase
+        .from("whatsapp_contacts")
+        .update(updates)
+        .eq("tenant_id", tenantId)
+        .eq("id", activeContact.id);
+
+      if (error) throw error;
+
+      updateActiveContactLocally(updates);
+      toast.success(successMessage);
+      void fetchContacts();
+    } catch (error: any) {
+      toast.error(error.message || "Nao foi possivel atualizar a conversa.");
+    } finally {
+      setIsConversationActionPending(false);
+    }
+  };
+
+  const handleResolveConversation = async () => {
+    await updateActiveContact(
+      { unread_count: 0, updated_at: new Date().toISOString() },
+      "Conversa marcada como resolvida."
+    );
+  };
+
+  const handleAssumeConversation = async () => {
+    if (!profile?.id) {
+      toast.error("Nao encontrei seu usuario para assumir a conversa.");
+      return;
+    }
+
+    await updateActiveContact(
+      { assigned_user_id: profile.id, department_id: transferDeptId || activeContact?.department_id || null },
+      "Conversa assumida por voce."
+    );
+  };
+
+  const handleReturnToAgent = async () => {
+    await updateActiveContact(
+      { assigned_user_id: null },
+      "Conversa devolvida para o agente MAYUS."
+    );
+  };
+
+  const handleTransferConversation = async () => {
+    if (!transferDeptId && !transferUserId) {
+      toast.error("Escolha um setor ou uma pessoa para transferir.");
+      return;
+    }
+
+    const updates: Record<string, any> = {};
+    if (transferDeptId) updates.department_id = transferDeptId;
+    if (transferUserId) {
+      updates.assigned_user_id = transferUserId;
+    } else if (transferDeptId) {
+      updates.assigned_user_id = null;
+    }
+
+    await updateActiveContact(updates, "Conversa transferida.");
+  };
+
+  const getDepartmentName = (id?: string | null) => {
+    if (!id) return "Sem setor";
+    return departments.find((department) => department.id === id)?.name || "Setor nao encontrado";
+  };
+
+  const getTeamMemberName = (id?: string | null) => {
+    if (!id) return "MAYUS";
+    return teamMembers.find((member) => member.id === id)?.full_name || "Responsavel nao encontrado";
+  };
 
   return (
     <div className={`h-[calc(100vh-6rem)] w-full flex bg-white dark:bg-[#050505] rounded-tl-3xl border-t border-l border-white/5 overflow-hidden ${montserrat.className} text-sm`}>
@@ -407,7 +556,7 @@ export default function TodasConversasPage() {
                       <h4 className={`font-bold truncate text-sm ${activeContact?.id === contact.id ? "text-white" : "text-gray-300"}`}>{contact.name || contact.phone_number}</h4>
                       <span className="text-[10px] text-gray-500">{contact.last_message_at ? formatTime(contact.last_message_at) : ''}</span>
                    </div>
-                   <p className="text-gray-400 text-xs truncate">Toque para ver histÃ³rico</p>
+                   <p className="text-gray-400 text-xs truncate">Toque para ver histórico</p>
                 </div>
              </div>
           ))}
@@ -444,48 +593,60 @@ export default function TodasConversasPage() {
                         <h2 className="text-white font-bold tracking-wide flex items-center gap-2">
                            {activeContact?.name || activeContact?.phone_number || "Lead de Teste"}
                            <span className="bg-[#25D366]/20 text-[#25D366] text-[9px] px-1.5 py-0.5 rounded font-black uppercase tracking-widest border border-[#25D366]/30">
-                              {activeContact ? "WhatsApp" : "SimulaÃ§Ã£o"}
+                              {activeContact ? "WhatsApp" : "Simulação"}
                            </span>
                         </h2>
                       </div>
                    </div>
                    <div className="flex items-center gap-3">
-                      <button className="bg-[#CCA761] text-black font-black uppercase tracking-widest text-[10px] px-4 py-2 rounded shadow-[0_0_15px_rgba(204,167,97,0.4)] hover:scale-105 transition-transform flex items-center gap-2">
-                         <CheckCircle2 size={14} /> Resolver
+                      <button
+                        onClick={handleResolveConversation}
+                        disabled={isConversationActionPending}
+                        className="bg-[#CCA761] text-black font-black uppercase tracking-widest text-[10px] px-4 py-2 rounded shadow-[0_0_15px_rgba(204,167,97,0.4)] hover:scale-105 transition-transform flex items-center gap-2 disabled:opacity-50 disabled:cursor-not-allowed"
+                      >
+                         {isConversationActionPending ? <Loader2 size={14} className="animate-spin" /> : <CheckCircle2 size={14} />} Resolver
                       </button>
                    </div>
                 </div>
 
-                {/* Ãrea de Mensagens */}
+                {/* Área de Mensagens */}
                 <div className="flex-1 overflow-y-auto p-6 flex flex-col gap-6 z-10 scroll-smooth">
                    {activeContact && messages.length === 0 && (
                       <div className="flex justify-center my-10 animate-fade-in-up">
                          <span className="bg-[#CCA761]/10 border border-[#CCA761]/20 text-[#CCA761] px-4 py-2 rounded-full text-xs font-bold tracking-wide shadow-[0_0_15px_rgba(204,167,97,0.1)]">
-                            Novo contato detectado. Diga olÃ¡!
+                            Novo contato detectado. Diga olá!
                          </span>
                       </div>
                    )}
 
                   {messages.map((msg, idx) => {
-                     const isMe = msg.direction === 'outbound';
+                     const isInternalNote = msg.message_type === "internal_note" || msg.status === "internal_note";
+                     const isMe = msg.direction === 'outbound' && !isInternalNote;
                      return (
-                        <div key={msg.id || idx} className={`flex gap-4 ${isMe ? 'justify-end' : 'justify-start'} animate-in fade-in slide-in-from-bottom-2 duration-300`}>
-                           {!isMe && (
+                        <div key={msg.id || idx} className={`flex gap-4 ${isInternalNote ? 'justify-center' : isMe ? 'justify-end' : 'justify-start'} animate-in fade-in slide-in-from-bottom-2 duration-300`}>
+                           {!isMe && !isInternalNote && (
                               <div className="w-8 h-8 rounded-full bg-[#111] border border-white/10 shrink-0 flex items-center justify-center text-xs font-bold text-gray-400">
                                  {activeContact.name ? activeContact.name.substring(0, 2).toUpperCase() : "WA"}
                               </div>
                            )}
 
-                           <div className={`flex flex-col gap-1 max-w-[70%] ${isMe ? 'items-end' : 'items-start'}`}>
+                           <div className={`flex flex-col gap-1 ${isInternalNote ? 'max-w-[76%] items-center' : `max-w-[70%] ${isMe ? 'items-end' : 'items-start'}`}`}>
                               <div className={`p-3 rounded-2xl text-sm shadow-md whitespace-pre-wrap ${
-                                 isMe
+                                 isInternalNote
+                                 ? 'bg-orange-500/10 text-orange-100 border border-orange-500/30 rounded-xl'
+                                 : isMe
                                  ? 'bg-[#CCA761] text-black font-medium border border-[#b89552] rounded-tr-sm'
                                  : 'bg-[#1a1a1a] border border-white/5 text-gray-200 rounded-tl-sm'
                               }`}>
+                                 {isInternalNote && (
+                                   <div className="flex items-center gap-2 text-[9px] font-black uppercase tracking-[0.2em] text-orange-400 mb-2">
+                                     <Lock size={12} /> Nota interna
+                                   </div>
+                                 )}
                                  {msg.content}
                               </div>
                               <span className="text-[9px] text-gray-500 font-bold tracking-widest uppercase mt-0.5 px-1">
-                                 {formatTime(msg.created_at)}
+                                 {formatTime(msg.created_at)} {isInternalNote ? "Somente equipe" : ""}
                               </span>
                            </div>
 
@@ -523,7 +684,7 @@ export default function TodasConversasPage() {
                        </label>
                    </div>
 
-                   {/* Ãrea Principal de Input - Estilo Barra */}
+                   {/* Área Principal de Input - Estilo Barra */}
                    <div className={`rounded-xl border transition-all flex flex-col shadow-lg relative ${inputMode === "nota" ? "bg-orange-500/[0.02] border-orange-500/30" : "bg-gray-200 dark:bg-black/40 border-white/10 focus-within:border-[#CCA761]/40"} ${isRecording ? 'border-red-500 ring-1 ring-red-500/20' : ''}`}>
                        {isRecording ? (
                          <div className="w-full flex items-center justify-between px-4 py-3 bg-red-500/5 rounded-xl animate-pulse">
@@ -586,7 +747,7 @@ export default function TodasConversasPage() {
                                 </div>
                               )}
 
-                              {/* BotÃ£o de Envio Compacto */}
+                              {/* Botão de Envio Compacto */}
                               <button
                                 onClick={(e) => { e.preventDefault(); handleSendMessage(); }}
                                 disabled={isSending || (!inputText.trim() && !isRecording && !selectedFile)}
@@ -594,11 +755,17 @@ export default function TodasConversasPage() {
                                   isSending ? 'bg-white/10 text-gray-400' : 'bg-[#CCA761] text-black hover:bg-white active:scale-95 shadow-lg shadow-[#CCA761]/10'
                                 }`}
                               >
-                                {isSending ? <Loader2 className="animate-spin" size={12} /> : <><Send size={12} /> ENVIAR</>}
+                                {isSending ? (
+                                  <Loader2 className="animate-spin" size={12} />
+                                ) : inputMode === "nota" ? (
+                                  <><Lock size={12} /> SALVAR NOTA</>
+                                ) : (
+                                  <><Send size={12} /> ENVIAR</>
+                                )}
                               </button>
                             </div>
 
-                            {/* Barra de Ferramentas Inferior - ORGANIZAÃ‡ÃƒO SOLICITADA */}
+                            {/* Barra de Ferramentas Inferior - ORGANIZAÇÃO SOLICITADA */}
                             <div className="flex gap-4 px-3 py-2 border-t border-gray-100 dark:border-white/[0.03] bg-gray-200 dark:bg-black/20 rounded-b-xl relative items-center">
                                 {/* Input de Arquivo Oculto */}
                                 <input
@@ -619,7 +786,7 @@ export default function TodasConversasPage() {
                                   <button
                                     onClick={(e) => { e.preventDefault(); startRecording(); }}
                                     className="text-gray-500 hover:text-red-500 transition-all p-1"
-                                    title="Gravar Ãudio"
+                                    title="Gravar Áudio"
                                   >
                                     <Mic size={18} />
                                   </button>
@@ -646,7 +813,7 @@ export default function TodasConversasPage() {
                                   <button onClick={() => toast.info("Modelos de resposta em breve")} className="text-gray-500 hover:text-[#CCA761] transition-all p-1" title="Modelos"><LayoutPanelLeft size={18} /></button>
                                 </div>
 
-                                <span className="ml-auto text-[7px] text-gray-700 font-black tracking-tighter uppercase self-center hidden sm:block">Focado na ExperiÃªncia MAYUS</span>
+                                <span className="ml-auto text-[7px] text-gray-700 font-black tracking-tighter uppercase self-center hidden sm:block">Focado na Experiência MAYUS</span>
                             </div>
                          </div>
                        )}
@@ -659,7 +826,7 @@ export default function TodasConversasPage() {
                   <Bot size={40} className="text-[#CCA761] opacity-50" />
                </div>
                <h2 className="text-2xl font-bold text-white mb-2 font-serif italic">Nenhum Contato Ativo</h2>
-               <p className="text-gray-500 max-w-sm">Mande uma mensagem do seu celular para a Evolution API ou aguarde um Lead entrar em contato para o cÃ³rtex interceptar.</p>
+               <p className="text-gray-500 max-w-sm">Mande uma mensagem do seu celular para a Evolution API ou aguarde um Lead entrar em contato para o córtex interceptar.</p>
             </div>
          )}
       </div>
@@ -687,21 +854,138 @@ export default function TodasConversasPage() {
                   </div>
                </div>
 
-               <div className="p-4 space-y-2">
-                  {rightPanels.map((panel, idx) => {
-                     const Icon = panel.icon;
-                     return (
-                        <div key={idx} className="border border-white/5 rounded-lg bg-white dark:bg-[#050505] hover:border-white/10 transition-colors cursor-pointer group">
-                           <div className="p-3 flex justify-between items-center text-gray-300 group-hover:text-white">
-                              <div className="flex items-center gap-3">
-                                 <Icon size={16} className={`text-gray-500 group-hover:text-[#CCA761] transition-colors`} />
-                                 <span className="text-[11px] font-black uppercase tracking-wider">{panel.name}</span>
-                              </div>
-                              <ChevronDown size={14} className="text-gray-600 group-hover:text-gray-400" />
-                           </div>
+               <div className="p-4 space-y-4">
+                  <div className="border border-white/5 rounded-lg bg-white dark:bg-[#050505] p-4 space-y-4">
+                     <div className="flex items-center justify-between gap-3">
+                        <div className="flex items-center gap-3 text-gray-300">
+                           <Briefcase size={16} className="text-[#CCA761]" />
+                           <span className="text-[11px] font-black uppercase tracking-wider">Kanban (CRM)</span>
                         </div>
-                     );
-                  })}
+                        <span className="text-[9px] text-gray-600 font-black uppercase tracking-widest">Ativo</span>
+                     </div>
+
+                     <div className="grid grid-cols-1 gap-3 text-xs">
+                        <div className="rounded-lg border border-white/5 bg-black/40 p-3">
+                           <span className="block text-[9px] font-black uppercase tracking-widest text-gray-600 mb-1">Setor</span>
+                           <span className="text-white font-bold">{getDepartmentName(activeContact.department_id)}</span>
+                        </div>
+                        <div className="rounded-lg border border-white/5 bg-black/40 p-3">
+                           <span className="block text-[9px] font-black uppercase tracking-widest text-gray-600 mb-1">Responsavel</span>
+                           <span className="text-white font-bold">{getTeamMemberName(activeContact.assigned_user_id)}</span>
+                        </div>
+                     </div>
+                  </div>
+
+                  <div className="border border-[#CCA761]/20 rounded-lg bg-[#CCA761]/5 p-4 space-y-3">
+                     <div className="flex items-center gap-3 text-[#CCA761]">
+                        <Zap size={16} />
+                        <span className="text-[11px] font-black uppercase tracking-wider">Acoes da conversa</span>
+                     </div>
+
+                     <button
+                       onClick={handleAssumeConversation}
+                       disabled={isConversationActionPending || activeContact.assigned_user_id === profile?.id}
+                       className="w-full flex items-center justify-center gap-2 rounded-lg bg-[#CCA761] px-3 py-3 text-[10px] font-black uppercase tracking-widest text-black transition-all hover:bg-white disabled:opacity-45 disabled:cursor-not-allowed"
+                     >
+                       {isConversationActionPending ? <Loader2 size={14} className="animate-spin" /> : <UserCheck size={14} />}
+                       Assumir conversa
+                     </button>
+
+                     <button
+                       onClick={handleReturnToAgent}
+                       disabled={isConversationActionPending || !activeContact.assigned_user_id}
+                       className="w-full flex items-center justify-center gap-2 rounded-lg border border-white/10 bg-black/40 px-3 py-3 text-[10px] font-black uppercase tracking-widest text-gray-300 transition-all hover:border-[#CCA761]/40 hover:text-[#CCA761] disabled:opacity-45 disabled:cursor-not-allowed"
+                     >
+                       <Bot size={14} />
+                       Voltar para agente
+                     </button>
+
+                     <button
+                       onClick={handleResolveConversation}
+                       disabled={isConversationActionPending}
+                       className="w-full flex items-center justify-center gap-2 rounded-lg border border-emerald-500/20 bg-emerald-500/10 px-3 py-3 text-[10px] font-black uppercase tracking-widest text-emerald-300 transition-all hover:bg-emerald-500 hover:text-black disabled:opacity-45 disabled:cursor-not-allowed"
+                     >
+                       <CheckCircle2 size={14} />
+                       Resolver
+                     </button>
+                  </div>
+
+                  <div className="border border-white/5 rounded-lg bg-white dark:bg-[#050505] p-4 space-y-4">
+                     <div className="flex items-center gap-3 text-gray-300">
+                        <Share2 size={16} className="text-[#CCA761]" />
+                        <span className="text-[11px] font-black uppercase tracking-wider">Transferir direto</span>
+                     </div>
+
+                     <div className="space-y-3">
+                        <label className="block">
+                           <span className="mb-2 flex items-center gap-2 text-[9px] font-black uppercase tracking-widest text-gray-500">
+                             <Building2 size={12} /> Setor
+                           </span>
+                           <select
+                             value={transferDeptId}
+                             onChange={(event) => setTransferDeptId(event.target.value)}
+                             className="w-full rounded-lg border border-white/10 bg-[#111] px-3 py-2.5 text-xs text-white outline-none transition-colors focus:border-[#CCA761]/50"
+                           >
+                             <option value="">Sem setor definido</option>
+                             {departments.map((department) => (
+                               <option key={department.id} value={department.id}>{department.name}</option>
+                             ))}
+                           </select>
+                        </label>
+
+                        <label className="block">
+                           <span className="mb-2 flex items-center gap-2 text-[9px] font-black uppercase tracking-widest text-gray-500">
+                             <Users size={12} /> Pessoa
+                           </span>
+                           <select
+                             value={transferUserId}
+                             onChange={(event) => setTransferUserId(event.target.value)}
+                             className="w-full rounded-lg border border-white/10 bg-[#111] px-3 py-2.5 text-xs text-white outline-none transition-colors focus:border-[#CCA761]/50"
+                           >
+                             <option value="">Fila do setor / MAYUS</option>
+                             {teamMembers.map((member) => (
+                               <option key={member.id} value={member.id}>
+                                 {member.full_name} {member.role ? `- ${member.role}` : ""}
+                               </option>
+                             ))}
+                           </select>
+                        </label>
+                     </div>
+
+                     <button
+                       onClick={handleTransferConversation}
+                       disabled={isConversationActionPending || (!transferDeptId && !transferUserId)}
+                       className="w-full flex items-center justify-center gap-2 rounded-lg bg-white/5 px-3 py-3 text-[10px] font-black uppercase tracking-widest text-gray-300 transition-all hover:bg-[#CCA761] hover:text-black disabled:opacity-45 disabled:cursor-not-allowed"
+                     >
+                       {isConversationActionPending ? <Loader2 size={14} className="animate-spin" /> : <Share2 size={14} />}
+                       Aplicar transferencia
+                     </button>
+                  </div>
+
+                  <div className="border border-white/5 rounded-lg bg-white dark:bg-[#050505] p-4 space-y-3">
+                     <div className="flex items-center gap-3 text-gray-300">
+                        <Info size={16} className="text-[#CCA761]" />
+                        <span className="text-[11px] font-black uppercase tracking-wider">Atributos do contato</span>
+                     </div>
+                     <div className="space-y-2 text-xs text-gray-400">
+                       <div className="flex items-center justify-between gap-3">
+                         <span>Telefone</span>
+                         <span className="text-white font-bold">+{activeContact.phone_number.split('@')[0]}</span>
+                       </div>
+                       <div className="flex items-center justify-between gap-3">
+                         <span>Mensagens</span>
+                         <span className="text-white font-bold">{messages.length}</span>
+                       </div>
+                     </div>
+                  </div>
+
+                  <button
+                    onClick={() => toast.info("Dossie completo sera aberto quando o contato estiver vinculado a um cliente/processo.")}
+                    className="w-full flex items-center justify-center gap-2 rounded-lg border border-white/10 bg-white/5 px-3 py-3 text-[10px] font-black uppercase tracking-widest text-gray-300 transition-all hover:border-[#CCA761]/40 hover:text-[#CCA761]"
+                  >
+                    <FileText size={14} />
+                    Dossie completo
+                  </button>
                </div>
             </>
          )}
