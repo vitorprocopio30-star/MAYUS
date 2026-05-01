@@ -43,7 +43,7 @@ export default function TodasConversasPage() {
   const [selectedFile, setSelectedFile] = useState<File | null>(null);
   const fileInputRef = useRef<HTMLInputElement>(null);
 
-  // Estados de Áudio
+  // Estados de Audio
   const [isRecording, setIsRecording] = useState(false);
   const [recordingDuration, setRecordingDuration] = useState(0);
   const mediaRecorderRef = useRef<MediaRecorder | null>(null);
@@ -133,7 +133,7 @@ export default function TodasConversasPage() {
 
     fetchMessages();
 
-    // 3. OUVINTE SUPABASE REALTIME (Magia Córtex)
+    // 3. OUVINTE SUPABASE REALTIME (Magia Cortex)
     const channel = supabase
        .channel(`chat_${activeContact.id}`)
        .on(
@@ -178,11 +178,11 @@ export default function TodasConversasPage() {
       setIsRecording(true);
       setRecordingDuration(0);
     } catch (err) {
-      console.error("Erro real de microfone, iniciando modo simulação:", err);
-      // Fallback de Simulação para Teste de UI
+      console.error("Erro real de microfone, iniciando modo simulacao:", err);
+      // Fallback de simulacao para teste de UI
       setIsRecording(true);
       setRecordingDuration(0);
-      toast.info("Modo Simulação: Usando hardware virtual para teste de UI");
+      toast.info("Modo simulacao: usando hardware virtual para teste de UI");
     }
   };
 
@@ -232,8 +232,8 @@ export default function TodasConversasPage() {
         })
       });
 
-      if (!response.ok) throw new Error("Erro ao enviar áudio");
-      toast.success("Áudio enviado com sucesso!");
+      if (!response.ok) throw new Error("Erro ao enviar audio");
+      toast.success("Audio enviado com sucesso.");
       fetchContacts();
     } catch (e: any) {
       toast.error("Falha ao enviar áudio: " + e.message);
@@ -310,7 +310,7 @@ export default function TodasConversasPage() {
       setInputText("");
       setSelectedFile(null);
       scrollToBottom();
-      toast.success("Mensagem Simulada com Sucesso! 🚀");
+      toast.success("Mensagem simulada com sucesso.");
       return;
     }
 
@@ -337,7 +337,7 @@ export default function TodasConversasPage() {
        const resData = await response.json();
        if (!response.ok) throw new Error(resData.error || "Erro ao disparar");
 
-       toast.success("Disparo de Ouro! 🟢");
+       toast.success("Disparo de ouro.");
        setSelectedFile(null); // Limpar arquivo após envio real
        fetchContacts();
     } catch (error: any) {
@@ -593,7 +593,7 @@ export default function TodasConversasPage() {
                         <h2 className="text-white font-bold tracking-wide flex items-center gap-2">
                            {activeContact?.name || activeContact?.phone_number || "Lead de Teste"}
                            <span className="bg-[#25D366]/20 text-[#25D366] text-[9px] px-1.5 py-0.5 rounded font-black uppercase tracking-widest border border-[#25D366]/30">
-                              {activeContact ? "WhatsApp" : "Simulação"}
+                              {activeContact ? "WhatsApp" : "Simulacao"}
                            </span>
                         </h2>
                       </div>
@@ -786,7 +786,7 @@ export default function TodasConversasPage() {
                                   <button
                                     onClick={(e) => { e.preventDefault(); startRecording(); }}
                                     className="text-gray-500 hover:text-red-500 transition-all p-1"
-                                    title="Gravar Áudio"
+                                    title="Gravar Audio"
                                   >
                                     <Mic size={18} />
                                   </button>

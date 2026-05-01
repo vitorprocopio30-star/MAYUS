@@ -269,11 +269,11 @@ export default function WhatsAppChatPremiumPage() {
       setIsRecording(true);
       setRecordingDuration(0);
     } catch (err) {
-      console.error("Erro real de microfone no WhatsApp, iniciando modo simulação:", err);
-      // Fallback de Simulação
+      console.error("Erro real de microfone no WhatsApp, iniciando modo simulacao:", err);
+      // Fallback de simulacao
       setIsRecording(true);
       setRecordingDuration(0);
-      toast.info("Modo Simulação: Validando interface de áudio...");
+      toast.info("Modo simulacao: validando interface de audio...");
     }
   };
 
@@ -282,14 +282,14 @@ export default function WhatsAppChatPremiumPage() {
       mediaRecorderRef.current.stop();
       setIsRecording(false);
     } else if (isRecording) {
-      // Modo Simulação — enviar mensagem de áudio simulada
+      // Modo simulacao: enviar mensagem de audio simulada
       setIsRecording(false);
       setRecordingDuration(0);
       const displayName = signatureName || profile?.full_name || 'Equipe MAYUS';
       const audioMsg = {
         id: `sim-audio-${Date.now()}`,
         contact_id: activeContact?.id || 'test-wa',
-        content: `${showSignature ? `*${displayName}*\n\n` : ''}🎙️ Áudio (${formatDuration(recordingDuration)})`,
+        content: `${showSignature ? `*${displayName}*\n\n` : ''}Audio (${formatDuration(recordingDuration)})`,
         direction: 'outbound',
         message_type: 'audio',
         status: 'sent',
@@ -298,7 +298,7 @@ export default function WhatsAppChatPremiumPage() {
       };
       setMessages(prev => [...prev, audioMsg]);
       scrollToBottom();
-      toast.success("Áudio simulado enviado!");
+      toast.success("Audio simulado enviado.");
     }
   };
 
@@ -341,10 +341,10 @@ export default function WhatsAppChatPremiumPage() {
         })
       });
 
-      if (!response.ok) throw new Error("Erro ao enviar áudio");
-      toast.success("Áudio enviado");
+      if (!response.ok) throw new Error("Erro ao enviar audio");
+      toast.success("Audio enviado");
     } catch (e: any) {
-      toast.error("Falha ao enviar áudio: " + e.message);
+      toast.error("Falha ao enviar audio: " + e.message);
     } finally {
       setIsSending(false);
     }
@@ -403,7 +403,7 @@ export default function WhatsAppChatPremiumPage() {
     const signature = showSignature ? `*${displayName}*\n\n` : "";
     const textToSend = signature + messageBody;
 
-    // MODO SIMULAÇÃO (Liberado para Teste)
+    // MODO SIMULACAO (Liberado para Teste)
     if (!activeContact) {
       const simulatedMsg = {
         id: `sim-wa-${Date.now()}`,
@@ -418,7 +418,7 @@ export default function WhatsAppChatPremiumPage() {
       setInputText("");
       setSelectedFile(null);
       scrollToBottom();
-      toast.success("Mensagem de Teste Enviada! 🚀");
+      toast.success("Mensagem de teste enviada.");
       return;
     }
 
@@ -435,7 +435,7 @@ export default function WhatsAppChatPremiumPage() {
        });
        if (!response.ok) throw new Error("Erro no motor Meta");
 
-       toast.success("Mensagem disparada com sucesso! 🟢");
+       toast.success("Mensagem disparada com sucesso.");
        setSelectedFile(null);
        fetchContacts();
     } catch (e: any) {
@@ -598,7 +598,7 @@ export default function WhatsAppChatPremiumPage() {
 
       const contractMsg = {
         id: `contract-${Date.now()}`,
-        content: `📄 *Contrato Gerado!* \n\nLink para assinatura: ${data.sign_url}`,
+        content: `*Contrato Gerado!*\n\nLink para assinatura: ${data.sign_url}`,
         direction: 'outbound',
         message_type: 'text',
         created_at: new Date().toISOString()
@@ -735,7 +735,7 @@ export default function WhatsAppChatPremiumPage() {
                             {activeContact?.name || activeContact?.phone_number || "Lead de Teste (Simulado)"}
                             <div className="flex gap-1.5 translate-y-[-1px]">
                                <span className={`text-[8px] px-2.5 py-1 rounded-full font-black uppercase tracking-widest border ${activeContact ? 'bg-[#25D366]/10 text-[#25D366] border-[#25D366]/20' : 'bg-[#CCA761]/10 text-[#CCA761] border-[#CCA761]/20'}`}>
-                                  {activeContact ? 'WhatsApp' : 'Simulação'}
+                                  {activeContact ? 'WhatsApp' : 'Simulacao'}
                                 </span>
                             </div>
                          </h2>
@@ -832,7 +832,7 @@ export default function WhatsAppChatPremiumPage() {
                                    {msg.content}
                                 </div>
                                 <span className="text-[9px] text-gray-600 font-bold uppercase tracking-widest px-2">
-                                   {formatTime(msg.created_at)} {isInternalNote ? 'Somente equipe' : isMe ? '— Vitor P.' : ''}
+                                   {formatTime(msg.created_at)} {isInternalNote ? 'Somente equipe' : isMe ? '- Vitor P.' : ''}
                                 </span>
                              </div>
                           </div>
@@ -847,7 +847,7 @@ export default function WhatsAppChatPremiumPage() {
                       <div className="absolute inset-0 bg-[conic-gradient(from_0deg,#CCA761,transparent,transparent,#CCA761)] animate-spin opacity-20" />
                       <Bot size={44} className="text-[#CCA761] relative z-10" />
                   </div>
-                  <h2 className={`text-4xl font-bold text-white mb-4 ${cormorant.className} italic`}>Córtex de Mensagens Ativo</h2>
+                  <h2 className={`text-4xl font-bold text-white mb-4 ${cormorant.className} italic`}>Cortex de Mensagens Ativo</h2>
                   <p className="text-gray-500 max-w-sm text-sm font-medium leading-relaxed mb-12">O sistema está pronto. Escolha um lead que aguarda retorno ou comece uma prospecção de ouro agora.</p>
                   <button onClick={() => setIsAddingContact(true)} className="bg-white/5 border border-white/10 text-white px-10 py-5 rounded-2xl font-black uppercase text-[11px] tracking-[0.3em] hover:bg-[#CCA761] hover:text-black transition-all">Novo Atendimento</button>
                 </div>
@@ -993,7 +993,7 @@ export default function WhatsAppChatPremiumPage() {
                                <button
                                  onClick={(e) => { e.preventDefault(); startRecording(); }}
                                  className="text-gray-500 hover:text-red-500 transition-all p-1"
-                                 title="Gravar Áudio"
+                                 title="Gravar Audio"
                                >
                                  <Mic size={18} />
                                </button>
@@ -1022,7 +1022,7 @@ export default function WhatsAppChatPremiumPage() {
                                <button onClick={() => toast.info("Modelos de resposta em breve")} className="text-gray-500 hover:text-[#CCA761] transition-all p-1" title="Modelos de Resposta"><LayoutPanelLeft size={18} /></button>
                              </div>
 
-                             <span className="ml-auto text-[7px] text-gray-700 font-black tracking-tighter uppercase self-center hidden sm:block">Gerado pelo Córtex MAYUS</span>
+                             <span className="ml-auto text-[7px] text-gray-700 font-black tracking-tighter uppercase self-center hidden sm:block">Gerado pelo Cortex MAYUS</span>
                          </div>
                       </div>
                   )}
@@ -1135,7 +1135,7 @@ export default function WhatsAppChatPremiumPage() {
                     onClick={() => toast.info("Dossie completo sera aberto quando o contato estiver vinculado a um cliente/processo.")}
                     className="w-full py-5 bg-white/5 border border-white/10 rounded-2xl font-black uppercase text-[10px] tracking-[0.2em] flex items-center justify-center gap-3 hover:bg-white/10 transition-all group"
                   >
-                     <FileText size={16} className="group-hover:-rotate-6 transition-transform" /> Dossiê Completo
+                     <FileText size={16} className="group-hover:-rotate-6 transition-transform" /> Dossie Completo
                   </button>
                   <button
                     onClick={handleResolveConversation}
@@ -1176,7 +1176,7 @@ export default function WhatsAppChatPremiumPage() {
                   onChange={(e) => setTransferDeptId(e.target.value)}
                   className="w-full bg-[#111] border border-white/10 rounded-xl px-4 py-3 text-sm text-white outline-none focus:border-[#CCA761]/50 appearance-none"
                 >
-                  <option value="">— Selecione o departamento —</option>
+                  <option value="">- Selecione o departamento -</option>
                   {departments.map(dept => (
                     <option key={dept.id} value={dept.id}>{dept.name}</option>
                   ))}
@@ -1185,14 +1185,14 @@ export default function WhatsAppChatPremiumPage() {
 
               <div>
                 <label className="text-[10px] font-black uppercase tracking-widest text-[#CCA761] mb-2 block">
-                  <Users size={12} className="inline mr-1" /> Agente Responsável
+                  <Users size={12} className="inline mr-1" /> Agente Responsavel
                 </label>
                 <select
                   value={transferUserId}
                   onChange={(e) => setTransferUserId(e.target.value)}
                   className="w-full bg-[#111] border border-white/10 rounded-xl px-4 py-3 text-sm text-white outline-none focus:border-[#CCA761]/50 appearance-none"
                 >
-                  <option value="">— Selecione o agente —</option>
+                  <option value="">- Selecione o agente -</option>
                   {teamMembers.map(member => (
                     <option key={member.id} value={member.id}>{member.full_name} ({member.role})</option>
                   ))}
