@@ -112,8 +112,7 @@ export async function POST(req: NextRequest) {
       contact_id: contact_id,
       direction: "outbound",
       content: audio_url ? "[Áudio Enviado]" : text,
-      status: "sent",
-      metadata: audio_url ? { audio_url } : null
+      status: "sent"
     }]);
 
     if (dbError) throw dbError;

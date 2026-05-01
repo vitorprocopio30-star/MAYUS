@@ -3,6 +3,7 @@ import { createClient } from "@supabase/supabase-js";
 import crypto from "crypto";
 import { prepareWhatsAppSalesReplyForContact } from "@/lib/growth/whatsapp-sales-reply-runtime";
 import { handleWhatsAppInternalCommand } from "@/lib/mayus/whatsapp-command-runtime";
+import { listTenantIntegrationsResolved } from "@/lib/integrations/server";
 
 const supabase = createClient(
   process.env.NEXT_PUBLIC_SUPABASE_URL!,
@@ -19,6 +20,50 @@ function verifySignature(body: string, signature: string | null): boolean {
   const signatureBuf = Buffer.from(signature);
   if (expectedBuf.length !== signatureBuf.length) return false;
   return crypto.timingSafeEqual(expectedBuf, signatureBuf);
+}
+
+function cleanWhatsAppNumber(value: string | null | undefined) {
+  return String(value || "").split("@")[0].replace(/\D/g, "");
+}
+
+async function fetchEvolutionProfilePicture(params: {
+  tenantId: string;
+  instanceName: string;
+  remoteJid: string;
+}) {
+  try {
+    const integrations = await listTenantIntegrationsResolved(params.tenantId, ["evolution"]);
+    const provider = integrations.find((item) => item.provider === "evolution");
+    const [baseUrlRaw] = String(provider?.instance_name || "").split("|");
+    const apiKey = String(provider?.api_key || "").trim();
+    const baseUrl = String(baseUrlRaw || "").replace(/\/$/, "");
+    const number = cleanWhatsAppNumber(params.remoteJid);
+
+    if (!baseUrl || !apiKey || !number) return null;
+
+    const response = await fetch(`${baseUrl}/chat/fetchProfilePictureUrl/${encodeURIComponent(params.instanceName)}`, {
+      method: "POST",
+      headers: {
+        apikey: apiKey,
+        "Content-Type": "application/json",
+      },
+      body: JSON.stringify({ number }),
+    });
+
+    const data = await response.json().catch(() => null);
+    const url = typeof data?.profilePictureUrl === "string"
+      ? data.profilePictureUrl
+      : typeof data?.profilePicture === "string"
+        ? data.profilePicture
+        : typeof data?.url === "string"
+          ? data.url
+          : null;
+
+    return response.ok && url ? url : null;
+  } catch (error) {
+    console.warn("[Evolution Webhook] Nao foi possivel buscar foto do contato:", error);
+    return null;
+  }
 }
 
 export async function POST(req: Request) {
@@ -82,11 +127,16 @@ export async function POST(req: Request) {
       }
 
       const tenantId = matched.tenant_id;
+      const avatarUrl = await fetchEvolutionProfilePicture({
+        tenantId,
+        instanceName,
+        remoteJid,
+      });
 
       // 2. Verificar/Criar o Contato (Lead/Cliente)
       let { data: contact } = await supabase
         .from("whatsapp_contacts")
-        .select("id")
+        .select("id, avatar_url")
         .eq("tenant_id", tenantId)
         .eq("phone_number", remoteJid)
         .single();
@@ -100,7 +150,8 @@ export async function POST(req: Request) {
           .insert([{ 
              tenant_id: tenantId, 
              phone_number: remoteJid, 
-             name: pushName 
+             name: pushName,
+             avatar_url: avatarUrl,
           }])
           .select("id")
           .single();
@@ -114,7 +165,8 @@ export async function POST(req: Request) {
          // Atualizar data da última mensagem
          await supabase.from("whatsapp_contacts").update({
             last_message_at: new Date().toISOString(),
-            unread_count: fromMe ? 0 : 1 // Se foi do cliente, marca 1 (simplificado)
+            unread_count: fromMe ? 0 : 1, // Se foi do cliente, marca 1 (simplificado)
+            ...(avatarUrl && !contact?.avatar_url ? { avatar_url: avatarUrl } : {}),
          }).eq("id", contactId);
       }
 

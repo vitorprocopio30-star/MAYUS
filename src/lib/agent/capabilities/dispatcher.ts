@@ -1142,7 +1142,6 @@ async function runWhatsAppSend(input: DispatchCapabilityInput): Promise<Dispatch
     direction: "outbound",
     content: audioUrl ? "[Audio Enviado]" : text,
     status: "sent",
-    metadata: audioUrl ? { audio_url: audioUrl } : null,
   });
 
   await registerArtifact(input, {

@@ -3,6 +3,7 @@ import { describe, expect, it, vi, beforeEach } from "vitest";
 const handleWhatsAppInternalCommandMock = vi.hoisted(() => vi.fn());
 const prepareWhatsAppSalesReplyForContactMock = vi.hoisted(() => vi.fn());
 const createClientMock = vi.hoisted(() => vi.fn());
+const listTenantIntegrationsResolvedMock = vi.hoisted(() => vi.fn());
 
 vi.mock("@/lib/mayus/whatsapp-command-runtime", () => ({
   handleWhatsAppInternalCommand: handleWhatsAppInternalCommandMock,
@@ -12,14 +13,20 @@ vi.mock("@/lib/growth/whatsapp-sales-reply-runtime", () => ({
   prepareWhatsAppSalesReplyForContact: prepareWhatsAppSalesReplyForContactMock,
 }));
 
+vi.mock("@/lib/integrations/server", () => ({
+  listTenantIntegrationsResolved: listTenantIntegrationsResolvedMock,
+}));
+
 vi.mock("@supabase/supabase-js", () => ({
   createClient: createClientMock,
 }));
 
 function buildSupabaseMock() {
   const messageInserts: unknown[] = [];
+  const contactInserts: unknown[] = [];
   return {
     messageInserts,
+    contactInserts,
     from: vi.fn((table: string) => {
       if (table === "tenant_integrations") {
         return {
@@ -43,7 +50,10 @@ function buildSupabaseMock() {
           })),
           insert: vi.fn(() => ({
             select: vi.fn(() => ({
-              single: vi.fn(async () => ({ data: { id: "contact-1" }, error: null })),
+              single: vi.fn(async () => {
+                contactInserts.push({ tenant_id: "tenant-1", phone_number: "5521999990000@s.whatsapp.net" });
+                return { data: { id: "contact-1" }, error: null };
+              }),
             })),
           })),
           update: vi.fn(() => ({ eq: vi.fn(async () => ({ error: null })) })),
@@ -73,6 +83,12 @@ describe("/api/evolution-webhook", () => {
     delete process.env.EVOLUTION_WEBHOOK_SECRET;
     supabaseMock = buildSupabaseMock();
     createClientMock.mockReturnValue(supabaseMock);
+    listTenantIntegrationsResolvedMock.mockResolvedValue([{
+      provider: "evolution",
+      api_key: "evolution-key",
+      instance_name: "http://evolution.local|mayus-dutra",
+    }]);
+    global.fetch = vi.fn(async () => new Response(JSON.stringify({ profilePictureUrl: "https://cdn.example/avatar.jpg" }), { status: 200 })) as any;
     handleWhatsAppInternalCommandMock.mockResolvedValue({ handled: true, sent: true, intent: "daily_playbook" });
   });
 
@@ -109,6 +125,13 @@ describe("/api/evolution-webhook", () => {
       contactId: "contact-1",
       source: "evolution_webhook",
     }));
+    expect(global.fetch).toHaveBeenCalledWith(
+      "http://evolution.local/chat/fetchProfilePictureUrl/mayus-dutra",
+      expect.objectContaining({
+        method: "POST",
+        body: JSON.stringify({ number: "5521999990000" }),
+      }),
+    );
     expect(supabaseMock.messageInserts).toEqual([
       expect.objectContaining({
         tenant_id: "tenant-1",
