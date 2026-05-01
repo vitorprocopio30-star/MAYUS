@@ -87,6 +87,7 @@ REGRAS DE EXECUÇÃO DE SKILLS:
 - Quando tiver todas as informações mínimas (nome + valor + vencimento), execute a skill diretamente sem fazer perguntas.
 - Para investigar o lead em bate-papo comercial, gravar sinais e adaptar atendimento consultivo de alta performance pelo metodo DEF (descoberta, encantamento, fechamento), use a skill sales_consultation.
 - Para auto-configurar a base comercial do escritorio com cliente ideal, solucao central, PUV, pilares e anti-cliente, conversando com o usuario e gravando o perfil para reduzir configuracoes manuais, use a skill sales_profile_setup.
+- Para criar ou adaptar playbook comercial premium do escritorio a partir de documento/modelo, com menu diario, primeiro atendimento MAYUS, SDR/closer, objecoes e analise de call, use a skill commercial_playbook_setup.
 - Para registrar ou qualificar um novo lead, indicado ou indicacao comercial no CRM, use a skill lead_intake.
 - Para montar roteiro de qualificacao, documentos minimos, objecoes e proximo melhor movimento de um lead ja registrado, use a skill lead_qualify.
 - Para montar cadencia ou mensagem supervisionada de follow-up de lead sem envio automatico, use a skill lead_followup.

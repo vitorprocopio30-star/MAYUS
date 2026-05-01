@@ -92,6 +92,12 @@ import {
   type SalesProfileSetupProfile,
 } from "@/lib/growth/sales-profile-setup";
 import {
+  buildCommercialPlaybookArtifactMetadata,
+  buildCommercialPlaybookReply,
+  buildCommercialPlaybookSetup,
+  type CommercialPlaybookSetupInput,
+} from "@/lib/growth/commercial-playbook-template";
+import {
   buildMarketingOpsAssistantMetadata,
   buildMarketingOpsAssistantPlan,
   type MarketingOpsAssistantInput,
@@ -1504,6 +1510,25 @@ function buildSalesConsultationInputFromEntities(entities: Record<string, string
   };
 }
 
+function buildCommercialPlaybookInputFromEntities(entities: Record<string, string>): CommercialPlaybookSetupInput {
+  const pillarsRaw = getStringValue(entities.value_pillars) || getStringValue(entities.office_pillars);
+
+  return {
+    firmName: getStringValue(entities.firm_name) || getStringValue(entities.office_name),
+    legalArea: getStringValue(entities.legal_area) || getStringValue(entities.legalArea) || getStringValue(entities.segment),
+    idealClient: getStringValue(entities.ideal_client) || getStringValue(entities.office_ideal_client),
+    coreSolution: getStringValue(entities.core_solution) || getStringValue(entities.office_solution),
+    uniqueValueProposition: getStringValue(entities.unique_value_proposition) || getStringValue(entities.office_unique_value_proposition),
+    valuePillars: pillarsRaw
+      ? pillarsRaw.split(/[|,;]/).map((item) => item.trim()).filter(Boolean)
+      : undefined,
+    positioningSummary: getStringValue(entities.positioning_summary) || getStringValue(entities.context),
+    templateFlavor: getStringValue(entities.template_flavor) || getStringValue(entities.modelo),
+    sourceDocument: getStringValue(entities.source_document) || getStringValue(entities.documento),
+    notes: getStringValue(entities.notes) || getStringValue(entities.request),
+  };
+}
+
 function buildSalesProfileSetupInputFromEntities(entities: Record<string, string>): SalesProfileSetupInput {
   return {
     idealClient: getStringValue(entities.office_ideal_client) || getStringValue(entities.ideal_client),
@@ -1931,6 +1956,65 @@ async function runGrowthSalesConsultation(input: DispatchCapabilityInput): Promi
     data: {
       plan,
       crmTask,
+    },
+  };
+}
+
+async function runGrowthCommercialPlaybookSetup(input: DispatchCapabilityInput): Promise<DispatchCapabilityResult> {
+  const direct = buildCommercialPlaybookInputFromEntities(input.entities);
+  const tenantSalesProfile = await loadTenantSalesConsultationProfile(input.tenantId);
+  const playbook = buildCommercialPlaybookSetup({
+    firmName: direct.firmName,
+    legalArea: direct.legalArea,
+    idealClient: direct.idealClient || tenantSalesProfile?.idealClient || null,
+    coreSolution: direct.coreSolution || tenantSalesProfile?.coreSolution || null,
+    uniqueValueProposition: direct.uniqueValueProposition || tenantSalesProfile?.uniqueValueProposition || null,
+    valuePillars: direct.valuePillars || tenantSalesProfile?.valuePillars || null,
+    positioningSummary: direct.positioningSummary || tenantSalesProfile?.positioningSummary || null,
+    templateFlavor: direct.templateFlavor,
+    sourceDocument: direct.sourceDocument,
+    notes: direct.notes,
+  });
+  const metadata = buildCommercialPlaybookArtifactMetadata(playbook);
+
+  await registerArtifact(input, {
+    artifactType: "commercial_playbook_setup",
+    title: `Playbook comercial - ${playbook.officeName}`,
+    mimeType: "application/json",
+    dedupeKey: input.auditLogId
+      ? `commercial-playbook:${input.auditLogId}`
+      : `commercial-playbook:${playbook.officeName}:${playbook.legalArea}`,
+    metadata,
+  });
+
+  await registerLearningEvent(input, "commercial_playbook_setup_created", {
+    method_name: playbook.methodName,
+    office_name: playbook.officeName,
+    legal_area: playbook.legalArea,
+    first_response_sla_minutes: playbook.firstResponseSlaMinutes,
+    step_count: playbook.steps.length,
+    objection_count: playbook.objections.length,
+    external_side_effects_blocked: true,
+  });
+
+  return {
+    status: "executed",
+    reply: buildCommercialPlaybookReply(playbook),
+    outputPayload: {
+      auditLogId: input.auditLogId || null,
+      handler_type: input.handlerType,
+      artifact_type: "commercial_playbook_setup",
+      method_name: playbook.methodName,
+      office_name: playbook.officeName,
+      legal_area: playbook.legalArea,
+      first_response_sla_minutes: playbook.firstResponseSlaMinutes,
+      daily_report_sections: playbook.dailyReportSections.map((section) => section.id),
+      call_analysis_checklist_count: playbook.callAnalysisChecklist.length,
+      external_side_effects_blocked: true,
+      requires_human_review_for_legal_commitments: true,
+    },
+    data: {
+      playbook,
     },
   };
 }
@@ -4691,6 +4775,8 @@ export async function dispatchCapabilityExecution(input: DispatchCapabilityInput
       return runGrowthSalesProfileSetup(input);
     case "growth_sales_consultation":
       return runGrowthSalesConsultation(input);
+    case "growth_commercial_playbook_setup":
+      return runGrowthCommercialPlaybookSetup(input);
     case "growth_lead_reactivation":
       return runGrowthColdLeadReactivation(input);
     case "growth_client_acceptance_record":

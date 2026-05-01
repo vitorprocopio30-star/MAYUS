@@ -46,6 +46,11 @@ describe("call commercial analysis", () => {
     expect(analysis.advancementProbability).toBeGreaterThanOrEqual(70);
     expect(analysis.pain).toContain("beneficio foi negado");
     expect(analysis.objections).toEqual(expect.arrayContaining([expect.stringContaining("valor")]));
+    expect(analysis.commercialPlaybookMethod).toBe("MAYUS Front Desk Comercial");
+    expect(analysis.playbookChecklist.length).toBeGreaterThan(4);
+    expect(analysis.playbookGaps).toEqual(expect.arrayContaining([
+      "SLA de primeiro atendimento nao foi evidenciado na call.",
+    ]));
     expect(analysis.strengths).toEqual(expect.arrayContaining([
       "Call identificou urgencia ou risco temporal.",
       "Lead demonstrou sinal explicito de avanco.",
@@ -74,6 +79,7 @@ describe("call commercial analysis", () => {
     expect(analysis.missedOpportunities).toEqual(expect.arrayContaining([
       "Definir proximo passo com data, canal e responsavel.",
       "Pedir documentos minimos para reduzir incerteza do caso.",
+      "Decisor e influenciadores nao foram confirmados.",
     ]));
   });
 
@@ -90,6 +96,8 @@ describe("call commercial analysis", () => {
       crm_task_id: "crm-task-1",
       mvp_label: "MVP upload/analysis - text transcript/notes only",
       interest_level: analysis.interestLevel,
+      commercial_playbook_method: "MAYUS Front Desk Comercial",
+      playbook_gap_count: analysis.playbookGaps.length,
       requires_human_review: true,
       external_side_effects_blocked: true,
     }));
@@ -150,6 +158,7 @@ describe("call commercial analysis", () => {
       metadata: expect.objectContaining({
         crm_task_id: "crm-task-1",
         lead_name: "Livia",
+        commercial_playbook_method: "MAYUS Front Desk Comercial",
         requires_human_review: true,
         external_side_effects_blocked: true,
       }),

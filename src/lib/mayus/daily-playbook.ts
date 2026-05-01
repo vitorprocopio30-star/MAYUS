@@ -1,4 +1,5 @@
 import { buildCrmLeadNextStepStatus } from "@/lib/growth/crm-next-step";
+import { buildCommercialPlaybookModel } from "@/lib/growth/commercial-playbook-template";
 
 export type DailyPlaybookChannel = "whatsapp" | "email" | "mayus_panel";
 export type DailyPlaybookScope = "executive" | "growth" | "legal" | "full";
@@ -63,6 +64,7 @@ export type DailyPlaybook = {
   generatedAt: string;
   preferences: DailyPlaybookPreferences;
   executiveSummary: string;
+  reportMenu: Array<{ id: string; label: string; detail: string }>;
   metrics: {
     crmLeadsNeedingNextStep: number;
     agendaCriticalTasks: number;
@@ -98,6 +100,7 @@ export type DailyPlaybook = {
   };
   priorityActions: DailyPlaybookAction[];
   whatsappSummary: string;
+  htmlReport: string;
   externalSideEffectsBlocked: boolean;
 };
 
@@ -308,7 +311,7 @@ function buildExecutiveSummary(params: {
   return `${params.firmName}: ${signals.join("; ")}.`;
 }
 
-function buildWhatsAppSummary(playbook: Omit<DailyPlaybook, "whatsappSummary">) {
+function buildWhatsAppSummary(playbook: Omit<DailyPlaybook, "whatsappSummary" | "htmlReport">) {
   const topActions = playbook.priorityActions
     .slice(0, playbook.preferences.detailLevel === "short" ? 3 : 5)
     .map((action, index) => `${index + 1}. ${action.title}: ${action.detail}`)
@@ -323,6 +326,84 @@ function buildWhatsAppSummary(playbook: Omit<DailyPlaybook, "whatsappSummary">) 
     "",
     "Nenhuma acao externa foi executada automaticamente.",
   ].join("\n").trim();
+}
+
+function escapeHtml(value: unknown) {
+  return String(value ?? "")
+    .replace(/&/g, "&amp;")
+    .replace(/</g, "&lt;")
+    .replace(/>/g, "&gt;")
+    .replace(/"/g, "&quot;")
+    .replace(/'/g, "&#39;");
+}
+
+function renderAction(action: DailyPlaybookAction, index: number) {
+  return `
+    <div class="action ${escapeHtml(action.urgency)}">
+      <div class="action-index">${index + 1}</div>
+      <div>
+        <div class="action-title">${escapeHtml(action.title)}</div>
+        <div class="action-detail">${escapeHtml(action.detail)}</div>
+        <div class="action-meta">${escapeHtml(action.ownerLabel)}${action.dueAt ? ` - ${escapeHtml(action.dueAt)}` : ""}</div>
+      </div>
+    </div>`;
+}
+
+function buildDailyPlaybookHtmlReport(playbook: Omit<DailyPlaybook, "whatsappSummary" | "htmlReport">) {
+  const menu = playbook.reportMenu.map((section, index) => `
+    <a class="nav-link" href="#${escapeHtml(section.id)}">
+      <span class="nav-dot">${index + 1}</span>
+      <span><b>${escapeHtml(section.label)}</b><small>${escapeHtml(section.detail)}</small></span>
+    </a>`).join("");
+  const priorityActions = playbook.priorityActions.map(renderAction).join("");
+  const crmItems = playbook.crm.leadsNeedingNextStep.length > 0
+    ? playbook.crm.leadsNeedingNextStep.map((lead, index) => `
+      <div class="row">
+        <span class="row-n">${index + 1}</span>
+        <div><b>${escapeHtml(lead.title)}</b><p>${escapeHtml(lead.reason)} - ${escapeHtml(lead.organizedObjective)}</p></div>
+      </div>`).join("")
+    : `<p class="muted">Nenhum lead parado detectado no recorte do dia.</p>`;
+  const agendaItems = [...playbook.agenda.critical, ...playbook.agenda.today].slice(0, 12).map((task, index) => `
+    <div class="row">
+      <span class="row-n">${index + 1}</span>
+      <div><b>${escapeHtml(task.title)}</b><p>${escapeHtml(task.urgency)} - ${escapeHtml(task.ownerLabel)}${task.scheduledFor ? ` - ${escapeHtml(task.scheduledFor)}` : ""}</p></div>
+    </div>`).join("") || `<p class="muted">Agenda sem alerta prioritario.</p>`;
+
+  return `<!DOCTYPE html>
+<html lang="pt-BR">
+<head>
+<meta charset="UTF-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1.0" />
+<title>${escapeHtml(playbook.title)}</title>
+<style>
+:root{--gold:#C9A84C;--dark:#09090E;--dark2:#10101A;--dark3:#181825;--text:#EAE6DA;--dim:#8a8799;--border:rgba(201,168,76,.14);--red:#de7a6f;--green:#5dba8a}
+*{box-sizing:border-box}body{margin:0;background:var(--dark);color:var(--text);font-family:Arial,sans-serif;font-size:14px;line-height:1.7}.topbar{position:fixed;top:0;left:0;right:0;height:56px;background:rgba(9,9,14,.97);border-bottom:1px solid var(--border);display:flex;align-items:center;justify-content:space-between;padding:0 20px;z-index:2}.brand{font-family:Georgia,serif;color:var(--gold);font-size:18px;letter-spacing:.08em}.sidebar{position:fixed;top:56px;bottom:0;left:0;width:270px;background:var(--dark2);border-right:1px solid var(--border);padding:18px 0;overflow:auto}.nav-link{display:flex;gap:10px;padding:9px 18px;color:var(--dim);text-decoration:none;border-left:2px solid transparent}.nav-link:hover{background:rgba(201,168,76,.06);border-left-color:var(--gold);color:var(--text)}.nav-dot{width:22px;height:22px;border-radius:50%;border:1px solid var(--border);color:var(--gold);display:flex;align-items:center;justify-content:center;font-size:11px;flex-shrink:0}.nav-link small{display:block;color:#55556a;font-size:10px;line-height:1.3}.main{margin-left:270px;padding:96px 54px 80px;max-width:1160px}.hero{border-bottom:1px solid var(--border);padding-bottom:32px;margin-bottom:34px}.eyebrow{color:var(--gold);font-size:10px;text-transform:uppercase;letter-spacing:.25em}h1{font-family:Georgia,serif;font-size:42px;font-weight:300;line-height:1.1;margin:12px 0}h1 em{color:var(--gold)}.summary{color:var(--dim);max-width:720px}.kpis{display:grid;grid-template-columns:repeat(4,minmax(120px,1fr));gap:12px;margin-top:26px}.kpi,.card{background:var(--dark3);border:1px solid var(--border);border-radius:5px;padding:18px}.kpi b{font-family:Georgia,serif;color:var(--gold);font-size:28px}.kpi span{display:block;color:var(--dim);font-size:10px;text-transform:uppercase;letter-spacing:.14em}.section{margin:0 0 42px;scroll-margin-top:74px}.sec-title{font-family:Georgia,serif;font-size:26px;border-bottom:1px solid var(--border);padding-bottom:10px;margin-bottom:18px}.sec-title em{color:var(--gold)}.action{display:grid;grid-template-columns:34px 1fr;gap:14px;background:var(--dark3);border:1px solid var(--border);border-left:3px solid var(--gold);border-radius:5px;padding:14px;margin-bottom:10px}.action.critical{border-left-color:var(--red)}.action.routine{border-left-color:var(--green)}.action-index{color:var(--gold);font-family:Georgia,serif;font-size:22px}.action-title{font-weight:700}.action-detail{color:var(--text)}.action-meta,.muted{color:var(--dim);font-size:12px}.row{display:grid;grid-template-columns:28px 1fr;gap:12px;border-bottom:1px solid rgba(201,168,76,.08);padding:11px 0}.row-n{color:var(--gold);font-family:Georgia,serif}.row p{margin:3px 0 0;color:var(--dim)}.footer{color:#5c596b;font-size:11px;border-top:1px solid var(--border);padding-top:24px}@media(max-width:850px){.sidebar{display:none}.main{margin-left:0;padding:82px 20px}.kpis{grid-template-columns:1fr 1fr}h1{font-size:30px}}
+</style>
+</head>
+<body>
+<header class="topbar"><div class="brand">MAYUS <span style="color:#fff">Playbook</span></div><div>${escapeHtml(playbook.preferences.deliveryTime)} - ${escapeHtml(playbook.preferences.scope)}</div></header>
+<nav class="sidebar">${menu}</nav>
+<main class="main">
+  <section class="hero" id="executive">
+    <div class="eyebrow">Relatorio diario premium</div>
+    <h1>${escapeHtml(playbook.title)}<br><em>menu operacional do dia</em></h1>
+    <p class="summary">${escapeHtml(playbook.executiveSummary)}</p>
+    <div class="kpis">
+      <div class="kpi"><b>${playbook.metrics.crmLeadsNeedingNextStep}</b><span>Leads sem proximo passo</span></div>
+      <div class="kpi"><b>${playbook.metrics.agendaCriticalTasks}</b><span>Tarefas criticas</span></div>
+      <div class="kpi"><b>${playbook.metrics.agendaTodayTasks}</b><span>Agenda hoje</span></div>
+      <div class="kpi"><b>${playbook.metrics.priorityActions}</b><span>Acoes prioritarias</span></div>
+    </div>
+  </section>
+  <section class="section" id="playbook"><h2 class="sec-title">Playbook <em>do dia</em></h2>${priorityActions}</section>
+  <section class="section" id="crm"><h2 class="sec-title">Comercial <em>e CRM</em></h2><div class="card">${crmItems}</div></section>
+  <section class="section" id="agenda"><h2 class="sec-title">Agenda <em>e prazos</em></h2><div class="card">${agendaItems}</div></section>
+  <section class="section" id="frontdesk"><h2 class="sec-title">Front desk <em>MAYUS</em></h2><div class="card"><p>MAYUS deve fazer o primeiro atendimento em ate 5 minutos, qualificar, registrar sinais e transferir quando houver urgencia, pedido humano ou setor especifico.</p></div></section>
+  <section class="section" id="calls"><h2 class="sec-title">Calls <em>e qualidade</em></h2><div class="card"><p>Revisar dor, urgencia, decisor, objecao dominante, encantamento, isolamento de variaveis e proximo passo com data/canal/responsavel.</p></div></section>
+  <footer class="footer">Nenhuma acao externa foi executada automaticamente. Gerado pelo MAYUS para uso operacional interno.</footer>
+</main>
+</body>
+</html>`;
 }
 
 export function buildDailyPlaybook(input: DailyPlaybookInput): DailyPlaybook {
@@ -341,10 +422,12 @@ export function buildDailyPlaybook(input: DailyPlaybookInput): DailyPlaybook {
   const priorityActions = buildPriorityActions({ crmLeads, todayTasks, criticalTasks });
   const generatedAt = now.toISOString();
   const title = `${firmName} - Playbook do dia`;
+  const reportMenu = buildCommercialPlaybookModel({ firmName }).dailyReportSections;
   const base = {
     title,
     generatedAt,
     preferences,
+    reportMenu,
     executiveSummary: buildExecutiveSummary({
       firmName,
       crmLeadCount: crmLeads.length,
@@ -371,6 +454,7 @@ export function buildDailyPlaybook(input: DailyPlaybookInput): DailyPlaybook {
   return {
     ...base,
     whatsappSummary: buildWhatsAppSummary(base),
+    htmlReport: buildDailyPlaybookHtmlReport(base),
   };
 }
 
@@ -382,6 +466,10 @@ export function buildDailyPlaybookMetadata(playbook: DailyPlaybook) {
     channels: playbook.preferences.channels,
     scope: playbook.preferences.scope,
     detail_level: playbook.preferences.detailLevel,
+    html_report_available: true,
+    html_report_mime_type: "text/html",
+    html_report: playbook.htmlReport,
+    report_menu: playbook.reportMenu,
     crm_leads_needing_next_step: playbook.metrics.crmLeadsNeedingNextStep,
     agenda_critical_tasks: playbook.metrics.agendaCriticalTasks,
     agenda_today_tasks: playbook.metrics.agendaTodayTasks,

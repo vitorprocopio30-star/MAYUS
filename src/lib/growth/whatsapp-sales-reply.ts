@@ -3,6 +3,10 @@ import {
   type SalesConsultationInput,
   type SalesConsultationPlan,
 } from "./sales-consultation";
+import {
+  buildCommercialFirstReply,
+  buildCommercialPlaybookModel,
+} from "./commercial-playbook-template";
 
 export type WhatsAppSalesMessage = {
   direction: "inbound" | "outbound" | string;
@@ -16,6 +20,7 @@ export type WhatsAppSalesReplyInput = {
   phoneNumber?: string | null;
   messages: WhatsAppSalesMessage[];
   salesProfile?: {
+    firmName?: string | null;
     idealClient?: string | null;
     coreSolution?: string | null;
     uniqueValueProposition?: string | null;
@@ -35,6 +40,8 @@ export type WhatsAppSalesReply = {
   mayAutoSend: boolean;
   requiresHumanReview: boolean;
   externalSideEffectsBlocked: boolean;
+  firstResponseSlaMinutes: number;
+  handoffRecommended: boolean;
 };
 
 function cleanText(value?: string | null) {
@@ -64,16 +71,24 @@ function detectRiskFlags(lastInboundText: string | null, plan: SalesConsultation
   const normalized = normalizeText(lastInboundText);
   const flags: string[] = [];
 
-  if (/contrato|assin|proposta|honorario|honorarios|valor|preco|preço|custa|custo|pix|boleto|pagamento|cobranca|cobrança/.test(normalized)) {
+  if (/contrato|assin|proposta|pix|boleto|pagamento|cobranca/.test(normalized)) {
     flags.push("commercial_commitment");
+  }
+
+  if (/valor|preco|custa|custo|honorario|honorarios|parcel/.test(normalized)) {
+    flags.push("price_question");
   }
 
   if (/garantia|garantido|chance|ganhar|resultado|causa ganha|promete/.test(normalized)) {
     flags.push("legal_result_risk");
   }
 
-  if (/urgente|liminar|audiencia|audiência|prazo|bloqueio|prisao|prisão|ameaça|ameaca/.test(normalized)) {
+  if (/urgente|liminar|audiencia|prazo|bloqueio|prisao|ameaca/.test(normalized)) {
     flags.push("legal_urgency");
+  }
+
+  if (/humano|atendente|advogado|doutor|doutora|responsavel|falar com/.test(normalized)) {
+    flags.push("human_requested");
   }
 
   if (plan.firmProfile.missingSignals.length > 0) {
@@ -87,19 +102,29 @@ function detectRiskFlags(lastInboundText: string | null, plan: SalesConsultation
   return flags;
 }
 
-function buildDiscoveryReply(plan: SalesConsultationPlan, leadFirstName: string) {
+function buildDiscoveryReply(plan: SalesConsultationPlan, leadFirstName: string, input: WhatsAppSalesReplyInput) {
   const question = plan.nextDiscoveryQuestion || plan.discoveryQuestions[1];
-  return [
-    `Oi, ${leadFirstName}. Antes de te indicar qualquer caminho, quero entender se isso realmente faz sentido para o seu caso.`,
-    question,
-  ].filter(Boolean).join("\n\n");
+  const firstReply = buildCommercialFirstReply({
+    leadName: leadFirstName,
+    lastInboundText: getLastInbound(input.messages)?.content,
+    profile: {
+      firmName: input.salesProfile?.firmName,
+      idealClient: input.salesProfile?.idealClient,
+      coreSolution: input.salesProfile?.coreSolution,
+      uniqueValueProposition: input.salesProfile?.uniqueValueProposition,
+      valuePillars: input.salesProfile?.valuePillars,
+      positioningSummary: input.salesProfile?.positioningSummary,
+    },
+  });
+
+  return [firstReply, question].filter(Boolean).join("\n\n");
 }
 
-function buildSuggestedReply(plan: SalesConsultationPlan, lastInboundText: string | null) {
+function buildSuggestedReply(plan: SalesConsultationPlan, lastInboundText: string | null, input: WhatsAppSalesReplyInput) {
   const leadFirstName = plan.leadName.split(/\s+/)[0] || "tudo bem";
   const normalized = normalizeText(lastInboundText);
 
-  if (/caro|preco|preço|valor|custa|custo|honorario|honorarios/.test(normalized)) {
+  if (/caro|preco|valor|custa|custo|honorario|honorarios/.test(normalized)) {
     return [
       `Entendo, ${leadFirstName}. Quando voce fala em valor, quero separar bem as coisas para nao te responder de forma rasa.`,
       "Sua duvida principal e sobre preco, forma de pagamento, seguranca do caminho ou prioridade de resolver isso agora?",
@@ -113,14 +138,22 @@ function buildSuggestedReply(plan: SalesConsultationPlan, lastInboundText: strin
     ].join("\n\n");
   }
 
-  if (/conjuge|esposa|marido|socio|sócio|familia/.test(normalized)) {
+  if (/humano|atendente|advogado|doutor|doutora|responsavel|falar com|conjuge|esposa|marido|socio|familia/.test(normalized)) {
     return [
-      `Faz sentido, ${leadFirstName}. Para essa decisao ficar segura, e melhor envolver quem realmente participa dela.`,
-      "Essa pessoa precisa decidir junto desde agora ou voce quer primeiro entender o caminho para depois explicar com clareza?",
+      `Faz sentido, ${leadFirstName}. Eu vou organizar isso para a pessoa certa pegar o contexto sem voce repetir tudo.`,
+      "Antes de eu encaminhar: o ponto principal e urgencia, documentos, valor, estrategia do caso ou falar com alguem especifico?",
     ].join("\n\n");
   }
 
-  return buildDiscoveryReply(plan, leadFirstName);
+  return buildDiscoveryReply(plan, leadFirstName, input);
+}
+
+function hasAutoSendBlockingRisk(flags: string[]) {
+  return flags.some((flag) => (
+    flag === "legal_result_risk"
+    || flag === "legal_urgency"
+    || flag === "commercial_commitment"
+  ));
 }
 
 export function buildWhatsAppSalesReply(input: WhatsAppSalesReplyInput): WhatsAppSalesReply {
@@ -128,6 +161,14 @@ export function buildWhatsAppSalesReply(input: WhatsAppSalesReplyInput): WhatsAp
   const lastInboundText = cleanText(lastInbound?.content);
   const leadName = cleanText(input.contactName) || cleanText(input.phoneNumber) || "Lead WhatsApp";
   const profile = input.salesProfile || null;
+  const playbook = buildCommercialPlaybookModel({
+    firmName: profile?.firmName,
+    idealClient: profile?.idealClient,
+    coreSolution: profile?.coreSolution,
+    uniqueValueProposition: profile?.uniqueValueProposition,
+    valuePillars: profile?.valuePillars,
+    positioningSummary: profile?.positioningSummary,
+  });
   const consultationInput: SalesConsultationInput = {
     leadName,
     channel: "WhatsApp",
@@ -144,34 +185,27 @@ export function buildWhatsAppSalesReply(input: WhatsAppSalesReplyInput): WhatsAp
   };
   const plan = buildSalesConsultationPlan(consultationInput);
   const riskFlags = detectRiskFlags(lastInboundText, plan);
-
-  if (plan.firmProfile.missingSignals.length > 0) {
-    return {
-      mode: "internal_setup_required",
-      suggestedReply: null,
-      internalNote: `Antes de responder o lead, configure o perfil comercial: ${plan.firmProfile.nextPositioningQuestion}`,
-      plan,
-      riskFlags,
-      mayAutoSend: false,
-      requiresHumanReview: true,
-      externalSideEffectsBlocked: true,
-    };
-  }
-
-  const suggestedReply = buildSuggestedReply(plan, lastInboundText);
-  const requiresHumanReview = riskFlags.some((flag) => flag !== "early_discovery");
+  const suggestedReply = buildSuggestedReply(plan, lastInboundText, input);
+  const blocksAutoSend = hasAutoSendBlockingRisk(riskFlags);
+  const requiresHumanReview = blocksAutoSend;
+  const mayAutoSend = Boolean(suggestedReply && !blocksAutoSend);
+  const handoffRecommended = riskFlags.includes("human_requested");
 
   return {
     mode: requiresHumanReview ? "human_review_required" : "suggested_reply",
     suggestedReply,
     internalNote: requiresHumanReview
       ? "Resposta preparada para revisao humana antes de envio pelo WhatsApp."
-      : "Resposta consultiva preparada para o atendimento WhatsApp.",
+      : plan.firmProfile.missingSignals.length > 0
+        ? `Resposta inicial preparada pelo Front Desk MAYUS com playbook generico. Depois configure o escritorio: ${plan.firmProfile.nextPositioningQuestion}`
+        : "Resposta consultiva preparada para o atendimento WhatsApp.",
     plan,
     riskFlags,
-    mayAutoSend: false,
-    requiresHumanReview: true,
-    externalSideEffectsBlocked: true,
+    mayAutoSend,
+    requiresHumanReview,
+    externalSideEffectsBlocked: !mayAutoSend,
+    firstResponseSlaMinutes: playbook.firstResponseSlaMinutes,
+    handoffRecommended,
   };
 }
 
@@ -184,6 +218,8 @@ export function buildWhatsAppSalesReplyMetadata(reply: WhatsAppSalesReply) {
     may_auto_send: reply.mayAutoSend,
     requires_human_review: reply.requiresHumanReview,
     external_side_effects_blocked: reply.externalSideEffectsBlocked,
+    first_response_sla_minutes: reply.firstResponseSlaMinutes,
+    handoff_recommended: reply.handoffRecommended,
     consultation_phase: reply.plan.phase,
     customer_profile: reply.plan.customerProfile,
     discovery_completeness: reply.plan.discoveryCompleteness,

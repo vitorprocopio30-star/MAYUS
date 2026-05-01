@@ -1,3 +1,5 @@
+import { buildCommercialPlaybookModel } from "./commercial-playbook-template";
+
 export type CallCommercialAnalysisInput = {
   crmTaskId?: string | null;
   leadName?: string | null;
@@ -27,6 +29,9 @@ export type CallCommercialAnalysis = {
   strengths: string[];
   weaknesses: string[];
   missedOpportunities: string[];
+  commercialPlaybookMethod: string;
+  playbookChecklist: string[];
+  playbookGaps: string[];
   recommendedNextStep: string;
   suggestedFollowUp: string;
   advancementProbability: number;
@@ -135,6 +140,15 @@ function buildMissedOpportunities(normalized: string) {
   ]);
 }
 
+function buildPlaybookGaps(normalized: string) {
+  return uniq([
+    !hasAny(normalized, /respondeu|primeira resposta|5 minutos|cinco minutos/) ? "SLA de primeiro atendimento nao foi evidenciado na call." : null,
+    !hasAny(normalized, /quem decide|decisor|marido|esposa|socio|familia|decido/) ? "Decisor e influenciadores nao foram confirmados." : null,
+    !hasAny(normalized, /se esse ponto|se isso fosse|se isso resolvesse|estaria pronto|isol/) ? "Objecao nao foi isolada antes da resposta comercial." : null,
+    !hasAny(normalized, /proximo passo|agend|reuniao|retorno marcado|combinamos|ficou combinado/) ? "Proximo passo saiu sem data, canal ou responsavel claro." : null,
+  ]);
+}
+
 function calculateAdvancementProbability(params: {
   normalized: string;
   objections: string[];
@@ -172,6 +186,8 @@ export function buildCallCommercialAnalysis(input: CallCommercialAnalysisInput):
   const strengths = buildStrengths({ normalized, pain, objections });
   const weaknesses = buildWeaknesses({ normalized, objections });
   const missedOpportunities = buildMissedOpportunities(normalized);
+  const playbook = buildCommercialPlaybookModel({ legalArea });
+  const playbookGaps = buildPlaybookGaps(normalized);
   const advancementProbability = calculateAdvancementProbability({ normalized, objections, weaknesses, currentScore });
   const interestLevel = interestFromProbability(advancementProbability);
   const nextStep = interestLevel === "high"
@@ -199,7 +215,10 @@ export function buildCallCommercialAnalysis(input: CallCommercialAnalysisInput):
     objections,
     strengths,
     weaknesses,
-    missedOpportunities,
+    missedOpportunities: uniq([...missedOpportunities, ...playbookGaps]).slice(0, 8),
+    commercialPlaybookMethod: playbook.methodName,
+    playbookChecklist: playbook.callAnalysisChecklist,
+    playbookGaps,
     recommendedNextStep: nextStep,
     suggestedFollowUp,
     advancementProbability,
@@ -232,6 +251,10 @@ export function buildCallCommercialAnalysisArtifactMetadata(params: {
     weaknesses: params.analysis.weaknesses,
     missed_opportunities: params.analysis.missedOpportunities,
     recommended_next_step: params.analysis.recommendedNextStep,
+    commercial_playbook_method: params.analysis.commercialPlaybookMethod,
+    playbook_gap_count: params.analysis.playbookGaps.length,
+    playbook_gaps: params.analysis.playbookGaps,
+    playbook_checklist_count: params.analysis.playbookChecklist.length,
     advancement_probability: params.analysis.advancementProbability,
     crm_update_hints: safeCrmUpdateHints,
     requires_human_review: true,
@@ -340,6 +363,8 @@ export async function registerCallCommercialAnalysisBrainArtifact(params: {
         output_payload: {
           interest_level: params.analysis.interestLevel,
           advancement_probability: params.analysis.advancementProbability,
+          commercial_playbook_method: params.analysis.commercialPlaybookMethod,
+          playbook_gap_count: params.analysis.playbookGaps.length,
           requires_human_review: true,
           external_side_effects_blocked: true,
         },
@@ -384,6 +409,8 @@ export async function registerCallCommercialAnalysisBrainArtifact(params: {
           artifact_id: artifact?.id || null,
           interest_level: params.analysis.interestLevel,
           advancement_probability: params.analysis.advancementProbability,
+          commercial_playbook_method: params.analysis.commercialPlaybookMethod,
+          playbook_gap_count: params.analysis.playbookGaps.length,
           requires_human_review: true,
           external_side_effects_blocked: true,
         },

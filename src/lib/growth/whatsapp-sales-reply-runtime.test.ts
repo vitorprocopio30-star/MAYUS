@@ -1,4 +1,11 @@
 import { describe, expect, it, vi } from "vitest";
+
+const listTenantIntegrationsResolvedMock = vi.hoisted(() => vi.fn());
+
+vi.mock("@/lib/integrations/server", () => ({
+  listTenantIntegrationsResolved: listTenantIntegrationsResolvedMock,
+}));
+
 import { prepareWhatsAppSalesReplyForContact } from "./whatsapp-sales-reply-runtime";
 
 function makeSelectQuery(result: any) {
@@ -15,6 +22,7 @@ function makeSelectQuery(result: any) {
 describe("prepareWhatsAppSalesReplyForContact", () => {
   it("prepara resposta, audita evento e notifica sem enviar WhatsApp", async () => {
     const inserts: Array<{ table: string; payload: any }> = [];
+    listTenantIntegrationsResolvedMock.mockResolvedValue([]);
     const supabase: any = {
       from: vi.fn((table: string) => {
         if (table === "whatsapp_contacts") {
@@ -68,7 +76,8 @@ describe("prepareWhatsAppSalesReplyForContact", () => {
     });
 
     expect(prepared.metadata.mode).toBe("suggested_reply");
-    expect(prepared.metadata.external_side_effects_blocked).toBe(true);
+    expect(prepared.metadata.external_side_effects_blocked).toBe(false);
+    expect(prepared.metadata.auto_sent).toBe(false);
     expect(inserts).toEqual(expect.arrayContaining([
       expect.objectContaining({
         table: "system_event_logs",
@@ -77,7 +86,11 @@ describe("prepareWhatsAppSalesReplyForContact", () => {
           payload: expect.objectContaining({
             contact_id: "contact-1",
             trigger: "meta_webhook",
-            may_auto_send: false,
+            may_auto_send: true,
+            first_response_policy: expect.objectContaining({
+              enabled: false,
+              can_auto_send: false,
+            }),
           }),
         }),
       }),

@@ -219,6 +219,7 @@ export async function POST(req: Request) {
             contactId,
             trigger: "evolution_webhook",
             notify: true,
+            autoSendFirstResponse: true,
           });
         } catch (replyError) {
           console.error("[Evolution Webhook] Erro ao preparar resposta MAYUS:", replyError);

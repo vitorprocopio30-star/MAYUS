@@ -290,7 +290,7 @@ export async function POST(req: NextRequest) {
         await supabase.from("notifications").insert([{
           tenant_id: tenantId,
           user_id: null, // Vai para todos do tenant
-          title: `📱 WhatsApp: ${pushName}`,
+          title: `WhatsApp: ${pushName}`,
           message: content.substring(0, 100),
           type: "info",
           link_url: "/dashboard/conversas/whatsapp",
@@ -303,6 +303,7 @@ export async function POST(req: NextRequest) {
             contactId,
             trigger: "meta_webhook",
             notify: true,
+            autoSendFirstResponse: true,
           });
         } catch (replyError) {
           console.error("[Meta Webhook] Erro ao preparar resposta MAYUS:", replyError);

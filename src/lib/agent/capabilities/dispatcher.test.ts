@@ -979,6 +979,60 @@ describe("dispatchCapabilityExecution - juridico", () => {
     expect(JSON.stringify(createBrainArtifactMock.mock.calls[0][0].metadata)).not.toMatch(/phone_number|email|api_key|webhook_secret|sk_live|sk_test|sk-or-v1/i);
   });
 
+  it("executa commercial_playbook_setup e registra skill comercial reutilizavel", async () => {
+    const inserts: Array<{ table: string; payload: any }> = [];
+    fromMock.mockImplementation((table: string) => makeGrowthQuery(table, inserts));
+
+    const result = await dispatchCapabilityExecution({
+      handlerType: "growth_commercial_playbook_setup",
+      capabilityName: "commercial_playbook_setup",
+      tenantId: "tenant-1",
+      userId: "user-1",
+      entities: {
+        firm_name: "Dutra Advocacia",
+        legal_area: "Direito Bancario",
+        template_flavor: "dutra_blindagem",
+        source_document: "gestao-comercial-dutra-advocacia.html",
+        ideal_client: "aposentados com descontos RMC ou GRAM e urgencia financeira",
+      },
+      auditLogId: "audit-commercial-playbook-1",
+      brainContext: {
+        taskId: "brain-task-commercial-playbook-1",
+        runId: "brain-run-commercial-playbook-1",
+        stepId: "brain-step-commercial-playbook-1",
+        sourceModule: "mayus",
+      },
+    });
+
+    expect(result.status).toBe("executed");
+    expect(result.reply).toContain("Skill comercial criada para Dutra Advocacia");
+    expect(result.outputPayload).toEqual(expect.objectContaining({
+      artifact_type: "commercial_playbook_setup",
+      method_name: "MAYUS Front Desk Comercial",
+      office_name: "Dutra Advocacia",
+      first_response_sla_minutes: 5,
+      call_analysis_checklist_count: expect.any(Number),
+      external_side_effects_blocked: true,
+    }));
+    expect(createBrainArtifactMock).toHaveBeenCalledWith(expect.objectContaining({
+      tenantId: "tenant-1",
+      taskId: "brain-task-commercial-playbook-1",
+      artifactType: "commercial_playbook_setup",
+      metadata: expect.objectContaining({
+        office_name: "Dutra Advocacia",
+        source_model: expect.stringContaining("Modelo Dutra Advocacia"),
+        first_response_sla_minutes: 5,
+        mayus_role: "first_attendant_sdr_closer_router",
+        daily_report_sections: expect.arrayContaining([
+          expect.objectContaining({ id: "frontdesk" }),
+          expect.objectContaining({ id: "calls" }),
+        ]),
+        call_analysis_checklist: expect.any(Array),
+      }),
+    }));
+    expect(inserts.some((item) => item.table === "learning_events" && item.payload.event_type === "commercial_playbook_setup_created")).toBe(true);
+  });
+
   it("executa sales_profile_setup e grava perfil comercial nas configuracoes", async () => {
     const inserts: Array<{ table: string; payload: any }> = [];
     const upserts: Array<{ table: string; payload: any }> = [];
