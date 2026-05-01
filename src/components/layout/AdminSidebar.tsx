@@ -81,6 +81,15 @@ export function AdminSidebar() {
     setMounted(true);
   }, []);
 
+  useEffect(() => {
+    const width = sidebarMode === "expanded" ? "280px" : sidebarMode === "mini" ? "80px" : "0px";
+    document.documentElement.style.setProperty("--mayus-sidebar-offset", width);
+
+    return () => {
+      document.documentElement.style.setProperty("--mayus-sidebar-offset", "280px");
+    };
+  }, [sidebarMode]);
+
   const toggleSidebar = () => setIsOpen(!isOpen);
 
   const toggleSidebarMode = () => {

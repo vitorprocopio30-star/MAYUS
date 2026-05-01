@@ -3,6 +3,7 @@
 import { AdminSidebar } from "@/components/layout/AdminSidebar";
 import { AdminHeader } from "@/components/layout/AdminHeader";
 import { MAYUSOrb } from "@/components/dashboard/MAYUSOrb";
+import type { CSSProperties } from "react";
 
 export default function DashboardLayout({
   children,
@@ -10,13 +11,16 @@ export default function DashboardLayout({
   children: React.ReactNode;
 }) {
   return (
-    <div className="min-h-screen flex bg-white dark:bg-[#030303] text-white/90 transition-all duration-300">
+    <div
+      className="min-h-screen flex bg-white dark:bg-[#030303] text-white/90 transition-all duration-300"
+      style={{ "--mayus-sidebar-offset": "280px" } as CSSProperties}
+    >
       
       {/* Sidebar Fixa à Esquerda */}
       <AdminSidebar />
       
       {/* Container Principal */}
-      <div className="flex-1 flex flex-col md:ml-[280px] min-h-screen">
+      <div className="flex-1 flex flex-col md:ml-[var(--mayus-sidebar-offset)] min-h-screen transition-[margin] duration-300 ease-in-out">
         
         {/* Top Header */}
         <AdminHeader />
