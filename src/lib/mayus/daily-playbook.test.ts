@@ -71,10 +71,10 @@ describe("daily playbook", () => {
       ownerLabel: "Equipe Juridica",
     });
     expect(playbook.crm.leadsNeedingNextStep[0].organizedObjective).toContain("qualificar Maria Previdenciario em Previdenciario");
-    expect(playbook.whatsappSummary).toContain("*Dutra Advocacia - Playbook do dia*");
-    expect(playbook.whatsappSummary).toContain("*Placar agora:*");
-    expect(playbook.whatsappSummary).toContain("Minha recomendacao");
-    expect(playbook.whatsappSummary).toContain("Nenhuma acao externa foi executada automaticamente.");
+    expect(playbook.whatsappSummary).toContain("*Relatorio MAYUS - Dutra Advocacia*");
+    expect(playbook.whatsappSummary).toContain("*Leitura rapida:*");
+    expect(playbook.whatsappSummary).toContain("Eu atacaria nessa ordem");
+    expect(playbook.whatsappSummary).toContain("Nada foi executado fora do MAYUS");
     expect(playbook.reportMenu.map((item) => item.id)).toEqual(expect.arrayContaining(["executive", "crm", "frontdesk", "calls", "playbook"]));
     expect(playbook.htmlReport).toContain("<nav class=\"sidebar\">");
     expect(playbook.htmlReport).toContain("Front desk");
@@ -111,8 +111,8 @@ describe("daily playbook", () => {
       userTasks: [],
     });
 
-    expect(playbook.whatsappSummary).toContain("nao encontrei alerta critico");
-    expect(playbook.whatsappSummary).toContain("hoje da para operar com calma");
+    expect(playbook.whatsappSummary).toContain("nao achei incendio");
+    expect(playbook.whatsappSummary).toContain("casa limpa");
     expect(playbook.whatsappSummary).toContain("use a primeira janela do dia");
     expect(playbook.whatsappSummary).not.toContain("Acoes prioritarias:");
   });

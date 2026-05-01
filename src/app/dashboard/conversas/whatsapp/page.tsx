@@ -16,7 +16,7 @@ import EmojiPicker, { Theme as EmojiTheme } from "emoji-picker-react";
 const montserrat = Montserrat({ subsets: ["latin"], weight: ["300", "400", "500", "600", "700"] });
 const cormorant = Cormorant_Garamond({ subsets: ["latin"], weight: ["400", "500", "600", "700"], style: ["normal", "italic"] });
 
-// Funções Utilitárias de Formatação
+// Funcoes utilitarias de formatacao
 const formatTime = (dateString: string) => {
   if (!dateString) return "";
   const date = new Date(dateString);
@@ -28,6 +28,7 @@ const formatDuration = (seconds: number) => {
   const secs = seconds % 60;
   return `${mins}:${secs.toString().padStart(2, '0')}`;
 };
+
 const sortMessagesByCreatedAt = (items: any[]) => {
   return [...items].sort((a, b) => {
     const dateA = new Date(a.created_at || 0).getTime();
@@ -43,21 +44,37 @@ const mergeMessage = (current: any[], nextMessage: any) => {
   return sortMessagesByCreatedAt([...current, nextMessage]);
 };
 
+const renderFormattedText = (text: string, keyPrefix: string) => {
+  const parts = text.split(/(\*[^*\n]+\*)/g).filter(Boolean);
+  return parts.map((part, partIndex) => {
+    const isBold = part.startsWith("*") && part.endsWith("*") && part.length > 2;
+    return isBold ? (
+      <strong key={`${keyPrefix}-${partIndex}`} className="font-black">
+        {part.slice(1, -1)}
+      </strong>
+    ) : (
+      <span key={`${keyPrefix}-${partIndex}`}>{part}</span>
+    );
+  });
+};
+
 const renderWhatsAppContent = (content: string) => {
-  return String(content || "").split("\n").map((line, lineIndex, lines) => {
-    const parts = line.split(/(\*[^*\n]+\*)/g).filter(Boolean);
+  const lines = String(content || "").split("\n");
+  const firstLineSignature = lines[0]?.match(/^\*([^*\n]+)\*$/);
+
+  return lines.map((line, lineIndex) => {
+    if (lineIndex === 0 && firstLineSignature) {
+      return (
+        <span key="signature-line" className="block font-black text-[15px] leading-tight">
+          {firstLineSignature[1]}
+          {lineIndex < lines.length - 1 && <br />}
+        </span>
+      );
+    }
+
     return (
       <span key={`line-${lineIndex}`}>
-        {parts.map((part, partIndex) => {
-          const isBold = part.startsWith("*") && part.endsWith("*") && part.length > 2;
-          return isBold ? (
-            <strong key={`${lineIndex}-${partIndex}`} className="font-black">
-              {part.slice(1, -1)}
-            </strong>
-          ) : (
-            <span key={`${lineIndex}-${partIndex}`}>{part}</span>
-          );
-        })}
+        {renderFormattedText(line, `line-${lineIndex}`)}
         {lineIndex < lines.length - 1 && <br />}
       </span>
     );
@@ -79,6 +96,7 @@ export default function WhatsAppChatPremiumPage() {
   const [signatureName, setSignatureName] = useState("");
   const [showEmojiPicker, setShowEmojiPicker] = useState(false);
   const [selectedFile, setSelectedFile] = useState<File | null>(null);
+  const [sideNoteText, setSideNoteText] = useState("");
   const fileInputRef = useRef<HTMLInputElement>(null);
 
   const [contacts, setContacts] = useState<any[]>([]);
@@ -91,7 +109,7 @@ export default function WhatsAppChatPremiumPage() {
   const [departments, setDepartments] = useState<any[]>([]);
   const [filterDeptId, setFilterDeptId] = useState<string | null>(null);
 
-  // Modal de Transferência
+  // Modal de transferencia
   const [showTransferModal, setShowTransferModal] = useState(false);
   const [transferDeptId, setTransferDeptId] = useState("");
   const [transferUserId, setTransferUserId] = useState("");
@@ -100,12 +118,13 @@ export default function WhatsAppChatPremiumPage() {
   const [isSendingContract, setIsSendingContract] = useState(false);
   const [isGeneratingMayusReply, setIsGeneratingMayusReply] = useState(false);
   const [isLoadingMayusDraft, setIsLoadingMayusDraft] = useState(false);
+  const [isConversationActionPending, setIsConversationActionPending] = useState(false);
   const [showTypingIndicator, setShowTypingIndicator] = useState(false);
   const [mayusDraft, setMayusDraft] = useState<any | null>(null);
   const [contractFlowMode, setContractFlowMode] = useState<'ia_only' | 'human_only' | 'hybrid'>('hybrid');
   const [zapsignTemplateId, setZapsignTemplateId] = useState<string>("");
 
-  // Permissões
+  // Permissoes
   const isAdmin = profile?.role === 'Administrador' || profile?.role === 'mayus_admin' || profile?.role === 'Sócio';
 
   // Carregar Departamentos e Membros
@@ -119,7 +138,7 @@ export default function WhatsAppChatPremiumPage() {
       const { data: members } = await supabase.from('profiles').select('id, full_name, role').eq('tenant_id', profile!.tenant_id).eq('is_active', true);
       if (members) setTeamMembers(members);
 
-      // Carregar Configurações de Governança
+      // Carregar configuracoes de governanca
       const { data: settings } = await supabase.from('tenant_settings').select('ai_features').eq('tenant_id', profile!.tenant_id).maybeSingle();
       if (settings?.ai_features) {
         if (settings.ai_features.contract_flow_mode) setContractFlowMode(settings.ai_features.contract_flow_mode);
@@ -135,6 +154,11 @@ export default function WhatsAppChatPremiumPage() {
     fetchContacts();
   }, [profile?.tenant_id, activeTab, filterDeptId]);
 
+  useEffect(() => {
+    setTransferDeptId(activeContact?.department_id || "");
+    setTransferUserId(activeContact?.assigned_user_id || "");
+  }, [activeContact?.id, activeContact?.department_id, activeContact?.assigned_user_id]);
+
   const fetchContacts = async (showLoading = true) => {
      if (showLoading) setIsLoading(true);
      let query = supabase
@@ -143,7 +167,7 @@ export default function WhatsAppChatPremiumPage() {
        .eq("tenant_id", profile!.tenant_id)
        .order("last_message_at", { ascending: false });
 
-     // PERMISSÕES: SDR/Advogado vê só as suas; Admin vê tudo
+     // Permissoes: SDR/Advogado ve so as suas; Admin ve tudo
      if (!isAdmin) {
        if (activeTab === "minhas" || activeTab === "todas") {
          query = query.eq("assigned_user_id", profile!.id);
@@ -159,7 +183,10 @@ export default function WhatsAppChatPremiumPage() {
      const { data } = await query;
      if (data) {
         setContacts(data);
-        if (data.length > 0 && !activeContact) setActiveContact(data[0]);
+        setActiveContact((current) => {
+          if (!current) return data.length > 0 ? data[0] : null;
+          return data.find((contact) => contact.id === current.id) || current;
+        });
      }
      if (showLoading) setIsLoading(false);
   };
@@ -180,7 +207,7 @@ export default function WhatsAppChatPremiumPage() {
 
     const intervalId = window.setInterval(() => {
       void fetchContacts(false);
-    }, 12000);
+    }, 2500);
 
     return () => {
       window.clearInterval(intervalId);
@@ -195,6 +222,16 @@ export default function WhatsAppChatPremiumPage() {
     return (c.name || '').toLowerCase().includes(q) || (c.phone_number || '').includes(q);
   });
 
+  const internalNotes = messages.filter((message) => (
+    message.message_type === "internal_note" || message.status === "internal_note"
+  ));
+
+  const serviceStatusLabel = activeContact?.assigned_user_id
+    ? activeContact.assigned_user_id === profile?.id
+      ? "Atendimento humano"
+      : "Com responsavel"
+    : "MAYUS atendendo";
+
   // Transferir Atendimento
   const handleTransfer = async () => {
     if (!activeContact || (!transferDeptId && !transferUserId)) return toast.error("Selecione um departamento ou agente.");
@@ -203,7 +240,7 @@ export default function WhatsAppChatPremiumPage() {
     const updates: any = {};
 
     // Se selecionou departamento, atualiza.
-    // Se transferir para departamento SEM usuário, remove o assigned_user_id para cair na fila "Aguardando"
+    // Se transferir para departamento sem usuario, remove o assigned_user_id para cair na fila "Aguardando"
     if (transferDeptId) {
       updates.department_id = transferDeptId;
       if (!transferUserId) updates.assigned_user_id = null;
@@ -214,13 +251,13 @@ export default function WhatsAppChatPremiumPage() {
     const { error } = await supabase.from('whatsapp_contacts').update(updates).eq('id', activeContact.id);
 
     if (error) {
-       console.error("Erro na transferência:", error);
+       console.error("Erro na transferencia:", error);
        toast.error('Erro: ' + error.message);
     } else {
       toast.success('Conversa transferida com sucesso!');
       setShowTransferModal(false);
 
-      // Lógica de visibilidade: se o contato "sumiu" da visão do usuário atual
+      // Logica de visibilidade: se o contato saiu da visao do usuario atual
       const movedAway = !isAdmin && (
         (updates.assigned_user_id && updates.assigned_user_id !== profile?.id) ||
         (activeTab === 'aguardando' && updates.assigned_user_id)
@@ -229,7 +266,7 @@ export default function WhatsAppChatPremiumPage() {
       if (movedAway) {
         setActiveContact(null);
       } else {
-        // Atualiza localmente o contato ativo para refletir a mudança
+        // Atualiza localmente o contato ativo para refletir a mudanca
         setActiveContact(prev => prev ? { ...prev, ...updates } : null);
       }
 
@@ -284,7 +321,7 @@ export default function WhatsAppChatPremiumPage() {
 
     const intervalId = window.setInterval(() => {
       void fetchMessages();
-    }, 4000);
+    }, 1500);
 
     const handleVisibility = () => {
       if (document.visibilityState === "visible") {
@@ -352,11 +389,11 @@ export default function WhatsAppChatPremiumPage() {
       setIsRecording(true);
       setRecordingDuration(0);
     } catch (err) {
-      console.error("Erro real de microfone no WhatsApp, iniciando modo simulação:", err);
-      // Fallback de Simulação
+      console.error("Erro real de microfone no WhatsApp, iniciando modo simulacao:", err);
+      // Fallback de simulacao
       setIsRecording(true);
       setRecordingDuration(0);
-      toast.info("Modo Simulação: Validando interface de áudio...");
+      toast.info("Modo simulacao: validando interface de audio...");
     }
   };
 
@@ -365,14 +402,14 @@ export default function WhatsAppChatPremiumPage() {
       mediaRecorderRef.current.stop();
       setIsRecording(false);
     } else if (isRecording) {
-      // Modo Simulação — enviar mensagem de áudio simulada
+      // Modo simulacao: enviar mensagem de audio simulada
       setIsRecording(false);
       setRecordingDuration(0);
       const displayName = signatureName || profile?.full_name || 'Equipe MAYUS';
       const audioMsg = {
         id: `sim-audio-${Date.now()}`,
         contact_id: activeContact?.id || 'test-wa',
-        content: `🎙️ Áudio (${formatDuration(recordingDuration)})${showSignature ? `\n— *${displayName}*` : ''}`,
+        content: `${showSignature ? `*${displayName}*\n\n` : ''}Audio (${formatDuration(recordingDuration)})`,
         direction: 'outbound',
         message_type: 'audio',
         status: 'sent',
@@ -381,7 +418,7 @@ export default function WhatsAppChatPremiumPage() {
       };
       setMessages(prev => [...prev, audioMsg]);
       scrollToBottom();
-      toast.success("Áudio simulado enviado!");
+      toast.success("Audio simulado enviado.");
     }
   };
 
@@ -398,7 +435,7 @@ export default function WhatsAppChatPremiumPage() {
 
     if (!activeContact) {
       setIsAddingContact(true);
-      toast.info("Selecione um contato para enviar o áudio.");
+      toast.info("Selecione um contato para enviar o audio.");
       return;
     }
 
@@ -424,24 +461,45 @@ export default function WhatsAppChatPremiumPage() {
         })
       });
 
-      if (!response.ok) throw new Error("Erro ao enviar áudio");
-      toast.success("Áudio enviado");
+      if (!response.ok) throw new Error("Erro ao enviar audio");
+      toast.success("Audio enviado");
     } catch (e: any) {
-      toast.error("Falha ao enviar áudio: " + e.message);
+      toast.error("Falha ao enviar audio: " + e.message);
     } finally {
       setIsSending(false);
     }
   };
 
   const handleSendMessage = async () => {
-    if ((!inputText.trim() && !selectedFile) || isSending) return;
+    if (isSending) return;
+
+    const messageBody = inputText.trim();
+
+    if (inputMode === "nota") {
+      if (!messageBody) return;
+
+      setIsSending(true);
+      setInputText("");
+
+      try {
+        await saveInternalNote(messageBody);
+      } catch (error: any) {
+        toast.error("Falha ao salvar nota interna: " + error.message);
+        setInputText(messageBody);
+      } finally {
+        setIsSending(false);
+      }
+      return;
+    }
+
+    if (!messageBody && !selectedFile) return;
 
     // Aplicar Assinatura ACIMA da mensagem
-    const displayName = signatureName || profile?.full_name || 'Equipe MAYUS';
+    const displayName = (signatureName || profile?.full_name || 'Equipe MAYUS').trim();
     const signature = showSignature ? `*${displayName}*\n\n` : "";
-    const textToSend = signature + inputText;
+    const textToSend = signature + messageBody;
 
-    // MODO SIMULAÇÃO (Liberado para Teste)
+    // MODO SIMULACAO (Liberado para Teste)
     if (!activeContact) {
       const simulatedMsg = {
         id: `sim-wa-${Date.now()}`,
@@ -456,7 +514,7 @@ export default function WhatsAppChatPremiumPage() {
       setInputText("");
       setSelectedFile(null);
       scrollToBottom();
-      toast.success("Mensagem de Teste Enviada! 🚀");
+      toast.success("Mensagem de teste enviada.");
       return;
     }
 
@@ -474,7 +532,7 @@ export default function WhatsAppChatPremiumPage() {
        });
        if (!response.ok) throw new Error("Erro no motor Meta");
 
-       toast.success("Mensagem disparada com sucesso! 🟢");
+       toast.success("Mensagem disparada com sucesso.");
        setSelectedFile(null);
        fetchContacts();
     } catch (e: any) {
@@ -532,7 +590,7 @@ export default function WhatsAppChatPremiumPage() {
 
   const handleCreateContact = async () => {
      let cleanPhone = newContactPhone.replace(/\D/g, '');
-     if (cleanPhone.length < 10) return toast.error("Número inválido.");
+     if (cleanPhone.length < 10) return toast.error("Numero invalido.");
      const fullJid = cleanPhone;
      const { data: newContact, error } = await supabase
        .from("whatsapp_contacts")
@@ -546,6 +604,136 @@ export default function WhatsAppChatPremiumPage() {
         setNewContactPhone("");
         toast.success("Contato pronto para conversa");
      }
+  };
+
+  const updateActiveContactLocally = (updates: Record<string, any>) => {
+    if (!activeContact) return;
+    setActiveContact({ ...activeContact, ...updates });
+    setContacts((current) => current.map((contact) => (
+      contact.id === activeContact.id ? { ...contact, ...updates } : contact
+    )));
+  };
+
+  const updateActiveContact = async (updates: Record<string, any>, successMessage: string) => {
+    if (!activeContact || !profile?.tenant_id) return;
+
+    setIsConversationActionPending(true);
+    try {
+      const { error } = await supabase
+        .from("whatsapp_contacts")
+        .update(updates)
+        .eq("tenant_id", profile.tenant_id)
+        .eq("id", activeContact.id);
+
+      if (error) throw error;
+
+      updateActiveContactLocally(updates);
+      toast.success(successMessage);
+      void fetchContacts();
+    } catch (error: any) {
+      toast.error(error.message || "Nao foi possivel atualizar a conversa.");
+    } finally {
+      setIsConversationActionPending(false);
+    }
+  };
+
+  const saveInternalNote = async (content: string) => {
+    const note = content.trim();
+    if (!note) return null;
+
+    if (!activeContact || !profile?.tenant_id) {
+      throw new Error("Selecione uma conversa real para salvar a nota interna.");
+    }
+
+    const { data, error } = await supabase
+      .from("whatsapp_messages")
+      .insert([{
+        tenant_id: profile.tenant_id,
+        contact_id: activeContact.id,
+        direction: "outbound",
+        message_type: "internal_note",
+        content: note,
+        status: "internal_note",
+      }])
+      .select()
+      .single();
+
+    if (error) throw error;
+
+    if (data) {
+      setMessages((current) => current.some((message) => message.id === data.id) ? current : [...current, data]);
+    }
+    scrollToBottom();
+    toast.success("Nota interna salva somente para a equipe.");
+    return data;
+  };
+
+  const handleSaveSideNote = async () => {
+    if (!sideNoteText.trim()) return;
+
+    setIsConversationActionPending(true);
+    try {
+      await saveInternalNote(sideNoteText);
+      setSideNoteText("");
+    } catch (error: any) {
+      toast.error(error.message || "Falha ao salvar nota interna.");
+    } finally {
+      setIsConversationActionPending(false);
+    }
+  };
+
+  const handleResolveConversation = async () => {
+    await updateActiveContact(
+      { unread_count: 0, updated_at: new Date().toISOString() },
+      "Conversa marcada como resolvida."
+    );
+  };
+
+  const handleAssumeConversation = async () => {
+    if (!profile?.id) {
+      toast.error("Nao encontrei seu usuario para assumir a conversa.");
+      return;
+    }
+
+    await updateActiveContact(
+      { assigned_user_id: profile.id, department_id: transferDeptId || activeContact?.department_id || null },
+      "Conversa assumida por voce."
+    );
+  };
+
+  const handleReturnToAgent = async () => {
+    await updateActiveContact(
+      { assigned_user_id: null },
+      "Conversa devolvida para o agente MAYUS."
+    );
+  };
+
+  const handleToggleHumanAgent = async () => {
+    if (activeContact?.assigned_user_id === profile?.id) {
+      await handleReturnToAgent();
+      return;
+    }
+
+    await handleAssumeConversation();
+  };
+
+  const handleMayusControl = async () => {
+    if (activeContact?.assigned_user_id === profile?.id) {
+      await handleReturnToAgent();
+      return;
+    }
+
+    await handleGenerateMayusReply();
+  };
+
+  const getDepartmentName = (id?: string | null) => {
+    if (!id) return "Sem setor";
+    return departments.find((department) => department.id === id)?.name || "Setor nao encontrado";
+  };
+
+  const getTeamMemberName = (id?: string | null) => {
+    if (!id) return "MAYUS";
+    return teamMembers.find((member) => member.id === id)?.full_name || "Responsavel nao encontrado";
   };
 
   const handleSendZapSignContract = async () => {
@@ -562,7 +750,7 @@ export default function WhatsAppChatPremiumPage() {
           tenant_id: profile?.tenant_id,
           contact_id: activeContact.id,
           template_id: zapsignTemplateId || "default",
-          doc_name: `Contrato de Honorários - ${activeContact.name || 'Cliente'}`
+          doc_name: `Contrato de Honorarios - ${activeContact.name || 'Cliente'}`
         })
       });
 
@@ -573,7 +761,7 @@ export default function WhatsAppChatPremiumPage() {
 
       const contractMsg = {
         id: `contract-${Date.now()}`,
-        content: `📄 *Contrato Gerado!* \n\nLink para assinatura: ${data.sign_url}`,
+        content: `*Contrato Gerado!*\n\nLink para assinatura: ${data.sign_url}`,
         direction: 'outbound',
         message_type: 'text',
         created_at: new Date().toISOString()
@@ -678,7 +866,7 @@ export default function WhatsAppChatPremiumPage() {
            ) : filteredContacts.map((contact) => (
               <div key={contact.id} onClick={() => setActiveContact(contact)} className={`group relative flex items-start gap-4 p-4 rounded-2xl cursor-pointer transition-all border ${activeContact?.id === contact.id ? "bg-[#111] border-[#CCA761]/30" : "hover:bg-white/5 border-transparent opacity-80 hover:opacity-100"}`}>
                  <div className="w-12 h-12 rounded-full border border-[#CCA761]/20 bg-gray-200 dark:bg-black flex flex-shrink-0 items-center justify-center text-[#CCA761] font-black shadow-inner overflow-hidden">
-                    {contact.avatar_url ? <img src={contact.avatar_url} className="w-full h-full object-cover" /> : contact.name?.substring(0, 2).toUpperCase()}
+                    {contact.profile_pic_url ? <img src={contact.profile_pic_url} className="w-full h-full object-cover" /> : contact.name?.substring(0, 2).toUpperCase()}
                  </div>
                  <div className="flex-1 min-w-0">
                     <div className="flex justify-between items-center mb-1">
@@ -703,14 +891,14 @@ export default function WhatsAppChatPremiumPage() {
                 <div className="h-20 border-b border-white/5 flex items-center justify-between px-8 bg-[#0a0a0a]/90 backdrop-blur-3xl z-10 flex-shrink-0">
                     <div className="flex items-center gap-5">
                        <div className="w-11 h-11 rounded-full border border-[#CCA761]/50 bg-gray-200 dark:bg-black flex items-center justify-center text-[#CCA761] font-black text-lg shadow-[0_0_20px_rgba(204,167,97,0.1)] overflow-hidden">
-                          {activeContact?.avatar_url ? <img src={activeContact.avatar_url} className="w-full h-full object-cover" /> : (activeContact?.name?.substring(0, 2).toUpperCase() || "TS")}
+                          {activeContact?.profile_pic_url ? <img src={activeContact.profile_pic_url} className="w-full h-full object-cover" /> : (activeContact?.name?.substring(0, 2).toUpperCase() || "TS")}
                        </div>
                        <div>
                          <h2 className={`text-2xl font-bold text-white tracking-wide flex items-center gap-3 ${cormorant.className} italic`}>
                             {activeContact?.name || activeContact?.phone_number || "Lead de Teste (Simulado)"}
                             <div className="flex gap-1.5 translate-y-[-1px]">
                                <span className={`text-[8px] px-2.5 py-1 rounded-full font-black uppercase tracking-widest border ${activeContact ? 'bg-[#25D366]/10 text-[#25D366] border-[#25D366]/20' : 'bg-[#CCA761]/10 text-[#CCA761] border-[#CCA761]/20'}`}>
-                                  {activeContact ? 'WhatsApp' : 'Simulação'}
+                                  {activeContact ? 'WhatsApp' : 'Simulacao'}
                                 </span>
                             </div>
                          </h2>
@@ -725,8 +913,12 @@ export default function WhatsAppChatPremiumPage() {
                        <button onClick={() => setShowTransferModal(true)} className="flex items-center gap-2 bg-white/5 border border-white/10 text-gray-400 px-4 py-2 rounded-xl text-[10px] font-black uppercase tracking-widest hover:bg-[#CCA761]/10 hover:text-[#CCA761] transition-all">
                           <Share2 size={14} /> Transferir Atendimento
                        </button>
-                       <button className="bg-[#CCA761] text-black px-6 py-2.5 rounded-xl text-[10px] font-black uppercase tracking-widest shadow-[0_0_25px_rgba(204,167,97,0.3)] hover:scale-105 transition-all">
-                          <CheckCircle2 size={16} /> Resolver
+                       <button
+                         onClick={handleResolveConversation}
+                         disabled={isConversationActionPending}
+                         className="flex items-center gap-2 bg-[#CCA761] text-black px-6 py-2.5 rounded-xl text-[10px] font-black uppercase tracking-widest shadow-[0_0_25px_rgba(204,167,97,0.3)] hover:scale-105 transition-all disabled:opacity-50 disabled:cursor-not-allowed"
+                       >
+                          {isConversationActionPending ? <Loader2 size={16} className="animate-spin" /> : <CheckCircle2 size={16} />} Resolver
                        </button>
                     </div>
                 </div>
@@ -783,19 +975,27 @@ export default function WhatsAppChatPremiumPage() {
 
                 <div className="flex-1 overflow-y-auto p-10 flex flex-col gap-10 no-scrollbar min-h-0">
                     {messages.map((msg, idx) => {
-                       const isMe = msg.direction === 'outbound';
+                       const isInternalNote = msg.message_type === "internal_note" || msg.status === "internal_note";
+                       const isMe = msg.direction === 'outbound' && !isInternalNote;
                        return (
-                          <div key={msg.id || idx} className={`flex ${isMe ? 'justify-end' : 'justify-start'} animate-in fade-in slide-in-from-bottom-4`}>
-                             <div className={`flex flex-col gap-2 max-w-[65%] ${isMe ? 'items-end' : 'items-start'}`}>
+                          <div key={msg.id || idx} className={`flex ${isInternalNote ? 'justify-center' : isMe ? 'justify-end' : 'justify-start'} animate-in fade-in slide-in-from-bottom-4`}>
+                             <div className={`flex flex-col gap-2 ${isInternalNote ? 'items-center max-w-[72%]' : `max-w-[65%] ${isMe ? 'items-end' : 'items-start'}`}`}>
                                 <div className={`p-5 rounded-2xl text-[14px] leading-relaxed shadow-2xl relative border ${
-                                   isMe
+                                   isInternalNote
+                                   ? 'bg-orange-500/10 border-orange-500/30 text-orange-100 rounded-xl'
+                                   : isMe
                                    ? 'bg-gradient-to-br from-[#CCA761] to-[#b89552] text-black font-semibold rounded-tr-sm border-[#b89552]/40'
                                    : 'bg-[#121212] border-white/10 text-gray-200 rounded-tl-sm'
                                 }`}>
+                                   {isInternalNote && (
+                                     <div className="flex items-center gap-2 text-[9px] font-black uppercase tracking-[0.2em] text-orange-400 mb-2">
+                                       <Lock size={12} /> Nota interna
+                                     </div>
+                                   )}
                                    {renderWhatsAppContent(msg.content)}
                                 </div>
                                 <span className="text-[9px] text-gray-600 font-bold uppercase tracking-widest px-2">
-                                   {formatTime(msg.created_at)} {isMe ? '— Vitor P.' : ''}
+                                   {formatTime(msg.created_at)} {isInternalNote ? 'Somente equipe' : isMe ? '- Vitor P.' : ''}
                                 </span>
                              </div>
                           </div>
@@ -826,8 +1026,8 @@ export default function WhatsAppChatPremiumPage() {
                       <div className="absolute inset-0 bg-[conic-gradient(from_0deg,#CCA761,transparent,transparent,#CCA761)] animate-spin opacity-20" />
                       <Bot size={44} className="text-[#CCA761] relative z-10" />
                   </div>
-                  <h2 className={`text-4xl font-bold text-white mb-4 ${cormorant.className} italic`}>Córtex de Mensagens Ativo</h2>
-                  <p className="text-gray-500 max-w-sm text-sm font-medium leading-relaxed mb-12">O sistema está pronto. Escolha um lead que aguarda retorno ou comece uma prospecção de ouro agora.</p>
+                  <h2 className={`text-4xl font-bold text-white mb-4 ${cormorant.className} italic`}>Cortex de Mensagens Ativo</h2>
+                  <p className="text-gray-500 max-w-sm text-sm font-medium leading-relaxed mb-12">O sistema esta pronto. Escolha um lead que aguarda retorno ou comece uma prospeccao de ouro agora.</p>
                   <button onClick={() => setIsAddingContact(true)} className="bg-white/5 border border-white/10 text-white px-10 py-5 rounded-2xl font-black uppercase text-[11px] tracking-[0.3em] hover:bg-[#CCA761] hover:text-black transition-all">Novo Atendimento</button>
                 </div>
             )}
@@ -842,8 +1042,9 @@ export default function WhatsAppChatPremiumPage() {
                         <MessageCircle size={12} /> Atendimento
                         {inputMode === "responder" && <div className="absolute -bottom-1 left-0 w-full h-[1px] bg-[#CCA761]" />}
                     </button>
-                    <button onClick={handleGenerateMayusReply} disabled={isGeneratingMayusReply || !activeContact} className="text-[9px] font-black uppercase tracking-[0.2em] relative transition-all flex items-center gap-1.5 text-[#CCA761] disabled:opacity-40 disabled:cursor-not-allowed">
-                        {isGeneratingMayusReply ? <Loader2 size={12} className="animate-spin" /> : <Bot size={12} />} MAYUS
+                    <button onClick={handleMayusControl} disabled={(isGeneratingMayusReply || isConversationActionPending) || !activeContact} className="text-[9px] font-black uppercase tracking-[0.2em] relative transition-all flex items-center gap-1.5 text-[#CCA761] disabled:opacity-40 disabled:cursor-not-allowed">
+                        {(isGeneratingMayusReply || isConversationActionPending) ? <Loader2 size={12} className="animate-spin" /> : <Bot size={12} />}
+                        {activeContact?.assigned_user_id === profile?.id ? "Voltar MAYUS" : "MAYUS"}
                     </button>
                     <button onClick={() => { console.log('Mode: Nota'); setInputMode("nota"); }} className={`text-[9px] font-black uppercase tracking-[0.2em] relative transition-all flex items-center gap-1.5 ${inputMode === "nota" ? "text-orange-500" : "text-gray-600 hover:text-gray-400"}`}>
                         <Lock size={12} /> Nota Interna
@@ -870,7 +1071,7 @@ export default function WhatsAppChatPremiumPage() {
                   </div>
               </div>
 
-              {/* Área Principal de Input - Estilo Barra */}
+              {/* Area principal de input - estilo barra */}
               <div className={`rounded-xl border transition-all flex flex-col shadow-lg relative ${inputMode === "nota" ? "bg-orange-500/[0.02] border-orange-500/30" : "bg-gray-200 dark:bg-black/40 border-white/10 focus-within:border-[#CCA761]/40"} ${isRecording ? 'border-red-500 ring-1 ring-red-500/20' : ''}`}>
                   {isRecording ? (
                     <div className="w-full flex items-center justify-between px-4 py-3 bg-red-500/5 rounded-xl animate-pulse">
@@ -933,19 +1134,25 @@ export default function WhatsAppChatPremiumPage() {
                              </div>
                            )}
 
-                           {/* Botão de Envio Compacto */}
+                           {/* Botao de envio compacto */}
                            <button
                              onClick={(e) => { e.preventDefault(); handleSendMessage(); }}
-                             disabled={isSending || (!inputText.trim() && !isRecording && !selectedFile)}
+                             disabled={isSending || (inputMode === "nota" ? !inputText.trim() : (!inputText.trim() && !isRecording && !selectedFile))}
                              className={`ml-2 mb-1 shrink-0 h-9 px-4 rounded-lg font-black uppercase text-[9px] tracking-wider transition-all flex items-center gap-2 ${
                                isSending ? 'bg-white/10 text-gray-400' : 'bg-[#CCA761] text-black hover:bg-white active:scale-95 shadow-lg shadow-[#CCA761]/10'
                              }`}
                            >
-                             {isSending ? <Loader2 className="animate-spin" size={12} /> : <><Send size={12} /> ENVIAR</>}
+                             {isSending ? (
+                               <Loader2 className="animate-spin" size={12} />
+                             ) : inputMode === "nota" ? (
+                               <><Lock size={12} /> SALVAR NOTA</>
+                             ) : (
+                               <><Send size={12} /> ENVIAR</>
+                             )}
                            </button>
                          </div>
 
-                         {/* Barra de Ferramentas Inferior - ORGANIZAÇÃO SOLICITADA */}
+                         {/* Barra de ferramentas inferior - organizacao solicitada */}
                          <div className="flex gap-4 px-3 py-2 border-t border-gray-100 dark:border-white/[0.03] bg-gray-200 dark:bg-black/20 rounded-b-xl relative items-center">
                              {/* Input de Arquivo Oculto */}
                              <input
@@ -966,7 +1173,7 @@ export default function WhatsAppChatPremiumPage() {
                                <button
                                  onClick={(e) => { e.preventDefault(); startRecording(); }}
                                  className="text-gray-500 hover:text-red-500 transition-all p-1"
-                                 title="Gravar Áudio"
+                                 title="Gravar Audio"
                                >
                                  <Mic size={18} />
                                </button>
@@ -995,7 +1202,7 @@ export default function WhatsAppChatPremiumPage() {
                                <button onClick={() => toast.info("Modelos de resposta em breve")} className="text-gray-500 hover:text-[#CCA761] transition-all p-1" title="Modelos de Resposta"><LayoutPanelLeft size={18} /></button>
                              </div>
 
-                             <span className="ml-auto text-[7px] text-gray-700 font-black tracking-tighter uppercase self-center hidden sm:block">Gerado pelo Córtex MAYUS</span>
+                             <span className="ml-auto text-[7px] text-gray-700 font-black tracking-tighter uppercase self-center hidden sm:block">Gerado pelo Cortex MAYUS</span>
                          </div>
                       </div>
                   )}
@@ -1010,8 +1217,8 @@ export default function WhatsAppChatPremiumPage() {
                {/* Header Perfil */}
                <div className="flex flex-col items-center">
                   <div className="w-28 h-28 rounded-full border-2 border-[#CCA761] bg-gray-200 dark:bg-black p-1 mb-5 relative group">
-                     {activeContact.avatar_url ? (
-                        <img src={activeContact.avatar_url} className="w-full h-full object-cover rounded-full" />
+                     {activeContact.profile_pic_url ? (
+                        <img src={activeContact.profile_pic_url} className="w-full h-full object-cover rounded-full" />
                      ) : (
                         <div className="w-full h-full rounded-full flex items-center justify-center text-3xl font-black text-[#CCA761]">
                            {activeContact.name?.substring(0, 2).toUpperCase()}
@@ -1020,34 +1227,109 @@ export default function WhatsAppChatPremiumPage() {
                      <div className="absolute bottom-2 right-2 w-5 h-5 bg-[#25D366] rounded-full border-4 border-[#050505] shadow-[0_0_10px_#22c55e]" />
                   </div>
                   <h3 className="text-2xl font-bold text-white text-center italic group-hover:text-[#CCA761] transition-colors">{activeContact.name}</h3>
-                  <div className="bg-[#CCA761]/10 border border-[#CCA761]/20 text-[#CCA761] px-4 py-1.5 rounded-full text-[9px] font-black uppercase mt-3 tracking-widest">Lead Qualificado</div>
+                  <div className="bg-[#CCA761]/10 border border-[#CCA761]/20 text-[#CCA761] px-4 py-1.5 rounded-full text-[9px] font-black uppercase mt-3 tracking-widest">{serviceStatusLabel}</div>
                </div>
 
-               {/* Módulo KANBAN (FUNCIONALIDADE SOLICITADA) */}
+               {/* Modulo Kanban */}
                <div className="space-y-4">
-                  <div className="flex items-center gap-2 text-gray-500 font-black uppercase text-[10px] tracking-widest"><ClipboardList size={14} className="text-[#CCA761]" /> Gestão Pipeline</div>
+                  <div className="flex items-center gap-2 text-gray-500 font-black uppercase text-[10px] tracking-widest"><ClipboardList size={14} className="text-[#CCA761]" /> Gestao Pipeline</div>
                   <div className="p-5 bg-gray-200 dark:bg-black rounded-2xl border border-white/5 space-y-4">
+                     <div className="grid grid-cols-1 gap-3 text-xs">
+                        <div className="rounded-xl border border-white/5 bg-[#111] p-3">
+                           <span className="block text-[9px] font-black uppercase tracking-widest text-gray-600 mb-1">Setor atual</span>
+                           <span className="text-white font-bold">{getDepartmentName(activeContact.department_id)}</span>
+                        </div>
+                        <div className="rounded-xl border border-white/5 bg-[#111] p-3">
+                           <span className="block text-[9px] font-black uppercase tracking-widest text-gray-600 mb-1">Responsavel atual</span>
+                           <span className="text-white font-bold">{getTeamMemberName(activeContact.assigned_user_id)}</span>
+                        </div>
+                     </div>
                      <div>
-                        <label className="text-[9px] font-black text-gray-600 uppercase tracking-widest block mb-2">Etapa Atual</label>
-                        <select className="w-full bg-[#111] border border-white/10 rounded-xl px-4 py-3 text-xs text-white outline-none focus:border-[#CCA761]">
-                           <option>⭐ Novo Lead</option>
-                           <option>📞 Chamada em Aberto</option>
-                           <option>💼 Negociação</option>
-                           <option>✍️ Contrato Emitido</option>
+                        <label className="text-[9px] font-black text-gray-600 uppercase tracking-widest block mb-2">Transferir para setor</label>
+                        <select
+                          value={transferDeptId}
+                          onChange={(e) => setTransferDeptId(e.target.value)}
+                          className="w-full bg-[#111] border border-white/10 rounded-xl px-4 py-3 text-xs text-white outline-none focus:border-[#CCA761]"
+                        >
+                           <option value="">Sem setor definido</option>
+                           {departments.map((dept) => (
+                             <option key={dept.id} value={dept.id}>{dept.name}</option>
+                           ))}
                         </select>
                      </div>
                      <div>
-                        <label className="text-[9px] font-black text-gray-600 uppercase tracking-widest block mb-2">Agente Responsável</label>
-                        <div className="flex items-center gap-3 bg-[#111] p-3 rounded-xl border border-white/5">
-                           <div className="w-6 h-6 rounded-full bg-[#CCA761] flex items-center justify-center text-[10px] font-black text-black">VP</div>
-                           <span className="text-white text-xs font-bold">Vitor Procópio</span>
-                        </div>
+                        <label className="text-[9px] font-black text-gray-600 uppercase tracking-widest block mb-2">Transferir para pessoa</label>
+                        <select
+                          value={transferUserId}
+                          onChange={(e) => setTransferUserId(e.target.value)}
+                          className="w-full bg-[#111] border border-white/10 rounded-xl px-4 py-3 text-xs text-white outline-none focus:border-[#CCA761]"
+                        >
+                           <option value="">Fila do setor / MAYUS</option>
+                           {teamMembers.map((member) => (
+                             <option key={member.id} value={member.id}>
+                               {member.full_name} {member.role ? `- ${member.role}` : ""}
+                             </option>
+                           ))}
+                        </select>
                      </div>
+                     <button
+                       onClick={handleTransfer}
+                       disabled={isTransferring || (!transferDeptId && !transferUserId)}
+                       className="w-full py-3 bg-white/5 border border-white/10 rounded-xl font-black uppercase text-[10px] tracking-[0.2em] flex items-center justify-center gap-3 hover:bg-[#CCA761] hover:text-black transition-all disabled:opacity-40 disabled:cursor-not-allowed"
+                     >
+                       {isTransferring ? <Loader2 size={14} className="animate-spin" /> : <Share2 size={14} />}
+                       Aplicar transferencia
+                     </button>
                   </div>
                </div>
 
-                {/* Ações Rápidas */}
+               <div className="space-y-4">
+                  <div className="flex items-center gap-2 text-gray-500 font-black uppercase text-[10px] tracking-widest"><Lock size={14} className="text-orange-400" /> Notas internas</div>
+                  <div className="p-5 bg-gray-200 dark:bg-black rounded-2xl border border-white/5 space-y-4">
+                    <div className="max-h-44 overflow-y-auto no-scrollbar space-y-3 pr-1">
+                      {internalNotes.length > 0 ? internalNotes.slice(-5).map((note) => (
+                        <div key={note.id} className="rounded-xl border border-orange-500/20 bg-orange-500/10 p-3">
+                          <p className="text-xs leading-relaxed text-orange-50 whitespace-pre-wrap">{note.content}</p>
+                          <span className="mt-2 block text-[8px] font-black uppercase tracking-widest text-orange-400/70">{formatTime(note.created_at)}</span>
+                        </div>
+                      )) : (
+                        <p className="text-xs leading-relaxed text-gray-500">Nenhuma nota interna registrada para esta conversa.</p>
+                      )}
+                    </div>
+                    <textarea
+                      value={sideNoteText}
+                      onChange={(event) => setSideNoteText(event.target.value)}
+                      placeholder="Adicionar contexto interno, dados do lead, combinado ou alerta..."
+                      rows={3}
+                      className="w-full resize-none rounded-xl border border-white/10 bg-[#111] px-4 py-3 text-xs text-white outline-none placeholder:text-gray-700 focus:border-orange-400/50"
+                    />
+                    <button
+                      onClick={handleSaveSideNote}
+                      disabled={isConversationActionPending || !sideNoteText.trim()}
+                      className="w-full py-3 bg-orange-500/10 border border-orange-500/25 text-orange-200 rounded-xl font-black uppercase text-[10px] tracking-[0.2em] flex items-center justify-center gap-3 hover:bg-orange-500 hover:text-black transition-all disabled:opacity-40 disabled:cursor-not-allowed"
+                    >
+                      {isConversationActionPending ? <Loader2 size={14} className="animate-spin" /> : <Lock size={14} />}
+                      Salvar nota
+                    </button>
+                  </div>
+               </div>
+
+                {/* Acoes rapidas */}
                <div className="space-y-3">
+                  <button
+                    onClick={handleToggleHumanAgent}
+                    disabled={isConversationActionPending}
+                    className="w-full py-5 bg-[#CCA761] border border-[#CCA761]/20 text-black rounded-2xl font-black uppercase text-[10px] tracking-[0.2em] flex items-center justify-center gap-3 hover:scale-105 transition-all shadow-[0_0_20px_rgba(204,167,97,0.2)] disabled:opacity-50 disabled:cursor-not-allowed"
+                  >
+                     {isConversationActionPending ? (
+                       <Loader2 className="animate-spin" size={16} />
+                     ) : activeContact.assigned_user_id === profile?.id ? (
+                       <Bot size={16} />
+                     ) : (
+                       <UserCheck size={16} />
+                     )}
+                     {activeContact.assigned_user_id === profile?.id ? "Voltar para MAYUS" : "Assumir conversa"}
+                  </button>
                   {contractFlowMode !== 'ia_only' && (
                     <button
                       onClick={handleSendZapSignContract}
@@ -1058,10 +1340,17 @@ export default function WhatsAppChatPremiumPage() {
                        Gerar Contrato (Um Clique)
                     </button>
                   )}
-                  <button className="w-full py-5 bg-white/5 border border-white/10 rounded-2xl font-black uppercase text-[10px] tracking-[0.2em] flex items-center justify-center gap-3 hover:bg-white/10 transition-all group">
-                     <FileText size={16} className="group-hover:-rotate-6 transition-transform" /> Dossiê Completo
+                  <button
+                    onClick={() => toast.info("Dossie completo sera aberto quando o contato estiver vinculado a um cliente/processo.")}
+                    className="w-full py-5 bg-white/5 border border-white/10 rounded-2xl font-black uppercase text-[10px] tracking-[0.2em] flex items-center justify-center gap-3 hover:bg-white/10 transition-all group"
+                  >
+                     <FileText size={16} className="group-hover:-rotate-6 transition-transform" /> Dossie Completo
                   </button>
-                  <button className="w-full py-5 bg-gray-200 dark:bg-black border border-red-500/20 text-red-500 rounded-2xl font-black uppercase text-[10px] tracking-[0.2em] flex items-center justify-center gap-3 hover:bg-red-500 hover:text-white transition-all">
+                  <button
+                    onClick={handleResolveConversation}
+                    disabled={isConversationActionPending}
+                    className="w-full py-5 bg-gray-200 dark:bg-black border border-red-500/20 text-red-500 rounded-2xl font-black uppercase text-[10px] tracking-[0.2em] flex items-center justify-center gap-3 hover:bg-red-500 hover:text-white transition-all disabled:opacity-50 disabled:cursor-not-allowed"
+                  >
                      <X size={16} /> Encerrar Caso
                   </button>
                </div>
@@ -1069,7 +1358,7 @@ export default function WhatsAppChatPremiumPage() {
          )}
       </div>
 
-      {/* MODAL DE TRANSFERÊNCIA DE ATENDIMENTO */}
+      {/* Modal de transferencia de atendimento */}
       {showTransferModal && (
         <div className="fixed inset-0 bg-gray-200 dark:bg-black/70 backdrop-blur-sm z-50 flex items-center justify-center p-4 animate-in fade-in duration-200">
           <div className="bg-[#0a0a0a] border border-white/10 rounded-2xl p-8 w-full max-w-md shadow-2xl animate-in zoom-in-95 duration-300">
@@ -1096,7 +1385,7 @@ export default function WhatsAppChatPremiumPage() {
                   onChange={(e) => setTransferDeptId(e.target.value)}
                   className="w-full bg-[#111] border border-white/10 rounded-xl px-4 py-3 text-sm text-white outline-none focus:border-[#CCA761]/50 appearance-none"
                 >
-                  <option value="">— Selecione o departamento —</option>
+                  <option value="">- Selecione o departamento -</option>
                   {departments.map(dept => (
                     <option key={dept.id} value={dept.id}>{dept.name}</option>
                   ))}
@@ -1105,14 +1394,14 @@ export default function WhatsAppChatPremiumPage() {
 
               <div>
                 <label className="text-[10px] font-black uppercase tracking-widest text-[#CCA761] mb-2 block">
-                  <Users size={12} className="inline mr-1" /> Agente Responsável
+                  <Users size={12} className="inline mr-1" /> Agente Responsavel
                 </label>
                 <select
                   value={transferUserId}
                   onChange={(e) => setTransferUserId(e.target.value)}
                   className="w-full bg-[#111] border border-white/10 rounded-xl px-4 py-3 text-sm text-white outline-none focus:border-[#CCA761]/50 appearance-none"
                 >
-                  <option value="">— Selecione o agente —</option>
+                  <option value="">- Selecione o agente -</option>
                   {teamMembers.map(member => (
                     <option key={member.id} value={member.id}>{member.full_name} ({member.role})</option>
                   ))}
