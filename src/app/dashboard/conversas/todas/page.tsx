@@ -16,7 +16,7 @@ import EmojiPicker, { Theme as EmojiTheme } from "emoji-picker-react";
 const montserrat = Montserrat({ subsets: ["latin"], weight: ["300", "400", "500", "600", "700"] });
 const cormorant = Cormorant_Garamond({ subsets: ["latin"], weight: ["400", "500", "600", "700"], style: ["normal", "italic"] });
 
-// Funções Utilitárias de Formatação
+// Funcoes utilitarias de formatacao
 const formatTime = (dateString: string) => {
   if (!dateString) return "";
   const date = new Date(dateString);
@@ -41,6 +41,7 @@ export default function TodasConversasPage() {
   const [showSignature, setShowSignature] = useState(true);
   const [showEmojiPicker, setShowEmojiPicker] = useState(false);
   const [selectedFile, setSelectedFile] = useState<File | null>(null);
+  const [sideNoteText, setSideNoteText] = useState("");
   const fileInputRef = useRef<HTMLInputElement>(null);
 
   // Estados de Audio
@@ -64,7 +65,7 @@ export default function TodasConversasPage() {
   const [isConversationActionPending, setIsConversationActionPending] = useState(false);
   const tenantId = profile?.tenant_id;
 
-  // 1. Carregar Configurações e Contatos Iniciais
+  // 1. Carregar configuracoes e contatos iniciais
   const fetchContacts = useCallback(async () => {
      if (!tenantId) return;
 
@@ -77,7 +78,7 @@ export default function TodasConversasPage() {
      if (data) {
         setContacts(data);
         if (data.length > 0 && !activeContact) {
-           setActiveContact(data[0]); // Seleciona o primeiro por padrão
+           setActiveContact(data[0]); // Seleciona o primeiro por padrao
         }
      }
   }, [activeContact, supabase, tenantId]);
@@ -155,7 +156,17 @@ export default function TodasConversasPage() {
     }, 100);
   };
 
-  // 4. LÓGICA DE ÁUDIO (REALTIME REC)
+  const internalNotes = messages.filter((message) => (
+    message.message_type === "internal_note" || message.status === "internal_note"
+  ));
+
+  const serviceStatusLabel = activeContact?.assigned_user_id
+    ? activeContact.assigned_user_id === profile?.id
+      ? "Atendimento humano"
+      : "Com responsavel"
+    : "MAYUS atendendo";
+
+  // 4. Logica de audio (realtime rec)
   const startRecording = async () => {
     try {
       const stream = await navigator.mediaDevices.getUserMedia({ audio: true });
@@ -206,7 +217,7 @@ export default function TodasConversasPage() {
 
     if (!activeContact) {
       setIsAddingContact(true);
-      toast.info("Selecione um contato para enviar o áudio.");
+      toast.info("Selecione um contato para enviar o audio.");
       return;
     }
 
@@ -236,13 +247,58 @@ export default function TodasConversasPage() {
       toast.success("Audio enviado com sucesso.");
       fetchContacts();
     } catch (e: any) {
-      toast.error("Falha ao enviar áudio: " + e.message);
+      toast.error("Falha ao enviar audio: " + e.message);
     } finally {
       setIsSending(false);
     }
   };
 
   // 5. DISPARO DA ARMA (Enviar mensagem via Servidor MAYUS)
+  const saveInternalNote = async (content: string) => {
+    const note = content.trim();
+    if (!note) return null;
+
+    if (!activeContact || !tenantId) {
+      throw new Error("Selecione uma conversa real para salvar a nota interna.");
+    }
+
+    const { data, error } = await supabase
+      .from("whatsapp_messages")
+      .insert([{
+        tenant_id: tenantId,
+        contact_id: activeContact.id,
+        direction: "outbound",
+        message_type: "internal_note",
+        content: note,
+        status: "internal_note",
+      }])
+      .select()
+      .single();
+
+    if (error) throw error;
+
+    if (data) {
+      setMessages((current) => current.some((message) => message.id === data.id) ? current : [...current, data]);
+    }
+    scrollToBottom();
+    toast.success("Nota interna salva somente para a equipe.");
+    return data;
+  };
+
+  const handleSaveSideNote = async () => {
+    if (!sideNoteText.trim()) return;
+
+    setIsConversationActionPending(true);
+    try {
+      await saveInternalNote(sideNoteText);
+      setSideNoteText("");
+    } catch (error: any) {
+      toast.error(error.message || "Falha ao salvar nota interna.");
+    } finally {
+      setIsConversationActionPending(false);
+    }
+  };
+
   const handleSendMessage = async () => {
     if (isSending) return;
 
@@ -260,26 +316,7 @@ export default function TodasConversasPage() {
       setInputText("");
 
       try {
-        const { data, error } = await supabase
-          .from("whatsapp_messages")
-          .insert([{
-            tenant_id: tenantId,
-            contact_id: activeContact.id,
-            direction: "outbound",
-            message_type: "internal_note",
-            content: messageBody,
-            status: "internal_note",
-          }])
-          .select()
-          .single();
-
-        if (error) throw error;
-
-        if (data) {
-          setMessages((current) => current.some((message) => message.id === data.id) ? current : [...current, data]);
-        }
-        scrollToBottom();
-        toast.success("Nota interna salva somente para a equipe.");
+        await saveInternalNote(messageBody);
       } catch (error: any) {
         toast.error("Falha ao salvar nota interna: " + error.message);
         setInputText(messageBody);
@@ -295,7 +332,7 @@ export default function TodasConversasPage() {
     const signature = showSignature ? `*${profile?.full_name || 'Equipe MAYUS'}*\n\n` : "";
     const textToSend = signature + messageBody;
 
-    // MODO SIMULAÇÃO (Liberado para Teste)
+    // Modo simulacao liberado para teste
     if (!activeContact) {
       const simulatedMsg = {
         id: `sim-${Date.now()}`,
@@ -338,7 +375,7 @@ export default function TodasConversasPage() {
        if (!response.ok) throw new Error(resData.error || "Erro ao disparar");
 
        toast.success("Disparo de ouro.");
-       setSelectedFile(null); // Limpar arquivo após envio real
+       setSelectedFile(null); // Limpar arquivo apos envio real
        fetchContacts();
     } catch (error: any) {
        toast.error("Falha : " + error.message);
@@ -349,22 +386,22 @@ export default function TodasConversasPage() {
   };
 
   const handleCreateContact = async () => {
-     let cleanPhone = newContactPhone.replace(/\D/g, ''); // Remover não-números
+     let cleanPhone = newContactPhone.replace(/\D/g, ''); // Remover nao-numeros
      if (cleanPhone.length < 10) {
-        toast.error("Insira um número válido com DDD e País (Ex: 551199999999)");
+        toast.error("Insira um numero valido com DDD e Pais (Ex: 551199999999)");
         return;
      }
 
-     // O padrão Baileys Evolution é 551199999999@s.whatsapp.net
+     // O padrao Baileys Evolution e 551199999999@s.whatsapp.net
      const fullJid = `${cleanPhone}@s.whatsapp.net`;
 
-     // Checar se já existe no banco
+     // Checar se ja existe no banco
      const existente = contacts.find(c => c.phone_number === fullJid || c.phone_number === cleanPhone);
      if (existente) {
         setActiveContact(existente);
         setIsAddingContact(false);
         setNewContactPhone("");
-        toast.info("Contato já existe na sua base.");
+        toast.info("Contato ja existe na sua base.");
         return;
      }
 
@@ -375,7 +412,7 @@ export default function TodasConversasPage() {
        .insert([{
           tenant_id: profile!.tenant_id,
           phone_number: fullJid,
-          name: cleanPhone // Usando o número como nome provisório
+          name: cleanPhone // Usando o numero como nome provisorio
        }])
        .select()
        .single();
@@ -390,7 +427,7 @@ export default function TodasConversasPage() {
      setActiveContact(newContact);
      setIsAddingContact(false);
      setNewContactPhone("");
-     setInputText((prev) => !prev ? "Olá! Aqui é da equipe MAYUS." : prev); // Helper initial message
+     setInputText((prev) => !prev ? "Ola! Aqui e da equipe MAYUS." : prev); // Helper initial message
   };
 
   const updateActiveContactLocally = (updates: Record<string, any>) => {
@@ -448,6 +485,15 @@ export default function TodasConversasPage() {
       { assigned_user_id: null },
       "Conversa devolvida para o agente MAYUS."
     );
+  };
+
+  const handleToggleHumanAgent = async () => {
+    if (activeContact?.assigned_user_id === profile?.id) {
+      await handleReturnToAgent();
+      return;
+    }
+
+    await handleAssumeConversation();
   };
 
   const handleTransferConversation = async () => {
@@ -556,7 +602,7 @@ export default function TodasConversasPage() {
                       <h4 className={`font-bold truncate text-sm ${activeContact?.id === contact.id ? "text-white" : "text-gray-300"}`}>{contact.name || contact.phone_number}</h4>
                       <span className="text-[10px] text-gray-500">{contact.last_message_at ? formatTime(contact.last_message_at) : ''}</span>
                    </div>
-                   <p className="text-gray-400 text-xs truncate">Toque para ver histórico</p>
+                   <p className="text-gray-400 text-xs truncate">Toque para ver historico</p>
                 </div>
              </div>
           ))}
@@ -609,12 +655,12 @@ export default function TodasConversasPage() {
                    </div>
                 </div>
 
-                {/* Área de Mensagens */}
+                {/* Area de mensagens */}
                 <div className="flex-1 overflow-y-auto p-6 flex flex-col gap-6 z-10 scroll-smooth">
                    {activeContact && messages.length === 0 && (
                       <div className="flex justify-center my-10 animate-fade-in-up">
                          <span className="bg-[#CCA761]/10 border border-[#CCA761]/20 text-[#CCA761] px-4 py-2 rounded-full text-xs font-bold tracking-wide shadow-[0_0_15px_rgba(204,167,97,0.1)]">
-                            Novo contato detectado. Diga olá!
+                            Novo contato detectado. Diga ola!
                          </span>
                       </div>
                    )}
@@ -684,7 +730,7 @@ export default function TodasConversasPage() {
                        </label>
                    </div>
 
-                   {/* Área Principal de Input - Estilo Barra */}
+                   {/* Area principal de input - estilo barra */}
                    <div className={`rounded-xl border transition-all flex flex-col shadow-lg relative ${inputMode === "nota" ? "bg-orange-500/[0.02] border-orange-500/30" : "bg-gray-200 dark:bg-black/40 border-white/10 focus-within:border-[#CCA761]/40"} ${isRecording ? 'border-red-500 ring-1 ring-red-500/20' : ''}`}>
                        {isRecording ? (
                          <div className="w-full flex items-center justify-between px-4 py-3 bg-red-500/5 rounded-xl animate-pulse">
@@ -747,7 +793,7 @@ export default function TodasConversasPage() {
                                 </div>
                               )}
 
-                              {/* Botão de Envio Compacto */}
+                              {/* Botao de envio compacto */}
                               <button
                                 onClick={(e) => { e.preventDefault(); handleSendMessage(); }}
                                 disabled={isSending || (inputMode === "nota" ? !inputText.trim() : (!inputText.trim() && !isRecording && !selectedFile))}
@@ -765,7 +811,7 @@ export default function TodasConversasPage() {
                               </button>
                             </div>
 
-                            {/* Barra de Ferramentas Inferior - ORGANIZAÇÃO SOLICITADA */}
+                            {/* Barra de ferramentas inferior - organizacao solicitada */}
                             <div className="flex gap-4 px-3 py-2 border-t border-gray-100 dark:border-white/[0.03] bg-gray-200 dark:bg-black/20 rounded-b-xl relative items-center">
                                 {/* Input de Arquivo Oculto */}
                                 <input
@@ -813,7 +859,7 @@ export default function TodasConversasPage() {
                                   <button onClick={() => toast.info("Modelos de resposta em breve")} className="text-gray-500 hover:text-[#CCA761] transition-all p-1" title="Modelos"><LayoutPanelLeft size={18} /></button>
                                 </div>
 
-                                <span className="ml-auto text-[7px] text-gray-700 font-black tracking-tighter uppercase self-center hidden sm:block">Focado na Experiência MAYUS</span>
+                                <span className="ml-auto text-[7px] text-gray-700 font-black tracking-tighter uppercase self-center hidden sm:block">Focado na Experiencia MAYUS</span>
                             </div>
                          </div>
                        )}
@@ -826,7 +872,7 @@ export default function TodasConversasPage() {
                   <Bot size={40} className="text-[#CCA761] opacity-50" />
                </div>
                <h2 className="text-2xl font-bold text-white mb-2 font-serif italic">Nenhum Contato Ativo</h2>
-               <p className="text-gray-500 max-w-sm">Mande uma mensagem do seu celular para a Evolution API ou aguarde um Lead entrar em contato para o córtex interceptar.</p>
+               <p className="text-gray-500 max-w-sm">Mande uma mensagem do seu celular para a Evolution API ou aguarde um lead entrar em contato para o Cortex interceptar.</p>
             </div>
          )}
       </div>
@@ -846,6 +892,9 @@ export default function TodasConversasPage() {
                   </div>
                   <h3 className="text-xl font-bold text-white tracking-tight text-center">{activeContact.name || activeContact.phone_number}</h3>
                   <span className="text-gray-500 text-[10px] font-black tracking-[0.2em] uppercase mt-1">Contato Externo</span>
+                  <span className="mt-3 rounded-full border border-[#CCA761]/20 bg-[#CCA761]/10 px-3 py-1 text-[9px] font-black uppercase tracking-widest text-[#CCA761]">
+                    {serviceStatusLabel}
+                  </span>
 
                   <div className="w-full mt-6 space-y-3">
                      <div className="flex items-center gap-3 text-sm text-gray-400">
@@ -883,21 +932,18 @@ export default function TodasConversasPage() {
                      </div>
 
                      <button
-                       onClick={handleAssumeConversation}
-                       disabled={isConversationActionPending || activeContact.assigned_user_id === profile?.id}
+                       onClick={handleToggleHumanAgent}
+                       disabled={isConversationActionPending}
                        className="w-full flex items-center justify-center gap-2 rounded-lg bg-[#CCA761] px-3 py-3 text-[10px] font-black uppercase tracking-widest text-black transition-all hover:bg-white disabled:opacity-45 disabled:cursor-not-allowed"
                      >
-                       {isConversationActionPending ? <Loader2 size={14} className="animate-spin" /> : <UserCheck size={14} />}
-                       Assumir conversa
-                     </button>
-
-                     <button
-                       onClick={handleReturnToAgent}
-                       disabled={isConversationActionPending || !activeContact.assigned_user_id}
-                       className="w-full flex items-center justify-center gap-2 rounded-lg border border-white/10 bg-black/40 px-3 py-3 text-[10px] font-black uppercase tracking-widest text-gray-300 transition-all hover:border-[#CCA761]/40 hover:text-[#CCA761] disabled:opacity-45 disabled:cursor-not-allowed"
-                     >
-                       <Bot size={14} />
-                       Voltar para agente
+                       {isConversationActionPending ? (
+                         <Loader2 size={14} className="animate-spin" />
+                       ) : activeContact.assigned_user_id === profile?.id ? (
+                         <Bot size={14} />
+                       ) : (
+                         <UserCheck size={14} />
+                       )}
+                       {activeContact.assigned_user_id === profile?.id ? "Voltar para MAYUS" : "Assumir conversa"}
                      </button>
 
                      <button
@@ -907,6 +953,41 @@ export default function TodasConversasPage() {
                      >
                        <CheckCircle2 size={14} />
                        Resolver
+                     </button>
+                  </div>
+
+                  <div className="border border-orange-500/20 rounded-lg bg-orange-500/5 p-4 space-y-3">
+                     <div className="flex items-center gap-3 text-orange-300">
+                        <Lock size={16} />
+                        <span className="text-[11px] font-black uppercase tracking-wider">Notas internas</span>
+                     </div>
+
+                     <div className="max-h-36 overflow-y-auto hide-scrollbar space-y-2 pr-1">
+                       {internalNotes.length > 0 ? internalNotes.slice(-4).map((note) => (
+                         <div key={note.id} className="rounded-lg border border-orange-500/20 bg-black/30 p-3">
+                           <p className="text-xs leading-relaxed text-orange-50 whitespace-pre-wrap">{note.content}</p>
+                           <span className="mt-2 block text-[8px] font-black uppercase tracking-widest text-orange-400/70">{formatTime(note.created_at)}</span>
+                         </div>
+                       )) : (
+                         <p className="text-xs leading-relaxed text-gray-500">Nenhuma nota interna registrada para esta conversa.</p>
+                       )}
+                     </div>
+
+                     <textarea
+                       value={sideNoteText}
+                       onChange={(event) => setSideNoteText(event.target.value)}
+                       placeholder="Adicionar contexto interno, dados do lead, combinado ou alerta..."
+                       rows={3}
+                       className="w-full resize-none rounded-lg border border-white/10 bg-[#111] px-3 py-2.5 text-xs text-white outline-none placeholder:text-gray-700 focus:border-orange-400/50"
+                     />
+
+                     <button
+                       onClick={handleSaveSideNote}
+                       disabled={isConversationActionPending || !sideNoteText.trim()}
+                       className="w-full flex items-center justify-center gap-2 rounded-lg border border-orange-500/25 bg-orange-500/10 px-3 py-3 text-[10px] font-black uppercase tracking-widest text-orange-200 transition-all hover:bg-orange-500 hover:text-black disabled:opacity-45 disabled:cursor-not-allowed"
+                     >
+                       {isConversationActionPending ? <Loader2 size={14} className="animate-spin" /> : <Lock size={14} />}
+                       Salvar nota
                      </button>
                   </div>
 
