@@ -19,8 +19,11 @@ export default function DashboardLayout({
       
       {/* Container Principal */}
       <div
-        className="flex-1 flex flex-col min-h-screen transition-[margin] duration-300 ease-in-out"
-        style={{ marginLeft: "var(--mayus-dashboard-sidebar-offset, 0px)" }}
+        className="flex flex-col min-h-screen min-w-0 transition-all duration-300 ease-in-out"
+        style={{
+          marginLeft: "var(--mayus-dashboard-sidebar-offset, 0px)",
+          width: "calc(100vw - var(--mayus-dashboard-sidebar-offset, 0px))",
+        }}
       >
         
         {/* Top Header */}

@@ -84,9 +84,11 @@ export function AdminSidebar() {
   useEffect(() => {
     const width = sidebarMode === "expanded" ? "280px" : sidebarMode === "mini" ? "80px" : "0px";
     document.documentElement.style.setProperty("--mayus-sidebar-offset", width);
+    document.body.dataset.mayusSidebarMode = sidebarMode;
 
     return () => {
       document.documentElement.style.setProperty("--mayus-sidebar-offset", "280px");
+      delete document.body.dataset.mayusSidebarMode;
     };
   }, [sidebarMode]);
 

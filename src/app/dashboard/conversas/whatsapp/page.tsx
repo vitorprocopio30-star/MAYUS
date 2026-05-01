@@ -8,7 +8,7 @@ import {
   Search, ChevronDown, Phone, Send,
   MessageCircle, Bot, Lock, CheckCircle2,
   Zap, Filter, FileText, Mic, Clock, Plus, X, Smartphone, Loader2, Smile, Paperclip, MoreVertical,
-  Users, UserCheck, LayoutPanelLeft, Share2, ClipboardList, Building2
+  Users, UserCheck, LayoutPanelLeft, Share2, ClipboardList, Building2, Tag
 } from "lucide-react";
 import { toast } from "sonner";
 import EmojiPicker, { Theme as EmojiTheme } from "emoji-picker-react";
@@ -42,6 +42,52 @@ const mergeMessage = (current: any[], nextMessage: any) => {
     return current;
   }
   return sortMessagesByCreatedAt([...current, nextMessage]);
+};
+
+const DEFAULT_LEAD_TAGS = ["Urgente", "Aguardando documento", "Contrato", "Novo lead", "Retornar hoje", "MAYUS atendendo"];
+const TAG_COLORS = [
+  "border-red-400/30 bg-red-500/10 text-red-200",
+  "border-amber-400/30 bg-amber-500/10 text-amber-100",
+  "border-emerald-400/30 bg-emerald-500/10 text-emerald-100",
+  "border-sky-400/30 bg-sky-500/10 text-sky-100",
+  "border-fuchsia-400/30 bg-fuchsia-500/10 text-fuchsia-100",
+  "border-[#CCA761]/35 bg-[#CCA761]/10 text-[#f4d991]",
+];
+
+const normalizeLeadTags = (value: unknown) => {
+  if (!Array.isArray(value)) return [];
+  return Array.from(new Set(value
+    .map((item) => String(item || "").trim())
+    .filter(Boolean)
+    .slice(0, 12)));
+};
+
+const getTagClassName = (tag: string, index = 0) => {
+  const tagKey = tag.toLowerCase();
+  if (/urgente|prazo|risco/.test(tagKey)) return TAG_COLORS[0];
+  if (/documento|aguardando/.test(tagKey)) return TAG_COLORS[1];
+  if (/contrato|honorario|valor/.test(tagKey)) return TAG_COLORS[2];
+  if (/novo|lead/.test(tagKey)) return TAG_COLORS[3];
+  return TAG_COLORS[index % TAG_COLORS.length];
+};
+
+const suggestLeadTags = (contact: any, messages: any[]) => {
+  const text = [
+    contact?.name,
+    contact?.phone_number,
+    ...messages.slice(-8).map((message) => message.content),
+  ].join(" ").toLowerCase();
+  const suggestions: string[] = [];
+
+  if (!contact?.assigned_user_id) suggestions.push("MAYUS atendendo");
+  if ((contact?.unread_count || 0) > 0) suggestions.push("Responder");
+  if (/urgente|prazo|liminar|audiencia|bloqueio/.test(text)) suggestions.push("Urgente");
+  if (/documento|rg|cpf|comprovante|prova|imagem/.test(text)) suggestions.push("Aguardando documento");
+  if (/contrato|honorario|valor|preco|pagamento/.test(text)) suggestions.push("Contrato");
+  if (/inss|beneficio|aposentadoria|previd/.test(text)) suggestions.push("Previdenciario");
+  if (suggestions.length === 0) suggestions.push("Novo lead");
+
+  return Array.from(new Set(suggestions)).slice(0, 4);
 };
 
 const renderFormattedText = (text: string, keyPrefix: string) => {
@@ -97,6 +143,9 @@ export default function WhatsAppChatPremiumPage() {
   const [showEmojiPicker, setShowEmojiPicker] = useState(false);
   const [selectedFile, setSelectedFile] = useState<File | null>(null);
   const [sideNoteText, setSideNoteText] = useState("");
+  const [leadTagInput, setLeadTagInput] = useState("");
+  const [localLeadTags, setLocalLeadTags] = useState<Record<string, string[]>>({});
+  const [isSavingLeadTags, setIsSavingLeadTags] = useState(false);
   const fileInputRef = useRef<HTMLInputElement>(null);
 
   const [contacts, setContacts] = useState<any[]>([]);
@@ -126,6 +175,23 @@ export default function WhatsAppChatPremiumPage() {
 
   // Permissoes
   const isAdmin = profile?.role === 'Administrador' || profile?.role === 'mayus_admin' || profile?.role === 'Sócio';
+
+  useEffect(() => {
+    try {
+      const rawTags = window.localStorage.getItem("mayus_whatsapp_lead_tags");
+      if (rawTags) setLocalLeadTags(JSON.parse(rawTags));
+    } catch {
+      setLocalLeadTags({});
+    }
+  }, []);
+
+  useEffect(() => {
+    try {
+      window.localStorage.setItem("mayus_whatsapp_lead_tags", JSON.stringify(localLeadTags));
+    } catch {
+      // localStorage is best-effort only.
+    }
+  }, [localLeadTags]);
 
   // Carregar Departamentos e Membros
   useEffect(() => {
@@ -191,6 +257,14 @@ export default function WhatsAppChatPremiumPage() {
      if (showLoading) setIsLoading(false);
   };
 
+  const getLeadTagsForContact = (contact: any) => {
+    if (!contact?.id) return [];
+    const persistedTags = normalizeLeadTags(contact.lead_tags);
+    return persistedTags.length > 0 ? persistedTags : normalizeLeadTags(localLeadTags[contact.id]);
+  };
+
+  const activeLeadTags = activeContact ? getLeadTagsForContact(activeContact) : [];
+
   useEffect(() => {
     if (!profile?.tenant_id) return;
 
@@ -219,7 +293,8 @@ export default function WhatsAppChatPremiumPage() {
   const filteredContacts = contacts.filter(c => {
     if (!searchQuery.trim()) return true;
     const q = searchQuery.toLowerCase();
-    return (c.name || '').toLowerCase().includes(q) || (c.phone_number || '').includes(q);
+    const tagText = getLeadTagsForContact(c).join(" ").toLowerCase();
+    return (c.name || '').toLowerCase().includes(q) || (c.phone_number || '').includes(q) || tagText.includes(q);
   });
 
   const internalNotes = messages.filter((message) => (
@@ -306,6 +381,8 @@ export default function WhatsAppChatPremiumPage() {
            if (payload.new?.tenant_id !== tenantId) return;
            setMessages((current) => mergeMessage(current, payload.new));
            if (payload.new?.direction === "inbound") {
+             setShowTypingIndicator(true);
+             setTimeout(() => setShowTypingIndicator(false), 2600);
              setTimeout(() => loadLatestMayusDraft(contactId), 1200);
            }
          }
@@ -532,9 +609,20 @@ export default function WhatsAppChatPremiumPage() {
        });
        if (!response.ok) throw new Error("Erro no motor Meta");
 
+       setMessages((current) => mergeMessage(current, {
+          id: `local-outbound-${Date.now()}`,
+          tenant_id: profile!.tenant_id,
+          contact_id: activeContact.id,
+          direction: "outbound",
+          message_type: "text",
+          content: textToSend,
+          status: "sent",
+          created_at: new Date().toISOString(),
+       }));
+       scrollToBottom();
        toast.success("Mensagem disparada com sucesso.");
        setSelectedFile(null);
-       fetchContacts();
+       fetchContacts(false);
     } catch (e: any) {
        toast.error("Falha : " + e.message);
        setInputText(inputText);
@@ -600,6 +688,7 @@ export default function WhatsAppChatPremiumPage() {
      if (!error) {
         setContacts([newContact, ...contacts]);
         setActiveContact(newContact);
+        setLocalLeadTags((current) => ({ ...current, [newContact.id]: ["Novo lead"] }));
         setIsAddingContact(false);
         setNewContactPhone("");
         toast.success("Contato pronto para conversa");
@@ -635,6 +724,57 @@ export default function WhatsAppChatPremiumPage() {
     } finally {
       setIsConversationActionPending(false);
     }
+  };
+
+  const saveLeadTags = async (nextTags: string[], successMessage = "Etiquetas atualizadas.") => {
+    if (!activeContact || !profile?.tenant_id) return;
+
+    const normalizedTags = normalizeLeadTags(nextTags);
+    const updates = {
+      lead_tags: normalizedTags,
+      updated_at: new Date().toISOString(),
+    };
+
+    updateActiveContactLocally(updates);
+    setLocalLeadTags((current) => ({ ...current, [activeContact.id]: normalizedTags }));
+    setIsSavingLeadTags(true);
+
+    try {
+      const { error } = await supabase
+        .from("whatsapp_contacts")
+        .update(updates)
+        .eq("tenant_id", profile.tenant_id)
+        .eq("id", activeContact.id);
+
+      if (error) throw error;
+      toast.success(successMessage);
+      void fetchContacts(false);
+    } catch (error: any) {
+      toast.warning("Etiqueta aplicada na tela. O banco precisa receber a migration lead_tags para persistir entre usuarios.");
+      console.error("[WhatsApp] Falha ao persistir etiquetas do lead:", error);
+    } finally {
+      setIsSavingLeadTags(false);
+    }
+  };
+
+  const handleAddLeadTag = (tagValue?: string) => {
+    const tag = String(tagValue ?? leadTagInput).trim();
+    if (!tag || !activeContact) return;
+
+    const nextTags = normalizeLeadTags([...activeLeadTags, tag]);
+    setLeadTagInput("");
+    void saveLeadTags(nextTags, "Etiqueta adicionada ao lead.");
+  };
+
+  const handleRemoveLeadTag = (tag: string) => {
+    if (!activeContact) return;
+    void saveLeadTags(activeLeadTags.filter((item) => item !== tag), "Etiqueta removida do lead.");
+  };
+
+  const handleMayusSuggestLeadTags = () => {
+    if (!activeContact) return;
+    const suggestions = suggestLeadTags(activeContact, messages);
+    void saveLeadTags([...activeLeadTags, ...suggestions], "MAYUS atualizou as etiquetas do lead.");
   };
 
   const saveInternalNote = async (content: string) => {
@@ -863,21 +1003,33 @@ export default function WhatsAppChatPremiumPage() {
         <div className="flex-1 overflow-y-auto no-scrollbar space-y-1 p-3">
            {isLoading ? (
               <div className="flex flex-col items-center justify-center h-40 opacity-20"><Loader2 className="animate-spin" /></div>
-           ) : filteredContacts.map((contact) => (
-              <div key={contact.id} onClick={() => setActiveContact(contact)} className={`group relative flex items-start gap-4 p-4 rounded-2xl cursor-pointer transition-all border ${activeContact?.id === contact.id ? "bg-[#111] border-[#CCA761]/30" : "hover:bg-white/5 border-transparent opacity-80 hover:opacity-100"}`}>
-                 <div className="w-12 h-12 rounded-full border border-[#CCA761]/20 bg-gray-200 dark:bg-black flex flex-shrink-0 items-center justify-center text-[#CCA761] font-black shadow-inner overflow-hidden">
-                    {contact.profile_pic_url ? <img src={contact.profile_pic_url} className="w-full h-full object-cover" /> : contact.name?.substring(0, 2).toUpperCase()}
-                 </div>
-                 <div className="flex-1 min-w-0">
-                    <div className="flex justify-between items-center mb-1">
-                       <h4 className="font-bold truncate text-sm text-gray-200">{contact.name || contact.phone_number}</h4>
-                       <span className="text-[9px] text-gray-600 font-bold uppercase">{contact.last_message_at ? formatTime(contact.last_message_at) : ''}</span>
-                    </div>
-                    <p className="text-gray-500 text-[10px] truncate italic font-medium">Sincronizado via Meta Cloud</p>
-                 </div>
-                 {contact.unread_count > 0 && <div className="bg-[#CCA761] text-black text-[9px] font-black w-4 h-4 rounded-full flex items-center justify-center animate-pulse">{contact.unread_count}</div>}
-              </div>
-           ))}
+           ) : filteredContacts.map((contact) => {
+              const contactTags = getLeadTagsForContact(contact);
+              return (
+                <div key={contact.id} onClick={() => setActiveContact(contact)} className={`group relative flex items-start gap-4 p-4 rounded-2xl cursor-pointer transition-all border ${activeContact?.id === contact.id ? "bg-[#111] border-[#CCA761]/30" : "hover:bg-white/5 border-transparent opacity-80 hover:opacity-100"}`}>
+                   <div className="w-12 h-12 rounded-full border border-[#CCA761]/20 bg-gray-200 dark:bg-black flex flex-shrink-0 items-center justify-center text-[#CCA761] font-black shadow-inner overflow-hidden">
+                      {contact.profile_pic_url ? <img src={contact.profile_pic_url} className="w-full h-full object-cover" /> : contact.name?.substring(0, 2).toUpperCase()}
+                   </div>
+                   <div className="flex-1 min-w-0">
+                      <div className="flex justify-between items-center mb-1">
+                         <h4 className="font-bold truncate text-sm text-gray-200">{contact.name || contact.phone_number}</h4>
+                         <span className="text-[9px] text-gray-600 font-bold uppercase">{contact.last_message_at ? formatTime(contact.last_message_at) : ''}</span>
+                      </div>
+                      <p className="text-gray-500 text-[10px] truncate italic font-medium">Sincronizado via Meta Cloud</p>
+                      {contactTags.length > 0 && (
+                        <div className="mt-2 flex flex-wrap gap-1">
+                          {contactTags.slice(0, 3).map((tag, index) => (
+                            <span key={`${contact.id}-${tag}`} className={`max-w-full truncate rounded-full border px-2 py-0.5 text-[8px] font-black uppercase tracking-widest ${getTagClassName(tag, index)}`}>
+                              {tag}
+                            </span>
+                          ))}
+                        </div>
+                      )}
+                   </div>
+                   {contact.unread_count > 0 && <div className="bg-[#CCA761] text-black text-[9px] font-black w-4 h-4 rounded-full flex items-center justify-center animate-pulse">{contact.unread_count}</div>}
+                </div>
+              );
+           })}
         </div>
       </div>
 
@@ -1228,6 +1380,76 @@ export default function WhatsAppChatPremiumPage() {
                   </div>
                   <h3 className="text-2xl font-bold text-white text-center italic group-hover:text-[#CCA761] transition-colors">{activeContact.name}</h3>
                   <div className="bg-[#CCA761]/10 border border-[#CCA761]/20 text-[#CCA761] px-4 py-1.5 rounded-full text-[9px] font-black uppercase mt-3 tracking-widest">{serviceStatusLabel}</div>
+               </div>
+
+               <div className="space-y-4">
+                  <div className="flex items-center gap-2 text-gray-500 font-black uppercase text-[10px] tracking-widest">
+                    <Tag size={14} className="text-[#CCA761]" /> Etiquetas do lead
+                  </div>
+                  <div className="rounded-2xl border border-white/5 bg-gray-200 p-5 dark:bg-black">
+                    <div className="mb-4 flex flex-wrap gap-2">
+                      {activeLeadTags.length > 0 ? activeLeadTags.map((tag, index) => (
+                        <button
+                          key={tag}
+                          type="button"
+                          onClick={() => handleRemoveLeadTag(tag)}
+                          className={`flex max-w-full items-center gap-1 rounded-full border px-2.5 py-1 text-[9px] font-black uppercase tracking-widest transition-all hover:border-red-400/50 hover:text-red-100 ${getTagClassName(tag, index)}`}
+                          title="Remover etiqueta"
+                        >
+                          <span className="truncate">{tag}</span>
+                          <X size={10} />
+                        </button>
+                      )) : (
+                        <p className="text-xs leading-relaxed text-gray-500">Sem etiqueta ainda. Use uma sugestao do MAYUS ou crie uma manualmente.</p>
+                      )}
+                    </div>
+
+                    <div className="flex gap-2">
+                      <input
+                        value={leadTagInput}
+                        onChange={(event) => setLeadTagInput(event.target.value)}
+                        onKeyDown={(event) => {
+                          if (event.key === "Enter") {
+                            event.preventDefault();
+                            handleAddLeadTag();
+                          }
+                        }}
+                        placeholder="Nova etiqueta"
+                        className="min-w-0 flex-1 rounded-xl border border-white/10 bg-[#111] px-3 py-2 text-xs text-white outline-none placeholder:text-gray-700 focus:border-[#CCA761]/50"
+                      />
+                      <button
+                        type="button"
+                        onClick={() => handleAddLeadTag()}
+                        disabled={!leadTagInput.trim() || isSavingLeadTags}
+                        className="rounded-xl bg-[#CCA761] px-3 text-black transition-all hover:bg-white disabled:opacity-40"
+                        title="Adicionar etiqueta"
+                      >
+                        {isSavingLeadTags ? <Loader2 size={14} className="animate-spin" /> : <Plus size={14} />}
+                      </button>
+                    </div>
+
+                    <div className="mt-3 flex flex-wrap gap-1.5">
+                      <button
+                        type="button"
+                        onClick={handleMayusSuggestLeadTags}
+                        disabled={isSavingLeadTags}
+                        className="rounded-full border border-[#CCA761]/30 bg-[#CCA761]/10 px-2.5 py-1 text-[8px] font-black uppercase tracking-widest text-[#CCA761] transition-all hover:bg-[#CCA761] hover:text-black disabled:opacity-40"
+                      >
+                        MAYUS sugerir
+                      </button>
+                      {DEFAULT_LEAD_TAGS.filter((tag) => !activeLeadTags.includes(tag)).slice(0, 5).map((tag) => (
+                        <button
+                          key={tag}
+                          type="button"
+                          onClick={() => handleAddLeadTag(tag)}
+                          disabled={isSavingLeadTags}
+                          className="rounded-full border border-white/10 px-2.5 py-1 text-[8px] font-black uppercase tracking-widest text-gray-500 transition-all hover:border-[#CCA761]/40 hover:text-[#CCA761] disabled:opacity-40"
+                        >
+                          {tag}
+                        </button>
+                      ))}
+                    </div>
+                  </div>
                </div>
 
                {/* Modulo Kanban */}
