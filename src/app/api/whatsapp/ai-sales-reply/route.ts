@@ -99,23 +99,41 @@ export async function GET(req: NextRequest) {
       return NextResponse.json({ error: "Contato nao encontrado." }, { status: 404 });
     }
 
-    const { data: event } = await adminSupabase
+    const { data: latestInbound } = await adminSupabase
+      .from("whatsapp_messages")
+      .select("created_at")
+      .eq("tenant_id", auth.tenantId)
+      .eq("contact_id", contactId)
+      .eq("direction", "inbound")
+      .order("created_at", { ascending: false })
+      .limit(1)
+      .maybeSingle<{ created_at: string | null }>();
+
+    const latestInboundAt = latestInbound?.created_at || null;
+    let latestDraftQuery = adminSupabase
       .from("system_event_logs")
       .select("id, payload, created_at")
       .eq("tenant_id", auth.tenantId)
       .in("event_name", ["whatsapp_mayus_reply_prepared", "whatsapp_sales_reply_prepared"])
-      .eq("payload->>contact_id", contactId)
+      .eq("payload->>contact_id", contactId);
+
+    if (latestInboundAt) {
+      latestDraftQuery = latestDraftQuery.gte("created_at", latestInboundAt);
+    }
+
+    const { data: event } = await latestDraftQuery
       .order("created_at", { ascending: false })
       .limit(1)
       .maybeSingle<{ id: string; payload: Record<string, unknown> | null; created_at: string }>();
 
     if (!event?.payload) {
-      return NextResponse.json({ ok: true, contact_id: contactId, draft: null });
+      return NextResponse.json({ ok: true, contact_id: contactId, latest_inbound_at: latestInboundAt, draft: null });
     }
 
     return NextResponse.json({
       ok: true,
       contact_id: contactId,
+      latest_inbound_at: latestInboundAt,
       draft: {
         event_id: event.id,
         created_at: event.created_at,

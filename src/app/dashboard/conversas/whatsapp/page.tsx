@@ -150,12 +150,26 @@ const renderWhatsAppContent = (content: string) => {
   });
 };
 
-export default function WhatsAppChatPremiumPage() {
+type WhatsAppChatPremiumPageProps = {
+  initialActiveTab?: string;
+  initialFiltersOpen?: boolean;
+  pageTitle?: string;
+};
+
+export default function WhatsAppChatPremiumPage({
+  initialActiveTab = "minhas",
+  initialFiltersOpen = true,
+  pageTitle = "Conversas",
+}: WhatsAppChatPremiumPageProps = {}) {
   const { profile } = useUserProfile();
   const supabase = useMemo(() => createClient(), []);
   const messagesEndRef = useRef<HTMLDivElement>(null);
+  const autoPreparedDraftContactsRef = useRef<Set<string>>(new Set());
+  const activeContactIdRef = useRef<string | null>(null);
+  const inputTextRef = useRef("");
 
-  const [activeTab, setActiveTab] = useState("minhas"); // minhas, aguardando, todas
+  const [activeTab, setActiveTab] = useState(initialActiveTab); // minhas, aguardando, todas
+  const [isFiltersOpen, setIsFiltersOpen] = useState(initialFiltersOpen);
   const [inputMode, setInputMode] = useState("responder");
   const [inputText, setInputText] = useState("");
   const [isSending, setIsSending] = useState(false);
@@ -206,6 +220,14 @@ export default function WhatsAppChatPremiumPage() {
 
   // Permissoes
   const isAdmin = ["administrador", "admin", "socio", "mayus_admin"].includes(normalizedRole);
+
+  useEffect(() => {
+    activeContactIdRef.current = activeContact?.id || null;
+  }, [activeContact?.id]);
+
+  useEffect(() => {
+    inputTextRef.current = inputText;
+  }, [inputText]);
 
   useEffect(() => {
     try {
@@ -309,9 +331,13 @@ export default function WhatsAppChatPremiumPage() {
 
   const handleSelectContact = (contact: any) => {
     if (contact?.id === activeContact?.id) return;
+    activeContactIdRef.current = contact?.id || null;
     setActiveContact(contact);
     setMessages([]);
     setMayusDraft(null);
+    setInputMode("responder");
+    setInputText("");
+    setSelectedFile(null);
     setShowTypingIndicator(false);
   };
 
@@ -449,7 +475,7 @@ export default function WhatsAppChatPremiumPage() {
     };
 
     fetchMessages();
-    loadLatestMayusDraft(contactId);
+    loadLatestMayusDraft(contactId, { prepareIfMissing: true });
 
     const channel = supabase
        .channel(`chat_ws_meta_${contactId}`)
@@ -470,7 +496,7 @@ export default function WhatsAppChatPremiumPage() {
            if (payload.new?.direction === "inbound") {
              setShowTypingIndicator(true);
              setTimeout(() => setShowTypingIndicator(false), 2600);
-             setTimeout(() => loadLatestMayusDraft(contactId), 1200);
+              setTimeout(() => loadLatestMayusDraft(contactId, { prepareIfMissing: true }), 1200);
            }
          }
        )
@@ -517,16 +543,56 @@ export default function WhatsAppChatPremiumPage() {
     setTimeout(() => messagesEndRef.current?.scrollIntoView({ behavior: "smooth" }), 100);
   };
 
-  const loadLatestMayusDraft = async (contactId: string) => {
+  const loadLatestMayusDraft = async (contactId: string, options: { prepareIfMissing?: boolean } = {}) => {
     if (!contactId) return;
+    const isCurrentContact = () => activeContactIdRef.current === contactId;
+    const applyDraft = (draft: any) => {
+      setMayusDraft(draft);
+      if (draft?.suggested_reply && !inputTextRef.current.trim()) {
+        setInputMode("responder");
+        setInputText(draft.suggested_reply);
+      }
+    };
+
     try {
       const response = await fetch(`/api/whatsapp/ai-sales-reply?contact_id=${encodeURIComponent(contactId)}`);
-      const data = await response.json();
-      if (response.ok) {
-        setMayusDraft(data.draft || null);
+      const data = await response.json().catch(() => null);
+      if (!isCurrentContact()) return;
+      if (!response.ok || !data) {
+        setMayusDraft(null);
+        return;
       }
-    } catch {
+
+      if (data.draft) {
+        applyDraft(data.draft);
+        return;
+      }
+
       setMayusDraft(null);
+
+      const autoPrepareKey = `${contactId}:${data.latest_inbound_at || "no-inbound"}`;
+      if (!options.prepareIfMissing || autoPreparedDraftContactsRef.current.has(autoPrepareKey)) return;
+
+      autoPreparedDraftContactsRef.current.add(autoPrepareKey);
+      setShowTypingIndicator(true);
+
+      const prepareResponse = await fetch('/api/whatsapp/ai-sales-reply', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ contact_id: contactId }),
+      });
+      const prepared = await prepareResponse.json().catch(() => null);
+      if (!isCurrentContact()) return;
+      if (!prepareResponse.ok || !prepared) {
+        autoPreparedDraftContactsRef.current.delete(autoPrepareKey);
+        return;
+      }
+
+      applyDraft(prepared);
+    } catch {
+      if (isCurrentContact()) setMayusDraft(null);
+    } finally {
+      if (isCurrentContact()) setShowTypingIndicator(false);
     }
   };
 
@@ -1086,77 +1152,100 @@ export default function WhatsAppChatPremiumPage() {
 
 
   return (
-    <div className={`h-[calc(100vh-6rem)] w-full flex bg-[#020104] rounded-tl-3xl border-t border-l border-white/5 overflow-hidden ${montserrat.className} text-sm`}>
+    <div className={`h-[calc(100dvh-7rem)] md:h-[calc(100dvh-9rem)] min-h-[640px] w-full flex bg-[#020104] rounded-tl-3xl border-t border-l border-white/5 overflow-hidden ${montserrat.className} text-sm`}>
 
       {/* 1. BARRA LATERAL ESQUERDA (LISTAGEM) */}
       <div className="w-[320px] flex-shrink-0 border-r border-white/10 bg-white dark:bg-[#050505] flex flex-col h-full z-10 transition-all">
-        <div className="p-6 border-b border-white/10 flex flex-col gap-4">
+        <div className="border-b border-white/10 p-5 flex flex-col gap-4">
            <div className="flex justify-between items-center">
               <div className="flex items-center gap-2">
-                 <div className="w-8 h-8 rounded-lg bg-[#CCA761]/10 flex items-center justify-center border border-[#CCA761]/30 shadow-[0_0_15px_rgba(204,167,97,0.1)]">
-                    <MessageCircle size={18} className="text-[#CCA761]" />
-                 </div>
-                 <h2 className={`text-xl font-black text-white italic tracking-tighter ${cormorant.className}`}>Conversas</h2>
+                  <div className="w-8 h-8 rounded-lg bg-[#CCA761]/10 flex items-center justify-center border border-[#CCA761]/30 shadow-[0_0_15px_rgba(204,167,97,0.1)]">
+                     <MessageCircle size={18} className="text-[#CCA761]" />
+                  </div>
+                  <h2 className={`text-xl font-black text-white italic tracking-tighter ${cormorant.className}`}>{pageTitle}</h2>
               </div>
-              <button onClick={() => setIsAddingContact(!isAddingContact)} className="bg-white/5 p-2 rounded-lg border border-white/5 hover:bg-[#CCA761] hover:text-black transition-all">
-                 <Plus size={18} />
-              </button>
-           </div>
-
-           {/* BARRA DE BUSCA */}
-           <div className="relative">
-              <Search size={14} className="absolute left-3 top-1/2 -translate-y-1/2 text-gray-600" />
-              <input
-                type="text"
-                value={searchQuery}
-                onChange={(e) => setSearchQuery(e.target.value)}
-                placeholder="Buscar por nome ou telefone..."
-                className="w-full bg-gray-200 dark:bg-black/40 border border-white/5 rounded-xl pl-9 pr-3 py-2.5 text-xs text-white placeholder:text-gray-700 outline-none focus:border-[#CCA761]/30 transition-colors"
-              />
-           </div>
-
-           {/* Filtros de Aba Estilo Premium */}
-           <div className="flex p-1 bg-gray-200 dark:bg-black/40 rounded-xl border border-white/5">
-              {[
-                { id: "minhas", label: "Minhas", icon: UserCheck },
-                { id: "aguardando", label: "Espera", icon: Clock },
-                ...(isAdmin ? [{ id: "todas", label: "Todas", icon: Users }] : [])
-              ].map((tab) => (
+              <div className="flex items-center gap-2">
                 <button
-                  key={tab.id}
-                  onClick={() => setActiveTab(tab.id)}
-                  className={`flex-1 flex items-center justify-center gap-2 py-2 rounded-lg text-[10px] font-black uppercase tracking-widest transition-all ${activeTab === tab.id ? "bg-[#CCA761] text-black shadow-lg" : "text-gray-500 hover:text-gray-300"}`}
+                  type="button"
+                  onClick={() => setIsFiltersOpen((current) => !current)}
+                  className={`rounded-lg border p-2 transition-all ${isFiltersOpen ? "border-[#CCA761]/30 bg-[#CCA761]/10 text-[#CCA761]" : "border-white/5 bg-white/5 text-gray-500 hover:text-[#CCA761]"}`}
+                  title={isFiltersOpen ? "Fechar filtros" : "Abrir filtros"}
                 >
-                   <tab.icon size={12} /> {tab.label}
+                  <Filter size={16} />
                 </button>
-              ))}
+                <button onClick={() => setIsAddingContact(!isAddingContact)} className="bg-white/5 p-2 rounded-lg border border-white/5 hover:bg-[#CCA761] hover:text-black transition-all">
+                   <Plus size={18} />
+                </button>
+              </div>
            </div>
 
-           {/* FILTRO POR DEPARTAMENTO */}
-           {departments.length > 0 && (
-             <div className="flex gap-1.5 flex-wrap">
-               <button
-                 onClick={() => setFilterDeptId(null)}
-                 className={`text-[8px] font-black uppercase tracking-widest px-2.5 py-1 rounded-full border transition-all ${
-                   !filterDeptId ? 'bg-white/10 border-white/20 text-white' : 'border-white/5 text-gray-600 hover:text-gray-400'
-                 }`}
-               >
-                 Todos
-               </button>
-               {departments.map(dept => (
-                 <button
-                   key={dept.id}
-                   onClick={() => setFilterDeptId(filterDeptId === dept.id ? null : dept.id)}
-                   className={`text-[8px] font-black uppercase tracking-widest px-2.5 py-1 rounded-full border transition-all flex items-center gap-1 ${
-                     filterDeptId === dept.id ? 'border-white/20 text-white' : 'border-white/5 text-gray-600 hover:text-gray-400'
-                   }`}
-                   style={filterDeptId === dept.id ? { backgroundColor: `${dept.color}20`, borderColor: `${dept.color}40` } : {}}
-                 >
-                   <div className="w-1.5 h-1.5 rounded-full" style={{ backgroundColor: dept.color }} />
-                   {dept.name}
-                 </button>
-               ))}
+           {isFiltersOpen ? (
+             <div className="animate-in slide-in-from-top-2 flex flex-col gap-4">
+               {/* BARRA DE BUSCA */}
+               <div className="relative">
+                  <Search size={14} className="absolute left-3 top-1/2 -translate-y-1/2 text-gray-600" />
+                  <input
+                    type="text"
+                    value={searchQuery}
+                    onChange={(e) => setSearchQuery(e.target.value)}
+                    placeholder="Buscar por nome ou telefone..."
+                    className="w-full bg-gray-200 dark:bg-black/40 border border-white/5 rounded-xl pl-9 pr-3 py-2.5 text-xs text-white placeholder:text-gray-700 outline-none focus:border-[#CCA761]/30 transition-colors"
+                  />
+               </div>
+
+               {/* Filtros de Aba Estilo Premium */}
+               <div className="flex p-1 bg-gray-200 dark:bg-black/40 rounded-xl border border-white/5">
+                  {[
+                    { id: "minhas", label: "Minhas", icon: UserCheck },
+                    { id: "aguardando", label: "Espera", icon: Clock },
+                    ...(isAdmin ? [{ id: "todas", label: "Todas", icon: Users }] : [])
+                  ].map((tab) => (
+                    <button
+                      key={tab.id}
+                      onClick={() => setActiveTab(tab.id)}
+                      className={`flex-1 flex items-center justify-center gap-2 py-2 rounded-lg text-[10px] font-black uppercase tracking-widest transition-all ${activeTab === tab.id ? "bg-[#CCA761] text-black shadow-lg" : "text-gray-500 hover:text-gray-300"}`}
+                    >
+                       <tab.icon size={12} /> {tab.label}
+                    </button>
+                  ))}
+               </div>
+
+               {/* FILTRO POR DEPARTAMENTO */}
+               {departments.length > 0 && (
+                 <div className="flex gap-1.5 flex-wrap">
+                   <button
+                     onClick={() => setFilterDeptId(null)}
+                     className={`text-[8px] font-black uppercase tracking-widest px-2.5 py-1 rounded-full border transition-all ${
+                       !filterDeptId ? 'bg-white/10 border-white/20 text-white' : 'border-white/5 text-gray-600 hover:text-gray-400'
+                     }`}
+                   >
+                     Todos
+                   </button>
+                   {departments.map(dept => (
+                     <button
+                       key={dept.id}
+                       onClick={() => setFilterDeptId(filterDeptId === dept.id ? null : dept.id)}
+                       className={`text-[8px] font-black uppercase tracking-widest px-2.5 py-1 rounded-full border transition-all flex items-center gap-1 ${
+                         filterDeptId === dept.id ? 'border-white/20 text-white' : 'border-white/5 text-gray-600 hover:text-gray-400'
+                       }`}
+                       style={filterDeptId === dept.id ? { backgroundColor: `${dept.color}20`, borderColor: `${dept.color}40` } : {}}
+                     >
+                       <div className="w-1.5 h-1.5 rounded-full" style={{ backgroundColor: dept.color }} />
+                       {dept.name}
+                     </button>
+                   ))}
+                 </div>
+               )}
              </div>
+           ) : (
+             <button
+               type="button"
+               onClick={() => setIsFiltersOpen(true)}
+               className="flex items-center justify-between rounded-xl border border-white/5 bg-black/30 px-3 py-2 text-left text-[10px] font-black uppercase tracking-widest text-gray-500 transition-all hover:border-[#CCA761]/30 hover:text-[#CCA761]"
+             >
+               <span>{filteredContacts.length} conversa(s) nesta visao</span>
+               <ChevronDown size={14} />
+             </button>
            )}
 
            {isAddingContact && (
@@ -1207,19 +1296,19 @@ export default function WhatsAppChatPremiumPage() {
           <div className="flex-1 flex flex-col min-h-0">
             {(activeContact || messages.length > 0) ? (
               <>
-                <div className="h-16 border-b border-white/5 flex items-center justify-between px-6 bg-[#0a0a0a]/90 backdrop-blur-3xl z-10 flex-shrink-0">
+                <div className="min-h-[84px] border-b border-white/5 flex items-center justify-between px-7 py-3 bg-[#0a0a0a]/90 backdrop-blur-3xl z-10 flex-shrink-0">
                     <div className="flex min-w-0 items-center gap-4">
-                       <div className="h-10 w-10 rounded-full border border-[#CCA761]/50 bg-gray-200 dark:bg-black flex flex-shrink-0 items-center justify-center text-[#CCA761] font-black text-base shadow-[0_0_20px_rgba(204,167,97,0.1)] overflow-hidden">
-                          {activeContact?.profile_pic_url ? <img src={activeContact.profile_pic_url} alt={activeContact?.name || "Contato ativo"} className="w-full h-full object-cover" /> : (activeContact?.name?.substring(0, 2).toUpperCase() || "TS")}
-                       </div>
-                       <div className="min-w-0">
-                         <h2 className={`truncate text-xl font-bold text-white tracking-wide ${cormorant.className} italic`}>
-                            {activeContact?.name || activeContact?.phone_number || "Lead de Teste (Simulado)"}
-                          </h2>
-                         <div className="mt-1 flex min-w-0 items-center gap-2">
-                            <div className="w-2 h-2 rounded-full bg-green-500 animate-pulse shadow-[0_0_10px_#22c55e]" />
-                            <span className={`text-[8px] px-2 py-0.5 rounded-full font-black uppercase tracking-widest border ${activeContact ? 'bg-[#25D366]/10 text-[#25D366] border-[#25D366]/20' : 'bg-[#CCA761]/10 text-[#CCA761] border-[#CCA761]/20'}`}>
-                              {activeContact ? 'WhatsApp' : 'Simulacao'}
+                       <div className="h-12 w-12 rounded-full border border-[#CCA761]/50 bg-gray-200 dark:bg-black flex flex-shrink-0 items-center justify-center text-[#CCA761] font-black text-base shadow-[0_0_20px_rgba(204,167,97,0.1)] overflow-hidden">
+                           {activeContact?.profile_pic_url ? <img src={activeContact.profile_pic_url} alt={activeContact?.name || "Contato ativo"} className="w-full h-full object-cover" /> : (activeContact?.name?.substring(0, 2).toUpperCase() || "TS")}
+                        </div>
+                        <div className="min-w-0">
+                          <h2 className={`truncate text-2xl font-bold leading-none text-white tracking-wide ${cormorant.className} italic`}>
+                             {activeContact?.name || activeContact?.phone_number || "Lead de Teste (Simulado)"}
+                           </h2>
+                          <div className="mt-2 flex min-w-0 flex-wrap items-center gap-2">
+                             <div className="w-2 h-2 rounded-full bg-green-500 animate-pulse shadow-[0_0_10px_#22c55e]" />
+                             <span className={`text-[8px] px-2 py-0.5 rounded-full font-black uppercase tracking-widest border ${activeContact ? 'bg-[#25D366]/10 text-[#25D366] border-[#25D366]/20' : 'bg-[#CCA761]/10 text-[#CCA761] border-[#CCA761]/20'}`}>
+                               {activeContact ? 'WhatsApp' : 'Simulacao'}
                             </span>
                             <span className="truncate text-[9px] text-gray-600 uppercase font-black tracking-widest">{serviceStatusLabel}</span>
                           </div>

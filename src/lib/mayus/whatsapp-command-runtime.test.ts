@@ -117,10 +117,10 @@ describe("whatsapp command runtime", () => {
     });
     expect(global.fetch).not.toHaveBeenCalled();
     expect(integrationMock.listTenantIntegrationsResolved).not.toHaveBeenCalled();
-    expect(inserts.some((item) => item.table === "system_event_logs" && item.payload.event_type === "whatsapp_internal_command_blocked")).toBe(true);
+    expect(inserts.some((item) => item.table === "system_event_logs" && item.payload.event_name === "whatsapp_internal_command_blocked" && item.payload.status === "warning")).toBe(true);
   });
 
-  it("gera artifact e envia resposta para comando autorizado", async () => {
+  it("gera artifact com link publico e envia resposta para comando autorizado", async () => {
     const { supabase, inserts } = createSupabaseMock();
     integrationMock.listTenantIntegrationsResolved.mockResolvedValue([
       {
@@ -134,7 +134,7 @@ describe("whatsapp command runtime", () => {
       supabase,
       tenantId: "tenant-1",
       senderPhone: "5521999990000@s.whatsapp.net",
-      content: "Mayus, CRM sem proximo passo",
+      content: "Mayus, relatorio do escritorio",
       contactId: "contact-1",
       source: "evolution_webhook",
     });
@@ -142,7 +142,7 @@ describe("whatsapp command runtime", () => {
     expect(result).toMatchObject({
       handled: true,
       sent: true,
-      intent: "crm_next_steps",
+      intent: "daily_playbook",
       provider: "evolution",
     });
     expect(global.fetch).toHaveBeenCalledWith(
@@ -151,8 +151,11 @@ describe("whatsapp command runtime", () => {
         method: "POST",
       }),
     );
-    expect(inserts.some((item) => item.table === "brain_artifacts" && item.payload.artifact_type === "daily_playbook")).toBe(true);
-    expect(inserts.some((item) => item.table === "system_event_logs" && item.payload.event_type === "whatsapp_internal_command_processed")).toBe(true);
+    expect(String((global.fetch as any).mock.calls[0][1].body)).toContain("https://mayus-premium-pro.vercel.app/r/playbook/");
+
+    const artifactInsert = inserts.find((item) => item.table === "brain_artifacts" && item.payload.artifact_type === "daily_playbook");
+    expect(artifactInsert?.payload.metadata.html_report_url).toContain("https://mayus-premium-pro.vercel.app/r/playbook/");
+    expect(inserts.some((item) => item.table === "system_event_logs" && item.payload.event_name === "whatsapp_internal_command_processed" && item.payload.status === "ok")).toBe(true);
     expect(inserts.some((item) => item.table === "whatsapp_messages" && item.payload?.[0]?.direction === "outbound")).toBe(true);
     expect(JSON.stringify(inserts)).not.toContain("21999990000");
   });

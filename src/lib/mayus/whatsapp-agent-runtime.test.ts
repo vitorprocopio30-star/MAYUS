@@ -77,6 +77,12 @@ describe("whatsapp MAYUS agent runtime", () => {
     expect(inferWhatsAppMayusIntent({ messages })).toBe("human_handoff");
   });
 
+  it("mantem lead novo em vendas quando processo e contexto comercial", () => {
+    const messages = [{ direction: "inbound", content: "Preciso abrir um processo contra o INSS", message_type: "text", created_at: null }];
+
+    expect(inferWhatsAppMayusIntent({ messages })).toBe("sales");
+  });
+
   it("autoenvia suporte quando identifica caso com base segura", async () => {
     const inserts: Array<{ table: string; payload: any }> = [];
     const supabase: any = {

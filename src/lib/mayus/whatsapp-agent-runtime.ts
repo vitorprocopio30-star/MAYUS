@@ -83,7 +83,7 @@ function getProcessNumber(text: string) {
 }
 
 function hasSupportSignal(text: string) {
-  return /(status|andamento|movimenta[cç][aã]o|publica[cç][aã]o|processo|meu\s+caso|meu\s+processo|audi[eê]ncia|per[ií]cia|senten[cç]a|recurso|prazo|documento\s+pendente|pend[eê]ncia|juntada|protocolo)/i.test(text);
+  return /(status|andamento|movimenta[cç][aã]o|publica[cç][aã]o|meu\s+caso|meu\s+processo|n[uú]mero\s+do\s+processo|consulta\s+processual|audi[eê]ncia|per[ií]cia|senten[cç]a|recurso|prazo|documento\s+pendente|pend[eê]ncia|juntada|protocolo)/i.test(text);
 }
 
 function hasHumanSignal(text: string) {
@@ -107,7 +107,7 @@ export function inferWhatsAppMayusIntent(params: {
   const normalized = normalizeText(text);
 
   if (lastInbound && hasHumanSignal(normalizeText(lastInbound.content))) return "human_handoff";
-  if (hasSupportSignal(normalized)) return "support";
+  if (hasSupportSignal(normalized) || Boolean(getProcessNumber(text))) return "support";
   return "sales";
 }
 

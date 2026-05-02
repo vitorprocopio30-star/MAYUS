@@ -188,15 +188,17 @@ export async function handleWhatsAppInternalCommand(params: HandleWhatsAppIntern
     if (rejected.reason === "not_authorized" && rejected.intent !== "unknown") {
       await params.supabase.from("system_event_logs").insert({
         tenant_id: params.tenantId,
-        event_type: "whatsapp_internal_command_blocked",
-        severity: "warning",
-        source: "mayus",
-        metadata: {
+        source: "whatsapp",
+        provider: "mayus",
+        event_name: "whatsapp_internal_command_blocked",
+        status: "warning",
+        payload: {
           source: params.source,
           intent: rejected.intent,
           sender_phone_authorized: false,
           raw_phone_stored: false,
         },
+        created_at: new Date().toISOString(),
       });
     }
 
@@ -219,16 +221,18 @@ export async function handleWhatsAppInternalCommand(params: HandleWhatsAppIntern
 
   await params.supabase.from("system_event_logs").insert({
     tenant_id: params.tenantId,
-    event_type: "whatsapp_internal_command_processed",
-    severity: "info",
-    source: "mayus",
-    metadata: {
+    source: "whatsapp",
+    provider: "mayus",
+    event_name: "whatsapp_internal_command_processed",
+    status: "ok",
+    payload: {
       ...result.metadata,
       source: params.source,
       brain_trace: brainTrace,
       html_report_url: reportUrl && brainTrace?.artifactId ? reportUrl : null,
       raw_phone_stored: false,
     },
+    created_at: new Date().toISOString(),
   });
 
   const delivery = await sendInternalWhatsAppReply({
