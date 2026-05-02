@@ -244,7 +244,7 @@ export function buildWhatsAppSalesReply(input: WhatsAppSalesReplyInput): WhatsAp
     internalNote: requiresHumanReview
       ? "Resposta preparada para revisao humana antes de envio pelo WhatsApp."
       : plan.firmProfile.missingSignals.length > 0
-        ? `Resposta inicial preparada pelo Front Desk MAYUS com playbook generico. Depois configure o escritorio: ${plan.firmProfile.nextPositioningQuestion}`
+        ? `Resposta inicial preparada pelo MAYUS com base na mensagem do lead. Depois refine o perfil do escritorio: ${plan.firmProfile.nextPositioningQuestion}`
         : "Resposta consultiva preparada para o atendimento WhatsApp.",
     plan,
     riskFlags,

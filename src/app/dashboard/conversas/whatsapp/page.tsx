@@ -4,6 +4,7 @@ import { useState, useCallback, useEffect, useMemo, useRef } from "react";
 import { Cormorant_Garamond, Montserrat } from "next/font/google";
 import { createClient } from "@/lib/supabase/client";
 import { useUserProfile } from "@/hooks/useUserProfile";
+import { DEMO_SEED_TAG } from "@/lib/demo/demo-oab-flow";
 import {
   Search, ChevronDown, Phone, Send,
   MessageCircle, Bot, Lock, CheckCircle2,
@@ -188,7 +189,7 @@ export default function WhatsAppChatPremiumPage() {
   const [isTransferring, setIsTransferring] = useState(false);
   const [isSendingContract, setIsSendingContract] = useState(false);
   const [isGeneratingMayusReply, setIsGeneratingMayusReply] = useState(false);
-  const [isLoadingMayusDraft, setIsLoadingMayusDraft] = useState(false);
+  const [isExecutingMayusReply, setIsExecutingMayusReply] = useState(false);
   const [isConversationActionPending, setIsConversationActionPending] = useState(false);
   const [showTypingIndicator, setShowTypingIndicator] = useState(false);
   const [mayusDraft, setMayusDraft] = useState<any | null>(null);
@@ -302,6 +303,8 @@ export default function WhatsAppChatPremiumPage() {
   };
 
   const activeLeadTags = activeContact ? getLeadTagsForContact(activeContact) : [];
+  const isDemoContact = activeLeadTags.includes(DEMO_SEED_TAG);
+  const visibleActiveLeadTags = activeLeadTags.filter((tag) => tag !== DEMO_SEED_TAG);
 
   const handleSelectContact = (contact: any) => {
     if (contact?.id === activeContact?.id) return;
@@ -515,7 +518,6 @@ export default function WhatsAppChatPremiumPage() {
 
   const loadLatestMayusDraft = async (contactId: string) => {
     if (!contactId) return;
-    setIsLoadingMayusDraft(true);
     try {
       const response = await fetch(`/api/whatsapp/ai-sales-reply?contact_id=${encodeURIComponent(contactId)}`);
       const data = await response.json();
@@ -524,8 +526,6 @@ export default function WhatsAppChatPremiumPage() {
       }
     } catch {
       setMayusDraft(null);
-    } finally {
-      setIsLoadingMayusDraft(false);
     }
   };
 
@@ -765,11 +765,51 @@ export default function WhatsAppChatPremiumPage() {
     }
   };
 
-  const handleUseMayusDraft = () => {
-    if (!mayusDraft?.suggested_reply) return;
-    setInputMode("responder");
-    setInputText(mayusDraft.suggested_reply);
-    toast.success("Rascunho MAYUS carregado no atendimento.");
+  const handleExecuteMayusReply = async () => {
+    if (!activeContact || isExecutingMayusReply) {
+      if (!activeContact) toast.info("Selecione um contato demo para executar a resposta.");
+      return;
+    }
+
+    const replyText = String(mayusDraft?.suggested_reply || inputText || "").trim();
+    if (!replyText) {
+      toast.info("Gere ou escreva uma resposta antes de executar.");
+      return;
+    }
+
+    setIsExecutingMayusReply(true);
+    setShowTypingIndicator(true);
+
+    try {
+      const response = await fetch("/api/whatsapp/execute-reply", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ contact_id: activeContact.id, text: replyText }),
+      });
+      const data = await response.json().catch(() => ({}));
+      if (!response.ok) throw new Error(data?.error || "Nao consegui executar a resposta demo agora.");
+
+      setMessages((current) => mergeMessage(current, data?.message || {
+        id: `demo-outbound-${Date.now()}`,
+        tenant_id: tenantId,
+        contact_id: activeContact.id,
+        direction: "outbound",
+        message_type: "text",
+        content: replyText,
+        status: "sent",
+        created_at: new Date().toISOString(),
+        metadata: { simulated: true, source: "whatsapp_execute_reply" },
+      }));
+      setInputText("");
+      scrollToBottom();
+      toast.success("Resposta demo executada no WhatsApp.");
+      void fetchContacts(false);
+    } catch (error: any) {
+      toast.error(error.message || "Falha ao executar resposta demo.");
+    } finally {
+      setIsExecutingMayusReply(false);
+      setShowTypingIndicator(false);
+    }
   };
 
   const handleCreateContact = async () => {
@@ -1048,7 +1088,7 @@ export default function WhatsAppChatPremiumPage() {
     <div className={`h-[calc(100vh-6rem)] w-full flex bg-[#020104] rounded-tl-3xl border-t border-l border-white/5 overflow-hidden ${montserrat.className} text-sm`}>
 
       {/* 1. BARRA LATERAL ESQUERDA (LISTAGEM) */}
-      <div className="w-[360px] flex-shrink-0 border-r border-white/10 bg-white dark:bg-[#050505] flex flex-col h-full z-10 transition-all">
+      <div className="w-[320px] flex-shrink-0 border-r border-white/10 bg-white dark:bg-[#050505] flex flex-col h-full z-10 transition-all">
         <div className="p-6 border-b border-white/10 flex flex-col gap-4">
            <div className="flex justify-between items-center">
               <div className="flex items-center gap-2">
@@ -1130,11 +1170,11 @@ export default function WhatsAppChatPremiumPage() {
            {isLoading ? (
               <div className="flex flex-col items-center justify-center h-40 opacity-20"><Loader2 className="animate-spin" /></div>
            ) : filteredContacts.map((contact) => {
-              const contactTags = getLeadTagsForContact(contact);
+               const contactTags = getLeadTagsForContact(contact).filter((tag) => tag !== DEMO_SEED_TAG);
               return (
                 <div key={contact.id} onClick={() => handleSelectContact(contact)} className={`group relative flex items-start gap-4 p-4 rounded-2xl cursor-pointer transition-all border ${activeContact?.id === contact.id ? "bg-[#111] border-[#CCA761]/30" : "hover:bg-white/5 border-transparent opacity-80 hover:opacity-100"}`}>
                    <div className="w-12 h-12 rounded-full border border-[#CCA761]/20 bg-gray-200 dark:bg-black flex flex-shrink-0 items-center justify-center text-[#CCA761] font-black shadow-inner overflow-hidden">
-                      {contact.profile_pic_url ? <img src={contact.profile_pic_url} className="w-full h-full object-cover" /> : contact.name?.substring(0, 2).toUpperCase()}
+                       {contact.profile_pic_url ? <img src={contact.profile_pic_url} alt={contact.name || "Contato"} className="w-full h-full object-cover" /> : contact.name?.substring(0, 2).toUpperCase()}
                    </div>
                    <div className="flex-1 min-w-0">
                       <div className="flex justify-between items-center mb-1">
@@ -1166,157 +1206,27 @@ export default function WhatsAppChatPremiumPage() {
           <div className="flex-1 flex flex-col min-h-0">
             {(activeContact || messages.length > 0) ? (
               <>
-                <div className="h-20 border-b border-white/5 flex items-center justify-between px-8 bg-[#0a0a0a]/90 backdrop-blur-3xl z-10 flex-shrink-0">
-                    <div className="flex items-center gap-5">
-                       <div className="w-11 h-11 rounded-full border border-[#CCA761]/50 bg-gray-200 dark:bg-black flex items-center justify-center text-[#CCA761] font-black text-lg shadow-[0_0_20px_rgba(204,167,97,0.1)] overflow-hidden">
-                          {activeContact?.profile_pic_url ? <img src={activeContact.profile_pic_url} className="w-full h-full object-cover" /> : (activeContact?.name?.substring(0, 2).toUpperCase() || "TS")}
+                <div className="h-16 border-b border-white/5 flex items-center justify-between px-6 bg-[#0a0a0a]/90 backdrop-blur-3xl z-10 flex-shrink-0">
+                    <div className="flex min-w-0 items-center gap-4">
+                       <div className="h-10 w-10 rounded-full border border-[#CCA761]/50 bg-gray-200 dark:bg-black flex flex-shrink-0 items-center justify-center text-[#CCA761] font-black text-base shadow-[0_0_20px_rgba(204,167,97,0.1)] overflow-hidden">
+                          {activeContact?.profile_pic_url ? <img src={activeContact.profile_pic_url} alt={activeContact?.name || "Contato ativo"} className="w-full h-full object-cover" /> : (activeContact?.name?.substring(0, 2).toUpperCase() || "TS")}
                        </div>
-                       <div>
-                         <h2 className={`text-2xl font-bold text-white tracking-wide flex items-center gap-3 ${cormorant.className} italic`}>
+                       <div className="min-w-0">
+                         <h2 className={`truncate text-xl font-bold text-white tracking-wide ${cormorant.className} italic`}>
                             {activeContact?.name || activeContact?.phone_number || "Lead de Teste (Simulado)"}
-                            <div className="flex gap-1.5 translate-y-[-1px]">
-                               <span className={`text-[8px] px-2.5 py-1 rounded-full font-black uppercase tracking-widest border ${activeContact ? 'bg-[#25D366]/10 text-[#25D366] border-[#25D366]/20' : 'bg-[#CCA761]/10 text-[#CCA761] border-[#CCA761]/20'}`}>
-                                  {activeContact ? 'WhatsApp' : 'Simulacao'}
-                                </span>
-                            </div>
-                         </h2>
-                         <div className="flex items-center gap-2 mt-0.5">
+                          </h2>
+                         <div className="mt-1 flex min-w-0 items-center gap-2">
                             <div className="w-2 h-2 rounded-full bg-green-500 animate-pulse shadow-[0_0_10px_#22c55e]" />
-                            <span className="text-[9px] text-gray-600 uppercase font-black tracking-widest">Protocolo de Criptografia Ativo</span>
-                         </div>
-                       </div>
-                    </div>
-
-                    <div className="flex items-center gap-3">
-                       <button onClick={() => setShowTransferModal(true)} className="flex items-center gap-2 bg-white/5 border border-white/10 text-gray-400 px-4 py-2 rounded-xl text-[10px] font-black uppercase tracking-widest hover:bg-[#CCA761]/10 hover:text-[#CCA761] transition-all">
-                          <Share2 size={14} /> Transferir Atendimento
-                       </button>
-                       <button
-                         onClick={handleResolveConversation}
-                         disabled={isConversationActionPending}
-                         className="flex items-center gap-2 bg-[#CCA761] text-black px-6 py-2.5 rounded-xl text-[10px] font-black uppercase tracking-widest shadow-[0_0_25px_rgba(204,167,97,0.3)] hover:scale-105 transition-all disabled:opacity-50 disabled:cursor-not-allowed"
-                       >
-                          {isConversationActionPending ? <Loader2 size={16} className="animate-spin" /> : <CheckCircle2 size={16} />} Resolver
-                       </button>
-                    </div>
+                            <span className={`text-[8px] px-2 py-0.5 rounded-full font-black uppercase tracking-widest border ${activeContact ? 'bg-[#25D366]/10 text-[#25D366] border-[#25D366]/20' : 'bg-[#CCA761]/10 text-[#CCA761] border-[#CCA761]/20'}`}>
+                              {activeContact ? 'WhatsApp' : 'Simulacao'}
+                            </span>
+                            <span className="truncate text-[9px] text-gray-600 uppercase font-black tracking-widest">{serviceStatusLabel}</span>
+                          </div>
+                        </div>
+                     </div>
                 </div>
 
-                {activeContact && (
-                  <div className="border-b border-white/5 bg-[#050505]/95 px-8 py-3 z-10 flex-shrink-0">
-                    <div className="flex flex-wrap items-center gap-3">
-                      <div className="flex items-center gap-2 text-[9px] font-black uppercase tracking-[0.2em] text-[#CCA761]">
-                        <Tag size={13} />
-                        Etiquetas
-                      </div>
-                      <div className="flex min-w-0 flex-1 flex-wrap items-center gap-1.5">
-                        {activeLeadTags.length > 0 ? activeLeadTags.map((tag, index) => (
-                          <button
-                            key={tag}
-                            type="button"
-                            onClick={() => handleRemoveLeadTag(tag)}
-                            className={`group flex max-w-[150px] items-center gap-1 rounded-full border px-2.5 py-1 text-[8px] font-black uppercase tracking-widest transition-all hover:border-red-400/60 hover:text-red-100 ${getTagClassName(tag, index)}`}
-                            title="Remover etiqueta"
-                          >
-                            <span className="truncate">{tag}</span>
-                            <X size={9} className="opacity-60 group-hover:opacity-100" />
-                          </button>
-                        )) : (
-                          <span className="text-[10px] font-semibold text-gray-600">
-                            Sem etiqueta
-                          </span>
-                        )}
-                      </div>
-                      <div className="flex w-full gap-2 sm:w-auto">
-                        <input
-                          value={leadTagInput}
-                          onChange={(event) => setLeadTagInput(event.target.value)}
-                          onKeyDown={(event) => {
-                            if (event.key === "Enter") {
-                              event.preventDefault();
-                              handleAddLeadTag();
-                            }
-                          }}
-                          placeholder="Editar etiqueta"
-                          className="h-9 min-w-0 flex-1 rounded-lg border border-white/10 bg-black/50 px-3 text-[11px] font-semibold text-white outline-none placeholder:text-gray-700 focus:border-[#CCA761]/50 sm:w-40"
-                        />
-                        <button
-                          type="button"
-                          onClick={() => handleAddLeadTag()}
-                          disabled={!leadTagInput.trim() || isSavingLeadTags}
-                          className="h-9 rounded-lg bg-[#CCA761] px-3 text-black transition-all hover:bg-white disabled:opacity-40"
-                          title="Adicionar etiqueta"
-                        >
-                          {isSavingLeadTags ? <Loader2 size={14} className="animate-spin" /> : <Plus size={14} />}
-                        </button>
-                        <button
-                          type="button"
-                          onClick={handleMayusSuggestLeadTags}
-                          disabled={isSavingLeadTags}
-                          className="hidden h-9 rounded-lg border border-[#CCA761]/25 px-3 text-[8px] font-black uppercase tracking-widest text-[#CCA761] transition-all hover:bg-[#CCA761] hover:text-black disabled:opacity-40 md:block"
-                        >
-                          MAYUS
-                        </button>
-                      </div>
-                    </div>
-                  </div>
-                )}
-
-                {(mayusDraft || isLoadingMayusDraft) && (
-                  <div className="border-b border-[#CCA761]/15 bg-[#CCA761]/5 px-8 py-3 z-10 flex-shrink-0">
-                    <div className="flex items-start justify-between gap-5">
-                      <div className="min-w-0 flex-1">
-                        <div className="flex items-center gap-2 mb-1">
-                          <Bot size={14} className="text-[#CCA761]" />
-                          <span className="text-[9px] font-black uppercase tracking-[0.2em] text-[#CCA761]">
-                            Rascunho MAYUS
-                          </span>
-                          {mayusDraft?.mode && (
-                            <span className="text-[8px] font-black uppercase tracking-widest text-gray-500">
-                              {String(mayusDraft.mode).replaceAll("_", " ")}
-                            </span>
-                          )}
-                          {mayusDraft?.intent && (
-                            <span className="rounded-full border border-[#CCA761]/25 bg-black/20 px-2 py-0.5 text-[8px] font-black uppercase tracking-widest text-[#CCA761]">
-                              {String(mayusDraft.agent_role || mayusDraft.intent).replaceAll("_", " ")}
-                            </span>
-                          )}
-                        </div>
-                        <div className="text-[12px] leading-relaxed text-gray-300 line-clamp-2">
-                          {isLoadingMayusDraft
-                            ? "Carregando rascunho consultivo..."
-                            : renderWhatsAppContent(mayusDraft?.suggested_reply || mayusDraft?.internal_note || "Sem rascunho disponivel para este contato.")}
-                        </div>
-                        {Array.isArray(mayusDraft?.risk_flags) && mayusDraft.risk_flags.length > 0 && (
-                          <div className="mt-2 flex flex-wrap gap-1.5">
-                            {mayusDraft.risk_flags.slice(0, 4).map((flag: string) => (
-                              <span key={flag} className="text-[8px] font-black uppercase tracking-widest px-2 py-1 rounded-full bg-black/20 text-gray-400 border border-white/10">
-                                {flag.replaceAll("_", " ")}
-                              </span>
-                            ))}
-                          </div>
-                        )}
-                      </div>
-                      <div className="flex items-center gap-2 flex-shrink-0">
-                        <button
-                          onClick={handleUseMayusDraft}
-                          disabled={!mayusDraft?.suggested_reply}
-                          className="px-3 py-2 rounded-lg bg-[#CCA761] text-black text-[9px] font-black uppercase tracking-widest disabled:opacity-40 disabled:cursor-not-allowed"
-                        >
-                          Usar
-                        </button>
-                        <button
-                          onClick={handleGenerateMayusReply}
-                          disabled={isGeneratingMayusReply || !activeContact}
-                          className="px-3 py-2 rounded-lg border border-[#CCA761]/20 text-[#CCA761] text-[9px] font-black uppercase tracking-widest disabled:opacity-40"
-                        >
-                          {isGeneratingMayusReply ? "Atualizando" : "Atualizar"}
-                        </button>
-                      </div>
-                    </div>
-                  </div>
-                )}
-
-                <div className="flex-1 overflow-y-auto p-10 flex flex-col gap-10 no-scrollbar min-h-0">
+                <div className="flex-1 overflow-y-auto p-8 flex flex-col gap-8 no-scrollbar min-h-0">
                     {messages.map((msg, idx) => {
                        const isInternalNote = msg.message_type === "internal_note" || msg.status === "internal_note";
                        const isMe = msg.direction === 'outbound' && !isInternalNote;
@@ -1344,7 +1254,7 @@ export default function WhatsAppChatPremiumPage() {
                           </div>
                        );
                     })}
-                    {(showTypingIndicator || isSending || isGeneratingMayusReply) && (
+                    {(showTypingIndicator || isSending || isGeneratingMayusReply || isExecutingMayusReply) && (
                       <div className="flex justify-start animate-in fade-in slide-in-from-bottom-2">
                         <div className="max-w-[65%] rounded-2xl rounded-tl-sm border border-white/10 bg-[#121212] px-5 py-4 text-gray-300 shadow-2xl">
                           <div className="flex items-center gap-3">
@@ -1377,31 +1287,31 @@ export default function WhatsAppChatPremiumPage() {
           </div>
 
           {/* COMPOSER SLIM - DESIGN ULTRA COMPACTO E FUNCIONAL */}
-          <div className="p-3 pb-4 bg-[#0a0a0a]/95 backdrop-blur-3xl border-t border-white/10 z-10 flex-shrink-0">
+          <div className="p-3 bg-[#0a0a0a]/95 backdrop-blur-3xl border-t border-white/10 z-10 flex-shrink-0">
               {/* Linha Fina de Controles Superiores */}
-              <div className="flex justify-between items-center mb-2 px-3">
-                  <div className="flex gap-4">
-                    <button onClick={() => { console.log('Mode: Responder'); setInputMode("responder"); }} className={`text-[9px] font-black uppercase tracking-[0.2em] relative transition-all flex items-center gap-1.5 ${inputMode === "responder" ? "text-[#CCA761]" : "text-gray-600 hover:text-gray-400"}`}>
+              <div className="mb-2 flex flex-wrap items-center justify-between gap-2 px-2">
+                  <div className="flex flex-wrap gap-3">
+                    <button onClick={() => { console.log('Mode: Responder'); setInputMode("responder"); }} className={`text-[9px] font-black uppercase tracking-[0.16em] relative transition-all flex items-center gap-1.5 ${inputMode === "responder" ? "text-[#CCA761]" : "text-gray-600 hover:text-gray-400"}`}>
                         <MessageCircle size={12} /> Atendimento
                         {inputMode === "responder" && <div className="absolute -bottom-1 left-0 w-full h-[1px] bg-[#CCA761]" />}
                     </button>
-                    <button onClick={handleMayusControl} disabled={(isGeneratingMayusReply || isConversationActionPending) || !activeContact} className="text-[9px] font-black uppercase tracking-[0.2em] relative transition-all flex items-center gap-1.5 text-[#CCA761] disabled:opacity-40 disabled:cursor-not-allowed">
+                    <button onClick={handleMayusControl} disabled={(isGeneratingMayusReply || isConversationActionPending) || !activeContact} className="text-[9px] font-black uppercase tracking-[0.16em] relative transition-all flex items-center gap-1.5 text-[#CCA761] disabled:opacity-40 disabled:cursor-not-allowed">
                         {(isGeneratingMayusReply || isConversationActionPending) ? <Loader2 size={12} className="animate-spin" /> : <Bot size={12} />}
-                        {activeContact?.assigned_user_id === profile?.id ? "Voltar MAYUS" : "MAYUS"}
+                        {activeContact?.assigned_user_id === profile?.id ? "Voltar MAYUS" : "MAYUS responder"}
                     </button>
-                    <button onClick={() => { console.log('Mode: Nota'); setInputMode("nota"); }} className={`text-[9px] font-black uppercase tracking-[0.2em] relative transition-all flex items-center gap-1.5 ${inputMode === "nota" ? "text-orange-500" : "text-gray-600 hover:text-gray-400"}`}>
+                    <button onClick={() => { console.log('Mode: Nota'); setInputMode("nota"); }} className={`text-[9px] font-black uppercase tracking-[0.16em] relative transition-all flex items-center gap-1.5 ${inputMode === "nota" ? "text-orange-500" : "text-gray-600 hover:text-gray-400"}`}>
                         <Lock size={12} /> Nota Interna
                         {inputMode === "nota" && <div className="absolute -bottom-1 left-0 w-full h-[1px] bg-orange-500" />}
                     </button>
                   </div>
-                  <div className="flex items-center gap-3">
+                  <div className="flex min-w-0 items-center gap-3">
                     {showSignature && (
                       <input
                         type="text"
                         value={signatureName}
                         onChange={(e) => setSignatureName(e.target.value)}
                         placeholder={profile?.full_name || 'Seu nome'}
-                        className="bg-transparent border-b border-white/10 text-[10px] text-gray-200 px-1 py-0.5 w-24 outline-none focus:border-[#CCA761] placeholder:text-gray-700 font-black transition-colors"
+                        className="w-40 max-w-[44vw] bg-transparent border-b border-white/10 text-[10px] text-gray-200 px-1 py-0.5 outline-none focus:border-[#CCA761] placeholder:text-gray-700 font-black transition-colors"
                       />
                     )}
                     <label className="flex items-center gap-2 cursor-pointer group">
@@ -1469,17 +1379,7 @@ export default function WhatsAppChatPremiumPage() {
                              placeholder={inputMode === "nota" ? "Nota interna..." : "Mensagem..."}
                              className="flex-1 bg-transparent border-none text-white text-[13px] px-3 py-2 outline-none resize-none min-h-[42px] max-h-[150px] placeholder:text-gray-700 transition-all font-medium scrollbar-none"
                            />
-
-                           {/* Preview da Assinatura Minimalista */}
-                           {showSignature && inputMode === "responder" && (
-                             <div className="absolute bottom-1 right-[115px] pointer-events-none opacity-30 hidden sm:block">
-                                <strong className="text-[8px] font-black not-italic text-gray-400">
-                                  {signatureName || profile?.full_name || 'Equipe MAYUS'}
-                                </strong>
-                             </div>
-                           )}
-
-                           {/* Botao de envio compacto */}
+                            {/* Botao de envio compacto */}
                            <button
                              onClick={(e) => { e.preventDefault(); handleSendMessage(); }}
                              disabled={isSending || (inputMode === "nota" ? !inputText.trim() : (!inputText.trim() && !isRecording && !selectedFile))}
@@ -1556,14 +1456,14 @@ export default function WhatsAppChatPremiumPage() {
       </div>
 
       {/* 3. INFO E KANBAN (BARRA DIREITA) */}
-      <div className="w-[340px] flex-shrink-0 border-l border-white/10 bg-white dark:bg-[#050505] flex flex-col h-full z-10 overflow-y-auto no-scrollbar">
+      <div className="w-[300px] flex-shrink-0 border-l border-white/10 bg-white dark:bg-[#050505] flex flex-col h-full z-10 overflow-y-auto no-scrollbar">
          {activeContact && (
-            <div className="p-8 space-y-10 animate-in slide-in-from-right-4 duration-700">
+             <div className="p-5 space-y-7 animate-in slide-in-from-right-4 duration-700">
                {/* Header Perfil */}
                <div className="flex flex-col items-center">
-                  <div className="w-28 h-28 rounded-full border-2 border-[#CCA761] bg-gray-200 dark:bg-black p-1 mb-5 relative group">
+                  <div className="w-24 h-24 rounded-full border-2 border-[#CCA761] bg-gray-200 dark:bg-black p-1 mb-4 relative group">
                      {activeContact.profile_pic_url ? (
-                        <img src={activeContact.profile_pic_url} className="w-full h-full object-cover rounded-full" />
+                         <img src={activeContact.profile_pic_url} alt={activeContact.name || "Contato ativo"} className="w-full h-full object-cover rounded-full" />
                      ) : (
                         <div className="w-full h-full rounded-full flex items-center justify-center text-3xl font-black text-[#CCA761]">
                            {activeContact.name?.substring(0, 2).toUpperCase()}
@@ -1571,17 +1471,118 @@ export default function WhatsAppChatPremiumPage() {
                      )}
                      <div className="absolute bottom-2 right-2 w-5 h-5 bg-[#25D366] rounded-full border-4 border-[#050505] shadow-[0_0_10px_#22c55e]" />
                   </div>
-                  <h3 className="text-2xl font-bold text-white text-center italic group-hover:text-[#CCA761] transition-colors">{activeContact.name}</h3>
+                  <h3 className="text-xl font-bold text-white text-center italic group-hover:text-[#CCA761] transition-colors">{activeContact.name}</h3>
                   <div className="bg-[#CCA761]/10 border border-[#CCA761]/20 text-[#CCA761] px-4 py-1.5 rounded-full text-[9px] font-black uppercase mt-3 tracking-widest">{serviceStatusLabel}</div>
-               </div>
+                </div>
 
+                <div className="space-y-3">
+                  <div className="flex items-center gap-2 text-gray-500 font-black uppercase text-[10px] tracking-widest">
+                    <CheckCircle2 size={14} className="text-[#CCA761]" /> Acoes do atendimento
+                  </div>
+                  <div className="rounded-2xl border border-white/5 bg-gray-200 p-4 dark:bg-black space-y-2.5">
+                    <button
+                      onClick={handleResolveConversation}
+                      disabled={isConversationActionPending}
+                      className="w-full rounded-xl bg-[#CCA761] px-4 py-3 text-[10px] font-black uppercase tracking-[0.16em] text-black transition-all hover:bg-white disabled:opacity-50 disabled:cursor-not-allowed flex items-center justify-center gap-2"
+                    >
+                      {isConversationActionPending ? <Loader2 size={14} className="animate-spin" /> : <CheckCircle2 size={14} />}
+                      Resolver
+                    </button>
+                    <button
+                      onClick={() => setShowTransferModal(true)}
+                      className="w-full rounded-xl border border-white/10 bg-white/5 px-4 py-3 text-[10px] font-black uppercase tracking-[0.16em] text-gray-300 transition-all hover:border-[#CCA761]/40 hover:text-[#CCA761] flex items-center justify-center gap-2"
+                    >
+                      <Share2 size={14} /> Transferir
+                    </button>
+                    <button
+                      onClick={handleToggleHumanAgent}
+                      disabled={isConversationActionPending}
+                      className="w-full rounded-xl border border-white/10 bg-white/5 px-4 py-3 text-[10px] font-black uppercase tracking-[0.16em] text-gray-300 transition-all hover:border-[#CCA761]/40 hover:text-[#CCA761] disabled:opacity-50 disabled:cursor-not-allowed flex items-center justify-center gap-2"
+                    >
+                      {activeContact.assigned_user_id === profile?.id ? <Bot size={14} /> : <UserCheck size={14} />}
+                      {activeContact.assigned_user_id === profile?.id ? "Voltar MAYUS" : "Assumir"}
+                    </button>
+                    <button
+                      onClick={handleMayusControl}
+                      disabled={(isGeneratingMayusReply || isConversationActionPending) || !activeContact}
+                      className="w-full rounded-xl border border-[#CCA761]/25 bg-[#CCA761]/10 px-4 py-3 text-[10px] font-black uppercase tracking-[0.16em] text-[#CCA761] transition-all hover:bg-[#CCA761] hover:text-black disabled:opacity-50 disabled:cursor-not-allowed flex items-center justify-center gap-2"
+                    >
+                      {(isGeneratingMayusReply || isConversationActionPending) ? <Loader2 size={14} className="animate-spin" /> : <Bot size={14} />}
+                      {activeContact.assigned_user_id === profile?.id ? "Voltar MAYUS" : "MAYUS responder"}
+                    </button>
+                    {isDemoContact && (
+                      <button
+                        onClick={handleExecuteMayusReply}
+                        disabled={isExecutingMayusReply || (!mayusDraft?.suggested_reply && !inputText.trim())}
+                        className="w-full rounded-xl border border-emerald-400/25 bg-emerald-500/10 px-4 py-3 text-[10px] font-black uppercase tracking-[0.16em] text-emerald-100 transition-all hover:bg-emerald-400 hover:text-black disabled:opacity-50 disabled:cursor-not-allowed flex items-center justify-center gap-2"
+                      >
+                        {isExecutingMayusReply ? <Loader2 size={14} className="animate-spin" /> : <Send size={14} />}
+                        Executar demo
+                      </button>
+                    )}
+                  </div>
+                </div>
+
+                {/* Modulo Kanban */}
                <div className="space-y-4">
+                  <div className="flex items-center gap-2 text-gray-500 font-black uppercase text-[10px] tracking-widest"><ClipboardList size={14} className="text-[#CCA761]" /> Gestao Pipeline</div>
+                  <div className="p-5 bg-gray-200 dark:bg-black rounded-2xl border border-white/5 space-y-4">
+                     <div className="grid grid-cols-1 gap-3 text-xs">
+                        <div className="rounded-xl border border-white/5 bg-[#111] p-3">
+                           <span className="block text-[9px] font-black uppercase tracking-widest text-gray-600 mb-1">Setor atual</span>
+                           <span className="text-white font-bold">{getDepartmentName(activeContact.department_id)}</span>
+                        </div>
+                        <div className="rounded-xl border border-white/5 bg-[#111] p-3">
+                           <span className="block text-[9px] font-black uppercase tracking-widest text-gray-600 mb-1">Responsavel atual</span>
+                           <span className="text-white font-bold">{getTeamMemberName(activeContact.assigned_user_id)}</span>
+                        </div>
+                     </div>
+                     <div>
+                        <label className="text-[9px] font-black text-gray-600 uppercase tracking-widest block mb-2">Transferir para setor</label>
+                        <select
+                          value={transferDeptId}
+                          onChange={(e) => setTransferDeptId(e.target.value)}
+                          className="w-full bg-[#111] border border-white/10 rounded-xl px-4 py-3 text-xs text-white outline-none focus:border-[#CCA761]"
+                        >
+                           <option value="">Sem setor definido</option>
+                           {departments.map((dept) => (
+                             <option key={dept.id} value={dept.id}>{dept.name}</option>
+                           ))}
+                        </select>
+                     </div>
+                     <div>
+                        <label className="text-[9px] font-black text-gray-600 uppercase tracking-widest block mb-2">Transferir para pessoa</label>
+                        <select
+                          value={transferUserId}
+                          onChange={(e) => setTransferUserId(e.target.value)}
+                          className="w-full bg-[#111] border border-white/10 rounded-xl px-4 py-3 text-xs text-white outline-none focus:border-[#CCA761]"
+                        >
+                           <option value="">Fila do setor / MAYUS</option>
+                           {teamMembers.map((member) => (
+                             <option key={member.id} value={member.id}>
+                               {member.full_name} {member.role ? `- ${member.role}` : ""}
+                             </option>
+                           ))}
+                        </select>
+                     </div>
+                     <button
+                       onClick={handleTransfer}
+                       disabled={isTransferring || (!transferDeptId && !transferUserId)}
+                       className="w-full py-3 bg-white/5 border border-white/10 rounded-xl font-black uppercase text-[10px] tracking-[0.2em] flex items-center justify-center gap-3 hover:bg-[#CCA761] hover:text-black transition-all disabled:opacity-40 disabled:cursor-not-allowed"
+                     >
+                       {isTransferring ? <Loader2 size={14} className="animate-spin" /> : <Share2 size={14} />}
+                       Aplicar transferencia
+                     </button>
+                   </div>
+                </div>
+
+                <div className="space-y-4">
                   <div className="flex items-center gap-2 text-gray-500 font-black uppercase text-[10px] tracking-widest">
                     <Tag size={14} className="text-[#CCA761]" /> Etiquetas do lead
                   </div>
-                  <div className="rounded-2xl border border-white/5 bg-gray-200 p-5 dark:bg-black">
+                  <div className="rounded-2xl border border-white/5 bg-gray-200 p-4 dark:bg-black">
                     <div className="mb-4 flex flex-wrap gap-2">
-                      {activeLeadTags.length > 0 ? activeLeadTags.map((tag, index) => (
+                      {visibleActiveLeadTags.length > 0 ? visibleActiveLeadTags.map((tag, index) => (
                         <button
                           key={tag}
                           type="button"
@@ -1643,62 +1644,9 @@ export default function WhatsAppChatPremiumPage() {
                       ))}
                     </div>
                   </div>
-               </div>
+                </div>
 
-               {/* Modulo Kanban */}
-               <div className="space-y-4">
-                  <div className="flex items-center gap-2 text-gray-500 font-black uppercase text-[10px] tracking-widest"><ClipboardList size={14} className="text-[#CCA761]" /> Gestao Pipeline</div>
-                  <div className="p-5 bg-gray-200 dark:bg-black rounded-2xl border border-white/5 space-y-4">
-                     <div className="grid grid-cols-1 gap-3 text-xs">
-                        <div className="rounded-xl border border-white/5 bg-[#111] p-3">
-                           <span className="block text-[9px] font-black uppercase tracking-widest text-gray-600 mb-1">Setor atual</span>
-                           <span className="text-white font-bold">{getDepartmentName(activeContact.department_id)}</span>
-                        </div>
-                        <div className="rounded-xl border border-white/5 bg-[#111] p-3">
-                           <span className="block text-[9px] font-black uppercase tracking-widest text-gray-600 mb-1">Responsavel atual</span>
-                           <span className="text-white font-bold">{getTeamMemberName(activeContact.assigned_user_id)}</span>
-                        </div>
-                     </div>
-                     <div>
-                        <label className="text-[9px] font-black text-gray-600 uppercase tracking-widest block mb-2">Transferir para setor</label>
-                        <select
-                          value={transferDeptId}
-                          onChange={(e) => setTransferDeptId(e.target.value)}
-                          className="w-full bg-[#111] border border-white/10 rounded-xl px-4 py-3 text-xs text-white outline-none focus:border-[#CCA761]"
-                        >
-                           <option value="">Sem setor definido</option>
-                           {departments.map((dept) => (
-                             <option key={dept.id} value={dept.id}>{dept.name}</option>
-                           ))}
-                        </select>
-                     </div>
-                     <div>
-                        <label className="text-[9px] font-black text-gray-600 uppercase tracking-widest block mb-2">Transferir para pessoa</label>
-                        <select
-                          value={transferUserId}
-                          onChange={(e) => setTransferUserId(e.target.value)}
-                          className="w-full bg-[#111] border border-white/10 rounded-xl px-4 py-3 text-xs text-white outline-none focus:border-[#CCA761]"
-                        >
-                           <option value="">Fila do setor / MAYUS</option>
-                           {teamMembers.map((member) => (
-                             <option key={member.id} value={member.id}>
-                               {member.full_name} {member.role ? `- ${member.role}` : ""}
-                             </option>
-                           ))}
-                        </select>
-                     </div>
-                     <button
-                       onClick={handleTransfer}
-                       disabled={isTransferring || (!transferDeptId && !transferUserId)}
-                       className="w-full py-3 bg-white/5 border border-white/10 rounded-xl font-black uppercase text-[10px] tracking-[0.2em] flex items-center justify-center gap-3 hover:bg-[#CCA761] hover:text-black transition-all disabled:opacity-40 disabled:cursor-not-allowed"
-                     >
-                       {isTransferring ? <Loader2 size={14} className="animate-spin" /> : <Share2 size={14} />}
-                       Aplicar transferencia
-                     </button>
-                  </div>
-               </div>
-
-               <div className="space-y-4">
+                <div className="space-y-4">
                   <div className="flex items-center gap-2 text-gray-500 font-black uppercase text-[10px] tracking-widest"><Lock size={14} className="text-orange-400" /> Notas internas</div>
                   <div className="p-5 bg-gray-200 dark:bg-black rounded-2xl border border-white/5 space-y-4">
                     <div className="max-h-44 overflow-y-auto no-scrollbar space-y-3 pr-1">
@@ -1729,46 +1677,28 @@ export default function WhatsAppChatPremiumPage() {
                   </div>
                </div>
 
-                {/* Acoes rapidas */}
-               <div className="space-y-3">
-                  <button
-                    onClick={handleToggleHumanAgent}
-                    disabled={isConversationActionPending}
-                    className="w-full py-5 bg-[#CCA761] border border-[#CCA761]/20 text-black rounded-2xl font-black uppercase text-[10px] tracking-[0.2em] flex items-center justify-center gap-3 hover:scale-105 transition-all shadow-[0_0_20px_rgba(204,167,97,0.2)] disabled:opacity-50 disabled:cursor-not-allowed"
-                  >
-                     {isConversationActionPending ? (
-                       <Loader2 className="animate-spin" size={16} />
-                     ) : activeContact.assigned_user_id === profile?.id ? (
-                       <Bot size={16} />
-                     ) : (
-                       <UserCheck size={16} />
-                     )}
-                     {activeContact.assigned_user_id === profile?.id ? "Voltar para MAYUS" : "Assumir conversa"}
-                  </button>
-                  {contractFlowMode !== 'ia_only' && (
-                    <button
-                      onClick={handleSendZapSignContract}
-                      disabled={isSendingContract}
-                      className="w-full py-5 bg-[#CCA761] border border-[#CCA761]/20 text-black rounded-2xl font-black uppercase text-[10px] tracking-[0.2em] flex items-center justify-center gap-3 hover:scale-105 transition-all shadow-[0_0_20px_rgba(204,167,97,0.2)] disabled:opacity-50"
-                    >
-                       {isSendingContract ? <Loader2 className="animate-spin" size={16} /> : <Zap size={16} />}
-                       Gerar Contrato (Um Clique)
+                 {/* Automacoes */}
+                <div className="space-y-3">
+                   <div className="flex items-center gap-2 text-gray-500 font-black uppercase text-[10px] tracking-widest">
+                     <Zap size={14} className="text-[#CCA761]" /> Automacoes
+                   </div>
+                   {contractFlowMode !== 'ia_only' && (
+                     <button
+                       onClick={handleSendZapSignContract}
+                       disabled={isSendingContract}
+                       className="w-full py-4 bg-[#CCA761] border border-[#CCA761]/20 text-black rounded-2xl font-black uppercase text-[10px] tracking-[0.16em] flex items-center justify-center gap-3 hover:scale-105 transition-all shadow-[0_0_20px_rgba(204,167,97,0.2)] disabled:opacity-50"
+                     >
+                        {isSendingContract ? <Loader2 className="animate-spin" size={16} /> : <Zap size={16} />}
+                        Gerar Contrato (Um Clique)
                     </button>
                   )}
-                  <button
-                    onClick={() => toast.info("Dossie completo sera aberto quando o contato estiver vinculado a um cliente/processo.")}
-                    className="w-full py-5 bg-white/5 border border-white/10 rounded-2xl font-black uppercase text-[10px] tracking-[0.2em] flex items-center justify-center gap-3 hover:bg-white/10 transition-all group"
-                  >
-                     <FileText size={16} className="group-hover:-rotate-6 transition-transform" /> Dossie Completo
-                  </button>
-                  <button
-                    onClick={handleResolveConversation}
-                    disabled={isConversationActionPending}
-                    className="w-full py-5 bg-gray-200 dark:bg-black border border-red-500/20 text-red-500 rounded-2xl font-black uppercase text-[10px] tracking-[0.2em] flex items-center justify-center gap-3 hover:bg-red-500 hover:text-white transition-all disabled:opacity-50 disabled:cursor-not-allowed"
-                  >
-                     <X size={16} /> Encerrar Caso
-                  </button>
-               </div>
+                   <button
+                     onClick={() => toast.info("Dossie completo sera aberto quando o contato estiver vinculado a um cliente/processo.")}
+                     className="w-full py-4 bg-white/5 border border-white/10 rounded-2xl font-black uppercase text-[10px] tracking-[0.16em] flex items-center justify-center gap-3 hover:bg-white/10 transition-all group"
+                   >
+                      <FileText size={16} className="group-hover:-rotate-6 transition-transform" /> Dossie Completo
+                   </button>
+                </div>
             </div>
          )}
       </div>

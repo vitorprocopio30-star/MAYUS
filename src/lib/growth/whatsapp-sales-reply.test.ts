@@ -27,7 +27,7 @@ describe("buildWhatsAppSalesReply", () => {
     expect(reply.firstResponseSlaMinutes).toBe(5);
   });
 
-  it("usa playbook generico quando falta perfil comercial do escritorio", () => {
+  it("prepara primeira resposta contextual quando falta perfil comercial do escritorio", () => {
     const reply = buildWhatsAppSalesReply({
       contactName: "Carlos",
       messages: [
@@ -38,7 +38,7 @@ describe("buildWhatsAppSalesReply", () => {
 
     expect(reply.mode).toBe("suggested_reply");
     expect(reply.suggestedReply).toContain("MAYUS");
-    expect(reply.internalNote).toContain("playbook generico");
+    expect(reply.internalNote).toContain("mensagem do lead");
     expect(reply.riskFlags).toContain("missing_firm_profile");
     expect(reply.mayAutoSend).toBe(true);
   });

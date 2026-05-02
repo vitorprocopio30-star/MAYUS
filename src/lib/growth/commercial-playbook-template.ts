@@ -65,6 +65,12 @@ function normalizeText(value?: string | null) {
     .toLowerCase() || "";
 }
 
+function shortContext(value?: string | null) {
+  const text = cleanText(value);
+  if (!text) return null;
+  return text.length > 120 ? `${text.slice(0, 117).trim()}...` : text;
+}
+
 function cleanList(value?: string[] | null) {
   return (value || [])
     .map((item) => cleanText(item))
@@ -310,7 +316,8 @@ export function buildCommercialFirstReply(params: {
   const playbook = buildCommercialPlaybookModel(params.profile || {});
   const name = firstName(params.leadName);
   const normalized = normalizeText(params.lastInboundText);
-  const opening = `Oi, ${name}. Aqui e o MAYUS, assistente do ${playbook.officeName}. Vou te ajudar agora e organizar o atendimento para ninguem te deixar esperando.`;
+  const context = shortContext(params.lastInboundText);
+  const opening = `Oi, ${name}. Aqui e o MAYUS, assistente do ${playbook.officeName}. Vou fazer sua primeira triagem agora.`;
 
   if (/humano|atendente|advogado|doutor|doutora|responsavel|falar com/.test(normalized)) {
     return [
@@ -335,7 +342,7 @@ export function buildCommercialFirstReply(params: {
 
   return [
     opening,
-    `${playbook.positioning.uniqueValueProposition}`,
-    "Me conta em uma frase o que aconteceu e qual e a urgencia. Depois eu te digo o melhor proximo passo.",
+    context ? `Entendi sua mensagem: "${context}".` : "Vou entender seu caso antes de te direcionar.",
+    "Para eu te encaminhar certo: qual e o assunto principal, quando isso aconteceu e existe algum prazo ou documento importante?",
   ].join("\n\n");
 }
