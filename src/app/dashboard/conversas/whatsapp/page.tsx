@@ -1275,6 +1275,11 @@ export default function WhatsAppChatPremiumPage() {
                               {String(mayusDraft.mode).replaceAll("_", " ")}
                             </span>
                           )}
+                          {mayusDraft?.intent && (
+                            <span className="rounded-full border border-[#CCA761]/25 bg-black/20 px-2 py-0.5 text-[8px] font-black uppercase tracking-widest text-[#CCA761]">
+                              {String(mayusDraft.agent_role || mayusDraft.intent).replaceAll("_", " ")}
+                            </span>
+                          )}
                         </div>
                         <div className="text-[12px] leading-relaxed text-gray-300 line-clamp-2">
                           {isLoadingMayusDraft

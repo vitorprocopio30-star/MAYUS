@@ -132,4 +132,41 @@ describe("/api/whatsapp/send", () => {
       }),
     );
   });
+
+  it("mantem sucesso quando provedor enviou mas insert local falhou", async () => {
+    createClientMock.mockReturnValueOnce({
+      from: vi.fn((table: string) => {
+        if (table === "whatsapp_messages") {
+          return {
+            insert: vi.fn(() => ({
+              select: vi.fn(() => ({
+                single: vi.fn(async () => ({ data: null, error: { message: "metadata column missing" } })),
+              })),
+            })),
+          };
+        }
+
+        return { update: vi.fn(() => ({ eq: vi.fn(() => ({ eq: vi.fn(async () => ({ error: null })) })) })) };
+      }),
+    });
+
+    const response = await POST(buildRequest({
+      tenant_id: "tenant-1",
+      contact_id: "contact-1",
+      phone_number: "5521999990000",
+      text: "Mensagem enviada no provedor",
+    }));
+    const body = await response.json();
+
+    expect(response.status).toBe(200);
+    expect(body).toEqual(expect.objectContaining({
+      success: true,
+      warning: "message_sent_but_not_saved",
+      dbError: "metadata column missing",
+    }));
+    expect(global.fetch).toHaveBeenCalledWith(
+      "http://187.77.240.109:32768/message/sendText/mayus-dutra",
+      expect.any(Object),
+    );
+  });
 });

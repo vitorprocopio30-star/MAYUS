@@ -10,9 +10,14 @@ function cleanUrl(value: string): string {
 }
 
 export function resolvePublicAppUrl(request: Request): string {
-  const envUrl = String(process.env.NEXT_PUBLIC_SITE_URL || "").trim();
+  const envUrl = String(process.env.NEXT_PUBLIC_SITE_URL || process.env.NEXT_PUBLIC_APP_URL || "").trim();
   if (envUrl && !isLocalHost(envUrl)) {
     return cleanUrl(envUrl);
+  }
+
+  const vercelUrl = String(process.env.VERCEL_URL || "").trim();
+  if (vercelUrl && !isLocalHost(vercelUrl)) {
+    return cleanUrl(vercelUrl.startsWith("http") ? vercelUrl : `https://${vercelUrl}`);
   }
 
   const forwardedHost = request.headers.get("x-forwarded-host");
@@ -28,6 +33,18 @@ export function resolvePublicAppUrl(request: Request): string {
     }
   } catch {
     // ignore parse failures and fallback below
+  }
+
+  return DEFAULT_PUBLIC_APP_URL;
+}
+
+export function resolvePublicAppUrlFromEnv(): string {
+  const envUrl = String(process.env.NEXT_PUBLIC_SITE_URL || process.env.NEXT_PUBLIC_APP_URL || "").trim();
+  if (envUrl && !isLocalHost(envUrl)) return cleanUrl(envUrl);
+
+  const vercelUrl = String(process.env.VERCEL_URL || "").trim();
+  if (vercelUrl && !isLocalHost(vercelUrl)) {
+    return cleanUrl(vercelUrl.startsWith("http") ? vercelUrl : `https://${vercelUrl}`);
   }
 
   return DEFAULT_PUBLIC_APP_URL;

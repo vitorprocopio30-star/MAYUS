@@ -1,4 +1,5 @@
 import { NextRequest, NextResponse } from "next/server";
+import { randomUUID } from "crypto";
 import { z } from "zod";
 import { getTenantSession } from "@/lib/auth/get-tenant-session";
 import {
@@ -12,6 +13,7 @@ import {
   type DailyPlaybookScope,
 } from "@/lib/mayus/daily-playbook";
 import { supabaseAdmin } from "@/lib/supabase/admin";
+import { resolvePublicAppUrl } from "@/lib/url/resolve-public-app-url";
 
 type TenantSettingsRecord = {
   ai_features: Record<string, any> | null;
@@ -48,6 +50,8 @@ function normalizeLatestHistoryItem(row: any) {
     channels: Array.isArray(metadata.channels) ? metadata.channels : [],
     scope: metadata.scope || null,
     detailLevel: metadata.detail_level || null,
+    htmlReportAvailable: metadata.html_report_available === true,
+    htmlReportUrl: typeof metadata.html_report_url === "string" ? metadata.html_report_url : null,
     metrics: {
       crmLeadsNeedingNextStep: Number(metadata.crm_leads_needing_next_step || 0),
       agendaCriticalTasks: Number(metadata.agenda_critical_tasks || 0),
@@ -201,8 +205,13 @@ export async function POST(request: NextRequest) {
       crmTasks,
       userTasks,
     });
-    const metadata = buildDailyPlaybookMetadata(playbook);
     const shouldPersist = parsed.data?.persist !== false;
+    const reportShareToken = shouldPersist ? randomUUID().replace(/-/g, "") : null;
+    const reportUrl = reportShareToken ? `${resolvePublicAppUrl(request)}/r/playbook/${reportShareToken}` : null;
+    const metadata = buildDailyPlaybookMetadata(playbook, {
+      htmlReportUrl: reportUrl,
+      htmlReportShareToken: reportShareToken,
+    });
     let brainTrace: Awaited<ReturnType<typeof registerDailyPlaybookBrainArtifact>> = null;
     let eventPersisted = false;
 
@@ -229,6 +238,8 @@ export async function POST(request: NextRequest) {
         userId: session.userId,
         playbook,
         supabase: supabaseAdmin,
+        htmlReportUrl: reportUrl,
+        htmlReportShareToken: reportShareToken,
       });
     }
 

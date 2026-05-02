@@ -1,6 +1,8 @@
 import { listTenantIntegrationsResolved } from "@/lib/integrations/server";
 import { buildWhatsAppCommandResponse, normalizeWhatsAppPhone } from "@/lib/mayus/whatsapp-command-center";
 import { registerDailyPlaybookBrainArtifact } from "@/lib/mayus/daily-playbook";
+import { randomUUID } from "crypto";
+import { resolvePublicAppUrlFromEnv } from "@/lib/url/resolve-public-app-url";
 
 type RuntimeSupabase = {
   from: (table: string) => any;
@@ -201,12 +203,19 @@ export async function handleWhatsAppInternalCommand(params: HandleWhatsAppIntern
     return { handled: false, sent: false, reason: rejected.reason, intent: rejected.intent };
   }
 
+  const reportShareToken = result.intent === "daily_playbook" ? randomUUID().replace(/-/g, "") : null;
+  const reportUrl = reportShareToken ? `${resolvePublicAppUrlFromEnv()}/r/playbook/${reportShareToken}` : null;
   const brainTrace = await registerDailyPlaybookBrainArtifact({
     tenantId: params.tenantId,
     userId: null,
     playbook: result.playbook,
     supabase: params.supabase,
+    htmlReportUrl: reportUrl,
+    htmlReportShareToken: reportShareToken,
   });
+  const replyText = reportUrl && brainTrace?.artifactId
+    ? `${result.replyText}\n\nRelatorio completo em HTML: ${reportUrl}`
+    : result.replyText;
 
   await params.supabase.from("system_event_logs").insert({
     tenant_id: params.tenantId,
@@ -217,6 +226,7 @@ export async function handleWhatsAppInternalCommand(params: HandleWhatsAppIntern
       ...result.metadata,
       source: params.source,
       brain_trace: brainTrace,
+      html_report_url: reportUrl && brainTrace?.artifactId ? reportUrl : null,
       raw_phone_stored: false,
     },
   });
@@ -226,7 +236,7 @@ export async function handleWhatsAppInternalCommand(params: HandleWhatsAppIntern
     tenantId: params.tenantId,
     contactId: params.contactId,
     phoneNumber: params.senderPhone,
-    text: result.replyText,
+    text: replyText,
   });
 
   return {

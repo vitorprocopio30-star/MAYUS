@@ -61,7 +61,7 @@ describe("daily playbook", () => {
       ],
     });
 
-    expect(playbook.title).toBe("Dutra Advocacia - Playbook do dia");
+    expect(playbook.title).toBe("Dutra Advocacia - Resumo do dia");
     expect(playbook.metrics.crmLeadsNeedingNextStep).toBe(1);
     expect(playbook.metrics.agendaCriticalTasks).toBe(1);
     expect(playbook.metrics.agendaTodayTasks).toBe(1);
@@ -71,10 +71,10 @@ describe("daily playbook", () => {
       ownerLabel: "Equipe Juridica",
     });
     expect(playbook.crm.leadsNeedingNextStep[0].organizedObjective).toContain("qualificar Maria Previdenciario em Previdenciario");
-    expect(playbook.whatsappSummary).toContain("*Dutra Advocacia: leitura operacional do dia*");
-    expect(playbook.whatsappSummary).toContain("*Radar rapido*");
-    expect(playbook.whatsappSummary).toContain("Minha ordem de ataque");
-    expect(playbook.whatsappSummary).toContain("Nada foi enviado ou executado fora do MAYUS");
+    expect(playbook.whatsappSummary).toContain("*Dutra Advocacia: resumo do dia*");
+    expect(playbook.whatsappSummary).toContain("*Numeros*");
+    expect(playbook.whatsappSummary).toContain("*O que priorizar*");
+    expect(playbook.whatsappSummary).toContain("Nenhuma mensagem foi enviada automaticamente");
     expect(playbook.reportMenu.map((item) => item.id)).toEqual(expect.arrayContaining(["executive", "crm", "frontdesk", "calls", "playbook"]));
     expect(playbook.htmlReport).toContain("<nav class=\"sidebar\">");
     expect(playbook.htmlReport).toContain("Front desk");
@@ -91,10 +91,12 @@ describe("daily playbook", () => {
 
     const metadata = buildDailyPlaybookMetadata(playbook);
 
-    expect(metadata.summary).toContain("operacao sem alerta prioritario");
+    expect(metadata.summary).toContain("dia sem pendencia urgente");
     expect(metadata.html_report_available).toBe(true);
     expect(metadata.html_report_mime_type).toBe("text/html");
     expect(metadata.html_report).toContain("<!DOCTYPE html>");
+    expect(metadata.html_report_url).toBe(null);
+    expect(metadata.html_report_share_token).toBe(null);
     expect(metadata.report_menu).toEqual(expect.arrayContaining([
       expect.objectContaining({ id: "frontdesk" }),
       expect.objectContaining({ id: "calls" }),
@@ -111,9 +113,9 @@ describe("daily playbook", () => {
       userTasks: [],
     });
 
-    expect(playbook.whatsappSummary).toContain("nao encontrei nada pedindo sirene");
-    expect(playbook.whatsappSummary).toContain("rotina limpa");
-    expect(playbook.whatsappSummary).toContain("use a primeira janela do dia");
+    expect(playbook.whatsappSummary).toContain("Nada urgente pedindo sirene");
+    expect(playbook.whatsappSummary).toContain("Dia tranquilo");
+    expect(playbook.whatsappSummary).toContain("revisar CRM parado");
     expect(playbook.whatsappSummary).not.toContain("Acoes prioritarias:");
   });
 

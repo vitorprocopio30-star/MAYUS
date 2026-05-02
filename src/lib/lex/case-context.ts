@@ -7,6 +7,7 @@ type ProcessTaskCaseRow = {
   title: string;
   client_name: string | null;
   process_number: string | null;
+  phone?: string | null;
   demanda: string | null;
   description: string | null;
   created_at: string;
@@ -225,6 +226,10 @@ function sanitizeReference(value: string) {
   return value.replace(/[,%()]/g, " ").replace(/\s+/g, " ").trim();
 }
 
+function normalizePhone(value: string) {
+  return String(value || "").split("@")[0].replace(/\D/g, "");
+}
+
 function pickFirstString(entities: Record<string, string>, keys: string[]) {
   for (const key of keys) {
     const value = String(entities[key] || "").trim();
@@ -236,7 +241,7 @@ function pickFirstString(entities: Record<string, string>, keys: string[]) {
 async function resolveProcessTaskById(tenantId: string, processTaskId: string) {
   const { data, error } = await supabaseAdmin
     .from("process_tasks")
-    .select("id, pipeline_id, stage_id, title, client_name, process_number, demanda, description, created_at")
+    .select("id, pipeline_id, stage_id, title, client_name, process_number, phone, demanda, description, created_at")
     .eq("tenant_id", tenantId)
     .eq("id", processTaskId)
     .maybeSingle<ProcessTaskCaseRow>();
@@ -251,7 +256,7 @@ async function resolveProcessTaskByProcessNumber(tenantId: string, processNumber
 
   let { data, error } = await supabaseAdmin
     .from("process_tasks")
-    .select("id, pipeline_id, stage_id, title, client_name, process_number, demanda, description, created_at")
+    .select("id, pipeline_id, stage_id, title, client_name, process_number, phone, demanda, description, created_at")
     .eq("tenant_id", tenantId)
     .eq("process_number", normalized)
     .order("created_at", { ascending: false })
@@ -263,7 +268,7 @@ async function resolveProcessTaskByProcessNumber(tenantId: string, processNumber
 
   ({ data, error } = await supabaseAdmin
     .from("process_tasks")
-    .select("id, pipeline_id, stage_id, title, client_name, process_number, demanda, description, created_at")
+    .select("id, pipeline_id, stage_id, title, client_name, process_number, phone, demanda, description, created_at")
     .eq("tenant_id", tenantId)
     .ilike("process_number", `%${sanitizeReference(normalized)}%`)
     .order("created_at", { ascending: false })
@@ -280,7 +285,7 @@ async function resolveProcessTaskByReference(tenantId: string, reference: string
 
   const { data, error } = await supabaseAdmin
     .from("process_tasks")
-    .select("id, pipeline_id, stage_id, title, client_name, process_number, demanda, description, created_at")
+    .select("id, pipeline_id, stage_id, title, client_name, process_number, phone, demanda, description, created_at")
     .eq("tenant_id", tenantId)
     .or(`client_name.ilike.%${normalized}%,title.ilike.%${normalized}%,process_number.ilike.%${normalized}%`)
     .order("created_at", { ascending: false })
@@ -290,6 +295,28 @@ async function resolveProcessTaskByReference(tenantId: string, reference: string
   const matches = (data || []) as ProcessTaskCaseRow[];
   if (matches.length > 1) {
     throw new Error("Encontrei mais de um processo juridico para essa referencia. Informe o numero do processo ou o ID interno.");
+  }
+
+  return matches[0] || null;
+}
+
+async function resolveProcessTaskByPhone(tenantId: string, phone: string) {
+  const normalized = normalizePhone(phone);
+  if (normalized.length < 8) return null;
+  const lastDigits = normalized.slice(-8);
+
+  const { data, error } = await supabaseAdmin
+    .from("process_tasks")
+    .select("id, pipeline_id, stage_id, title, client_name, process_number, phone, demanda, description, created_at")
+    .eq("tenant_id", tenantId)
+    .or(`phone.ilike.%${normalized}%,phone.ilike.%${lastDigits}%`)
+    .order("created_at", { ascending: false })
+    .limit(2);
+
+  if (error) throw error;
+  const matches = (data || []) as ProcessTaskCaseRow[];
+  if (matches.length > 1) {
+    throw new Error("Encontrei mais de um processo juridico para esse telefone. Informe o numero do processo ou o ID interno.");
   }
 
   return matches[0] || null;
@@ -306,6 +333,12 @@ export async function resolveLegalProcessTask(params: { tenantId: string; entiti
   if (processNumber) {
     const byNumber = await resolveProcessTaskByProcessNumber(params.tenantId, processNumber);
     if (byNumber) return byNumber;
+  }
+
+  const phone = pickFirstString(params.entities, ["phone", "phone_number", "whatsapp_phone"]);
+  if (phone) {
+    const byPhone = await resolveProcessTaskByPhone(params.tenantId, phone);
+    if (byPhone) return byPhone;
   }
 
   const reference = pickFirstString(params.entities, ["process_reference", "client_name", "process_title", "title", "case_reference"]);

@@ -1,7 +1,7 @@
 import { NextResponse } from "next/server";
 import { createClient } from "@supabase/supabase-js";
 import crypto from "crypto";
-import { prepareWhatsAppSalesReplyForContact } from "@/lib/growth/whatsapp-sales-reply-runtime";
+import { prepareWhatsAppMayusReplyForContact } from "@/lib/mayus/whatsapp-agent-runtime";
 import { handleWhatsAppInternalCommand } from "@/lib/mayus/whatsapp-command-runtime";
 import { listTenantIntegrationsResolved } from "@/lib/integrations/server";
 
@@ -277,7 +277,7 @@ export async function POST(req: Request) {
         }
 
         try {
-          await prepareWhatsAppSalesReplyForContact({
+          await prepareWhatsAppMayusReplyForContact({
             supabase,
             tenantId,
             contactId,

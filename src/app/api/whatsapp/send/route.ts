@@ -19,7 +19,11 @@ function cleanWhatsAppNumber(value: string) {
 }
 
 function getTypingDelay(text?: string) {
-  return Math.min(2200, Math.max(700, String(text || "").length * 15));
+  const length = String(text || "").length;
+  if (length <= 80) return 1400;
+  if (length <= 220) return 2800;
+  if (length <= 600) return 5200;
+  return Math.min(10000, 5200 + Math.round((length - 600) * 4));
 }
 
 // Rota Segura (Server-Side) de Disparo do MAYUS
@@ -132,13 +136,24 @@ export async function POST(req: NextRequest) {
       tenant_id: tenant_id,
       contact_id: contact_id,
       direction: "outbound",
+      message_type: audio_url ? "audio" : "text",
       content: audio_url ? "[Audio Enviado]" : text,
+      media_url: audio_url || null,
       status: "sent",
-      metadata: audio_url ? { audio_url } : null,
       created_at: insertedAt,
     }]).select("*").single();
 
-    if (dbError) throw dbError;
+    if (dbError) {
+      console.error("Mensagem enviada no provedor, mas nao salva no banco:", dbError);
+      return NextResponse.json({
+        success: true,
+        motor: provider.provider,
+        apiResponse,
+        message: null,
+        warning: "message_sent_but_not_saved",
+        dbError: dbError.message,
+      });
+    }
 
     await supabase
       .from("whatsapp_contacts")

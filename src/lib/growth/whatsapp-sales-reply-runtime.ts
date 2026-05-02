@@ -100,7 +100,7 @@ function buildNotification(reply: WhatsAppSalesReply, contactName: string | null
   };
 }
 
-async function sendFrontdeskWhatsAppReply(params: {
+export async function sendFrontdeskWhatsAppReply(params: {
   supabase: SupabaseClient;
   tenantId: string;
   contactId: string;

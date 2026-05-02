@@ -2,7 +2,7 @@ import { NextRequest, NextResponse } from "next/server";
 import { cookies } from "next/headers";
 import { createServerClient } from "@supabase/ssr";
 import { createClient } from "@supabase/supabase-js";
-import { prepareWhatsAppSalesReplyForContact } from "@/lib/growth/whatsapp-sales-reply-runtime";
+import { prepareWhatsAppMayusReplyForContact } from "@/lib/mayus/whatsapp-agent-runtime";
 
 export const dynamic = "force-dynamic";
 
@@ -57,7 +57,7 @@ export async function POST(req: NextRequest) {
       return NextResponse.json({ error: "contact_id obrigatorio." }, { status: 400 });
     }
 
-    const prepared = await prepareWhatsAppSalesReplyForContact({
+    const prepared = await prepareWhatsAppMayusReplyForContact({
       supabase: adminSupabase,
       tenantId: auth.tenantId,
       contactId,
@@ -103,7 +103,7 @@ export async function GET(req: NextRequest) {
       .from("system_event_logs")
       .select("id, payload, created_at")
       .eq("tenant_id", auth.tenantId)
-      .eq("event_name", "whatsapp_sales_reply_prepared")
+      .in("event_name", ["whatsapp_mayus_reply_prepared", "whatsapp_sales_reply_prepared"])
       .eq("payload->>contact_id", contactId)
       .order("created_at", { ascending: false })
       .limit(1)

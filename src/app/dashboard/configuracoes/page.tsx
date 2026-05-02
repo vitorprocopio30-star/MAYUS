@@ -582,6 +582,7 @@ function ConfiguracoesContent() {
   const [authorizedPhonesInput, setAuthorizedPhonesInput] = useState("");
   const [isPreviewingPlaybook, setIsPreviewingPlaybook] = useState(false);
   const [playbookPreview, setPlaybookPreview] = useState<string | null>(null);
+  const [playbookPreviewHtml, setPlaybookPreviewHtml] = useState<string | null>(null);
 
   const loadIntegrations = useCallback(async () => {
     if (!tenantId) return;
@@ -715,6 +716,7 @@ function ConfiguracoesContent() {
     setDailyPlaybook((prev) => ({ ...prev, ...patch }));
     setHasUnsavedChanges(true);
     setPlaybookPreview(null);
+    setPlaybookPreviewHtml(null);
   };
 
   const updateAuthorizedPhonesInput = (value: string) => {
@@ -736,6 +738,7 @@ function ConfiguracoesContent() {
     });
     setHasUnsavedChanges(true);
     setPlaybookPreview(null);
+    setPlaybookPreviewHtml(null);
   };
 
   const toggleDailyPlaybookWeekday = (day: number) => {
@@ -751,6 +754,7 @@ function ConfiguracoesContent() {
     });
     setHasUnsavedChanges(true);
     setPlaybookPreview(null);
+    setPlaybookPreviewHtml(null);
   };
 
   const previewDailyPlaybook = async () => {
@@ -766,6 +770,7 @@ function ConfiguracoesContent() {
       if (!response.ok) throw new Error(data?.error || "Nao foi possivel gerar a previa.");
 
       setPlaybookPreview(data?.playbook?.whatsappSummary || data?.playbook?.executiveSummary || "Playbook gerado.");
+      setPlaybookPreviewHtml(data?.playbook?.htmlReport || null);
       toast.success("Previa do Playbook gerada sem criar artifact.");
     } catch (error: any) {
       toast.error(error?.message || "Falha ao gerar previa do Playbook.");
@@ -1167,10 +1172,24 @@ function ConfiguracoesContent() {
                       Gerar previa
                     </button>
                   </div>
-                  {playbookPreview && (
-                    <pre className="mt-4 max-h-56 overflow-auto whitespace-pre-wrap rounded-xl border border-white/10 bg-[#050505] p-4 text-[11px] leading-5 text-gray-300">
-                      {playbookPreview}
-                    </pre>
+                  {(playbookPreviewHtml || playbookPreview) && (
+                    <div className="mt-4 space-y-3">
+                      {playbookPreviewHtml && (
+                        <div className="overflow-hidden rounded-xl border border-[#CCA761]/20 bg-[#050505]">
+                          <iframe
+                            title="Previa HTML do Playbook diario MAYUS"
+                            srcDoc={playbookPreviewHtml}
+                            sandbox=""
+                            className="h-[420px] w-full bg-[#050505]"
+                          />
+                        </div>
+                      )}
+                      {playbookPreview && (
+                        <pre className="max-h-40 overflow-auto whitespace-pre-wrap rounded-xl border border-white/10 bg-[#050505] p-4 text-[11px] leading-5 text-gray-300">
+                          {playbookPreview}
+                        </pre>
+                      )}
+                    </div>
                   )}
                 </div>
 

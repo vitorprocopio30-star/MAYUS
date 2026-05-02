@@ -1,7 +1,7 @@
 import { describe, expect, it, vi, beforeEach } from "vitest";
 
 const handleWhatsAppInternalCommandMock = vi.hoisted(() => vi.fn());
-const prepareWhatsAppSalesReplyForContactMock = vi.hoisted(() => vi.fn());
+const prepareWhatsAppMayusReplyForContactMock = vi.hoisted(() => vi.fn());
 const createClientMock = vi.hoisted(() => vi.fn());
 const listTenantIntegrationsResolvedMock = vi.hoisted(() => vi.fn());
 
@@ -9,8 +9,8 @@ vi.mock("@/lib/mayus/whatsapp-command-runtime", () => ({
   handleWhatsAppInternalCommand: handleWhatsAppInternalCommandMock,
 }));
 
-vi.mock("@/lib/growth/whatsapp-sales-reply-runtime", () => ({
-  prepareWhatsAppSalesReplyForContact: prepareWhatsAppSalesReplyForContactMock,
+vi.mock("@/lib/mayus/whatsapp-agent-runtime", () => ({
+  prepareWhatsAppMayusReplyForContact: prepareWhatsAppMayusReplyForContactMock,
 }));
 
 vi.mock("@/lib/integrations/server", () => ({
@@ -44,6 +44,7 @@ function buildSupabaseMock() {
           select: vi.fn(() => ({
             eq: vi.fn(() => ({
               eq: vi.fn(() => ({
+                maybeSingle: vi.fn(async () => ({ data: null, error: null })),
                 single: vi.fn(async () => ({ data: null })),
               })),
             })),
@@ -62,6 +63,13 @@ function buildSupabaseMock() {
 
       if (table === "whatsapp_messages") {
         return {
+          select: vi.fn(() => ({
+            eq: vi.fn(() => ({
+              eq: vi.fn(() => ({
+                maybeSingle: vi.fn(async () => ({ data: null, error: null })),
+              })),
+            })),
+          })),
           insert: vi.fn(async (rows: unknown[]) => {
             messageInserts.push(...rows);
             return { error: null };
@@ -151,7 +159,7 @@ describe("/api/evolution-webhook", () => {
         unread_count: 1,
       }),
     ]);
-    expect(prepareWhatsAppSalesReplyForContactMock).not.toHaveBeenCalled();
+    expect(prepareWhatsAppMayusReplyForContactMock).not.toHaveBeenCalled();
   });
 
   it("bloqueia mensagens de grupo antes de criar contato ou responder", async () => {
@@ -181,7 +189,7 @@ describe("/api/evolution-webhook", () => {
     expect(response.status).toBe(200);
     expect(body).toEqual({ success: true, ignored: true, reason: "group_message_blocked" });
     expect(handleWhatsAppInternalCommandMock).not.toHaveBeenCalled();
-    expect(prepareWhatsAppSalesReplyForContactMock).not.toHaveBeenCalled();
+    expect(prepareWhatsAppMayusReplyForContactMock).not.toHaveBeenCalled();
     expect(supabaseMock.contactInserts).toEqual([]);
     expect(supabaseMock.messageInserts).toEqual([]);
   });

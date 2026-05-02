@@ -115,6 +115,11 @@ type DailyPlaybookSupabase = {
   from: (table: string) => any;
 };
 
+type DailyPlaybookReportShare = {
+  htmlReportUrl?: string | null;
+  htmlReportShareToken?: string | null;
+};
+
 const DEFAULT_PREFERENCES: DailyPlaybookPreferences = {
   enabled: false,
   timezone: "America/Sao_Paulo",
@@ -481,7 +486,7 @@ export function buildDailyPlaybook(input: DailyPlaybookInput): DailyPlaybook {
   };
 }
 
-export function buildDailyPlaybookMetadata(playbook: DailyPlaybook) {
+export function buildDailyPlaybookMetadata(playbook: DailyPlaybook, reportShare: DailyPlaybookReportShare = {}) {
   return {
     summary: playbook.executiveSummary,
     generated_at: playbook.generatedAt,
@@ -492,6 +497,8 @@ export function buildDailyPlaybookMetadata(playbook: DailyPlaybook) {
     html_report_available: true,
     html_report_mime_type: "text/html",
     html_report: playbook.htmlReport,
+    html_report_url: reportShare.htmlReportUrl || null,
+    html_report_share_token: reportShare.htmlReportShareToken || null,
     report_menu: playbook.reportMenu,
     crm_leads_needing_next_step: playbook.metrics.crmLeadsNeedingNextStep,
     agenda_critical_tasks: playbook.metrics.agendaCriticalTasks,
@@ -506,9 +513,14 @@ export async function registerDailyPlaybookBrainArtifact(params: {
   userId: string | null;
   playbook: DailyPlaybook;
   supabase: DailyPlaybookSupabase;
+  htmlReportUrl?: string | null;
+  htmlReportShareToken?: string | null;
 }): Promise<DailyPlaybookBrainTrace> {
   const now = new Date().toISOString();
-  const metadata = buildDailyPlaybookMetadata(params.playbook);
+  const metadata = buildDailyPlaybookMetadata(params.playbook, {
+    htmlReportUrl: params.htmlReportUrl,
+    htmlReportShareToken: params.htmlReportShareToken,
+  });
   let createdTaskId: string | null = null;
 
   try {

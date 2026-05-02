@@ -139,7 +139,7 @@ describe("mayus daily playbook route", () => {
             limit: vi.fn(async () => ({
               data: [{
                 id: "artifact-1",
-                title: "Dutra Advocacia - Playbook do dia",
+                title: "Dutra Advocacia - Resumo do dia",
                 metadata: { summary: "Resumo", delivery_time: "07:30", channels: ["whatsapp"], external_side_effects_blocked: true },
                 created_at: "2026-04-30T10:00:00.000Z",
               }],
@@ -180,13 +180,14 @@ describe("mayus daily playbook route", () => {
 
     expect(response.status).toBe(200);
     expect(json.success).toBe(true);
-    expect(json.playbook.title).toBe("Dutra Advocacia - Playbook do dia");
+    expect(json.playbook.title).toBe("Dutra Advocacia - Resumo do dia");
     expect(json.playbook.metrics.crmLeadsNeedingNextStep).toBe(1);
     expect(json.playbook.htmlReport).toContain("<!DOCTYPE html>");
     expect(json.metadata.report_menu).toEqual(expect.arrayContaining([
       expect.objectContaining({ id: "frontdesk" }),
       expect.objectContaining({ id: "calls" }),
     ]));
+    expect(json.metadata.html_report_url).toContain("/r/playbook/");
     expect(json.metadata.persistence).toBe("brain_artifact_and_system_event_logs");
     expect(inserts.some((item) => item.table === "system_event_logs" && item.payload.event_name === "daily_playbook_prepared")).toBe(true);
     expect(inserts.some((item) => item.table === "brain_artifacts" && item.payload.artifact_type === "daily_playbook")).toBe(true);
@@ -211,7 +212,7 @@ describe("mayus daily playbook route", () => {
     expect(json.success).toBe(true);
     expect(json.history[0]).toMatchObject({
       id: "artifact-1",
-      title: "Dutra Advocacia - Playbook do dia",
+      title: "Dutra Advocacia - Resumo do dia",
       externalSideEffectsBlocked: true,
     });
   });
