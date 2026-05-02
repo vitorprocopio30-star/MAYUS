@@ -1,14 +1,59 @@
 "use client";
 
+import type { CSSProperties } from "react";
+import { useEffect, useState } from "react";
 import { AdminSidebar } from "@/components/layout/AdminSidebar";
 import { AdminHeader } from "@/components/layout/AdminHeader";
 import { MAYUSOrb } from "@/components/dashboard/MAYUSOrb";
+
+type SidebarMode = "expanded" | "mini" | "hidden";
+
+const SIDEBAR_STORAGE_KEY = "mayus_sidebar_mode";
+
+function normalizeSidebarMode(value: unknown): SidebarMode {
+  if (value === "mini" || value === "hidden" || value === "expanded") return value;
+  return "expanded";
+}
+
+function getSidebarOffset(mode: SidebarMode) {
+  if (mode === "mini") return "80px";
+  if (mode === "hidden") return "0px";
+  return "280px";
+}
 
 export default function DashboardLayout({
   children,
 }: {
   children: React.ReactNode;
 }) {
+  const [sidebarMode, setSidebarMode] = useState<SidebarMode>("expanded");
+  const sidebarOffset = getSidebarOffset(sidebarMode);
+
+  useEffect(() => {
+    const syncSidebarMode = (mode?: unknown) => {
+      const storedMode = mode ?? window.localStorage.getItem(SIDEBAR_STORAGE_KEY);
+      setSidebarMode(normalizeSidebarMode(storedMode));
+    };
+
+    syncSidebarMode();
+
+    const handleModeChange = (event: Event) => {
+      syncSidebarMode((event as CustomEvent<{ mode?: SidebarMode }>).detail?.mode);
+    };
+
+    const handleStorageChange = (event: StorageEvent) => {
+      if (event.key === SIDEBAR_STORAGE_KEY) syncSidebarMode(event.newValue);
+    };
+
+    window.addEventListener("mayus-sidebar-mode-change", handleModeChange);
+    window.addEventListener("storage", handleStorageChange);
+
+    return () => {
+      window.removeEventListener("mayus-sidebar-mode-change", handleModeChange);
+      window.removeEventListener("storage", handleStorageChange);
+    };
+  }, []);
+
   return (
     <div
       className="min-h-screen flex bg-white dark:bg-[#030303] text-white/90 transition-all duration-300"
@@ -19,12 +64,12 @@ export default function DashboardLayout({
       
       {/* Container Principal */}
       <div
-        className="mayus-dashboard-shell flex flex-col min-h-screen min-w-0 transition-all duration-300 ease-in-out"
+        className={`mayus-dashboard-shell flex flex-col min-h-screen min-w-0 transition-all duration-300 ease-in-out is-${sidebarMode}`}
         style={{
-          marginLeft: "var(--mayus-dashboard-sidebar-offset, 0px)",
-          width: "calc(100dvw - var(--mayus-dashboard-sidebar-offset, 0px))",
-          maxWidth: "calc(100dvw - var(--mayus-dashboard-sidebar-offset, 0px))",
-        }}
+          "--mayus-dashboard-sidebar-offset": sidebarOffset,
+        } as CSSProperties}
+        data-sidebar-mode={sidebarMode}
+        data-sidebar-offset={sidebarOffset}
       >
         
         {/* Top Header */}
@@ -43,31 +88,16 @@ export default function DashboardLayout({
         :root {
           --mayus-dashboard-sidebar-offset: 0px;
         }
+        .mayus-dashboard-shell {
+          margin-left: 0;
+          width: 100dvw;
+          max-width: 100dvw;
+        }
         @media (min-width: 768px) {
-          :root {
-            --mayus-dashboard-sidebar-offset: var(--mayus-sidebar-offset, 280px);
-          }
-          html[data-mayus-sidebar-mode="mini"] .mayus-dashboard-shell,
-          body[data-mayus-sidebar-mode="mini"] .mayus-dashboard-shell {
-            margin-left: 80px !important;
-            width: calc(100dvw - 80px) !important;
-            max-width: calc(100dvw - 80px) !important;
-          }
-          html[data-mayus-sidebar-mode="hidden"] .mayus-dashboard-shell,
-          body[data-mayus-sidebar-mode="hidden"] .mayus-dashboard-shell {
-            margin-left: 0 !important;
-            width: 100dvw !important;
-            max-width: 100dvw !important;
-          }
-          html[data-mayus-sidebar-mode="hidden"] .mayus-dashboard-main,
-          body[data-mayus-sidebar-mode="hidden"] .mayus-dashboard-main {
-            padding-left: 1rem !important;
-          }
-          html[data-mayus-sidebar-mode="expanded"] .mayus-dashboard-shell,
-          body[data-mayus-sidebar-mode="expanded"] .mayus-dashboard-shell {
-            margin-left: 280px !important;
-            width: calc(100dvw - 280px) !important;
-            max-width: calc(100dvw - 280px) !important;
+          .mayus-dashboard-shell {
+            margin-left: var(--mayus-dashboard-sidebar-offset) !important;
+            width: calc(100dvw - var(--mayus-dashboard-sidebar-offset)) !important;
+            max-width: calc(100dvw - var(--mayus-dashboard-sidebar-offset)) !important;
           }
         }
       `}</style>

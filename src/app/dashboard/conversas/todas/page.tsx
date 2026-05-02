@@ -68,7 +68,7 @@ const parseLeadTagsMessage = (message: any) => {
 };
 
 const renderFormattedText = (text: string, keyPrefix: string) => {
-  const parts = text.split(/(\*[^*\n]+\*)/g).filter(Boolean);
+  const parts = String(text || "").split(/(\*[^*]+\*)/g).filter(Boolean);
   return parts.map((part, partIndex) => {
     const isBold = part.startsWith("*") && part.endsWith("*") && part.length > 2;
     return isBold ? (
@@ -82,7 +82,7 @@ const renderFormattedText = (text: string, keyPrefix: string) => {
 };
 
 const renderWhatsAppContent = (content: string) => {
-  const lines = String(content || "").split("\n");
+  const lines = String(content || "").replace(/\r\n/g, "\n").replace(/\r/g, "\n").split("\n");
   const firstLineSignature = lines[0]?.match(/^\*([^*\n]+)\*$/);
 
   return lines.map((line, lineIndex) => {
@@ -933,6 +933,66 @@ export default function TodasConversasPage() {
                       </button>
                    </div>
                 </div>
+
+                {activeContact && (
+                  <div className="border-b border-white/5 bg-[#050505]/95 px-6 py-3 z-10 flex-shrink-0">
+                    <div className="flex flex-wrap items-center gap-3">
+                      <div className="flex items-center gap-2 text-[9px] font-black uppercase tracking-[0.2em] text-[#CCA761]">
+                        <Tag size={13} />
+                        Etiquetas
+                      </div>
+                      <div className="flex min-w-0 flex-1 flex-wrap items-center gap-1.5">
+                        {activeLeadTags.length > 0 ? activeLeadTags.map((tag, index) => (
+                          <button
+                            key={tag}
+                            type="button"
+                            onClick={() => handleRemoveLeadTag(tag)}
+                            className={`group flex max-w-[150px] items-center gap-1 rounded-full border px-2.5 py-1 text-[8px] font-black uppercase tracking-widest transition-all hover:border-red-400/60 hover:text-red-100 ${getTagClassName(tag, index)}`}
+                            title="Remover etiqueta"
+                          >
+                            <span className="truncate">{tag}</span>
+                            <X size={9} className="opacity-60 group-hover:opacity-100" />
+                          </button>
+                        )) : (
+                          <span className="text-[10px] font-semibold text-gray-600">
+                            Sem etiqueta
+                          </span>
+                        )}
+                      </div>
+                      <div className="flex w-full gap-2 sm:w-auto">
+                        <input
+                          value={leadTagInput}
+                          onChange={(event) => setLeadTagInput(event.target.value)}
+                          onKeyDown={(event) => {
+                            if (event.key === "Enter") {
+                              event.preventDefault();
+                              handleAddLeadTag();
+                            }
+                          }}
+                          placeholder="Editar etiqueta"
+                          className="h-9 min-w-0 flex-1 rounded-lg border border-white/10 bg-black/50 px-3 text-[11px] font-semibold text-white outline-none placeholder:text-gray-700 focus:border-[#CCA761]/50 sm:w-40"
+                        />
+                        <button
+                          type="button"
+                          onClick={() => handleAddLeadTag()}
+                          disabled={!leadTagInput.trim() || isSavingLeadTags}
+                          className="h-9 rounded-lg bg-[#CCA761] px-3 text-black transition-all hover:bg-white disabled:opacity-40"
+                          title="Adicionar etiqueta"
+                        >
+                          {isSavingLeadTags ? <Loader2 size={14} className="animate-spin" /> : <Plus size={14} />}
+                        </button>
+                        <button
+                          type="button"
+                          onClick={handleMayusSuggestLeadTags}
+                          disabled={isSavingLeadTags}
+                          className="hidden h-9 rounded-lg border border-[#CCA761]/25 px-3 text-[8px] font-black uppercase tracking-widest text-[#CCA761] transition-all hover:bg-[#CCA761] hover:text-black disabled:opacity-40 md:block"
+                        >
+                          MAYUS
+                        </button>
+                      </div>
+                    </div>
+                  </div>
+                )}
 
                 {/* Area de mensagens */}
                 <div className="flex-1 overflow-y-auto p-6 flex flex-col gap-6 z-10 scroll-smooth">

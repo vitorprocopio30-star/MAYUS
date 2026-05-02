@@ -80,8 +80,7 @@ export function AdminSidebar() {
   const [sidebarMode, setSidebarMode] = useState<SidebarMode>(() => {
     if (typeof window === "undefined") return "expanded";
     const saved = window.localStorage.getItem(SIDEBAR_STORAGE_KEY);
-    if (saved === "hidden") return "hidden";
-    if (saved === "mini") return "hidden";
+    if (saved === "mini" || saved === "hidden") return "mini";
     return "expanded";
   });
 
@@ -101,6 +100,7 @@ export function AdminSidebar() {
     document.documentElement.dataset.mayusSidebarMode = sidebarMode;
     document.body.dataset.mayusSidebarMode = sidebarMode;
     window.localStorage.setItem(SIDEBAR_STORAGE_KEY, sidebarMode);
+    window.dispatchEvent(new CustomEvent("mayus-sidebar-mode-change", { detail: { mode: sidebarMode } }));
 
     return () => {
       document.documentElement.style.removeProperty("--mayus-sidebar-offset");
@@ -112,7 +112,7 @@ export function AdminSidebar() {
   const toggleSidebar = () => setIsOpen(!isOpen);
 
   const toggleSidebarMode = () => {
-    setSidebarMode(sidebarMode === "expanded" ? "hidden" : "expanded");
+    setSidebarMode(sidebarMode === "expanded" ? "mini" : "expanded");
   };
 
   const toggleSection = (title: string) => {
