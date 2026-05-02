@@ -6,7 +6,7 @@ import { createClient } from "@/lib/supabase/client";
 import { useUserProfile } from "@/hooks/useUserProfile";
 import { DEMO_SEED_TAG } from "@/lib/demo/demo-oab-flow";
 import {
-  Search, ChevronDown, Phone, Send,
+  Search, ChevronDown, ChevronLeft, ChevronRight, Phone, Send,
   MessageCircle, Bot, Lock, CheckCircle2,
   Zap, Filter, FileText, Mic, Clock, Plus, X, Smartphone, Loader2, Smile, Paperclip, MoreVertical,
   Users, UserCheck, LayoutPanelLeft, Share2, ClipboardList, Building2, Tag
@@ -195,6 +195,7 @@ export default function WhatsAppChatPremiumPage() {
   const [mayusDraft, setMayusDraft] = useState<any | null>(null);
   const [contractFlowMode, setContractFlowMode] = useState<'ia_only' | 'human_only' | 'hybrid'>('hybrid');
   const [zapsignTemplateId, setZapsignTemplateId] = useState<string>("");
+  const [isRightPanelCollapsed, setIsRightPanelCollapsed] = useState(false);
 
   const tenantId = profile?.tenant_id || null;
   const profileId = profile?.id || null;
@@ -1295,10 +1296,6 @@ export default function WhatsAppChatPremiumPage() {
                         <MessageCircle size={12} /> Atendimento
                         {inputMode === "responder" && <div className="absolute -bottom-1 left-0 w-full h-[1px] bg-[#CCA761]" />}
                     </button>
-                    <button onClick={handleMayusControl} disabled={(isGeneratingMayusReply || isConversationActionPending) || !activeContact} className="text-[9px] font-black uppercase tracking-[0.16em] relative transition-all flex items-center gap-1.5 text-[#CCA761] disabled:opacity-40 disabled:cursor-not-allowed">
-                        {(isGeneratingMayusReply || isConversationActionPending) ? <Loader2 size={12} className="animate-spin" /> : <Bot size={12} />}
-                        {activeContact?.assigned_user_id === profile?.id ? "Voltar MAYUS" : "MAYUS responder"}
-                    </button>
                     <button onClick={() => { console.log('Mode: Nota'); setInputMode("nota"); }} className={`text-[9px] font-black uppercase tracking-[0.16em] relative transition-all flex items-center gap-1.5 ${inputMode === "nota" ? "text-orange-500" : "text-gray-600 hover:text-gray-400"}`}>
                         <Lock size={12} /> Nota Interna
                         {inputMode === "nota" && <div className="absolute -bottom-1 left-0 w-full h-[1px] bg-orange-500" />}
@@ -1456,124 +1453,98 @@ export default function WhatsAppChatPremiumPage() {
       </div>
 
       {/* 3. INFO E KANBAN (BARRA DIREITA) */}
-      <div className="w-[300px] flex-shrink-0 border-l border-white/10 bg-white dark:bg-[#050505] flex flex-col h-full z-10 overflow-y-auto no-scrollbar">
-         {activeContact && (
-             <div className="p-5 space-y-7 animate-in slide-in-from-right-4 duration-700">
-               {/* Header Perfil */}
-               <div className="flex flex-col items-center">
-                  <div className="w-24 h-24 rounded-full border-2 border-[#CCA761] bg-gray-200 dark:bg-black p-1 mb-4 relative group">
-                     {activeContact.profile_pic_url ? (
-                         <img src={activeContact.profile_pic_url} alt={activeContact.name || "Contato ativo"} className="w-full h-full object-cover rounded-full" />
-                     ) : (
-                        <div className="w-full h-full rounded-full flex items-center justify-center text-3xl font-black text-[#CCA761]">
-                           {activeContact.name?.substring(0, 2).toUpperCase()}
-                        </div>
-                     )}
-                     <div className="absolute bottom-2 right-2 w-5 h-5 bg-[#25D366] rounded-full border-4 border-[#050505] shadow-[0_0_10px_#22c55e]" />
-                  </div>
-                  <h3 className="text-xl font-bold text-white text-center italic group-hover:text-[#CCA761] transition-colors">{activeContact.name}</h3>
-                  <div className="bg-[#CCA761]/10 border border-[#CCA761]/20 text-[#CCA761] px-4 py-1.5 rounded-full text-[9px] font-black uppercase mt-3 tracking-widest">{serviceStatusLabel}</div>
-                </div>
+      <div className={`${isRightPanelCollapsed ? "w-[56px]" : "w-[320px]"} flex-shrink-0 border-l border-white/10 bg-white dark:bg-[#050505] flex flex-col h-full z-10 overflow-hidden transition-all duration-300`}>
+        <div className="flex h-14 flex-shrink-0 items-center justify-between border-b border-white/10 px-3">
+          {!isRightPanelCollapsed && (
+            <div className="min-w-0">
+              <span className="block text-[9px] font-black uppercase tracking-[0.2em] text-[#CCA761]">Painel</span>
+              <span className="block truncate text-[10px] font-bold uppercase tracking-widest text-gray-600">Atendimento</span>
+            </div>
+          )}
+          <button
+            type="button"
+            onClick={() => setIsRightPanelCollapsed((current) => !current)}
+            className="ml-auto flex h-9 w-9 items-center justify-center rounded-xl border border-white/10 bg-white/5 text-gray-400 transition-all hover:border-[#CCA761]/40 hover:text-[#CCA761]"
+            title={isRightPanelCollapsed ? "Abrir painel direito" : "Recuar painel direito"}
+          >
+            {isRightPanelCollapsed ? <ChevronLeft size={16} /> : <ChevronRight size={16} />}
+          </button>
+        </div>
 
-                <div className="space-y-3">
-                  <div className="flex items-center gap-2 text-gray-500 font-black uppercase text-[10px] tracking-widest">
-                    <CheckCircle2 size={14} className="text-[#CCA761]" /> Acoes do atendimento
+        {isRightPanelCollapsed ? (
+          <div className="flex flex-1 flex-col items-center gap-4 py-5">
+            <button type="button" onClick={() => setIsRightPanelCollapsed(false)} className="rounded-xl border border-[#CCA761]/25 bg-[#CCA761]/10 p-3 text-[#CCA761]" title="Abrir MAYUS">
+              <Bot size={18} />
+            </button>
+            <button type="button" onClick={() => setIsRightPanelCollapsed(false)} className="rounded-xl border border-white/10 bg-white/5 p-3 text-gray-400" title="Abrir notas">
+              <Lock size={18} />
+            </button>
+            <button type="button" onClick={() => setIsRightPanelCollapsed(false)} className="rounded-xl border border-white/10 bg-white/5 p-3 text-gray-400" title="Abrir etiquetas">
+              <Tag size={18} />
+            </button>
+          </div>
+        ) : activeContact ? (
+          <div className="min-h-0 flex-1 overflow-y-auto no-scrollbar">
+            <div className="flex min-h-full flex-col p-5 animate-in slide-in-from-right-4 duration-500">
+              <div className="flex flex-col items-center">
+                <div className="w-20 h-20 rounded-full border-2 border-[#CCA761] bg-gray-200 dark:bg-black p-1 mb-4 relative group">
+                  {activeContact.profile_pic_url ? (
+                    <img src={activeContact.profile_pic_url} alt={activeContact.name || "Contato ativo"} className="w-full h-full object-cover rounded-full" />
+                  ) : (
+                    <div className="w-full h-full rounded-full flex items-center justify-center text-2xl font-black text-[#CCA761]">
+                      {activeContact.name?.substring(0, 2).toUpperCase()}
+                    </div>
+                  )}
+                  <div className="absolute bottom-1.5 right-1.5 w-4 h-4 bg-[#25D366] rounded-full border-4 border-[#050505] shadow-[0_0_10px_#22c55e]" />
+                </div>
+                <h3 className="text-lg font-bold text-white text-center italic group-hover:text-[#CCA761] transition-colors">{activeContact.name}</h3>
+                <div className="bg-[#CCA761]/10 border border-[#CCA761]/20 text-[#CCA761] px-4 py-1.5 rounded-full text-[9px] font-black uppercase mt-3 tracking-widest">{serviceStatusLabel}</div>
+              </div>
+
+              <div className="mt-6 space-y-4">
+                <div className="flex items-center gap-2 text-gray-500 font-black uppercase text-[10px] tracking-widest"><ClipboardList size={14} className="text-[#CCA761]" /> Gestao Pipeline</div>
+                <div className="p-4 bg-gray-200 dark:bg-black rounded-2xl border border-white/5 space-y-3">
+                  <div className="rounded-xl border border-white/5 bg-[#111] p-3 text-xs">
+                    <span className="block text-[9px] font-black uppercase tracking-widest text-gray-600 mb-1">Setor atual</span>
+                    <span className="text-white font-bold">{getDepartmentName(activeContact.department_id)}</span>
                   </div>
-                  <div className="rounded-2xl border border-white/5 bg-gray-200 p-4 dark:bg-black space-y-2.5">
-                    <button
-                      onClick={handleResolveConversation}
-                      disabled={isConversationActionPending}
-                      className="w-full rounded-xl bg-[#CCA761] px-4 py-3 text-[10px] font-black uppercase tracking-[0.16em] text-black transition-all hover:bg-white disabled:opacity-50 disabled:cursor-not-allowed flex items-center justify-center gap-2"
-                    >
-                      {isConversationActionPending ? <Loader2 size={14} className="animate-spin" /> : <CheckCircle2 size={14} />}
-                      Resolver
-                    </button>
-                    <button
-                      onClick={() => setShowTransferModal(true)}
-                      className="w-full rounded-xl border border-white/10 bg-white/5 px-4 py-3 text-[10px] font-black uppercase tracking-[0.16em] text-gray-300 transition-all hover:border-[#CCA761]/40 hover:text-[#CCA761] flex items-center justify-center gap-2"
-                    >
-                      <Share2 size={14} /> Transferir
-                    </button>
-                    <button
-                      onClick={handleToggleHumanAgent}
-                      disabled={isConversationActionPending}
-                      className="w-full rounded-xl border border-white/10 bg-white/5 px-4 py-3 text-[10px] font-black uppercase tracking-[0.16em] text-gray-300 transition-all hover:border-[#CCA761]/40 hover:text-[#CCA761] disabled:opacity-50 disabled:cursor-not-allowed flex items-center justify-center gap-2"
-                    >
-                      {activeContact.assigned_user_id === profile?.id ? <Bot size={14} /> : <UserCheck size={14} />}
-                      {activeContact.assigned_user_id === profile?.id ? "Voltar MAYUS" : "Assumir"}
-                    </button>
-                    <button
-                      onClick={handleMayusControl}
-                      disabled={(isGeneratingMayusReply || isConversationActionPending) || !activeContact}
-                      className="w-full rounded-xl border border-[#CCA761]/25 bg-[#CCA761]/10 px-4 py-3 text-[10px] font-black uppercase tracking-[0.16em] text-[#CCA761] transition-all hover:bg-[#CCA761] hover:text-black disabled:opacity-50 disabled:cursor-not-allowed flex items-center justify-center gap-2"
-                    >
-                      {(isGeneratingMayusReply || isConversationActionPending) ? <Loader2 size={14} className="animate-spin" /> : <Bot size={14} />}
-                      {activeContact.assigned_user_id === profile?.id ? "Voltar MAYUS" : "MAYUS responder"}
-                    </button>
-                    {isDemoContact && (
-                      <button
-                        onClick={handleExecuteMayusReply}
-                        disabled={isExecutingMayusReply || (!mayusDraft?.suggested_reply && !inputText.trim())}
-                        className="w-full rounded-xl border border-emerald-400/25 bg-emerald-500/10 px-4 py-3 text-[10px] font-black uppercase tracking-[0.16em] text-emerald-100 transition-all hover:bg-emerald-400 hover:text-black disabled:opacity-50 disabled:cursor-not-allowed flex items-center justify-center gap-2"
-                      >
-                        {isExecutingMayusReply ? <Loader2 size={14} className="animate-spin" /> : <Send size={14} />}
-                        Executar demo
-                      </button>
-                    )}
+                  <div className="rounded-xl border border-white/5 bg-[#111] p-3 text-xs">
+                    <span className="block text-[9px] font-black uppercase tracking-widest text-gray-600 mb-1">Responsavel atual</span>
+                    <span className="text-white font-bold">{getTeamMemberName(activeContact.assigned_user_id)}</span>
                   </div>
                 </div>
+              </div>
 
-                {/* Modulo Kanban */}
-               <div className="space-y-4">
-                  <div className="flex items-center gap-2 text-gray-500 font-black uppercase text-[10px] tracking-widest"><ClipboardList size={14} className="text-[#CCA761]" /> Gestao Pipeline</div>
-                  <div className="p-5 bg-gray-200 dark:bg-black rounded-2xl border border-white/5 space-y-4">
-                     <div className="grid grid-cols-1 gap-3 text-xs">
-                        <div className="rounded-xl border border-white/5 bg-[#111] p-3">
-                           <span className="block text-[9px] font-black uppercase tracking-widest text-gray-600 mb-1">Setor atual</span>
-                           <span className="text-white font-bold">{getDepartmentName(activeContact.department_id)}</span>
+              <div className="mt-auto space-y-5 border-t border-white/10 pt-5">
+                <div className="space-y-4">
+                  <div className="flex items-center gap-2 text-gray-500 font-black uppercase text-[10px] tracking-widest"><Lock size={14} className="text-orange-400" /> Notas internas</div>
+                  <div className="p-4 bg-gray-200 dark:bg-black rounded-2xl border border-white/5 space-y-4">
+                    <div className="max-h-36 overflow-y-auto no-scrollbar space-y-3 pr-1">
+                      {internalNotes.length > 0 ? internalNotes.slice(-4).map((note) => (
+                        <div key={note.id} className="rounded-xl border border-orange-500/20 bg-orange-500/10 p-3">
+                          <p className="text-xs leading-relaxed text-orange-50">{renderWhatsAppContent(note.content)}</p>
+                          <span className="mt-2 block text-[8px] font-black uppercase tracking-widest text-orange-400/70">{formatTime(note.created_at)}</span>
                         </div>
-                        <div className="rounded-xl border border-white/5 bg-[#111] p-3">
-                           <span className="block text-[9px] font-black uppercase tracking-widest text-gray-600 mb-1">Responsavel atual</span>
-                           <span className="text-white font-bold">{getTeamMemberName(activeContact.assigned_user_id)}</span>
-                        </div>
-                     </div>
-                     <div>
-                        <label className="text-[9px] font-black text-gray-600 uppercase tracking-widest block mb-2">Transferir para setor</label>
-                        <select
-                          value={transferDeptId}
-                          onChange={(e) => setTransferDeptId(e.target.value)}
-                          className="w-full bg-[#111] border border-white/10 rounded-xl px-4 py-3 text-xs text-white outline-none focus:border-[#CCA761]"
-                        >
-                           <option value="">Sem setor definido</option>
-                           {departments.map((dept) => (
-                             <option key={dept.id} value={dept.id}>{dept.name}</option>
-                           ))}
-                        </select>
-                     </div>
-                     <div>
-                        <label className="text-[9px] font-black text-gray-600 uppercase tracking-widest block mb-2">Transferir para pessoa</label>
-                        <select
-                          value={transferUserId}
-                          onChange={(e) => setTransferUserId(e.target.value)}
-                          className="w-full bg-[#111] border border-white/10 rounded-xl px-4 py-3 text-xs text-white outline-none focus:border-[#CCA761]"
-                        >
-                           <option value="">Fila do setor / MAYUS</option>
-                           {teamMembers.map((member) => (
-                             <option key={member.id} value={member.id}>
-                               {member.full_name} {member.role ? `- ${member.role}` : ""}
-                             </option>
-                           ))}
-                        </select>
-                     </div>
-                     <button
-                       onClick={handleTransfer}
-                       disabled={isTransferring || (!transferDeptId && !transferUserId)}
-                       className="w-full py-3 bg-white/5 border border-white/10 rounded-xl font-black uppercase text-[10px] tracking-[0.2em] flex items-center justify-center gap-3 hover:bg-[#CCA761] hover:text-black transition-all disabled:opacity-40 disabled:cursor-not-allowed"
-                     >
-                       {isTransferring ? <Loader2 size={14} className="animate-spin" /> : <Share2 size={14} />}
-                       Aplicar transferencia
-                     </button>
-                   </div>
+                      )) : (
+                        <p className="text-xs leading-relaxed text-gray-500">Nenhuma nota interna registrada para esta conversa.</p>
+                      )}
+                    </div>
+                    <textarea
+                      value={sideNoteText}
+                      onChange={(event) => setSideNoteText(event.target.value)}
+                      placeholder="Adicionar contexto interno, dados do lead, combinado ou alerta..."
+                      rows={3}
+                      className="w-full resize-none rounded-xl border border-white/10 bg-[#111] px-4 py-3 text-xs text-white outline-none placeholder:text-gray-700 focus:border-orange-400/50"
+                    />
+                    <button
+                      onClick={handleSaveSideNote}
+                      disabled={isConversationActionPending || !sideNoteText.trim()}
+                      className="w-full py-3 bg-orange-500/10 border border-orange-500/25 text-orange-200 rounded-xl font-black uppercase text-[10px] tracking-[0.2em] flex items-center justify-center gap-3 hover:bg-orange-500 hover:text-black transition-all disabled:opacity-40 disabled:cursor-not-allowed"
+                    >
+                      {isConversationActionPending ? <Loader2 size={14} className="animate-spin" /> : <Lock size={14} />}
+                      Salvar nota
+                    </button>
+                  </div>
                 </div>
 
                 <div className="space-y-4">
@@ -1646,61 +1617,83 @@ export default function WhatsAppChatPremiumPage() {
                   </div>
                 </div>
 
-                <div className="space-y-4">
-                  <div className="flex items-center gap-2 text-gray-500 font-black uppercase text-[10px] tracking-widest"><Lock size={14} className="text-orange-400" /> Notas internas</div>
-                  <div className="p-5 bg-gray-200 dark:bg-black rounded-2xl border border-white/5 space-y-4">
-                    <div className="max-h-44 overflow-y-auto no-scrollbar space-y-3 pr-1">
-                      {internalNotes.length > 0 ? internalNotes.slice(-5).map((note) => (
-                        <div key={note.id} className="rounded-xl border border-orange-500/20 bg-orange-500/10 p-3">
-                          <p className="text-xs leading-relaxed text-orange-50">{renderWhatsAppContent(note.content)}</p>
-                          <span className="mt-2 block text-[8px] font-black uppercase tracking-widest text-orange-400/70">{formatTime(note.created_at)}</span>
-                        </div>
-                      )) : (
-                        <p className="text-xs leading-relaxed text-gray-500">Nenhuma nota interna registrada para esta conversa.</p>
-                      )}
-                    </div>
-                    <textarea
-                      value={sideNoteText}
-                      onChange={(event) => setSideNoteText(event.target.value)}
-                      placeholder="Adicionar contexto interno, dados do lead, combinado ou alerta..."
-                      rows={3}
-                      className="w-full resize-none rounded-xl border border-white/10 bg-[#111] px-4 py-3 text-xs text-white outline-none placeholder:text-gray-700 focus:border-orange-400/50"
-                    />
-                    <button
-                      onClick={handleSaveSideNote}
-                      disabled={isConversationActionPending || !sideNoteText.trim()}
-                      className="w-full py-3 bg-orange-500/10 border border-orange-500/25 text-orange-200 rounded-xl font-black uppercase text-[10px] tracking-[0.2em] flex items-center justify-center gap-3 hover:bg-orange-500 hover:text-black transition-all disabled:opacity-40 disabled:cursor-not-allowed"
-                    >
-                      {isConversationActionPending ? <Loader2 size={14} className="animate-spin" /> : <Lock size={14} />}
-                      Salvar nota
-                    </button>
-                  </div>
-               </div>
-
-                 {/* Automacoes */}
                 <div className="space-y-3">
-                   <div className="flex items-center gap-2 text-gray-500 font-black uppercase text-[10px] tracking-widest">
-                     <Zap size={14} className="text-[#CCA761]" /> Automacoes
-                   </div>
-                   {contractFlowMode !== 'ia_only' && (
-                     <button
-                       onClick={handleSendZapSignContract}
-                       disabled={isSendingContract}
-                       className="w-full py-4 bg-[#CCA761] border border-[#CCA761]/20 text-black rounded-2xl font-black uppercase text-[10px] tracking-[0.16em] flex items-center justify-center gap-3 hover:scale-105 transition-all shadow-[0_0_20px_rgba(204,167,97,0.2)] disabled:opacity-50"
-                     >
-                        {isSendingContract ? <Loader2 className="animate-spin" size={16} /> : <Zap size={16} />}
-                        Gerar Contrato (Um Clique)
+                  <div className="flex items-center gap-2 text-gray-500 font-black uppercase text-[10px] tracking-widest">
+                    <CheckCircle2 size={14} className="text-[#CCA761]" /> Acoes do atendimento
+                  </div>
+                  <div className="rounded-2xl border border-white/5 bg-gray-200 p-4 dark:bg-black space-y-2.5">
+                    <button
+                      onClick={handleMayusControl}
+                      disabled={(isGeneratingMayusReply || isConversationActionPending) || !activeContact}
+                      className="w-full rounded-xl border border-[#CCA761]/25 bg-[#CCA761]/10 px-4 py-3 text-[10px] font-black uppercase tracking-[0.16em] text-[#CCA761] transition-all hover:bg-[#CCA761] hover:text-black disabled:opacity-50 disabled:cursor-not-allowed flex items-center justify-center gap-2"
+                    >
+                      {(isGeneratingMayusReply || isConversationActionPending) ? <Loader2 size={14} className="animate-spin" /> : <Bot size={14} />}
+                      {activeContact.assigned_user_id === profile?.id ? "Voltar MAYUS" : "MAYUS responder"}
+                    </button>
+                    <button
+                      onClick={() => setShowTransferModal(true)}
+                      className="w-full rounded-xl border border-white/10 bg-white/5 px-4 py-3 text-[10px] font-black uppercase tracking-[0.16em] text-gray-300 transition-all hover:border-[#CCA761]/40 hover:text-[#CCA761] flex items-center justify-center gap-2"
+                    >
+                      <Share2 size={14} /> Transferir
+                    </button>
+                    <button
+                      onClick={handleResolveConversation}
+                      disabled={isConversationActionPending}
+                      className="w-full rounded-xl bg-[#CCA761] px-4 py-3 text-[10px] font-black uppercase tracking-[0.16em] text-black transition-all hover:bg-white disabled:opacity-50 disabled:cursor-not-allowed flex items-center justify-center gap-2"
+                    >
+                      {isConversationActionPending ? <Loader2 size={14} className="animate-spin" /> : <CheckCircle2 size={14} />}
+                      Resolver
+                    </button>
+                    <button
+                      onClick={handleToggleHumanAgent}
+                      disabled={isConversationActionPending}
+                      className="w-full rounded-xl border border-white/10 bg-white/5 px-4 py-3 text-[10px] font-black uppercase tracking-[0.16em] text-gray-300 transition-all hover:border-[#CCA761]/40 hover:text-[#CCA761] disabled:opacity-50 disabled:cursor-not-allowed flex items-center justify-center gap-2"
+                    >
+                      {activeContact.assigned_user_id === profile?.id ? <Bot size={14} /> : <UserCheck size={14} />}
+                      {activeContact.assigned_user_id === profile?.id ? "Voltar MAYUS" : "Assumir"}
+                    </button>
+                    {isDemoContact && (
+                      <button
+                        onClick={handleExecuteMayusReply}
+                        disabled={isExecutingMayusReply || (!mayusDraft?.suggested_reply && !inputText.trim())}
+                        className="w-full rounded-xl border border-emerald-400/25 bg-emerald-500/10 px-4 py-3 text-[10px] font-black uppercase tracking-[0.16em] text-emerald-100 transition-all hover:bg-emerald-400 hover:text-black disabled:opacity-50 disabled:cursor-not-allowed flex items-center justify-center gap-2"
+                      >
+                        {isExecutingMayusReply ? <Loader2 size={14} className="animate-spin" /> : <Send size={14} />}
+                        Executar demo
+                      </button>
+                    )}
+                  </div>
+                </div>
+
+                <div className="space-y-3">
+                  <div className="flex items-center gap-2 text-gray-500 font-black uppercase text-[10px] tracking-widest">
+                    <Zap size={14} className="text-[#CCA761]" /> Automacoes
+                  </div>
+                  {contractFlowMode !== 'ia_only' && (
+                    <button
+                      onClick={handleSendZapSignContract}
+                      disabled={isSendingContract}
+                      className="w-full py-4 bg-[#CCA761] border border-[#CCA761]/20 text-black rounded-2xl font-black uppercase text-[10px] tracking-[0.16em] flex items-center justify-center gap-3 hover:scale-105 transition-all shadow-[0_0_20px_rgba(204,167,97,0.2)] disabled:opacity-50"
+                    >
+                      {isSendingContract ? <Loader2 className="animate-spin" size={16} /> : <Zap size={16} />}
+                      Gerar Contrato
                     </button>
                   )}
-                   <button
-                     onClick={() => toast.info("Dossie completo sera aberto quando o contato estiver vinculado a um cliente/processo.")}
-                     className="w-full py-4 bg-white/5 border border-white/10 rounded-2xl font-black uppercase text-[10px] tracking-[0.16em] flex items-center justify-center gap-3 hover:bg-white/10 transition-all group"
-                   >
-                      <FileText size={16} className="group-hover:-rotate-6 transition-transform" /> Dossie Completo
-                   </button>
+                  <button
+                    onClick={() => toast.info("Dossie completo sera aberto quando o contato estiver vinculado a um cliente/processo.")}
+                    className="w-full py-4 bg-white/5 border border-white/10 rounded-2xl font-black uppercase text-[10px] tracking-[0.16em] flex items-center justify-center gap-3 hover:bg-white/10 transition-all group"
+                  >
+                    <FileText size={16} className="group-hover:-rotate-6 transition-transform" /> Dossie Completo
+                  </button>
                 </div>
+              </div>
             </div>
-         )}
+          </div>
+        ) : (
+          <div className="flex flex-1 items-center justify-center p-5 text-center text-xs font-bold uppercase tracking-widest text-gray-600">
+            Selecione uma conversa
+          </div>
+        )}
       </div>
 
       {/* Modal de transferencia de atendimento */}
