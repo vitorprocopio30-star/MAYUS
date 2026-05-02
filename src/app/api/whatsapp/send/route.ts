@@ -126,19 +126,31 @@ export async function POST(req: NextRequest) {
        if (!evoRes.ok) throw new Error("Erro Evolution API: " + JSON.stringify(apiResponse));
     }
 
-    // 3. Salvar Fisicamente no Banco (Histórico do Cliente)
-    const { error: dbError } = await supabase.from("whatsapp_messages").insert([{
+    // 3. Salvar Fisicamente no Banco (Historico do Cliente)
+    const insertedAt = new Date().toISOString();
+    const { data: savedMessage, error: dbError } = await supabase.from("whatsapp_messages").insert([{
       tenant_id: tenant_id,
       contact_id: contact_id,
       direction: "outbound",
-      content: audio_url ? "[Áudio Enviado]" : text,
+      content: audio_url ? "[Audio Enviado]" : text,
       status: "sent",
-      metadata: audio_url ? { audio_url } : null
-    }]);
+      metadata: audio_url ? { audio_url } : null,
+      created_at: insertedAt,
+    }]).select("*").single();
 
     if (dbError) throw dbError;
 
-    return NextResponse.json({ success: true, motor: provider.provider, apiResponse });
+    await supabase
+      .from("whatsapp_contacts")
+      .update({
+        last_message_at: savedMessage?.created_at || insertedAt,
+        unread_count: 0,
+        updated_at: savedMessage?.created_at || insertedAt,
+      })
+      .eq("tenant_id", tenant_id)
+      .eq("id", contact_id);
+
+    return NextResponse.json({ success: true, motor: provider.provider, apiResponse, message: savedMessage || null });
 
   } catch (err: any) {
     console.error("Erro no Envio de WhatsApp:", err);

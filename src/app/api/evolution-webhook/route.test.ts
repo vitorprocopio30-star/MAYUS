@@ -48,14 +48,14 @@ function buildSupabaseMock() {
               })),
             })),
           })),
-          insert: vi.fn(() => ({
-            select: vi.fn(() => ({
-              single: vi.fn(async () => {
-                contactInserts.push({ tenant_id: "tenant-1", phone_number: "5521999990000@s.whatsapp.net" });
-                return { data: { id: "contact-1" }, error: null };
-              }),
-            })),
-          })),
+          insert: vi.fn((rows: unknown[]) => {
+            contactInserts.push(...rows);
+            return {
+              select: vi.fn(() => ({
+                single: vi.fn(async () => ({ data: { id: "contact-1" }, error: null })),
+              })),
+            };
+          }),
           update: vi.fn(() => ({ eq: vi.fn(async () => ({ error: null })) })),
         };
       }
@@ -140,6 +140,15 @@ describe("/api/evolution-webhook", () => {
         content: "Mayus, relatorio do escritorio",
         message_id_from_evolution: "msg-1",
         status: "delivered",
+        created_at: expect.any(String),
+      }),
+    ]);
+    expect(supabaseMock.contactInserts).toEqual([
+      expect.objectContaining({
+        tenant_id: "tenant-1",
+        phone_number: "5521999990000@s.whatsapp.net",
+        last_message_at: expect.any(String),
+        unread_count: 1,
       }),
     ]);
     expect(prepareWhatsAppSalesReplyForContactMock).not.toHaveBeenCalled();

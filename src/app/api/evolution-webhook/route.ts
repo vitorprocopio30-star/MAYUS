@@ -171,6 +171,7 @@ export async function POST(req: Request) {
         instanceName,
         remoteJid,
       });
+      const receivedAt = new Date().toISOString();
 
       // 2. Verificar/Criar o Contato (Lead/Cliente)
       let { data: contact } = await supabase
@@ -191,6 +192,8 @@ export async function POST(req: Request) {
              phone_number: remoteJid, 
              name: pushName,
              profile_pic_url: avatarUrl,
+             last_message_at: receivedAt,
+             unread_count: fromMe ? 0 : 1,
           }])
           .select("id")
           .single();
@@ -203,7 +206,7 @@ export async function POST(req: Request) {
       } else {
          // Atualizar data da última mensagem
          await supabase.from("whatsapp_contacts").update({
-            last_message_at: new Date().toISOString(),
+            last_message_at: receivedAt,
             unread_count: fromMe ? 0 : 1, // Se foi do cliente, marca 1 (simplificado)
             ...(avatarUrl && !contact?.profile_pic_url ? { profile_pic_url: avatarUrl } : {}),
          }).eq("id", contactId);
@@ -220,7 +223,8 @@ export async function POST(req: Request) {
            message_type: messageType,
            media_url: mediaUrl,
            message_id_from_evolution: messageId,
-           status: 'delivered'
+           status: 'delivered',
+           created_at: receivedAt,
         }]);
 
       if (msgErr) {

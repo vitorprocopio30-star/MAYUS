@@ -1,6 +1,6 @@
 ﻿"use client";
 
-import { useState, useEffect, useRef, useCallback } from "react";
+import { useState, useEffect, useMemo, useRef, useCallback } from "react";
 import { Cormorant_Garamond, Montserrat } from "next/font/google";
 import { createClient } from "@/lib/supabase/client";
 import { useUserProfile } from "@/hooks/useUserProfile";
@@ -72,7 +72,7 @@ const renderFormattedText = (text: string, keyPrefix: string) => {
   return parts.map((part, partIndex) => {
     const isBold = part.startsWith("*") && part.endsWith("*") && part.length > 2;
     return isBold ? (
-      <strong key={`${keyPrefix}-${partIndex}`} className="font-black">
+      <strong key={`${keyPrefix}-${partIndex}`} className="font-black tracking-normal">
         {part.slice(1, -1)}
       </strong>
     ) : (
@@ -88,10 +88,10 @@ const renderWhatsAppContent = (content: string) => {
   return lines.map((line, lineIndex) => {
     if (lineIndex === 0 && firstLineSignature) {
       return (
-        <span key="signature-line" className="block font-black text-[15px] leading-tight">
+        <strong key="signature-line" className="mb-1 block text-[15px] font-black leading-tight tracking-normal">
           {firstLineSignature[1]}
           {lineIndex < lines.length - 1 && <br />}
-        </span>
+        </strong>
       );
     }
 
@@ -125,7 +125,7 @@ const suggestLeadTags = (contact: any, messages: any[]) => {
 
 export default function TodasConversasPage() {
   const { profile } = useUserProfile();
-  const supabase = createClient();
+  const supabase = useMemo(() => createClient(), []);
   const messagesEndRef = useRef<HTMLDivElement>(null);
 
   const [activeTab, setActiveTab] = useState("minhas");
@@ -193,8 +193,9 @@ export default function TodasConversasPage() {
      if (data) {
         setContacts(data);
         setActiveContact((current) => {
-          if (!current) return data.length > 0 ? data[0] : null;
-          return data.find((contact) => contact.id === current.id) || current;
+          if (data.length === 0) return null;
+          if (!current) return data[0];
+          return data.find((contact) => contact.id === current.id) || data[0];
         });
      }
   }, [supabase, tenantId]);
@@ -329,6 +330,12 @@ export default function TodasConversasPage() {
       supabase.removeChannel(channel);
     };
   }, [activeContact, supabase, tenantId]);
+
+  useEffect(() => {
+    if (activeContact) return;
+    setMessages([]);
+    setShowTypingIndicator(false);
+  }, [activeContact]);
 
   const scrollToBottom = () => {
     setTimeout(() => {
@@ -949,7 +956,7 @@ export default function TodasConversasPage() {
                            )}
 
                            <div className={`flex flex-col gap-1 ${isInternalNote ? 'max-w-[76%] items-center' : `max-w-[70%] ${isMe ? 'items-end' : 'items-start'}`}`}>
-                              <div className={`p-3 rounded-2xl text-sm shadow-md whitespace-pre-wrap ${
+                              <div className={`p-3 rounded-2xl text-sm tracking-normal shadow-md whitespace-pre-wrap ${
                                  isInternalNote
                                  ? 'bg-orange-500/10 text-orange-100 border border-orange-500/30 rounded-xl'
                                  : isMe
@@ -1077,7 +1084,9 @@ export default function TodasConversasPage() {
                               {/* Preview da Assinatura Minimalista */}
                               {showSignature && inputMode === "responder" && (
                                 <div className="absolute bottom-1 right-[115px] pointer-events-none opacity-30 hidden sm:block">
-                                   <span className="text-[8px] text-gray-500 italic font-bold">*{profile?.full_name || 'Equipe'}*</span>
+                                   <strong className="text-[8px] font-black not-italic text-gray-400">
+                                     {profile?.full_name || 'Equipe MAYUS'}
+                                   </strong>
                                 </div>
                               )}
 

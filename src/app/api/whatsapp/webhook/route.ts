@@ -136,6 +136,7 @@ export async function POST(req: NextRequest) {
         const messageType = msg.type || "text"; // text, image, audio, document, video, sticker, location, contacts
         const messageIdFromMeta = msg.id;
         const pushName = contactInfo?.profile?.name || "Desconhecido";
+        const receivedAt = new Date().toISOString();
 
         if (isGroupSender(senderPhone)) {
           console.log("[Meta Webhook] Mensagem de grupo ignorada para impedir resposta automatica.", { tenantId });
@@ -229,7 +230,9 @@ export async function POST(req: NextRequest) {
               tenant_id: tenantId,
               phone_number: senderPhone,
               name: pushName,
-              department_id: defaultDeptId
+              department_id: defaultDeptId,
+              last_message_at: receivedAt,
+              unread_count: 1,
             }])
             .select("id")
             .single();
@@ -246,7 +249,7 @@ export async function POST(req: NextRequest) {
             .from("whatsapp_contacts")
             .update({
               name: pushName,
-              last_message_at: new Date().toISOString(),
+              last_message_at: receivedAt,
               unread_count: currentUnread + 1,
             })
             .eq("id", contactId);
@@ -264,6 +267,7 @@ export async function POST(req: NextRequest) {
             media_url: mediaUrl || null,
             message_id_from_evolution: messageIdFromMeta, // Reutilizamos o campo para o ID da Meta
             status: "delivered",
+            created_at: receivedAt,
           }]);
 
         if (msgErr) {

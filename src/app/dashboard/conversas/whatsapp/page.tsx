@@ -1,6 +1,6 @@
 "use client";
 
-import { useState, useEffect, useRef } from "react";
+import { useState, useCallback, useEffect, useMemo, useRef } from "react";
 import { Cormorant_Garamond, Montserrat } from "next/font/google";
 import { createClient } from "@/lib/supabase/client";
 import { useUserProfile } from "@/hooks/useUserProfile";
@@ -106,7 +106,7 @@ const renderFormattedText = (text: string, keyPrefix: string) => {
   return parts.map((part, partIndex) => {
     const isBold = part.startsWith("*") && part.endsWith("*") && part.length > 2;
     return isBold ? (
-      <strong key={`${keyPrefix}-${partIndex}`} className="font-black">
+      <strong key={`${keyPrefix}-${partIndex}`} className="font-black tracking-normal">
         {part.slice(1, -1)}
       </strong>
     ) : (
@@ -122,10 +122,10 @@ const renderWhatsAppContent = (content: string) => {
   return lines.map((line, lineIndex) => {
     if (lineIndex === 0 && firstLineSignature) {
       return (
-        <span key="signature-line" className="block font-black text-[15px] leading-tight">
+        <strong key="signature-line" className="mb-1 block text-[15px] font-black leading-tight tracking-normal">
           {firstLineSignature[1]}
           {lineIndex < lines.length - 1 && <br />}
-        </span>
+        </strong>
       );
     }
 
@@ -140,7 +140,7 @@ const renderWhatsAppContent = (content: string) => {
 
 export default function WhatsAppChatPremiumPage() {
   const { profile } = useUserProfile();
-  const supabase = createClient();
+  const supabase = useMemo(() => createClient(), []);
   const messagesEndRef = useRef<HTMLDivElement>(null);
 
   const [activeTab, setActiveTab] = useState("minhas"); // minhas, aguardando, todas
@@ -184,8 +184,15 @@ export default function WhatsAppChatPremiumPage() {
   const [contractFlowMode, setContractFlowMode] = useState<'ia_only' | 'human_only' | 'hybrid'>('hybrid');
   const [zapsignTemplateId, setZapsignTemplateId] = useState<string>("");
 
+  const tenantId = profile?.tenant_id || null;
+  const profileId = profile?.id || null;
+  const normalizedRole = String(profile?.role || "")
+    .normalize("NFD")
+    .replace(/[\u0300-\u036f]/g, "")
+    .toLowerCase();
+
   // Permissoes
-  const isAdmin = profile?.role === 'Administrador' || profile?.role === 'mayus_admin' || profile?.role === 'Sócio';
+  const isAdmin = ["administrador", "admin", "socio", "mayus_admin"].includes(normalizedRole);
 
   useEffect(() => {
     try {
@@ -206,53 +213,55 @@ export default function WhatsAppChatPremiumPage() {
 
   // Carregar Departamentos e Membros
   useEffect(() => {
-    if (!profile?.tenant_id) return;
+    if (!tenantId) return;
 
     const loadDeps = async () => {
-      const { data: depts } = await supabase.from('departments').select('*').eq('tenant_id', profile!.tenant_id).order('name');
+      const { data: depts } = await supabase.from('departments').select('*').eq('tenant_id', tenantId).order('name');
       if (depts) setDepartments(depts);
 
-      const { data: members } = await supabase.from('profiles').select('id, full_name, role').eq('tenant_id', profile!.tenant_id).eq('is_active', true);
+      const { data: members } = await supabase.from('profiles').select('id, full_name, role').eq('tenant_id', tenantId).eq('is_active', true);
       if (members) setTeamMembers(members);
 
       // Carregar configuracoes de governanca
-      const { data: settings } = await supabase.from('tenant_settings').select('ai_features').eq('tenant_id', profile!.tenant_id).maybeSingle();
+      const { data: settings } = await supabase.from('tenant_settings').select('ai_features').eq('tenant_id', tenantId).maybeSingle();
       if (settings?.ai_features) {
         if (settings.ai_features.contract_flow_mode) setContractFlowMode(settings.ai_features.contract_flow_mode);
         if (settings.ai_features.zapsign_template_id) setZapsignTemplateId(settings.ai_features.zapsign_template_id);
       }
     };
     loadDeps();
-  }, [profile?.tenant_id]);
-
-  // Carregar Contatos Iniciais
-  useEffect(() => {
-    if (!profile?.tenant_id) return;
-    fetchContacts();
-  }, [profile?.tenant_id, activeTab, filterDeptId]);
+  }, [supabase, tenantId]);
 
   useEffect(() => {
     setTransferDeptId(activeContact?.department_id || "");
     setTransferUserId(activeContact?.assigned_user_id || "");
   }, [activeContact?.id, activeContact?.department_id, activeContact?.assigned_user_id]);
 
-  const fetchContacts = async (showLoading = true) => {
+  const fetchContacts = useCallback(async (showLoading = true) => {
      if (showLoading) setIsLoading(true);
+     if (!tenantId) {
+        setContacts([]);
+        setActiveContact(null);
+        if (showLoading) setIsLoading(false);
+        return;
+     }
      let query = supabase
        .from("whatsapp_contacts")
        .select("*")
-       .eq("tenant_id", profile!.tenant_id)
+       .eq("tenant_id", tenantId)
        .order("last_message_at", { ascending: false });
 
      // Permissoes: SDR/Advogado ve so as suas; Admin ve tudo
-     if (!isAdmin) {
-       if (activeTab === "minhas" || activeTab === "todas") {
-         query = query.eq("assigned_user_id", profile!.id);
-       }
-     } else {
-       if (activeTab === "minhas") query = query.eq("assigned_user_id", profile!.id);
-     }
      if (activeTab === "aguardando") query = query.is("assigned_user_id", null);
+     else if (activeTab === "minhas") {
+       query = profileId
+         ? query.or(`assigned_user_id.eq.${profileId},assigned_user_id.is.null`)
+         : query.is("assigned_user_id", null);
+     } else if (!isAdmin) {
+       query = profileId
+         ? query.or(`assigned_user_id.eq.${profileId},assigned_user_id.is.null`)
+         : query.is("assigned_user_id", null);
+     }
 
      // Filtro por departamento
      if (filterDeptId) query = query.eq("department_id", filterDeptId);
@@ -261,12 +270,19 @@ export default function WhatsAppChatPremiumPage() {
      if (data) {
         setContacts(data);
         setActiveContact((current) => {
-          if (!current) return data.length > 0 ? data[0] : null;
-          return data.find((contact) => contact.id === current.id) || current;
+          if (data.length === 0) return null;
+          if (!current) return data[0];
+          return data.find((contact) => contact.id === current.id) || data[0];
         });
      }
      if (showLoading) setIsLoading(false);
-  };
+  }, [activeTab, filterDeptId, isAdmin, profileId, supabase, tenantId]);
+
+  // Carregar Contatos Iniciais
+  useEffect(() => {
+    if (!tenantId) return;
+    void fetchContacts();
+  }, [fetchContacts, tenantId]);
 
   const getLeadTagsForContact = (contact: any) => {
     if (!contact?.id) return [];
@@ -276,14 +292,22 @@ export default function WhatsAppChatPremiumPage() {
 
   const activeLeadTags = activeContact ? getLeadTagsForContact(activeContact) : [];
 
+  const handleSelectContact = (contact: any) => {
+    if (contact?.id === activeContact?.id) return;
+    setActiveContact(contact);
+    setMessages([]);
+    setMayusDraft(null);
+    setShowTypingIndicator(false);
+  };
+
   useEffect(() => {
-    if (!profile?.tenant_id) return;
+    if (!tenantId) return;
 
     const channel = supabase
-      .channel(`whatsapp_contacts_${profile.tenant_id}_${profile.id || "all"}`)
+      .channel(`whatsapp_contacts_${tenantId}_${profileId || "all"}`)
       .on(
         "postgres_changes",
-        { event: "*", schema: "public", table: "whatsapp_contacts", filter: `tenant_id=eq.${profile.tenant_id}` },
+        { event: "*", schema: "public", table: "whatsapp_contacts", filter: `tenant_id=eq.${tenantId}` },
         () => {
           void fetchContacts(false);
         }
@@ -294,11 +318,18 @@ export default function WhatsAppChatPremiumPage() {
       void fetchContacts(false);
     }, 2500);
 
+    const handleWindowFocus = () => {
+      void fetchContacts(false);
+    };
+
+    window.addEventListener("focus", handleWindowFocus);
+
     return () => {
       window.clearInterval(intervalId);
+      window.removeEventListener("focus", handleWindowFocus);
       supabase.removeChannel(channel);
     };
-  }, [profile?.tenant_id, profile?.id, activeTab, filterDeptId]);
+  }, [fetchContacts, supabase, tenantId, profileId]);
 
   // Filtro local de busca por nome/telefone
   const filteredContacts = contacts.filter(c => {
@@ -366,8 +397,7 @@ export default function WhatsAppChatPremiumPage() {
 
   // Realtime Messages
   useEffect(() => {
-    if (!profile?.tenant_id || !activeContact) return;
-    const tenantId = profile.tenant_id;
+    if (!tenantId || !activeContact) return;
     const contactId = activeContact.id;
 
     const fetchMessages = async () => {
@@ -446,7 +476,14 @@ export default function WhatsAppChatPremiumPage() {
       document.removeEventListener("visibilitychange", handleVisibility);
       supabase.removeChannel(channel);
     };
-  }, [profile?.tenant_id, activeContact?.id]);
+  }, [supabase, tenantId, activeContact]);
+
+  useEffect(() => {
+    if (activeContact) return;
+    setMessages([]);
+    setMayusDraft(null);
+    setShowTypingIndicator(false);
+  }, [activeContact]);
 
   useEffect(() => {
     scrollToBottom();
@@ -548,10 +585,14 @@ export default function WhatsAppChatPremiumPage() {
       toast.info("Selecione um contato para enviar o audio.");
       return;
     }
+    if (!tenantId) {
+      toast.error("Nao encontrei o tenant para enviar o audio.");
+      return;
+    }
 
     setIsSending(true);
     try {
-      const fileName = `${profile?.tenant_id}/${activeContact.id}/${Date.now()}.webm`;
+      const fileName = `${tenantId}/${activeContact.id}/${Date.now()}.webm`;
       const { data, error: uploadError } = await supabase.storage
         .from('whatsapp-media')
         .upload(fileName, blob);
@@ -564,7 +605,7 @@ export default function WhatsAppChatPremiumPage() {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
-          tenant_id: profile!.tenant_id,
+          tenant_id: tenantId,
           contact_id: activeContact.id,
           phone_number: activeContact.phone_number,
           audio_url: publicUrl
@@ -633,18 +674,20 @@ export default function WhatsAppChatPremiumPage() {
     setInputText("");
 
     try {
+       if (!tenantId) throw new Error("Tenant nao encontrado para enviar mensagem.");
        if (selectedFile) toast.success(`Anexo ${selectedFile.name} pronto.`);
 
        const response = await fetch('/api/whatsapp/send', {
           method: 'POST',
           headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({ tenant_id: profile!.tenant_id, contact_id: activeContact.id, phone_number: activeContact.phone_number, text: textToSend })
+          body: JSON.stringify({ tenant_id: tenantId, contact_id: activeContact.id, phone_number: activeContact.phone_number, text: textToSend })
        });
-       if (!response.ok) throw new Error("Erro no motor Meta");
+       const sendResult = await response.json().catch(() => ({}));
+       if (!response.ok) throw new Error(sendResult?.error || "Erro no motor Meta");
 
-       setMessages((current) => mergeMessage(current, {
+       setMessages((current) => mergeMessage(current, sendResult?.message || {
           id: `local-outbound-${Date.now()}`,
-          tenant_id: profile!.tenant_id,
+          tenant_id: tenantId,
           contact_id: activeContact.id,
           direction: "outbound",
           message_type: "text",
@@ -710,17 +753,20 @@ export default function WhatsAppChatPremiumPage() {
   };
 
   const handleCreateContact = async () => {
+     if (!tenantId || !profileId) return toast.error("Nao encontrei sua sessao para criar a conversa.");
      let cleanPhone = newContactPhone.replace(/\D/g, '');
      if (cleanPhone.length < 10) return toast.error("Numero invalido.");
      const fullJid = cleanPhone;
      const { data: newContact, error } = await supabase
        .from("whatsapp_contacts")
-       .insert([{ tenant_id: profile!.tenant_id, phone_number: fullJid, name: cleanPhone, assigned_user_id: profile!.id }])
+       .insert([{ tenant_id: tenantId, phone_number: fullJid, name: cleanPhone, assigned_user_id: profileId }])
        .select().single();
 
      if (!error) {
         setContacts([newContact, ...contacts]);
         setActiveContact(newContact);
+        setMessages([]);
+        setMayusDraft(null);
         setLocalLeadTags((current) => ({ ...current, [newContact.id]: ["Novo lead"] }));
         setIsAddingContact(false);
         setNewContactPhone("");
@@ -737,14 +783,14 @@ export default function WhatsAppChatPremiumPage() {
   };
 
   const updateActiveContact = async (updates: Record<string, any>, successMessage: string) => {
-    if (!activeContact || !profile?.tenant_id) return;
+    if (!activeContact || !tenantId) return;
 
     setIsConversationActionPending(true);
     try {
       const { error } = await supabase
         .from("whatsapp_contacts")
         .update(updates)
-        .eq("tenant_id", profile.tenant_id)
+        .eq("tenant_id", tenantId)
         .eq("id", activeContact.id);
 
       if (error) throw error;
@@ -760,7 +806,7 @@ export default function WhatsAppChatPremiumPage() {
   };
 
   const saveLeadTags = async (nextTags: string[], successMessage = "Etiquetas atualizadas.") => {
-    if (!activeContact || !profile?.tenant_id) return;
+    if (!activeContact || !tenantId) return;
 
     const normalizedTags = normalizeLeadTags(nextTags);
     const updates = {
@@ -776,7 +822,7 @@ export default function WhatsAppChatPremiumPage() {
       const { error } = await supabase
         .from("whatsapp_contacts")
         .update(updates)
-        .eq("tenant_id", profile.tenant_id)
+        .eq("tenant_id", tenantId)
         .eq("id", activeContact.id);
 
       if (error) throw error;
@@ -784,7 +830,7 @@ export default function WhatsAppChatPremiumPage() {
       void fetchContacts(false);
     } catch (error: any) {
       const fallback = await supabase.from("whatsapp_messages").insert([{
-        tenant_id: profile.tenant_id,
+        tenant_id: tenantId,
         contact_id: activeContact.id,
         direction: "outbound",
         message_type: LEAD_TAG_MESSAGE_TYPE,
@@ -827,14 +873,14 @@ export default function WhatsAppChatPremiumPage() {
     const note = content.trim();
     if (!note) return null;
 
-    if (!activeContact || !profile?.tenant_id) {
+    if (!activeContact || !tenantId) {
       throw new Error("Selecione uma conversa real para salvar a nota interna.");
     }
 
     const { data, error } = await supabase
       .from("whatsapp_messages")
       .insert([{
-        tenant_id: profile.tenant_id,
+        tenant_id: tenantId,
         contact_id: activeContact.id,
         direction: "outbound",
         message_type: "internal_note",
@@ -924,6 +970,7 @@ export default function WhatsAppChatPremiumPage() {
 
   const handleSendZapSignContract = async () => {
     if (!activeContact || isSendingContract) return;
+    if (!tenantId) return toast.error("Nao encontrei o tenant para gerar o contrato.");
 
     setIsSendingContract(true);
     const toastId = toast.loading("Gerando contrato na ZapSign...");
@@ -933,7 +980,7 @@ export default function WhatsAppChatPremiumPage() {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
-          tenant_id: profile?.tenant_id,
+          tenant_id: tenantId,
           contact_id: activeContact.id,
           template_id: zapsignTemplateId || "default",
           doc_name: `Contrato de Honorarios - ${activeContact.name || 'Cliente'}`
@@ -1052,7 +1099,7 @@ export default function WhatsAppChatPremiumPage() {
            ) : filteredContacts.map((contact) => {
               const contactTags = getLeadTagsForContact(contact);
               return (
-                <div key={contact.id} onClick={() => setActiveContact(contact)} className={`group relative flex items-start gap-4 p-4 rounded-2xl cursor-pointer transition-all border ${activeContact?.id === contact.id ? "bg-[#111] border-[#CCA761]/30" : "hover:bg-white/5 border-transparent opacity-80 hover:opacity-100"}`}>
+                <div key={contact.id} onClick={() => handleSelectContact(contact)} className={`group relative flex items-start gap-4 p-4 rounded-2xl cursor-pointer transition-all border ${activeContact?.id === contact.id ? "bg-[#111] border-[#CCA761]/30" : "hover:bg-white/5 border-transparent opacity-80 hover:opacity-100"}`}>
                    <div className="w-12 h-12 rounded-full border border-[#CCA761]/20 bg-gray-200 dark:bg-black flex flex-shrink-0 items-center justify-center text-[#CCA761] font-black shadow-inner overflow-hidden">
                       {contact.profile_pic_url ? <img src={contact.profile_pic_url} className="w-full h-full object-cover" /> : contact.name?.substring(0, 2).toUpperCase()}
                    </div>
@@ -1178,7 +1225,7 @@ export default function WhatsAppChatPremiumPage() {
                        return (
                           <div key={msg.id || idx} className={`flex ${isInternalNote ? 'justify-center' : isMe ? 'justify-end' : 'justify-start'} animate-in fade-in slide-in-from-bottom-4`}>
                              <div className={`flex flex-col gap-2 ${isInternalNote ? 'items-center max-w-[72%]' : `max-w-[65%] ${isMe ? 'items-end' : 'items-start'}`}`}>
-                                <div className={`p-5 rounded-2xl text-[14px] leading-relaxed shadow-2xl relative border ${
+                                <div className={`p-5 rounded-2xl text-[14px] leading-relaxed tracking-normal shadow-2xl relative border ${
                                    isInternalNote
                                    ? 'bg-orange-500/10 border-orange-500/30 text-orange-100 rounded-xl'
                                    : isMe
@@ -1256,7 +1303,7 @@ export default function WhatsAppChatPremiumPage() {
                         value={signatureName}
                         onChange={(e) => setSignatureName(e.target.value)}
                         placeholder={profile?.full_name || 'Seu nome'}
-                        className="bg-transparent border-b border-white/10 text-[10px] text-gray-300 px-1 py-0.5 w-24 outline-none focus:border-[#CCA761] placeholder:text-gray-700 font-bold transition-colors"
+                        className="bg-transparent border-b border-white/10 text-[10px] text-gray-200 px-1 py-0.5 w-24 outline-none focus:border-[#CCA761] placeholder:text-gray-700 font-black transition-colors"
                       />
                     )}
                     <label className="flex items-center gap-2 cursor-pointer group">
@@ -1328,7 +1375,9 @@ export default function WhatsAppChatPremiumPage() {
                            {/* Preview da Assinatura Minimalista */}
                            {showSignature && inputMode === "responder" && (
                              <div className="absolute bottom-1 right-[115px] pointer-events-none opacity-30 hidden sm:block">
-                                <span className="text-[8px] text-gray-500 italic font-bold">*{profile?.full_name || 'Equipe'}*</span>
+                                <strong className="text-[8px] font-black not-italic text-gray-400">
+                                  {signatureName || profile?.full_name || 'Equipe MAYUS'}
+                                </strong>
                              </div>
                            )}
 

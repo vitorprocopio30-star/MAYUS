@@ -52,6 +52,15 @@ import { getAllowedHrefs, isFullAccessRole } from "@/lib/permissions";
 const cormorant = Cormorant_Garamond({ subsets: ["latin"], weight: ["400", "500", "600", "700"], style: ["normal", "italic"] });
 const montserrat = Montserrat({ subsets: ["latin"], weight: ["300", "400", "500", "600", "700"] });
 
+type SidebarMode = "expanded" | "mini" | "hidden";
+
+const SIDEBAR_STORAGE_KEY = "mayus_sidebar_mode";
+const sidebarOffsets: Record<SidebarMode, string> = {
+  expanded: "280px",
+  mini: "80px",
+  hidden: "0px",
+};
+
 export function AdminSidebar() {
   const pathname = usePathname();
   const [isOpen, setIsOpen] = useState(false);
@@ -68,8 +77,13 @@ export function AdminSidebar() {
     "SISTEMA": true,
   });
 
-  type SidebarMode = "expanded" | "mini" | "hidden";
-  const [sidebarMode, setSidebarMode] = useState<SidebarMode>("expanded");
+  const [sidebarMode, setSidebarMode] = useState<SidebarMode>(() => {
+    if (typeof window === "undefined") return "expanded";
+    const saved = window.localStorage.getItem(SIDEBAR_STORAGE_KEY);
+    if (saved === "hidden") return "hidden";
+    if (saved === "mini") return "hidden";
+    return "expanded";
+  });
 
   // Hook para dados reais do usuário
   const { user, role, customPermissions, profile, isLoading: profileLoading } = useUserProfile();
@@ -82,12 +96,15 @@ export function AdminSidebar() {
   }, []);
 
   useEffect(() => {
-    const width = sidebarMode === "expanded" ? "280px" : sidebarMode === "mini" ? "80px" : "0px";
+    const width = sidebarOffsets[sidebarMode];
     document.documentElement.style.setProperty("--mayus-sidebar-offset", width);
+    document.documentElement.dataset.mayusSidebarMode = sidebarMode;
     document.body.dataset.mayusSidebarMode = sidebarMode;
+    window.localStorage.setItem(SIDEBAR_STORAGE_KEY, sidebarMode);
 
     return () => {
-      document.documentElement.style.setProperty("--mayus-sidebar-offset", "280px");
+      document.documentElement.style.removeProperty("--mayus-sidebar-offset");
+      delete document.documentElement.dataset.mayusSidebarMode;
       delete document.body.dataset.mayusSidebarMode;
     };
   }, [sidebarMode]);
@@ -95,9 +112,7 @@ export function AdminSidebar() {
   const toggleSidebar = () => setIsOpen(!isOpen);
 
   const toggleSidebarMode = () => {
-    if (sidebarMode === "expanded") setSidebarMode("mini");
-    else if (sidebarMode === "mini") setSidebarMode("hidden");
-    else setSidebarMode("expanded");
+    setSidebarMode(sidebarMode === "expanded" ? "hidden" : "expanded");
   };
 
   const toggleSection = (title: string) => {

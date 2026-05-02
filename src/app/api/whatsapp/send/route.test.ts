@@ -24,10 +24,12 @@ function buildRequest(body: unknown) {
 
 describe("/api/whatsapp/send", () => {
   const messageInserts: unknown[] = [];
+  const contactUpdates: unknown[] = [];
 
   beforeEach(() => {
     vi.clearAllMocks();
     messageInserts.length = 0;
+    contactUpdates.length = 0;
     global.fetch = vi.fn(async () => new Response(JSON.stringify({ key: { id: "evo-msg-1" } }), { status: 200 })) as any;
     listTenantIntegrationsResolvedMock.mockResolvedValue([
       {
@@ -40,9 +42,26 @@ describe("/api/whatsapp/send", () => {
       from: vi.fn((table: string) => {
         if (table === "whatsapp_messages") {
           return {
-            insert: vi.fn(async (rows: unknown[]) => {
+            insert: vi.fn((rows: any[]) => {
               messageInserts.push(...rows);
-              return { error: null };
+              return {
+                select: vi.fn(() => ({
+                  single: vi.fn(async () => ({ data: { id: "msg-1", ...rows[0] }, error: null })),
+                })),
+              };
+            }),
+          };
+        }
+
+        if (table === "whatsapp_contacts") {
+          return {
+            update: vi.fn((payload: unknown) => {
+              contactUpdates.push(payload);
+              return {
+                eq: vi.fn(() => ({
+                  eq: vi.fn(async () => ({ error: null })),
+                })),
+              };
             }),
           };
         }
@@ -88,6 +107,12 @@ describe("/api/whatsapp/send", () => {
         direction: "outbound",
         content: "Mensagem teste MAYUS",
         status: "sent",
+      }),
+    ]);
+    expect(contactUpdates).toEqual([
+      expect.objectContaining({
+        unread_count: 0,
+        last_message_at: expect.any(String),
       }),
     ]);
   });

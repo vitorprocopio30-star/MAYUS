@@ -1,3 +1,5 @@
+import { buildCommercialPlaybookModel } from "./commercial-playbook-template";
+
 export type CallCommercialAnalysisInput = {
   crmTaskId?: string | null;
   leadName?: string | null;
@@ -27,6 +29,9 @@ export type CallCommercialAnalysis = {
   strengths: string[];
   weaknesses: string[];
   missedOpportunities: string[];
+  commercialPlaybookMethod: string;
+  playbookChecklist: string[];
+  playbookGaps: string[];
   recommendedNextStep: string;
   suggestedFollowUp: string;
   advancementProbability: number;
@@ -135,6 +140,15 @@ function buildMissedOpportunities(normalized: string) {
   ]);
 }
 
+function buildPlaybookGaps(normalized: string) {
+  return uniq([
+    !hasAny(normalized, /respondeu|primeira resposta|5 minutos|cinco minutos/) ? "SLA de primeiro atendimento nao foi evidenciado na call." : null,
+    !hasAny(normalized, /quem decide|decisor|marido|esposa|socio|familia|decido/) ? "Decisor e influenciadores nao foram confirmados." : null,
+    !hasAny(normalized, /se esse ponto|se isso fosse|se isso resolvesse|estaria pronto|isol/) ? "Objecao nao foi isolada antes da resposta comercial." : null,
+    !hasAny(normalized, /proximo passo|agend|reuniao|retorno marcado|combinamos|ficou combinado/) ? "Proximo passo saiu sem data, canal ou responsavel claro." : null,
+  ]);
+}
+
 function calculateAdvancementProbability(params: {
   normalized: string;
   objections: string[];
@@ -172,16 +186,19 @@ export function buildCallCommercialAnalysis(input: CallCommercialAnalysisInput):
   const strengths = buildStrengths({ normalized, pain, objections });
   const weaknesses = buildWeaknesses({ normalized, objections });
   const missedOpportunities = buildMissedOpportunities(normalized);
+  const playbook = buildCommercialPlaybookModel({ legalArea });
+  const playbookGaps = buildPlaybookGaps(normalized);
   const advancementProbability = calculateAdvancementProbability({ normalized, objections, weaknesses, currentScore });
   const interestLevel = interestFromProbability(advancementProbability);
+  const interestLabel = interestLevel === "high" ? "alto" : interestLevel === "medium" ? "medio" : "baixo";
   const nextStep = interestLevel === "high"
-    ? "SDR deve revisar a call e propor avanco humano com prazo definido, sem envio automatico."
+    ? "Revisar a call e chamar o lead para um avanco humano com prazo, canal e documentos definidos. Nada deve ser enviado automaticamente."
     : interestLevel === "medium"
-      ? "SDR deve esclarecer objecao principal, confirmar decisor e combinar retorno objetivo."
-      : "SDR deve retomar descoberta, validar dor real e decidir se o lead permanece no pipeline.";
+      ? "Esclarecer a objecao principal, confirmar quem decide e combinar um retorno objetivo antes de falar em proposta."
+      : "Retomar descoberta, validar se a dor e real e decidir se este lead ainda merece ficar no pipeline.";
   const suggestedFollowUp = interestLevel === "high"
-    ? `Ola, ${leadName.split(/\s+/)[0]}. Revendo nossa conversa, o ponto central foi: ${pain} Posso te chamar para alinharmos o proximo passo e os documentos necessarios?`
-    : `Ola, ${leadName.split(/\s+/)[0]}. Fiquei com um ponto importante da nossa conversa para confirmar: ${pain} O que mais pesa para voce decidir o proximo passo agora?`;
+    ? `Ola, ${leadName.split(/\s+/)[0]}. Revendo nossa conversa, o ponto que mais pesa e este: ${pain} Posso te chamar para alinharmos o proximo passo e os documentos necessarios?`
+    : `Ola, ${leadName.split(/\s+/)[0]}. Fiquei pensando em um ponto da nossa conversa: ${pain} O que mais pesa para voce decidir com seguranca o proximo passo?`;
   const tags = uniq([
     "call_analisada_mvp",
     `interesse_${interestLevel}`,
@@ -193,13 +210,16 @@ export function buildCallCommercialAnalysis(input: CallCommercialAnalysisInput):
     mvpLabel: "MVP upload/analysis - text transcript/notes only",
     leadName,
     legalArea,
-    summary: `Analise deterministica de call para ${leadName}${legalArea ? ` em ${legalArea}` : ""}: interesse ${interestLevel}, probabilidade ${advancementProbability}% e ${objections.length} objecao(oes) mapeada(s).`,
+    summary: `${leadName}${legalArea ? ` (${legalArea})` : ""} saiu da call com interesse ${interestLabel} e ${advancementProbability}% de chance de avanco. O ponto central foi: ${pain}`,
     pain,
     interestLevel,
     objections,
     strengths,
     weaknesses,
-    missedOpportunities,
+    missedOpportunities: uniq([...missedOpportunities, ...playbookGaps]).slice(0, 8),
+    commercialPlaybookMethod: playbook.methodName,
+    playbookChecklist: playbook.callAnalysisChecklist,
+    playbookGaps,
     recommendedNextStep: nextStep,
     suggestedFollowUp,
     advancementProbability,
@@ -220,9 +240,11 @@ export function buildCallCommercialAnalysisArtifactMetadata(params: {
   analysis: CallCommercialAnalysis;
 }) {
   const safeCrmUpdateHints = params.analysis.crmUpdateHints.filter((hint) => hint.field !== "last_call_summary");
+  const interestLabel = params.analysis.interestLevel === "high" ? "alto" : params.analysis.interestLevel === "medium" ? "medio" : "baixo";
+  const safeSummary = `${params.analysis.leadName}${params.analysis.legalArea ? ` (${params.analysis.legalArea})` : ""}: interesse ${interestLabel}, ${params.analysis.advancementProbability}% de chance de avanco e ${params.analysis.playbookGaps.length} ajuste(s) de playbook para revisar.`;
 
   return {
-    summary: params.analysis.summary,
+    summary: safeSummary,
     crm_task_id: params.crmTaskId || null,
     mvp_label: params.analysis.mvpLabel,
     lead_name: params.analysis.leadName,
@@ -232,6 +254,10 @@ export function buildCallCommercialAnalysisArtifactMetadata(params: {
     weaknesses: params.analysis.weaknesses,
     missed_opportunities: params.analysis.missedOpportunities,
     recommended_next_step: params.analysis.recommendedNextStep,
+    commercial_playbook_method: params.analysis.commercialPlaybookMethod,
+    playbook_gap_count: params.analysis.playbookGaps.length,
+    playbook_gaps: params.analysis.playbookGaps,
+    playbook_checklist_count: params.analysis.playbookChecklist.length,
     advancement_probability: params.analysis.advancementProbability,
     crm_update_hints: safeCrmUpdateHints,
     requires_human_review: true,
@@ -340,6 +366,8 @@ export async function registerCallCommercialAnalysisBrainArtifact(params: {
         output_payload: {
           interest_level: params.analysis.interestLevel,
           advancement_probability: params.analysis.advancementProbability,
+          commercial_playbook_method: params.analysis.commercialPlaybookMethod,
+          playbook_gap_count: params.analysis.playbookGaps.length,
           requires_human_review: true,
           external_side_effects_blocked: true,
         },
@@ -384,6 +412,8 @@ export async function registerCallCommercialAnalysisBrainArtifact(params: {
           artifact_id: artifact?.id || null,
           interest_level: params.analysis.interestLevel,
           advancement_probability: params.analysis.advancementProbability,
+          commercial_playbook_method: params.analysis.commercialPlaybookMethod,
+          playbook_gap_count: params.analysis.playbookGaps.length,
           requires_human_review: true,
           external_side_effects_blocked: true,
         },

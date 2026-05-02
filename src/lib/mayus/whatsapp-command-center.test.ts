@@ -75,8 +75,8 @@ describe("whatsapp command center", () => {
     expect(result.handled).toBe(true);
     if (!result.handled) throw new Error("expected handled command");
     expect(result.intent).toBe("daily_playbook");
-    expect(result.replyText).toContain("MAYUS Playbook");
-    expect(result.replyText).toContain("Nenhuma acao externa foi executada automaticamente.");
+    expect(result.replyText).toContain("Dutra Advocacia: leitura operacional do dia");
+    expect(result.replyText).toContain("Nada foi enviado ou executado fora do MAYUS");
     expect(result.playbook.metrics.crmLeadsNeedingNextStep).toBe(1);
     expect(JSON.stringify(result.metadata)).not.toContain("21999990000");
   });

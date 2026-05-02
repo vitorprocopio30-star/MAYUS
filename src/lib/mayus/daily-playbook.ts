@@ -317,37 +317,37 @@ function buildWhatsAppSummary(playbook: Omit<DailyPlaybook, "whatsappSummary" | 
     || playbook.metrics.agendaTodayTasks > 0;
   const firmName = playbook.title.replace(/\s+-\s+Playbook do dia$/i, "").trim() || playbook.preferences.scope;
   const opening = hasSignals
-    ? `Bom dia. Dei uma varrida no ${firmName} e separei o que merece sua atencao antes do escritorio entrar no automatico.`
-    : `Bom dia. Dei uma varrida no ${firmName} e nao achei incendio para abrir o dia. Bom sinal: hoje o ganho esta em manter a casa limpa e nao deixar coisa pequena virar urgencia.`;
+    ? `Bom dia. Olhei o ${firmName} como se eu fosse abrir a operacao agora: primeiro risco, depois oportunidade, depois manutencao.`
+    : `Bom dia. Passei pelo ${firmName} e nao encontrei nada pedindo sirene. O melhor ganho hoje e manter a rotina limpa antes que detalhe pequeno vire urgencia.`;
   const scoreboardLines = [
-    `CRM: ${playbook.metrics.crmLeadsNeedingNextStep} lead(s) sem proximo passo claro`,
-    `Agenda: ${playbook.metrics.agendaTodayTasks} compromisso(s)/tarefa(s) no radar de hoje`,
-    `Alertas: ${playbook.metrics.agendaCriticalTasks} ponto(s) critico(s)`,
+    `CRM: ${playbook.metrics.crmLeadsNeedingNextStep} lead(s) sem proximo passo claro.`,
+    `Agenda: ${playbook.metrics.agendaTodayTasks} compromisso(s) ou tarefa(s) no radar de hoje.`,
+    `Risco: ${playbook.metrics.agendaCriticalTasks} ponto(s) critico(s) para nao deixar escapar.`,
   ];
   const topActions = playbook.priorityActions
     .slice(0, playbook.preferences.detailLevel === "short" ? 3 : 5)
     .map((action, index) => {
       const owner = action.ownerLabel && action.ownerLabel !== "MAYUS" ? `\n   Dono: ${action.ownerLabel}` : "";
       const due = action.dueAt ? `\n   Prazo: ${action.dueAt}` : "";
-      return `${index + 1}. ${action.title}\n   Por que importa: ${action.detail}${owner}${due}`;
+      return `${index + 1}. ${action.title}\n   Eu faria: ${action.detail}${owner}${due}`;
     })
     .join("\n\n");
   const nextMove = hasSignals
-    ? "Eu atacaria nessa ordem: primeiro prazo e risco, depois lead parado, depois o resto. Se tentar abrir coisa nova antes disso, o dia fica barulhento e pouco produtivo."
-    : "Minha sugestao pratica: use a primeira janela do dia para revisar CRM parado, confirmar agenda e limpar pendencias pequenas. E o tipo de manutencao que evita correria depois.";
+    ? "Minha ordem de ataque: fechar prazo e risco primeiro; recuperar lead parado logo depois; so entao abrir frente nova."
+    : "Minha sugestao pratica: use a primeira janela do dia para confirmar agenda, revisar CRM parado e limpar pendencias pequenas. E manutencao simples, mas economiza correria depois.";
 
   return [
-    `*Relatorio MAYUS - ${firmName}*`,
+    `*${firmName}: leitura operacional do dia*`,
     opening,
     "",
-    "*Leitura rapida:*",
+    "*Radar rapido*",
     scoreboardLines.map((line) => `- ${line}`).join("\n"),
     "",
-    topActions ? "*O que eu faria agora:*\n" + topActions : "*O que eu faria agora:*\n1. Manter operacao limpa\n   Por que importa: sem alerta prioritario, o melhor uso do MAYUS e revisar CRM, agenda e pendencias antes de iniciar novas frentes.",
+    topActions ? "*Prioridade agora*\n" + topActions : "*Prioridade agora*\n1. Manter operacao limpa\n   Eu faria: revisar CRM, agenda e pendencias antes de iniciar novas frentes.",
     "",
     nextMove,
     "",
-    "_Nada foi executado fora do MAYUS. Isso e leitura operacional para decisao humana._",
+    "_Nada foi enviado ou executado fora do MAYUS. Isto e leitura operacional para decisao humana._",
   ].join("\n").trim();
 }
 
