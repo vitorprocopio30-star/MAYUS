@@ -29,6 +29,27 @@ const formatDuration = (seconds: number) => {
   return `${mins}:${secs.toString().padStart(2, '0')}`;
 };
 
+const sortMessagesByCreatedAt = (items: any[]) => {
+  return [...items].sort((a, b) => {
+    const dateA = new Date(a.created_at || 0).getTime();
+    const dateB = new Date(b.created_at || 0).getTime();
+    return dateA - dateB;
+  });
+};
+
+const mergeMessage = (current: any[], nextMessage: any) => {
+  const nextEvolutionId = String(nextMessage?.message_id_from_evolution || "").trim();
+  if (!nextMessage?.id && !nextEvolutionId) return current;
+
+  const alreadyExists = current.some((message) => (
+    (nextMessage?.id && message.id === nextMessage.id)
+    || (nextEvolutionId && message.message_id_from_evolution === nextEvolutionId)
+  ));
+
+  if (alreadyExists) return current;
+  return sortMessagesByCreatedAt([...current, nextMessage]);
+};
+
 const DEFAULT_LEAD_TAGS = ["Urgente", "Aguardando documento", "Contrato", "Novo lead", "Retornar hoje", "MAYUS atendendo"];
 const LEAD_TAG_MESSAGE_TYPE = "lead_tags";
 const TAG_COLORS = [
@@ -287,7 +308,7 @@ export default function TodasConversasPage() {
             ));
           }
 
-          setMessages(data.filter((message) => message.message_type !== LEAD_TAG_MESSAGE_TYPE));
+          setMessages(sortMessagesByCreatedAt(data.filter((message) => message.message_type !== LEAD_TAG_MESSAGE_TYPE)));
           scrollToBottom();
        }
     };
@@ -311,7 +332,7 @@ export default function TodasConversasPage() {
              }
              return;
            }
-           setMessages((current) => current.some((message) => message.id === payload.new.id) ? current : [...current, payload.new]);
+           setMessages((current) => mergeMessage(current, payload.new));
            if (payload.new?.direction === "inbound") {
              setShowTypingIndicator(true);
              setTimeout(() => setShowTypingIndicator(false), 2600);
@@ -646,13 +667,20 @@ export default function TodasConversasPage() {
 
     setIsConversationActionPending(true);
     try {
-      const { error } = await supabase
+      const { error, data } = await supabase
         .from("whatsapp_contacts")
         .update(updates)
         .eq("tenant_id", tenantId)
-        .eq("id", activeContact.id);
+        .eq("id", activeContact.id)
+        .select()
+        .maybeSingle();
 
       if (error) throw error;
+
+      if (!data) {
+        toast.warning("Atualizacao nao aplicada. Verifique se voce tem permissao para editar este contato.");
+        return;
+      }
 
       updateActiveContactLocally(updates);
       toast.success(successMessage);
@@ -678,13 +706,19 @@ export default function TodasConversasPage() {
     setIsSavingLeadTags(true);
 
     try {
-      const { error } = await supabase
+      const { error, data } = await supabase
         .from("whatsapp_contacts")
         .update(updates)
         .eq("tenant_id", tenantId)
-        .eq("id", activeContact.id);
+        .eq("id", activeContact.id)
+        .select()
+        .maybeSingle();
 
       if (error) throw error;
+
+      if (!data) {
+        throw new Error("Update de etiquetas nao retornou o contato. Verifique RLS/permissao.");
+      }
       toast.success(successMessage);
       void fetchContacts();
     } catch (error: any) {
@@ -1016,7 +1050,7 @@ export default function TodasConversasPage() {
                            )}
 
                            <div className={`flex flex-col gap-1 ${isInternalNote ? 'max-w-[76%] items-center' : `max-w-[70%] ${isMe ? 'items-end' : 'items-start'}`}`}>
-                              <div className={`p-3 rounded-2xl text-sm tracking-normal shadow-md whitespace-pre-wrap ${
+                              <div className={`p-3 rounded-2xl text-sm tracking-normal shadow-md ${
                                  isInternalNote
                                  ? 'bg-orange-500/10 text-orange-100 border border-orange-500/30 rounded-xl'
                                  : isMe
@@ -1395,7 +1429,7 @@ export default function TodasConversasPage() {
                      <div className="max-h-36 overflow-y-auto hide-scrollbar space-y-2 pr-1">
                        {internalNotes.length > 0 ? internalNotes.slice(-4).map((note) => (
                          <div key={note.id} className="rounded-lg border border-orange-500/20 bg-black/30 p-3">
-                           <p className="text-xs leading-relaxed text-orange-50 whitespace-pre-wrap">{note.content}</p>
+                            <p className="text-xs leading-relaxed text-orange-50">{renderWhatsAppContent(note.content)}</p>
                            <span className="mt-2 block text-[8px] font-black uppercase tracking-widest text-orange-400/70">{formatTime(note.created_at)}</span>
                          </div>
                        )) : (

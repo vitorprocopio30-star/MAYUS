@@ -61,6 +61,11 @@ const sidebarOffsets: Record<SidebarMode, string> = {
   hidden: "0px",
 };
 
+function normalizeSidebarMode(value: unknown): SidebarMode {
+  if (value === "mini" || value === "hidden" || value === "expanded") return value;
+  return "expanded";
+}
+
 export function AdminSidebar() {
   const pathname = usePathname();
   const [isOpen, setIsOpen] = useState(false);
@@ -80,8 +85,7 @@ export function AdminSidebar() {
   const [sidebarMode, setSidebarMode] = useState<SidebarMode>(() => {
     if (typeof window === "undefined") return "expanded";
     const saved = window.localStorage.getItem(SIDEBAR_STORAGE_KEY);
-    if (saved === "mini" || saved === "hidden") return "mini";
-    return "expanded";
+    return normalizeSidebarMode(saved);
   });
 
   // Hook para dados reais do usuário

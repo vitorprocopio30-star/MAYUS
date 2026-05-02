@@ -38,9 +38,20 @@ const sortMessagesByCreatedAt = (items: any[]) => {
 };
 
 const mergeMessage = (current: any[], nextMessage: any) => {
-  if (!nextMessage?.id || current.some((message) => message.id === nextMessage.id)) {
+  const nextEvolutionId = String(nextMessage?.message_id_from_evolution || "").trim();
+  if (!nextMessage?.id && !nextEvolutionId) {
     return current;
   }
+
+  const alreadyExists = current.some((message) => (
+    (nextMessage?.id && message.id === nextMessage.id)
+    || (nextEvolutionId && message.message_id_from_evolution === nextEvolutionId)
+  ));
+
+  if (alreadyExists) {
+    return current;
+  }
+
   return sortMessagesByCreatedAt([...current, nextMessage]);
 };
 
@@ -353,6 +364,7 @@ export default function WhatsAppChatPremiumPage() {
   // Transferir Atendimento
   const handleTransfer = async () => {
     if (!activeContact || (!transferDeptId && !transferUserId)) return toast.error("Selecione um departamento ou agente.");
+    if (!tenantId) return toast.error("Nao encontrei o tenant para transferir a conversa.");
     setIsTransferring(true);
 
     const updates: any = {};
@@ -366,11 +378,19 @@ export default function WhatsAppChatPremiumPage() {
 
     if (transferUserId) updates.assigned_user_id = transferUserId;
 
-    const { error } = await supabase.from('whatsapp_contacts').update(updates).eq('id', activeContact.id);
+    const { error, data } = await supabase
+      .from('whatsapp_contacts')
+      .update(updates)
+      .eq('tenant_id', tenantId)
+      .eq('id', activeContact.id)
+      .select()
+      .maybeSingle();
 
     if (error) {
        console.error("Erro na transferencia:", error);
        toast.error('Erro: ' + error.message);
+    } else if (!data) {
+       toast.warning("Transferencia nao aplicada. Verifique se voce tem permissao para editar este contato.");
     } else {
       toast.success('Conversa transferida com sucesso!');
       setShowTransferModal(false);
@@ -787,13 +807,20 @@ export default function WhatsAppChatPremiumPage() {
 
     setIsConversationActionPending(true);
     try {
-      const { error } = await supabase
+      const { error, data } = await supabase
         .from("whatsapp_contacts")
         .update(updates)
         .eq("tenant_id", tenantId)
-        .eq("id", activeContact.id);
+        .eq("id", activeContact.id)
+        .select()
+        .maybeSingle();
 
       if (error) throw error;
+
+      if (!data) {
+        toast.warning("Atualizacao nao aplicada. Verifique se voce tem permissao para editar este contato.");
+        return;
+      }
 
       updateActiveContactLocally(updates);
       toast.success(successMessage);
@@ -819,13 +846,19 @@ export default function WhatsAppChatPremiumPage() {
     setIsSavingLeadTags(true);
 
     try {
-      const { error } = await supabase
+      const { error, data } = await supabase
         .from("whatsapp_contacts")
         .update(updates)
         .eq("tenant_id", tenantId)
-        .eq("id", activeContact.id);
+        .eq("id", activeContact.id)
+        .select()
+        .maybeSingle();
 
       if (error) throw error;
+
+      if (!data) {
+        throw new Error("Update de etiquetas nao retornou o contato. Verifique RLS/permissao.");
+      }
       toast.success(successMessage);
       void fetchContacts(false);
     } catch (error: any) {
@@ -1243,11 +1276,11 @@ export default function WhatsAppChatPremiumPage() {
                             </span>
                           )}
                         </div>
-                        <p className="text-[12px] leading-relaxed text-gray-300 line-clamp-2">
+                        <div className="text-[12px] leading-relaxed text-gray-300 line-clamp-2">
                           {isLoadingMayusDraft
                             ? "Carregando rascunho consultivo..."
-                            : mayusDraft?.suggested_reply || mayusDraft?.internal_note || "Sem rascunho disponivel para este contato."}
-                        </p>
+                            : renderWhatsAppContent(mayusDraft?.suggested_reply || mayusDraft?.internal_note || "Sem rascunho disponivel para este contato.")}
+                        </div>
                         {Array.isArray(mayusDraft?.risk_flags) && mayusDraft.risk_flags.length > 0 && (
                           <div className="mt-2 flex flex-wrap gap-1.5">
                             {mayusDraft.risk_flags.slice(0, 4).map((flag: string) => (
@@ -1666,7 +1699,7 @@ export default function WhatsAppChatPremiumPage() {
                     <div className="max-h-44 overflow-y-auto no-scrollbar space-y-3 pr-1">
                       {internalNotes.length > 0 ? internalNotes.slice(-5).map((note) => (
                         <div key={note.id} className="rounded-xl border border-orange-500/20 bg-orange-500/10 p-3">
-                          <p className="text-xs leading-relaxed text-orange-50 whitespace-pre-wrap">{note.content}</p>
+                          <p className="text-xs leading-relaxed text-orange-50">{renderWhatsAppContent(note.content)}</p>
                           <span className="mt-2 block text-[8px] font-black uppercase tracking-widest text-orange-400/70">{formatTime(note.created_at)}</span>
                         </div>
                       )) : (

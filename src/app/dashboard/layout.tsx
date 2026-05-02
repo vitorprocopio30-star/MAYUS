@@ -26,7 +26,11 @@ export default function DashboardLayout({
 }: {
   children: React.ReactNode;
 }) {
-  const [sidebarMode, setSidebarMode] = useState<SidebarMode>("expanded");
+  const [sidebarMode, setSidebarMode] = useState<SidebarMode>(() => {
+    if (typeof window === "undefined") return "expanded";
+    const saved = window.localStorage.getItem(SIDEBAR_STORAGE_KEY);
+    return normalizeSidebarMode(saved);
+  });
   const sidebarOffset = getSidebarOffset(sidebarMode);
 
   useEffect(() => {
@@ -66,7 +70,7 @@ export default function DashboardLayout({
       <div
         className={`mayus-dashboard-shell flex flex-col min-h-screen min-w-0 transition-all duration-300 ease-in-out is-${sidebarMode}`}
         style={{
-          "--mayus-dashboard-sidebar-offset": sidebarOffset,
+          "--mayus-dashboard-sidebar-offset": `var(--mayus-sidebar-offset, ${sidebarOffset})`,
         } as CSSProperties}
         data-sidebar-mode={sidebarMode}
         data-sidebar-offset={sidebarOffset}

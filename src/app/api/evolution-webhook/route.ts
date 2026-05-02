@@ -179,7 +179,7 @@ export async function POST(req: Request) {
         .select("id, profile_pic_url")
         .eq("tenant_id", tenantId)
         .eq("phone_number", remoteJid)
-        .single();
+        .maybeSingle();
 
       let contactId = contact?.id;
 
@@ -205,11 +205,30 @@ export async function POST(req: Request) {
         contactId = newContact.id;
       } else {
          // Atualizar data da última mensagem
-         await supabase.from("whatsapp_contacts").update({
-            last_message_at: receivedAt,
-            unread_count: fromMe ? 0 : 1, // Se foi do cliente, marca 1 (simplificado)
-            ...(avatarUrl && !contact?.profile_pic_url ? { profile_pic_url: avatarUrl } : {}),
-         }).eq("id", contactId);
+          await supabase.from("whatsapp_contacts").update({
+             last_message_at: receivedAt,
+             unread_count: fromMe ? 0 : 1, // Se foi do cliente, marca 1 (simplificado)
+             ...(avatarUrl && !contact?.profile_pic_url ? { profile_pic_url: avatarUrl } : {}),
+          })
+            .eq("tenant_id", tenantId)
+            .eq("id", contactId);
+      }
+
+      if (messageId) {
+        const { data: existingMessage, error: duplicateCheckError } = await supabase
+          .from("whatsapp_messages")
+          .select("id")
+          .eq("tenant_id", tenantId)
+          .eq("message_id_from_evolution", messageId)
+          .maybeSingle();
+
+        if (duplicateCheckError) {
+          console.warn("[Evolution Webhook] Nao foi possivel checar duplicidade da mensagem:", duplicateCheckError);
+        }
+
+        if (existingMessage?.id) {
+          return NextResponse.json({ success: true, duplicate: true, message_id: existingMessage.id });
+        }
       }
 
       // 3. Salvar a Mensagem

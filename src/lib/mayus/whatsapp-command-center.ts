@@ -92,13 +92,13 @@ function buildCommandReply(params: {
       : "Nenhum lead prioritario sem proximo passo agora.";
 
     return [
-      "*MAYUS: foco comercial de agora*",
+      "*MAYUS: foco comercial*",
       params.playbook.metrics.crmLeadsNeedingNextStep > 0
-        ? `${params.playbook.metrics.crmLeadsNeedingNextStep} lead(s) pedem proximo passo claro. Eu comecaria por estes:`
-        : "Nao encontrei lead prioritario sem proximo passo neste recorte.",
+        ? `${params.playbook.metrics.crmLeadsNeedingNextStep} lead(s) precisam de proximo passo. Comecaria por estes:`
+        : "Nenhum lead prioritario sem proximo passo agora.",
       list,
       "",
-      "_Nenhuma mensagem externa foi enviada automaticamente._",
+      "_Nenhuma mensagem foi enviada automaticamente._",
     ].join("\n").trim();
   }
 
@@ -112,10 +112,10 @@ function buildCommandReply(params: {
 
     return [
       "*MAYUS: agenda de hoje*",
-      `Olhei a agenda e separaria o dia assim: ${params.playbook.executiveSummary}`,
+      `Olhei a agenda: ${params.playbook.executiveSummary}`,
       list,
       "",
-      "_Nenhuma acao externa foi executada automaticamente._",
+      "_Nenhuma mensagem foi enviada automaticamente._",
     ].join("\n").trim();
   }
 

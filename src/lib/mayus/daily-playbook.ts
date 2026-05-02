@@ -247,7 +247,7 @@ function buildPriorityActions(params: {
     actions.push({
       area: "agenda",
       title: task.title,
-      detail: "Essa tarefa tem prazo ou risco. Fechar antes de seguir.",
+      detail: "Essa tarefa tem prazo ou risco. Fechar antes de partir para o proximo.",
       urgency: "critical",
       ownerLabel: task.ownerLabel,
       dueAt: task.scheduledFor,
@@ -281,8 +281,8 @@ function buildPriorityActions(params: {
   if (actions.length === 0) {
     actions.push({
       area: "system",
-      title: "Dia sem alerta critico",
-      detail: "Nenhum risco visivel. Bom dia para limpar CRM parado, confirmar agenda e fechar pendencia pequena antes que vire urgencia.",
+      title: "Dia tranquilo",
+      detail: "Nada urgente no radar. Bom momento para adiantar CRM parado, confirmar agenda e fechar pendencia pequena.",
       urgency: "routine",
       ownerLabel: "MAYUS",
       dueAt: null,
@@ -305,7 +305,7 @@ function buildExecutiveSummary(params: {
   ].filter(Boolean);
 
   if (signals.length === 0) {
-    return `${params.firmName}: operacao sem alerta prioritario no inicio do dia.`;
+    return `${params.firmName}: dia sem pendencia urgente.`;
   }
 
   return `${params.firmName}: ${signals.join("; ")}.`;
@@ -315,39 +315,39 @@ function buildWhatsAppSummary(playbook: Omit<DailyPlaybook, "whatsappSummary" | 
   const hasSignals = playbook.metrics.crmLeadsNeedingNextStep > 0
     || playbook.metrics.agendaCriticalTasks > 0
     || playbook.metrics.agendaTodayTasks > 0;
-  const firmName = playbook.title.replace(/\s+-\s+Playbook do dia$/i, "").trim() || playbook.preferences.scope;
+  const firmName = playbook.title.replace(/\s+-\s+(Playbook do dia|Resumo do dia)$/i, "").trim() || playbook.preferences.scope;
   const opening = hasSignals
-    ? `Bom dia. Olhei o ${firmName} como se eu fosse abrir a operacao agora: primeiro risco, depois oportunidade, depois manutencao.`
-    : `Bom dia. Passei pelo ${firmName} e nao encontrei nada pedindo sirene. O melhor ganho hoje e manter a rotina limpa antes que detalhe pequeno vire urgencia.`;
+    ? `Bom dia. Olhei o ${firmName} e separei o que precisa de atencao agora.`
+    : `Bom dia. Passei pelo ${firmName} e esta tudo encaminhado. Nada urgente pedindo sirene.`;
   const scoreboardLines = [
-    `CRM: ${playbook.metrics.crmLeadsNeedingNextStep} lead(s) sem proximo passo claro.`,
-    `Agenda: ${playbook.metrics.agendaTodayTasks} compromisso(s) ou tarefa(s) no radar de hoje.`,
-    `Risco: ${playbook.metrics.agendaCriticalTasks} ponto(s) critico(s) para nao deixar escapar.`,
+    `CRM: ${playbook.metrics.crmLeadsNeedingNextStep} lead(s) sem proximo passo.`,
+    `Agenda: ${playbook.metrics.agendaTodayTasks} compromisso(s) ou tarefa(s) hoje.`,
+    `Risco: ${playbook.metrics.agendaCriticalTasks} ponto(s) critico(s).`,
   ];
   const topActions = playbook.priorityActions
     .slice(0, playbook.preferences.detailLevel === "short" ? 3 : 5)
     .map((action, index) => {
       const owner = action.ownerLabel && action.ownerLabel !== "MAYUS" ? `\n   Dono: ${action.ownerLabel}` : "";
       const due = action.dueAt ? `\n   Prazo: ${action.dueAt}` : "";
-      return `${index + 1}. ${action.title}\n   Eu faria: ${action.detail}${owner}${due}`;
+      return `${index + 1}. ${action.title}\n   O que fazer: ${action.detail}${owner}${due}`;
     })
     .join("\n\n");
   const nextMove = hasSignals
-    ? "Minha ordem de ataque: fechar prazo e risco primeiro; recuperar lead parado logo depois; so entao abrir frente nova."
-    : "Minha sugestao pratica: use a primeira janela do dia para confirmar agenda, revisar CRM parado e limpar pendencias pequenas. E manutencao simples, mas economiza correria depois.";
+    ? "Comecar por prazo e risco; depois lead parado; so entao abrir frente nova."
+    : "Sugestao: confirmar agenda, revisar CRM parado e limpar pendencias pequenas antes de iniciar novas frentes.";
 
   return [
-    `*${firmName}: leitura operacional do dia*`,
+    `*${firmName}: resumo do dia*`,
     opening,
     "",
-    "*Radar rapido*",
+    "*Numeros*",
     scoreboardLines.map((line) => `- ${line}`).join("\n"),
     "",
-    topActions ? "*Prioridade agora*\n" + topActions : "*Prioridade agora*\n1. Manter operacao limpa\n   Eu faria: revisar CRM, agenda e pendencias antes de iniciar novas frentes.",
+    topActions ? "*O que priorizar*\n" + topActions : "*O que priorizar*\n1. Manter operacao em dia\n   O que fazer: revisar CRM, agenda e pendencias.",
     "",
     nextMove,
     "",
-    "_Nada foi enviado ou executado fora do MAYUS. Isto e leitura operacional para decisao humana._",
+    "_Nenhuma mensagem foi enviada automaticamente. Resumo para voce decidir._",
   ].join("\n").trim();
 }
 
@@ -408,14 +408,14 @@ function buildDailyPlaybookHtmlReport(playbook: Omit<DailyPlaybook, "whatsappSum
 <nav class="sidebar">${menu}</nav>
 <main class="main">
   <section class="hero" id="executive">
-    <div class="eyebrow">Leitura do dia</div>
-    <h1>${escapeHtml(playbook.title)}<br><em>o que muda hoje</em></h1>
+    <div class="eyebrow">Resumo do dia</div>
+    <h1>${escapeHtml(playbook.title)}<br><em>o que precisa de atencao</em></h1>
     <p class="summary">${escapeHtml(playbook.executiveSummary)}</p>
     <div class="kpis">
       <div class="kpi"><b>${playbook.metrics.crmLeadsNeedingNextStep}</b><span>Leads sem proximo passo</span></div>
       <div class="kpi"><b>${playbook.metrics.agendaCriticalTasks}</b><span>Tarefas criticas</span></div>
       <div class="kpi"><b>${playbook.metrics.agendaTodayTasks}</b><span>Agenda hoje</span></div>
-      <div class="kpi"><b>${playbook.metrics.priorityActions}</b><span>Acoes prioritarias</span></div>
+      <div class="kpi"><b>${playbook.metrics.priorityActions}</b><span>Prioridades</span></div>
     </div>
   </section>
   <section class="section" id="playbook"><h2 class="sec-title">Playbook <em>do dia</em></h2>${priorityActions}</section>
@@ -423,7 +423,7 @@ function buildDailyPlaybookHtmlReport(playbook: Omit<DailyPlaybook, "whatsappSum
   <section class="section" id="agenda"><h2 class="sec-title">Agenda <em>e prazos</em></h2><div class="card">${agendaItems}</div></section>
   <section class="section" id="frontdesk"><h2 class="sec-title">Front desk <em>MAYUS</em></h2><div class="card"><p>Primeiro contato em ate 5 minutos. Qualificar, registrar sinais e transferir se for urgencia ou pedido direto do lead.</p></div></section>
   <section class="section" id="calls"><h2 class="sec-title">Calls <em>e qualidade</em></h2><div class="card"><p>Para cada conversa: identificar dor principal, nivel de urgencia, quem decide e qual o proximo passo concreto (data, canal, responsavel).</p></div></section>
-  <footer class="footer">Nenhuma acao externa foi executada automaticamente. Gerado pelo MAYUS para uso operacional interno.</footer>
+  <footer class="footer">Nenhuma mensagem foi enviada automaticamente. Resumo gerado pelo MAYUS para decisao interna.</footer>
 </main>
 </body>
 </html>`;
@@ -444,7 +444,7 @@ export function buildDailyPlaybook(input: DailyPlaybookInput): DailyPlaybook {
     .slice(0, 12);
   const priorityActions = buildPriorityActions({ crmLeads, todayTasks, criticalTasks });
   const generatedAt = now.toISOString();
-  const title = `${firmName} - Playbook do dia`;
+  const title = `${firmName} - Resumo do dia`;
   const reportMenu = buildCommercialPlaybookModel({ firmName }).dailyReportSections;
   const base = {
     title,
