@@ -46,7 +46,8 @@ describe("/api/integrations/evolution", () => {
   it("cria e conecta instancia por proxy", async () => {
     const fetchMock = vi.fn()
       .mockResolvedValueOnce(new Response(JSON.stringify({ message: "Instance created" }), { status: 200 }))
-      .mockResolvedValueOnce(new Response(JSON.stringify({ base64: "qr-image" }), { status: 200 }));
+      .mockResolvedValueOnce(new Response(JSON.stringify({ base64: "qr-image" }), { status: 200 }))
+      .mockResolvedValueOnce(new Response(JSON.stringify({ enabled: true }), { status: 201 }));
     global.fetch = fetchMock as any;
 
     const response = await POST(buildRequest({
@@ -60,6 +61,7 @@ describe("/api/integrations/evolution", () => {
     expect(response.status).toBe(200);
     expect(body.ok).toBe(true);
     expect(body.connectData.base64).toBe("qr-image");
+    expect(body.webhookData.enabled).toBe(true);
     expect(fetchMock).toHaveBeenNthCalledWith(
       1,
       "http://187.77.240.109:32768/instance/create",
@@ -70,12 +72,21 @@ describe("/api/integrations/evolution", () => {
       "http://187.77.240.109:32768/instance/connect/mayus-dutra",
       expect.objectContaining({ method: "GET" }),
     );
+    expect(fetchMock).toHaveBeenNthCalledWith(
+      3,
+      "http://187.77.240.109:32768/webhook/set/mayus-dutra",
+      expect.objectContaining({
+        method: "POST",
+        body: expect.stringContaining("MESSAGES_UPSERT"),
+      }),
+    );
   });
 
   it("segue para connect quando a Evolution diz que o nome ja existe", async () => {
     const fetchMock = vi.fn()
       .mockResolvedValueOnce(new Response(JSON.stringify({ error: "This name \"mayus-dutra\" is already in use." }), { status: 400 }))
-      .mockResolvedValueOnce(new Response(JSON.stringify({ base64: "qr-image" }), { status: 200 }));
+      .mockResolvedValueOnce(new Response(JSON.stringify({ base64: "qr-image" }), { status: 200 }))
+      .mockResolvedValueOnce(new Response(JSON.stringify({ enabled: true }), { status: 201 }));
     global.fetch = fetchMock as any;
 
     const response = await POST(buildRequest({
@@ -89,6 +100,27 @@ describe("/api/integrations/evolution", () => {
     expect(response.status).toBe(200);
     expect(body.ok).toBe(true);
     expect(body.connectData.base64).toBe("qr-image");
-    expect(fetchMock).toHaveBeenCalledTimes(2);
+    expect(fetchMock).toHaveBeenCalledTimes(3);
+  });
+
+  it("falha explicitamente quando nao consegue configurar webhook", async () => {
+    const fetchMock = vi.fn()
+      .mockResolvedValueOnce(new Response(JSON.stringify({ message: "Instance created" }), { status: 200 }))
+      .mockResolvedValueOnce(new Response(JSON.stringify({ base64: "qr-image" }), { status: 200 }))
+      .mockResolvedValueOnce(new Response(JSON.stringify({ message: "Webhook refused" }), { status: 400 }));
+    global.fetch = fetchMock as any;
+
+    const response = await POST(buildRequest({
+      action: "connect",
+      url: "http://187.77.240.109:32768",
+      name: "mayus-dutra",
+      key: "api-key",
+    }));
+
+    const body = await response.json();
+    expect(response.status).toBe(502);
+    expect(body.ok).toBe(false);
+    expect(body.stage).toBe("webhook");
+    expect(body.error).toBe("Webhook refused");
   });
 });

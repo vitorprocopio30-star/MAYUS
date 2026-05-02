@@ -97,6 +97,7 @@ export function AdminSidebar() {
   useEffect(() => {
     const width = sidebarOffsets[sidebarMode];
     document.documentElement.style.setProperty("--mayus-sidebar-offset", width);
+    document.documentElement.style.setProperty("--mayus-dashboard-sidebar-offset", width);
     document.documentElement.dataset.mayusSidebarMode = sidebarMode;
     document.body.dataset.mayusSidebarMode = sidebarMode;
     window.localStorage.setItem(SIDEBAR_STORAGE_KEY, sidebarMode);
@@ -104,6 +105,7 @@ export function AdminSidebar() {
 
     return () => {
       document.documentElement.style.removeProperty("--mayus-sidebar-offset");
+      document.documentElement.style.removeProperty("--mayus-dashboard-sidebar-offset");
       delete document.documentElement.dataset.mayusSidebarMode;
       delete document.body.dataset.mayusSidebarMode;
     };

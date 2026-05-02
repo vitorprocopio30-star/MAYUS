@@ -163,10 +163,6 @@ async function sendInternalWhatsAppReply(params: {
       message_type: "text",
       content: params.text,
       status: "sent",
-      metadata: {
-        source: "mayus_internal_command",
-        provider: (provider as WhatsAppProvider).provider,
-      },
     }]);
   }
 

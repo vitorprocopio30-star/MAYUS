@@ -215,6 +215,53 @@ const INTENT_PATTERNS: IntentDefinition[] = [
     baseConfidence: 0.91,
   },
   {
+    intent: 'commercial_playbook_setup',
+    patterns: [
+      /playbook\s+(comercial|de\s+vendas|de\s+atendimento)/i,
+      /modelo\s+(de\s+atendimento|comercial|de\s+call)/i,
+      /skill\s+com\s+esse\s+documento/i,
+      /documento\s+(do\s+)?dutra.*(playbook|vendas|atendimento|call)/i,
+      /relatorio\s+diario.*menu.*playbook/i,
+      /mayus.*(sdr|closer|head|vendedor).*(escritorio|comercial)/i,
+      /primeiro\s+atendimento.*mayus/i,
+    ],
+    entityExtractors: [
+      {
+        key: 'firm_name',
+        pattern: /(?:escritorio|firma|firm_name)\s*[:\-]?\s*([^,.;:!?]+?)(?=\s*(?:area|segmento|modelo|documento|cliente|,|\.|$))/i,
+      },
+      {
+        key: 'legal_area',
+        pattern: /(?:area|segmento)\s*[:\-]?\s*([^,.;:!?]+?)(?=\s*(?:modelo|documento|cliente|puv|,|\.|$))/i,
+      },
+      {
+        key: 'ideal_client',
+        pattern: /(?:cliente\s+ideal|icp)\s*[:\-]?\s*([^\n.]{8,240})/i,
+      },
+      {
+        key: 'core_solution',
+        pattern: /(?:solucao\s+central|solu\u00e7\u00e3o\s+central|solucao)\s*[:\-]?\s*([^\n.]{8,240})/i,
+      },
+      {
+        key: 'unique_value_proposition',
+        pattern: /(?:puv|proposta\s+unica\s+de\s+valor|proposta\s+\u00fanica\s+de\s+valor)\s*[:\-]?\s*([^\n.]{8,260})/i,
+      },
+      {
+        key: 'template_flavor',
+        pattern: /(dutra_blindagem|dutra|blindagem|rmc|gram|generic)/i,
+      },
+      {
+        key: 'source_document',
+        pattern: /((?:[A-Za-z]:[\\\/][\w\\\/\-. ]+)?gestao-comercial-dutra-advocacia\.html)/i,
+      },
+      {
+        key: 'notes',
+        pattern: /^([\s\S]{1,700})$/i,
+      },
+    ],
+    baseConfidence: 0.92,
+  },
+  {
     intent: 'lead_reactivation',
     patterns: [
       /recuper(ar|e)\s+leads?\s+frios?\s+(de|da|do|por|em)\s+/i,

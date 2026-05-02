@@ -1,13 +1,13 @@
 "use client";
 
-import { useState, useEffect, useRef, useCallback } from "react";
+import { useState, useEffect, useRef, useCallback, useMemo } from "react";
 import ReactMarkdown from 'react-markdown'
 import { Cormorant_Garamond, Montserrat } from "next/font/google";
 import {
   Send, Bot, User, BrainCircuit, Sparkles, Loader2, KeyRound,
   AlertCircle, CheckCircle, XCircle, ShieldAlert,
   History, Plus, Trash2, Menu, X, MessageSquare, ChevronLeft, Search,
-  Mic, Volume2, Square, VolumeX
+  Mic, Volume2, Square, VolumeX, SlidersHorizontal
 } from "lucide-react";
 import { useUserProfile } from "@/hooks/useUserProfile";
 import { toast } from "sonner";
@@ -55,6 +55,43 @@ interface Conversation {
   title: string;
   updated_at: string;
 }
+
+type ModelOption = {
+  provider: string;
+  model: string;
+  label: string;
+  description: string;
+};
+
+const MODEL_PRESETS: Record<string, Array<Omit<ModelOption, "provider">>> = {
+  openrouter: [
+    { model: "qwen/qwen3.6-plus", label: "Qwen 3.6 Plus", description: "Rapido e bom para rotina geral" },
+    { model: "anthropic/claude-sonnet-4.6", label: "Claude Sonnet", description: "Melhor para raciocinio juridico longo" },
+    { model: "openai/gpt-5.2", label: "GPT-5.2", description: "Analise forte e respostas mais robustas" },
+    { model: "google/gemini-3.1-pro-preview-customtools", label: "Gemini Pro", description: "Contexto amplo e documentos grandes" },
+    { model: "deepseek/deepseek-chat", label: "DeepSeek", description: "Boa relacao custo/desempenho" },
+  ],
+  openai: [
+    { model: "gpt-5.4-nano", label: "GPT-5.4 Nano", description: "Baixa latencia para chat diario" },
+    { model: "gpt-5.4-mini", label: "GPT-5.4 Mini", description: "Equilibrio para operacoes" },
+    { model: "gpt-5.2", label: "GPT-5.2", description: "Trabalho juridico mais profundo" },
+  ],
+  anthropic: [
+    { model: "claude-haiku-4-5-20251001", label: "Claude Haiku", description: "Rapido para atendimento" },
+    { model: "claude-sonnet-4-6", label: "Claude Sonnet", description: "Contratos, pecas e leitura longa" },
+  ],
+  google: [
+    { model: "gemini-2.0-flash", label: "Gemini Flash", description: "Rapido para respostas gerais" },
+    { model: "gemini-3.1-pro-preview-customtools", label: "Gemini Pro", description: "Contexto longo e analise documental" },
+  ],
+  gemini: [
+    { model: "gemini-2.0-flash", label: "Gemini Flash", description: "Rapido para respostas gerais" },
+    { model: "gemini-3.1-pro-preview-customtools", label: "Gemini Pro", description: "Contexto longo e analise documental" },
+  ],
+  groq: [
+    { model: "llama-3.3-70b-versatile", label: "Llama 70B", description: "Rapido para testes e rascunhos" },
+  ],
+};
 
 interface BrainTaskRecord {
   id: string;
@@ -938,6 +975,8 @@ export default function MAYUSPlayground() {
   const [isLoading, setIsLoading] = useState(false);
   const [apiKeyData, setApiKeyData] = useState<{ provider: string; model: string } | null>(null);
   const [availableIntegrations, setAvailableIntegrations] = useState<{ provider: string; model: string }[]>([]);
+  const [isModelSwitcherOpen, setIsModelSwitcherOpen] = useState(false);
+  const [customModelInput, setCustomModelInput] = useState("");
   const [checkingVault, setCheckingVault] = useState(true);
   const [brainTaskSnapshots, setBrainTaskSnapshots] = useState<Record<string, BrainTaskSnapshot>>({});
 
@@ -956,6 +995,46 @@ export default function MAYUSPlayground() {
   const [isConversationMode, setIsConversationMode] = useState(false);
   const [playingMessageId, setPlayingMessageId] = useState<number | string | null>(null);
   const { profile, isLoading: profileLoading } = useUserProfile();
+
+  const modelOptions = useMemo<ModelOption[]>(() => {
+    const seen = new Set<string>();
+    const options: ModelOption[] = [];
+
+    for (const integration of availableIntegrations) {
+      const provider = integration.provider;
+      const configuredKey = `${provider}:${integration.model}`;
+      if (!seen.has(configuredKey)) {
+        seen.add(configuredKey);
+        options.push({
+          provider,
+          model: integration.model,
+          label: `${provider.toUpperCase()} atual`,
+          description: "Modelo salvo na integracao",
+        });
+      }
+
+      for (const preset of MODEL_PRESETS[provider.toLowerCase()] || []) {
+        const key = `${provider}:${preset.model}`;
+        if (seen.has(key)) continue;
+        seen.add(key);
+        options.push({ provider, ...preset });
+      }
+    }
+
+    return options;
+  }, [availableIntegrations]);
+
+  const selectChatModel = (option: { provider: string; model: string }, announce = true) => {
+    setApiKeyData({ provider: option.provider, model: option.model });
+    setCustomModelInput(option.model);
+    setIsModelSwitcherOpen(false);
+    if (announce) {
+      setMessages((prev) => [
+        ...prev,
+        { role: "system", content: `Cortex ajustado para ${option.provider.toUpperCase()} / ${option.model}.` },
+      ]);
+    }
+  };
 
   const loadBrainTask = useCallback(async (taskId: string) => {
     try {
@@ -1029,6 +1108,12 @@ export default function MAYUSPlayground() {
       }
     }
   }, [profile?.tenant_id, profileLoading, loadBrainStatus]);
+
+  useEffect(() => {
+    if (apiKeyData?.model) {
+      setCustomModelInput(apiKeyData.model);
+    }
+  }, [apiKeyData?.model]);
 
   useEffect(() => {
     messagesEndRef.current?.scrollIntoView({ behavior: "smooth" });
@@ -1604,9 +1689,89 @@ export default function MAYUSPlayground() {
             >
               <Sparkles size={14} /> {isConversationMode ? 'Modo Conversa Ativo' : 'Ativar Modo Conversa'}
             </button>
-            <div className="bg-[#CCA761]/10 border border-[#CCA761]/20 px-3 py-1.5 flex flex-col items-end rounded-lg text-xs tracking-widest text-[#CCA761] font-bold uppercase">
-              <span>{apiKeyData.provider}</span>
-              <span className="text-[9px] text-gray-500 lowercase opacity-80 mt-0.5 truncate max-w-[120px]">{apiKeyData.model}</span>
+            <div className="relative">
+              <button
+                type="button"
+                onClick={() => setIsModelSwitcherOpen((value) => !value)}
+                className="bg-[#CCA761]/10 border border-[#CCA761]/20 px-3 py-1.5 flex items-center gap-3 rounded-lg text-xs tracking-widest text-[#CCA761] font-bold uppercase hover:border-[#CCA761]/50 hover:bg-[#CCA761]/15 transition-colors"
+                title="Trocar modelo do chat"
+              >
+                <SlidersHorizontal size={14} />
+                <span className="flex flex-col items-end">
+                  <span>{apiKeyData.provider}</span>
+                  <span className="text-[9px] text-gray-500 lowercase opacity-80 mt-0.5 truncate max-w-[150px]">{apiKeyData.model}</span>
+                </span>
+              </button>
+
+              {isModelSwitcherOpen && (
+                <div className="absolute right-0 top-full mt-3 w-[min(92vw,420px)] rounded-2xl border border-[#CCA761]/25 bg-[#080808] shadow-2xl shadow-black/60 z-50 overflow-hidden">
+                  <div className="p-4 border-b border-white/10">
+                    <p className="text-[10px] uppercase tracking-[0.25em] text-[#CCA761] font-black">Modelo do chat</p>
+                    <p className="mt-1 text-[11px] text-gray-500 normal-case tracking-normal">
+                      Troca apenas esta sessao de conversa para testar respostas.
+                    </p>
+                  </div>
+
+                  <div className="max-h-80 overflow-y-auto p-2 space-y-1">
+                    {modelOptions.length === 0 ? (
+                      <div className="p-4 text-xs text-gray-500">Nenhum provedor conectado encontrado.</div>
+                    ) : (
+                      modelOptions.map((option) => {
+                        const active = option.provider === apiKeyData.provider && option.model === apiKeyData.model;
+                        return (
+                          <button
+                            key={`${option.provider}:${option.model}`}
+                            type="button"
+                            onClick={() => selectChatModel(option)}
+                            className={`w-full text-left rounded-xl px-3 py-3 border transition-colors ${
+                              active
+                                ? "border-[#CCA761]/50 bg-[#CCA761]/10"
+                                : "border-transparent hover:border-white/10 hover:bg-white/[0.04]"
+                            }`}
+                          >
+                            <div className="flex items-start justify-between gap-3">
+                              <div className="min-w-0">
+                                <p className="text-sm font-bold text-gray-100 truncate">{option.label}</p>
+                                <p className="mt-1 text-[10px] uppercase tracking-[0.18em] text-[#CCA761]/80 truncate">
+                                  {option.provider} / {option.model}
+                                </p>
+                                <p className="mt-1 text-[11px] text-gray-500">{option.description}</p>
+                              </div>
+                              {active && <CheckCircle size={16} className="text-[#CCA761] shrink-0 mt-0.5" />}
+                            </div>
+                          </button>
+                        );
+                      })
+                    )}
+                  </div>
+
+                  <div className="p-3 border-t border-white/10 bg-white/[0.02]">
+                    <label className="block text-[9px] uppercase tracking-[0.22em] text-gray-500 font-black mb-2">
+                      Modelo customizado
+                    </label>
+                    <div className="flex gap-2">
+                      <input
+                        value={customModelInput}
+                        onChange={(event) => setCustomModelInput(event.target.value)}
+                        className="min-w-0 flex-1 rounded-xl border border-white/10 bg-black/40 px-3 py-2 text-xs text-gray-200 outline-none focus:border-[#CCA761]/60"
+                        placeholder="ex: qwen/qwen3.6-plus"
+                      />
+                      <button
+                        type="button"
+                        onClick={() => {
+                          const model = customModelInput.trim();
+                          if (!model || !apiKeyData) return;
+                          selectChatModel({ provider: apiKeyData.provider, model });
+                        }}
+                        disabled={!customModelInput.trim()}
+                        className="rounded-xl border border-[#CCA761]/30 px-3 py-2 text-[10px] font-black uppercase tracking-widest text-[#CCA761] disabled:opacity-40"
+                      >
+                        Usar
+                      </button>
+                    </div>
+                  </div>
+                </div>
+              )}
             </div>
           </div>
         </header>

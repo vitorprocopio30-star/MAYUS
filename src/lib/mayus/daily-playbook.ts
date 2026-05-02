@@ -247,7 +247,7 @@ function buildPriorityActions(params: {
     actions.push({
       area: "agenda",
       title: task.title,
-      detail: "Resolver tarefa critica antes de abrir novas frentes.",
+      detail: "Essa tarefa tem prazo ou risco. Fechar antes de seguir.",
       urgency: "critical",
       ownerLabel: task.ownerLabel,
       dueAt: task.scheduledFor,
@@ -270,7 +270,7 @@ function buildPriorityActions(params: {
       actions.push({
         area: "agenda",
         title: task.title,
-        detail: "Executar tarefa do dia e registrar conclusao no MAYUS.",
+        detail: "Fazer e marcar como feito. Simples assim.",
         urgency: "routine",
         ownerLabel: task.ownerLabel,
         dueAt: task.scheduledFor,
@@ -281,8 +281,8 @@ function buildPriorityActions(params: {
   if (actions.length === 0) {
     actions.push({
       area: "system",
-      title: "Manter operacao limpa",
-      detail: "Sem alerta prioritario. Revisar CRM, agenda e pendencias antes de iniciar novas campanhas.",
+      title: "Dia sem alerta critico",
+      detail: "Nenhum risco visivel. Bom dia para limpar CRM parado, confirmar agenda e fechar pendencia pequena antes que vire urgencia.",
       urgency: "routine",
       ownerLabel: "MAYUS",
       dueAt: null,
@@ -408,8 +408,8 @@ function buildDailyPlaybookHtmlReport(playbook: Omit<DailyPlaybook, "whatsappSum
 <nav class="sidebar">${menu}</nav>
 <main class="main">
   <section class="hero" id="executive">
-    <div class="eyebrow">Relatorio diario premium</div>
-    <h1>${escapeHtml(playbook.title)}<br><em>menu operacional do dia</em></h1>
+    <div class="eyebrow">Leitura do dia</div>
+    <h1>${escapeHtml(playbook.title)}<br><em>o que muda hoje</em></h1>
     <p class="summary">${escapeHtml(playbook.executiveSummary)}</p>
     <div class="kpis">
       <div class="kpi"><b>${playbook.metrics.crmLeadsNeedingNextStep}</b><span>Leads sem proximo passo</span></div>
@@ -421,8 +421,8 @@ function buildDailyPlaybookHtmlReport(playbook: Omit<DailyPlaybook, "whatsappSum
   <section class="section" id="playbook"><h2 class="sec-title">Playbook <em>do dia</em></h2>${priorityActions}</section>
   <section class="section" id="crm"><h2 class="sec-title">Comercial <em>e CRM</em></h2><div class="card">${crmItems}</div></section>
   <section class="section" id="agenda"><h2 class="sec-title">Agenda <em>e prazos</em></h2><div class="card">${agendaItems}</div></section>
-  <section class="section" id="frontdesk"><h2 class="sec-title">Front desk <em>MAYUS</em></h2><div class="card"><p>MAYUS deve fazer o primeiro atendimento em ate 5 minutos, qualificar, registrar sinais e transferir quando houver urgencia, pedido humano ou setor especifico.</p></div></section>
-  <section class="section" id="calls"><h2 class="sec-title">Calls <em>e qualidade</em></h2><div class="card"><p>Revisar dor, urgencia, decisor, objecao dominante, encantamento, isolamento de variaveis e proximo passo com data/canal/responsavel.</p></div></section>
+  <section class="section" id="frontdesk"><h2 class="sec-title">Front desk <em>MAYUS</em></h2><div class="card"><p>Primeiro contato em ate 5 minutos. Qualificar, registrar sinais e transferir se for urgencia ou pedido direto do lead.</p></div></section>
+  <section class="section" id="calls"><h2 class="sec-title">Calls <em>e qualidade</em></h2><div class="card"><p>Para cada conversa: identificar dor principal, nivel de urgencia, quem decide e qual o proximo passo concreto (data, canal, responsavel).</p></div></section>
   <footer class="footer">Nenhuma acao externa foi executada automaticamente. Gerado pelo MAYUS para uso operacional interno.</footer>
 </main>
 </body>
