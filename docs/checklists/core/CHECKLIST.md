@@ -1,6 +1,6 @@
 # MAYUS Core Checklist
 
-Objetivo: transformar o MAYUS em um Mission Engine governado, auditavel e facil de acionar por chat, voz, WhatsApp, jobs e eventos internos.
+Objetivo: transformar o MAYUS em um agente agentico supervisionado: um Mission Engine governado, auditavel e facil de acionar por chat, voz, WhatsApp, jobs e eventos internos, capaz de iniciar, explicar, pausar, cancelar, tentar de novo e concluir missoes com trilha reconstruivel.
 
 ## Mission Engine
 
@@ -10,8 +10,10 @@ Objetivo: transformar o MAYUS em um Mission Engine governado, auditavel e facil 
 Evidencia 2026-04-24: `analisarMovimentacao` aciona `prepareProactiveMovementDraft` apos criar prazo/card; a Draft Factory registra task/run/step e artifacts para revisao humana.
 - [x] Registry central de eventos proativos existe como contrato de plataforma.
 Evidencia 2026-04-24: `src/lib/agent/proactive-events/registry.ts` resolve playbooks por dominio/fonte/evento e suporta `draft_factory` e `artifact_only`.
-- [ ] Criar endpoint de retry por step com idempotencia.
-- [ ] Criar endpoint de cancelamento de missao com motivo e ator.
+- [x] Criar endpoint de retry por step com idempotencia.
+Evidencia 2026-05-02: `POST /api/brain/tasks/:id/retry` exige `stepId`, aceita apenas step `failed`/`cancelled`, impede retry duplicado por `idempotency_key`, cria nova `brain_run`/`brain_step` em `queued`, preserva contexto do step original e registra `learning_events.task_step_retry_requested` sem executar ferramenta externa automaticamente.
+- [x] Criar controle agentico de cancelamento de missao com motivo e ator.
+Evidencia 2026-05-02: `POST /api/brain/tasks/:id/cancel` valida sessao/tenant, exige `reason`, grava ator em `error_payload`, cancela runs/steps/approvals ativos e registra `learning_events.task_cancelled`; teste focado passou com 4 casos. O objetivo nao e apenas encerrar uma rota, mas permitir que o agente pare uma missao sob comando humano e deixe o motivo auditavel.
 - [ ] Criar streaming/status incremental da missao para UI.
 - [ ] Persistir plano completo antes de executar ferramentas externas.
 - [ ] Garantir estados padronizados: queued, planning, executing, awaiting_input, awaiting_approval, failed, completed, completed_with_warnings.
@@ -49,7 +51,8 @@ Evidencia 2026-04-24: runtime migrado para `system_event_logs` em Asaas, onboard
 
 ## Criterios de aceite
 
-- [ ] Uma missao complexa pode ser reconstruida somente com os dados do banco.
+- [~] Uma missao complexa pode ser reconstruida somente com os dados do banco.
+Evidencia parcial 2026-05-02: cancel/retry agora deixam trilha em `brain_runs`, `brain_steps`, `brain_approvals` e `learning_events`; falta painel/stream e padronizacao completa de plano antes de ferramentas externas.
 - [ ] Nenhuma skill sensivel executa sem audit log.
 - [ ] Toda falha retorna proximo passo claro ao usuario.
 - [ ] Dashboard mostra missoes em andamento, pausadas, aguardando aprovacao e concluidas.

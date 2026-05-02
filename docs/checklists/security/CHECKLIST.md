@@ -27,6 +27,10 @@ Objetivo: proteger dados juridicos, clientes, chaves, artifacts e execucoes agen
 
 - [x] Middleware protege paginas do dashboard.
 - [x] Route handlers criticos validam sessao em pontos centrais.
+- [ ] Criar papel `mayus_support_admin` separado de usuarios comuns de tenant.
+- [ ] Criar grants temporarios de suporte por tenant com motivo, expiracao e auditoria.
+- [ ] Bloquear acesso cross-tenant de super admin sem grant quando houver dado sensivel.
+- [ ] Garantir que tenant demo marcado como `demo_mode=true` nao contem dados reais.
 - [ ] Garantir que nenhum endpoint API dependa apenas do middleware.
 - [ ] Testar tenant isolation com usuario A tentando ler tenant B.
 - [ ] Exigir MFA para admin, aprovacao critica e export sensivel.

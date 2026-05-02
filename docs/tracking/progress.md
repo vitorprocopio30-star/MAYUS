@@ -96,9 +96,17 @@ Use esse checklist para marcar:
 - [x] Smoke seguro de webhook Asaas passou em 2026-04-26 com payload sintetico e auditoria em `system_event_logs` confirmada.
 - [x] Protecao de configuracao Google Drive adicionada em 2026-04-26: `isGoogleDriveConfigured()` agora retorna falso quando o OAuth client ID nao tem formato valido.
 - [x] Aplicacao da migration `20260424110000_system_event_logs.sql` concluida em 2026-04-25; tabela `public.system_event_logs` validada com insert/delete temporario.
+- [x] Controle de autonomia supervisionada iniciado em 2026-05-02: criado `POST /api/brain/tasks/:id/cancel` para o MAYUS agir como agente agentico que consegue parar uma missao sob comando humano, com motivo obrigatorio, escopo por tenant, bloqueio de estados finais, cancelamento de task/runs/steps/approvals pendentes e evento `task_cancelled` em `learning_events`. Validacoes passaram: teste focado da rota com 4 casos e `npx.cmd tsc --noEmit --pretty false`.
+- [x] Retry agentico por step entregue em 2026-05-02: criado `POST /api/brain/tasks/:id/retry` para o MAYUS retomar etapa falha/cancelada com idempotencia, criando nova tentativa auditavel sem executar ferramenta externa automaticamente. Validacoes passaram: teste focado da rota com 4 casos e `npx.cmd tsc --noEmit --pretty false`.
+- [x] Plano de Demo Tenant, Super Admin e WhatsApp multi-conta registrado em 2026-05-02: criado `docs/operations/demo-superadmin-whatsapp-plan.md` e checklist principal passou a prever tenant demo sem dados reais, papel `mayus_support_admin`, grants temporarios, WhatsApp oficial MAYUS, WhatsApp Dutra isolado e simuladores para demo.
+- [x] Primeiro reset da conta demo implementado em 2026-05-02: `src/lib/demo/demo-tenant-reset.ts` gera 100 casos sinteticos (12 vitrine + 88 volume) e `POST /api/admin/demo/reset` exige superadmin, tenant demo, dry-run padrao e confirmacao `RESET_DEMO` para reset real. Validacoes passaram: 8 testes focados e typecheck.
+- [x] Fluxo demo OAB/IA/WhatsApp implementado em 2026-05-02: OAB ficticia `SP/123456` carrega processos sinteticos sem Escavador real; reset semeia monitoramentos, movimentacoes e conversas WhatsApp; `POST /api/agent/processos/organizar` gera organizacao deterministica para processo demo sem LLM externo.
 
 ## Proximo Passo
 
+- [ ] Criar UI/painel super admin para executar dry-run/reset da conta demo e marcar o tenant como demo.
+- [ ] Implementar contrato/tipos e flags para `demo_mode`, `mayus_support_admin` e contas WhatsApp por dono operacional.
+- [ ] Criar stream/status incremental de missao e painel operacional para o agente mostrar o que esta fazendo, falhou, pausou ou aguarda aprovacao.
 - [ ] Substituir OAuth client local malformado do Google Drive por credenciais validas e repetir salvar/restaurar root + process-folder.
 - [ ] Rodar smoke funcional real de Asaas, ZapSign e Escavador com payloads aprovados.
 - [ ] Validar fluxo completo de chat real de `support_case_status` em tenant descartavel/staging, aceitando escritas controladas em auditoria/artifacts/events.

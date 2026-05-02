@@ -4,6 +4,15 @@ import { createServerClient } from '@supabase/ssr'
 import { cookies } from 'next/headers'
 import { requireTenantApiKey } from '@/lib/integrations/server'
 import { pickExplicitClientName } from '@/lib/juridico/process-card-context'
+import {
+  DEMO_OAB_ADVOGADO_NOME,
+  DEMO_OAB_ESTADO,
+  DEMO_OAB_MONITORAMENTO_ID,
+  DEMO_OAB_NUMERO,
+  DEMO_SEED_TAG,
+  buildDemoOabCachePayloadFromTasks,
+  isDemoOabQuery,
+} from '@/lib/demo/demo-oab-flow'
 
 interface MonitoramentoCapacity {
   total_monitorados: number
@@ -17,6 +26,14 @@ const adminSupabase = createClient(
   process.env.SUPABASE_SERVICE_ROLE_KEY!,
   { auth: { autoRefreshToken: false, persistSession: false } }
 )
+
+function isDemoMode(aiFeatures: unknown) {
+  if (!aiFeatures || typeof aiFeatures !== 'object' || Array.isArray(aiFeatures)) return false
+  const features = aiFeatures as Record<string, unknown>
+  const demo = features.demo
+  return features.demo_mode === true
+    || (demo && typeof demo === 'object' && !Array.isArray(demo) && (demo as Record<string, unknown>).enabled === true)
+}
 
 // Extrai tudo que a Escavador manda — sem perder nada
 function mapearProcesso(p: Record<string, unknown>) {
@@ -94,6 +111,137 @@ function mapearProcesso(p: Record<string, unknown>) {
   }
 }
 
+async function buildDemoOabResponse(params: {
+  tenantId: string
+  oabEstado: unknown
+  oabNumero: unknown
+}) {
+  if (!isDemoOabQuery(params.oabEstado, params.oabNumero)) return null
+
+  const { data: settings, error: settingsError } = await adminSupabase
+    .from('tenant_settings')
+    .select('ai_features')
+    .eq('tenant_id', params.tenantId)
+    .maybeSingle()
+
+  if (settingsError) throw settingsError
+  if (!isDemoMode(settings?.ai_features)) return null
+
+  const now = new Date().toISOString()
+  const dbCacheKey = `OAB_V2:${DEMO_OAB_ESTADO}:${DEMO_OAB_NUMERO}:ROOT`
+  const { data: cache } = await adminSupabase
+    .from('processos_cache')
+    .select('processos, total, advogado, updated_at')
+    .eq('tenant_id', params.tenantId)
+    .eq('cache_key', dbCacheKey)
+    .single()
+
+  let processos = Array.isArray(cache?.processos) ? cache.processos : null
+  let total = Number(cache?.total || 0)
+  let advogado = cache?.advogado || {
+    nome: DEMO_OAB_ADVOGADO_NOME,
+    quantidade_processos: 0,
+    oab_estado: DEMO_OAB_ESTADO,
+    oab_numero: DEMO_OAB_NUMERO,
+    demo_seed: DEMO_SEED_TAG,
+  }
+
+  if (!processos) {
+    const { data: demoTasks, error: tasksError } = await adminSupabase
+      .from('process_tasks')
+      .select('source,title,client_name,sector,demanda,processo_1grau,orgao_julgador,reu,valor_causa,andamento_1grau,data_ultima_movimentacao,tags,position_index')
+      .eq('tenant_id', params.tenantId)
+      .contains('tags', [DEMO_SEED_TAG])
+      .order('position_index', { ascending: true })
+      .limit(100)
+
+    if (tasksError) throw tasksError
+
+    const payload = buildDemoOabCachePayloadFromTasks(demoTasks || [])
+    processos = payload.processos
+    total = payload.total
+    advogado = payload.advogado
+
+    await adminSupabase.from('processos_cache').upsert({
+      tenant_id: params.tenantId,
+      cache_key: dbCacheKey,
+      processos,
+      total,
+      advogado,
+      total_paginas: 1,
+      pagina_atual: 1,
+      sincronizado: true,
+      updated_at: now,
+    }, { onConflict: 'tenant_id,cache_key' })
+  }
+
+  await adminSupabase.from('oabs_salvas').upsert({
+    tenant_id: params.tenantId,
+    oab_estado: DEMO_OAB_ESTADO,
+    oab_numero: DEMO_OAB_NUMERO,
+    advogado: DEMO_OAB_ADVOGADO_NOME,
+    total_processos: total,
+    ultima_busca: now,
+  }, { onConflict: 'tenant_id,oab_estado,oab_numero' })
+
+  await adminSupabase.from('tenant_oab_monitoramentos').upsert({
+    tenant_id: params.tenantId,
+    oab_estado: DEMO_OAB_ESTADO,
+    oab_numero: DEMO_OAB_NUMERO,
+    advogado_nome: DEMO_OAB_ADVOGADO_NOME,
+    monitoramento_oab_id: DEMO_OAB_MONITORAMENTO_ID,
+    monitoramento_ativo: true,
+    ultima_sincronizacao: now,
+    updated_at: now,
+  }, { onConflict: 'tenant_id,oab_estado,oab_numero' })
+
+  const numeros = (processos || []).map((p: any) => p.numero_processo).filter(Boolean)
+  const { data: jaMonitorados } = numeros.length > 0
+    ? await adminSupabase
+        .from('monitored_processes')
+        .select('id, numero_processo, escavador_id, escavador_monitoramento_id, resumo_curto, urgencia_nivel, proxima_acao_sugerida, cliente_nome')
+        .eq('tenant_id', params.tenantId)
+        .in('numero_processo', numeros)
+    : { data: [] }
+
+  const monitoradosMap = new Map((jaMonitorados ?? []).map((m: any) => [m.numero_processo, m]))
+  const processosComStatus = (processos || []).map((p: any) => {
+    const db = monitoradosMap.get(p.numero_processo)
+    return {
+      ...p,
+      monitorado: !!db?.id,
+      id: db?.id ?? undefined,
+      escavador_id: db?.escavador_id || p.escavador_id,
+      resumo_curto: db?.resumo_curto ?? undefined,
+      cliente_nome: db?.cliente_nome ?? p.cliente_nome ?? undefined,
+      urgencia_nivel: db?.urgencia_nivel ?? undefined,
+      proxima_acao_sugerida: db?.proxima_acao_sugerida ?? undefined,
+    }
+  })
+
+  return NextResponse.json({
+    demo: true,
+    cached: !!cache?.updated_at,
+    processos: processosComStatus,
+    total,
+    total_retornado: processosComStatus.length,
+    advogado_nome: (advogado as any)?.nome || DEMO_OAB_ADVOGADO_NOME,
+    next_url: null,
+    paginas_buscadas: 1,
+    billing: {
+      demo_mode: true,
+      total_ja_monitorados: monitoradosMap.size,
+      gratuitos: 100,
+      disponivel_sem_custo: 100,
+      ativos_nao_monitorados: 0,
+      ja_monitorados_desta_oab: monitoradosMap.size,
+      excedente_se_prosseguir: 0,
+      custo_estimado_mes: 0,
+      preco_por_extra: 0,
+    },
+  }, { status: 200 })
+}
+
 // v3.1 - Force deploy for Premium Pro
 export async function POST(req: NextRequest) {
   process.stdout.write('\n\n>>> REQUISIÇÃO RECEBIDA EM buscar-completo\n\n')
@@ -134,6 +282,13 @@ export async function POST(req: NextRequest) {
     .from('profiles').select('tenant_id').eq('id', user.id).single()
   if (!profile?.tenant_id) return NextResponse.json({ error: 'No tenant' }, { status: 400 })
   const tenantId = profile.tenant_id
+
+  const demoResponse = await buildDemoOabResponse({
+    tenantId,
+    oabEstado: oab_estado,
+    oabNumero: oab_numero,
+  })
+  if (demoResponse) return demoResponse
 
   const { data: capacity } = await adminSupabase
     .rpc('check_monitoramento_capacity', { p_tenant_id: tenantId }).single() as { data: MonitoramentoCapacity | null; error: unknown }

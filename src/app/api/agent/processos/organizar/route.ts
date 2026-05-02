@@ -5,6 +5,7 @@ import { NextRequest, NextResponse } from 'next/server'
 import { callLLMWithFallback } from '@/lib/llm-fallback'
 import { requireTenantApiKey } from '@/lib/integrations/server'
 import { buildDocumentOrganizationSummary } from '@/lib/juridico/document-organization'
+import { buildDemoOrganizationResult, isDemoProcessRecord } from '@/lib/demo/demo-oab-flow'
 import {
   buildProcessCardClientName,
   buildProcessCardDescription,
@@ -136,6 +137,7 @@ export async function POST(req: NextRequest) {
     .eq('id', processo_id)
     .single()
   if (procErr || !proc) return NextResponse.json({ error: 'Processo não encontrado' }, { status: 404 })
+  const isDemoProcess = isDemoProcessRecord(proc)
 
   // 2. Buscar advogados do tenant
   const { data: advogados } = await supabase
@@ -145,7 +147,9 @@ export async function POST(req: NextRequest) {
     .in('role', ['Administrador', 'advogado', 'socio'])
 
   // 3. Buscar chave do Escavador
-  const { apiKey: tenantEscavadorKey } = await requireTenantApiKey(proc.tenant_id, 'escavador')
+  const { apiKey: tenantEscavadorKey } = isDemoProcess
+    ? { apiKey: null }
+    : await requireTenantApiKey(proc.tenant_id, 'escavador')
   const escavadorKey = tenantEscavadorKey || process.env.ESCAVADOR_API_KEY
 
   // 3b. Resolver pipeline e etapas reais
@@ -204,7 +208,7 @@ export async function POST(req: NextRequest) {
   let movimentacoesEscavador: any[] = Array.isArray(proc.movimentacoes)
     ? proc.movimentacoes : []
 
-  if (proc.escavador_id && escavadorKey) {
+  if (!isDemoProcess && proc.escavador_id && escavadorKey) {
     try {
       const detResp = await fetch(
         `https://api.escavador.com/api/v2/processos/${proc.escavador_id}`,
@@ -297,37 +301,46 @@ Retorne exatamente este JSON:
   "peca_sugerida": "Nome da peça processual a elaborar agora (ou null)"
 }`
 
-  // 5. Chamar IA com fallback seguro entre provedores configurados
-  const aiResult = await callLLMWithFallback<any>({
-    supabase,
-    tenantId: proc.tenant_id,
-    useCase: 'organizar_processo',
-    request: {
-      max_tokens: 1500,
-      messages: [{ role: 'user', content: prompt }],
-    },
-  })
-
-  if (aiResult.ok === false) {
-    return NextResponse.json(
-      {
-        error: aiResult.notice.message,
-        ai_notice: aiResult.notice,
-      },
-      { status: aiResult.failureKind === 'missing_key' || aiResult.failureKind === 'invalid_key' ? 400 : 503 }
-    )
-  }
-
-  const aiData = aiResult.data
-  const aiNotice = aiResult.notice || null
-  const rawText = aiData.choices?.[0]?.message?.content || ''
-
   let resultado: any
-  try {
-    const clean = rawText.replace(/```json|```/g, '').trim()
-    resultado = JSON.parse(clean)
-  } catch {
-    return NextResponse.json({ error: 'IA retornou JSON inválido', raw: rawText }, { status: 500 })
+  let aiNotice: any = null
+
+  if (isDemoProcess) {
+    resultado = buildDemoOrganizationResult(proc, {
+      kanbanStageId: etapaFallbackId,
+      responsavelNome: advogados?.[0]?.full_name || null,
+    })
+  } else {
+    // 5. Chamar IA com fallback seguro entre provedores configurados
+    const aiResult = await callLLMWithFallback<any>({
+      supabase,
+      tenantId: proc.tenant_id,
+      useCase: 'organizar_processo',
+      request: {
+        max_tokens: 1500,
+        messages: [{ role: 'user', content: prompt }],
+      },
+    })
+
+    if (aiResult.ok === false) {
+      return NextResponse.json(
+        {
+          error: aiResult.notice.message,
+          ai_notice: aiResult.notice,
+        },
+        { status: aiResult.failureKind === 'missing_key' || aiResult.failureKind === 'invalid_key' ? 400 : 503 }
+      )
+    }
+
+    const aiData = aiResult.data
+    aiNotice = aiResult.notice || null
+    const rawText = aiData.choices?.[0]?.message?.content || ''
+
+    try {
+      const clean = rawText.replace(/```json|```/g, '').trim()
+      resultado = JSON.parse(clean)
+    } catch {
+      return NextResponse.json({ error: 'IA retornou JSON inválido', raw: rawText }, { status: 500 })
+    }
   }
 
   const etapaValida = etapasDisponiveis.find((s: any) => s.id === resultado.kanban_stage_id)
@@ -534,6 +547,8 @@ Retorne exatamente este JSON:
     process_task_id:     organizedTaskId,
     document_organization: documentOrganization,
     document_memory:     documentMemory,
+    demo:                isDemoProcess,
+    whatsapp_resposta_sugerida: resultado.whatsapp_resposta_sugerida || null,
     ai_notice:           aiNotice
   })
 }

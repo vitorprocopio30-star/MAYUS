@@ -459,6 +459,18 @@ Exemplos:
 
 ## Rotas Alvo
 
+## Plataforma / Operacao MAYUS
+
+1. `POST /api/admin/demo/reset`
+2. `GET /api/admin/demo/status`
+3. `GET /api/admin/support/tenants`
+4. `POST /api/admin/support/grants`
+5. `POST /api/admin/support/grants/:id/revoke`
+6. `GET /api/admin/support/inbox`
+7. `POST /api/admin/support/whatsapp/reply`
+8. `GET /api/admin/whatsapp-accounts`
+9. `POST /api/admin/whatsapp-accounts`
+
 ## Core
 
 1. `POST /api/brain/dispatch`
@@ -999,6 +1011,50 @@ Frase de produto:
 3. Nunca mudar permissao, cobranca, mensagem externa ou dado sensivel sem aprovacao.
 4. Toda auto-configuracao deve gerar artifact, evento e resumo humano.
 5. O usuario deve ver resultado operacional, nao detalhes de codigo.
+
+---
+
+## Demo Tenant, Super Admin e WhatsApp Multi-Conta
+
+### Tese
+
+O MAYUS precisa de um ambiente de demonstracao completo, bonito e seguro, sem nenhum dado real. Ao mesmo tempo, a operacao da MAYUS precisa de uma conta super admin para atender clientes da plataforma pelo WhatsApp oficial da MAYUS, separada do WhatsApp de cada escritorio cliente.
+
+Regra central:
+
+**Demo, suporte MAYUS e escritorio real nunca compartilham dados, numero, credencial ou conversa.**
+
+### Escopo executavel
+
+1. `[ ]` criar tenant demo com `demo_mode=true`
+2. `[ ]` criar seed sintetico completo para CRM, processos, documentos, prazos, financeiro, marketing, artifacts e missoes
+3. `[ ]` criar reset seguro do tenant demo antes de demonstracoes
+4. `[ ]` adicionar banner visual permanente de ambiente demo
+5. `[ ]` bloquear integracoes externas reais quando `demo_mode=true`
+6. `[ ]` criar simuladores de WhatsApp, Drive, Escavador, Asaas e ZapSign para demo
+7. `[ ]` criar papel `mayus_support_admin` separado de usuario comum de tenant
+8. `[ ]` criar painel super admin para tenants, saude, suporte e grants temporarios
+9. `[ ]` criar grant temporario de suporte por tenant com motivo, expiracao e auditoria
+10. `[ ]` criar inbox de suporte MAYUS ligado ao WhatsApp oficial da plataforma
+11. `[ ]` criar modelo `whatsapp_accounts` com `owner_type`: `mayus_support`, `tenant`, `demo`
+12. `[ ]` garantir que Dutra use conta WhatsApp propria do escritorio, isolada do suporte MAYUS
+13. `[ ]` rotear inbound/outbound por conta provedora/numero receptor, nao por texto livre
+14. `[ ]` validar que demo nao contem dado real e que tenant real nao acessa demo/suporte
+
+### Guardrails
+
+1. Demo nunca pode importar dados reais.
+2. Demo nunca envia mensagem externa real sem simulador.
+3. Super admin ve dados sensiveis somente com grant temporario e motivo.
+4. Atendimento MAYUS nao usa numero de tenant cliente.
+5. WhatsApp de Dutra fica no tenant Dutra.
+6. Todo acesso super admin gera `system_event_logs`.
+7. Nenhum segredo aparece em UI, logs, artifacts ou respostas de API.
+8. Toda acao externa continua supervisionada.
+
+Referencia operacional:
+
+- `docs/operations/demo-superadmin-whatsapp-plan.md`
 
 ---
 

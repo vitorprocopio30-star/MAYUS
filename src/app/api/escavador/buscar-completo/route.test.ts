@@ -41,6 +41,7 @@ vi.mock("@/lib/integrations/server", () => ({
 }));
 
 import { POST } from "./route";
+import { DEMO_OAB_ADVOGADO_NOME, DEMO_SEED_TAG } from "@/lib/demo/demo-oab-flow";
 
 function buildRequest(body: Record<string, unknown>) {
   return new NextRequest("http://localhost:3000/api/escavador/buscar-completo", {
@@ -95,13 +96,35 @@ function makeMonitoradosQuery(data: any[] = []) {
   return query;
 }
 
-function mockCommonDb(cache: any = null) {
+function makeSettingsQuery(demoMode = false) {
+  const query: any = {
+    select: vi.fn(() => query),
+    eq: vi.fn(() => query),
+    maybeSingle: vi.fn(async () => ({ data: { ai_features: { demo_mode: demoMode } }, error: null })),
+  };
+  return query;
+}
+
+function makeProcessTasksQuery(data: any[] = []) {
+  const query: any = {
+    select: vi.fn(() => query),
+    eq: vi.fn(() => query),
+    contains: vi.fn(() => query),
+    order: vi.fn(() => query),
+    limit: vi.fn(async () => ({ data, error: null })),
+  };
+  return query;
+}
+
+function mockCommonDb(cache: any = null, options: { demoMode?: boolean; processTasks?: any[] } = {}) {
   const profileQuery = makeSingleQuery({ tenant_id: "tenant-1" });
   const cacheQuery = makeCacheQuery(cache);
   const usageQuery = makeUpsertQuery();
   const oabsQuery = makeUpsertQuery();
   const monitoramentosQuery = makeUpsertQuery();
   const monitoradosQuery = makeMonitoradosQuery();
+  const settingsQuery = makeSettingsQuery(options.demoMode ?? false);
+  const processTasksQuery = makeProcessTasksQuery(options.processTasks ?? []);
 
   adminRpcMock.mockReturnValue({
     single: vi.fn(async () => ({
@@ -112,7 +135,9 @@ function mockCommonDb(cache: any = null) {
 
   adminFromMock.mockImplementation((table: string) => {
     if (table === "profiles") return profileQuery;
+    if (table === "tenant_settings") return settingsQuery;
     if (table === "processos_cache") return cacheQuery;
+    if (table === "process_tasks") return processTasksQuery;
     if (table === "api_usage_log") return usageQuery;
     if (table === "oabs_salvas") return oabsQuery;
     if (table === "tenant_oab_monitoramentos") return monitoramentosQuery;
@@ -120,7 +145,7 @@ function mockCommonDb(cache: any = null) {
     throw new Error(`unexpected table ${table}`);
   });
 
-  return { cacheQuery, monitoradosQuery, usageQuery };
+  return { cacheQuery, monitoradosQuery, usageQuery, processTasksQuery };
 }
 
 describe("POST /api/escavador/buscar-completo", () => {
@@ -183,6 +208,44 @@ describe("POST /api/escavador/buscar-completo", () => {
       cached: true,
       total: 1,
       advogado_nome: "Dra. Maria",
+    }));
+  });
+
+  it("retorna fluxo demo da OAB ficticia sem exigir Escavador configurado", async () => {
+    const { cacheQuery, processTasksQuery } = mockCommonDb(null, {
+      demoMode: true,
+      processTasks: [{
+        source: `${DEMO_SEED_TAG}:demo_case_001`,
+        title: "Previdenciario - Ana Almeida",
+        client_name: "Ana Almeida",
+        sector: "Previdenciario",
+        demanda: "revisao de beneficio demo",
+        processo_1grau: "000001-45.2026.8.26.1001",
+        orgao_julgador: "1a Vara Previdenciaria Modelo",
+        reu: "INSS Demo",
+        valor_causa: 18000,
+        andamento_1grau: "Triagem MAYUS",
+        tags: [DEMO_SEED_TAG, "caso_vitrine"],
+        position_index: 0,
+      }],
+    });
+    requireTenantApiKeyMock.mockResolvedValueOnce({ apiKey: null });
+
+    const response = await POST(buildRequest(validBody()));
+
+    expect(response.status).toBe(200);
+    expect(requireTenantApiKeyMock).not.toHaveBeenCalled();
+    expect(global.fetch).not.toHaveBeenCalled();
+    expect(processTasksQuery.limit).toHaveBeenCalledWith(100);
+    expect(cacheQuery.upsert).toHaveBeenCalledWith(expect.objectContaining({
+      tenant_id: "tenant-1",
+      cache_key: "OAB_V2:SP:123456:ROOT",
+    }), { onConflict: "tenant_id,cache_key" });
+    await expect(response.json()).resolves.toEqual(expect.objectContaining({
+      demo: true,
+      total: 1,
+      advogado_nome: DEMO_OAB_ADVOGADO_NOME,
+      billing: expect.objectContaining({ demo_mode: true, custo_estimado_mes: 0 }),
     }));
   });
 

@@ -25,6 +25,9 @@ Evidencia parcial 2026-04-24: o fluxo de Growth Intake retorna `needsHumanHandof
 
 - [x] Onboarding web autentica pela sessao do usuario, sem exigir token manual no browser.
 Evidencia 2026-04-24: `src/app/api/onboarding/oab/route.ts` passou a usar `createServerClient` com cookies, compatível com `src/app/onboarding/page.tsx`.
+- [ ] Criar conta demo completa para demonstracao comercial sem dados reais.
+- [ ] Exibir banner permanente quando o usuario estiver no ambiente demo.
+- [ ] Criar reset seguro da conta demo para antes de reunioes comerciais.
 - [ ] Onboarding pergunta OAB, areas, modelo de honorarios e tom do escritorio.
 - [ ] Configuracao inicial cria memoria institucional supervisionada.
 - [ ] Agente testa integracoes e mostra checklist de pendencias.

@@ -50,6 +50,12 @@ Evidencia 2026-04-24: teste estatico garante que o webhook Asaas nao voltou a gr
 
 ## WhatsApp/Voz
 
+- [ ] Separar contas WhatsApp por dono operacional: `mayus_support`, `tenant`, `demo`.
+- [ ] Roteamento inbound por conta provedora/numero receptor, nao por texto livre.
+- [ ] Garantir que outbound usa a mesma conta que recebeu a conversa.
+- [ ] Criar WhatsApp simulado para tenant demo.
+- [ ] Criar WhatsApp oficial MAYUS para suporte aos clientes da plataforma.
+- [ ] Garantir que Dutra use WhatsApp proprio do escritorio, isolado do suporte MAYUS.
 - [ ] Validar assinatura do provedor.
 - [ ] Separar mensagem de cliente, lead e equipe.
 - [ ] Registrar consentimento e opt-out.

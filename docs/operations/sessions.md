@@ -4,6 +4,43 @@ Log central das sessoes de desenvolvimento. Cada sessao registra briefing, feito
 
 ---
 
+## Sessao 9 - 02/05/2026
+
+### Briefing
+Analisar o checklist principal e retomar uma frente executavel sem depender de credenciais externas, mantendo a intencao central: MAYUS como agente agentico supervisionado, nao apenas um conjunto de endpoints.
+
+### Feitos
+- [x] Retomado Core Agentico como controle de autonomia supervisionada do agente.
+- [x] Criado `POST /api/brain/tasks/:id/cancel` com auth/tenant, motivo obrigatorio e bloqueio de estados finais.
+- [x] Cancelamento atualiza task, runs, steps e approvals pendentes, registrando ator/motivo e `learning_events.task_cancelled`.
+- [x] Criado `POST /api/brain/tasks/:id/retry` para retomar step falho/cancelado com idempotencia, nova run/step em fila e `learning_events.task_step_retry_requested`.
+- [x] Planejada frente Demo Tenant, Super Admin e WhatsApp multi-conta para demonstracoes sem dados reais e suporte MAYUS separado de tenants.
+- [x] Criado `docs/operations/demo-superadmin-whatsapp-plan.md` com fases, guardrails, criterios de aceite e ordem recomendada.
+- [x] Implementado primeiro reset demo: gerador de 100 casos sinteticos, rota `POST /api/admin/demo/reset`, dry-run padrao, confirmacao `RESET_DEMO` e bloqueio para tenant sem `demo_mode`.
+- [x] Ampliado fluxo demo completo: OAB ficticia `SP/123456`, cache Escavador sintetico, monitoramentos, inbox de movimentacoes, processos monitorados, conversas WhatsApp demo e organizacao deterministica sem provedor externo.
+- [x] Checklist principal, checklist Core e progresso atualizados com evidencia.
+
+### Pendencias
+- [ ] Criar UI/painel super admin para dry-run/reset da conta demo.
+- [ ] Implementar contrato/tipos e flags para `demo_mode`, `mayus_support_admin` e contas WhatsApp por dono operacional.
+- [ ] Criar stream/status incremental de missao.
+- [ ] Criar painel operacional de missoes.
+
+### Validacoes
+- Primeira tentativa de Vitest focado falhou no sandbox com `spawn EPERM`; rerun fora do sandbox passou.
+- `npm.cmd test -- --run src/app/api/brain/tasks/[id]/cancel/route.test.ts` passou: 1 arquivo, 4 testes.
+- Primeira tentativa de Vitest focado de retry falhou no sandbox com `spawn EPERM`; rerun fora do sandbox passou.
+- `npm.cmd test -- --run src/app/api/brain/tasks/[id]/retry/route.test.ts` passou: 1 arquivo, 4 testes.
+- Primeira tentativa do pacote Mission Control falhou no sandbox com `spawn EPERM`; rerun fora do sandbox passou.
+- `npm.cmd test -- --run src/app/api/brain/tasks/[id]/cancel/route.test.ts src/app/api/brain/tasks/[id]/retry/route.test.ts` passou: 2 arquivos, 8 testes.
+- `npx.cmd tsc --noEmit --pretty false` passou.
+- `git diff --check` passou nos docs do plano Demo/Super Admin/WhatsApp.
+- Primeira tentativa dos testes do demo reset falhou no sandbox com `spawn EPERM`; rerun fora do sandbox passou.
+- `npm.cmd test -- --run src/lib/demo/demo-tenant-reset.test.ts src/app/api/admin/demo/reset/route.test.ts` passou: 2 arquivos, 8 testes.
+- `npx.cmd tsc --noEmit --pretty false` passou apos o demo reset.
+
+---
+
 ## Sessao 8 - 27/04/2026
 
 ### Briefing

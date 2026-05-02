@@ -148,6 +148,9 @@ Decisao tecnica recomendada:
 
 ## 4. Core Agentico
 
+Intencao de produto:
+o Core nao e um pacote tecnico de rotas. Ele e o nucleo para o MAYUS agir como agente agentico supervisionado: abrir missoes, explicar plano, executar, pausar/cancelar quando o humano mandar, tentar novamente com idempotencia, mostrar status e deixar trilha reconstruivel.
+
 ### 4.1 Foundation
 
 - [x] `brain/dispatch`.
@@ -168,7 +171,9 @@ Decisao tecnica recomendada:
 - [x] `brain_approvals`.
 - [x] `brain_memories`.
 - [x] `learning_events`.
-- [ ] Retry/cancel de missao como rotas de primeira classe.
+- [x] Controles agenticos de missao: retry/cancel como capacidades do proprio agente.
+Evidencia 2026-05-02: `POST /api/brain/tasks/:id/cancel` criado como primeiro controle de autonomia supervisionada; exige sessao/tenant, motivo explicito, bloqueia missao terminal, cancela task/runs/steps/approvals pendentes e registra `learning_events.task_cancelled`.
+Evidencia 2026-05-02: `POST /api/brain/tasks/:id/retry` criado para retomar step falho/cancelado com idempotencia; cria nova `brain_run`, clona o step em estado `queued`, grava `retry_metadata`, bloqueia efeitos externos automaticos na rota e registra `learning_events.task_step_retry_requested`.
 - [ ] Stream de status de missao.
 - [ ] Painel operacional de missoes.
 
@@ -518,7 +523,45 @@ Evidencia parcial 2026-04-30: `POST /api/mayus/daily-playbook` gera playbook com
 - [ ] Amarrar ciclo completo: marketing -> lead -> CRM -> call -> follow-up -> contrato -> cobranca -> juridico -> prazos -> metricas.
 - [ ] Manter Meta Ads API, Google Meet automatico, Drive automatico de gravacoes, publicacao automatica e monitoramento amplo como integracoes futuras fora do escopo inicial.
 
-### 9.4 Voice Brain Execution
+### 9.4 Demo Tenant, Super Admin e WhatsApp Multi-Conta
+
+Objetivo:
+criar uma conta modelo para demonstracao comercial sem dados reais, uma operacao super admin para suporte MAYUS e separacao total entre WhatsApp da MAYUS, WhatsApp do Dutra e WhatsApp de outros tenants.
+
+Referencia:
+`docs/operations/demo-superadmin-whatsapp-plan.md`
+
+- [~] Criar tenant demo com `demo_mode=true`.
+Evidencia 2026-05-02: `POST /api/admin/demo/reset` exige superadmin e so opera em tenant cujo `tenant_settings.ai_features.demo_mode` esteja ativo. Falta UI/flag operacional para marcar/criar o tenant demo.
+- [~] Criar seed sintetico completo para CRM, processos, documentos, prazos, financeiro, marketing, artifacts e missoes.
+Evidencia 2026-05-02: `buildDemoCaseSeeds` gera 100 casos sinteticos determinísticos, sendo 12 casos vitrine ricos e 88 casos de volume, com areas, fases, prazos, memoria documental simulada e tarefas internas. CRM/financeiro/marketing/artifacts de missao ainda faltam como camadas adicionais.
+Evidencia 2026-05-02: `src/lib/demo/demo-oab-flow.ts` adiciona OAB ficticia `SP/123456`, advogada demo, cache de processos, movimentacoes e resposta supervisionada de WhatsApp; o reset agora semeia `processos_cache`, `tenant_oab_monitoramentos`, `process_movimentacoes_inbox`, `monitored_processes`, `whatsapp_contacts` e `whatsapp_messages`.
+- [x] Criar reset seguro do demo para estado padrao antes de demonstracoes.
+Evidencia 2026-05-02: `POST /api/admin/demo/reset` faz `dryRun` por padrao, exige `confirm="RESET_DEMO"` para reset real, apaga apenas dados com tag/source `mayus_demo_seed_v1`, recria pipeline/stages/processos/memorias/tarefas e registra `system_event_logs.demo_tenant_reset`.
+- [ ] Adicionar banner visual permanente de ambiente de demonstracao.
+- [~] Bloquear integracoes externas reais no demo e usar simuladores.
+Evidencia 2026-05-02: `POST /api/escavador/buscar-completo` reconhece a OAB demo em tenant `demo_mode` e retorna dados sinteticos sem `requireTenantApiKey`; `POST /api/agent/processos/organizar` reconhece processo demo e gera organizacao deterministica sem LLM/Escavador externo.
+- [~] Criar simuladores para WhatsApp, Drive, Escavador, Asaas e ZapSign.
+Evidencia 2026-05-02: simulador inicial cobre Escavador/OAB, movimentacoes e WhatsApp de demonstracao. Drive/Asaas/ZapSign ainda precisam de simuladores dedicados.
+- [ ] Criar papel `mayus_support_admin` separado de usuarios comuns de tenant.
+- [ ] Criar painel super admin com tenants, status de setup, saude, suporte e grants temporarios.
+- [ ] Criar grants temporarios de suporte por tenant com motivo, expiracao, escopo e auditoria.
+- [ ] Criar inbox de suporte MAYUS conectado ao WhatsApp oficial da plataforma.
+- [ ] Criar modelo de contas WhatsApp por dono: `mayus_support`, `tenant`, `demo`.
+- [ ] Configurar Dutra com WhatsApp proprio do escritorio, isolado do suporte MAYUS.
+- [ ] Resolver inbound/outbound por conta provedora/numero receptor, nao por texto livre.
+- [ ] Garantir que demo, Dutra e suporte MAYUS nao compartilham dados, conversas, artifacts ou credenciais.
+- [ ] Testar tenant isolation, reset demo, roteamento WhatsApp e ausencia de dados reais no demo.
+
+Guardrails:
+
+- Demo nunca usa dados reais.
+- Super admin nao acessa tenant sem motivo/grant quando houver dado sensivel.
+- WhatsApp MAYUS atende clientes da plataforma; WhatsApp Dutra atende clientes do escritorio Dutra.
+- Nenhum segredo aparece em chat, log, artifact, UI ou resposta de API.
+- Toda acao de suporte fica auditada.
+
+### 9.5 Voice Brain Execution
 
 - [ ] Contrato entre ElevenLabs shell e brain principal.
 - [ ] Resposta curta pronta para TTS.
