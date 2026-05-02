@@ -39,3 +39,6 @@ BEGIN
     END IF;
   END IF;
 END $$;
+
+-- Force PostgREST to reload schema cache after adding columns/publication settings.
+NOTIFY pgrst, 'reload schema';
