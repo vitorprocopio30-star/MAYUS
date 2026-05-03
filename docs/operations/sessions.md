@@ -41,6 +41,12 @@ Analisar o checklist principal e retomar uma frente executavel sem depender de c
 - [x] Configuracoes passou a exibir historico compacto da ultima execucao beta: status final, quantidade de itens e resumos dos steps executados.
 - [x] Cockpit MAYUS passou a exibir historico compacto da execucao beta dentro do card da missao, com contadores de concluidos/fila/executando/aprovacao e eventos recentes.
 - [~] Painel operacional de missoes iniciado no cockpit MAYUS: a conversa agora mostra resumo das missoes acompanhadas, ativas, aprovacoes pendentes e steps concluidos; falta painel global por tenant.
+- [~] Painel operacional de missoes expandido no cockpit MAYUS: a UI agora tambem consulta a inbox global do brain para mostrar missoes recentes do tenant, aprovacoes pendentes globais, eventos recentes, carregamento parcial, refresh periodico e stream SSE com fallback.
+- [~] Stream operacional do brain iniciado: `GET /api/brain/stream` publica eventos SSE autenticados para perfis executivos com `latest_task_id` e `latest_step_*`; o cockpit MAYUS usa `EventSource` como gatilho de refresh da inbox e da missao alterada, mantendo polling de 15s como fallback e indicador ao vivo/reconectando com ultimo step/status.
+- [x] Painel de missoes do cockpit ganhou supervisao rapida: botao `Atualizar` e atalho para `/dashboard/aprovacoes` quando existem aprovacoes pendentes.
+- [x] Painel de missoes do cockpit ganhou bloco `Proximas decisoes`, destacando aprovacoes pendentes, missoes aguardando input/aprovacao e falhas que precisam de revisao humana.
+- [x] Painel de missoes do cockpit ganhou cancelamento supervisionado de missao ativa, com motivo obrigatorio e refresh da missao/inbox apos `POST /api/brain/tasks/:id/cancel`.
+- [x] Painel de missoes do cockpit ganhou retry supervisionado para step falho/cancelado, com motivo obrigatorio e refresh da missao/inbox apos `POST /api/brain/tasks/:id/retry`.
 - [x] Checklist principal, checklist Core e progresso atualizados com evidencia.
 
 ### Pendencias
@@ -53,11 +59,18 @@ Analisar o checklist principal e retomar uma frente executavel sem depender de c
   - [x] `core:daily_playbook`
   - [x] `growth:crm_next_steps`
   - [x] `lex:support_case_status`
-- [ ] Criar stream/status incremental de missao.
+- [~] Criar stream/status incremental de missao.
 - [x] Criar acao de executar todos os itens seguros restantes da fila beta, parando em aprovacoes pendentes.
 - [x] Expor historico compacto da execucao segura no painel Configuracoes.
 - [x] Expor historico compacto da execucao segura tambem no painel MAYUS.
 - [~] Criar painel operacional de missoes.
+  - [x] Missões da conversa.
+  - [x] Missões recentes do tenant via inbox global.
+  - [x] Feed incremental por eventos recentes do brain.
+  - [~] Stream em tempo real via SSE.
+  - [x] Refresh granular por missão alterada.
+  - [x] Stream granular por step/status.
+  - [ ] Substituir polling interno do SSE por push nativo do banco quando a infra permitir.
 - [ ] Conectar uma conta Google Drive exclusiva da demo e validar `Criar Estrutura` -> `Executar Acervo` -> `Sincronizar IA` com arquivos ficticios reais.
 
 ### Validacoes
@@ -113,6 +126,17 @@ Analisar o checklist principal e retomar uma frente executavel sem depender de c
 - `npm.cmd test -- --run src/lib/setup/tenant-doctor.test.ts` passou apos status final da missao beta: 1 arquivo, 12 testes.
 - `npm.cmd test -- --run src/lib/setup/tenant-doctor.test.ts` passou apos execucao continua da fila segura: 1 arquivo, 13 testes.
 - `npx.cmd tsc --noEmit --pretty false` passou apos historico compacto da execucao beta em Configuracoes.
+- `npx.cmd tsc --noEmit --pretty false` passou apos expandir o painel de missoes do cockpit para a inbox global do brain.
+- Primeira tentativa do teste focado do stream do brain falhou no sandbox com `spawn EPERM`; rerun fora do sandbox passou.
+- `npm.cmd test -- --run src/app/api/brain/stream/route.test.ts` passou: 1 arquivo, 2 testes.
+- `npx.cmd tsc --noEmit --pretty false` passou apos refresh granular por missao alterada via SSE.
+- `npm.cmd test -- --run src/app/api/brain/stream/route.test.ts` passou novamente apos refresh granular: 1 arquivo, 2 testes.
+- `npm.cmd test -- --run src/app/api/brain/stream/route.test.ts` passou apos granularidade por step/status: 1 arquivo, 3 testes.
+- `npx.cmd tsc --noEmit --pretty false` e o teste focado do stream passaram apos cancelamento limpo do SSE quando o browser fecha a conexao.
+- `npx.cmd tsc --noEmit --pretty false` e o teste focado do stream passaram apos a supervisao rapida do painel de missoes.
+- `npx.cmd tsc --noEmit --pretty false` e o teste focado do stream passaram apos o bloco `Proximas decisoes` do cockpit.
+- `npm.cmd test -- --run src/app/api/brain/stream/route.test.ts src/app/api/brain/tasks/[id]/cancel/route.test.ts` passou apos cancelamento supervisionado no cockpit: 2 arquivos, 7 testes.
+- `npm.cmd test -- --run src/app/api/brain/stream/route.test.ts src/app/api/brain/tasks/[id]/cancel/route.test.ts src/app/api/brain/tasks/[id]/retry/route.test.ts` passou apos retry supervisionado no cockpit: 3 arquivos, 11 testes.
 
 ---
 

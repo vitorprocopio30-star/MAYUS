@@ -10,7 +10,7 @@ import {
   Mic, Volume2, Square, VolumeX, SlidersHorizontal
 } from "lucide-react";
 import { useUserProfile } from "@/hooks/useUserProfile";
-import type { BrainInboxResponse, BrainInboxTaskItem } from "@/lib/brain/inbox-types";
+import type { BrainInboxEventItem, BrainInboxResponse, BrainInboxTaskItem } from "@/lib/brain/inbox-types";
 import { toast } from "sonner";
 import Link from "next/link";
 import dayjs from "dayjs";
@@ -99,6 +99,8 @@ const BRAIN_LIST_TIMEOUT_MS = 7000;
 const BRAIN_TASK_TIMEOUT_MS = 8000;
 const BRAIN_CHAT_TIMEOUT_MS = 35000;
 const TERMINAL_BRAIN_TASK_STATUSES = new Set(["completed", "completed_with_warnings", "failed", "cancelled"]);
+
+type BrainStreamState = "idle" | "connected" | "reconnecting" | "error";
 
 async function fetchJsonWithTimeout<T = any>(input: RequestInfo | URL, init: RequestInit = {}, timeoutMs = 10000) {
   const controller = new AbortController();
@@ -943,19 +945,37 @@ function MissionPendingCard() {
 function MissionOpsPanel({
   snapshots,
   recentTasks,
+  recentEvents,
   pendingApprovalCount,
   partial,
   isLoading,
   error,
+  streamState,
+  lastStreamActivityAt,
+  lastStreamStep,
+  onRefresh,
+  onCancelMission,
+  onRetryStep,
+  cancellingTaskId,
+  retryingStepId,
 }: {
   snapshots: BrainTaskSnapshot[];
   recentTasks: BrainInboxTaskItem[];
+  recentEvents: BrainInboxEventItem[];
   pendingApprovalCount: number;
   partial: boolean;
   isLoading: boolean;
   error: string | null;
+  streamState: BrainStreamState;
+  lastStreamActivityAt: string | null;
+  lastStreamStep: { title: string; status: string } | null;
+  onRefresh: () => void;
+  onCancelMission: (taskId: string) => void;
+  onRetryStep: (taskId: string, stepId: string) => void;
+  cancellingTaskId: string | null;
+  retryingStepId: string | null;
 }) {
-  if (snapshots.length === 0 && recentTasks.length === 0 && !isLoading && !error) {
+  if (snapshots.length === 0 && recentTasks.length === 0 && recentEvents.length === 0 && !isLoading && !error) {
     return null;
   }
 
@@ -976,31 +996,129 @@ function MissionOpsPanel({
     (total, snapshot) => total + snapshot.steps.filter((step) => step.status === "completed").length,
     0
   );
+  const supervisedActions = [
+    approvalCount > 0
+      ? {
+          id: "approvals",
+          label: `${approvalCount} aprovacao(oes) pendente(s)`,
+          detail: "Decida as acoes bloqueadas antes do MAYUS executar efeitos sensiveis.",
+          href: "/dashboard/aprovacoes",
+          tone: "orange",
+        }
+      : null,
+    ...snapshots
+      .filter((snapshot) => ["awaiting_input", "awaiting_approval", "failed"].includes(snapshot.task.status))
+      .slice(0, 3)
+      .map((snapshot) => ({
+        id: snapshot.task.id,
+        label: snapshot.task.status === "failed" ? "Missao falhou" : "Missao aguardando supervisao",
+        detail: snapshot.task.error_message || snapshot.task.goal || snapshot.task.module,
+        href: null,
+        tone: snapshot.task.status === "failed" ? "red" : "orange",
+      })),
+  ].filter(Boolean) as Array<{ id: string; label: string; detail: string; href: string | null; tone: "orange" | "red" }>;
 
   return (
     <section data-testid="mayus-mission-ops-panel" className="rounded-xl border border-[#CCA761]/20 bg-[#0f0f0f]/90 p-3 space-y-3">
-      <div className="flex flex-col gap-2 sm:flex-row sm:items-center sm:justify-between">
+      <div className="flex flex-col gap-2 lg:flex-row lg:items-center lg:justify-between">
         <div>
           <p className="text-[10px] text-[#CCA761] uppercase tracking-widest">Painel de missoes</p>
           <p className="text-xs text-gray-400">Acompanhamento operacional do que o MAYUS esta executando nesta conversa e no tenant.</p>
         </div>
-        <div className="flex flex-wrap gap-1.5">
-          <span className="rounded-full border border-[#CCA761]/20 bg-[#CCA761]/10 px-2 py-1 text-[9px] uppercase tracking-widest text-[#CCA761]">
-            {activeCount} ativas
-          </span>
-          <span className="rounded-full border border-orange-500/20 bg-orange-500/10 px-2 py-1 text-[9px] uppercase tracking-widest text-orange-300">
-            {approvalCount} aprovacoes
-          </span>
-          <span className="rounded-full border border-emerald-500/20 bg-emerald-500/10 px-2 py-1 text-[9px] uppercase tracking-widest text-emerald-300">
-            {completedStepCount} steps concluidos
-          </span>
-          {recentTasks.length > 0 && (
-            <span className="rounded-full border border-white/10 bg-white/5 px-2 py-1 text-[9px] uppercase tracking-widest text-gray-400">
-              {recentTasks.length} recentes
+        <div className="flex flex-col gap-2 sm:flex-row sm:items-center">
+          <div className="flex flex-wrap gap-1.5">
+            <span className="rounded-full border border-[#CCA761]/20 bg-[#CCA761]/10 px-2 py-1 text-[9px] uppercase tracking-widest text-[#CCA761]">
+              {activeCount} ativas
             </span>
-          )}
+            <Link href="/dashboard/aprovacoes" className="rounded-full border border-orange-500/20 bg-orange-500/10 px-2 py-1 text-[9px] uppercase tracking-widest text-orange-300 hover:border-orange-400/40">
+              {approvalCount} aprovacoes
+            </Link>
+            <span className="rounded-full border border-emerald-500/20 bg-emerald-500/10 px-2 py-1 text-[9px] uppercase tracking-widest text-emerald-300">
+              {completedStepCount} steps concluidos
+            </span>
+            {recentTasks.length > 0 && (
+              <span className="rounded-full border border-white/10 bg-white/5 px-2 py-1 text-[9px] uppercase tracking-widest text-gray-400">
+                {recentTasks.length} recentes
+              </span>
+            )}
+            {recentEvents.length > 0 && (
+              <span className="rounded-full border border-white/10 bg-white/5 px-2 py-1 text-[9px] uppercase tracking-widest text-gray-400">
+                {recentEvents.length} eventos
+              </span>
+            )}
+            <span className={`rounded-full border px-2 py-1 text-[9px] uppercase tracking-widest ${
+              streamState === "connected"
+                ? "border-emerald-500/20 bg-emerald-500/10 text-emerald-300"
+                : streamState === "reconnecting"
+                  ? "border-amber-500/20 bg-amber-500/10 text-amber-300"
+                  : streamState === "error"
+                    ? "border-red-500/20 bg-red-500/10 text-red-300"
+                    : "border-white/10 bg-white/5 text-gray-400"
+            }`}>
+              {streamState === "connected" ? "ao vivo" : streamState === "reconnecting" ? "reconectando" : streamState === "error" ? "stream falhou" : "polling"}
+            </span>
+            {lastStreamActivityAt && (
+              <span className="rounded-full border border-white/10 bg-white/5 px-2 py-1 text-[9px] uppercase tracking-widest text-gray-400">
+                {dayjs(lastStreamActivityAt).fromNow()}
+              </span>
+            )}
+            {lastStreamStep && (
+              <span className="max-w-full truncate rounded-full border border-[#CCA761]/20 bg-[#CCA761]/10 px-2 py-1 text-[9px] uppercase tracking-widest text-[#CCA761]">
+                {lastStreamStep.title} / {lastStreamStep.status.replaceAll("_", " ")}
+              </span>
+            )}
+          </div>
+          <button
+            type="button"
+            onClick={onRefresh}
+            disabled={isLoading}
+            className="inline-flex h-8 items-center justify-center gap-1.5 rounded-full border border-white/10 bg-white/5 px-3 text-[9px] font-bold uppercase tracking-widest text-gray-300 hover:border-[#CCA761]/30 hover:text-[#CCA761] disabled:opacity-50"
+            title="Atualizar missoes agora"
+          >
+            {isLoading ? <Loader2 size={11} className="animate-spin" /> : <History size={11} />}
+            Atualizar
+          </button>
         </div>
       </div>
+
+      {approvalCount > 0 && (
+        <Link
+          href="/dashboard/aprovacoes"
+          className="flex items-center justify-between gap-3 rounded-lg border border-orange-500/20 bg-orange-500/10 px-2.5 py-2 text-[11px] text-orange-300 hover:border-orange-400/40"
+        >
+          <span>{approvalCount} aprovacao(oes) aguardando decisao humana.</span>
+          <span className="shrink-0 text-[9px] font-bold uppercase tracking-widest">Abrir inbox</span>
+        </Link>
+      )}
+
+      {supervisedActions.length > 0 && (
+        <div className="space-y-2">
+          <p className="text-[10px] text-gray-500 uppercase tracking-widest">Proximas decisoes</p>
+          <div className="grid gap-2 md:grid-cols-2">
+            {supervisedActions.map((action) => {
+              const className = action.tone === "red"
+                ? "border-red-500/20 bg-red-500/10 text-red-300 hover:border-red-400/40"
+                : "border-orange-500/20 bg-orange-500/10 text-orange-300 hover:border-orange-400/40";
+              const content = (
+                <>
+                  <div className="text-[10px] font-bold uppercase tracking-widest">{action.label}</div>
+                  <div className="mt-1 line-clamp-2 text-[11px] leading-relaxed opacity-85">{action.detail}</div>
+                </>
+              );
+
+              return action.href ? (
+                <Link key={action.id} href={action.href} className={`rounded-lg border px-2.5 py-2 ${className}`}>
+                  {content}
+                </Link>
+              ) : (
+                <div key={action.id} className={`rounded-lg border px-2.5 py-2 ${className}`}>
+                  {content}
+                </div>
+              );
+            })}
+          </div>
+        </div>
+      )}
 
       {partial && (
         <div className="rounded-lg border border-amber-500/20 bg-amber-500/10 px-2.5 py-2 text-[11px] text-amber-300">
@@ -1027,6 +1145,9 @@ function MissionOpsPanel({
           const badge = getMissionBadge(snapshot.task.status);
           const betaSummary = getBetaExecutionSummary(snapshot);
           const pendingApprovals = snapshot.approvals.filter((approval) => approval.status === "pending").length;
+          const canCancel = !isTerminalBrainTaskStatus(snapshot.task.status);
+          const retryableStep = snapshot.steps.find((step) => ["failed", "cancelled"].includes(step.status));
+          const canRetry = Boolean(retryableStep && !["completed", "completed_with_warnings", "cancelled"].includes(snapshot.task.status));
 
           return (
             <div key={snapshot.task.id} className="min-w-0 rounded-lg border border-white/5 bg-white/[0.03] p-2.5">
@@ -1040,7 +1161,7 @@ function MissionOpsPanel({
                 </span>
               </div>
 
-              <div className="mt-2 flex flex-wrap gap-1.5">
+              <div className="mt-2 flex flex-wrap items-center gap-1.5">
                 <span className="rounded-full border border-white/10 bg-white/5 px-2 py-1 text-[9px] uppercase tracking-widest text-gray-400">
                   {snapshot.steps.length} steps
                 </span>
@@ -1053,6 +1174,28 @@ function MissionOpsPanel({
                   <span className="rounded-full border border-[#CCA761]/20 bg-[#CCA761]/10 px-2 py-1 text-[9px] uppercase tracking-widest text-[#CCA761]">
                     beta {betaSummary.completed}/{Math.max(snapshot.steps.length, betaSummary.completed)}
                   </span>
+                )}
+                {canCancel && (
+                  <button
+                    type="button"
+                    onClick={() => onCancelMission(snapshot.task.id)}
+                    disabled={cancellingTaskId === snapshot.task.id}
+                    className="rounded-full border border-red-500/20 bg-red-500/10 px-2 py-1 text-[9px] uppercase tracking-widest text-red-300 hover:border-red-400/40 disabled:opacity-50"
+                    title="Cancelar missao"
+                  >
+                    {cancellingTaskId === snapshot.task.id ? "cancelando" : "cancelar"}
+                  </button>
+                )}
+                {retryableStep && canRetry && (
+                  <button
+                    type="button"
+                    onClick={() => onRetryStep(snapshot.task.id, retryableStep.id)}
+                    disabled={retryingStepId === retryableStep.id}
+                    className="rounded-full border border-[#CCA761]/20 bg-[#CCA761]/10 px-2 py-1 text-[9px] uppercase tracking-widest text-[#CCA761] hover:border-[#CCA761]/40 disabled:opacity-50"
+                    title={`Retomar step: ${retryableStep.title}`}
+                  >
+                    {retryingStepId === retryableStep.id ? "retomando" : "retomar"}
+                  </button>
                 )}
               </div>
             </div>
@@ -1085,6 +1228,36 @@ function MissionOpsPanel({
             </div>
           );
         })}
+        </div>
+      )}
+
+      {recentEvents.length > 0 && (
+        <div className="space-y-2">
+          <p className="text-[10px] text-gray-500 uppercase tracking-widest">Status incremental</p>
+          <div className="grid gap-2 md:grid-cols-2">
+            {recentEvents.slice(0, 4).map((event) => {
+              const preview = getEventPreview(event);
+
+              return (
+                <div key={event.id} className="min-w-0 rounded-lg border border-white/5 bg-white/[0.03] p-2.5 text-[11px] text-gray-300">
+                  <div className="flex items-start justify-between gap-2">
+                    <div className="min-w-0">
+                      <p className="truncate text-white/90">{getEventLabel(event.event_type)}</p>
+                      <p className="mt-0.5 text-[10px] uppercase tracking-widest text-gray-500">
+                        {event.source_module || event.task?.module || "brain"} / {dayjs(event.created_at).fromNow()}
+                      </p>
+                    </div>
+                    {event.step?.status && (
+                      <span className="shrink-0 rounded-full border border-white/10 bg-white/5 px-2 py-1 text-[9px] uppercase tracking-widest text-gray-400">
+                        {event.step.status.replaceAll("_", " ")}
+                      </span>
+                    )}
+                  </div>
+                  {preview && <p className="mt-2 text-gray-400 line-clamp-2">{preview}</p>}
+                </div>
+              );
+            })}
+          </div>
         </div>
       )}
     </section>
@@ -1270,10 +1443,16 @@ export default function MAYUSPlayground() {
   const [brainStatusError, setBrainStatusError] = useState<string | null>(null);
   const [brainTaskSnapshots, setBrainTaskSnapshots] = useState<Record<string, BrainTaskSnapshot>>({});
   const [tenantMissionTasks, setTenantMissionTasks] = useState<BrainInboxTaskItem[]>([]);
+  const [tenantMissionEvents, setTenantMissionEvents] = useState<BrainInboxEventItem[]>([]);
   const [tenantMissionPendingApprovals, setTenantMissionPendingApprovals] = useState(0);
   const [tenantMissionPartial, setTenantMissionPartial] = useState(false);
   const [tenantMissionError, setTenantMissionError] = useState<string | null>(null);
   const [isTenantMissionLoading, setIsTenantMissionLoading] = useState(false);
+  const [brainStreamState, setBrainStreamState] = useState<BrainStreamState>("idle");
+  const [lastBrainStreamActivityAt, setLastBrainStreamActivityAt] = useState<string | null>(null);
+  const [lastBrainStreamStep, setLastBrainStreamStep] = useState<{ title: string; status: string } | null>(null);
+  const [cancellingMissionId, setCancellingMissionId] = useState<string | null>(null);
+  const [retryingStepId, setRetryingStepId] = useState<string | null>(null);
 
   // Novos estados da Fase 5A
   const [conversations, setConversations] = useState<Conversation[]>([]);
@@ -1368,6 +1547,7 @@ export default function MAYUSPlayground() {
 
       if (response.status === 403) {
         setTenantMissionTasks([]);
+        setTenantMissionEvents([]);
         setTenantMissionPendingApprovals(0);
         setTenantMissionPartial(false);
         return;
@@ -1378,10 +1558,12 @@ export default function MAYUSPlayground() {
       }
 
       setTenantMissionTasks(Array.isArray(data.recent_tasks) ? data.recent_tasks : []);
+      setTenantMissionEvents(Array.isArray(data.recent_events) ? data.recent_events : []);
       setTenantMissionPendingApprovals(Number(data.pending_count || 0));
       setTenantMissionPartial(data.partial === true);
     } catch (error) {
       setTenantMissionTasks([]);
+      setTenantMissionEvents([]);
       setTenantMissionPendingApprovals(0);
       setTenantMissionPartial(false);
       setTenantMissionError(getFriendlyRequestError(error, "Nao consegui carregar missoes recentes do tenant."));
@@ -1389,6 +1571,72 @@ export default function MAYUSPlayground() {
       setIsTenantMissionLoading(false);
     }
   }, []);
+
+  const cancelMission = useCallback(async (taskId: string) => {
+    const reason = window.prompt("Motivo para cancelar esta missao do MAYUS:");
+    const normalizedReason = reason?.trim();
+    if (!normalizedReason) return;
+
+    setCancellingMissionId(taskId);
+    try {
+      const { response, data } = await fetchJsonWithTimeout(
+        `/api/brain/tasks/${taskId}/cancel`,
+        {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ reason: normalizedReason }),
+        },
+        BRAIN_TASK_TIMEOUT_MS
+      );
+
+      if (!response.ok) {
+        throw new Error(data?.error || "Nao foi possivel cancelar a missao.");
+      }
+
+      toast.success("Missao cancelada e registrada no cerebro.");
+      await Promise.all([
+        loadBrainTask(taskId),
+        loadTenantMissionActivity(),
+      ]);
+    } catch (error) {
+      toast.error(getFriendlyRequestError(error, "Nao foi possivel cancelar a missao."));
+    } finally {
+      setCancellingMissionId(null);
+    }
+  }, [loadBrainTask, loadTenantMissionActivity]);
+
+  const retryMissionStep = useCallback(async (taskId: string, stepId: string) => {
+    const reason = window.prompt("Motivo para retomar este step da missao:");
+    const normalizedReason = reason?.trim();
+    if (!normalizedReason) return;
+
+    setRetryingStepId(stepId);
+    try {
+      const { response, data } = await fetchJsonWithTimeout(
+        `/api/brain/tasks/${taskId}/retry`,
+        {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ stepId, reason: normalizedReason }),
+        },
+        BRAIN_TASK_TIMEOUT_MS
+      );
+
+      if (!response.ok) {
+        throw new Error(data?.error || "Nao foi possivel retomar a missao.");
+      }
+
+      toast.success("Retry registrado. O MAYUS retomou a missao em fila supervisionada.");
+      await Promise.all([
+        loadBrainTask(taskId),
+        loadTenantMissionActivity(),
+      ]);
+    } catch (error) {
+      toast.error(getFriendlyRequestError(error, "Nao foi possivel retomar a missao."));
+    } finally {
+      setRetryingStepId(null);
+    }
+  }, [loadBrainTask, loadTenantMissionActivity]);
 
   const loadBrainStatus = useCallback(async () => {
     setCheckingVault(true);
@@ -1505,6 +1753,87 @@ export default function MAYUSPlayground() {
 
     return () => window.clearInterval(intervalId);
   }, [profile?.tenant_id, loadTenantMissionActivity]);
+
+  useEffect(() => {
+    if (!profile?.tenant_id || typeof window === "undefined" || !("EventSource" in window)) return;
+
+    let reconnectTimer: number | null = null;
+    let closed = false;
+    let source: EventSource | null = null;
+
+    const connect = () => {
+      if (closed) return;
+      setBrainStreamState("reconnecting");
+      source = new EventSource("/api/brain/stream");
+
+      source.addEventListener("ready", () => {
+        setBrainStreamState("connected");
+      });
+
+      source.addEventListener("brain_activity", (event) => {
+        setBrainStreamState("connected");
+        setLastBrainStreamActivityAt(new Date().toISOString());
+        void loadTenantMissionActivity();
+
+        try {
+          const payload = JSON.parse((event as MessageEvent).data || "{}") as {
+            latest_task_id?: unknown;
+            latest_step_task_id?: unknown;
+            latest_step_title?: unknown;
+            latest_step_status?: unknown;
+          };
+          const taskId = typeof payload.latest_step_task_id === "string" && payload.latest_step_task_id.trim()
+            ? payload.latest_step_task_id.trim()
+            : typeof payload.latest_task_id === "string" && payload.latest_task_id.trim()
+              ? payload.latest_task_id.trim()
+              : "";
+
+          if (taskId) {
+            void loadBrainTask(taskId);
+          }
+
+          if (typeof payload.latest_step_title === "string" && typeof payload.latest_step_status === "string") {
+            setLastBrainStreamStep({
+              title: payload.latest_step_title.trim() || "Step atualizado",
+              status: payload.latest_step_status.trim() || "updated",
+            });
+          }
+        } catch {
+          // Evento SSE malformado nao deve derrubar o cockpit; o polling continua como fallback.
+        }
+      });
+
+      source.addEventListener("warning", () => {
+        setBrainStreamState("error");
+        void loadTenantMissionActivity();
+      });
+
+      source.addEventListener("close", () => {
+        source?.close();
+        source = null;
+        if (!closed) {
+          reconnectTimer = window.setTimeout(connect, 3000);
+        }
+      });
+
+      source.onerror = () => {
+        setBrainStreamState("error");
+        source?.close();
+        source = null;
+        if (!closed) {
+          reconnectTimer = window.setTimeout(connect, 5000);
+        }
+      };
+    };
+
+    connect();
+
+    return () => {
+      closed = true;
+      if (reconnectTimer) window.clearTimeout(reconnectTimer);
+      source?.close();
+    };
+  }, [profile?.tenant_id, loadBrainTask, loadTenantMissionActivity]);
 
   const fetchConversations = async () => {
     try {
@@ -2152,10 +2481,19 @@ export default function MAYUSPlayground() {
           <MissionOpsPanel
             snapshots={missionSnapshots}
             recentTasks={tenantMissionTasks}
+            recentEvents={tenantMissionEvents}
             pendingApprovalCount={tenantMissionPendingApprovals}
             partial={tenantMissionPartial}
             isLoading={isTenantMissionLoading}
             error={tenantMissionError}
+            streamState={brainStreamState}
+            lastStreamActivityAt={lastBrainStreamActivityAt}
+            lastStreamStep={lastBrainStreamStep}
+            onRefresh={() => void loadTenantMissionActivity()}
+            onCancelMission={(taskId) => void cancelMission(taskId)}
+            onRetryStep={(taskId, stepId) => void retryMissionStep(taskId, stepId)}
+            cancellingTaskId={cancellingMissionId}
+            retryingStepId={retryingStepId}
           />
           
           {messages.length === 0 && (

@@ -70,6 +70,12 @@ Use esse checklist para marcar:
 - [x] Historico compacto de execucao beta exibido em Configuracoes em 2026-05-03: painel mostra ultima execucao, status final, quantidade de itens e resumos dos steps concluidos.
 - [x] Historico compacto de execucao beta exibido no cockpit MAYUS em 2026-05-03: `/dashboard/mayus` mostra, no card da missao, itens concluidos, fila, execucao, aprovacoes e eventos recentes `tenant_beta_step_completed`.
 - [~] Painel operacional de missoes iniciado no cockpit MAYUS em 2026-05-03: a conversa resume missoes acompanhadas, ativas, aprovacoes pendentes e steps concluidos; falta painel global por tenant.
+- [~] Painel operacional de missoes expandido no cockpit MAYUS em 2026-05-03: alem das missoes da conversa, `/dashboard/mayus` consulta a inbox global do brain e mostra missoes recentes do tenant, aprovacoes pendentes, status parcial, eventos recentes como feed incremental e stream SSE com fallback.
+- [~] Stream operacional do brain iniciado em 2026-05-03: `GET /api/brain/stream` publica SSE autenticado para perfis executivos com `latest_task_id` e `latest_step_*`; o cockpit MAYUS usa `EventSource` para recarregar a inbox, recarregar a missao alterada e mostrar ultimo step/status, mantendo polling como fallback.
+- [x] Supervisao rapida no cockpit MAYUS adicionada em 2026-05-03: painel de missoes ganhou botao `Atualizar` e atalho para `/dashboard/aprovacoes` quando houver decisao humana pendente.
+- [x] Proximas decisoes do cockpit MAYUS adicionadas em 2026-05-03: painel destaca aprovacoes pendentes, missoes aguardando input/aprovacao e falhas que precisam de revisao humana.
+- [x] Cancelamento supervisionado no cockpit MAYUS adicionado em 2026-05-03: missoes ativas acompanhadas podem ser canceladas com motivo obrigatorio via rota auditada `POST /api/brain/tasks/:id/cancel`.
+- [x] Retry supervisionado no cockpit MAYUS adicionado em 2026-05-03: missoes acompanhadas com step falho/cancelado podem ser retomadas com motivo obrigatorio via `POST /api/brain/tasks/:id/retry`, sem efeito externo automatico.
 - [x] Referral Intake agentico concluido em 2026-04-27: indicacoes registradas por `POST /api/growth/lead-intake` agora criam missao `growth/crm`, run, step, artifact `referral_intake` e learning event `referral_intake_artifact_created`; o payload nao expõe telefone/e-mail bruto e o dashboard MAYUS mostra score, area, indicador e handoff humano. Validacoes passaram com 15 testes focados, typecheck e diff-check.
 - [x] `lead_intake` como skill formal concluido em 2026-04-27: registry/seed de `agent_skills`, prompt do chat, router deterministico e dispatcher `growth_lead_intake` permitem registrar lead/indicacao pelo MAYUS/chat; a execucao cria card CRM, artifact `lead_intake`/`referral_intake`, evento operacional e learning event sem acionar integracoes externas. Validacoes passaram com 35 testes focados, typecheck e diff-check.
 - [x] `lead_qualify` iniciado em 2026-04-27 como primeiro bloco do `growth_frontdoor`: skill formal com router/dispatcher cria artifact `lead_qualification_plan`, roteiro por area, documentos minimos, objecoes provaveis, alertas, handoff e proximo melhor movimento sem acionar integracoes externas. Validacoes passaram com 40 testes focados, typecheck e diff-check.
@@ -134,7 +140,7 @@ Use esse checklist para marcar:
 - [~] Criar painel super admin de suporte MAYUS com tenants, saude operacional e grants temporarios.
 - [ ] Validar Documentos/Drive demo com conta Google exclusiva conectada e arquivos ficticios reais.
 - [ ] Expandir padrao `Executar` para financeiro e contratos demo, sempre com status visivel e side effects supervisionados.
-- [ ] Criar stream/status incremental de missao e painel operacional para o agente mostrar o que esta fazendo, falhou, pausou ou aguarda aprovacao.
+- [~] Criar stream/status incremental de missao e painel operacional para o agente mostrar o que esta fazendo, falhou, pausou ou aguarda aprovacao.
 - [ ] Substituir OAuth client local malformado do Google Drive por credenciais validas e repetir salvar/restaurar root + process-folder.
 - [ ] Rodar smoke funcional real de Asaas, ZapSign e Escavador com payloads aprovados.
 - [ ] Validar fluxo completo de chat real de `support_case_status` em tenant descartavel/staging, aceitando escritas controladas em auditoria/artifacts/events.

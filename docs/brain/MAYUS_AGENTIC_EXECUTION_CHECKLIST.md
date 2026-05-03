@@ -174,9 +174,15 @@ o Core nao e um pacote tecnico de rotas. Ele e o nucleo para o MAYUS agir como a
 - [x] Controles agenticos de missao: retry/cancel como capacidades do proprio agente.
 Evidencia 2026-05-02: `POST /api/brain/tasks/:id/cancel` criado como primeiro controle de autonomia supervisionada; exige sessao/tenant, motivo explicito, bloqueia missao terminal, cancela task/runs/steps/approvals pendentes e registra `learning_events.task_cancelled`.
 Evidencia 2026-05-02: `POST /api/brain/tasks/:id/retry` criado para retomar step falho/cancelado com idempotencia; cria nova `brain_run`, clona o step em estado `queued`, grava `retry_metadata`, bloqueia efeitos externos automaticos na rota e registra `learning_events.task_step_retry_requested`.
-- [ ] Stream de status de missao.
+- [~] Stream de status de missao.
+Evidencia 2026-05-03: criado `GET /api/brain/stream` como SSE autenticado para perfis executivos; ele observa atividade recente do brain, inclui `latest_task_id` e `latest_step_*`, e o cockpit MAYUS usa `EventSource` para recarregar a inbox, recarregar a missao alterada e mostrar o ultimo step/status. Falta trocar polling interno do SSE por push nativo do banco.
 - [~] Painel operacional de missoes.
-Evidencia 2026-05-03: `/dashboard/mayus` agora mostra um painel compacto das missoes acompanhadas pela conversa, com ativas, aprovacoes pendentes, steps concluidos e resumo por missao. Falta evoluir para painel global de todas as missoes do tenant.
+Evidencia 2026-05-03: `/dashboard/mayus` agora mostra um painel compacto das missoes acompanhadas pela conversa, com ativas, aprovacoes pendentes, steps concluidos e resumo por missao.
+Evidencia 2026-05-03: o painel do cockpit passou a carregar `/api/brain/inbox?include_activity=true`, exibindo tambem missoes recentes do tenant, aprovacoes pendentes globais e eventos recentes do cerebro como status incremental, com refresh periodico, indicador ao vivo/reconectando, ultimo step/status e gatilho por `/api/brain/stream`.
+Evidencia 2026-05-03: o painel do cockpit ganhou acao manual `Atualizar` e atalho para `/dashboard/aprovacoes` quando houver aprovacoes pendentes, mantendo o operador no fluxo de supervisao.
+Evidencia 2026-05-03: o painel tambem ganhou bloco `Proximas decisoes`, destacando aprovacoes pendentes, missoes aguardando input/aprovacao e falhas que exigem revisao humana.
+Evidencia 2026-05-03: missoes ativas acompanhadas no cockpit podem ser canceladas pelo operador com motivo obrigatorio, reaproveitando `POST /api/brain/tasks/:id/cancel` e atualizando a missao/inbox apos a decisao.
+Evidencia 2026-05-03: missoes acompanhadas com step `failed` ou `cancelled` podem ser retomadas pelo operador com motivo obrigatorio, reaproveitando `POST /api/brain/tasks/:id/retry`; o retry volta em fila supervisionada e o cockpit atualiza missao/inbox.
 
 ### 4.3 Skill Fabric
 
