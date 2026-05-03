@@ -19,6 +19,18 @@ const montserrat = Montserrat({
 
 const inter = Inter({ subsets: ["latin"] });
 
+const CHECK_LOCK_TIMEOUT_MS = 1800;
+const AUTH_STEP_TIMEOUT_MS = 15000;
+
+function withTimeout<T>(promise: Promise<T>, timeoutMs: number, message: string): Promise<T> {
+  let timeoutId: ReturnType<typeof setTimeout>;
+
+  return new Promise((resolve, reject) => {
+    timeoutId = setTimeout(() => reject(new Error(message)), timeoutMs);
+    promise.then(resolve, reject).finally(() => clearTimeout(timeoutId));
+  });
+}
+
 export default function LoginPage() {
   const router = useRouter();
   const supabase = createClient();
@@ -52,7 +64,12 @@ export default function LoginPage() {
     setLockMinutes(0);
 
     try {
-      const lockRes = await fetch(`/api/auth/check-lock?email=${encodeURIComponent(email)}`);
+      const controller = new AbortController();
+      const timeoutId = setTimeout(() => controller.abort(), CHECK_LOCK_TIMEOUT_MS);
+      const lockRes = await fetch(`/api/auth/check-lock?email=${encodeURIComponent(email)}`, {
+        signal: controller.signal,
+      }).finally(() => clearTimeout(timeoutId));
+
       if (lockRes.ok) {
         const lockData = await lockRes.json();
         if (lockData.locked) {
@@ -63,68 +80,85 @@ export default function LoginPage() {
         }
       }
     } catch {
-      // fail-open
+      // A checagem de bloqueio nao pode impedir login legitimo quando Supabase esta lento.
     }
 
-    const { data, error } = await supabase.auth.signInWithPassword({
-      email,
-      password,
-    });
-
-    if (error) {
-      fetch("/api/audit/login", {
-        method: "POST",
-        body: JSON.stringify({ email, success: false, errorMsg: error.message }),
-      }).catch(console.error);
-
-      setErrorMsg(
-        error.message === "Invalid login credentials"
-          ? "E-mail ou senha incorretos."
-          : error.message
+    try {
+      const { data, error } = await withTimeout(
+        supabase.auth.signInWithPassword({
+          email,
+          password,
+        }),
+        AUTH_STEP_TIMEOUT_MS,
+        "auth_timeout",
       );
-      setIsLoading(false);
-    } else {
-      const { data: authData, error: authError } = await supabase.auth.mfa.getAuthenticatorAssuranceLevel();
-      
-      if (authError) {
-        setErrorMsg("Erro ao verificar nível de segurança.");
-        setIsLoading(false);
-        return;
-      }
 
-      if (authData.currentLevel === authData.nextLevel) {
+      if (error) {
         fetch("/api/audit/login", {
           method: "POST",
-          body: JSON.stringify({
-            email,
-            success: true,
-            userId: data.user.id,
-            tenantId: data.user.app_metadata?.tenant_id
-          }),
+          body: JSON.stringify({ email, success: false, errorMsg: error.message }),
         }).catch(console.error);
 
-        router.push("/dashboard");
-        router.refresh();
+        setErrorMsg(
+          error.message === "Invalid login credentials"
+            ? "E-mail ou senha incorretos."
+            : error.message
+        );
+        setIsLoading(false);
       } else {
-        const { data: factorsData, error: factorsError } = await supabase.auth.mfa.listFactors();
+        const { data: authData, error: authError } = await withTimeout(
+          supabase.auth.mfa.getAuthenticatorAssuranceLevel(),
+          AUTH_STEP_TIMEOUT_MS,
+          "mfa_level_timeout",
+        );
         
-        if (factorsError || !factorsData) {
-            setErrorMsg("Falha ao recuperar os fatores de segurança configurados.");
-            setIsLoading(false);
-            return;
+        if (authError) {
+          setErrorMsg("Erro ao verificar nível de segurança.");
+          setIsLoading(false);
+          return;
         }
 
-        const totpFactor = factorsData.totp.find(f => f.status === "verified");
+        if (authData.currentLevel === authData.nextLevel) {
+          fetch("/api/audit/login", {
+            method: "POST",
+            body: JSON.stringify({
+              email,
+              success: true,
+              userId: data.user.id,
+              tenantId: data.user.app_metadata?.tenant_id
+            }),
+          }).catch(console.error);
 
-        if (totpFactor) {
-            setFactorId(totpFactor.id);
-            setStep("totp");
-            setIsLoading(false);
+          router.push("/dashboard");
+          router.refresh();
         } else {
-            setErrorMsg("Conta com segurança inconsistente. Contate o suporte.");
-            setIsLoading(false);
+          const { data: factorsData, error: factorsError } = await withTimeout(
+            supabase.auth.mfa.listFactors(),
+            AUTH_STEP_TIMEOUT_MS,
+            "mfa_factors_timeout",
+          );
+
+          if (factorsError || !factorsData) {
+              setErrorMsg("Falha ao recuperar os fatores de segurança configurados.");
+              setIsLoading(false);
+              return;
+          }
+
+          const totpFactor = factorsData.totp.find(f => f.status === "verified");
+
+          if (totpFactor) {
+              setFactorId(totpFactor.id);
+              setStep("totp");
+              setIsLoading(false);
+          } else {
+              setErrorMsg("Conta com segurança inconsistente. Contate o suporte.");
+              setIsLoading(false);
+          }
         }
       }
+    } catch {
+      setErrorMsg("A validacao demorou demais. Tente novamente em alguns segundos.");
+      setIsLoading(false);
     }
   }, [email, password, router, supabase.auth]);
 
@@ -135,26 +169,39 @@ export default function LoginPage() {
     setIsLoading(true);
     setErrorMsg("");
 
-    const { data: challengeData, error: challengeError } = await supabase.auth.mfa.challenge({ factorId });
+    try {
+      const { data: challengeData, error: challengeError } = await withTimeout(
+        supabase.auth.mfa.challenge({ factorId }),
+        AUTH_STEP_TIMEOUT_MS,
+        "mfa_challenge_timeout",
+      );
 
-    if (challengeError) {
-        setErrorMsg("Erro ao iniciar o desafio de segurança.");
+      if (challengeError) {
+          setErrorMsg("Erro ao iniciar o desafio de segurança.");
+          setIsLoading(false);
+          return;
+      }
+
+      const { error: verifyError } = await withTimeout(
+        supabase.auth.mfa.verify({
+            factorId,
+            challengeId: challengeData.id,
+            code: totpCode,
+        }),
+        AUTH_STEP_TIMEOUT_MS,
+        "mfa_verify_timeout",
+      );
+
+      if (verifyError) {
+          setErrorMsg("Código inválido ou expirado.");
+          setIsLoading(false);
+      } else {
+          router.push("/dashboard");
+          router.refresh();
+      }
+    } catch {
+        setErrorMsg("A verificacao demorou demais. Tente novamente em alguns segundos.");
         setIsLoading(false);
-        return;
-    }
-
-    const { data: verifyData, error: verifyError } = await supabase.auth.mfa.verify({
-        factorId,
-        challengeId: challengeData.id,
-        code: totpCode,
-    });
-
-    if (verifyError) {
-        setErrorMsg("Código inválido ou expirado.");
-        setIsLoading(false);
-    } else {
-        router.push("/dashboard");
-        router.refresh();
     }
   }, [factorId, totpCode, router, supabase.auth]);
 

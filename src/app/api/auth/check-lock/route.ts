@@ -3,6 +3,8 @@ import { isAccountLocked } from "@/lib/login-attempts";
 
 export const dynamic = "force-dynamic";
 
+const CHECK_LOCK_TIMEOUT_MS = 1800;
+
 export async function GET(req: Request) {
   try {
     const { searchParams } = new URL(req.url);
@@ -15,7 +17,10 @@ export async function GET(req: Request) {
       );
     }
 
-    const result = await isAccountLocked(email);
+    const controller = new AbortController();
+    const timeoutId = setTimeout(() => controller.abort(), CHECK_LOCK_TIMEOUT_MS);
+    const result = await isAccountLocked(email, controller.signal)
+      .finally(() => clearTimeout(timeoutId));
 
     return NextResponse.json(result);
   } catch (err) {

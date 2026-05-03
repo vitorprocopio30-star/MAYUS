@@ -13,43 +13,61 @@ const WINDOW_MINUTES = 15;
  */
 export async function getFailedAttempts(
   email: string,
-  windowMinutes: number = WINDOW_MINUTES
+  windowMinutes: number = WINDOW_MINUTES,
+  signal?: AbortSignal,
 ): Promise<number> {
   const since = new Date(Date.now() - windowMinutes * 60 * 1000).toISOString();
 
-  const { count, error } = await supabaseAdmin
-    .from("audit_logs")
-    .select("id", { count: "exact", head: true })
-    .eq("action", "LOGIN_FAILED")
-    .gte("created_at", since)
-    .filter("new_data->>email_attempt", "eq", email);
+  try {
+    const query = supabaseAdmin
+      .from("audit_logs")
+      .select("id", { count: "exact", head: true })
+      .eq("action", "LOGIN_FAILED")
+      .gte("created_at", since)
+      .filter("new_data->>email_attempt", "eq", email);
 
-  if (error) {
-    console.error("Erro ao contar tentativas de login:", error.message);
-    return 0; // fail-open para não bloquear usuário legítimo se DB falhar
+    const { count, error } = await (signal ? query.abortSignal(signal) : query);
+
+    if (error) {
+      console.error("Erro ao contar tentativas de login:", error.message);
+      return 0; // fail-open para não bloquear usuário legítimo se DB falhar
+    }
+
+    return count || 0;
+  } catch (error) {
+    console.error("Timeout/erro ao contar tentativas de login:", error);
+    return 0;
   }
-
-  return count || 0;
 }
 
 /**
  * Verifica se a conta está bloqueada + retorna minutos restantes.
  */
 export async function isAccountLocked(
-  email: string
+  email: string,
+  signal?: AbortSignal,
 ): Promise<{ locked: boolean; remainingMinutes: number; attempts: number }> {
-  const attempts = await getFailedAttempts(email, WINDOW_MINUTES);
+  const attempts = await getFailedAttempts(email, WINDOW_MINUTES, signal);
 
   if (attempts >= MAX_ATTEMPTS) {
     // Pega o timestamp da última tentativa falha para calcular tempo restante
-    const { data } = await supabaseAdmin
-      .from("audit_logs")
-      .select("created_at")
-      .eq("action", "LOGIN_FAILED")
-      .filter("new_data->>email_attempt", "eq", email)
-      .order("created_at", { ascending: false })
-      .limit(1)
-      .single();
+    let data: { created_at: string } | null = null;
+
+    try {
+      const query = supabaseAdmin
+        .from("audit_logs")
+        .select("created_at")
+        .eq("action", "LOGIN_FAILED")
+        .filter("new_data->>email_attempt", "eq", email)
+        .order("created_at", { ascending: false })
+        .limit(1);
+
+      const result = await (signal ? query.abortSignal(signal) : query).single();
+      data = result.data;
+    } catch (error) {
+      console.error("Timeout/erro ao buscar ultima tentativa de login:", error);
+      return { locked: false, remainingMinutes: 0, attempts };
+    }
 
     if (data) {
       const lastAttempt = new Date(data.created_at).getTime();
