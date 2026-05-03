@@ -147,6 +147,62 @@ describe("whatsapp MAYUS agent runtime", () => {
     ]));
   });
 
+  it("prepara handoff sem autoenvio quando o lead pede humano", async () => {
+    const inserts: Array<{ table: string; payload: any }> = [];
+    const supabase: any = {
+      from: vi.fn((table: string) => {
+        if (table === "whatsapp_contacts") {
+          return makeQuery({
+            data: { id: "contact-1", name: "Ana Paula", phone_number: "5511999999999", assigned_user_id: null, lead_tags: [] },
+            error: null,
+          });
+        }
+
+        if (table === "whatsapp_messages") {
+          return makeQuery({
+            data: [{ direction: "inbound", content: "Quero falar com um advogado responsavel.", message_type: "text", created_at: "2026-05-01T10:00:00.000Z" }],
+            error: null,
+          });
+        }
+
+        if (table === "tenant_settings") {
+          return makeQuery({ data: { ai_features: { contract_flow_mode: "hybrid" } }, error: null });
+        }
+
+        return {
+          insert: vi.fn(async (payload: any) => {
+            inserts.push({ table, payload });
+            return { error: null };
+          }),
+        };
+      }),
+    };
+
+    const prepared = await prepareWhatsAppMayusReplyForContact({
+      supabase,
+      tenantId: "tenant-1",
+      contactId: "contact-1",
+      trigger: "evolution_webhook",
+      notify: true,
+      autoSendFirstResponse: true,
+    });
+
+    expect(prepared.intent).toBe("human_handoff");
+    expect(prepared.agentRole).toBe("human");
+    expect(prepared.metadata.auto_sent).toBe(false);
+    expect(prepareWhatsAppSalesReplyForContactMock).not.toHaveBeenCalled();
+    expect(sendFrontdeskWhatsAppReplyMock).not.toHaveBeenCalled();
+    expect(inserts).toEqual(expect.arrayContaining([
+      expect.objectContaining({
+        table: "system_event_logs",
+        payload: expect.objectContaining({
+          event_name: "whatsapp_mayus_reply_prepared",
+          payload: expect.objectContaining({ intent: "human_handoff", may_auto_send: false }),
+        }),
+      }),
+    ]));
+  });
+
   it("respeita human_only ao rotear venda para rascunho", async () => {
     prepareWhatsAppSalesReplyForContactMock.mockResolvedValue({
       contact: { id: "contact-1" },

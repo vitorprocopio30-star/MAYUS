@@ -164,7 +164,7 @@ function buildDiscoveryReply(plan: SalesConsultationPlan, leadFirstName: string,
   });
   const blocks = firstReply.split(/\n{2,}/).map((block) => block.trim()).filter(Boolean);
 
-  return blocks.slice(0, 2).join("\n\n");
+  return blocks.slice(0, 3).join("\n\n");
 }
 
 function buildSuggestedReply(plan: SalesConsultationPlan, lastInboundText: string | null, input: WhatsAppSalesReplyInput) {
@@ -173,15 +173,15 @@ function buildSuggestedReply(plan: SalesConsultationPlan, lastInboundText: strin
 
   if (/caro|preco|valor|custa|custo|honorario|honorarios/.test(normalized)) {
     return [
-      `Entendo, ${leadFirstName}. Quando voce fala em valor, quero separar bem as coisas para nao te responder de forma rasa.`,
-      "Sua duvida principal e sobre preco, forma de pagamento, seguranca do caminho ou prioridade de resolver isso agora?",
+      `Entendi, ${leadFirstName}. Consigo te ajudar com valor, mas primeiro preciso separar preco de risco para nao te orientar errado.`,
+      "Me responde rapidinho: voce quer entender preco, forma de pagamento, seguranca do caminho ou prioridade de resolver isso agora?",
     ].join("\n\n");
   }
 
   if (/vou pensar|depois|mais tarde|sem tempo/.test(normalized)) {
     return [
-      `Claro, ${leadFirstName}. Antes de deixar isso em aberto, so quero entender uma coisa para nao te pressionar nem te abandonar no meio do caminho.`,
-      "O que exatamente voce precisa pensar: seguranca, valor, prazo, decisao com outra pessoa ou se esse caminho serve para voce?",
+      `Claro, ${leadFirstName}. Sem pressa artificial; so nao quero te deixar com uma duvida solta.`,
+      "O que ainda falta para voce decidir: seguranca, valor, prazo, falar com outra pessoa ou entender se esse caminho serve para voce?",
     ].join("\n\n");
   }
 
@@ -200,6 +200,7 @@ function hasAutoSendBlockingRisk(flags: string[]) {
     flag === "legal_result_risk"
     || flag === "legal_urgency"
     || flag === "commercial_commitment"
+    || flag === "human_requested"
   ));
 }
 
@@ -237,15 +238,18 @@ export function buildWhatsAppSalesReply(input: WhatsAppSalesReplyInput): WhatsAp
   const requiresHumanReview = blocksAutoSend;
   const mayAutoSend = Boolean(suggestedReply && !blocksAutoSend);
   const handoffRecommended = riskFlags.includes("human_requested");
+  const internalNote = requiresHumanReview
+    ? handoffRecommended
+      ? "Lead pediu atendimento humano. MAYUS preparou handoff com contexto para a equipe assumir."
+      : "Resposta preparada para revisao humana antes de envio pelo WhatsApp."
+    : plan.firmProfile.missingSignals.length > 0
+      ? `Resposta inicial preparada pelo MAYUS com base na mensagem do lead. Depois refine o perfil do escritorio: ${plan.firmProfile.nextPositioningQuestion}`
+      : "Resposta consultiva preparada para o atendimento WhatsApp.";
 
   return {
     mode: requiresHumanReview ? "human_review_required" : "suggested_reply",
     suggestedReply,
-    internalNote: requiresHumanReview
-      ? "Resposta preparada para revisao humana antes de envio pelo WhatsApp."
-      : plan.firmProfile.missingSignals.length > 0
-        ? `Resposta inicial preparada pelo MAYUS com base na mensagem do lead. Depois refine o perfil do escritorio: ${plan.firmProfile.nextPositioningQuestion}`
-        : "Resposta consultiva preparada para o atendimento WhatsApp.",
+    internalNote,
     plan,
     riskFlags,
     mayAutoSend,

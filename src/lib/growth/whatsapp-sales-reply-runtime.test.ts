@@ -213,4 +213,86 @@ describe("prepareWhatsAppSalesReplyForContact", () => {
       && item.payload.payload.typing_presence_used === true
     ))).toBe(true);
   });
+
+  it("nao autoenvia quando a conversa ja tem responsavel humano", async () => {
+    const inserts: Array<{ table: string; payload: any }> = [];
+    const fetchMock = vi.fn();
+    global.fetch = fetchMock as any;
+    listTenantIntegrationsResolvedMock.mockResolvedValue([{
+      provider: "evolution",
+      api_key: "evolution-key",
+      instance_name: "http://187.77.240.109:32768|mayus-dutra",
+    }]);
+
+    const supabase: any = {
+      from: vi.fn((table: string) => {
+        if (table === "whatsapp_contacts") {
+          return makeSelectQuery({
+            data: { id: "contact-1", name: "Maria Silva", phone_number: "5511999999999", assigned_user_id: "user-1" },
+            error: null,
+          });
+        }
+
+        if (table === "tenant_settings") {
+          return makeSelectQuery({
+            data: {
+              ai_features: {
+                sales_consultation_profile: {
+                  ideal_client: "beneficiarios do INSS com negativa recente",
+                  core_solution: "entender chance real e documentos faltantes",
+                  unique_value_proposition: "Diagnostico previdenciario consultivo",
+                  value_pillars: ["Diagnostico", "Provas", "Plano"],
+                  positioning_summary: "Atendimento previdenciario consultivo",
+                },
+              },
+            },
+            error: null,
+          });
+        }
+
+        if (table === "whatsapp_messages") {
+          return makeSelectQuery({
+            data: [
+              { direction: "inbound", content: "Oi, meu beneficio foi negado.", message_type: "text", created_at: "2026-04-28T10:00:00.000Z" },
+            ],
+            error: null,
+          });
+        }
+
+        return {
+          insert: vi.fn(async (payload: any) => {
+            inserts.push({ table, payload });
+            return { error: null };
+          }),
+        };
+      }),
+    };
+
+    const prepared = await prepareWhatsAppSalesReplyForContact({
+      supabase,
+      tenantId: "tenant-1",
+      contactId: "contact-1",
+      trigger: "evolution_webhook",
+      notify: true,
+      autoSendFirstResponse: true,
+    });
+
+    expect(prepared.metadata.auto_sent).toBe(false);
+    expect(fetchMock).not.toHaveBeenCalled();
+    expect(inserts).toEqual(expect.arrayContaining([
+      expect.objectContaining({
+        table: "system_event_logs",
+        payload: expect.objectContaining({
+          event_name: "whatsapp_sales_reply_prepared",
+          payload: expect.objectContaining({
+            may_auto_send: true,
+            first_response_policy: expect.objectContaining({
+              enabled: true,
+              can_auto_send: false,
+            }),
+          }),
+        }),
+      }),
+    ]));
+  });
 });

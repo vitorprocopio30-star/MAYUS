@@ -547,8 +547,9 @@ export default function WhatsAppChatPremiumPage({
     if (!contactId) return;
     const isCurrentContact = () => activeContactIdRef.current === contactId;
     const applyDraft = (draft: any) => {
+      const wasAutoSent = draft?.auto_sent === true || draft?.metadata?.auto_sent === true;
       setMayusDraft(draft);
-      if (draft?.suggested_reply && !inputTextRef.current.trim()) {
+      if (!wasAutoSent && draft?.suggested_reply && !inputTextRef.current.trim()) {
         setInputMode("responder");
         setInputText(draft.suggested_reply);
       }
@@ -1152,10 +1153,10 @@ export default function WhatsAppChatPremiumPage({
 
 
   return (
-    <div className={`h-[calc(100dvh-7rem)] md:h-[calc(100dvh-9rem)] min-h-[640px] w-full flex bg-[#020104] rounded-tl-3xl border-t border-l border-white/5 overflow-hidden ${montserrat.className} text-sm`}>
+    <div className={`-mx-4 -mb-4 h-[calc(100dvh-6rem)] min-h-[520px] w-[calc(100%+2rem)] max-w-none flex overflow-hidden rounded-tl-3xl border-t border-l border-white/5 bg-[#020104] text-sm md:-mx-8 md:-mb-8 md:h-[calc(100dvh-7rem)] md:min-h-[560px] md:w-[calc(100%+4rem)] ${montserrat.className}`}>
 
       {/* 1. BARRA LATERAL ESQUERDA (LISTAGEM) */}
-      <div className="w-[320px] flex-shrink-0 border-r border-white/10 bg-white dark:bg-[#050505] flex flex-col h-full z-10 transition-all">
+      <div className="w-[288px] flex-shrink-0 border-r border-white/10 bg-white dark:bg-[#050505] flex flex-col h-full z-10 transition-all md:w-[300px] 2xl:w-[320px]">
         <div className="border-b border-white/10 p-5 flex flex-col gap-4">
            <div className="flex justify-between items-center">
               <div className="flex items-center gap-2">
@@ -1296,7 +1297,7 @@ export default function WhatsAppChatPremiumPage({
           <div className="flex-1 flex flex-col min-h-0">
             {(activeContact || messages.length > 0) ? (
               <>
-                <div className="min-h-[84px] border-b border-white/5 flex items-center justify-between px-7 py-3 bg-[#0a0a0a]/90 backdrop-blur-3xl z-10 flex-shrink-0">
+                <div className="min-h-[84px] border-b border-white/5 flex items-center justify-between px-4 py-3 bg-[#0a0a0a]/90 backdrop-blur-3xl z-10 flex-shrink-0 md:px-6">
                     <div className="flex min-w-0 items-center gap-4">
                        <div className="h-12 w-12 rounded-full border border-[#CCA761]/50 bg-gray-200 dark:bg-black flex flex-shrink-0 items-center justify-center text-[#CCA761] font-black text-base shadow-[0_0_20px_rgba(204,167,97,0.1)] overflow-hidden">
                            {activeContact?.profile_pic_url ? <img src={activeContact.profile_pic_url} alt={activeContact?.name || "Contato ativo"} className="w-full h-full object-cover" /> : (activeContact?.name?.substring(0, 2).toUpperCase() || "TS")}
@@ -1316,13 +1317,13 @@ export default function WhatsAppChatPremiumPage({
                      </div>
                 </div>
 
-                <div className="flex-1 overflow-y-auto p-8 flex flex-col gap-8 no-scrollbar min-h-0">
+                <div className="flex-1 overflow-y-auto p-5 flex flex-col gap-5 no-scrollbar min-h-0 md:p-6 md:gap-6 lg:p-7">
                     {messages.map((msg, idx) => {
                        const isInternalNote = msg.message_type === "internal_note" || msg.status === "internal_note";
                        const isMe = msg.direction === 'outbound' && !isInternalNote;
                        return (
                           <div key={msg.id || idx} className={`flex ${isInternalNote ? 'justify-center' : isMe ? 'justify-end' : 'justify-start'} animate-in fade-in slide-in-from-bottom-4`}>
-                             <div className={`flex flex-col gap-2 ${isInternalNote ? 'items-center max-w-[72%]' : `max-w-[65%] ${isMe ? 'items-end' : 'items-start'}`}`}>
+                             <div className={`flex flex-col gap-2 ${isInternalNote ? 'items-center max-w-[82%] md:max-w-[72%]' : `max-w-[82%] md:max-w-[74%] xl:max-w-[66%] ${isMe ? 'items-end' : 'items-start'}`}`}>
                                 <div className={`p-5 rounded-2xl text-[14px] leading-relaxed tracking-normal shadow-2xl relative border ${
                                    isInternalNote
                                    ? 'bg-orange-500/10 border-orange-500/30 text-orange-100 rounded-xl'
@@ -1346,7 +1347,7 @@ export default function WhatsAppChatPremiumPage({
                     })}
                     {(showTypingIndicator || isSending || isGeneratingMayusReply || isExecutingMayusReply) && (
                       <div className="flex justify-start animate-in fade-in slide-in-from-bottom-2">
-                        <div className="max-w-[65%] rounded-2xl rounded-tl-sm border border-white/10 bg-[#121212] px-5 py-4 text-gray-300 shadow-2xl">
+                        <div className="max-w-[82%] rounded-2xl rounded-tl-sm border border-white/10 bg-[#121212] px-5 py-4 text-gray-300 shadow-2xl md:max-w-[74%] xl:max-w-[66%]">
                           <div className="flex items-center gap-3">
                             <span className="text-[10px] font-black uppercase tracking-[0.2em] text-[#CCA761]">
                               MAYUS digitando
@@ -1542,7 +1543,7 @@ export default function WhatsAppChatPremiumPage({
       </div>
 
       {/* 3. INFO E KANBAN (BARRA DIREITA) */}
-      <div className={`${isRightPanelCollapsed ? "w-[56px]" : "w-[320px]"} flex-shrink-0 border-l border-white/10 bg-white dark:bg-[#050505] flex flex-col h-full z-10 overflow-hidden transition-all duration-300`}>
+      <div className={`${isRightPanelCollapsed ? "w-[56px]" : "w-[292px] 2xl:w-[320px]"} flex-shrink-0 border-l border-white/10 bg-white dark:bg-[#050505] flex flex-col h-full z-10 overflow-hidden transition-all duration-300`}>
         <div className="flex h-14 flex-shrink-0 items-center justify-between border-b border-white/10 px-3">
           {!isRightPanelCollapsed && (
             <div className="min-w-0">

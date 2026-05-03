@@ -21,6 +21,7 @@ describe("buildWhatsAppSalesReply", () => {
 
     expect(reply.mode).toBe("suggested_reply");
     expect(reply.suggestedReply).toContain("Maria");
+    expect(reply.suggestedReply).toMatch(/o que aconteceu/i);
     expect(reply.mayAutoSend).toBe(true);
     expect(reply.externalSideEffectsBlocked).toBe(false);
     expect(reply.requiresHumanReview).toBe(false);
@@ -58,6 +59,22 @@ describe("buildWhatsAppSalesReply", () => {
       "legal_result_risk",
       "legal_urgency",
     ]));
+    expect(reply.mayAutoSend).toBe(false);
+    expect(reply.requiresHumanReview).toBe(true);
+  });
+
+  it("recomenda handoff e bloqueia autoenvio quando o lead pede humano", () => {
+    const reply = buildWhatsAppSalesReply({
+      contactName: "Ana Paula",
+      messages: [
+        { direction: "inbound", content: "Quero falar com um advogado responsavel." },
+      ],
+      salesProfile,
+    });
+
+    expect(reply.mode).toBe("human_review_required");
+    expect(reply.riskFlags).toContain("human_requested");
+    expect(reply.handoffRecommended).toBe(true);
     expect(reply.mayAutoSend).toBe(false);
     expect(reply.requiresHumanReview).toBe(true);
   });

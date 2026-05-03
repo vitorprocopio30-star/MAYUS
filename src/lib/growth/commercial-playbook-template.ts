@@ -317,7 +317,8 @@ export function buildCommercialFirstReply(params: {
   const name = firstName(params.leadName);
   const normalized = normalizeText(params.lastInboundText);
   const context = shortContext(params.lastInboundText);
-  const opening = `Oi, ${name}. Aqui e o MAYUS, assistente do ${playbook.officeName}. Vou fazer sua primeira triagem agora.`;
+  const officeLabel = playbook.officeName === "Escritorio" ? "escritorio" : playbook.officeName;
+  const opening = `Oi, ${name}. Aqui e o MAYUS, do ${officeLabel}. Vou cuidar da sua primeira triagem agora.`;
 
   if (/humano|atendente|advogado|doutor|doutora|responsavel|falar com/.test(normalized)) {
     return [
@@ -329,7 +330,7 @@ export function buildCommercialFirstReply(params: {
   if (/valor|preco|custa|honorario|honorarios|parcel/.test(normalized)) {
     return [
       opening,
-      "Antes de falar em valor, eu preciso entender se o caminho faz sentido para o seu caso. Sua duvida principal hoje e seguranca, prazo, documentos ou forma de pagamento?",
+      "Consigo te ajudar com valor, mas nao quero te passar nada no escuro. Primeiro preciso entender se faz sentido para o seu caso: sua duvida hoje e seguranca, prazo, documentos ou forma de pagamento?",
     ].join("\n\n");
   }
 
@@ -342,7 +343,6 @@ export function buildCommercialFirstReply(params: {
 
   return [
     opening,
-    context ? `Entendi sua mensagem: "${context}".` : "Vou entender seu caso antes de te direcionar.",
-    "Para eu te encaminhar certo: qual e o assunto principal, quando isso aconteceu e existe algum prazo ou documento importante?",
+    `${context ? `Vi sua mensagem sobre "${context}".` : "Vou entender seu caso antes de te direcionar."} Para eu te ajudar sem chute: o que aconteceu, quando foi e existe algum prazo ou documento importante?`,
   ].join("\n\n");
 }
