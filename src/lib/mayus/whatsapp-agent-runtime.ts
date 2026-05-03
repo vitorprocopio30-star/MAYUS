@@ -12,6 +12,10 @@ import {
 export type WhatsAppMayusIntent = "sales" | "support" | "human_handoff";
 export type WhatsAppMayusAgentRole = "sdr" | "closer" | "support" | "human";
 export type WhatsAppMayusGovernanceMode = "ia_only" | "human_only" | "hybrid";
+export type WhatsAppMayusDecisionStatus = "prepared" | "auto_send_allowed" | "auto_sent" | "auto_send_failed" | "human_review_required" | "duplicate_suppressed";
+export type WhatsAppMayusDecisionStage = "sdr_discovery" | "closer_qualification" | "support_status" | "human_handoff";
+export type WhatsAppMayusNextAction = "prepare_reply" | "auto_send_whatsapp" | "notify_human" | "skip_duplicate" | "no_action";
+export type WhatsAppMayusDecisionConfidence = "low" | "medium" | "high";
 
 type RuntimeSupabase = SupabaseClient | { from: (table: string) => any };
 
@@ -70,6 +74,10 @@ function getLastInbound(messages: WhatsAppMessageRecord[]) {
   return [...messages].reverse().find((message) => message.direction === "inbound" && cleanText(message.content)) || null;
 }
 
+function getLatestInboundAt(messages: WhatsAppMessageRecord[]) {
+  return getLastInbound(messages)?.created_at || null;
+}
+
 function getConversationText(messages: WhatsAppMessageRecord[]) {
   return messages
     .slice(-8)
@@ -83,19 +91,50 @@ function getProcessNumber(text: string) {
 }
 
 function hasSupportSignal(text: string) {
-  return /(status|andamento|movimenta[cç][aã]o|publica[cç][aã]o|meu\s+caso|meu\s+processo|n[uú]mero\s+do\s+processo|consulta\s+processual|audi[eê]ncia|per[ií]cia|senten[cç]a|recurso|prazo|documento\s+pendente|pend[eê]ncia|juntada|protocolo)/i.test(text);
+  return /(suporte|status|atualiza[cç][aã]o|andamento|movimenta[cç][aã]o|publica[cç][aã]o|meu\s+caso|meu\s+processo|n[uú]mero\s+do\s+processo|consulta\s+processual|audi[eê]ncia|per[ií]cia|senten[cç]a|recurso|prazo|documento\s+pendente|pend[eê]ncia|juntada|protocolo)/i.test(text);
 }
 
 function hasHumanSignal(text: string) {
-  return /(humano|atendente|advogado|doutor|doutora|respons[aá]vel|falar\s+com|me\s+liga|ligar)/i.test(text);
+  return /(humano|atendente|advogado|doutor|doutora|respons[aá]vel|falar\s+com|prefiro\s+falar|pessoa\s+da\s+equipe|algu[eé]m\s+da\s+equipe|me\s+liga|ligar|telefone|chamada)/i.test(text);
 }
 
 function hasCloserSignal(text: string) {
-  return /(valor|pre[cç]o|custa|honor[aá]rio|honorarios|proposta|contrato|assin|pix|boleto|pagamento|fechar|fechamento|parcel)/i.test(text);
+  return /(valor|valores|pre[cç]o|custa|or[cç]amento|honor[aá]rio|honorarios|proposta|contrato|assin|pix|boleto|pagamento|forma\s+de\s+pagamento|entrada|fechar|fechamento|posso\s+fechar|parcel|proxima\s+etapa|pr[oó]ximo\s+passo)/i.test(text);
 }
 
 function normalizeGovernanceMode(value: unknown): WhatsAppMayusGovernanceMode {
   return value === "ia_only" || value === "human_only" || value === "hybrid" ? value : "hybrid";
+}
+
+function inferDecisionStage(intent: WhatsAppMayusIntent, role: WhatsAppMayusAgentRole): WhatsAppMayusDecisionStage {
+  if (intent === "support") return "support_status";
+  if (intent === "human_handoff") return "human_handoff";
+  return role === "closer" ? "closer_qualification" : "sdr_discovery";
+}
+
+function confidenceFromCompleteness(value: unknown): WhatsAppMayusDecisionConfidence {
+  const score = typeof value === "number" && Number.isFinite(value) ? value : 0;
+  if (score >= 65) return "high";
+  if (score >= 35) return "medium";
+  return "low";
+}
+
+function buildDecisionMetadata(params: {
+  status: WhatsAppMayusDecisionStatus;
+  nextAction: WhatsAppMayusNextAction;
+  stage: WhatsAppMayusDecisionStage;
+  confidence: WhatsAppMayusDecisionConfidence;
+  latestInboundAt: string | null;
+  handoffReason?: string | null;
+}) {
+  return {
+    decision_status: params.status,
+    next_action: params.nextAction,
+    decision_stage: params.stage,
+    decision_confidence: params.confidence,
+    handoff_reason: params.handoffReason || null,
+    latest_inbound_at: params.latestInboundAt,
+  };
 }
 
 export function inferWhatsAppMayusIntent(params: {
@@ -226,6 +265,37 @@ async function insertSystemEvent(params: {
   });
 }
 
+async function loadExistingPreparedDecision(params: {
+  supabase: RuntimeSupabase;
+  tenantId: string;
+  contactId: string;
+  latestInboundAt: string | null;
+}) {
+  if (!params.latestInboundAt) return null;
+
+  try {
+    const table = params.supabase.from("system_event_logs");
+    if (typeof table?.select !== "function") return null;
+
+    const query = table
+      .select("id, payload, created_at")
+      .eq("tenant_id", params.tenantId)
+      .eq("event_name", "whatsapp_mayus_reply_prepared")
+      .eq("payload->>contact_id", params.contactId)
+      .eq("payload->>latest_inbound_at", params.latestInboundAt)
+      .order("created_at", { ascending: false });
+    const limitedQuery = typeof query.limit === "function" ? query.limit(1) : query;
+    const finalQuery = typeof limitedQuery?.maybeSingle === "function" ? limitedQuery : query;
+    const { data } = typeof finalQuery?.maybeSingle === "function"
+      ? await finalQuery.maybeSingle()
+      : { data: null };
+
+    return data?.payload ? data as { id: string; payload: Record<string, unknown>; created_at: string } : null;
+  } catch {
+    return null;
+  }
+}
+
 async function notifyTeam(params: {
   supabase: RuntimeSupabase;
   tenantId: string;
@@ -244,11 +314,32 @@ async function notifyTeam(params: {
   });
 }
 
+async function saveHandoffInternalNote(params: {
+  supabase: RuntimeSupabase;
+  tenantId: string;
+  contactId: string;
+  content: string;
+}) {
+  const table = params.supabase.from("whatsapp_messages");
+  if (typeof table?.insert !== "function") return;
+
+  await table.insert({
+    tenant_id: params.tenantId,
+    contact_id: params.contactId,
+    direction: "outbound",
+    message_type: "internal_note",
+    content: params.content.slice(0, 1200),
+    status: "internal_note",
+    created_at: new Date().toISOString(),
+  });
+}
+
 async function prepareSupportReply(params: PrepareWhatsAppMayusReplyParams & {
   contact: WhatsAppContactRecord;
   messages: WhatsAppMessageRecord[];
   settings: WhatsAppMayusSettings;
   agentRole: WhatsAppMayusAgentRole;
+  latestInboundAt: string | null;
 }) {
   const entities = buildSupportCaseStatusEntities({ contact: params.contact, messages: params.messages });
   let contract: SupportCaseStatusContract | null = null;
@@ -294,6 +385,25 @@ async function prepareSupportReply(params: PrepareWhatsAppMayusReplyParams & {
   );
   let autoDelivery: Awaited<ReturnType<typeof sendFrontdeskWhatsAppReply>> | null = null;
   let autoSendError: string | null = null;
+  const supportHandoffReason = contract?.responseMode === "handoff"
+    ? contract.handoffReason || supportError || "support_needs_review"
+    : null;
+  const baseDecision = buildDecisionMetadata({
+    status: mayAutoSend
+      ? "auto_send_allowed"
+      : contract?.responseMode === "answer"
+        ? "prepared"
+        : "human_review_required",
+    nextAction: mayAutoSend
+      ? "auto_send_whatsapp"
+      : contract?.responseMode === "answer"
+        ? "prepare_reply"
+        : "notify_human",
+    stage: "support_status",
+    confidence: (contract?.confidence || "low") as WhatsAppMayusDecisionConfidence,
+    handoffReason: supportHandoffReason,
+    latestInboundAt: params.latestInboundAt,
+  });
 
   const payload = {
     contact_id: params.contact.id,
@@ -304,6 +414,7 @@ async function prepareSupportReply(params: PrepareWhatsAppMayusReplyParams & {
     mode: contract?.responseMode === "answer" ? "suggested_reply" : "human_review_required",
     suggested_reply: suggestedReply,
     internal_note: internalNote,
+    ...baseDecision,
     may_auto_send: mayAutoSend,
     requires_human_review: contract?.responseMode !== "answer",
     support_case_entities: entities,
@@ -329,6 +440,20 @@ async function prepareSupportReply(params: PrepareWhatsAppMayusReplyParams & {
     payload,
   });
 
+  if (contract?.responseMode !== "answer") {
+    await saveHandoffInternalNote({
+      supabase: params.supabase,
+      tenantId: params.tenantId,
+      contactId: params.contact.id,
+      content: [
+        "Handoff MAYUS - Suporte",
+        `Motivo: ${supportHandoffReason || "base do caso nao confirmada"}`,
+        `Sinais encontrados: ${Object.keys(entities).join(", ") || "nenhum"}`,
+        internalNote,
+      ].join("\n"),
+    });
+  }
+
   if (mayAutoSend && params.contact.phone_number) {
     try {
       autoDelivery = await sendFrontdeskWhatsAppReply({
@@ -345,6 +470,14 @@ async function prepareSupportReply(params: PrepareWhatsAppMayusReplyParams & {
         eventName: "whatsapp_mayus_reply_auto_sent",
         payload: {
           ...payload,
+          ...buildDecisionMetadata({
+            status: autoDelivery.sent ? "auto_sent" : "auto_send_failed",
+            nextAction: autoDelivery.sent ? "no_action" : "notify_human",
+            stage: "support_status",
+            confidence: (contract?.confidence || "low") as WhatsAppMayusDecisionConfidence,
+            handoffReason: autoDelivery.sent ? null : "whatsapp_delivery_failed",
+            latestInboundAt: params.latestInboundAt,
+          }),
           auto_sent: autoDelivery.sent,
           provider: "provider" in autoDelivery ? autoDelivery.provider : null,
           block_count: "blockCount" in autoDelivery ? autoDelivery.blockCount : 0,
@@ -382,6 +515,16 @@ async function prepareSupportReply(params: PrepareWhatsAppMayusReplyParams & {
     agentRole: params.agentRole,
     metadata: {
       ...payload,
+      ...buildDecisionMetadata({
+        status: autoDelivery
+          ? autoDelivery.sent ? "auto_sent" : "auto_send_failed"
+          : autoSendError ? "auto_send_failed" : baseDecision.decision_status,
+        nextAction: autoDelivery?.sent ? "no_action" : autoSendError ? "notify_human" : baseDecision.next_action,
+        stage: "support_status",
+        confidence: (contract?.confidence || "low") as WhatsAppMayusDecisionConfidence,
+        handoffReason: autoDelivery?.sent ? null : supportHandoffReason || (autoSendError ? "whatsapp_delivery_failed" : null),
+        latestInboundAt: params.latestInboundAt,
+      }),
       auto_sent: autoDelivery?.sent === true,
       auto_send_error: autoSendError,
     },
@@ -392,8 +535,17 @@ async function prepareHumanHandoffReply(params: PrepareWhatsAppMayusReplyParams 
   contact: WhatsAppContactRecord;
   settings: WhatsAppMayusSettings;
   agentRole: WhatsAppMayusAgentRole;
+  latestInboundAt: string | null;
 }) {
   const suggestedReply = buildHumanHandoffReply(params.contact);
+  const decision = buildDecisionMetadata({
+    status: "human_review_required",
+    nextAction: "notify_human",
+    stage: "human_handoff",
+    confidence: "high",
+    handoffReason: "human_requested",
+    latestInboundAt: params.latestInboundAt,
+  });
   const payload = {
     contact_id: params.contact.id,
     trigger: params.trigger,
@@ -403,6 +555,7 @@ async function prepareHumanHandoffReply(params: PrepareWhatsAppMayusReplyParams 
     mode: "human_review_required",
     suggested_reply: suggestedReply,
     internal_note: "Cliente pediu atendimento humano. MAYUS preparou handoff com contexto.",
+    ...decision,
     may_auto_send: false,
     requires_human_review: true,
     handoff_recommended: true,
@@ -414,6 +567,18 @@ async function prepareHumanHandoffReply(params: PrepareWhatsAppMayusReplyParams 
     userId: params.actorUserId,
     status: "warning",
     payload,
+  });
+
+  await saveHandoffInternalNote({
+    supabase: params.supabase,
+    tenantId: params.tenantId,
+    contactId: params.contact.id,
+    content: [
+      "Handoff MAYUS - Cliente pediu humano",
+      "Motivo: human_requested",
+      "Acao: equipe deve assumir sem pedir para o lead repetir o contexto.",
+      `Resposta preparada: ${suggestedReply}`,
+    ].join("\n"),
   });
 
   if (params.notify) {
@@ -442,14 +607,56 @@ export async function prepareWhatsAppMayusReplyForContact(params: PrepareWhatsAp
   ]);
   const intent = inferWhatsAppMayusIntent({ contact, messages });
   const agentRole = inferWhatsAppMayusAgentRole({ intent, messages });
+  const latestInboundAt = getLatestInboundAt(messages);
+  const decisionStage = inferDecisionStage(intent, agentRole);
   const autoSendFirstResponse = Boolean(params.autoSendFirstResponse && settings.governanceMode !== "human_only");
 
+  if (params.trigger !== "manual") {
+    const existingDecision = await loadExistingPreparedDecision({
+      supabase: params.supabase,
+      tenantId: params.tenantId,
+      contactId: params.contactId,
+      latestInboundAt,
+    });
+
+    if (existingDecision) {
+      const payload = {
+        contact_id: contact.id,
+        trigger: params.trigger,
+        intent,
+        agent_role: agentRole,
+        governance_mode: settings.governanceMode,
+        duplicate_of_event_id: existingDecision.id,
+        duplicate_of_created_at: existingDecision.created_at,
+        ...buildDecisionMetadata({
+          status: "duplicate_suppressed",
+          nextAction: "skip_duplicate",
+          stage: decisionStage,
+          confidence: "high",
+          latestInboundAt,
+        }),
+        auto_sent: false,
+        auto_send_error: null,
+      };
+
+      await insertSystemEvent({
+        supabase: params.supabase,
+        tenantId: params.tenantId,
+        userId: params.actorUserId,
+        eventName: "whatsapp_mayus_reply_duplicate_suppressed",
+        payload,
+      });
+
+      return { contact, intent, agentRole, metadata: payload };
+    }
+  }
+
   if (intent === "support") {
-    return prepareSupportReply({ ...params, contact, messages, settings, agentRole, autoSendFirstResponse });
+    return prepareSupportReply({ ...params, contact, messages, settings, agentRole, autoSendFirstResponse, latestInboundAt });
   }
 
   if (intent === "human_handoff") {
-    return prepareHumanHandoffReply({ ...params, contact, settings, agentRole });
+    return prepareHumanHandoffReply({ ...params, contact, settings, agentRole, latestInboundAt });
   }
 
   const prepared = await prepareWhatsAppSalesReplyForContact({
@@ -468,6 +675,24 @@ export async function prepareWhatsAppMayusReplyForContact(params: PrepareWhatsAp
     intent,
     agent_role: agentRole,
     governance_mode: settings.governanceMode,
+    ...buildDecisionMetadata({
+      status: prepared.metadata.auto_sent === true
+        ? "auto_sent"
+        : prepared.metadata.auto_send_error
+          ? "auto_send_failed"
+          : prepared.metadata.requires_human_review
+            ? "human_review_required"
+            : "prepared",
+      nextAction: prepared.metadata.auto_sent === true
+        ? "no_action"
+        : prepared.metadata.requires_human_review || prepared.metadata.handoff_recommended
+          ? "notify_human"
+          : "prepare_reply",
+      stage: decisionStage,
+      confidence: confidenceFromCompleteness(prepared.metadata.discovery_completeness),
+      handoffReason: prepared.metadata.handoff_recommended ? "human_requested" : null,
+      latestInboundAt,
+    }),
   };
 
   await insertSystemEvent({

@@ -21,13 +21,17 @@ import {
   prepareWhatsAppMayusReplyForContact,
 } from "./whatsapp-agent-runtime";
 
-function makeQuery(result: any) {
+function makeQuery(result: any, onInsert?: (payload: any) => void) {
   const query: any = {
     select: vi.fn(() => query),
     eq: vi.fn(() => query),
     order: vi.fn(() => query),
     limit: vi.fn(async () => result),
     maybeSingle: vi.fn(async () => result),
+    insert: vi.fn(async (payload: any) => {
+      onInsert?.(payload);
+      return { error: null };
+    }),
   };
   return query;
 }
@@ -64,11 +68,16 @@ describe("whatsapp MAYUS agent runtime", () => {
     const supportMessages = [{ direction: "inbound", content: "Qual o andamento do meu processo?", message_type: "text", created_at: null }];
     const salesMessages = [{ direction: "inbound", content: "Preciso de ajuda com uma negativa do INSS", message_type: "text", created_at: null }];
     const closerMessages = [{ direction: "inbound", content: "Qual o valor dos honorarios?", message_type: "text", created_at: null }];
+    const humanMessages = [{ direction: "inbound", content: "Prefiro falar com uma pessoa da equipe", message_type: "text", created_at: null }];
+    const proposalMessages = [{ direction: "inbound", content: "Pode mandar a proposta e forma de pagamento?", message_type: "text", created_at: null }];
 
     expect(inferWhatsAppMayusIntent({ messages: supportMessages })).toBe("support");
     expect(inferWhatsAppMayusIntent({ messages: salesMessages })).toBe("sales");
+    expect(inferWhatsAppMayusIntent({ messages: humanMessages })).toBe("human_handoff");
+    expect(inferWhatsAppMayusIntent({ messages: salesMessages, contact: { lead_tags: ["Suporte"] } })).toBe("support");
     expect(inferWhatsAppMayusAgentRole({ intent: "sales", messages: salesMessages })).toBe("sdr");
     expect(inferWhatsAppMayusAgentRole({ intent: "sales", messages: closerMessages })).toBe("closer");
+    expect(inferWhatsAppMayusAgentRole({ intent: "sales", messages: proposalMessages })).toBe("closer");
   });
 
   it("prioriza handoff humano mesmo quando a mensagem menciona processo", () => {
@@ -126,6 +135,10 @@ describe("whatsapp MAYUS agent runtime", () => {
     expect(prepared.intent).toBe("support");
     expect(prepared.agentRole).toBe("support");
     expect(prepared.metadata.auto_sent).toBe(true);
+    expect(prepared.metadata.decision_status).toBe("auto_sent");
+    expect(prepared.metadata.next_action).toBe("no_action");
+    expect(prepared.metadata.decision_stage).toBe("support_status");
+    expect(prepared.metadata.latest_inbound_at).toBe("2026-05-01T10:00:00.000Z");
     expect(sendFrontdeskWhatsAppReplyMock).toHaveBeenCalledWith(expect.objectContaining({
       tenantId: "tenant-1",
       contactId: "contact-1",
@@ -190,6 +203,9 @@ describe("whatsapp MAYUS agent runtime", () => {
     expect(prepared.intent).toBe("human_handoff");
     expect(prepared.agentRole).toBe("human");
     expect(prepared.metadata.auto_sent).toBe(false);
+    expect(prepared.metadata.decision_status).toBe("human_review_required");
+    expect(prepared.metadata.next_action).toBe("notify_human");
+    expect(prepared.metadata.handoff_reason).toBe("human_requested");
     expect(prepareWhatsAppSalesReplyForContactMock).not.toHaveBeenCalled();
     expect(sendFrontdeskWhatsAppReplyMock).not.toHaveBeenCalled();
     expect(inserts).toEqual(expect.arrayContaining([
@@ -198,6 +214,63 @@ describe("whatsapp MAYUS agent runtime", () => {
         payload: expect.objectContaining({
           event_name: "whatsapp_mayus_reply_prepared",
           payload: expect.objectContaining({ intent: "human_handoff", may_auto_send: false }),
+        }),
+      }),
+    ]));
+  });
+
+  it("suprime reprocessamento do mesmo inbound antes de autoenviar de novo", async () => {
+    const inserts: Array<{ table: string; payload: any }> = [];
+    const latestInboundAt = "2026-05-01T10:00:00.000Z";
+    const supabase: any = {
+      from: vi.fn((table: string) => {
+        if (table === "whatsapp_contacts") {
+          return makeQuery({ data: { id: "contact-1", name: "Lead", phone_number: "5511999999999", assigned_user_id: null, lead_tags: [] }, error: null });
+        }
+        if (table === "whatsapp_messages") {
+          return makeQuery({ data: [{ direction: "inbound", content: "Preciso de ajuda com aposentadoria", message_type: "text", created_at: latestInboundAt }], error: null });
+        }
+        if (table === "tenant_settings") {
+          return makeQuery({ data: { ai_features: { contract_flow_mode: "hybrid" } }, error: null });
+        }
+        if (table === "system_event_logs") {
+          return makeQuery({
+            data: {
+              id: "event-1",
+              created_at: "2026-05-01T10:00:03.000Z",
+              payload: { contact_id: "contact-1", latest_inbound_at: latestInboundAt, decision_status: "prepared" },
+            },
+            error: null,
+          }, (payload) => inserts.push({ table, payload }));
+        }
+        return { insert: vi.fn(async (payload: any) => { inserts.push({ table, payload }); return { error: null }; }) };
+      }),
+    };
+
+    const prepared = await prepareWhatsAppMayusReplyForContact({
+      supabase,
+      tenantId: "tenant-1",
+      contactId: "contact-1",
+      trigger: "evolution_webhook",
+      notify: true,
+      autoSendFirstResponse: true,
+    });
+
+    expect(prepared.intent).toBe("sales");
+    expect(prepared.metadata.decision_status).toBe("duplicate_suppressed");
+    expect(prepared.metadata.next_action).toBe("skip_duplicate");
+    expect(prepared.metadata.latest_inbound_at).toBe(latestInboundAt);
+    expect(prepareWhatsAppSalesReplyForContactMock).not.toHaveBeenCalled();
+    expect(sendFrontdeskWhatsAppReplyMock).not.toHaveBeenCalled();
+    expect(inserts).toEqual(expect.arrayContaining([
+      expect.objectContaining({
+        table: "system_event_logs",
+        payload: expect.objectContaining({
+          event_name: "whatsapp_mayus_reply_duplicate_suppressed",
+          payload: expect.objectContaining({
+            decision_status: "duplicate_suppressed",
+            duplicate_of_event_id: "event-1",
+          }),
         }),
       }),
     ]));
