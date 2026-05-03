@@ -63,6 +63,8 @@ export interface BrainInboxApprovalItem {
 
 export interface BrainInboxResponse {
   pending_count: number;
+  partial?: boolean;
+  warnings?: string[];
   pending_approvals: BrainInboxApprovalItem[];
   recent_approvals: BrainInboxApprovalItem[];
   recent_tasks: BrainInboxTaskItem[];

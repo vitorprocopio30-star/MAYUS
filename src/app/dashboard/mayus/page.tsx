@@ -10,6 +10,7 @@ import {
   Mic, Volume2, Square, VolumeX, SlidersHorizontal
 } from "lucide-react";
 import { useUserProfile } from "@/hooks/useUserProfile";
+import type { BrainInboxResponse, BrainInboxTaskItem } from "@/lib/brain/inbox-types";
 import { toast } from "sonner";
 import Link from "next/link";
 import dayjs from "dayjs";
@@ -939,18 +940,37 @@ function MissionPendingCard() {
 
 // ─── ApprovalCard ─────────────────────────────────────────────────────────────
 
-function MissionOpsPanel({ snapshots }: { snapshots: BrainTaskSnapshot[] }) {
-  if (snapshots.length === 0) {
+function MissionOpsPanel({
+  snapshots,
+  recentTasks,
+  pendingApprovalCount,
+  partial,
+  isLoading,
+  error,
+}: {
+  snapshots: BrainTaskSnapshot[];
+  recentTasks: BrainInboxTaskItem[];
+  pendingApprovalCount: number;
+  partial: boolean;
+  isLoading: boolean;
+  error: string | null;
+}) {
+  if (snapshots.length === 0 && recentTasks.length === 0 && !isLoading && !error) {
     return null;
   }
 
+  const trackedTaskIds = new Set(snapshots.map((snapshot) => snapshot.task.id));
+  const tenantTasks = recentTasks.filter((task) => !trackedTaskIds.has(task.id)).slice(0, Math.max(0, 4 - snapshots.length));
   const orderedSnapshots = snapshots.slice(0, 4);
-  const activeCount = snapshots.filter((snapshot) =>
-    ["queued", "planning", "executing", "awaiting_input", "awaiting_approval"].includes(snapshot.task.status)
+  const activeCount = [
+    ...snapshots.map((snapshot) => snapshot.task),
+    ...recentTasks.filter((task) => !trackedTaskIds.has(task.id)),
+  ].filter((task) =>
+    ["queued", "planning", "executing", "awaiting_input", "awaiting_approval"].includes(task.status)
   ).length;
   const approvalCount = snapshots.reduce(
     (total, snapshot) => total + snapshot.approvals.filter((approval) => approval.status === "pending").length,
-    0
+    pendingApprovalCount
   );
   const completedStepCount = snapshots.reduce(
     (total, snapshot) => total + snapshot.steps.filter((step) => step.status === "completed").length,
@@ -962,7 +982,7 @@ function MissionOpsPanel({ snapshots }: { snapshots: BrainTaskSnapshot[] }) {
       <div className="flex flex-col gap-2 sm:flex-row sm:items-center sm:justify-between">
         <div>
           <p className="text-[10px] text-[#CCA761] uppercase tracking-widest">Painel de missoes</p>
-          <p className="text-xs text-gray-400">Acompanhamento operacional do que o MAYUS esta executando nesta conversa.</p>
+          <p className="text-xs text-gray-400">Acompanhamento operacional do que o MAYUS esta executando nesta conversa e no tenant.</p>
         </div>
         <div className="flex flex-wrap gap-1.5">
           <span className="rounded-full border border-[#CCA761]/20 bg-[#CCA761]/10 px-2 py-1 text-[9px] uppercase tracking-widest text-[#CCA761]">
@@ -974,10 +994,35 @@ function MissionOpsPanel({ snapshots }: { snapshots: BrainTaskSnapshot[] }) {
           <span className="rounded-full border border-emerald-500/20 bg-emerald-500/10 px-2 py-1 text-[9px] uppercase tracking-widest text-emerald-300">
             {completedStepCount} steps concluidos
           </span>
+          {recentTasks.length > 0 && (
+            <span className="rounded-full border border-white/10 bg-white/5 px-2 py-1 text-[9px] uppercase tracking-widest text-gray-400">
+              {recentTasks.length} recentes
+            </span>
+          )}
         </div>
       </div>
 
-      <div className="grid gap-2 md:grid-cols-2">
+      {partial && (
+        <div className="rounded-lg border border-amber-500/20 bg-amber-500/10 px-2.5 py-2 text-[11px] text-amber-300">
+          Atividade global carregada parcialmente. O MAYUS segue mostrando o que esta disponivel.
+        </div>
+      )}
+
+      {error && (
+        <div className="rounded-lg border border-red-500/20 bg-red-500/10 px-2.5 py-2 text-[11px] text-red-300">
+          {error}
+        </div>
+      )}
+
+      {isLoading && snapshots.length === 0 && recentTasks.length === 0 && (
+        <div className="flex items-center gap-2 rounded-lg border border-white/5 bg-white/[0.03] px-2.5 py-2 text-[11px] text-gray-400">
+          <Loader2 size={12} className="animate-spin text-[#CCA761]" />
+          Carregando missoes recentes do tenant...
+        </div>
+      )}
+
+      {(orderedSnapshots.length > 0 || tenantTasks.length > 0) && (
+        <div className="grid gap-2 md:grid-cols-2">
         {orderedSnapshots.map((snapshot) => {
           const badge = getMissionBadge(snapshot.task.status);
           const betaSummary = getBetaExecutionSummary(snapshot);
@@ -1013,7 +1058,35 @@ function MissionOpsPanel({ snapshots }: { snapshots: BrainTaskSnapshot[] }) {
             </div>
           );
         })}
-      </div>
+        {tenantTasks.map((task) => {
+          const badge = getMissionBadge(task.status);
+
+          return (
+            <div key={task.id} className="min-w-0 rounded-lg border border-white/5 bg-white/[0.03] p-2.5">
+              <div className="flex items-start justify-between gap-2">
+                <div className="min-w-0">
+                  <p className="truncate text-xs font-semibold text-white/90">{task.goal || task.title || task.module}</p>
+                  <p className="mt-0.5 text-[10px] uppercase tracking-widest text-gray-500">{task.module} / {task.channel}</p>
+                </div>
+                <span className={`shrink-0 rounded-full border px-2 py-1 text-[9px] font-bold uppercase tracking-widest ${badge.className}`}>
+                  {badge.label}
+                </span>
+              </div>
+              <div className="mt-2 flex flex-wrap gap-1.5">
+                <span className="rounded-full border border-white/10 bg-white/5 px-2 py-1 text-[9px] uppercase tracking-widest text-gray-400">
+                  tenant
+                </span>
+                <span className="rounded-full border border-white/10 bg-white/5 px-2 py-1 text-[9px] uppercase tracking-widest text-gray-400">
+                  {dayjs(task.updated_at).fromNow()}
+                </span>
+              </div>
+              {task.result_summary && <p className="mt-2 text-[11px] text-gray-400 line-clamp-2">{task.result_summary}</p>}
+              {task.error_message && <p className="mt-2 text-[11px] text-red-300 line-clamp-2">{task.error_message}</p>}
+            </div>
+          );
+        })}
+        </div>
+      )}
     </section>
   );
 }
@@ -1196,6 +1269,11 @@ export default function MAYUSPlayground() {
   const [checkingVault, setCheckingVault] = useState(true);
   const [brainStatusError, setBrainStatusError] = useState<string | null>(null);
   const [brainTaskSnapshots, setBrainTaskSnapshots] = useState<Record<string, BrainTaskSnapshot>>({});
+  const [tenantMissionTasks, setTenantMissionTasks] = useState<BrainInboxTaskItem[]>([]);
+  const [tenantMissionPendingApprovals, setTenantMissionPendingApprovals] = useState(0);
+  const [tenantMissionPartial, setTenantMissionPartial] = useState(false);
+  const [tenantMissionError, setTenantMissionError] = useState<string | null>(null);
+  const [isTenantMissionLoading, setIsTenantMissionLoading] = useState(false);
 
   // Novos estados da Fase 5A
   const [conversations, setConversations] = useState<Conversation[]>([]);
@@ -1208,6 +1286,7 @@ export default function MAYUSPlayground() {
   const silenceTimerRef = useRef<NodeJS.Timeout | null>(null);
   const recognitionRef = useRef<any>(null);
   const isConversationModeRef = useRef(false);
+  const brainTaskSnapshotsRef = useRef<Record<string, BrainTaskSnapshot>>({});
   const [isRecording, setIsRecording] = useState(false);
   const [isConversationMode, setIsConversationMode] = useState(false);
   const [playingMessageId, setPlayingMessageId] = useState<number | string | null>(null);
@@ -1277,6 +1356,40 @@ export default function MAYUSPlayground() {
     }
   }, []);
 
+  const loadTenantMissionActivity = useCallback(async () => {
+    setIsTenantMissionLoading(true);
+    setTenantMissionError(null);
+    try {
+      const { response, data } = await fetchJsonWithTimeout<BrainInboxResponse>(
+        "/api/brain/inbox?include_activity=true&pending_limit=20&recent_limit=8&activity_limit=12&artifact_limit=8&event_limit=8",
+        { cache: "no-store" },
+        BRAIN_LIST_TIMEOUT_MS
+      );
+
+      if (response.status === 403) {
+        setTenantMissionTasks([]);
+        setTenantMissionPendingApprovals(0);
+        setTenantMissionPartial(false);
+        return;
+      }
+
+      if (!response.ok) {
+        throw new Error((data as any)?.error || "Nao consegui carregar missoes recentes do tenant.");
+      }
+
+      setTenantMissionTasks(Array.isArray(data.recent_tasks) ? data.recent_tasks : []);
+      setTenantMissionPendingApprovals(Number(data.pending_count || 0));
+      setTenantMissionPartial(data.partial === true);
+    } catch (error) {
+      setTenantMissionTasks([]);
+      setTenantMissionPendingApprovals(0);
+      setTenantMissionPartial(false);
+      setTenantMissionError(getFriendlyRequestError(error, "Nao consegui carregar missoes recentes do tenant."));
+    } finally {
+      setIsTenantMissionLoading(false);
+    }
+  }, []);
+
   const loadBrainStatus = useCallback(async () => {
     setCheckingVault(true);
     setBrainStatusError(null);
@@ -1320,12 +1433,13 @@ export default function MAYUSPlayground() {
     if (!profileLoading) {
       if (profile?.tenant_id) {
         void loadBrainStatus();
+        void loadTenantMissionActivity();
         fetchConversations();
       } else {
         setCheckingVault(false);
       }
     }
-  }, [profile?.tenant_id, profileLoading, loadBrainStatus]);
+  }, [profile?.tenant_id, profileLoading, loadBrainStatus, loadTenantMissionActivity]);
 
   useEffect(() => {
     if (apiKeyData?.model) {
@@ -1354,16 +1468,23 @@ export default function MAYUSPlayground() {
   }, [isConversationMode]);
 
   useEffect(() => {
-    const taskIds = getTrackedTaskIds(messages).filter((taskId) => (
-      !isTerminalBrainTaskStatus(brainTaskSnapshots[taskId]?.task?.status)
+    brainTaskSnapshotsRef.current = brainTaskSnapshots;
+  }, [brainTaskSnapshots]);
+
+  useEffect(() => {
+    const getPendingTaskIds = () => getTrackedTaskIds(messages).filter((taskId) => (
+      !isTerminalBrainTaskStatus(brainTaskSnapshotsRef.current[taskId]?.task?.status)
     ));
+    const taskIds = getPendingTaskIds();
 
     if (taskIds.length === 0) {
       return;
     }
 
     const refreshTasks = async () => {
-      await Promise.all(taskIds.map((taskId) => loadBrainTask(taskId)));
+      const pendingTaskIds = getPendingTaskIds();
+      if (pendingTaskIds.length === 0) return;
+      await Promise.all(pendingTaskIds.map((taskId) => loadBrainTask(taskId)));
     };
 
     void refreshTasks();
@@ -1373,7 +1494,17 @@ export default function MAYUSPlayground() {
     }, 4000);
 
     return () => window.clearInterval(intervalId);
-  }, [messages, loadBrainTask, brainTaskSnapshots]);
+  }, [messages, loadBrainTask]);
+
+  useEffect(() => {
+    if (!profile?.tenant_id) return;
+
+    const intervalId = window.setInterval(() => {
+      void loadTenantMissionActivity();
+    }, 15000);
+
+    return () => window.clearInterval(intervalId);
+  }, [profile?.tenant_id, loadTenantMissionActivity]);
 
   const fetchConversations = async () => {
     try {
@@ -2018,7 +2149,14 @@ export default function MAYUSPlayground() {
 
         {/* FEED DE MENSAGENS */}
         <div className="flex-1 overflow-y-auto hide-scrollbar space-y-6 lg:px-24 md:px-12 px-4 py-8">
-          {missionSnapshots.length > 0 && <MissionOpsPanel snapshots={missionSnapshots} />}
+          <MissionOpsPanel
+            snapshots={missionSnapshots}
+            recentTasks={tenantMissionTasks}
+            pendingApprovalCount={tenantMissionPendingApprovals}
+            partial={tenantMissionPartial}
+            isLoading={isTenantMissionLoading}
+            error={tenantMissionError}
+          />
           
           {messages.length === 0 && (
             <div className="h-full flex flex-col items-center justify-center text-center opacity-70">
