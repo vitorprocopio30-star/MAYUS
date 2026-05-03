@@ -25,11 +25,18 @@ export type CommercialObjectionMove = {
 };
 
 export type CommercialPlaybookModel = {
+  playbookKey: "dutra_blindagem" | "generic_legal_sales";
   methodName: string;
   sourceModel: string;
   officeName: string;
   legalArea: string;
   firstResponseSlaMinutes: number;
+  activationGreeting: string;
+  tenantIsolation: {
+    scope: "dutra_only" | "generic_fallback";
+    reason: string;
+    forbiddenOutsideScope: string[];
+  };
   positioning: {
     idealClient: string;
     coreSolution: string;
@@ -38,6 +45,7 @@ export type CommercialPlaybookModel = {
   };
   steps: CommercialPlaybookStep[];
   objections: CommercialObjectionMove[];
+  intakeQuestions: string[];
   callAnalysisChecklist: string[];
   dailyReportSections: Array<{ id: string; label: string; detail: string }>;
   adaptationNotes: string[];
@@ -78,7 +86,206 @@ function cleanList(value?: string[] | null) {
     .slice(0, 5);
 }
 
-export function buildCommercialPlaybookModel(profile: CommercialPlaybookOfficeProfile = {}): CommercialPlaybookModel {
+function isDutraContext(profile: CommercialPlaybookOfficeProfile = {}) {
+  const normalized = normalizeText([
+    profile.firmName,
+    profile.legalArea,
+    profile.idealClient,
+    profile.coreSolution,
+    profile.uniqueValueProposition,
+    profile.positioningSummary,
+    ...(profile.valuePillars || []),
+  ].filter(Boolean).join(" "));
+
+  return /\bdutra\b|blindagem|rmc|gram|credcesta|bmg|gratificacao de risco|servidor publico do rj/.test(normalized);
+}
+
+function buildDutraBlindagemPlaybook(): CommercialPlaybookModel {
+  return {
+    playbookKey: "dutra_blindagem",
+    methodName: "Metodologia Blindagem - DEF + 15 etapas",
+    sourceModel: "Skill Dutra Advocacia: RMC, GRAM, Blindagem 360 e playbook comercial interno.",
+    officeName: "Dutra Advocacia",
+    legalArea: "RMC, cartao consignado e GRAM para servidores publicos do RJ",
+    firstResponseSlaMinutes: 5,
+    activationGreeting: "Bom dia, Guardiao. Qual o desafio comercial de hoje?",
+    tenantIsolation: {
+      scope: "dutra_only",
+      reason: "Conteudo comercial, tese, persona, precificacao e linguagem pertencem ao contexto Dutra.",
+      forbiddenOutsideScope: ["Dutra", "RMC", "GRAM", "Blindagem 360", "Roberto", "Dra. Camila", "Credcesta", "BMG"],
+    },
+    positioning: {
+      idealClient: "Servidor publico do RJ, especialmente PM, Civil, Bombeiro ou Agente Penal, com desconto de RMC/cartao consignado e possivel direito ligado a GRAM.",
+      coreSolution: "Blindagem 360: diagnostico do contracheque, frentes RMC, GRAM e plano tatico para parar sangramento, revisar contrato e recuperar valores quando aplicavel.",
+      uniqueValueProposition: "A Dutra conduz o servidor com linguagem direta, descoberta profunda, ancoragem do prejuizo e fechamento consultivo sem culpar a vitima.",
+      valuePillars: [
+        "Nunca culpar o cliente: ele foi confundido por linguagem tecnica.",
+        "Descoberta antes de proposta: dor, desconto, familia, decisor e urgencia.",
+        "Encantamento conectado ao contracheque, batalhao, banco e sonho adiado.",
+        "Preco somente apos ancoragem e isolamento de variaveis.",
+        "GRAM como segunda frente somente quando juridicamente aplicavel.",
+      ],
+    },
+    steps: [
+      {
+        id: "opening",
+        order: 1,
+        title: "Quebra-gelo com contracheque",
+        objective: "Criar vinculo real usando orgao, batalhao, banco, desconto e tempo de carreira.",
+        mayusBehavior: "Cumprimenta, reconhece o contexto do servidor e pergunta sobre a realidade da carreira antes de vender.",
+        question: "Vi aqui o desconto no seu contracheque. Ha quanto tempo isso aparece e o que mais pesa hoje no seu salario?",
+      },
+      {
+        id: "strategic_retreat",
+        order: 2,
+        title: "Recuo estrategico",
+        objective: "Ganhar permissao para diagnosticar e deixar claro que nem todo caso serve para a solucao.",
+        mayusBehavior: "Evita promessa e conduz para perguntas de qualificacao.",
+        question: "Antes de te falar qualquer solucao, posso entender seu momento para ver se realmente faz sentido?",
+      },
+      {
+        id: "discovery",
+        order: 3,
+        title: "Arsenal de descoberta",
+        objective: "Mapear RMC, tentativas de cancelamento, saldo que nao cai, renda extra, familia, GRAM e dor emocional.",
+        mayusBehavior: "Fala pouco, escuta muito e registra os sinais que vao virar municao no fechamento.",
+        question: "Quando voce assinou isso, te explicaram que era cartao de credito ou voce entendeu que era emprestimo com parcelas fixas?",
+      },
+      {
+        id: "decision_maker",
+        order: 4,
+        title: "Decisor",
+        objective: "Descobrir se a decisao e individual ou envolve esposa, familia ou outro influenciador.",
+        mayusBehavior: "Inclui o decisor cedo para impedir objecao mascarada no final.",
+        question: "Essa decisao de resolver isso e somente sua ou voce costuma envolver alguem?",
+      },
+      {
+        id: "thermometer",
+        order: 5,
+        title: "Termometro",
+        objective: "Medir prioridade real de resolver agora.",
+        mayusBehavior: "Se nao for 8 a 10, investiga o que falta para virar prioridade.",
+        question: "De 0 a 10, qual e sua prioridade em resolver esse desconto agora?",
+      },
+      {
+        id: "honesty_agreement",
+        order: 6,
+        title: "Acordo de sinceridade",
+        objective: "Combinar objetividade: se nao fizer sentido, o cliente fala; se fizer, avanca.",
+        mayusBehavior: "Tira pressao vazia e aumenta compromisso de decisao.",
+        question: "Combinado: se nao fizer sentido voce me fala, e se fizer eu ja deixo o proximo passo organizado?",
+      },
+      {
+        id: "enchantment",
+        order: 7,
+        title: "Encantamento RMC + GRAM",
+        objective: "Explicar banco, juros, contrato, dano moral, devolucao, GRAM e urgencia usando a dor capturada.",
+        mayusBehavior: "Conecta cada frente a um fato dito pelo servidor e evita juridiquês.",
+        question: "De tudo isso, o que mais faria diferenca para voce: parar o desconto, recuperar valor, organizar a divida ou avaliar GRAM?",
+      },
+      {
+        id: "isolation",
+        order: 8,
+        title: "Isolamento de variaveis",
+        objective: "Separar objecao real de desculpa antes de apresentar proposta.",
+        mayusBehavior: "Pergunta o que falta e confirma se aquilo e somente aquilo.",
+        question: "O que falta para voce se tornar cliente hoje?",
+      },
+      {
+        id: "anchor",
+        order: 9,
+        title: "Ancoragem do prejuizo",
+        objective: "Mostrar custo de nao fazer nada com valor mensal, anos de desconto e janela da GRAM.",
+        mayusBehavior: "Ajuda o cliente a calcular o proprio prejuizo antes de falar investimento.",
+        question: "Ha quanto tempo voce paga esse valor por mes? Vamos fazer essa conta juntos.",
+      },
+      {
+        id: "proposal",
+        order: 10,
+        title: "Proposta e condicao",
+        objective: "Apresentar valor tabela, depois condicao especial, somente apos ancoragem.",
+        mayusBehavior: "Nao antecipa preco. Mostra escopo, taxa de exito e proximos passos com clareza.",
+        question: "Pelo numero de acoes mapeadas, vou te mostrar o caminho completo e a melhor forma de comecar.",
+      },
+      {
+        id: "close",
+        order: 11,
+        title: "Fechamento presumido",
+        objective: "Converter em agenda, documento, contrato ou pagamento quando o lead ja validou sentido.",
+        mayusBehavior: "Assume o proximo passo e reduz friccao operacional.",
+        question: "Vamos garantir seu inicio entao. O contrato fica no seu nome, certo?",
+      },
+    ],
+    objections: [
+      {
+        objection: "Vou pensar",
+        investigationQuestion: "O que exatamente voce precisa analisar melhor: seguranca, valor, decisor ou algum ponto que ficou em aberto?",
+        responseFrame: "Pensar faz sentido, mas enquanto fica aberto o desconto continua e a janela da GRAM pode andar.",
+        nextMove: "Isolar a variavel, retomar dor financeira e marcar proximo passo objetivo.",
+      },
+      {
+        objection: "Nao tenho esse dinheiro",
+        investigationQuestion: "Ate qual valor voce conseguiria investir para comecar sem apertar mais o mes?",
+        responseFrame: "Comparar parcela com desconto mensal e custo de continuar parado, sem prometer resultado.",
+        nextMove: "Recalibrar forma de pagamento ou encaminhar agenda de fechamento.",
+      },
+      {
+        objection: "Preciso falar com minha esposa",
+        investigationQuestion: "Ela decide junto ou voce quer explicar com seguranca antes?",
+        responseFrame: "Evitar perda de contexto e oferecer call com os dois.",
+        nextMove: "Agendar call conjunta ou enviar resumo curto para decisor.",
+      },
+      {
+        objection: "Nao sei se tenho direito",
+        investigationQuestion: "Voce tem contracheque, contrato, banco e historico do desconto para uma analise inicial?",
+        responseFrame: "Ninguem serio promete sem analisar, mas os sinais do contracheque indicam se vale avancar.",
+        nextMove: "Pedir documento minimo e organizar diagnostico.",
+      },
+      {
+        objection: "Ja tentei antes",
+        investigationQuestion: "O desconto chegou a parar? Qual foi a estrategia usada?",
+        responseFrame: "Diferenciar tentativa generica de uma analise com contrato, contracheque, banco e tese correta.",
+        nextMove: "Mapear falha anterior e propor nova leitura.",
+      },
+    ],
+    intakeQuestions: [
+      "Qual orgao, batalhao/corporacao, banco e valor do desconto aparecem no contracheque?",
+      "O cliente entendeu que assinou emprestimo ou sabia que era cartao consignado?",
+      "Ja tentou cancelar, pedir extrato ou negociar direto com banco?",
+      "Existe GRAM no contracheque e ja houve acao anterior sobre esse tema?",
+      "Quem decide a contratacao e qual objecao real apareceu?",
+      "Qual pacote, condicao e forma de pagamento foram autorizados pelo escritorio para esse caso?",
+    ],
+    callAnalysisChecklist: [
+      "Se abriu com contexto real do contracheque, orgao, banco e valor.",
+      "Se nunca culpou o servidor pela assinatura.",
+      "Se mapeou RMC, GRAM, renda extra, familia, decisor e prioridade.",
+      "Se perguntou expectativa de um excelente escritorio antes do fechamento.",
+      "Se explicou RMC/GRAM sem juridiquês e sem promessa de resultado.",
+      "Se ancorou o prejuizo antes de falar preco.",
+      "Se isolou a objecao antes de contornar.",
+      "Se fechou proximo passo com data, canal e responsavel.",
+    ],
+    dailyReportSections: [
+      { id: "executive", label: "Resumo executivo", detail: "Sinais comerciais, agenda e risco juridico do dia." },
+      { id: "rmc", label: "RMC e descontos", detail: "Leads com contracheque, banco, desconto e potencial frente RMC." },
+      { id: "gram", label: "GRAM", detail: "Oportunidades de triagem GRAM e documentos faltantes." },
+      { id: "crm", label: "Comercial e CRM", detail: "Leads sem proximo passo, no-show, follow-up e fechamento." },
+      { id: "agenda", label: "Agenda e prazos", detail: "Calls, documentos, retornos e tarefas criticas." },
+      { id: "frontdesk", label: "Front desk MAYUS", detail: "Atendimentos sem resposta, handoffs e primeira triagem." },
+      { id: "calls", label: "Calls e qualidade", detail: "Etapas puladas, objecoes e oportunidades perdidas." },
+      { id: "playbook", label: "Playbook do dia", detail: "Movimentos prioritarios para o time comercial Dutra." },
+    ],
+    adaptationNotes: [
+      "Esta skill so pode ser usada no contexto Dutra; qualquer tenant nao-Dutra deve cair no template generico.",
+      "MAYUS pode vender, qualificar, marcar reuniao e organizar fechamento quando a governanca permitir IA operando.",
+      "Nao prometer resultado juridico: separar tese, possibilidade, documentos e risco.",
+      "Preco, condicoes e taxa de exito devem seguir configuracao validada pelo escritorio.",
+    ],
+  };
+}
+
+function buildGenericLegalSalesPlaybook(profile: CommercialPlaybookOfficeProfile = {}): CommercialPlaybookModel {
   const officeName = cleanText(profile.firmName) || "Escritorio";
   const legalArea = cleanText(profile.legalArea) || "atendimento juridico consultivo";
   const idealClient = cleanText(profile.idealClient) || `pessoas com um problema real em ${legalArea}, urgencia de decisao e abertura para diagnostico`;
@@ -88,11 +295,18 @@ export function buildCommercialPlaybookModel(profile: CommercialPlaybookOfficePr
   const valuePillars = cleanList(profile.valuePillars);
 
   return {
+    playbookKey: "generic_legal_sales",
     methodName: "MAYUS Front Desk Comercial",
-    sourceModel: "Inspirado no documento gestao-comercial-dutra-advocacia.html; adaptavel por escritorio.",
+    sourceModel: "Template generico de vendas juridicas consultivas; nao contem termos proprietarios de outros tenants.",
     officeName,
     legalArea,
     firstResponseSlaMinutes: 5,
+    activationGreeting: "Bom dia. Qual e o desafio comercial de hoje?",
+    tenantIsolation: {
+      scope: "generic_fallback",
+      reason: "Fallback seguro para qualquer escritorio que ainda nao tenha playbook proprietario validado.",
+      forbiddenOutsideScope: ["termos proprietarios de outro tenant", "teses nao validadas", "precificacao nao autorizada"],
+    },
     positioning: {
       idealClient,
       coreSolution,
@@ -225,6 +439,20 @@ export function buildCommercialPlaybookModel(profile: CommercialPlaybookOfficePr
         nextMove: "Pedir documentos minimos e propor diagnostico responsavel.",
       },
     ],
+    intakeQuestions: [
+      "Qual e o nome do escritorio e qual tom de voz ele usa com clientes?",
+      "Qual area juridica e qual servico especifico esta sendo vendido?",
+      "Quem e o cliente ideal, quais sinais qualificam o lead e quais sinais desqualificam?",
+      "Qual dor concreta o cliente sente antes de contratar e qual custo de esperar?",
+      "Qual tese, metodo, produto juridico ou escopo pode ser explicado com seguranca?",
+      "Quais documentos minimos o MAYUS deve pedir antes de avancar?",
+      "Quais provas, diferenciais, cases ou autoridades podem ser citados sem exagero?",
+      "Quais promessas sao proibidas e quais frases precisam de revisao humana?",
+      "Qual preco, forma de pagamento, politica de desconto e condicao especial estao autorizados?",
+      "Quais objecoes mais aparecem e qual resposta aprovada para cada uma?",
+      "Quando o MAYUS deve vender sozinho, marcar reuniao, abrir suporte ou chamar humano?",
+      "Quais secoes o relatorio/playbook diario precisa trazer para esse escritorio?",
+    ],
     callAnalysisChecklist: [
       "Tempo ate primeira resposta e se o lead ficou mais de 5 minutos sem retorno.",
       "Dor concreta, impacto financeiro/emocional e custo de nao agir.",
@@ -243,15 +471,18 @@ export function buildCommercialPlaybookModel(profile: CommercialPlaybookOfficePr
       { id: "playbook", label: "Playbook do dia", detail: "Acoes prioritarias em estilo operacional premium." },
     ],
     adaptationNotes: [
-      "Dutra usa linguagem de RMC/GRAM e Metodologia Blindagem; outros escritorios devem trocar area, promessa, provas, oferta e objecoes.",
+      "Cada escritorio deve validar area, promessa, provas, oferta, preco e objecoes antes de ativar operacao plena.",
       "O modelo estrutural e reutilizavel: resposta rapida, descoberta, decisor, termometro, encantamento, objecao e fechamento.",
       "MAYUS deve fazer o primeiro atendimento e acionar humano quando houver urgencia juridica, pedido especifico ou risco de promessa.",
     ],
   };
 }
 
+export function buildCommercialPlaybookModel(profile: CommercialPlaybookOfficeProfile = {}): CommercialPlaybookModel {
+  return isDutraContext(profile) ? buildDutraBlindagemPlaybook() : buildGenericLegalSalesPlaybook(profile);
+}
+
 export function buildCommercialPlaybookSetup(input: CommercialPlaybookSetupInput = {}) {
-  const model = buildCommercialPlaybookModel(input);
   const flavor = cleanText(input.templateFlavor) || (
     /dutra|rmc|gram|blindagem|bancario/i.test([
       input.firmName,
@@ -264,6 +495,7 @@ export function buildCommercialPlaybookSetup(input: CommercialPlaybookSetupInput
       : "generic"
   );
   const dutraSpecific = flavor === "dutra_blindagem";
+  const model = dutraSpecific ? buildDutraBlindagemPlaybook() : buildGenericLegalSalesPlaybook(input);
 
   return {
     ...model,
@@ -289,9 +521,13 @@ export function buildCommercialPlaybookArtifactMetadata(playbook: CommercialPlay
     positioning: playbook.positioning,
     steps: playbook.steps,
     objections: playbook.objections,
+    intake_questions: playbook.intakeQuestions,
     call_analysis_checklist: playbook.callAnalysisChecklist,
     daily_report_sections: playbook.dailyReportSections,
     adaptation_notes: playbook.adaptationNotes,
+    playbook_key: playbook.playbookKey,
+    activation_greeting: playbook.activationGreeting,
+    tenant_isolation: playbook.tenantIsolation,
     mayus_role: "first_attendant_sdr_closer_router",
     requires_human_review_for_legal_commitments: true,
     external_side_effects_policy: "MAYUS pode responder primeira triagem segura; contrato, cobranca e promessa juridica exigem governanca.",
@@ -301,9 +537,11 @@ export function buildCommercialPlaybookArtifactMetadata(playbook: CommercialPlay
 export function buildCommercialPlaybookReply(playbook: CommercialPlaybookModel) {
   return [
     `Skill comercial criada para ${playbook.officeName}.`,
+    `Escopo: ${playbook.tenantIsolation.scope}.`,
     `SLA do primeiro atendimento: ate ${playbook.firstResponseSlaMinutes} minutos.`,
     `Metodo: ${playbook.methodName}.`,
     `Fases ativas: ${playbook.steps.map((step) => step.title).join(" -> ")}.`,
+    `Perguntas de configuracao: ${playbook.intakeQuestions.length}.`,
     "MAYUS atua como primeiro atendimento, qualifica, conduz descoberta, prepara fechamento e transfere quando houver pedido humano, urgencia juridica ou pessoa/setor especifico.",
   ].join("\n");
 }
@@ -319,6 +557,30 @@ export function buildCommercialFirstReply(params: {
   const context = shortContext(params.lastInboundText);
   const officeLabel = playbook.officeName === "Escritorio" ? "escritorio" : playbook.officeName;
   const opening = `Oi, ${name}. Aqui e o MAYUS, do ${officeLabel}. Vou cuidar da sua primeira triagem agora.`;
+
+  if (playbook.playbookKey === "dutra_blindagem") {
+    if (/reuni[aã]o|agenda|agendar|call|liga[cç][aã]o|telefone|marcar/.test(normalized)) {
+      return [
+        `Oi, ${name}. Perfeito, eu vou te ajudar a avancar com a Dutra.`,
+        "Para marcar a conversa certa: voce quer analisar RMC/cartao consignado, GRAM, contracheque ou fechamento de proposta?",
+        "Se puder, ja me mande o melhor periodo hoje e uma foto do contracheque para eu chegar na call sem chute.",
+      ].join("\n\n");
+    }
+
+    if (/rmc|credcesta|bmg|cart[aã]o|consignado|desconto|contracheque/.test(normalized)) {
+      return [
+        `Oi, ${name}. Entendi o sinal de RMC/cartao consignado.`,
+        "Antes de falar de valor, preciso entender a sangria: qual banco aparece no contracheque, qual valor desconta por mes e ha quanto tempo isso vem acontecendo?",
+      ].join("\n\n");
+    }
+
+    if (/gram|gratifica[cç][aã]o|risco|ir|imposto/.test(normalized)) {
+      return [
+        `Oi, ${name}. Entendi sua duvida sobre GRAM.`,
+        "Para eu qualificar certo: voce e servidor do RJ, a GRAM aparece no contracheque e voce ja entrou com alguma acao sobre esse desconto de IR?",
+      ].join("\n\n");
+    }
+  }
 
   if (/humano|atendente|advogado|doutor|doutora|responsavel|falar com/.test(normalized)) {
     return [

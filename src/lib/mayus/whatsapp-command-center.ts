@@ -1,6 +1,6 @@
 import { buildDailyPlaybook, type DailyPlaybook, type DailyPlaybookPreferences } from "@/lib/mayus/daily-playbook";
 
-export type WhatsAppCommandIntent = "daily_playbook" | "crm_next_steps" | "agenda_today" | "unknown";
+export type WhatsAppCommandIntent = "daily_playbook" | "crm_next_steps" | "agenda_today" | "process_status" | "unknown";
 
 export type WhatsAppCommandInput = {
   tenantId: string;
@@ -74,7 +74,8 @@ export function isAuthorizedWhatsAppCommandSender(params: {
 
 export function inferWhatsAppCommandIntent(text?: string | null): WhatsAppCommandIntent {
   const normalized = normalize(text);
-  if (!/(mayus|relatorio|relatorio|playbook|agenda|crm|lead|prazo|status|sistema)/.test(normalized)) return "unknown";
+  if (!/(mayus|relatorio|relatorio|playbook|agenda|crm|lead|prazo|status|sistema|processo|cliente|caso|andamento)/.test(normalized)) return "unknown";
+  if (/processo|cliente|caso|andamento|status do processo|status do cliente/.test(normalized)) return "process_status";
   if (/playbook|relatorio|resumo|status do escritorio|status do sistema/.test(normalized)) return "daily_playbook";
   if (/lead|crm|proximo passo|follow/.test(normalized)) return "crm_next_steps";
   if (/agenda|hoje|tarefas|prazo/.test(normalized)) return "agenda_today";
@@ -85,6 +86,23 @@ function buildCommandReply(params: {
   intent: Exclude<WhatsAppCommandIntent, "unknown">;
   playbook: DailyPlaybook;
 }) {
+  if (params.intent === "process_status") {
+    const legalActions = params.playbook.priorityActions
+      .filter((action) => action.area === "legal" || action.area === "agenda")
+      .slice(0, 5);
+    const list = legalActions.length > 0
+      ? legalActions.map((action, index) => `${index + 1}. ${action.title}: ${action.detail}`).join("\n")
+      : "Nao encontrei processo/prazo critico no recorte do dia. Para um cliente especifico, mande nome, telefone ou CNJ.";
+
+    return [
+      "*MAYUS: status juridico*",
+      `Olhei processos, prazos e tarefas do escritorio: ${params.playbook.executiveSummary}`,
+      list,
+      "",
+      "Se quiser status de um cliente especifico, me mande: nome do cliente, telefone ou CNJ. Eu busco o caso e respondo sem inventar.",
+    ].join("\n").trim();
+  }
+
   if (params.intent === "crm_next_steps") {
     const leads = params.playbook.crm.leadsNeedingNextStep.slice(0, 5);
     const list = leads.length > 0
@@ -98,7 +116,7 @@ function buildCommandReply(params: {
         : "Nenhum lead prioritario sem proximo passo agora.",
       list,
       "",
-      "_Nenhuma mensagem foi enviada automaticamente._",
+      "_MAYUS operacional: CRM organizado e proximo movimento separado._",
     ].join("\n").trim();
   }
 
@@ -115,7 +133,7 @@ function buildCommandReply(params: {
       `Olhei a agenda: ${params.playbook.executiveSummary}`,
       list,
       "",
-      "_Nenhuma mensagem foi enviada automaticamente._",
+      "_MAYUS operacional: agenda lida e prioridades separadas._",
     ].join("\n").trim();
   }
 

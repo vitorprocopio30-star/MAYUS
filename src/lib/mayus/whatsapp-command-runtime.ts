@@ -216,7 +216,7 @@ export async function handleWhatsAppInternalCommand(params: HandleWhatsAppIntern
     htmlReportShareToken: reportShareToken,
   });
   const replyText = reportUrl && brainTrace?.artifactId
-    ? `${result.replyText}\n\nRelatorio completo em HTML: ${reportUrl}`
+    ? `${result.replyText}\n\nPlaybook completo em HTML premium: ${reportUrl}`
     : result.replyText;
 
   await params.supabase.from("system_event_logs").insert({

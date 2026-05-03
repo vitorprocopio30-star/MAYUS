@@ -1114,7 +1114,7 @@ function ConfiguracoesContent() {
         ai_features: { 
           ...aiFeatures, 
           default_department_id: defaultDeptId,
-          contract_flow_mode: aiFeatures.contract_flow_mode || 'hybrid',
+          contract_flow_mode: aiFeatures.contract_flow_mode || 'ia_only',
           zapsign_template_id: aiFeatures.zapsign_template_id || '',
           sales_consultation_profile: normalizedSalesProfile,
           daily_playbook: normalizedDailyPlaybook,
@@ -1504,15 +1504,15 @@ function ConfiguracoesContent() {
               {/* GOVERNANÇA DE CONTRATOS - CARD SOLICITADO (MOVIDO PARA O TOPO PARA TESTE) */}
               <div className="bg-[#0C0C0C] border border-[#CCA761]/40 p-8 rounded-3xl relative shadow-2xl z-50 isolate mb-10">
                  <div className="flex items-center justify-between mb-8 border-b border-white/5 pb-4">
-                    <h2 className="text-sm font-black uppercase tracking-[0.3em] text-[#CCA761] flex items-center gap-3"><ShieldCheck size={18} /> Governança de Fechamento</h2>
-                    <span className="text-[9px] text-gray-500 font-bold uppercase tracking-widest bg-white/5 px-3 py-1 rounded-full border border-white/5">Protocolo ZapSign Ativo</span>
+                    <h2 className="text-sm font-black uppercase tracking-[0.3em] text-[#CCA761] flex items-center gap-3"><ShieldCheck size={18} /> Governanca de Atendimento e Fechamento</h2>
+                    <span className="text-[9px] text-gray-500 font-bold uppercase tracking-widest bg-white/5 px-3 py-1 rounded-full border border-white/5">WhatsApp operacional por padrao</span>
                  </div>
 
                  <div className="grid grid-cols-1 md:grid-cols-3 gap-4 mb-8">
                     {[
-                      { id: 'ia_only', label: 'Somente IA', desc: 'Fechamento Autônomo', icon: Bot, color: '#CCA761' },
-                      { id: 'human_only', label: 'Somente Humano', desc: 'Revisão Necessária', icon: Users, color: '#4F46E5' },
-                      { id: 'hybrid', label: 'Modo Híbrido', desc: 'Agilidade Máxima', icon: Zap, color: '#22c55e' }
+                      { id: 'ia_only', label: 'IA Operando', desc: 'Vende, atende e agenda', icon: Bot, color: '#CCA761' },
+                      { id: 'human_only', label: 'Somente Rascunho', desc: 'Usuario revisa antes', icon: Users, color: '#4F46E5' },
+                      { id: 'hybrid', label: 'IA Assistida', desc: 'Opera com supervisao leve', icon: Zap, color: '#22c55e' }
                     ].map((mode) => (
                       <button
                         key={mode.id}
@@ -1522,12 +1522,12 @@ function ConfiguracoesContent() {
                           setHasUnsavedChanges(true);
                         }}
                         className={`flex flex-col items-center gap-4 p-6 rounded-2xl border-2 transition-all text-center ${
-                          aiFeatures.contract_flow_mode === mode.id 
+                          (aiFeatures.contract_flow_mode || 'ia_only') === mode.id
                             ? 'bg-[#CCA761]/5 border-[#CCA761] shadow-[0_0_20px_rgba(204,167,97,0.1)]' 
                             : 'bg-gray-200 dark:bg-black border-white/10 hover:border-white/20 grayscale hover:grayscale-0'
                         }`}
                       >
-                         <div className={`p-4 rounded-xl mb-1 ${aiFeatures.contract_flow_mode === mode.id ? 'bg-[#CCA761] text-black' : 'bg-white/5 text-gray-500'}`}>
+                         <div className={`p-4 rounded-xl mb-1 ${(aiFeatures.contract_flow_mode || 'ia_only') === mode.id ? 'bg-[#CCA761] text-black' : 'bg-white/5 text-gray-500'}`}>
                            <mode.icon size={24} />
                          </div>
                          <div>

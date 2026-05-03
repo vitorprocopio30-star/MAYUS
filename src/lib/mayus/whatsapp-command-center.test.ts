@@ -28,6 +28,7 @@ describe("whatsapp command center", () => {
     expect(inferWhatsAppCommandIntent("Mayus, relatorio do escritorio")).toBe("daily_playbook");
     expect(inferWhatsAppCommandIntent("Mayus, leads sem proximo passo")).toBe("crm_next_steps");
     expect(inferWhatsAppCommandIntent("Mayus, agenda de hoje")).toBe("agenda_today");
+    expect(inferWhatsAppCommandIntent("Mayus, status do processo da Maria")).toBe("process_status");
   });
 
   it("bloqueia remetente nao autorizado", () => {
@@ -76,8 +77,34 @@ describe("whatsapp command center", () => {
     if (!result.handled) throw new Error("expected handled command");
     expect(result.intent).toBe("daily_playbook");
     expect(result.replyText).toContain("Dutra Advocacia: resumo do dia");
-    expect(result.replyText).toContain("Nenhuma mensagem foi enviada automaticamente");
+    expect(result.replyText).toContain("MAYUS operacional");
     expect(result.playbook.metrics.crmLeadsNeedingNextStep).toBe(1);
     expect(JSON.stringify(result.metadata)).not.toContain("21999990000");
+  });
+
+  it("responde comando de processo sem inventar cliente especifico quando falta identificador", () => {
+    const result = buildWhatsAppCommandResponse({
+      tenantId: "tenant-1",
+      senderPhone: "5521999990000",
+      text: "Mayus, status do processo do cliente",
+      aiFeatures,
+      now: new Date("2026-04-30T09:00:00.000Z"),
+      userTasks: [
+        {
+          id: "task-1",
+          title: "Prazo de recurso INSS",
+          urgency: "URGENTE",
+          status: "Pendente",
+          scheduled_for: "2026-04-30T13:00:00.000Z",
+          assigned_name_snapshot: "Equipe Juridica",
+        },
+      ],
+    });
+
+    expect(result.handled).toBe(true);
+    if (!result.handled) throw new Error("expected handled command");
+    expect(result.intent).toBe("process_status");
+    expect(result.replyText).toContain("*MAYUS: status juridico*");
+    expect(result.replyText).toContain("nome do cliente, telefone ou CNJ");
   });
 });

@@ -74,7 +74,8 @@ describe("daily playbook", () => {
     expect(playbook.whatsappSummary).toContain("*Dutra Advocacia: resumo do dia*");
     expect(playbook.whatsappSummary).toContain("*Numeros*");
     expect(playbook.whatsappSummary).toContain("*O que priorizar*");
-    expect(playbook.whatsappSummary).toContain("Nenhuma mensagem foi enviada automaticamente");
+    expect(playbook.whatsappSummary).toContain("Bom dia");
+    expect(playbook.whatsappSummary).toContain("MAYUS operacional");
     expect(playbook.reportMenu.map((item) => item.id)).toEqual(expect.arrayContaining(["executive", "crm", "frontdesk", "calls", "playbook"]));
     expect(playbook.htmlReport).toContain("<nav class=\"sidebar\">");
     expect(playbook.htmlReport).toContain("Front desk");
@@ -117,6 +118,17 @@ describe("daily playbook", () => {
     expect(playbook.whatsappSummary).toContain("Dia tranquilo");
     expect(playbook.whatsappSummary).toContain("revisar CRM parado");
     expect(playbook.whatsappSummary).not.toContain("Acoes prioritarias:");
+  });
+
+  it("ajusta saudacao conforme horario do pedido", () => {
+    expect(buildDailyPlaybook({
+      firmName: "Dutra Advocacia",
+      now: new Date(2026, 3, 30, 14, 0, 0),
+    }).whatsappSummary).toContain("Boa tarde");
+    expect(buildDailyPlaybook({
+      firmName: "Dutra Advocacia",
+      now: new Date(2026, 3, 30, 21, 0, 0),
+    }).whatsappSummary).toContain("Boa noite");
   });
 
   it("registra artifact e learning event do playbook", async () => {

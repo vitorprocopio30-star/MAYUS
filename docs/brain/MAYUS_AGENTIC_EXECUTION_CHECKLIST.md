@@ -209,10 +209,13 @@ Evidencia 2026-04-27: skill `lead_qualify` monta roteiro por area, documentos mi
 Evidencia 2026-04-28: skill `sales_consultation` aplica atendimento consultivo DEF com artifact `sales_consultation_plan`, descoberta antes da proposta, sinais capturados/faltantes no bate-papo, proxima pergunta adaptativa, cliente ideal do escritorio, solucao central, PUV sugerida quando ausente, pilares autorais, encantamento personalizado, movimentos de objecao, fechamento racional, scorecard de qualidade e side effects externos bloqueados.
 - [x] `sales_profile_setup`.
 Evidencia 2026-04-28: skill `sales_profile_setup` auto-configura a base comercial do escritorio por chat, extrai cliente ideal, solucao central, PUV, pilares e anti-cliente, cria artifact `sales_profile_setup`, registra learning event e grava o perfil em `tenant_settings.ai_features.sales_consultation_profile` para a `sales_consultation` usar sem exigir configuracao manual.
-- [x] WhatsApp consultivo supervisionado.
-Evidencia 2026-04-28: `/api/whatsapp/ai-sales-reply` e `whatsapp-sales-reply` geram resposta DEF para conversa real de WhatsApp com base no historico e no perfil comercial salvo; `/dashboard/conversas/whatsapp` ganhou botao MAYUS que coloca a resposta no composer sem envio automatico, com revisao humana para preco, contrato, urgencia ou promessa de resultado.
-Evidencia 2026-04-28: `prepareWhatsAppSalesReplyForContact` foi plugado nos webhooks Meta Cloud e Evolution para preparar rascunho/auditoria/notificacao em background quando chega mensagem inbound, mantendo `may_auto_send=false`.
-Evidencia 2026-04-28: `GET /api/whatsapp/ai-sales-reply` e o painel "Rascunho MAYUS" em `/dashboard/conversas/whatsapp` tornam o auto-rascunho visivel no atendimento e permitem usar/atualizar o texto sem envio automatico.
+- [x] Playbook comercial tenant-scoped.
+Evidencia 2026-05-03: `commercial-playbook-template` resolve a skill Dutra/Blindagem apenas para contexto Dutra, com RMC/GRAM no playbook diario e resposta WhatsApp especifica; outros escritorios recebem template generico sem termos proprietarios e com questionario para montar um playbook no mesmo nivel. Validacoes passaram com 21 testes focados e typecheck.
+- [x] WhatsApp consultivo operacional.
+Evidencia 2026-04-28: `/api/whatsapp/ai-sales-reply` e `whatsapp-sales-reply` geram resposta DEF para conversa real de WhatsApp com base no historico e no perfil comercial salvo; `/dashboard/conversas/whatsapp` ganhou botao MAYUS para acionar/atualizar a resposta quando o operador quiser intervir.
+Evidencia 2026-05-03: `prepareWhatsAppMayusReplyForContact` passou a tratar `ia_only` como padrao quando o escritorio nao escolheu outro modo. Nesse modo o MAYUS atende WhatsApp para venda, pedido de reuniao/agendamento e suporte; "Somente Rascunho" fica restrito a `human_only` em Configuracoes.
+Evidencia 2026-05-03: perguntas de preco, contrato, urgencia ou garantia nao travam mais a venda por padrao; o MAYUS responde com guardrails comerciais/juridicos, sem prometer resultado, e continua a conversa. Pedido explicito de pessoa/humano continua gerando handoff.
+Evidencia 2026-05-03: o WhatsApp Command Center reconhece relatorio/playbook, CRM, agenda e status juridico de telefone autorizado; gera saudacao conforme horario, responde com resumo operacional e anexa link de Playbook HTML premium (`/r/playbook/...`) quando registra artifact.
 - [x] `lead_followup`.
 Evidencia 2026-04-27: skill `lead_followup` monta cadencia supervisionada, mensagem inicial, checklist humano e condicoes de pausa como artifact `lead_followup_plan`, sem envio externo automatico.
 - [x] Agendamento.
@@ -464,6 +467,8 @@ Evidencia 2026-05-03: quando o executor beta roda `lex:support_case_status`, ele
 Evidencia 2026-05-03: apos cada `execute-next`, o runtime recalcula steps restantes e atualiza `brain_tasks`/`brain_runs` para `executing`, `awaiting_approval` ou `completed`, conforme ainda existam itens seguros, aprovacoes pendentes ou fila encerrada.
 - [x] Executar todos os itens seguros restantes da fila beta.
 Evidencia 2026-05-03: `POST /api/setup/beta/execute-safe-queue` executa a fila segura em loop ate concluir, parar em aprovacao humana ou atingir limite operacional, sem atravessar checkpoints sensiveis.
+- [x] Auto-organizar o escritorio pelo MAYUS.
+Evidencia 2026-05-03: `organizeTenantAutonomously` e `POST /api/setup/organize` permitem continuar fila segura existente, iniciar novo ciclo quando necessario e nao duplicar trabalho quando aguarda aprovacao; o chat detecta pedidos de organizacao agentica e o cockpit tem acao `Organizar agora`.
 - [x] Expor historico compacto da execucao beta em Configuracoes.
 Evidencia 2026-05-03: o painel do Modo Beta em Configuracoes agora mostra a ultima execucao, status final, quantidade de itens executados e resumo dos steps concluidos depois de `execute-next` ou `execute-safe-queue`.
 - [x] Expor historico compacto da execucao beta no cockpit MAYUS.
@@ -544,7 +549,7 @@ Evidencia 2026-04-30: o alerta deixou de ser apenas passivo e passou a devolver 
 Evidencia 2026-04-28: `marketing_ops_assistant` foi adicionado ao router/registry/dispatcher; le `tenant_settings.ai_features.marketing_os` e cards CRM para responder por chat com pautas da semana, conteudos aprovados sem tarefa, leads sem proximo passo e acoes recomendadas, criando artifact `marketing_ops_assistant_plan` e learning event sem side effects externos.
 - [~] Controlar MAYUS por WhatsApp interno autorizado.
 Escopo: permitir que usuarios autorizados comandem o MAYUS pelo WhatsApp para pedir relatorios, status do escritorio, agenda, leads parados, prazos criticos e proximas acoes; autenticar por telefone/perfil, registrar artifact/evento e manter side effects externos sob aprovacao.
-Evidencia parcial 2026-04-30: `whatsapp-command-center` reconhece intents de relatorio/playbook, CRM e agenda, valida remetente contra `daily_playbook.authorizedPhones` e gera resposta interna sem side effects; Configuracoes Globais permite cadastrar telefones autorizados. Falta plugar no webhook Meta/Evolution e envio real.
+Evidencia parcial 2026-05-03: `whatsapp-command-center` reconhece intents de relatorio/playbook, CRM, agenda e status juridico, valida remetente contra `daily_playbook.authorizedPhones`, gera Playbook HTML premium com link publico e responde pelo provider quando ha integracao; Configuracoes Globais permite cadastrar telefones autorizados.
 - [~] Criar Playbook diario configuravel por usuario/escritorio.
 Escopo: usuario escolhe se recebe, horario, dias, canal, escopo e nivel de detalhe; o MAYUS gera relatorio executivo premium com CRM, juridico, agenda, financeiro, marketing e proximas acoes. WhatsApp deve enviar resumo/link e o HTML premium deve ficar no MAYUS.
 Evidencia parcial 2026-04-30: `POST /api/mayus/daily-playbook` gera playbook com CRM/agenda, persiste artifact/evento quando solicitado e bloqueia side effects externos; Configuracoes Globais ganhou painel "Playbook Diario MAYUS" com horario, dias, canais, escopo, detalhe e previa sem persistir.

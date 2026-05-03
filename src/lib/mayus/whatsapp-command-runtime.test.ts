@@ -151,6 +151,7 @@ describe("whatsapp command runtime", () => {
         method: "POST",
       }),
     );
+    expect(String((global.fetch as any).mock.calls[0][1].body)).toContain("Playbook completo em HTML premium");
     expect(String((global.fetch as any).mock.calls[0][1].body)).toContain("https://mayus-premium-pro.vercel.app/r/playbook/");
 
     const artifactInsert = inserts.find((item) => item.table === "brain_artifacts" && item.payload.artifact_type === "daily_playbook");

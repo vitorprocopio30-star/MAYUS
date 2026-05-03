@@ -84,6 +84,13 @@ export type TenantBetaRunSafeQueueResult = {
   summary: string;
 };
 
+export type TenantAutonomousOrganizationResult = {
+  startedNewCycle: boolean;
+  beta: TenantBetaWorkMode | null;
+  result: TenantBetaRunSafeQueueResult;
+  summary: string;
+};
+
 type DoctorSupabase = {
   from: (table: string) => any;
 };
@@ -168,7 +175,7 @@ export function buildTenantDoctorReadiness(checks: TenantDoctorCheck[]): {
         category: "audit",
         title: "Tenant pronto para operar",
         detail: "O MAYUS nao encontrou bloqueios ou avisos criticos no setup atual.",
-        action: "Abrir o Playbook Diario ou iniciar uma missao operacional pelo MAYUS.",
+        action: "Abrir o Playbook Diario ou pedir para o MAYUS organizar o escritorio.",
         sourceCheckId: "setup:ready",
         requiresHumanAction: false,
       },
@@ -1647,5 +1654,104 @@ export async function executeTenantBetaSafeQueue(params: {
     executions,
     finalStatus,
     summary,
+  };
+}
+
+async function loadLatestTenantBetaTask(params: {
+  supabase: DoctorSupabase;
+  tenantId: string;
+}) {
+  const { data: latestArtifact, error: artifactError } = await params.supabase
+    .from("brain_artifacts")
+    .select("task_id")
+    .eq("tenant_id", params.tenantId)
+    .eq("artifact_type", "tenant_beta_workplan")
+    .order("created_at", { ascending: false })
+    .limit(1)
+    .maybeSingle();
+
+  if (artifactError) throw artifactError;
+  const taskId = typeof latestArtifact?.task_id === "string" ? latestArtifact.task_id : null;
+  if (!taskId) return null;
+
+  const { data: task, error: taskError } = await params.supabase
+    .from("brain_tasks")
+    .select("id,status,result_summary")
+    .eq("tenant_id", params.tenantId)
+    .eq("id", taskId)
+    .maybeSingle();
+
+  if (taskError) throw taskError;
+  if (!task?.id) return null;
+
+  return {
+    id: String(task.id),
+    status: String(task.status || ""),
+    resultSummary: typeof task.result_summary === "string" ? task.result_summary : null,
+  };
+}
+
+export async function organizeTenantAutonomously(params: {
+  tenantId: string;
+  userId?: string | null;
+  maxSteps?: number;
+  dependencies?: TenantDoctorDependencies;
+}): Promise<TenantAutonomousOrganizationResult> {
+  const supabase = params.dependencies?.supabase || (await import("@/lib/supabase/admin")).supabaseAdmin;
+  const latestTask = await loadLatestTenantBetaTask({ supabase, tenantId: params.tenantId });
+
+  if (latestTask && ["queued", "planning", "executing"].includes(latestTask.status)) {
+    const result = await executeTenantBetaSafeQueue({
+      tenantId: params.tenantId,
+      userId: params.userId || null,
+      taskId: latestTask.id,
+      maxSteps: params.maxSteps,
+      dependencies: { supabase },
+    });
+
+    return {
+      startedNewCycle: false,
+      beta: null,
+      result,
+      summary: result.summary,
+    };
+  }
+
+  if (latestTask?.status === "awaiting_approval") {
+    const result: TenantBetaRunSafeQueueResult = {
+      taskId: latestTask.id,
+      executions: [],
+      finalStatus: "awaiting_approval",
+      summary: latestTask.resultSummary || "MAYUS ja organizou os itens seguros e esta aguardando uma decisao humana.",
+    };
+
+    return {
+      startedNewCycle: false,
+      beta: null,
+      result,
+      summary: result.summary,
+    };
+  }
+
+  const beta = await startTenantBetaWorkMode({
+    tenantId: params.tenantId,
+    userId: params.userId || null,
+    dependencies: params.dependencies,
+  });
+  const result = await executeTenantBetaSafeQueue({
+    tenantId: params.tenantId,
+    userId: params.userId || null,
+    taskId: beta.taskId,
+    maxSteps: params.maxSteps,
+    dependencies: { supabase },
+  });
+
+  return {
+    startedNewCycle: true,
+    beta,
+    result,
+    summary: result.executions.length > 0
+      ? result.summary
+      : "MAYUS revisou o escritorio, montou a fila de organizacao e deixou o que exige decisao humana separado.",
   };
 }

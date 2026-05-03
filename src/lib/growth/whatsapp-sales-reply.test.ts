@@ -44,7 +44,7 @@ describe("buildWhatsAppSalesReply", () => {
     expect(reply.mayAutoSend).toBe(true);
   });
 
-  it("exige revisao humana para preco, contrato ou urgencia juridica", () => {
+  it("conduz preco, contrato e urgencia sem travar a venda por padrao", () => {
     const reply = buildWhatsAppSalesReply({
       contactName: "Joao",
       messages: [
@@ -53,14 +53,58 @@ describe("buildWhatsAppSalesReply", () => {
       salesProfile,
     });
 
-    expect(reply.mode).toBe("human_review_required");
+    expect(reply.mode).toBe("suggested_reply");
+    expect(reply.suggestedReply).toContain("nao vou te prometer resultado");
     expect(reply.riskFlags).toEqual(expect.arrayContaining([
       "price_question",
       "legal_result_risk",
       "legal_urgency",
     ]));
-    expect(reply.mayAutoSend).toBe(false);
-    expect(reply.requiresHumanReview).toBe(true);
+    expect(reply.mayAutoSend).toBe(true);
+    expect(reply.requiresHumanReview).toBe(false);
+  });
+
+  it("trata pedido de reuniao como avanco comercial", () => {
+    const reply = buildWhatsAppSalesReply({
+      contactName: "Rafael",
+      messages: [
+        { direction: "inbound", content: "Quero marcar uma reuniao ou ligacao para entender o RMC." },
+      ],
+      salesProfile,
+    });
+
+    expect(reply.mode).toBe("suggested_reply");
+    expect(reply.suggestedReply).toContain("melhor periodo hoje");
+    expect(reply.mayAutoSend).toBe(true);
+    expect(reply.requiresHumanReview).toBe(false);
+  });
+
+  it("usa playbook Dutra para RMC e fallback generico sem vazar termos proprietarios", () => {
+    const dutraReply = buildWhatsAppSalesReply({
+      contactName: "Roberto",
+      messages: [
+        { direction: "inbound", content: "Tenho desconto de RMC no contracheque." },
+      ],
+      salesProfile: {
+        firmName: "Dutra Advocacia",
+        idealClient: "servidores publicos do RJ",
+        coreSolution: "Blindagem 360",
+        uniqueValueProposition: "Diagnostico RMC e GRAM",
+        valuePillars: ["Contracheque", "RMC", "GRAM"],
+        positioningSummary: "Metodologia Blindagem.",
+      },
+    });
+    const genericReply = buildWhatsAppSalesReply({
+      contactName: "Maria",
+      messages: [
+        { direction: "inbound", content: "Tenho desconto de RMC no contracheque." },
+      ],
+      salesProfile,
+    });
+
+    expect(dutraReply.suggestedReply).toContain("RMC/cartao consignado");
+    expect(dutraReply.firstResponseSlaMinutes).toBe(5);
+    expect(genericReply.suggestedReply).not.toMatch(/Dutra|GRAM|Blindagem|Roberto|Camila/);
   });
 
   it("recomenda handoff e bloqueia autoenvio quando o lead pede humano", () => {

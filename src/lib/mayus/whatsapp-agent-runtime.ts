@@ -103,7 +103,15 @@ function hasCloserSignal(text: string) {
 }
 
 function normalizeGovernanceMode(value: unknown): WhatsAppMayusGovernanceMode {
-  return value === "ia_only" || value === "human_only" || value === "hybrid" ? value : "hybrid";
+  return value === "ia_only" || value === "human_only" || value === "hybrid" ? value : "ia_only";
+}
+
+function hasExplicitHumanHandoffSignal(text: string) {
+  return /(humano|atendente|advogado|doutor|doutora|respons[aÃ¡]vel|falar\s+com\s+(uma\s+)?pessoa|prefiro\s+falar\s+com\s+(uma\s+)?pessoa|pessoa\s+da\s+equipe|algu[eÃ©]m\s+da\s+equipe)/i.test(text);
+}
+
+function hasSalesAdvanceSignal(text: string) {
+  return /(valor|valores|pre[cÃ§]o|custa|or[cÃ§]amento|honor[aÃ¡]rio|honorarios|proposta|contrato|assin|pix|boleto|pagamento|forma\s+de\s+pagamento|entrada|fechar|fechamento|posso\s+fechar|parcel|proxima\s+etapa|pr[oÃ³]ximo\s+passo|reuni[aÃ£]o|agenda|agendar|marcar|call|liga[cÃ§][aÃ£]o|me\s+liga|ligar|telefone|chamada)/i.test(text);
 }
 
 function inferDecisionStage(intent: WhatsAppMayusIntent, role: WhatsAppMayusAgentRole): WhatsAppMayusDecisionStage {
@@ -145,7 +153,7 @@ export function inferWhatsAppMayusIntent(params: {
   const text = [getConversationText(params.messages), ...(params.contact?.lead_tags || [])].join("\n");
   const normalized = normalizeText(text);
 
-  if (lastInbound && hasHumanSignal(normalizeText(lastInbound.content))) return "human_handoff";
+  if (lastInbound && hasExplicitHumanHandoffSignal(normalizeText(lastInbound.content))) return "human_handoff";
   if (hasSupportSignal(normalized) || Boolean(getProcessNumber(text))) return "support";
   return "sales";
 }
@@ -156,7 +164,8 @@ export function inferWhatsAppMayusAgentRole(params: {
 }): WhatsAppMayusAgentRole {
   if (params.intent === "support") return "support";
   if (params.intent === "human_handoff") return "human";
-  return hasCloserSignal(normalizeText(getLastInbound(params.messages)?.content)) ? "closer" : "sdr";
+  const lastInboundText = normalizeText(getLastInbound(params.messages)?.content);
+  return (hasCloserSignal(lastInboundText) || hasSalesAdvanceSignal(lastInboundText)) ? "closer" : "sdr";
 }
 
 export function buildSupportCaseStatusEntities(params: {
@@ -381,7 +390,7 @@ async function prepareSupportReply(params: PrepareWhatsAppMayusReplyParams & {
     && params.settings.governanceMode !== "human_only"
     && !params.contact.assigned_user_id
     && params.contact.phone_number
-    && contract?.responseMode === "answer"
+    && suggestedReply
   );
   let autoDelivery: Awaited<ReturnType<typeof sendFrontdeskWhatsAppReply>> | null = null;
   let autoSendError: string | null = null;
@@ -411,12 +420,12 @@ async function prepareSupportReply(params: PrepareWhatsAppMayusReplyParams & {
     intent: "support" as const,
     agent_role: params.agentRole,
     governance_mode: params.settings.governanceMode,
-    mode: contract?.responseMode === "answer" ? "suggested_reply" : "human_review_required",
+    mode: contract?.responseMode === "answer" || mayAutoSend ? "suggested_reply" : "human_review_required",
     suggested_reply: suggestedReply,
     internal_note: internalNote,
     ...baseDecision,
     may_auto_send: mayAutoSend,
-    requires_human_review: contract?.responseMode !== "answer",
+    requires_human_review: !mayAutoSend && contract?.responseMode !== "answer",
     support_case_entities: entities,
     support_status_response_mode: contract?.responseMode || "handoff",
     support_status_confidence: contract?.confidence || "low",

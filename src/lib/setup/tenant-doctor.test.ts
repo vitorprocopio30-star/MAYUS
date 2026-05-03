@@ -6,6 +6,7 @@ import {
   executeNextTenantBetaStep,
   executeTenantBetaSafeQueue,
   buildTenantDoctorArtifactMetadata,
+  organizeTenantAutonomously,
   runTenantDoctor,
   startTenantBetaWorkMode,
   summarizeTenantDoctorChecks,
@@ -717,5 +718,109 @@ describe("tenant doctor", () => {
     expect(result.executions).toHaveLength(2);
     expect(result.finalStatus).toBe("completed");
     expect(result.summary).toContain("concluiu a fila beta");
+  });
+
+  it("organizes the tenant by continuing an active safe queue", async () => {
+    let stepLookupCount = 0;
+    const inserts: Array<{ table: string; payload: any }> = [];
+    const supabase = {
+      from(table: string) {
+        const builder: any = {
+          payload: undefined,
+          insert(payload: any) { inserts.push({ table, payload }); this.payload = payload; return this; },
+          update(payload: any) { this.payload = payload; return this; },
+          select() { return this; },
+          eq() { return this; },
+          order() { return this; },
+          limit() { return this; },
+          maybeSingle() {
+            if (table === "brain_artifacts") return Promise.resolve({ data: { task_id: "beta-task-1" }, error: null });
+            if (table === "brain_tasks") return Promise.resolve({ data: { id: "beta-task-1", status: "executing", result_summary: null }, error: null });
+            if (table === "brain_steps") {
+              stepLookupCount += 1;
+              return Promise.resolve({
+                data: stepLookupCount === 1
+                  ? {
+                      id: "queue-step-1",
+                      task_id: "beta-task-1",
+                      run_id: "beta-run-1",
+                      step_key: "growth:crm_next_steps",
+                      title: "Organizar leads sem proximo passo",
+                      status: "queued",
+                      output_payload: {},
+                    }
+                  : null,
+                error: null,
+              });
+            }
+            if (table === "tenant_settings") return Promise.resolve({ data: { ai_features: {} }, error: null });
+            return Promise.resolve({ data: null, error: null });
+          },
+          single() {
+            return Promise.resolve({ data: { id: `${table}-1` }, error: null });
+          },
+          then(resolve: (value: any) => void) {
+            const rows: Record<string, any[]> = {
+              crm_pipelines: [],
+              user_tasks: [],
+              brain_steps: [{ id: "queue-step-1", status: "completed" }],
+            };
+            resolve({ data: rows[table] || null, error: null });
+          },
+        };
+        return builder;
+      },
+    };
+
+    const result = await organizeTenantAutonomously({
+      tenantId: "tenant-1",
+      userId: "user-1",
+      dependencies: { supabase },
+    });
+
+    expect(result.startedNewCycle).toBe(false);
+    expect(result.result.executions).toHaveLength(1);
+    expect(result.result.taskId).toBe("beta-task-1");
+    expect(result.summary).toContain("concluiu a fila beta");
+    expect(inserts.some((item) => item.table === "learning_events" && item.payload.event_type === "tenant_beta_step_completed")).toBe(true);
+  });
+
+  it("does not start a duplicate organization cycle while waiting for approval", async () => {
+    const supabase = {
+      from(table: string) {
+        const builder: any = {
+          select() { return this; },
+          eq() { return this; },
+          order() { return this; },
+          limit() { return this; },
+          maybeSingle() {
+            if (table === "brain_artifacts") return Promise.resolve({ data: { task_id: "beta-task-1" }, error: null });
+            if (table === "brain_tasks") {
+              return Promise.resolve({
+                data: {
+                  id: "beta-task-1",
+                  status: "awaiting_approval",
+                  result_summary: "MAYUS organizou os itens seguros e aguarda aprovacao.",
+                },
+                error: null,
+              });
+            }
+            return Promise.resolve({ data: null, error: null });
+          },
+        };
+        return builder;
+      },
+    };
+
+    const result = await organizeTenantAutonomously({
+      tenantId: "tenant-1",
+      userId: "user-1",
+      dependencies: { supabase },
+    });
+
+    expect(result.startedNewCycle).toBe(false);
+    expect(result.result.finalStatus).toBe("awaiting_approval");
+    expect(result.result.executions).toHaveLength(0);
+    expect(result.summary).toContain("aguarda aprovacao");
   });
 });

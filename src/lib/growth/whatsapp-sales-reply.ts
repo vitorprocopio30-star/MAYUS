@@ -171,6 +171,30 @@ function buildSuggestedReply(plan: SalesConsultationPlan, lastInboundText: strin
   const leadFirstName = getLeadFirstName(plan.leadName);
   const normalized = normalizeText(lastInboundText);
 
+  if (/reuni[aã]o|agenda|agendar|marcar|call|liga[cç][aã]o|me\s+liga|ligar|telefone|chamada/.test(normalized)) {
+    return [
+      `Perfeito, ${leadFirstName}. Vou te ajudar a avancar sem enrolacao.`,
+      "Para marcar certo: esse atendimento e para diagnostico inicial, revisao de beneficio/contrato, suporte de caso em andamento ou fechamento de proposta?",
+      "Se quiser, ja me envie tambem o melhor periodo hoje: manha, tarde ou noite.",
+    ].join("\n\n");
+  }
+
+  if (/garantia|garantido|chance|ganhar|resultado|causa ganha|promete/.test(normalized)) {
+    return [
+      `Entendi, ${leadFirstName}. Eu nao vou te prometer resultado, porque isso seria irresponsavel.`,
+      "O que eu consigo fazer agora e separar risco, documentos e caminho provavel para voce decidir com clareza.",
+      "Me diga: voce ja tem decisao, negativa, contrato, cobranca ou documento principal do caso?",
+    ].join("\n\n");
+  }
+
+  if (/urgente|liminar|audiencia|prazo|bloqueio|prisao|ameaca/.test(normalized)) {
+    return [
+      `Entendi a urgencia, ${leadFirstName}. Vamos priorizar o que pode mudar o risco agora.`,
+      "Me responda em uma linha: qual e o prazo ou data critica, e qual documento/prova voce ja tem em maos?",
+      "Com isso eu organizo o proximo passo e, se for caso de reuniao, encaminho para agenda sem perder contexto.",
+    ].join("\n\n");
+  }
+
   if (/caro|preco|valor|custa|custo|honorario|honorarios/.test(normalized)) {
     return [
       `Entendi, ${leadFirstName}. Consigo te ajudar com valor, mas primeiro preciso separar preco de risco para nao te orientar errado.`,
@@ -196,12 +220,7 @@ function buildSuggestedReply(plan: SalesConsultationPlan, lastInboundText: strin
 }
 
 function hasAutoSendBlockingRisk(flags: string[]) {
-  return flags.some((flag) => (
-    flag === "legal_result_risk"
-    || flag === "legal_urgency"
-    || flag === "commercial_commitment"
-    || flag === "human_requested"
-  ));
+  return flags.some((flag) => flag === "human_requested");
 }
 
 export function buildWhatsAppSalesReply(input: WhatsAppSalesReplyInput): WhatsAppSalesReply {

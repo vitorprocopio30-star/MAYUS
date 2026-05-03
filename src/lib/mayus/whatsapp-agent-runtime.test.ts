@@ -70,14 +70,17 @@ describe("whatsapp MAYUS agent runtime", () => {
     const closerMessages = [{ direction: "inbound", content: "Qual o valor dos honorarios?", message_type: "text", created_at: null }];
     const humanMessages = [{ direction: "inbound", content: "Prefiro falar com uma pessoa da equipe", message_type: "text", created_at: null }];
     const proposalMessages = [{ direction: "inbound", content: "Pode mandar a proposta e forma de pagamento?", message_type: "text", created_at: null }];
+    const meetingMessages = [{ direction: "inbound", content: "Quero marcar uma reuniao ou ligacao sobre RMC", message_type: "text", created_at: null }];
 
     expect(inferWhatsAppMayusIntent({ messages: supportMessages })).toBe("support");
     expect(inferWhatsAppMayusIntent({ messages: salesMessages })).toBe("sales");
     expect(inferWhatsAppMayusIntent({ messages: humanMessages })).toBe("human_handoff");
+    expect(inferWhatsAppMayusIntent({ messages: meetingMessages })).toBe("sales");
     expect(inferWhatsAppMayusIntent({ messages: salesMessages, contact: { lead_tags: ["Suporte"] } })).toBe("support");
     expect(inferWhatsAppMayusAgentRole({ intent: "sales", messages: salesMessages })).toBe("sdr");
     expect(inferWhatsAppMayusAgentRole({ intent: "sales", messages: closerMessages })).toBe("closer");
     expect(inferWhatsAppMayusAgentRole({ intent: "sales", messages: proposalMessages })).toBe("closer");
+    expect(inferWhatsAppMayusAgentRole({ intent: "sales", messages: meetingMessages })).toBe("closer");
   });
 
   it("prioriza handoff humano mesmo quando a mensagem menciona processo", () => {
@@ -90,6 +93,42 @@ describe("whatsapp MAYUS agent runtime", () => {
     const messages = [{ direction: "inbound", content: "Preciso abrir um processo contra o INSS", message_type: "text", created_at: null }];
 
     expect(inferWhatsAppMayusIntent({ messages })).toBe("sales");
+  });
+
+  it("usa IA operando como padrao quando o escritorio nao escolheu somente rascunho", async () => {
+    prepareWhatsAppSalesReplyForContactMock.mockResolvedValue({
+      contact: { id: "contact-1" },
+      metadata: { mode: "suggested_reply", suggested_reply: "Oi", may_auto_send: true, auto_sent: true },
+    });
+    const supabase: any = {
+      from: vi.fn((table: string) => {
+        if (table === "whatsapp_contacts") {
+          return makeQuery({ data: { id: "contact-1", name: "Lead", phone_number: "5511999999999", assigned_user_id: null, lead_tags: [] }, error: null });
+        }
+        if (table === "whatsapp_messages") {
+          return makeQuery({ data: [{ direction: "inbound", content: "Quero marcar uma reuniao sobre RMC", message_type: "text", created_at: null }], error: null });
+        }
+        if (table === "tenant_settings") {
+          return makeQuery({ data: { ai_features: {} }, error: null });
+        }
+        return { insert: vi.fn(async () => ({ error: null })) };
+      }),
+    };
+
+    const prepared = await prepareWhatsAppMayusReplyForContact({
+      supabase,
+      tenantId: "tenant-1",
+      contactId: "contact-1",
+      trigger: "evolution_webhook",
+      autoSendFirstResponse: true,
+    });
+
+    expect(prepared.intent).toBe("sales");
+    expect(prepared.agentRole).toBe("closer");
+    expect(prepared.metadata.governance_mode).toBe("ia_only");
+    expect(prepareWhatsAppSalesReplyForContactMock).toHaveBeenCalledWith(expect.objectContaining({
+      autoSendFirstResponse: true,
+    }));
   });
 
   it("autoenvia suporte quando identifica caso com base segura", async () => {
@@ -156,6 +195,65 @@ describe("whatsapp MAYUS agent runtime", () => {
       expect.objectContaining({
         table: "system_event_logs",
         payload: expect.objectContaining({ event_name: "whatsapp_mayus_reply_auto_sent" }),
+      }),
+    ]));
+  });
+
+  it("responde suporte pedindo identificacao quando ainda nao achou o caso", async () => {
+    getLegalCaseContextSnapshotMock.mockRejectedValueOnce(new Error("case_not_identified"));
+    const inserts: Array<{ table: string; payload: any }> = [];
+    const supabase: any = {
+      from: vi.fn((table: string) => {
+        if (table === "whatsapp_contacts") {
+          return makeQuery({
+            data: { id: "contact-1", name: "Maria Silva", phone_number: "5511999999999", assigned_user_id: null, lead_tags: [] },
+            error: null,
+          });
+        }
+
+        if (table === "whatsapp_messages") {
+          return makeQuery({
+            data: [{ direction: "inbound", content: "Oi, quero suporte do meu caso", message_type: "text", created_at: "2026-05-01T10:00:00.000Z" }],
+            error: null,
+          });
+        }
+
+        if (table === "tenant_settings") {
+          return makeQuery({ data: { ai_features: {} }, error: null });
+        }
+
+        return {
+          insert: vi.fn(async (payload: any) => {
+            inserts.push({ table, payload });
+            return { error: null };
+          }),
+        };
+      }),
+    };
+
+    const prepared = await prepareWhatsAppMayusReplyForContact({
+      supabase,
+      tenantId: "tenant-1",
+      contactId: "contact-1",
+      trigger: "evolution_webhook",
+      notify: true,
+      autoSendFirstResponse: true,
+    });
+
+    expect(prepared.intent).toBe("support");
+    expect(prepared.metadata.governance_mode).toBe("ia_only");
+    expect(prepared.metadata.auto_sent).toBe(true);
+    expect((prepared.metadata as any).requires_human_review).toBe(false);
+    expect(sendFrontdeskWhatsAppReplyMock).toHaveBeenCalledWith(expect.objectContaining({
+      text: expect.stringContaining("confirme o processo correto"),
+    }));
+    expect(inserts).toEqual(expect.arrayContaining([
+      expect.objectContaining({
+        table: "system_event_logs",
+        payload: expect.objectContaining({
+          event_name: "whatsapp_mayus_reply_prepared",
+          payload: expect.objectContaining({ intent: "support", may_auto_send: true }),
+        }),
       }),
     ]));
   });

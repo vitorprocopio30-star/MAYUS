@@ -316,14 +316,22 @@ function buildExecutiveSummary(params: {
   return `${params.firmName}: ${signals.join("; ")}.`;
 }
 
+function getTimeGreeting(nowIso: string) {
+  const hour = new Date(nowIso).getHours();
+  if (hour < 12) return "Bom dia";
+  if (hour < 18) return "Boa tarde";
+  return "Boa noite";
+}
+
 function buildWhatsAppSummary(playbook: Omit<DailyPlaybook, "whatsappSummary" | "htmlReport">) {
   const hasSignals = playbook.metrics.crmLeadsNeedingNextStep > 0
     || playbook.metrics.agendaCriticalTasks > 0
     || playbook.metrics.agendaTodayTasks > 0;
   const firmName = playbook.title.replace(/\s+-\s+(Playbook do dia|Resumo do dia)$/i, "").trim() || playbook.preferences.scope;
+  const greeting = getTimeGreeting(playbook.generatedAt);
   const opening = hasSignals
-    ? `Bom dia. Olhei o ${firmName} e separei o que precisa de atencao agora.`
-    : `Bom dia. Passei pelo ${firmName} e esta tudo encaminhado. Nada urgente pedindo sirene.`;
+    ? `${greeting}. Olhei o ${firmName} e separei o que precisa de atencao agora.`
+    : `${greeting}. Passei pelo ${firmName} e esta tudo encaminhado. Nada urgente pedindo sirene.`;
   const scoreboardLines = [
     `CRM: ${playbook.metrics.crmLeadsNeedingNextStep} lead(s) sem proximo passo.`,
     `Agenda: ${playbook.metrics.agendaTodayTasks} compromisso(s) ou tarefa(s) hoje.`,
@@ -352,7 +360,7 @@ function buildWhatsAppSummary(playbook: Omit<DailyPlaybook, "whatsappSummary" | 
     "",
     nextMove,
     "",
-    "_Nenhuma mensagem foi enviada automaticamente. Resumo para voce decidir._",
+    "_MAYUS operacional: relatorio gerado, contexto organizado e proximo movimento separado._",
   ].join("\n").trim();
 }
 

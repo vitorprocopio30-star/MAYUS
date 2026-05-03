@@ -47,6 +47,10 @@ Analisar o checklist principal e retomar uma frente executavel sem depender de c
 - [x] Painel de missoes do cockpit ganhou bloco `Proximas decisoes`, destacando aprovacoes pendentes, missoes aguardando input/aprovacao e falhas que precisam de revisao humana.
 - [x] Painel de missoes do cockpit ganhou cancelamento supervisionado de missao ativa, com motivo obrigatorio e refresh da missao/inbox apos `POST /api/brain/tasks/:id/cancel`.
 - [x] Painel de missoes do cockpit ganhou retry supervisionado para step falho/cancelado, com motivo obrigatorio e refresh da missao/inbox apos `POST /api/brain/tasks/:id/retry`.
+- [x] Skill comercial Dutra implantada como playbook isolado: Metodologia Blindagem/RMC/GRAM so resolve para contexto Dutra, com menu RMC/GRAM no Playbook Diario e primeira resposta WhatsApp especifica.
+- [x] Criado template comercial generico no mesmo estilo, sem termos proprietarios Dutra, com questionario para montar playbooks de outros escritorios.
+- [x] Auto-organizacao do MAYUS adicionada: rota `POST /api/setup/organize`, comando por chat e botao no cockpit disparam a fila segura sem criar ciclo duplicado quando ha aprovacao pendente.
+- [x] Cockpit deixou de mostrar "missao" como linguagem de interacao e passou a exibir estados naturais: pensando, pesquisando, organizando, atividade do MAYUS e resultados.
 - [x] Checklist principal, checklist Core e progresso atualizados com evidencia.
 
 ### Pendencias
@@ -137,6 +141,11 @@ Analisar o checklist principal e retomar uma frente executavel sem depender de c
 - `npx.cmd tsc --noEmit --pretty false` e o teste focado do stream passaram apos o bloco `Proximas decisoes` do cockpit.
 - `npm.cmd test -- --run src/app/api/brain/stream/route.test.ts src/app/api/brain/tasks/[id]/cancel/route.test.ts` passou apos cancelamento supervisionado no cockpit: 2 arquivos, 7 testes.
 - `npm.cmd test -- --run src/app/api/brain/stream/route.test.ts src/app/api/brain/tasks/[id]/cancel/route.test.ts src/app/api/brain/tasks/[id]/retry/route.test.ts` passou apos retry supervisionado no cockpit: 3 arquivos, 11 testes.
+- Primeira tentativa dos testes focados do playbook comercial falhou no sandbox com `spawn EPERM`; rerun fora do sandbox passou.
+- `npm.cmd test -- --run src/lib/growth/commercial-playbook-template.test.ts src/lib/growth/whatsapp-sales-reply.test.ts src/lib/mayus/daily-playbook.test.ts src/lib/mayus/whatsapp-command-center.test.ts` passou: 4 arquivos, 21 testes.
+- `npx.cmd tsc --noEmit --pretty false` passou apos a skill Dutra e template generico.
+- `npm.cmd test -- --run src/lib/setup/tenant-doctor.test.ts src/lib/growth/commercial-playbook-template.test.ts src/lib/growth/whatsapp-sales-reply.test.ts src/lib/mayus/daily-playbook.test.ts src/lib/mayus/whatsapp-command-center.test.ts` passou apos auto-organizacao: 5 arquivos, 36 testes.
+- `npx.cmd tsc --noEmit --pretty false` passou apos auto-organizacao e ajustes do cockpit.
 
 ---
 
@@ -201,9 +210,10 @@ Retomar `support_case_status` sem depender de novas credenciais externas, fechan
 - `lead_reactivation` adicionou reativacao supervisionada de leads frios por segmento: skill formal com artifact `lead_reactivation_plan`, lista operacional de candidatos do CRM, criterios, mensagens sugeridas, checklist humano e learning event.
 - `sales_consultation` adicionou skill DEF de atendimento consultivo comercial: artifact `sales_consultation_plan`, descoberta antes da proposta, sinais capturados/faltantes no bate-papo, proxima pergunta adaptativa, cliente ideal do escritorio, solucao central, PUV sugerida quando ausente, pilares autorais, encantamento personalizado, fechamento racional, movimentos de objecao e bloqueio de contatos externos automaticos.
 - `sales_profile_setup` adicionou auto-configuracao comercial por chat: o MAYUS investiga cliente ideal, solucao central, PUV, pilares e anti-cliente, monta rascunhos quando faltam, cria artifact `sales_profile_setup` e grava `tenant_settings.ai_features.sales_consultation_profile` para reduzir configuracao manual.
-- WhatsApp ganhou geracao de resposta comercial pelo MAYUS: `/api/whatsapp/ai-sales-reply` le historico do contato, aplica o perfil comercial salvo e devolve resposta DEF para o composer da tela `/dashboard/conversas/whatsapp`; o sistema registra `whatsapp_sales_reply_prepared` e nao envia automaticamente.
-- Meta Cloud e Evolution agora tambem preparam rascunho comercial automaticamente no recebimento inbound via `prepareWhatsAppSalesReplyForContact`, com notificacao interna e auditoria, mas sem disparo externo automatico.
-- A tela de WhatsApp mostra o painel "Rascunho MAYUS", carregando o ultimo evento `whatsapp_sales_reply_prepared` do contato e permitindo usar/atualizar a resposta no composer.
+- WhatsApp ganhou atendimento operacional pelo MAYUS: `/api/whatsapp/ai-sales-reply` le historico do contato, aplica o perfil comercial salvo e devolve resposta DEF para a conversa; em 2026-05-03 o padrao passou a ser `ia_only`, com venda, reuniao/agendamento e suporte operando quando o escritorio nao escolheu "Somente Rascunho".
+- Meta Cloud e Evolution chamam `prepareWhatsAppMayusReplyForContact` no recebimento inbound; o MAYUS pode autoenviar a primeira resposta consultiva/suporte com typing/presence quando ha integracao, e registra auditoria/notificacao. `human_only` preserva o comportamento de rascunho.
+- A tela de WhatsApp mostra o painel "Rascunho MAYUS" para usar/atualizar a resposta quando o modo do escritorio for rascunho ou quando o envio automatico falhar.
+- WhatsApp Command Center virou operador interno mais agentico: comandos de telefone autorizado para relatorio/playbook, CRM, agenda e status juridico geram saudacao por horario, Playbook HTML premium com link `/r/playbook/...`, artifact/evento e resposta pelo provider quando configurado.
 - Auto Setup Doctor passou a diagnosticar `commercial:sales_profile` e avisar em Configuracoes quando o MAYUS ainda precisa investigar cliente ideal, solucao, PUV e pilares antes de escalar atendimento comercial.
 - Configuracoes ganhou painel "Perfil Comercial do MAYUS" para preencher/validar cliente ideal, solucao, PUV e pilares; o painel salva em `tenant_settings.ai_features.sales_consultation_profile`, fonte lida pela skill `sales_consultation`.
 - O dispatcher de `lead_reactivation` nao envia WhatsApp, telefone, e-mail ou campanha externa; ele deixa a execucao como lote manual aprovado e registra side effects externos bloqueados.

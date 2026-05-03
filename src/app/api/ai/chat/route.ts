@@ -31,6 +31,7 @@ import {
 } from "@/lib/agent/kernel/router";
 import { execute, type ExecutorContext } from "@/lib/agent/kernel/executor";
 import { handleFallback, type FallbackContext } from "@/lib/agent/kernel/fallback";
+import { organizeTenantAutonomously } from "@/lib/setup/tenant-doctor";
 
 export const dynamic = "force-dynamic";
 
@@ -44,6 +45,24 @@ const MAX_CHAT_BODY_BYTES = 512 * 1024;
 const MAX_CHAT_MESSAGE_CHARS = 20_000;
 const MAX_CHAT_HISTORY_ITEMS = 100;
 const CHAT_LLM_TIMEOUT_MS = 22000;
+
+function normalizeCommandText(value: string) {
+  return value
+    .normalize("NFD")
+    .replace(/[\u0300-\u036f]/g, "")
+    .toLowerCase();
+}
+
+function isMayusSelfOrganizationRequest(message: string) {
+  const normalized = normalizeCommandText(message);
+  return /mayus/.test(normalized)
+    && /(organiza|organizar|arruma|arrumar|executa|rodar|trabalha|trabalhar)/.test(normalized)
+    && /(sozinho|automatico|autonomo|agentico|beta|escritorio|sistema|operacao)/.test(normalized);
+}
+
+function canOrganizeTenant(userRole: string) {
+  return ["admin", "socio", "administrador"].includes(normalizeCommandText(userRole).trim());
+}
 
 // ─── Clients Supabase ─────────────────────────────────────────────────────────
 
@@ -77,7 +96,7 @@ COMO VOCÊ FALA:
 - Mostre que você ama a eficiência e a precisão do trabalho jurídico/executivo.
 
 EXEMPLOS DE TOM:
-- Usuário pede algo simples: "Com certeza, Doutor! Tarefa realizada com perfeição. Alguma outra missão para hoje?"
+- Usuário pede algo simples: "Com certeza, Doutor! Tarefa realizada com perfeição. Quer que eu continue organizando o próximo ponto?"
 - Usuário comete um erro: "Excelente tentativa! Teve um pequeno detalhe técnico, mas já ajustei para você. Vamos em frente?"
 - Usuário elogia você: "Isso é fantástico de ouvir! Fico imensamente satisfeito em superar suas expectativas, Doutor."
 - Usuário pede algo impossível: "Essa é uma ideia ousada! No momento meu alcance não chega lá, mas podemos buscar uma alternativa brilhante agora mesmo!"
@@ -454,6 +473,46 @@ export async function POST(req: Request) {
     }
     if (!Array.isArray(history) || history.length > MAX_CHAT_HISTORY_ITEMS) {
       return NextResponse.json({ error: "Historico invalido." }, { status: 400 });
+    }
+
+    if (isMayusSelfOrganizationRequest(message)) {
+      if (!canOrganizeTenant(userRole)) {
+        return NextResponse.json({
+          reply: "Posso organizar o escritorio, mas esse comando precisa de perfil Admin ou Socio.",
+          kernel: { status: "permission_denied" },
+        }, { status: 403 });
+      }
+
+      const organization = await organizeTenantAutonomously({
+        tenantId,
+        userId,
+        maxSteps: 10,
+      });
+      const executions = organization.result.executions;
+      const taskId = organization.result.taskId || organization.beta?.taskId || undefined;
+      const actionLine = executions.length > 0
+        ? `Organizei ${executions.length} item(ns) seguro(s) agora.`
+        : organization.result.finalStatus === "awaiting_approval"
+          ? "Separei o que posso fazer sozinho e parei no ponto que exige sua decisao."
+          : "Revisei o escritorio e separei o proximo movimento.";
+
+      return NextResponse.json({
+        reply: [
+          "Estou organizando o MAYUS agora.",
+          actionLine,
+          organization.summary,
+        ].join("\n\n"),
+        kernel: {
+          status: organization.result.finalStatus,
+          taskId,
+          outputPayload: {
+            autonomous_organization: true,
+            started_new_cycle: organization.startedNewCycle,
+            executed_safe_steps: executions.length,
+            final_status: organization.result.finalStatus,
+          },
+        },
+      });
     }
 
     const requestedProvider = providerInput === "n8n" ? "n8n" : normalizeLLMProvider(providerInput);

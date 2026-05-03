@@ -98,6 +98,7 @@ const BRAIN_STATUS_TIMEOUT_MS = 6500;
 const BRAIN_LIST_TIMEOUT_MS = 7000;
 const BRAIN_TASK_TIMEOUT_MS = 8000;
 const BRAIN_CHAT_TIMEOUT_MS = 35000;
+const MAYUS_ORGANIZE_TIMEOUT_MS = 45000;
 const TERMINAL_BRAIN_TASK_STATUSES = new Set(["completed", "completed_with_warnings", "failed", "cancelled"]);
 
 type BrainStreamState = "idle" | "connected" | "reconnecting" | "error";
@@ -203,9 +204,9 @@ function getMissionBadge(status: string) {
     case "queued":
       return { label: "Na fila", className: "text-gray-300 border-white/10 bg-white/5" };
     case "planning":
-      return { label: "Planejando", className: "text-blue-300 border-blue-500/30 bg-blue-500/10" };
+      return { label: "Pensando", className: "text-blue-300 border-blue-500/30 bg-blue-500/10" };
     case "executing":
-      return { label: "Executando", className: "text-[#CCA761] border-[#CCA761]/30 bg-[#CCA761]/10" };
+      return { label: "Organizando", className: "text-[#CCA761] border-[#CCA761]/30 bg-[#CCA761]/10" };
     case "awaiting_input":
       return { label: "Aguardando dados", className: "text-sky-300 border-sky-500/30 bg-sky-500/10" };
     case "awaiting_approval":
@@ -243,7 +244,7 @@ function getStepAccent(status: string) {
 function getEventLabel(eventType: string) {
   switch (eventType) {
     case "task_dispatched":
-      return "Missão despachada";
+      return "MAYUS comecou a pensar";
     case "chat_turn_processed":
       return "Turno processado";
     case "proposal_generated":
@@ -291,9 +292,9 @@ function getEventLabel(eventType: string) {
     case "tenant_setup_doctor_report_created":
       return "Setup Doctor registrado";
     case "tenant_beta_workplan_created":
-      return "Modo Beta iniciado";
+      return "Organizacao iniciada";
     case "tenant_beta_step_completed":
-      return "Item beta concluido";
+      return "Organizacao atualizada";
     case "referral_intake_artifact_created":
       return "Indicacao registrada";
     case "lead_intake_artifact_created":
@@ -358,7 +359,7 @@ function getEventPreview(event: BrainEventRecord) {
 function getArtifactTypeLabel(artifactType: string) {
   switch (artifactType) {
     case "mission_result":
-      return "Resultado da Missão";
+      return "Resultado";
     case "legal_case_context":
       return "Contexto Jurídico";
     case "support_case_status":
@@ -378,9 +379,9 @@ function getArtifactTypeLabel(artifactType: string) {
     case "tenant_setup_doctor_report":
       return "Setup Doctor";
     case "tenant_beta_workplan":
-      return "Modo Beta MAYUS";
+      return "Organizacao MAYUS";
     case "tenant_beta_step_result":
-      return "Resultado Beta";
+      return "Resultado da organizacao";
     case "referral_intake":
       return "Indicacao Comercial";
     case "lead_intake":
@@ -790,7 +791,7 @@ function MissionStatusCard({ snapshot }: { snapshot: BrainTaskSnapshot }) {
     <div data-testid={`mayus-mission-card-${snapshot.task.id}`} className="mt-3 border border-white/8 bg-gray-200 dark:bg-black/30 rounded-xl p-3 space-y-3">
       <div className="flex items-center justify-between gap-3">
         <div>
-          <p className="text-[10px] text-gray-500 uppercase tracking-widest">Missão</p>
+          <p className="text-[10px] text-gray-500 uppercase tracking-widest">MAYUS pensando</p>
           <p className="text-xs text-white font-semibold">{snapshot.task.module} · {snapshot.task.channel}</p>
         </div>
         <span className={`text-[10px] px-2.5 py-1 rounded-full border font-bold uppercase tracking-widest ${badge.className}`}>
@@ -800,28 +801,28 @@ function MissionStatusCard({ snapshot }: { snapshot: BrainTaskSnapshot }) {
 
       {pendingApprovals > 0 && (
         <div className="text-[11px] text-orange-300 border border-orange-500/20 bg-orange-500/10 rounded-lg px-2.5 py-2">
-          {pendingApprovals} aprovação(ões) pendente(s) nesta missão.
+          {pendingApprovals} aprovacao(oes) pendente(s) antes de agir.
         </div>
       )}
 
       {betaSummary && (
         <div className="rounded-lg border border-[#CCA761]/20 bg-[#CCA761]/10 p-2.5 text-[11px] text-gray-300 space-y-2">
           <div className="flex items-center justify-between gap-2">
-            <p className="text-[10px] text-[#CCA761] uppercase tracking-widest">Execucao beta</p>
+            <p className="text-[10px] text-[#CCA761] uppercase tracking-widest">Organizacao automatica</p>
             <span className="text-[10px] uppercase tracking-widest text-gray-500">supervisionada</span>
           </div>
           <div className="flex flex-wrap gap-1.5">
             <span className="rounded-full border border-emerald-500/20 bg-emerald-500/10 px-2 py-1 text-[9px] uppercase tracking-widest text-emerald-300">
-              {betaSummary.completed} concluidos
+              {betaSummary.completed} prontos
             </span>
             <span className="rounded-full border border-white/10 bg-white/5 px-2 py-1 text-[9px] uppercase tracking-widest text-gray-400">
               {betaSummary.queued} em fila
             </span>
             <span className="rounded-full border border-[#CCA761]/20 bg-[#CCA761]/10 px-2 py-1 text-[9px] uppercase tracking-widest text-[#CCA761]">
-              {betaSummary.executing} executando
+              {betaSummary.executing} organizando
             </span>
             <span className="rounded-full border border-orange-500/20 bg-orange-500/10 px-2 py-1 text-[9px] uppercase tracking-widest text-orange-300">
-              {betaSummary.awaitingApproval} aguardando aprovacao
+              {betaSummary.awaitingApproval} aguardando decisao
             </span>
           </div>
           {betaSummary.recentEvents.length > 0 && (
@@ -860,7 +861,7 @@ function MissionStatusCard({ snapshot }: { snapshot: BrainTaskSnapshot }) {
 
       {visibleArtifacts.length > 0 && (
         <div className="space-y-2">
-          <p className="text-[10px] text-gray-500 uppercase tracking-widest">Artifacts</p>
+          <p className="text-[10px] text-gray-500 uppercase tracking-widest">Resultados</p>
           {visibleArtifacts.map((artifact) => {
             const preview = getArtifactPreview(artifact);
             const highlights = getArtifactHighlights(artifact);
@@ -894,7 +895,7 @@ function MissionStatusCard({ snapshot }: { snapshot: BrainTaskSnapshot }) {
                     rel="noopener noreferrer"
                     className="mt-2 inline-flex text-[#CCA761] hover:underline"
                   >
-                    Abrir artifact
+                    Abrir resultado
                   </a>
                 )}
               </div>
@@ -905,7 +906,7 @@ function MissionStatusCard({ snapshot }: { snapshot: BrainTaskSnapshot }) {
 
       {visibleEvents.length > 0 && (
         <div className="space-y-2">
-          <p className="text-[10px] text-gray-500 uppercase tracking-widest">Feed do cérebro</p>
+          <p className="text-[10px] text-gray-500 uppercase tracking-widest">O que o MAYUS fez</p>
           {visibleEvents.map((event) => {
             const preview = getEventPreview(event);
 
@@ -935,7 +936,7 @@ function MissionPendingCard() {
   return (
     <div className="mt-3 border border-white/8 bg-gray-200 dark:bg-black/30 rounded-xl p-3 flex items-center gap-2 text-[11px] text-gray-400">
       <Loader2 size={12} className="animate-spin text-[#CCA761]" />
-      <span>Missão registrada. Carregando status do cérebro...</span>
+      <span>MAYUS esta pensando. Carregando o status...</span>
     </div>
   );
 }
@@ -954,10 +955,12 @@ function MissionOpsPanel({
   lastStreamActivityAt,
   lastStreamStep,
   onRefresh,
+  onOrganize,
   onCancelMission,
   onRetryStep,
   cancellingTaskId,
   retryingStepId,
+  isOrganizing,
 }: {
   snapshots: BrainTaskSnapshot[];
   recentTasks: BrainInboxTaskItem[];
@@ -970,15 +973,13 @@ function MissionOpsPanel({
   lastStreamActivityAt: string | null;
   lastStreamStep: { title: string; status: string } | null;
   onRefresh: () => void;
+  onOrganize: () => void;
   onCancelMission: (taskId: string) => void;
   onRetryStep: (taskId: string, stepId: string) => void;
   cancellingTaskId: string | null;
   retryingStepId: string | null;
+  isOrganizing: boolean;
 }) {
-  if (snapshots.length === 0 && recentTasks.length === 0 && recentEvents.length === 0 && !isLoading && !error) {
-    return null;
-  }
-
   const trackedTaskIds = new Set(snapshots.map((snapshot) => snapshot.task.id));
   const tenantTasks = recentTasks.filter((task) => !trackedTaskIds.has(task.id)).slice(0, Math.max(0, 4 - snapshots.length));
   const orderedSnapshots = snapshots.slice(0, 4);
@@ -1011,7 +1012,7 @@ function MissionOpsPanel({
       .slice(0, 3)
       .map((snapshot) => ({
         id: snapshot.task.id,
-        label: snapshot.task.status === "failed" ? "Missao falhou" : "Missao aguardando supervisao",
+        label: snapshot.task.status === "failed" ? "MAYUS encontrou uma falha" : "MAYUS aguarda supervisao",
         detail: snapshot.task.error_message || snapshot.task.goal || snapshot.task.module,
         href: null,
         tone: snapshot.task.status === "failed" ? "red" : "orange",
@@ -1022,23 +1023,23 @@ function MissionOpsPanel({
     <section data-testid="mayus-mission-ops-panel" className="rounded-xl border border-[#CCA761]/20 bg-[#0f0f0f]/90 p-3 space-y-3">
       <div className="flex flex-col gap-2 lg:flex-row lg:items-center lg:justify-between">
         <div>
-          <p className="text-[10px] text-[#CCA761] uppercase tracking-widest">Painel de missoes</p>
-          <p className="text-xs text-gray-400">Acompanhamento operacional do que o MAYUS esta executando nesta conversa e no tenant.</p>
+          <p className="text-[10px] text-[#CCA761] uppercase tracking-widest">Atividade do MAYUS</p>
+          <p className="text-xs text-gray-400">Ele pesquisa, pensa e organiza o escritorio sem despejar detalhes tecnicos na conversa.</p>
         </div>
         <div className="flex flex-col gap-2 sm:flex-row sm:items-center">
           <div className="flex flex-wrap gap-1.5">
             <span className="rounded-full border border-[#CCA761]/20 bg-[#CCA761]/10 px-2 py-1 text-[9px] uppercase tracking-widest text-[#CCA761]">
-              {activeCount} ativas
+              {activeCount} em andamento
             </span>
             <Link href="/dashboard/aprovacoes" className="rounded-full border border-orange-500/20 bg-orange-500/10 px-2 py-1 text-[9px] uppercase tracking-widest text-orange-300 hover:border-orange-400/40">
               {approvalCount} aprovacoes
             </Link>
             <span className="rounded-full border border-emerald-500/20 bg-emerald-500/10 px-2 py-1 text-[9px] uppercase tracking-widest text-emerald-300">
-              {completedStepCount} steps concluidos
+              {completedStepCount} itens prontos
             </span>
             {recentTasks.length > 0 && (
               <span className="rounded-full border border-white/10 bg-white/5 px-2 py-1 text-[9px] uppercase tracking-widest text-gray-400">
-                {recentTasks.length} recentes
+                {recentTasks.length} trabalhos recentes
               </span>
             )}
             {recentEvents.length > 0 && (
@@ -1073,10 +1074,20 @@ function MissionOpsPanel({
             onClick={onRefresh}
             disabled={isLoading}
             className="inline-flex h-8 items-center justify-center gap-1.5 rounded-full border border-white/10 bg-white/5 px-3 text-[9px] font-bold uppercase tracking-widest text-gray-300 hover:border-[#CCA761]/30 hover:text-[#CCA761] disabled:opacity-50"
-            title="Atualizar missoes agora"
+            title="Atualizar atividade agora"
           >
             {isLoading ? <Loader2 size={11} className="animate-spin" /> : <History size={11} />}
             Atualizar
+          </button>
+          <button
+            type="button"
+            onClick={onOrganize}
+            disabled={isOrganizing}
+            className="inline-flex h-8 items-center justify-center gap-1.5 rounded-full border border-[#CCA761]/30 bg-[#CCA761]/10 px-3 text-[9px] font-bold uppercase tracking-widest text-[#CCA761] hover:border-[#CCA761]/60 disabled:opacity-50"
+            title="Pedir para o MAYUS organizar o escritorio agora"
+          >
+            {isOrganizing ? <Loader2 size={11} className="animate-spin" /> : <Sparkles size={11} />}
+            Organizar agora
           </button>
         </div>
       </div>
@@ -1086,14 +1097,14 @@ function MissionOpsPanel({
           href="/dashboard/aprovacoes"
           className="flex items-center justify-between gap-3 rounded-lg border border-orange-500/20 bg-orange-500/10 px-2.5 py-2 text-[11px] text-orange-300 hover:border-orange-400/40"
         >
-          <span>{approvalCount} aprovacao(oes) aguardando decisao humana.</span>
+          <span>{approvalCount} decisao(oes) aguardando voce antes de uma acao sensivel.</span>
           <span className="shrink-0 text-[9px] font-bold uppercase tracking-widest">Abrir inbox</span>
         </Link>
       )}
 
       {supervisedActions.length > 0 && (
         <div className="space-y-2">
-          <p className="text-[10px] text-gray-500 uppercase tracking-widest">Proximas decisoes</p>
+          <p className="text-[10px] text-gray-500 uppercase tracking-widest">Decisoes pendentes</p>
           <div className="grid gap-2 md:grid-cols-2">
             {supervisedActions.map((action) => {
               const className = action.tone === "red"
@@ -1122,7 +1133,7 @@ function MissionOpsPanel({
 
       {partial && (
         <div className="rounded-lg border border-amber-500/20 bg-amber-500/10 px-2.5 py-2 text-[11px] text-amber-300">
-          Atividade global carregada parcialmente. O MAYUS segue mostrando o que esta disponivel.
+          Atividade carregada parcialmente. O MAYUS segue mostrando o que esta disponivel.
         </div>
       )}
 
@@ -1135,7 +1146,7 @@ function MissionOpsPanel({
       {isLoading && snapshots.length === 0 && recentTasks.length === 0 && (
         <div className="flex items-center gap-2 rounded-lg border border-white/5 bg-white/[0.03] px-2.5 py-2 text-[11px] text-gray-400">
           <Loader2 size={12} className="animate-spin text-[#CCA761]" />
-          Carregando missoes recentes do tenant...
+          Pesquisando atividade recente do escritorio...
         </div>
       )}
 
@@ -1181,7 +1192,7 @@ function MissionOpsPanel({
                     onClick={() => onCancelMission(snapshot.task.id)}
                     disabled={cancellingTaskId === snapshot.task.id}
                     className="rounded-full border border-red-500/20 bg-red-500/10 px-2 py-1 text-[9px] uppercase tracking-widest text-red-300 hover:border-red-400/40 disabled:opacity-50"
-                    title="Cancelar missao"
+                    title="Cancelar este trabalho"
                   >
                     {cancellingTaskId === snapshot.task.id ? "cancelando" : "cancelar"}
                   </button>
@@ -1453,6 +1464,7 @@ export default function MAYUSPlayground() {
   const [lastBrainStreamStep, setLastBrainStreamStep] = useState<{ title: string; status: string } | null>(null);
   const [cancellingMissionId, setCancellingMissionId] = useState<string | null>(null);
   const [retryingStepId, setRetryingStepId] = useState<string | null>(null);
+  const [isOrganizingMayus, setIsOrganizingMayus] = useState(false);
 
   // Novos estados da Fase 5A
   const [conversations, setConversations] = useState<Conversation[]>([]);
@@ -1517,7 +1529,7 @@ export default function MAYUSPlayground() {
       const { response, data } = await fetchJsonWithTimeout(`/api/brain/tasks/${taskId}`, { cache: "no-store" }, BRAIN_TASK_TIMEOUT_MS);
 
       if (!response.ok || !data?.task) {
-        throw new Error(data?.error || "Erro ao carregar status da missão.");
+        throw new Error(data?.error || "Erro ao carregar status do MAYUS.");
       }
 
       setBrainTaskSnapshots((current) => ({
@@ -1531,7 +1543,7 @@ export default function MAYUSPlayground() {
         },
       }));
     } catch (error) {
-      console.error(`[MAYUS] Falha ao carregar missão ${taskId}:`, error);
+      console.error(`[MAYUS] Falha ao carregar trabalho ${taskId}:`, error);
     }
   }, []);
 
@@ -1554,7 +1566,7 @@ export default function MAYUSPlayground() {
       }
 
       if (!response.ok) {
-        throw new Error((data as any)?.error || "Nao consegui carregar missoes recentes do tenant.");
+        throw new Error((data as any)?.error || "Nao consegui carregar atividade recente do tenant.");
       }
 
       setTenantMissionTasks(Array.isArray(data.recent_tasks) ? data.recent_tasks : []);
@@ -1566,14 +1578,14 @@ export default function MAYUSPlayground() {
       setTenantMissionEvents([]);
       setTenantMissionPendingApprovals(0);
       setTenantMissionPartial(false);
-      setTenantMissionError(getFriendlyRequestError(error, "Nao consegui carregar missoes recentes do tenant."));
+      setTenantMissionError(getFriendlyRequestError(error, "Nao consegui carregar atividade recente do tenant."));
     } finally {
       setIsTenantMissionLoading(false);
     }
   }, []);
 
   const cancelMission = useCallback(async (taskId: string) => {
-    const reason = window.prompt("Motivo para cancelar esta missao do MAYUS:");
+    const reason = window.prompt("Motivo para cancelar este trabalho do MAYUS:");
     const normalizedReason = reason?.trim();
     if (!normalizedReason) return;
 
@@ -1590,23 +1602,23 @@ export default function MAYUSPlayground() {
       );
 
       if (!response.ok) {
-        throw new Error(data?.error || "Nao foi possivel cancelar a missao.");
+        throw new Error(data?.error || "Nao foi possivel cancelar este trabalho.");
       }
 
-      toast.success("Missao cancelada e registrada no cerebro.");
+      toast.success("Trabalho cancelado e registrado.");
       await Promise.all([
         loadBrainTask(taskId),
         loadTenantMissionActivity(),
       ]);
     } catch (error) {
-      toast.error(getFriendlyRequestError(error, "Nao foi possivel cancelar a missao."));
+      toast.error(getFriendlyRequestError(error, "Nao foi possivel cancelar este trabalho."));
     } finally {
       setCancellingMissionId(null);
     }
   }, [loadBrainTask, loadTenantMissionActivity]);
 
   const retryMissionStep = useCallback(async (taskId: string, stepId: string) => {
-    const reason = window.prompt("Motivo para retomar este step da missao:");
+    const reason = window.prompt("Motivo para retomar este item:");
     const normalizedReason = reason?.trim();
     if (!normalizedReason) return;
 
@@ -1623,18 +1635,66 @@ export default function MAYUSPlayground() {
       );
 
       if (!response.ok) {
-        throw new Error(data?.error || "Nao foi possivel retomar a missao.");
+        throw new Error(data?.error || "Nao foi possivel retomar este trabalho.");
       }
 
-      toast.success("Retry registrado. O MAYUS retomou a missao em fila supervisionada.");
+      toast.success("Retomada registrada. O MAYUS voltou a organizar.");
       await Promise.all([
         loadBrainTask(taskId),
         loadTenantMissionActivity(),
       ]);
     } catch (error) {
-      toast.error(getFriendlyRequestError(error, "Nao foi possivel retomar a missao."));
+      toast.error(getFriendlyRequestError(error, "Nao foi possivel retomar este trabalho."));
     } finally {
       setRetryingStepId(null);
+    }
+  }, [loadBrainTask, loadTenantMissionActivity]);
+
+  const organizeMayusNow = useCallback(async () => {
+    setIsOrganizingMayus(true);
+    try {
+      const { response, data } = await fetchJsonWithTimeout(
+        "/api/setup/organize",
+        {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ maxSteps: 10 }),
+        },
+        MAYUS_ORGANIZE_TIMEOUT_MS
+      );
+
+      if (!response.ok) {
+        throw new Error(data?.error || "Nao foi possivel organizar o escritorio agora.");
+      }
+
+      const organization = data?.organization || {};
+      const result = organization.result || {};
+      const executions = Array.isArray(result.executions) ? result.executions : [];
+      const taskId = typeof result.taskId === "string"
+        ? result.taskId
+        : typeof organization.beta?.taskId === "string"
+          ? organization.beta.taskId
+          : null;
+      const summary = typeof organization.summary === "string"
+        ? organization.summary
+        : executions.length > 0
+          ? `MAYUS organizou ${executions.length} item(ns) seguro(s).`
+          : "MAYUS analisou o escritorio e separou o proximo passo.";
+
+      toast.success(summary);
+
+      if (taskId) {
+        await Promise.all([
+          loadBrainTask(taskId),
+          loadTenantMissionActivity(),
+        ]);
+      } else {
+        await loadTenantMissionActivity();
+      }
+    } catch (error) {
+      toast.error(getFriendlyRequestError(error, "Nao foi possivel organizar o escritorio agora."));
+    } finally {
+      setIsOrganizingMayus(false);
     }
   }, [loadBrainTask, loadTenantMissionActivity]);
 
@@ -2490,10 +2550,12 @@ export default function MAYUSPlayground() {
             lastStreamActivityAt={lastBrainStreamActivityAt}
             lastStreamStep={lastBrainStreamStep}
             onRefresh={() => void loadTenantMissionActivity()}
+            onOrganize={() => void organizeMayusNow()}
             onCancelMission={(taskId) => void cancelMission(taskId)}
             onRetryStep={(taskId, stepId) => void retryMissionStep(taskId, stepId)}
             cancellingTaskId={cancellingMissionId}
             retryingStepId={retryingStepId}
+            isOrganizing={isOrganizingMayus}
           />
           
           {messages.length === 0 && (
