@@ -175,7 +175,8 @@ o Core nao e um pacote tecnico de rotas. Ele e o nucleo para o MAYUS agir como a
 Evidencia 2026-05-02: `POST /api/brain/tasks/:id/cancel` criado como primeiro controle de autonomia supervisionada; exige sessao/tenant, motivo explicito, bloqueia missao terminal, cancela task/runs/steps/approvals pendentes e registra `learning_events.task_cancelled`.
 Evidencia 2026-05-02: `POST /api/brain/tasks/:id/retry` criado para retomar step falho/cancelado com idempotencia; cria nova `brain_run`, clona o step em estado `queued`, grava `retry_metadata`, bloqueia efeitos externos automaticos na rota e registra `learning_events.task_step_retry_requested`.
 - [ ] Stream de status de missao.
-- [ ] Painel operacional de missoes.
+- [~] Painel operacional de missoes.
+Evidencia 2026-05-03: `/dashboard/mayus` agora mostra um painel compacto das missoes acompanhadas pela conversa, com ativas, aprovacoes pendentes, steps concluidos e resumo por missao. Falta evoluir para painel global de todas as missoes do tenant.
 
 ### 4.3 Skill Fabric
 
@@ -439,7 +440,28 @@ Evidencia 2026-04-27: `POST /api/setup/doctor` registra missao `setup/settings`,
 - [ ] Criar pipeline juridico padrao por area de atuacao e objetivo do escritorio.
 - [ ] Criar estrutura documental padrao por area/tipo de processo.
 - [ ] Sugerir playbooks de atendimento, marketing, agenda e cobranca.
-- [ ] Score de prontidao do escritorio com proximo melhor passo.
+- [x] Score de prontidao do escritorio com proximo melhor passo.
+Evidencia 2026-05-03: `runTenantDoctor` agora calcula `readinessScore`, `readinessLevel` e `recommendedAction`, persiste esses sinais no artifact/learning event do Setup Doctor e a tela de Configuracoes mostra prontidao + proximo melhor passo com revisao humana quando necessario.
+- [x] Iniciar Modo Beta supervisionado do MAYUS.
+Evidencia 2026-05-03: `POST /api/setup/beta` roda o Doctor com autofix seguro, cria artifact `tenant_beta_workplan`, learning event `tenant_beta_workplan_created` e fila operacional com Setup, Playbook Diario, CRM sem proximo passo e `support_case_status`, sem side effects externos automaticos.
+- [x] Transformar fila beta em passos acompanhaveis de missao.
+Evidencia 2026-05-03: o Modo Beta agora cria `brain_steps` para cada item da fila: operacoes seguras entram como `queued`, checkpoints sensiveis entram como `awaiting_approval` e geram `brain_approvals` pendentes para aparecer no inbox/mission status.
+- [x] Executar proximo item seguro da fila beta.
+Evidencia 2026-05-03: `POST /api/setup/beta/execute-next` executa o proximo `brain_step` beta em `queued`, transiciona `queued -> executing -> completed`, cria artifact `tenant_beta_step_result`, learning event `tenant_beta_step_completed` e atualiza a UI de Configuracoes sem side effects externos.
+- [x] Conectar handler real do `core:daily_playbook`.
+Evidencia 2026-05-03: quando o executor beta roda `core:daily_playbook`, ele le CRM/agenda/configuracoes, usa `buildDailyPlaybook`, salva artifact `daily_playbook` na propria missao beta e mantem envio externo bloqueado.
+- [x] Conectar handler real do `growth:crm_next_steps`.
+Evidencia 2026-05-03: quando o executor beta roda `growth:crm_next_steps`, ele usa `buildMarketingOpsAssistantPlan` em modo leads sem proximo passo, salva artifact `marketing_ops_assistant_plan`, registra quantidade/recomendacoes e mantem WhatsApp/publicacao/campanhas bloqueados.
+- [x] Conectar handler real do `lex:support_case_status`.
+Evidencia 2026-05-03: quando o executor beta roda `lex:support_case_status`, ele monta snapshot seguro do processo mais recente, usa `buildSupportCaseStatusContract`/`buildSupportCaseStatusReply`, salva artifact `support_case_status` e preserva handoff humano quando a base estiver fraca.
+- [x] Atualizar status da missao beta conforme a fila anda.
+Evidencia 2026-05-03: apos cada `execute-next`, o runtime recalcula steps restantes e atualiza `brain_tasks`/`brain_runs` para `executing`, `awaiting_approval` ou `completed`, conforme ainda existam itens seguros, aprovacoes pendentes ou fila encerrada.
+- [x] Executar todos os itens seguros restantes da fila beta.
+Evidencia 2026-05-03: `POST /api/setup/beta/execute-safe-queue` executa a fila segura em loop ate concluir, parar em aprovacao humana ou atingir limite operacional, sem atravessar checkpoints sensiveis.
+- [x] Expor historico compacto da execucao beta em Configuracoes.
+Evidencia 2026-05-03: o painel do Modo Beta em Configuracoes agora mostra a ultima execucao, status final, quantidade de itens executados e resumo dos steps concluidos depois de `execute-next` ou `execute-safe-queue`.
+- [x] Expor historico compacto da execucao beta no cockpit MAYUS.
+Evidencia 2026-05-03: o card de missao em `/dashboard/mayus` agora reconhece missoes `tenant_beta_work_mode`, mostra contadores de concluidos/fila/executando/aprovacao e lista eventos recentes `tenant_beta_step_completed` para o operador ver o Beta trabalhando dentro do cockpit.
 - [ ] Aprovar/rejeitar configuracoes sugeridas em lote.
 
 Evidencia 2026-04-29: a auto-configuracao virou frente explicita de execucao. O estado atual nao e promessa vazia: `runTenantDoctor` ja diagnostica/aplica defaults seguros, e `sales_profile_setup` ja configura o perfil comercial por chat. Falta expandir para o onboarding completo do escritorio e aplicar o mesmo padrao aos demais modulos.
@@ -531,22 +553,28 @@ criar uma conta modelo para demonstracao comercial sem dados reais, uma operacao
 Referencia:
 `docs/operations/demo-superadmin-whatsapp-plan.md`
 
-- [~] Criar tenant demo com `demo_mode=true`.
-Evidencia 2026-05-02: `POST /api/admin/demo/reset` exige superadmin e so opera em tenant cujo `tenant_settings.ai_features.demo_mode` esteja ativo. Falta UI/flag operacional para marcar/criar o tenant demo.
+- [x] Criar tenant demo com `demo_mode=true`.
+Evidencia 2026-05-02: `POST /api/admin/demo/reset` exige superadmin e so opera em tenant cujo `tenant_settings.ai_features.demo_mode` esteja ativo; `/admin/demo` permite marcar/desmarcar o tenant demo preservando `tenant_settings.ai_features` existentes.
 - [~] Criar seed sintetico completo para CRM, processos, documentos, prazos, financeiro, marketing, artifacts e missoes.
 Evidencia 2026-05-02: `buildDemoCaseSeeds` gera 100 casos sinteticos determinísticos, sendo 12 casos vitrine ricos e 88 casos de volume, com areas, fases, prazos, memoria documental simulada e tarefas internas. CRM/financeiro/marketing/artifacts de missao ainda faltam como camadas adicionais.
 Evidencia 2026-05-02: `src/lib/demo/demo-oab-flow.ts` adiciona OAB ficticia `SP/123456`, advogada demo, cache de processos, movimentacoes e resposta supervisionada de WhatsApp; o reset agora semeia `processos_cache`, `tenant_oab_monitoramentos`, `process_movimentacoes_inbox`, `monitored_processes`, `whatsapp_contacts` e `whatsapp_messages`.
 - [x] Criar reset seguro do demo para estado padrao antes de demonstracoes.
 Evidencia 2026-05-02: `POST /api/admin/demo/reset` faz `dryRun` por padrao, exige `confirm="RESET_DEMO"` para reset real, apaga apenas dados com tag/source `mayus_demo_seed_v1`, recria pipeline/stages/processos/memorias/tarefas e registra `system_event_logs.demo_tenant_reset`.
-- [ ] Adicionar banner visual permanente de ambiente de demonstracao.
+- [x] Adicionar banner visual permanente de ambiente de demonstracao.
+Evidencia 2026-05-02: `src/components/layout/DemoEnvironmentBanner.tsx` aparece no `DashboardLayout` quando `tenant_settings.ai_features` indica demo, avisando que a conta usa dados sinteticos e mostrando os modos Drive/WhatsApp/Escavador sem expor segredo.
 - [~] Bloquear integracoes externas reais no demo e usar simuladores.
 Evidencia 2026-05-02: `POST /api/escavador/buscar-completo` reconhece a OAB demo em tenant `demo_mode` e retorna dados sinteticos sem `requireTenantApiKey`; `POST /api/agent/processos/organizar` reconhece processo demo e gera organizacao deterministica sem LLM/Escavador externo.
-- [~] Criar simuladores para WhatsApp, Drive, Escavador, Asaas e ZapSign.
-Evidencia 2026-05-02: simulador inicial cobre Escavador/OAB, movimentacoes e WhatsApp de demonstracao. Drive/Asaas/ZapSign ainda precisam de simuladores dedicados.
+- [~] Criar simuladores para WhatsApp, Escavador, Asaas e ZapSign, mantendo Drive em conta Google demo real.
+Evidencia 2026-05-02: simulador inicial cobre Escavador/OAB, movimentacoes e WhatsApp de demonstracao. Drive foi alinhado para conta Google dedicada da demo, com prontidao sanitizada em `/admin/demo`. Asaas/ZapSign ainda precisam de simuladores dedicados.
 - [ ] Criar papel `mayus_support_admin` separado de usuarios comuns de tenant.
-- [ ] Criar painel super admin com tenants, status de setup, saude, suporte e grants temporarios.
-- [ ] Criar grants temporarios de suporte por tenant com motivo, expiracao, escopo e auditoria.
-- [ ] Criar inbox de suporte MAYUS conectado ao WhatsApp oficial da plataforma.
+- [~] Criar painel super admin com tenants, status de setup, saude, suporte e grants temporarios.
+Evidencia 2026-05-02: `/api/admin/support/tenants` e `/admin/support` iniciam a visao operacional de suporte MAYUS com tenants, usuarios ativos, resumo sanitizado de integracoes, flag demo e exigencia de grant para dado sensivel. Falta criar grant temporario real e casos/inbox de suporte.
+- [x] Criar grants temporarios de suporte por tenant com motivo, expiracao, escopo e auditoria.
+Evidencia 2026-05-02: migration `20260502183000_admin_support_grants.sql`, `POST /api/admin/support/grants` e `POST /api/admin/support/grants/:id/revoke` criam/revogam grants com motivo, escopo, expiracao e eventos `support_grant_created`/`support_grant_revoked` em `system_event_logs`.
+- [x] Aplicar grant temporario como trava real para visualizacao sensivel redigida.
+Evidencia 2026-05-02: `getActiveSupportGrant` valida validade e escopo; `GET /api/admin/support/tenants/:id/sensitive-summary` exige `tenant_sensitive_readonly`, retorna apenas resumo redigido sem tokens/payload bruto e audita `support_access_viewed`.
+- [~] Criar inbox de suporte MAYUS conectado ao WhatsApp oficial da plataforma.
+Evidencia 2026-05-03: `GET /api/admin/support/inbox` lista eventos operacionais de suporte redigidos (`support_grant_created`, `support_grant_revoked`, `support_access_viewed`, reset/status demo) e `/admin/support` exibe a inbox. Falta conectar o WhatsApp oficial da plataforma.
 - [ ] Criar modelo de contas WhatsApp por dono: `mayus_support`, `tenant`, `demo`.
 - [ ] Configurar Dutra com WhatsApp proprio do escritorio, isolado do suporte MAYUS.
 - [ ] Resolver inbound/outbound por conta provedora/numero receptor, nao por texto livre.

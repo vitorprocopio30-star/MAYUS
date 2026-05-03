@@ -213,6 +213,7 @@ export default function WhatsAppChatPremiumPage({
 
   const tenantId = profile?.tenant_id || null;
   const profileId = profile?.id || null;
+  const activeContactId = activeContact?.id || null;
   const normalizedRole = String(profile?.role || "")
     .normalize("NFD")
     .replace(/[\u0300-\u036f]/g, "")
@@ -222,8 +223,8 @@ export default function WhatsAppChatPremiumPage({
   const isAdmin = ["administrador", "admin", "socio", "mayus_admin"].includes(normalizedRole);
 
   useEffect(() => {
-    activeContactIdRef.current = activeContact?.id || null;
-  }, [activeContact?.id]);
+    activeContactIdRef.current = activeContactId;
+  }, [activeContactId]);
 
   useEffect(() => {
     inputTextRef.current = inputText;
@@ -447,8 +448,8 @@ export default function WhatsAppChatPremiumPage({
 
   // Realtime Messages
   useEffect(() => {
-    if (!tenantId || !activeContact) return;
-    const contactId = activeContact.id;
+    if (!tenantId || !activeContactId) return;
+    const contactId = activeContactId;
 
     const fetchMessages = async () => {
        const { data } = await supabase
@@ -511,7 +512,7 @@ export default function WhatsAppChatPremiumPage({
 
     const intervalId = window.setInterval(() => {
       void fetchMessages();
-    }, 1500);
+    }, 5000);
 
     const handleVisibility = () => {
       if (document.visibilityState === "visible") {
@@ -526,7 +527,7 @@ export default function WhatsAppChatPremiumPage({
       document.removeEventListener("visibilitychange", handleVisibility);
       supabase.removeChannel(channel);
     };
-  }, [supabase, tenantId, activeContact]);
+  }, [supabase, tenantId, activeContactId]);
 
   useEffect(() => {
     if (activeContact) return;

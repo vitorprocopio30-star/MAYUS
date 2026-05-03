@@ -18,13 +18,47 @@ Analisar o checklist principal e retomar uma frente executavel sem depender de c
 - [x] Criado `docs/operations/demo-superadmin-whatsapp-plan.md` com fases, guardrails, criterios de aceite e ordem recomendada.
 - [x] Implementado primeiro reset demo: gerador de 100 casos sinteticos, rota `POST /api/admin/demo/reset`, dry-run padrao, confirmacao `RESET_DEMO` e bloqueio para tenant sem `demo_mode`.
 - [x] Ampliado fluxo demo completo: OAB ficticia `SP/123456`, cache Escavador sintetico, monitoramentos, inbox de movimentacoes, processos monitorados, conversas WhatsApp demo e organizacao deterministica sem provedor externo.
+- [x] Iniciado padrao `Executar` para demonstracao operacional: Monitoramento mostra a organizacao como execucao de fase, e Prazos ganhou `Executar na agenda` com rota server-side, sincronizacao idempotente e auditoria.
+- [x] WhatsApp demo ganhou `Executar` supervisionado: contato seed da conta modelo pode simular envio outbound auditado sem chamar provedor externo; contato real recebe bloqueio 409 e exige envio humano.
+- [x] Drive da conta modelo alinhado para conta Google dedicada de demonstracao: reset demo deixou de gravar `drive_folder_id`/links fake, mantendo o fluxo real de criar estrutura, sincronizar e executar acervo quando o Drive demo estiver conectado.
+- [x] Criado painel super admin da conta modelo em `/admin/demo`, com listagem de tenants, marcar/desmarcar `demo_mode`, dry-run e reset real com confirmacao `RESET_DEMO`.
+- [x] Painel `/admin/demo` passou a mostrar prontidao do Drive dedicado por tenant, incluindo disponibilidade OAuth, status conectado, email seguro da conta demo e pasta raiz configurada, sem expor refresh token, access token ou `api_key`.
+- [x] Adicionado banner permanente de ambiente demo no dashboard inteiro, lido de `tenant_settings.ai_features`, com helper compartilhado `isDemoModeEnabled`.
+- [x] Iniciado suporte MAYUS amplo: `GET /api/admin/support/tenants` e `/admin/support` listam tenants com dados sanitizados, usuarios ativos, resumo de integracoes, flag demo e grant sensivel ainda pendente.
+- [x] Criados grants temporarios de suporte: migration `admin_support_grants`, rota de criar grant com motivo/escopo/expiracao, rota de revogar e UI em `/admin/support`.
+- [x] Grants passaram a proteger endpoint real: `GET /api/admin/support/tenants/:id/sensitive-summary` exige escopo `tenant_sensitive_readonly`, retorna resumo redigido e audita `support_access_viewed`.
+- [x] Usuario confirmou em 2026-05-03 que o SQL `admin_support_grants` passou com sucesso no Supabase.
+- [~] Inbox de suporte MAYUS iniciada: `GET /api/admin/support/inbox` lista eventos de suporte redigidos e `/admin/support` exibe eventos recentes; falta WhatsApp oficial MAYUS.
+- [x] Setup Doctor passou a calcular prontidao agentica do escritorio (`readinessScore`, `readinessLevel`) e organizar o proximo melhor passo como `recommendedAction`, visivel em Configuracoes e no artifact do MAYUS.
+- [x] Modo Beta MAYUS criado: `POST /api/setup/beta` inicia uma missao supervisionada, gera artifact `tenant_beta_workplan`, learning event e fila operacional para o MAYUS trabalhar sem side effects externos automaticos.
+- [x] Fila do Modo Beta agora vira execucao acompanhavel: cada item gera `brain_steps`, com operacoes seguras em `queued` e checkpoints humanos em `awaiting_approval` + `brain_approvals`.
+- [x] Criado executor do proximo item seguro da fila beta: `POST /api/setup/beta/execute-next` muda `queued -> executing -> completed`, cria artifact `tenant_beta_step_result`, learning event e atualiza o painel de Configuracoes.
+- [x] Conectado primeiro handler real da fila beta: `core:daily_playbook` agora gera Playbook Diario a partir de CRM/agenda/configuracoes e salva artifact `daily_playbook` na missao beta, sem envio externo.
+- [x] Conectado handler Growth da fila beta: `growth:crm_next_steps` agora usa `buildMarketingOpsAssistantPlan`, identifica leads sem proximo passo e salva artifact `marketing_ops_assistant_plan`, sem WhatsApp/publicacao/campanhas.
+- [x] Conectado handler Lex da fila beta: `lex:support_case_status` monta snapshot seguro do processo mais recente, usa `buildSupportCaseStatusContract`/`buildSupportCaseStatusReply` e salva artifact `support_case_status`.
+- [x] Missao beta agora acompanha o estado real da fila: depois de cada `execute-next`, `brain_tasks`/`brain_runs` ficam `executing`, `awaiting_approval` ou `completed`.
+- [x] Criada execucao continua da fila segura beta: `POST /api/setup/beta/execute-safe-queue` executa itens seguros em sequencia e para em aprovacao humana/conclusao/limite.
+- [x] Configuracoes passou a exibir historico compacto da ultima execucao beta: status final, quantidade de itens e resumos dos steps executados.
+- [x] Cockpit MAYUS passou a exibir historico compacto da execucao beta dentro do card da missao, com contadores de concluidos/fila/executando/aprovacao e eventos recentes.
+- [~] Painel operacional de missoes iniciado no cockpit MAYUS: a conversa agora mostra resumo das missoes acompanhadas, ativas, aprovacoes pendentes e steps concluidos; falta painel global por tenant.
 - [x] Checklist principal, checklist Core e progresso atualizados com evidencia.
 
 ### Pendencias
-- [ ] Criar UI/painel super admin para dry-run/reset da conta demo.
+- [x] Criar UI/painel super admin para dry-run/reset da conta demo.
 - [ ] Implementar contrato/tipos e flags para `demo_mode`, `mayus_support_admin` e contas WhatsApp por dono operacional.
+- [ ] Criar onboarding conversacional para areas, equipe, tom, permissoes e rotina, usando o score do Setup Doctor como entrada.
+- [x] Transformar itens da fila `tenant_beta_workplan` em execucoes acompanhadas por status de missao.
+- [x] Criar executor do proximo item seguro da fila beta, com transicao `queued -> executing -> completed`.
+- [~] Conectar execucoes reais por tipo de step beta, com handlers especificos para Playbook Diario, CRM e status de caso.
+  - [x] `core:daily_playbook`
+  - [x] `growth:crm_next_steps`
+  - [x] `lex:support_case_status`
 - [ ] Criar stream/status incremental de missao.
-- [ ] Criar painel operacional de missoes.
+- [x] Criar acao de executar todos os itens seguros restantes da fila beta, parando em aprovacoes pendentes.
+- [x] Expor historico compacto da execucao segura no painel Configuracoes.
+- [x] Expor historico compacto da execucao segura tambem no painel MAYUS.
+- [~] Criar painel operacional de missoes.
+- [ ] Conectar uma conta Google Drive exclusiva da demo e validar `Criar Estrutura` -> `Executar Acervo` -> `Sincronizar IA` com arquivos ficticios reais.
 
 ### Validacoes
 - Primeira tentativa de Vitest focado falhou no sandbox com `spawn EPERM`; rerun fora do sandbox passou.
@@ -38,6 +72,47 @@ Analisar o checklist principal e retomar uma frente executavel sem depender de c
 - Primeira tentativa dos testes do demo reset falhou no sandbox com `spawn EPERM`; rerun fora do sandbox passou.
 - `npm.cmd test -- --run src/lib/demo/demo-tenant-reset.test.ts src/app/api/admin/demo/reset/route.test.ts` passou: 2 arquivos, 8 testes.
 - `npx.cmd tsc --noEmit --pretty false` passou apos o demo reset.
+- Primeira tentativa dos testes do `Executar` de prazos falhou no sandbox com `spawn EPERM`; rerun fora do sandbox passou.
+- `npm.cmd test -- --run src/app/api/prazos/executar-agenda/route.test.ts src/lib/demo/demo-tenant-reset.test.ts src/app/api/escavador/buscar-completo/route.test.ts src/app/api/agent/processos/organizar/route.test.ts` passou: 4 arquivos, 16 testes.
+- `npx.cmd tsc --noEmit --pretty false` passou apos o padrao `Executar`.
+- Primeira tentativa dos testes focados do WhatsApp `Executar` falhou no sandbox com `spawn EPERM`; rerun fora do sandbox passou.
+- `npm.cmd test -- --run src/app/api/whatsapp/execute-reply/route.test.ts src/app/api/whatsapp/send/route.test.ts src/app/api/prazos/executar-agenda/route.test.ts` passou: 3 arquivos, 9 testes.
+- `npx.cmd tsc --noEmit --pretty false` passou apos o `Executar` do WhatsApp demo.
+- `npx.cmd tsc --noEmit --pretty false` passou apos alinhar Drive demo ao fluxo real.
+- Primeira tentativa dos testes focados de Documentos/Drive demo falhou no sandbox com `spawn EPERM`; rerun fora do sandbox passou.
+- `npm.cmd test -- --run src/app/api/documentos/processos/[taskId]/organize/route.test.ts src/lib/demo/demo-tenant-reset.test.ts src/app/api/whatsapp/execute-reply/route.test.ts` passou: 3 arquivos, 10 testes.
+- Primeira tentativa dos testes focados do painel demo falhou no sandbox com `spawn EPERM`; rerun fora do sandbox passou.
+- `npm.cmd test -- --run src/app/api/admin/demo/status/route.test.ts src/app/api/admin/demo/reset/route.test.ts src/lib/demo/demo-tenant-reset.test.ts` passou: 3 arquivos, 12 testes.
+- `npx.cmd tsc --noEmit --pretty false` passou apos o painel `/admin/demo`.
+- Primeira tentativa dos testes focados da prontidao Drive no painel demo falhou no sandbox com `spawn EPERM`; rerun fora do sandbox passou.
+- `npm.cmd test -- --run src/app/api/admin/demo/status/route.test.ts src/app/api/admin/demo/reset/route.test.ts src/lib/demo/demo-tenant-reset.test.ts` passou novamente: 3 arquivos, 12 testes.
+- `npx.cmd tsc --noEmit --pretty false` passou apos incluir prontidao Drive no `/admin/demo`.
+- `git diff --check` passou nos arquivos da fatia `/admin/demo`, docs e status Drive, restando apenas warnings LF/CRLF do Windows.
+- Primeira tentativa dos testes focados do banner demo/helper falhou no sandbox com `spawn EPERM`; rerun fora do sandbox passou.
+- `npm.cmd test -- --run src/lib/demo/demo-mode.test.ts src/app/api/admin/demo/status/route.test.ts src/lib/demo/demo-tenant-reset.test.ts src/app/api/escavador/buscar-completo/route.test.ts` passou: 4 arquivos, 18 testes.
+- `npx.cmd tsc --noEmit --pretty false` passou apos o banner demo.
+- Primeira tentativa dos testes focados de suporte MAYUS falhou no sandbox com `spawn EPERM`; rerun fora do sandbox passou.
+- `npm.cmd test -- --run src/app/api/admin/support/tenants/route.test.ts src/lib/demo/demo-mode.test.ts src/app/api/admin/demo/status/route.test.ts` passou: 3 arquivos, 7 testes.
+- `npx.cmd tsc --noEmit --pretty false` passou apos `/admin/support`.
+- Primeira tentativa dos testes focados de grants de suporte falhou no sandbox com `spawn EPERM`; rerun fora do sandbox passou.
+- `npm.cmd test -- --run src/app/api/admin/support/tenants/route.test.ts src/app/api/admin/support/grants/route.test.ts src/app/api/admin/support/grants/[id]/revoke/route.test.ts` passou: 3 arquivos, 6 testes.
+- `npx.cmd tsc --noEmit --pretty false` passou apos grants temporarios.
+- Primeira tentativa dos testes focados de resumo protegido por grant falhou no sandbox com `spawn EPERM`; rerun fora do sandbox passou.
+- `npm.cmd test -- --run src/lib/admin/support-grants.test.ts src/app/api/admin/support/tenants/route.test.ts src/app/api/admin/support/tenants/[id]/sensitive-summary/route.test.ts src/app/api/admin/support/grants/route.test.ts src/app/api/admin/support/grants/[id]/revoke/route.test.ts` passou: 5 arquivos, 11 testes.
+- `npx.cmd tsc --noEmit --pretty false` passou apos resumo protegido por grant.
+- Primeira tentativa dos testes focados da inbox de suporte falhou no sandbox com `spawn EPERM`; rerun fora do sandbox passou.
+- `npm.cmd test -- --run src/app/api/admin/support/inbox/route.test.ts src/lib/admin/support-grants.test.ts src/app/api/admin/support/tenants/route.test.ts src/app/api/admin/support/tenants/[id]/sensitive-summary/route.test.ts src/app/api/admin/support/grants/route.test.ts src/app/api/admin/support/grants/[id]/revoke/route.test.ts` passou: 6 arquivos, 13 testes.
+- `npx.cmd tsc --noEmit --pretty false` passou apos inbox de suporte.
+- Primeira tentativa dos testes focados do Modo Beta falhou no sandbox com `spawn EPERM`; rerun fora do sandbox passou.
+- `npm.cmd test -- --run src/lib/setup/tenant-doctor.test.ts` passou: 1 arquivo, 10 testes.
+- `npx.cmd tsc --noEmit --pretty false` passou apos o Modo Beta.
+- `npm.cmd test -- --run src/lib/setup/tenant-doctor.test.ts` passou novamente apos handler `core:daily_playbook`: 1 arquivo, 10 testes.
+- `npm.cmd test -- --run src/lib/setup/tenant-doctor.test.ts` passou apos handler `growth:crm_next_steps`: 1 arquivo, 11 testes.
+- `npm.cmd test -- --run src/lib/setup/tenant-doctor.test.ts` passou apos handler `lex:support_case_status`: 1 arquivo, 12 testes.
+- `npx.cmd tsc --noEmit --pretty false` passou apos handler `lex:support_case_status`.
+- `npm.cmd test -- --run src/lib/setup/tenant-doctor.test.ts` passou apos status final da missao beta: 1 arquivo, 12 testes.
+- `npm.cmd test -- --run src/lib/setup/tenant-doctor.test.ts` passou apos execucao continua da fila segura: 1 arquivo, 13 testes.
+- `npx.cmd tsc --noEmit --pretty false` passou apos historico compacto da execucao beta em Configuracoes.
 
 ---
 

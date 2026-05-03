@@ -9,6 +9,7 @@ import {
   buildDemoOabCachePayload,
   buildDemoOabProcessFromCase,
 } from "@/lib/demo/demo-oab-flow";
+import { isDemoModeEnabled } from "@/lib/demo/demo-mode";
 
 export { DEMO_SEED_TAG } from "@/lib/demo/demo-oab-flow";
 export const DEMO_RESET_CONFIRMATION = "RESET_DEMO";
@@ -248,14 +249,6 @@ export function buildDemoResetPreview(cases = buildDemoCaseSeeds()): DemoResetPr
   };
 }
 
-function isDemoMode(aiFeatures: unknown) {
-  if (!aiFeatures || typeof aiFeatures !== "object" || Array.isArray(aiFeatures)) return false;
-  const features = aiFeatures as Record<string, unknown>;
-  const demo = features.demo;
-  return features.demo_mode === true
-    || (demo && typeof demo === "object" && !Array.isArray(demo) && (demo as Record<string, unknown>).enabled === true);
-}
-
 async function assertDemoTenant(supabase: SupabaseLike, tenantId: string) {
   const [{ data: tenant, error: tenantError }, { data: settings, error: settingsError }] = await Promise.all([
     supabase.from("tenants").select("id, name").eq("id", tenantId).maybeSingle(),
@@ -269,7 +262,7 @@ async function assertDemoTenant(supabase: SupabaseLike, tenantId: string) {
     (error as Error & { status?: number }).status = 404;
     throw error;
   }
-  if (!isDemoMode(settings?.ai_features)) {
+  if (!isDemoModeEnabled(settings?.ai_features)) {
     const error = new Error("TenantIsNotDemo");
     (error as Error & { status?: number }).status = 409;
     throw error;
@@ -740,9 +733,9 @@ export async function resetDemoTenant(params: {
     valor_causa: item.value,
     lead_scoring: item.score,
     data_ultima_movimentacao: addDays(-(index % 30)),
-    drive_structure_ready: item.isHero,
-    drive_folder_id: item.isHero ? `demo-folder-${item.code}` : null,
-    drive_link: item.isHero ? `https://drive.example/demo/${item.code}` : null,
+    drive_structure_ready: false,
+    drive_folder_id: null,
+    drive_link: null,
   }));
 
   const { data: insertedProcesses, error: processInsertError } = await supabase
@@ -756,13 +749,13 @@ export async function resetDemoTenant(params: {
   const memoryRows = cases.map((item) => ({
     tenant_id: tenant.id,
     process_task_id: processBySource.get(`${DEMO_SEED_TAG}:${item.code}`),
-    drive_folder_id: item.isHero ? `demo-folder-${item.code}` : null,
-    drive_folder_url: item.isHero ? `https://drive.example/demo/${item.code}` : null,
+    drive_folder_id: null,
+    drive_folder_url: null,
     drive_folder_name: `Acervo ${item.clientName} - ${item.legalArea}`,
     folder_structure: {
       demo_seed: DEMO_SEED_TAG,
       folders: ["01-Documentos do Cliente", "02-Pecas", "03-Provas", "04-Decisoes"],
-      simulated: true,
+      ready_for_demo_drive_account: true,
     },
     document_count: item.isHero ? 9 + (Number(item.code.slice(-3)) % 6) : 2 + (Number(item.code.slice(-3)) % 4),
     sync_status: "completed",

@@ -1355,8 +1355,8 @@ export default function DocumentosPage() {
       const review = data?.organization?.needsReview || 0;
       const warnings = Array.isArray(data?.warnings) ? data.warnings : [];
       const baseMessage = moved > 0
-        ? `Acervo organizado: ${moved} arquivo(s) movido(s) para as pastas jurídicas.`
-        : "Acervo analisado. Nenhum arquivo precisou ser movido.";
+        ? `Execucao concluida: ${moved} arquivo(s) movido(s) para as pastas juridicas.`
+        : "Execucao concluida. Nenhum arquivo precisou ser movido.";
       setOrganizationStatusByTask((current) => ({
         ...current,
         [taskId]: `${baseMessage} ${review} item(ns) para revisão humana.`,
@@ -2912,7 +2912,7 @@ export default function DocumentosPage() {
                     className="w-full py-3 rounded-xl border border-[#CCA761]/30 bg-[#CCA761]/10 hover:bg-[#CCA761]/20 text-[9px] font-black uppercase tracking-[0.1em] text-[#CCA761] flex items-center justify-center gap-1.5 disabled:opacity-50 transition-colors text-center"
                   >
                     {busyTaskId === selectedCard.id ? <Loader2 size={12} className="animate-spin shrink-0" /> : <Sparkles size={12} className="shrink-0" />}
-                    <span className="truncate">Organizar Acervo</span>
+                    <span className="truncate">Executar Acervo</span>
                   </button>
 
                   <button

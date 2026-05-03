@@ -14,7 +14,9 @@ import {
   User,
   Copy,
   Check,
-  X
+  X,
+  PlayCircle,
+  Loader2
 } from 'lucide-react'
 import { Montserrat, Cormorant_Garamond } from "next/font/google"
 
@@ -224,6 +226,8 @@ export default function PrazosPage() {
   const [annotationText, setAnnotationText] = useState('')
   const [isSavingAnnotation, setIsSavingAnnotation] = useState(false)
   const [saveSuccess, setSaveSuccess] = useState(false)
+  const [executingAgenda, setExecutingAgenda] = useState(false)
+  const [agendaExecutionMessage, setAgendaExecutionMessage] = useState<{ type: 'success' | 'error'; text: string } | null>(null)
 
   const getProfileById = (profileId: string | null | undefined) => {
     if (!profileId) return null
@@ -423,6 +427,70 @@ export default function PrazosPage() {
     })
     return Array.from(list).sort((a, b) => a.localeCompare(b))
   }, [items])
+
+  const executableAgendaItems = useMemo(() => {
+    if (activeTab === 'movimentacoes') return []
+    return filteredItems.filter((item) => {
+      if (!item?.id) return false
+      return String(item.status ?? '').normalize('NFD').replace(/[\u0300-\u036f]/g, '').toLowerCase() !== 'concluido'
+    })
+  }, [activeTab, filteredItems])
+
+  const handleExecuteAgenda = useCallback(async () => {
+    if (!tenantId || !currentUser?.id) return
+
+    if (executableAgendaItems.length === 0) {
+      setAgendaExecutionMessage({
+        type: 'error',
+        text: 'Nenhum prazo pendente nos filtros atuais para executar na agenda.',
+      })
+      return
+    }
+
+    setExecutingAgenda(true)
+    setAgendaExecutionMessage(null)
+
+    try {
+      const { data: sessionData } = await supabase.auth.getSession()
+      const token = sessionData.session?.access_token
+      if (!token) throw new Error('Sessao expirada. Entre novamente para executar.')
+
+      const response = await fetch('/api/prazos/executar-agenda', {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          Authorization: `Bearer ${token}`,
+        },
+        body: JSON.stringify({
+          prazoIds: executableAgendaItems.map((item) => item.id),
+        }),
+      })
+
+      const data = await response.json().catch(() => null)
+      if (!response.ok) {
+        throw new Error(data?.error || 'Nao foi possivel executar os prazos na agenda.')
+      }
+
+      const falhas = Number(data?.failed_count || 0)
+      const executados = Number(data?.executed_count || 0)
+      const ignorados = Number(data?.skipped_count || 0)
+      setAgendaExecutionMessage({
+        type: falhas > 0 ? 'error' : 'success',
+        text: falhas > 0
+          ? `Execucao parcial: ${executados} item(ns) enviados para agenda, ${falhas} falha(s).`
+          : `Executado: ${executados} item(ns) distribuido(s) na agenda${ignorados ? `, ${ignorados} ja concluidos.` : '.'}`,
+      })
+
+      await loadData(tenantId, currentUser.id, profiles)
+    } catch (error: any) {
+      setAgendaExecutionMessage({
+        type: 'error',
+        text: error?.message || 'Erro ao executar os prazos na agenda.',
+      })
+    } finally {
+      setExecutingAgenda(false)
+    }
+  }, [currentUser?.id, executableAgendaItems, loadData, profiles, tenantId])
 
   const movimentacoesFiltradas = useMemo(() => {
     const busca = searchTerm.trim().toLowerCase()
@@ -943,8 +1011,9 @@ export default function PrazosPage() {
           </h1>
         </div>
 
-        {/* Tabs */}
-        <div className="grid grid-cols-3 gap-1 w-full sm:w-[480px] bg-white/5 p-1 rounded-2xl border border-white/10 backdrop-blur-xl">
+        <div className="flex flex-col gap-3 w-full sm:w-[520px]">
+          {/* Tabs */}
+          <div className="grid grid-cols-3 gap-1 w-full bg-white/5 p-1 rounded-2xl border border-white/10 backdrop-blur-xl">
           <button 
             onClick={() => setActiveTab('movimentacoes')}
             className={`w-full px-4 py-2.5 rounded-xl text-sm font-medium transition-all duration-300 ${activeTab === 'movimentacoes' ? 'bg-[#CCA761] text-black shadow-lg shadow-[#CCA761]/20' : 'text-gray-400 dark:text-white/40 hover:text-gray-700 dark:text-white/70'}`}
@@ -963,8 +1032,31 @@ export default function PrazosPage() {
           >
             Audiências
           </button>
+          </div>
+
+          {activeTab !== 'movimentacoes' && (
+            <button
+              onClick={handleExecuteAgenda}
+              disabled={executingAgenda || executableAgendaItems.length === 0}
+              className="h-11 w-full rounded-2xl bg-[#CCA761] hover:bg-[#b89554] text-black text-[11px] font-black uppercase tracking-[0.18em] flex items-center justify-center gap-2 shadow-lg shadow-[#CCA761]/20 disabled:opacity-50 disabled:cursor-not-allowed transition-all"
+            >
+              {executingAgenda ? <Loader2 size={15} className="animate-spin" /> : <PlayCircle size={15} />}
+              {executingAgenda ? 'Executando...' : `Executar ${executableAgendaItems.length} na agenda`}
+            </button>
+          )}
         </div>
       </div>
+
+      {agendaExecutionMessage && (
+        <div className={`mb-8 rounded-2xl border px-5 py-4 flex items-center gap-3 text-xs font-bold uppercase tracking-widest ${
+          agendaExecutionMessage.type === 'success'
+            ? 'bg-green-500/5 border-green-500/20 text-green-400'
+            : 'bg-red-500/5 border-red-500/20 text-red-400'
+        }`}>
+          {agendaExecutionMessage.type === 'success' ? <CheckCircle size={18} /> : <X size={18} />}
+          {agendaExecutionMessage.text}
+        </div>
+      )}
 
       {/* Filters Bar */}
       <GlassCard className="mb-8 !p-4">

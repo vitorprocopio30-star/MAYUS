@@ -1026,16 +1026,20 @@ Regra central:
 
 ### Escopo executavel
 
-1. `[ ]` criar tenant demo com `demo_mode=true`
+1. `[x]` criar tenant demo com `demo_mode=true`
 2. `[ ]` criar seed sintetico completo para CRM, processos, documentos, prazos, financeiro, marketing, artifacts e missoes
-3. `[ ]` criar reset seguro do tenant demo antes de demonstracoes
-4. `[ ]` adicionar banner visual permanente de ambiente demo
+3. `[x]` criar reset seguro do tenant demo antes de demonstracoes
+4. `[x]` adicionar banner visual permanente de ambiente demo
 5. `[ ]` bloquear integracoes externas reais quando `demo_mode=true`
-6. `[ ]` criar simuladores de WhatsApp, Drive, Escavador, Asaas e ZapSign para demo
+6. `[~]` criar simuladores de WhatsApp, Escavador, Asaas e ZapSign para demo; Drive usa conta Google dedicada de demonstracao
 7. `[ ]` criar papel `mayus_support_admin` separado de usuario comum de tenant
-8. `[ ]` criar painel super admin para tenants, saude, suporte e grants temporarios
-9. `[ ]` criar grant temporario de suporte por tenant com motivo, expiracao e auditoria
-10. `[ ]` criar inbox de suporte MAYUS ligado ao WhatsApp oficial da plataforma
+8. `[~]` criar painel super admin para tenants, saude, suporte e grants temporarios
+   - 2026-05-02: `/admin/support` e `/api/admin/support/tenants` entregam primeira visao de suporte com dados sanitizados, contadores e exigencia de grant para dado sensivel. Grants temporarios ainda pendentes.
+9. `[x]` criar grant temporario de suporte por tenant com motivo, expiracao e auditoria
+   - 2026-05-02: `admin_support_grants` + rotas de criar/revogar entregam motivo, escopo, expiracao e auditoria em `system_event_logs`.
+   - 2026-05-02: `GET /api/admin/support/tenants/:id/sensitive-summary` passou a exigir grant ativo `tenant_sensitive_readonly` e auditar `support_access_viewed`, retornando apenas resumo redigido.
+10. `[~]` criar inbox de suporte MAYUS ligado ao WhatsApp oficial da plataforma
+   - 2026-05-03: `/api/admin/support/inbox` e `/admin/support` exibem eventos operacionais redigidos de suporte. Falta ligar WhatsApp oficial MAYUS.
 11. `[ ]` criar modelo `whatsapp_accounts` com `owner_type`: `mayus_support`, `tenant`, `demo`
 12. `[ ]` garantir que Dutra use conta WhatsApp propria do escritorio, isolada do suporte MAYUS
 13. `[ ]` rotear inbound/outbound por conta provedora/numero receptor, nao por texto livre

@@ -13,6 +13,7 @@ import {
   buildDemoOabCachePayloadFromTasks,
   isDemoOabQuery,
 } from '@/lib/demo/demo-oab-flow'
+import { isDemoModeEnabled } from '@/lib/demo/demo-mode'
 
 interface MonitoramentoCapacity {
   total_monitorados: number
@@ -27,13 +28,6 @@ const adminSupabase = createClient(
   { auth: { autoRefreshToken: false, persistSession: false } }
 )
 
-function isDemoMode(aiFeatures: unknown) {
-  if (!aiFeatures || typeof aiFeatures !== 'object' || Array.isArray(aiFeatures)) return false
-  const features = aiFeatures as Record<string, unknown>
-  const demo = features.demo
-  return features.demo_mode === true
-    || (demo && typeof demo === 'object' && !Array.isArray(demo) && (demo as Record<string, unknown>).enabled === true)
-}
 
 // Extrai tudo que a Escavador manda — sem perder nada
 function mapearProcesso(p: Record<string, unknown>) {
@@ -125,7 +119,7 @@ async function buildDemoOabResponse(params: {
     .maybeSingle()
 
   if (settingsError) throw settingsError
-  if (!isDemoMode(settings?.ai_features)) return null
+  if (!isDemoModeEnabled(settings?.ai_features)) return null
 
   const now = new Date().toISOString()
   const dbCacheKey = `OAB_V2:${DEMO_OAB_ESTADO}:${DEMO_OAB_NUMERO}:ROOT`

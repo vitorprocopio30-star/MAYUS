@@ -43,6 +43,7 @@ const ALLOWED_PROVIDERS = [
 const MAX_CHAT_BODY_BYTES = 512 * 1024;
 const MAX_CHAT_MESSAGE_CHARS = 20_000;
 const MAX_CHAT_HISTORY_ITEMS = 100;
+const CHAT_LLM_TIMEOUT_MS = 22000;
 
 // ─── Clients Supabase ─────────────────────────────────────────────────────────
 
@@ -512,7 +513,7 @@ export async function POST(req: Request) {
           tools: dynamicTools.length > 0 ? dynamicTools : undefined,
           tool_choice: dynamicTools.length > 0 ? "auto" : undefined,
         },
-        timeoutMs: 30000,
+        timeoutMs: CHAT_LLM_TIMEOUT_MS,
       })
 
       if (aiResult.ok === false) {
@@ -586,7 +587,7 @@ export async function POST(req: Request) {
           messages,
           tools: anthropicTools.length > 0 ? anthropicTools : undefined,
         },
-        timeoutMs: 30000,
+        timeoutMs: CHAT_LLM_TIMEOUT_MS,
         fetchImpl: buildAnthropicToolUseFallbackFetch(dynamicTools),
       });
 

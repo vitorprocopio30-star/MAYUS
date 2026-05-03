@@ -89,6 +89,21 @@ export default function AdminPage() {
           </div>
         </div>
 
+        <div className="mb-8">
+          <div className="flex flex-wrap gap-3">
+            <Link href="/admin/demo"
+              className="inline-flex w-fit items-center rounded-xl border border-[#CCA761]/30 bg-[#CCA761]/10 px-4 py-3 text-sm font-medium text-[#CCA761] transition hover:bg-[#CCA761]/15"
+            >
+              Conta Modelo
+            </Link>
+            <Link href="/admin/support"
+              className="inline-flex w-fit items-center rounded-xl border border-white/10 bg-white/[0.03] px-4 py-3 text-sm font-medium text-zinc-200 transition hover:bg-white/[0.06]"
+            >
+              Suporte MAYUS
+            </Link>
+          </div>
+        </div>
+
         <div className="overflow-hidden rounded-3xl border border-white/10 bg-white/[0.03] shadow-2xl backdrop-blur-sm">
           {loading ? (
             <div className="flex min-h-[320px] items-center justify-center">

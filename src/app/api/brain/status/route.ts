@@ -1,6 +1,5 @@
 import { NextResponse } from "next/server";
 import { brainAdminSupabase, getBrainAuthContext } from "@/lib/brain/server";
-import { listTenantIntegrationsResolved } from "@/lib/integrations/server";
 import {
   getDefaultModelForUseCase,
   normalizeLLMProvider,
@@ -10,6 +9,24 @@ import {
 export const dynamic = "force-dynamic";
 
 const PRIORITY: readonly LLMProvider[] = ["openrouter", "openai", "google", "groq", "anthropic"];
+const STATUS_QUERY_TIMEOUT_MS = 5000;
+const INTEGRATION_PROVIDERS = ["openrouter", "openai", "google", "gemini", "groq", "grok", "anthropic"];
+
+type BrainStatusIntegrationRow = {
+  provider: string | null;
+  instance_name: string | null;
+  status: string | null;
+  api_key_secret_id: string | null;
+};
+
+function withTimeout<T>(promise: PromiseLike<T>, timeoutMs: number, label: string): Promise<T> {
+  return new Promise((resolve, reject) => {
+    const timeoutId = setTimeout(() => reject(new Error(label)), timeoutMs);
+    Promise.resolve(promise)
+      .then(resolve, reject)
+      .finally(() => clearTimeout(timeoutId));
+  });
+}
 
 function resolveProviderFromSettings(aiFeatures: Record<string, unknown>): LLMProvider | null {
   return normalizeLLMProvider(
@@ -25,29 +42,37 @@ function resolveProviderFromSettings(aiFeatures: Record<string, unknown>): LLMPr
 
 export async function GET() {
   try {
-    const auth = await getBrainAuthContext();
+    const auth = await withTimeout(getBrainAuthContext(), STATUS_QUERY_TIMEOUT_MS, "brain_auth_timeout");
     if ("error" in auth) {
       return NextResponse.json({ error: auth.error }, { status: auth.status });
     }
 
-    const [{ data: settings }, integrations] = await Promise.all([
+    const [{ data: settings }, { data: integrations, error: integrationsError }] = await withTimeout(Promise.all([
       brainAdminSupabase
         .from("tenant_settings")
         .select("ai_features")
         .eq("tenant_id", auth.context.tenantId)
         .maybeSingle(),
-      listTenantIntegrationsResolved(auth.context.tenantId, ["openrouter", "openai", "google", "gemini", "groq", "grok", "anthropic"]),
-    ]);
+      brainAdminSupabase
+        .from("tenant_integrations")
+        .select("provider, instance_name, status, api_key_secret_id")
+        .eq("tenant_id", auth.context.tenantId)
+        .in("provider", INTEGRATION_PROVIDERS),
+    ]), STATUS_QUERY_TIMEOUT_MS, "brain_status_timeout");
+
+    if (integrationsError) {
+      throw integrationsError;
+    }
 
     const aiFeatures = (settings?.ai_features as Record<string, unknown> | null) || {};
     const preferredProvider = resolveProviderFromSettings(aiFeatures);
 
-    const availableProviders = (integrations || []).reduce<Array<{ provider: LLMProvider; model: string }>>((acc, integration) => {
+    const availableProviders = ((integrations || []) as BrainStatusIntegrationRow[]).reduce<Array<{ provider: LLMProvider; model: string }>>((acc, integration) => {
       const provider = normalizeLLMProvider(integration.provider);
-      const apiKey = String(integration.api_key || "").trim();
+      const hasApiKey = Boolean(String(integration.api_key_secret_id || "").trim());
       const status = String(integration.status || "").trim().toLowerCase();
 
-      if (!provider || !apiKey || (status && status !== "connected")) {
+      if (!provider || !hasApiKey || (status && status !== "connected")) {
         return acc;
       }
 
@@ -77,6 +102,10 @@ export async function GET() {
     });
   } catch (error) {
     console.error("[brain/status] fatal", error);
-    return NextResponse.json({ error: "Erro interno ao carregar status do cerebro." }, { status: 500 });
+    const isTimeout = error instanceof Error && /timeout/i.test(error.message);
+    return NextResponse.json(
+      { error: isTimeout ? "Tempo esgotado ao acessar o cofre de chaves." : "Erro interno ao carregar status do cerebro." },
+      { status: isTimeout ? 503 : 500 }
+    );
   }
 }

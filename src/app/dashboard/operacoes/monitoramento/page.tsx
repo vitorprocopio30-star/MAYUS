@@ -441,7 +441,12 @@ function ProcessoCard({ p, onSelect, selecionado, onAction, onRemover, onArquiva
                 disabled={organizandoState === 'loading'}
                 className="h-11 bg-secondary dark:bg-zinc-900 hover:bg-accent dark:hover:bg-zinc-800 border border-border dark:border-zinc-800 text-muted-foreground dark:text-zinc-400 hover:text-white text-[10px] font-black uppercase rounded-2xl transition-all flex items-center justify-center gap-2"
                >
-                 <Sparkles size={14} /> Organizar IA
+                 {organizandoState === 'loading'
+                   ? <Loader2 size={14} className="animate-spin" />
+                   : organizandoState === 'done'
+                     ? <CheckCircle size={14} />
+                     : <Sparkles size={14} />}
+                 {organizandoState === 'loading' ? 'Executando...' : organizandoState === 'done' ? 'Executado' : 'Executar IA'}
                </button>
              </>
            )}
@@ -818,7 +823,8 @@ function MonitoramentoContent() {
         const docsLabel = docs?.total
           ? ` Acervo: ${docs.total} documento(s), ${docs.extracted || 0} com texto extraido, ${docs.pendingReviewCount || 0} para revisar.`
           : ' Acervo sem documentos sincronizados ainda.'
-        setFeedback(`Organização concluída e card atualizado no fluxo jurídico.${docsLabel}`)
+        const whatsappLabel = data?.whatsapp_resposta_sugerida ? ' Resposta WhatsApp supervisionada pronta.' : ''
+        setFeedback(`Execução concluída: processo organizado, prazos/card atualizados e próxima fase disponível.${docsLabel}${whatsappLabel}`)
       } else {
         setOrganizando(prev => ({ ...prev, [processoId]: 'idle' }))
         setError(data?.error || 'Não foi possível organizar este processo com IA.')
@@ -863,7 +869,7 @@ function MonitoramentoContent() {
       if (i < monitorados.length - 1) await new Promise(r => setTimeout(r, 1000))
     }
     setOrganizandoTodos(false)
-    setFeedback(`Organizacao em lote concluida para ${monitorados.length} processo(s).`)
+    setFeedback(`Execução em lote concluída: ${monitorados.length} processo(s) organizados para a próxima fase.`)
   }, [result])
 
   const exportarCsv = () => {
@@ -1129,7 +1135,7 @@ function MonitoramentoContent() {
                         </>
                       ) : (
                         <>
-                          <Sparkles size={14} /> Organizar Todos com IA
+                          <Sparkles size={14} /> Executar IA
                         </>
                       )}
                     </button>

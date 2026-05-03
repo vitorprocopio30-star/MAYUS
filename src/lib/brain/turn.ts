@@ -5,6 +5,8 @@ import { listTenantIntegrationsResolved } from "@/lib/integrations/server";
 import { normalizeLLMProvider, type LLMProvider } from "@/lib/llm-router";
 
 const PROVIDER_PRIORITY: readonly LLMProvider[] = ["openrouter", "openai", "google", "groq", "anthropic"];
+const BRAIN_DISPATCH_TIMEOUT_MS = 8000;
+const BRAIN_CHAT_FETCH_TIMEOUT_MS = 28000;
 
 export interface NormalizedHistoryItem {
   role: "user" | "model";
@@ -55,6 +57,23 @@ export function normalizeChatHistory(history: unknown): NormalizedHistoryItem[] 
     })
     .filter((item) => item.content.trim().length > 0)
     .slice(-12);
+}
+
+function getErrorMessage(error: unknown) {
+  if (error instanceof Error) return error.message;
+  if (typeof error === "object" && error && "message" in error) return String((error as { message?: unknown }).message || "Erro desconhecido");
+  return String(error || "Erro desconhecido");
+}
+
+async function fetchWithTimeout(input: RequestInfo | URL, init: RequestInit, timeoutMs: number) {
+  const controller = new AbortController();
+  const timeoutId = setTimeout(() => controller.abort(), timeoutMs);
+
+  try {
+    return await fetch(input, { ...init, signal: controller.signal });
+  } finally {
+    clearTimeout(timeoutId);
+  }
 }
 
 export async function resolvePreferredBrainProvider(
@@ -133,7 +152,7 @@ export async function executeBrainTurn(input: ExecuteBrainTurnInput): Promise<Ex
   const dispatchUrl = new URL("/api/brain/dispatch", input.baseUrl);
   const chatUrl = new URL("/api/ai/chat", input.baseUrl);
 
-  const dispatchResponse = await fetch(dispatchUrl, {
+  const dispatchResponse = await fetchWithTimeout(dispatchUrl, {
     method: "POST",
     headers: {
       "Content-Type": "application/json",
@@ -151,7 +170,7 @@ export async function executeBrainTurn(input: ExecuteBrainTurnInput): Promise<Ex
         ...(input.policySnapshot || {}),
       },
     }),
-  });
+  }, BRAIN_DISPATCH_TIMEOUT_MS);
 
   const dispatchData = await dispatchResponse.json().catch(() => ({}));
   if (!dispatchResponse.ok || !dispatchData?.task?.id || !dispatchData?.run?.id || !dispatchData?.step?.id) {
@@ -169,30 +188,46 @@ export async function executeBrainTurn(input: ExecuteBrainTurnInput): Promise<Ex
     brainAdminSupabase.from("brain_tasks").update({ status: "executing" }).eq("id", taskId),
   ]);
 
-  const chatResponse = await fetch(chatUrl, {
-    method: "POST",
-    headers: {
-      "Content-Type": "application/json",
-      cookie: input.cookieHeader,
-    },
-    body: JSON.stringify({
-      message: input.goal,
-      provider: preferredProvider,
-      model: input.model || undefined,
-      history: input.history || [],
-      channel: input.channel,
-      taskId,
-      runId,
-      stepId,
-    }),
-  });
+  let chatData: any = {};
+  let chatOk = false;
+  let chatStatus = 503;
+  let fetchErrorMessage: string | null = null;
 
-  const chatData = await chatResponse.json().catch(() => ({}));
-  const kernelStatus = String(chatData?.kernel?.status || (chatResponse.ok ? "success" : "failed"));
+  try {
+    const chatResponse = await fetchWithTimeout(chatUrl, {
+      method: "POST",
+      headers: {
+        "Content-Type": "application/json",
+        cookie: input.cookieHeader,
+      },
+      body: JSON.stringify({
+        message: input.goal,
+        provider: preferredProvider,
+        model: input.model || undefined,
+        history: input.history || [],
+        channel: input.channel,
+        taskId,
+        runId,
+        stepId,
+      }),
+    }, BRAIN_CHAT_FETCH_TIMEOUT_MS);
+
+    chatOk = chatResponse.ok;
+    chatStatus = chatResponse.status || (chatOk ? 200 : 503);
+    chatData = await chatResponse.json().catch(() => ({}));
+  } catch (error) {
+    fetchErrorMessage = getErrorMessage(error);
+  }
+
+  const kernelStatus = String(chatData?.kernel?.status || (chatOk ? "success" : "failed"));
   const brainStatus = mapKernelStatusToBrainStatus(kernelStatus);
   const completedAt = new Date().toISOString();
-  const reply = typeof chatData?.reply === "string" ? chatData.reply : "";
-  const errorMessage = chatResponse.ok ? null : String(chatData?.error || "Falha ao consultar o cerebro principal.");
+  const errorMessage = chatOk ? null : String(fetchErrorMessage || chatData?.error || "Falha ao consultar o cerebro principal.");
+  const reply = typeof chatData?.reply === "string" && chatData.reply.trim()
+    ? chatData.reply
+    : errorMessage
+      ? `Nao consegui concluir esta missao agora: ${errorMessage}`
+      : "";
 
   const kernel = {
     ...(chatData?.kernel && typeof chatData.kernel === "object" ? chatData.kernel : {}),
@@ -301,7 +336,7 @@ export async function executeBrainTurn(input: ExecuteBrainTurnInput): Promise<Ex
     runId,
     stepId,
     provider: preferredProvider,
-    responseStatus: chatResponse.ok ? 200 : chatResponse.status || 500,
+    responseStatus: chatOk ? 200 : chatStatus || 503,
     error: errorMessage,
   };
 }

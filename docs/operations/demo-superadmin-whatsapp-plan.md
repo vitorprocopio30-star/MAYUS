@@ -24,8 +24,9 @@ Requisitos:
 - seed versionado para restaurar o mesmo estado antes de cada demonstracao;
 - reset seguro via painel admin;
 - banner visual permanente: `Ambiente de demonstracao`;
-- bloqueio de integracoes externas reais;
-- provedores simulados para WhatsApp, Drive, Escavador, Asaas e ZapSign;
+- bloqueio de integracoes externas reais quando houver risco de dado/efeito fora do ambiente demo;
+- Drive conectado com uma conta Google dedicada de demonstracao, contendo apenas arquivos ficticios, para exercitar o fluxo real de pastas, upload, sync e organizacao;
+- provedores simulados para WhatsApp, Escavador, Asaas e ZapSign quando a acao externa nao precisar sair do ambiente;
 - artifacts e missoes pre-carregados para mostrar o MAYUS trabalhando;
 - tarefas, prazos, CRM e financeiro com numeros plausiveis, mas falsos;
 - nenhum dado vindo de Dutra ou de clientes reais.
@@ -109,17 +110,25 @@ Evidencia 2026-05-02: primeira factory cobre processos, memoria documental simul
 Evidencia 2026-05-02: `POST /api/admin/demo/reset` tem dry-run padrao, confirmacao textual para reset real e bloqueio se `demo_mode` nao estiver ativo.
 - [x] Criar OAB ficticia que carrega dados demonstraveis.
 Evidencia 2026-05-02: `src/lib/demo/demo-oab-flow.ts` define `SP/123456` com advogada ficticia, 100 processos sinteticos, movimentacoes e payload de organizacao demo.
-- Adicionar banner/flag visual de ambiente demo.
-- [~] Bloquear provedores externos reais quando `demo_mode=true`.
-Evidencia 2026-05-02: `POST /api/escavador/buscar-completo` retorna a OAB demo sem chave Escavador e `POST /api/agent/processos/organizar` usa resultado deterministico para processo demo, sem chamada externa de IA/Escavador. Faltam simuladores para todos os demais provedores.
+- [x] Adicionar banner/flag visual de ambiente demo.
+Evidencia 2026-05-02: `DemoEnvironmentBanner` foi plugado no `DashboardLayout`; quando `tenant_settings.ai_features.demo_mode` ou `demo.enabled` esta ativo, o dashboard inteiro mostra `Ambiente de demonstracao`, dados sinteticos e modos Drive/WhatsApp/Escavador.
+- [~] Bloquear provedores externos reais quando `demo_mode=true`, exceto integracoes dedicadas de demonstracao.
+Evidencia 2026-05-02: `POST /api/escavador/buscar-completo` retorna a OAB demo sem chave Escavador e `POST /api/agent/processos/organizar` usa resultado deterministico para processo demo, sem chamada externa de IA/Escavador. WhatsApp demo executa resposta simulada. Drive deve usar conta Google exclusiva da demo, nao IDs fake nem Drive do tenant real.
+- [x] Expor prontidao do Drive dedicado no painel demo.
+Evidencia 2026-05-02: `/api/admin/demo/status` retorna `drive_readiness` sanitizado com disponibilidade OAuth, conexao, email seguro e pasta raiz; `/admin/demo` exibe o status para o super admin sem mostrar token, refresh token, access token ou `api_key`.
 
 ### Fase 3 - Super admin e suporte MAYUS
 
 - Criar papel `mayus_support_admin`.
-- Criar painel admin de tenants/clientes.
-- Criar grants temporarios de suporte por tenant.
+- [~] Criar painel admin de tenants/clientes.
+Evidencia 2026-05-02: primeira superficie entregue em `/admin/demo`, focada na conta modelo, com tenants, `demo_mode`, reset e health do Drive demo. `/admin/support` iniciou a visao ampla de suporte com resumo sanitizado por tenant, usuarios ativos, integracoes e exigencia de grant para dados sensiveis. Ainda faltam grants temporarios reais e casos de atendimento.
+- [x] Criar grants temporarios de suporte por tenant.
+Evidencia 2026-05-02: `admin_support_grants` controla grants ativos/revogados com motivo, escopo e expiracao; `/admin/support` permite criar grant de 60 minutos e revogar, auditando em `system_event_logs`.
+- [x] Criar primeira visualizacao protegida por grant.
+Evidencia 2026-05-02: `GET /api/admin/support/tenants/:id/sensitive-summary` exige grant ativo `tenant_sensitive_readonly`, retorna resumo redigido e registra `support_access_viewed`.
 - Criar logs de acesso e acao.
-- Criar inbox de suporte MAYUS separado dos tenants.
+- [~] Criar inbox de suporte MAYUS separado dos tenants.
+Evidencia 2026-05-03: `/api/admin/support/inbox` e `/admin/support` mostram eventos de suporte redigidos vindos de `system_event_logs`, incluindo grants, acessos protegidos e acoes da conta demo. Falta conectar WhatsApp oficial MAYUS.
 
 ### Fase 4 - WhatsApp multi-conta
 

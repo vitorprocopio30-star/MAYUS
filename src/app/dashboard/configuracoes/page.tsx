@@ -61,6 +61,17 @@ type SetupDoctorCheck = {
 type SetupDoctorReport = {
   ready: boolean;
   autoFixApplied: boolean;
+  readinessScore?: number;
+  readinessLevel?: "ready" | "almost_ready" | "needs_setup" | "blocked";
+  recommendedAction?: {
+    id: string;
+    category: string;
+    title: string;
+    detail: string;
+    action: string;
+    sourceCheckId: string;
+    requiresHumanAction: boolean;
+  };
   summary: Record<SetupDoctorStatus, number>;
   checks: SetupDoctorCheck[];
   brainTrace?: {
@@ -73,6 +84,33 @@ type SetupDoctorReport = {
 };
 
 // ─── Catálogo de Provedores Premium ───────────────────────────────────────────
+type TenantBetaWorkMode = {
+  taskId: string | null;
+  artifactId: string | null;
+  readinessScore: number;
+  readinessLevel: "ready" | "almost_ready" | "needs_setup" | "blocked";
+  workQueue: Array<{
+    id: string;
+    title: string;
+    detail: string;
+    priority: "high" | "medium" | "low";
+    requiresApproval: boolean;
+    status?: "queued" | "awaiting_approval" | "executing" | "completed";
+    stepId?: string | null;
+  }>;
+};
+
+type TenantBetaExecutionSummary = {
+  finalStatus: "executing" | "awaiting_approval" | "completed" | "idle";
+  summary: string;
+  executions: Array<{
+    stepId: string;
+    stepKey: string;
+    title: string;
+    summary: string;
+  }>;
+};
+
 type SalesConsultationProfile = {
   ideal_client: string;
   core_solution: string;
@@ -407,16 +445,32 @@ function IntegrationCard({
 
 function SetupDoctorPanel({
   report,
+  beta,
+  betaSummary,
   isLoading,
   isFixing,
+  isStartingBeta,
+  isExecutingBetaStep,
+  isExecutingBetaQueue,
   onRefresh,
   onAutofix,
+  onStartBeta,
+  onExecuteNextBetaStep,
+  onExecuteSafeBetaQueue,
 }: {
   report: SetupDoctorReport | null;
+  beta: TenantBetaWorkMode | null;
+  betaSummary: TenantBetaExecutionSummary | null;
   isLoading: boolean;
   isFixing: boolean;
+  isStartingBeta: boolean;
+  isExecutingBetaStep: boolean;
+  isExecutingBetaQueue: boolean;
   onRefresh: () => void;
   onAutofix: () => void;
+  onStartBeta: () => void;
+  onExecuteNextBetaStep: () => void;
+  onExecuteSafeBetaQueue: () => void;
 }) {
   const blocked = report?.summary.blocked || 0;
   const warnings = report?.summary.warning || 0;
@@ -475,7 +529,7 @@ function SetupDoctorPanel({
           <button
             type="button"
             onClick={onRefresh}
-            disabled={isLoading || isFixing}
+            disabled={isLoading || isFixing || isStartingBeta}
             className="h-10 px-4 rounded-xl border border-white/10 bg-white/80 dark:bg-black/20 text-[10px] font-black uppercase tracking-widest text-white flex items-center gap-2 disabled:opacity-50"
             title="Atualizar diagnostico"
           >
@@ -485,12 +539,22 @@ function SetupDoctorPanel({
           <button
             type="button"
             onClick={onAutofix}
-            disabled={isLoading || isFixing || !hasFixableIssues}
+            disabled={isLoading || isFixing || isStartingBeta || !hasFixableIssues}
             className="h-10 px-4 rounded-xl bg-[#CCA761] text-black text-[10px] font-black uppercase tracking-widest flex items-center gap-2 disabled:opacity-40"
             title="Corrigir defaults seguros"
           >
             {isFixing ? <Loader2 size={14} className="animate-spin" /> : <ShieldCheck size={14} />}
             Corrigir
+          </button>
+          <button
+            type="button"
+            onClick={onStartBeta}
+            disabled={isLoading || isFixing || isStartingBeta}
+            className="h-10 px-4 rounded-xl border border-[#4ade80]/25 bg-[#4ade80]/10 text-[#4ade80] text-[10px] font-black uppercase tracking-widest flex items-center gap-2 disabled:opacity-40"
+            title="Iniciar beta supervisionado"
+          >
+            {isStartingBeta ? <Loader2 size={14} className="animate-spin" /> : <Bot size={14} />}
+            Iniciar Beta
           </button>
         </div>
       </div>
@@ -508,6 +572,110 @@ function SetupDoctorPanel({
           </div>
         ))}
       </div>
+
+      {report?.recommendedAction && (
+        <div className="mt-5 grid gap-3 lg:grid-cols-[160px_1fr]">
+          <div className="border border-white/10 rounded-2xl px-4 py-4 bg-white/70 dark:bg-black/20">
+            <div className="flex items-center gap-2 text-[9px] font-black uppercase tracking-widest text-gray-500">
+              <Target size={12} className="text-[#CCA761]" />
+              Prontidao
+            </div>
+            <div className="mt-2 text-3xl font-black text-white">{report.readinessScore ?? 0}%</div>
+            <div className="mt-1 text-[10px] font-bold uppercase tracking-wider text-gray-500">
+              {(report.readinessLevel || "needs_setup").replaceAll("_", " ")}
+            </div>
+          </div>
+          <div className="border border-[#CCA761]/20 rounded-2xl p-4 bg-[#CCA761]/10">
+            <div className="flex flex-wrap items-center gap-2">
+              <span className="rounded-full border border-[#CCA761]/25 bg-[#CCA761]/10 px-2.5 py-1 text-[9px] font-black uppercase tracking-widest text-[#CCA761]">
+                Proximo melhor passo
+              </span>
+              {report.recommendedAction.requiresHumanAction && (
+                <span className="rounded-full border border-amber-400/20 bg-amber-400/10 px-2.5 py-1 text-[9px] font-black uppercase tracking-widest text-amber-300">
+                  Revisao humana
+                </span>
+              )}
+            </div>
+            <div className="mt-3 text-sm font-black uppercase tracking-wider text-white">{report.recommendedAction.title}</div>
+            <div className="mt-1 text-[11px] leading-relaxed text-gray-400">{report.recommendedAction.detail}</div>
+            <div className="mt-2 text-[11px] leading-relaxed text-[#CCA761] font-bold">{report.recommendedAction.action}</div>
+          </div>
+        </div>
+      )}
+
+      {beta && (
+        <div className="mt-5 border border-[#4ade80]/20 rounded-2xl p-4 bg-[#4ade80]/10">
+          <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3">
+            <div>
+              <div className="text-[9px] font-black uppercase tracking-widest text-[#4ade80]">Modo Beta ativo</div>
+              <div className="mt-1 text-sm font-black uppercase tracking-wider text-white">
+                Fila operacional criada com {beta.readinessScore}% de prontidao
+              </div>
+            </div>
+            {beta.artifactId && (
+              <Link href="/dashboard/mayus" className="inline-flex items-center gap-2 rounded-full border border-[#4ade80]/25 bg-[#4ade80]/10 px-3 py-1.5 text-[10px] font-black uppercase tracking-widest text-[#4ade80]">
+                <BrainCircuit size={12} />
+                Ver no MAYUS
+              </Link>
+            )}
+            <button
+              type="button"
+              onClick={onExecuteNextBetaStep}
+              disabled={isExecutingBetaStep || isExecutingBetaQueue || !beta.workQueue.some((item) => item.status === "queued" || !item.status)}
+              className="inline-flex items-center gap-2 rounded-full border border-[#4ade80]/25 bg-[#4ade80]/10 px-3 py-1.5 text-[10px] font-black uppercase tracking-widest text-[#4ade80] disabled:opacity-40"
+            >
+              {isExecutingBetaStep ? <Loader2 size={12} className="animate-spin" /> : <Zap size={12} />}
+              Executar proximo
+            </button>
+            <button
+              type="button"
+              onClick={onExecuteSafeBetaQueue}
+              disabled={isExecutingBetaStep || isExecutingBetaQueue || !beta.workQueue.some((item) => item.status === "queued" || !item.status)}
+              className="inline-flex items-center gap-2 rounded-full border border-[#CCA761]/25 bg-[#CCA761]/10 px-3 py-1.5 text-[10px] font-black uppercase tracking-widest text-[#CCA761] disabled:opacity-40"
+            >
+              {isExecutingBetaQueue ? <Loader2 size={12} className="animate-spin" /> : <ShieldCheck size={12} />}
+              Executar seguros
+            </button>
+          </div>
+          <div className="mt-4 grid gap-2">
+            {beta.workQueue.slice(0, 4).map((item) => (
+              <div key={item.id} className="rounded-xl border border-white/10 bg-black/20 px-3 py-2">
+                <div className="flex flex-wrap items-center gap-2">
+                  <span className="text-[10px] font-black uppercase tracking-wider text-white">{item.title}</span>
+                  <span className="rounded-full border border-white/10 px-2 py-0.5 text-[8px] font-black uppercase tracking-widest text-gray-400">{item.priority}</span>
+                  {item.status && <span className="rounded-full border border-white/10 px-2 py-0.5 text-[8px] font-black uppercase tracking-widest text-gray-400">{item.status.replaceAll("_", " ")}</span>}
+                  {item.requiresApproval && <span className="rounded-full border border-amber-400/20 px-2 py-0.5 text-[8px] font-black uppercase tracking-widest text-amber-300">Aprovar</span>}
+                </div>
+                <div className="mt-1 text-[10px] leading-relaxed text-gray-500">{item.detail}</div>
+              </div>
+            ))}
+          </div>
+          {betaSummary && (
+            <div className="mt-4 rounded-2xl border border-white/10 bg-black/20 p-3">
+              <div className="flex flex-wrap items-center gap-2">
+                <span className="text-[9px] font-black uppercase tracking-widest text-[#4ade80]">Ultima execucao</span>
+                <span className="rounded-full border border-white/10 px-2 py-0.5 text-[8px] font-black uppercase tracking-widest text-gray-400">
+                  {betaSummary.finalStatus.replaceAll("_", " ")}
+                </span>
+                <span className="rounded-full border border-white/10 px-2 py-0.5 text-[8px] font-black uppercase tracking-widest text-gray-400">
+                  {betaSummary.executions.length} item{betaSummary.executions.length === 1 ? "" : "s"}
+                </span>
+              </div>
+              <div className="mt-2 text-[11px] leading-relaxed text-gray-300">{betaSummary.summary}</div>
+              {betaSummary.executions.length > 0 && (
+                <div className="mt-3 grid gap-1.5">
+                  {betaSummary.executions.slice(0, 5).map((execution) => (
+                    <div key={`${execution.stepId}:${execution.stepKey}`} className="rounded-xl border border-white/5 bg-black/20 px-3 py-2">
+                      <div className="text-[10px] font-black uppercase tracking-wider text-white">{execution.title}</div>
+                      <div className="mt-1 text-[10px] leading-relaxed text-gray-500">{execution.summary}</div>
+                    </div>
+                  ))}
+                </div>
+              )}
+            </div>
+          )}
+        </div>
+      )}
 
       <div className="mt-5 space-y-2">
         {isLoading && !report ? (
@@ -575,8 +743,13 @@ function ConfiguracoesContent() {
     evolution: "", meta_cloud: "", asaas: "", zapsign: ""
   });
   const [doctorReport, setDoctorReport] = useState<SetupDoctorReport | null>(null);
+  const [betaWorkMode, setBetaWorkMode] = useState<TenantBetaWorkMode | null>(null);
+  const [betaExecutionSummary, setBetaExecutionSummary] = useState<TenantBetaExecutionSummary | null>(null);
   const [isDoctorLoading, setIsDoctorLoading] = useState(false);
   const [isDoctorFixing, setIsDoctorFixing] = useState(false);
+  const [isStartingBeta, setIsStartingBeta] = useState(false);
+  const [isExecutingBetaStep, setIsExecutingBetaStep] = useState(false);
+  const [isExecutingBetaQueue, setIsExecutingBetaQueue] = useState(false);
   const [salesProfile, setSalesProfile] = useState<SalesConsultationProfile>(EMPTY_SALES_PROFILE);
   const [dailyPlaybook, setDailyPlaybook] = useState<DailyPlaybookPreferences>(DEFAULT_DAILY_PLAYBOOK);
   const [authorizedPhonesInput, setAuthorizedPhonesInput] = useState("");
@@ -628,6 +801,111 @@ function ConfiguracoesContent() {
       setIsDoctorFixing(false);
     }
   }, [tenantId]);
+
+  const startBetaWorkMode = useCallback(async () => {
+    if (!tenantId) return;
+    setIsStartingBeta(true);
+    try {
+      const response = await fetch("/api/setup/beta", { method: "POST" });
+      const payload = await response.json().catch(() => null);
+      if (!response.ok) throw new Error(payload?.error || "Nao foi possivel iniciar o beta MAYUS.");
+      setDoctorReport(payload.beta?.report || null);
+      setBetaWorkMode(payload.beta || null);
+      setBetaExecutionSummary(null);
+      toast.success("Modo Beta iniciado. O MAYUS criou a fila operacional supervisionada.");
+    } catch (error: any) {
+      toast.error(error?.message || "Nao foi possivel iniciar o beta MAYUS.");
+    } finally {
+      setIsStartingBeta(false);
+    }
+  }, [tenantId]);
+
+  const executeNextBetaStep = useCallback(async () => {
+    if (!tenantId || !betaWorkMode?.taskId) return;
+    setIsExecutingBetaStep(true);
+    try {
+      const response = await fetch("/api/setup/beta/execute-next", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ taskId: betaWorkMode.taskId }),
+      });
+      const payload = await response.json().catch(() => null);
+      if (!response.ok) throw new Error(payload?.error || "Nao foi possivel executar o proximo item beta.");
+
+      if (!payload.execution) {
+        toast.info(payload.message || "Nenhum item seguro em fila para executar.");
+        return;
+      }
+
+      setBetaWorkMode((current) => current ? {
+        ...current,
+        workQueue: current.workQueue.map((item) => item.stepId === payload.execution.stepId
+          ? { ...item, status: "completed" }
+          : item),
+      } : current);
+      setBetaExecutionSummary({
+        finalStatus: payload.execution.taskStatus || "executing",
+        summary: payload.execution.summary || "Item beta executado.",
+        executions: [{
+          stepId: String(payload.execution.stepId || ""),
+          stepKey: String(payload.execution.stepKey || ""),
+          title: String(payload.execution.title || "Item beta"),
+          summary: String(payload.execution.summary || "Item beta executado."),
+        }],
+      });
+      if (payload.execution.taskStatus === "awaiting_approval") {
+        toast.warning(payload.execution.summary || "Itens seguros executados. O MAYUS aguarda aprovacao humana.");
+      } else {
+        toast.success(payload.execution.summary || "Item beta executado.");
+      }
+    } catch (error: any) {
+      toast.error(error?.message || "Nao foi possivel executar o proximo item beta.");
+    } finally {
+      setIsExecutingBetaStep(false);
+    }
+  }, [tenantId, betaWorkMode?.taskId]);
+
+  const executeSafeBetaQueue = useCallback(async () => {
+    if (!tenantId || !betaWorkMode?.taskId) return;
+    setIsExecutingBetaQueue(true);
+    try {
+      const response = await fetch("/api/setup/beta/execute-safe-queue", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ taskId: betaWorkMode.taskId, maxSteps: 10 }),
+      });
+      const payload = await response.json().catch(() => null);
+      if (!response.ok) throw new Error(payload?.error || "Nao foi possivel executar a fila segura beta.");
+
+      const executedStepIds = new Set<string>((payload.result?.executions || []).map((item: any) => String(item.stepId || "")));
+      setBetaWorkMode((current) => current ? {
+        ...current,
+        workQueue: current.workQueue.map((item) => item.stepId && executedStepIds.has(item.stepId)
+          ? { ...item, status: "completed" }
+          : item),
+      } : current);
+      setBetaExecutionSummary({
+        finalStatus: payload.result?.finalStatus || "idle",
+        summary: payload.result?.summary || "Fila segura executada.",
+        executions: (payload.result?.executions || []).map((item: any) => ({
+          stepId: String(item.stepId || ""),
+          stepKey: String(item.stepKey || ""),
+          title: String(item.title || "Item beta"),
+          summary: String(item.summary || "Item beta executado."),
+        })),
+      });
+
+      if (payload.result?.finalStatus === "awaiting_approval") {
+        toast.warning(payload.result.summary || "Fila segura executada. Restam aprovacoes humanas.");
+      } else {
+        toast.success(payload.result?.summary || "Fila segura executada.");
+      }
+    } catch (error: any) {
+      toast.error(error?.message || "Nao foi possivel executar a fila segura beta.");
+    } finally {
+      setIsExecutingBetaQueue(false);
+    }
+  }, [tenantId, betaWorkMode?.taskId]);
 
   useEffect(() => {
     if (activeTab === 'integrations') {
@@ -903,10 +1181,18 @@ function ConfiguracoesContent() {
         <div className="space-y-10 animate-fade-in-up">
           <SetupDoctorPanel
             report={doctorReport}
+            beta={betaWorkMode}
+            betaSummary={betaExecutionSummary}
             isLoading={isDoctorLoading}
             isFixing={isDoctorFixing}
+            isStartingBeta={isStartingBeta}
+            isExecutingBetaStep={isExecutingBetaStep}
+            isExecutingBetaQueue={isExecutingBetaQueue}
             onRefresh={loadDoctorReport}
             onAutofix={runDoctorAutofix}
+            onStartBeta={startBetaWorkMode}
+            onExecuteNextBetaStep={executeNextBetaStep}
+            onExecuteSafeBetaQueue={executeSafeBetaQueue}
           />
 
           <section className="border border-[#CCA761]/20 rounded-3xl p-6 sm:p-7 bg-white/80 dark:bg-[#0d0b07] mb-10">

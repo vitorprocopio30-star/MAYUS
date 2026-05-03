@@ -4,6 +4,7 @@ import type { CSSProperties } from "react";
 import { useEffect, useState } from "react";
 import { AdminSidebar } from "@/components/layout/AdminSidebar";
 import { AdminHeader } from "@/components/layout/AdminHeader";
+import { DemoEnvironmentBanner } from "@/components/layout/DemoEnvironmentBanner";
 import { MAYUSOrb } from "@/components/dashboard/MAYUSOrb";
 
 type SidebarMode = "expanded" | "mini" | "hidden";
@@ -84,6 +85,7 @@ export default function DashboardLayout({
         {/* Orbe Flutuante (Maya) */}
         <MAYUSOrb />
 
+        <DemoEnvironmentBanner />
         {children}
         </main>
         

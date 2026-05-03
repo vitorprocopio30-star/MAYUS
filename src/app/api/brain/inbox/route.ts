@@ -4,6 +4,38 @@ import { isBrainExecutiveRole } from "@/lib/brain/roles";
 
 export const dynamic = "force-dynamic";
 
+const BRAIN_INBOX_QUERY_TIMEOUT_MS = 6500;
+
+type BrainQueryResult<T> = {
+  data: T | null;
+  error: { message?: string } | null;
+  count?: number | null;
+};
+
+function getErrorMessage(error: unknown) {
+  if (!error) return null;
+  if (error instanceof Error) return error.message;
+  if (typeof error === "object" && "message" in error) return String((error as { message?: unknown }).message || "Erro desconhecido");
+  return String(error);
+}
+
+function safeQuery<T>(query: PromiseLike<BrainQueryResult<T>>, label: string): Promise<BrainQueryResult<T>> {
+  return new Promise((resolve) => {
+    const timeoutId = setTimeout(() => {
+      resolve({ data: null, error: { message: `${label}: upstream request timeout` }, count: null });
+    }, BRAIN_INBOX_QUERY_TIMEOUT_MS);
+
+    Promise.resolve(query)
+      .then(resolve, (error) => resolve({ data: null, error: { message: getErrorMessage(error) || `${label}: query failed` }, count: null }))
+      .finally(() => clearTimeout(timeoutId));
+  });
+}
+
+function warning(label: string, error: unknown) {
+  const message = getErrorMessage(error);
+  return message ? `${label}: ${message}` : null;
+}
+
 type ApprovalRow = {
   id: string;
   task_id: string;
@@ -147,58 +179,65 @@ export async function GET(req: NextRequest) {
     const eventLimit = normalizeLimit(searchParams.get("event_limit"), 16, 60);
     const includeActivity = searchParams.get("include_activity") === "true";
 
-    const [{ count: pendingCount, error: countError }, { data: pendingApprovals, error: pendingError }, { data: recentApprovals, error: recentError }, { data: recentTasks, error: tasksError }, { data: recentArtifacts, error: artifactsError }, { data: recentEvents, error: eventsError }] = await Promise.all([
-      brainAdminSupabase
+    const [pendingCountResult, pendingApprovalsResult, recentApprovalsResult, recentTasksResult, recentArtifactsResult, recentEventsResult] = await Promise.all([
+      safeQuery<{ id: string }[]>(brainAdminSupabase
         .from("brain_approvals")
         .select("id", { count: "exact", head: true })
         .eq("tenant_id", auth.context.tenantId)
-        .eq("status", "pending"),
-      brainAdminSupabase
+        .eq("status", "pending"), "pending_count"),
+      safeQuery<ApprovalRow[]>(brainAdminSupabase
         .from("brain_approvals")
         .select("id, task_id, step_id, status, risk_level, created_at, approved_at, decision_notes, approval_context")
         .eq("tenant_id", auth.context.tenantId)
         .eq("status", "pending")
         .order("created_at", { ascending: true })
-        .limit(pendingLimit),
-      brainAdminSupabase
+        .limit(pendingLimit), "pending_approvals"),
+      safeQuery<ApprovalRow[]>(brainAdminSupabase
         .from("brain_approvals")
         .select("id, task_id, step_id, status, risk_level, created_at, approved_at, decision_notes, approval_context")
         .eq("tenant_id", auth.context.tenantId)
         .neq("status", "pending")
         .order("updated_at", { ascending: false })
-        .limit(recentLimit),
+        .limit(recentLimit), "recent_approvals"),
       includeActivity
-        ? brainAdminSupabase
+        ? safeQuery<TaskRow[]>(brainAdminSupabase
             .from("brain_tasks")
             .select("id, title, goal, module, channel, status, created_at, updated_at, result_summary, error_message")
             .eq("tenant_id", auth.context.tenantId)
             .order("updated_at", { ascending: false })
-            .limit(activityLimit)
+            .limit(activityLimit), "recent_tasks")
         : Promise.resolve({ data: [], error: null } as { data: TaskRow[]; error: null }),
-      brainAdminSupabase
+      safeQuery<ArtifactRow[]>(brainAdminSupabase
         .from("brain_artifacts")
         .select("id, task_id, artifact_type, title, storage_url, mime_type, source_module, metadata, created_at")
         .eq("tenant_id", auth.context.tenantId)
         .order("created_at", { ascending: false })
-        .limit(artifactLimit),
-      brainAdminSupabase
+        .limit(artifactLimit), "recent_artifacts"),
+      safeQuery<LearningEventRow[]>(brainAdminSupabase
         .from("learning_events")
         .select("id, task_id, step_id, event_type, source_module, payload, created_at")
         .eq("tenant_id", auth.context.tenantId)
         .order("created_at", { ascending: false })
-        .limit(eventLimit),
+        .limit(eventLimit), "recent_events"),
     ]);
 
-    if (countError || pendingError || recentError || tasksError || artifactsError || eventsError) {
-      console.error("[brain/inbox] load", {
-        countError: countError?.message,
-        pendingError: pendingError?.message,
-        recentError: recentError?.message,
-        tasksError: tasksError?.message,
-        artifactsError: artifactsError?.message,
-        eventsError: eventsError?.message,
-      });
-      return NextResponse.json({ error: "Nao foi possivel carregar o inbox do cerebro." }, { status: 500 });
+    const pendingCount = pendingCountResult.count || 0;
+    const pendingApprovals = pendingApprovalsResult.data || [];
+    const recentApprovals = recentApprovalsResult.data || [];
+    const recentTasks = recentTasksResult.data || [];
+    const recentArtifacts = recentArtifactsResult.data || [];
+    const recentEvents = recentEventsResult.data || [];
+    const warnings = [
+      warning("pending_count", pendingCountResult.error),
+      warning("pending_approvals", pendingApprovalsResult.error),
+      warning("recent_approvals", recentApprovalsResult.error),
+      warning("recent_tasks", recentTasksResult.error),
+      warning("recent_artifacts", recentArtifactsResult.error),
+      warning("recent_events", recentEventsResult.error),
+    ].filter(Boolean) as string[];
+
+    if (warnings.length > 0) {
+      console.warn("[brain/inbox] partial", { warnings });
     }
 
     const allApprovals = [...(pendingApprovals || []), ...(recentApprovals || [])] as ApprovalRow[];
@@ -212,36 +251,42 @@ export async function GET(req: NextRequest) {
       ...(recentEvents || []).map((event) => event.step_id),
     ]);
 
-    const [{ data: taskRows, error: taskRowsError }, { data: stepRows, error: stepRowsError }] = await Promise.all([
+    const [taskRowsResult, stepRowsResult] = await Promise.all([
       taskIds.length > 0
-        ? brainAdminSupabase
+        ? safeQuery<TaskRow[]>(brainAdminSupabase
             .from("brain_tasks")
             .select("id, title, goal, module, channel, status, created_at, updated_at, result_summary, error_message")
             .eq("tenant_id", auth.context.tenantId)
-            .in("id", taskIds)
+            .in("id", taskIds), "related_tasks")
         : Promise.resolve({ data: [], error: null } as { data: TaskRow[]; error: null }),
       stepIds.length > 0
-        ? brainAdminSupabase
+        ? safeQuery<StepRow[]>(brainAdminSupabase
             .from("brain_steps")
             .select("id, title, status, step_type, capability_name, handler_type")
             .eq("tenant_id", auth.context.tenantId)
-            .in("id", stepIds)
+            .in("id", stepIds), "related_steps")
         : Promise.resolve({ data: [], error: null } as { data: StepRow[]; error: null }),
     ]);
 
-    if (taskRowsError || stepRowsError) {
-      console.error("[brain/inbox] relation load", {
-        taskRowsError: taskRowsError?.message,
-        stepRowsError: stepRowsError?.message,
-      });
-      return NextResponse.json({ error: "Nao foi possivel carregar detalhes do inbox do cerebro." }, { status: 500 });
+    const relationWarnings = [
+      warning("related_tasks", taskRowsResult.error),
+      warning("related_steps", stepRowsResult.error),
+    ].filter(Boolean) as string[];
+
+    if (relationWarnings.length > 0) {
+      warnings.push(...relationWarnings);
+      console.warn("[brain/inbox] relation partial", { warnings: relationWarnings });
     }
 
+    const taskRows = taskRowsResult.data || [];
+    const stepRows = stepRowsResult.data || [];
     const tasksMap = Object.fromEntries((taskRows || []).map((task) => [task.id, task])) as Record<string, TaskRow>;
     const stepsMap = Object.fromEntries((stepRows || []).map((step) => [step.id, step])) as Record<string, StepRow>;
 
     return NextResponse.json({
-      pending_count: pendingCount || 0,
+      pending_count: pendingCount,
+      partial: warnings.length > 0,
+      warnings,
       pending_approvals: (pendingApprovals || []).map((approval) => normalizeApprovalRow(approval as ApprovalRow, tasksMap, stepsMap)),
       recent_approvals: (recentApprovals || []).map((approval) => normalizeApprovalRow(approval as ApprovalRow, tasksMap, stepsMap)),
       recent_tasks: includeActivity ? (recentTasks || []) : [],

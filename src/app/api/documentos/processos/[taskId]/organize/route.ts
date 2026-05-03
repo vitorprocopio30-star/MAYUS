@@ -26,7 +26,11 @@ export async function POST(request: NextRequest, { params }: { params: { taskId:
       throw taskError;
     }
 
-    if (!task || !task.drive_folder_id) {
+    if (!task) {
+      return NextResponse.json({ error: "Processo nao encontrado para este escritorio." }, { status: 404 });
+    }
+
+    if (!task.drive_folder_id) {
       return NextResponse.json({ error: "Crie a estrutura documental do processo antes de organizar o acervo." }, { status: 400 });
     }
 

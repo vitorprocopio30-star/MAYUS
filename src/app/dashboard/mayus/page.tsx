@@ -93,6 +93,38 @@ const MODEL_PRESETS: Record<string, Array<Omit<ModelOption, "provider">>> = {
   ],
 };
 
+const BRAIN_STATUS_TIMEOUT_MS = 6500;
+const BRAIN_LIST_TIMEOUT_MS = 7000;
+const BRAIN_TASK_TIMEOUT_MS = 8000;
+const BRAIN_CHAT_TIMEOUT_MS = 35000;
+const TERMINAL_BRAIN_TASK_STATUSES = new Set(["completed", "completed_with_warnings", "failed", "cancelled"]);
+
+async function fetchJsonWithTimeout<T = any>(input: RequestInfo | URL, init: RequestInit = {}, timeoutMs = 10000) {
+  const controller = new AbortController();
+  const timeoutId = window.setTimeout(() => controller.abort(), timeoutMs);
+
+  try {
+    const response = await fetch(input, { ...init, signal: controller.signal });
+    const data = await response.json().catch(() => ({} as T));
+    return { response, data: data as T };
+  } finally {
+    window.clearTimeout(timeoutId);
+  }
+}
+
+function isAbortLike(error: unknown) {
+  return Boolean(error && typeof error === "object" && "name" in error && (error as { name?: string }).name === "AbortError");
+}
+
+function getFriendlyRequestError(error: unknown, fallback: string) {
+  if (isAbortLike(error)) return "O MAYUS demorou demais para responder. Tente novamente em instantes.";
+  return error instanceof Error && error.message ? error.message : fallback;
+}
+
+function isTerminalBrainTaskStatus(status?: string | null) {
+  return TERMINAL_BRAIN_TASK_STATUSES.has(String(status || ""));
+}
+
 interface BrainTaskRecord {
   id: string;
   status: string;
@@ -255,6 +287,10 @@ function getEventLabel(eventType: string) {
       return "Artifact premium publicado";
     case "tenant_setup_doctor_report_created":
       return "Setup Doctor registrado";
+    case "tenant_beta_workplan_created":
+      return "Modo Beta iniciado";
+    case "tenant_beta_step_completed":
+      return "Item beta concluido";
     case "referral_intake_artifact_created":
       return "Indicacao registrada";
     case "lead_intake_artifact_created":
@@ -338,6 +374,10 @@ function getArtifactTypeLabel(artifactType: string) {
       return "Artifact Premium";
     case "tenant_setup_doctor_report":
       return "Setup Doctor";
+    case "tenant_beta_workplan":
+      return "Modo Beta MAYUS";
+    case "tenant_beta_step_result":
+      return "Resultado Beta";
     case "referral_intake":
       return "Indicacao Comercial";
     case "lead_intake":
@@ -413,6 +453,9 @@ function getArtifactPreview(artifact: BrainArtifactRecord) {
 
 function getArtifactHighlights(artifact: BrainArtifactRecord) {
   const metadata = artifact.metadata || null;
+  const setupRecommendedAction = metadata?.recommended_action && typeof metadata.recommended_action === "object"
+    ? metadata.recommended_action as { title?: unknown }
+    : null;
   const highlights = [
     typeof metadata?.process_number === "string" && metadata.process_number.trim() ? metadata.process_number.trim() : null,
     typeof metadata?.recommended_piece_label === "string" && metadata.recommended_piece_label.trim()
@@ -513,8 +556,29 @@ function getArtifactHighlights(artifact: BrainArtifactRecord) {
     artifact.artifact_type === "tenant_setup_doctor_report" && typeof metadata?.warning_count === "number"
       ? `${metadata.warning_count} avisos`
       : null,
+    artifact.artifact_type === "tenant_setup_doctor_report" && typeof metadata?.readiness_score === "number"
+      ? `${metadata.readiness_score}% prontidao`
+      : null,
+    artifact.artifact_type === "tenant_setup_doctor_report" && typeof setupRecommendedAction?.title === "string" && setupRecommendedAction.title.trim()
+      ? setupRecommendedAction.title.trim()
+      : null,
     artifact.artifact_type === "tenant_setup_doctor_report" && typeof metadata?.requires_human_action === "boolean"
       ? metadata.requires_human_action ? "acao humana pendente" : "sem acao humana"
+      : null,
+    artifact.artifact_type === "tenant_beta_workplan" && typeof metadata?.readiness_score === "number"
+      ? `${metadata.readiness_score}% prontidao`
+      : null,
+    artifact.artifact_type === "tenant_beta_workplan" && Array.isArray(metadata?.work_queue)
+      ? `${metadata.work_queue.length} acoes beta`
+      : null,
+    artifact.artifact_type === "tenant_beta_workplan" && metadata?.external_side_effects_blocked === true
+      ? "sem envio externo automatico"
+      : null,
+    artifact.artifact_type === "tenant_beta_step_result" && typeof metadata?.step_key === "string" && metadata.step_key.trim()
+      ? metadata.step_key.trim()
+      : null,
+    artifact.artifact_type === "tenant_beta_step_result" && metadata?.external_side_effects_blocked === true
+      ? "sem envio externo automatico"
       : null,
     artifact.artifact_type === "referral_intake" && typeof metadata?.score === "number"
       ? `score ${metadata.score}`
@@ -679,12 +743,45 @@ function getRelatedTaskIds(kernel?: MessageKernel) {
   );
 }
 
+function getBetaExecutionSummary(snapshot: BrainTaskSnapshot) {
+  const betaSteps = snapshot.steps.filter((step) => step.handler_type === "tenant_beta_work_mode");
+  const betaEvents = snapshot.learningEvents.filter((event) => event.event_type === "tenant_beta_step_completed");
+  const hasBetaWorkplan = snapshot.artifacts.some((artifact) => artifact.artifact_type === "tenant_beta_workplan");
+  const hasBetaStepResult = snapshot.artifacts.some((artifact) => artifact.artifact_type === "tenant_beta_step_result");
+
+  if (betaSteps.length === 0 && betaEvents.length === 0 && !hasBetaWorkplan && !hasBetaStepResult) {
+    return null;
+  }
+
+  const completed = betaSteps.filter((step) => step.status === "completed").length;
+  const queued = betaSteps.filter((step) => step.status === "queued").length;
+  const awaitingApproval = betaSteps.filter((step) => step.status === "awaiting_approval").length;
+  const executing = betaSteps.filter((step) => step.status === "executing" || step.status === "running").length;
+
+  return {
+    completed,
+    queued,
+    awaitingApproval,
+    executing,
+    recentEvents: betaEvents.slice(0, 3),
+  };
+}
+
+function getBetaEventTitle(event: BrainEventRecord) {
+  const payload = event.payload ?? {};
+  const title = typeof payload.step_title === "string" ? payload.step_title.trim() : "";
+  const key = typeof payload.step_key === "string" ? payload.step_key.trim() : "";
+
+  return title || key || "Item beta executado";
+}
+
 function MissionStatusCard({ snapshot }: { snapshot: BrainTaskSnapshot }) {
   const badge = getMissionBadge(snapshot.task.status);
   const visibleSteps = snapshot.steps.slice(0, 4);
   const pendingApprovals = snapshot.approvals.filter((approval) => approval.status === "pending").length;
   const visibleArtifacts = snapshot.artifacts.slice(0, 3);
   const visibleEvents = snapshot.learningEvents.slice(0, 3);
+  const betaSummary = getBetaExecutionSummary(snapshot);
 
   return (
     <div data-testid={`mayus-mission-card-${snapshot.task.id}`} className="mt-3 border border-white/8 bg-gray-200 dark:bg-black/30 rounded-xl p-3 space-y-3">
@@ -701,6 +798,46 @@ function MissionStatusCard({ snapshot }: { snapshot: BrainTaskSnapshot }) {
       {pendingApprovals > 0 && (
         <div className="text-[11px] text-orange-300 border border-orange-500/20 bg-orange-500/10 rounded-lg px-2.5 py-2">
           {pendingApprovals} aprovação(ões) pendente(s) nesta missão.
+        </div>
+      )}
+
+      {betaSummary && (
+        <div className="rounded-lg border border-[#CCA761]/20 bg-[#CCA761]/10 p-2.5 text-[11px] text-gray-300 space-y-2">
+          <div className="flex items-center justify-between gap-2">
+            <p className="text-[10px] text-[#CCA761] uppercase tracking-widest">Execucao beta</p>
+            <span className="text-[10px] uppercase tracking-widest text-gray-500">supervisionada</span>
+          </div>
+          <div className="flex flex-wrap gap-1.5">
+            <span className="rounded-full border border-emerald-500/20 bg-emerald-500/10 px-2 py-1 text-[9px] uppercase tracking-widest text-emerald-300">
+              {betaSummary.completed} concluidos
+            </span>
+            <span className="rounded-full border border-white/10 bg-white/5 px-2 py-1 text-[9px] uppercase tracking-widest text-gray-400">
+              {betaSummary.queued} em fila
+            </span>
+            <span className="rounded-full border border-[#CCA761]/20 bg-[#CCA761]/10 px-2 py-1 text-[9px] uppercase tracking-widest text-[#CCA761]">
+              {betaSummary.executing} executando
+            </span>
+            <span className="rounded-full border border-orange-500/20 bg-orange-500/10 px-2 py-1 text-[9px] uppercase tracking-widest text-orange-300">
+              {betaSummary.awaitingApproval} aguardando aprovacao
+            </span>
+          </div>
+          {betaSummary.recentEvents.length > 0 && (
+            <div className="space-y-1.5">
+              {betaSummary.recentEvents.map((event) => {
+                const preview = getEventPreview(event);
+
+                return (
+                  <div key={event.id} className="min-w-0 rounded-md border border-white/5 bg-black/10 px-2 py-1.5">
+                    <div className="flex items-center justify-between gap-2">
+                      <p className="truncate text-white/90">{getBetaEventTitle(event)}</p>
+                      <span className="shrink-0 text-[10px] uppercase tracking-widest text-gray-500">{dayjs(event.created_at).fromNow()}</span>
+                    </div>
+                    {preview && <p className="mt-1 text-[10px] text-gray-400 line-clamp-2">{preview}</p>}
+                  </div>
+                );
+              })}
+            </div>
+          )}
         </div>
       )}
 
@@ -801,6 +938,85 @@ function MissionPendingCard() {
 }
 
 // ─── ApprovalCard ─────────────────────────────────────────────────────────────
+
+function MissionOpsPanel({ snapshots }: { snapshots: BrainTaskSnapshot[] }) {
+  if (snapshots.length === 0) {
+    return null;
+  }
+
+  const orderedSnapshots = snapshots.slice(0, 4);
+  const activeCount = snapshots.filter((snapshot) =>
+    ["queued", "planning", "executing", "awaiting_input", "awaiting_approval"].includes(snapshot.task.status)
+  ).length;
+  const approvalCount = snapshots.reduce(
+    (total, snapshot) => total + snapshot.approvals.filter((approval) => approval.status === "pending").length,
+    0
+  );
+  const completedStepCount = snapshots.reduce(
+    (total, snapshot) => total + snapshot.steps.filter((step) => step.status === "completed").length,
+    0
+  );
+
+  return (
+    <section data-testid="mayus-mission-ops-panel" className="rounded-xl border border-[#CCA761]/20 bg-[#0f0f0f]/90 p-3 space-y-3">
+      <div className="flex flex-col gap-2 sm:flex-row sm:items-center sm:justify-between">
+        <div>
+          <p className="text-[10px] text-[#CCA761] uppercase tracking-widest">Painel de missoes</p>
+          <p className="text-xs text-gray-400">Acompanhamento operacional do que o MAYUS esta executando nesta conversa.</p>
+        </div>
+        <div className="flex flex-wrap gap-1.5">
+          <span className="rounded-full border border-[#CCA761]/20 bg-[#CCA761]/10 px-2 py-1 text-[9px] uppercase tracking-widest text-[#CCA761]">
+            {activeCount} ativas
+          </span>
+          <span className="rounded-full border border-orange-500/20 bg-orange-500/10 px-2 py-1 text-[9px] uppercase tracking-widest text-orange-300">
+            {approvalCount} aprovacoes
+          </span>
+          <span className="rounded-full border border-emerald-500/20 bg-emerald-500/10 px-2 py-1 text-[9px] uppercase tracking-widest text-emerald-300">
+            {completedStepCount} steps concluidos
+          </span>
+        </div>
+      </div>
+
+      <div className="grid gap-2 md:grid-cols-2">
+        {orderedSnapshots.map((snapshot) => {
+          const badge = getMissionBadge(snapshot.task.status);
+          const betaSummary = getBetaExecutionSummary(snapshot);
+          const pendingApprovals = snapshot.approvals.filter((approval) => approval.status === "pending").length;
+
+          return (
+            <div key={snapshot.task.id} className="min-w-0 rounded-lg border border-white/5 bg-white/[0.03] p-2.5">
+              <div className="flex items-start justify-between gap-2">
+                <div className="min-w-0">
+                  <p className="truncate text-xs font-semibold text-white/90">{snapshot.task.goal || snapshot.task.module}</p>
+                  <p className="mt-0.5 text-[10px] uppercase tracking-widest text-gray-500">{snapshot.task.module} / {snapshot.task.channel}</p>
+                </div>
+                <span className={`shrink-0 rounded-full border px-2 py-1 text-[9px] font-bold uppercase tracking-widest ${badge.className}`}>
+                  {badge.label}
+                </span>
+              </div>
+
+              <div className="mt-2 flex flex-wrap gap-1.5">
+                <span className="rounded-full border border-white/10 bg-white/5 px-2 py-1 text-[9px] uppercase tracking-widest text-gray-400">
+                  {snapshot.steps.length} steps
+                </span>
+                {pendingApprovals > 0 && (
+                  <span className="rounded-full border border-orange-500/20 bg-orange-500/10 px-2 py-1 text-[9px] uppercase tracking-widest text-orange-300">
+                    {pendingApprovals} aprovacoes
+                  </span>
+                )}
+                {betaSummary && (
+                  <span className="rounded-full border border-[#CCA761]/20 bg-[#CCA761]/10 px-2 py-1 text-[9px] uppercase tracking-widest text-[#CCA761]">
+                    beta {betaSummary.completed}/{Math.max(snapshot.steps.length, betaSummary.completed)}
+                  </span>
+                )}
+              </div>
+            </div>
+          );
+        })}
+      </div>
+    </section>
+  );
+}
 
 type ApprovalState =
   | "idle" | "loading" | "approved" | "rejected"
@@ -978,6 +1194,7 @@ export default function MAYUSPlayground() {
   const [isModelSwitcherOpen, setIsModelSwitcherOpen] = useState(false);
   const [customModelInput, setCustomModelInput] = useState("");
   const [checkingVault, setCheckingVault] = useState(true);
+  const [brainStatusError, setBrainStatusError] = useState<string | null>(null);
   const [brainTaskSnapshots, setBrainTaskSnapshots] = useState<Record<string, BrainTaskSnapshot>>({});
 
   // Novos estados da Fase 5A
@@ -1023,6 +1240,7 @@ export default function MAYUSPlayground() {
 
     return options;
   }, [availableIntegrations]);
+  const missionSnapshots = useMemo(() => Object.values(brainTaskSnapshots), [brainTaskSnapshots]);
 
   const selectChatModel = (option: { provider: string; model: string }, announce = true) => {
     setApiKeyData({ provider: option.provider, model: option.model });
@@ -1038,8 +1256,7 @@ export default function MAYUSPlayground() {
 
   const loadBrainTask = useCallback(async (taskId: string) => {
     try {
-      const response = await fetch(`/api/brain/tasks/${taskId}`, { cache: "no-store" });
-      const data = await response.json().catch(() => ({}));
+      const { response, data } = await fetchJsonWithTimeout(`/api/brain/tasks/${taskId}`, { cache: "no-store" }, BRAIN_TASK_TIMEOUT_MS);
 
       if (!response.ok || !data?.task) {
         throw new Error(data?.error || "Erro ao carregar status da missão.");
@@ -1062,9 +1279,9 @@ export default function MAYUSPlayground() {
 
   const loadBrainStatus = useCallback(async () => {
     setCheckingVault(true);
+    setBrainStatusError(null);
     try {
-      const response = await fetch("/api/brain/status", { cache: "no-store" });
-      const data = await response.json().catch(() => ({}));
+      const { response, data } = await fetchJsonWithTimeout("/api/brain/status", { cache: "no-store" }, BRAIN_STATUS_TIMEOUT_MS);
 
       if (!response.ok) {
         throw new Error(data?.error || "Erro ao carregar status do cerebro.");
@@ -1093,6 +1310,7 @@ export default function MAYUSPlayground() {
       console.error(err);
       setApiKeyData(null);
       setAvailableIntegrations([]);
+      setBrainStatusError(getFriendlyRequestError(err, "Nao consegui acessar o cofre de chaves agora."));
     } finally {
       setCheckingVault(false);
     }
@@ -1136,7 +1354,9 @@ export default function MAYUSPlayground() {
   }, [isConversationMode]);
 
   useEffect(() => {
-    const taskIds = getTrackedTaskIds(messages);
+    const taskIds = getTrackedTaskIds(messages).filter((taskId) => (
+      !isTerminalBrainTaskStatus(brainTaskSnapshots[taskId]?.task?.status)
+    ));
 
     if (taskIds.length === 0) {
       return;
@@ -1153,12 +1373,11 @@ export default function MAYUSPlayground() {
     }, 4000);
 
     return () => window.clearInterval(intervalId);
-  }, [messages, loadBrainTask]);
+  }, [messages, loadBrainTask, brainTaskSnapshots]);
 
   const fetchConversations = async () => {
     try {
-      const res = await fetch("/api/ai/conversations");
-      const data = await res.json();
+      const { data } = await fetchJsonWithTimeout("/api/ai/conversations", { cache: "no-store" }, BRAIN_LIST_TIMEOUT_MS);
       if (data.conversations) setConversations(data.conversations);
     } catch (err) {
       console.error("Erro ao carregar histórico:", err);
@@ -1170,8 +1389,8 @@ export default function MAYUSPlayground() {
     setCurrentConversationId(id);
     setBrainTaskSnapshots({});
     try {
-      const res = await fetch(`/api/ai/conversations/${id}`);
-      const data = await res.json();
+      const { response: res, data } = await fetchJsonWithTimeout(`/api/ai/conversations/${id}`, { cache: "no-store" }, BRAIN_LIST_TIMEOUT_MS);
+      if (!res.ok) throw new Error(data?.error || "Erro ao carregar mensagens.");
       if (data.messages) setMessages(data.messages);
       if (window.innerWidth < 768) setIsMobileMenuOpen(false);
     } catch (err) {
@@ -1276,7 +1495,7 @@ export default function MAYUSPlayground() {
     let fallbackOutput = "";
 
     try {
-      const response = await fetch("/api/brain/chat-turn", {
+      const { response, data } = await fetchJsonWithTimeout("/api/brain/chat-turn", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
@@ -1288,9 +1507,8 @@ export default function MAYUSPlayground() {
             .filter(m => m.role === "user" || m.role === "model")
             .map(m => ({ role: m.role, content: m.content })),
         }),
-      });
+      }, BRAIN_CHAT_TIMEOUT_MS);
 
-      const data = await response.json();
       if (!response.ok) throw new Error(data.error || "A IA não conseguiu responder.");
       aiResponseData = data;
 
@@ -1336,9 +1554,10 @@ export default function MAYUSPlayground() {
         setMessages(prev => [...prev, ...newMessages]);
       }
     } catch (err: any) {
-      toast.error(err.message);
+      const errorMessage = getFriendlyRequestError(err, "A IA nao conseguiu responder agora.");
+      toast.error(errorMessage);
       fallbackStatus = true;
-      fallbackOutput = "Erro Crítico: A conexão com o córtex falhou.";
+      fallbackOutput = `Erro Critico: ${errorMessage}`;
       setMessages(prev => [...prev, { role: "system", content: fallbackOutput }]);
     } finally {
       setIsLoading(false);
@@ -1553,6 +1772,27 @@ export default function MAYUSPlayground() {
 
   if (checkingVault) {
     return <div className="p-8 flex items-center justify-center animate-pulse text-[#CCA761]">Acessando Cofre de Chaves...</div>;
+  }
+
+  if (brainStatusError) {
+    return (
+      <div className={`p-6 max-w-4xl mx-auto mt-20 text-center animate-fade-in-up ${montserrat.className}`}>
+        <div className="w-24 h-24 mx-auto bg-red-500/10 rounded-full flex items-center justify-center border border-red-500/30 mb-6">
+          <AlertCircle size={40} className="text-red-300" />
+        </div>
+        <h1 className={`text-5xl text-white mb-4 ${cormorant.className}`}>Cofre temporariamente indisponivel</h1>
+        <p className="text-gray-400 mb-8 max-w-xl mx-auto leading-relaxed">
+          {brainStatusError} O chat foi protegido contra carregamento infinito; tente novamente sem recarregar todo o sistema.
+        </p>
+        <button
+          type="button"
+          onClick={() => void loadBrainStatus()}
+          className="inline-flex items-center gap-2 bg-[#CCA761] text-black font-bold uppercase tracking-widest text-xs px-8 py-4 rounded-xl hover:scale-105 transition-transform"
+        >
+          Tentar novamente
+        </button>
+      </div>
+    );
   }
 
   if (!apiKeyData) {
@@ -1778,6 +2018,7 @@ export default function MAYUSPlayground() {
 
         {/* FEED DE MENSAGENS */}
         <div className="flex-1 overflow-y-auto hide-scrollbar space-y-6 lg:px-24 md:px-12 px-4 py-8">
+          {missionSnapshots.length > 0 && <MissionOpsPanel snapshots={missionSnapshots} />}
           
           {messages.length === 0 && (
             <div className="h-full flex flex-col items-center justify-center text-center opacity-70">
