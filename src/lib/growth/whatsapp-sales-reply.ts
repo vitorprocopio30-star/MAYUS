@@ -6,6 +6,7 @@ import {
 import {
   buildCommercialFirstReply,
   buildCommercialPlaybookModel,
+  resolveCommercialAttendantIdentity,
 } from "./commercial-playbook-template";
 
 export type WhatsAppSalesMessage = {
@@ -21,6 +22,8 @@ export type WhatsAppSalesReplyInput = {
   messages: WhatsAppSalesMessage[];
   salesProfile?: {
     firmName?: string | null;
+    attendantName?: string | null;
+    attendantRole?: string | null;
     idealClient?: string | null;
     coreSolution?: string | null;
     uniqueValueProposition?: string | null;
@@ -60,8 +63,33 @@ function getLastInbound(messages: WhatsAppSalesMessage[]) {
   return [...messages].reverse().find((message) => message.direction === "inbound" && cleanText(message.content)) || null;
 }
 
+function hasRecentPublicIntroduction(messages: WhatsAppSalesMessage[]) {
+  return messages
+    .slice(-8)
+    .some((message) => (
+      message.direction === "outbound"
+      && /meu nome e|vou cuidar do seu atendimento|sou .*responsavel pelo seu atendimento/i.test(normalizeText(message.content))
+    ));
+}
+
 function getLeadFirstName(value?: string | null) {
   return cleanText(value)?.split(/\s+/)[0] || "tudo bem";
+}
+
+function buildPublicOpening(input: WhatsAppSalesReplyInput, leadFirstName: string) {
+  const identity = resolveCommercialAttendantIdentity({
+    attendantName: input.salesProfile?.attendantName,
+    attendantRole: input.salesProfile?.attendantRole,
+  });
+
+  return `Ola, ${leadFirstName}. Meu nome e ${identity.attendantName}, sou ${identity.attendantRole}. Vou cuidar do seu atendimento.`;
+}
+
+function withOptionalOpening(blocks: string[], input: WhatsAppSalesReplyInput, leadFirstName: string) {
+  return [
+    ...(hasRecentPublicIntroduction(input.messages) ? [] : [buildPublicOpening(input, leadFirstName)]),
+    ...blocks,
+  ].join("\n\n");
 }
 
 function buildConversationSummary(messages: WhatsAppSalesMessage[]) {
@@ -155,12 +183,15 @@ function buildDiscoveryReply(plan: SalesConsultationPlan, leadFirstName: string,
     lastInboundText: getLastInbound(input.messages)?.content,
     profile: {
       firmName: input.salesProfile?.firmName,
+      attendantName: input.salesProfile?.attendantName,
+      attendantRole: input.salesProfile?.attendantRole,
       idealClient: input.salesProfile?.idealClient,
       coreSolution: input.salesProfile?.coreSolution,
       uniqueValueProposition: input.salesProfile?.uniqueValueProposition,
       valuePillars: input.salesProfile?.valuePillars,
       positioningSummary: input.salesProfile?.positioningSummary,
     },
+    suppressIntroduction: hasRecentPublicIntroduction(input.messages),
   });
   const blocks = firstReply.split(/\n{2,}/).map((block) => block.trim()).filter(Boolean);
 
@@ -172,48 +203,48 @@ function buildSuggestedReply(plan: SalesConsultationPlan, lastInboundText: strin
   const normalized = normalizeText(lastInboundText);
 
   if (/reuni[aã]o|agenda|agendar|marcar|call|liga[cç][aã]o|me\s+liga|ligar|telefone|chamada/.test(normalized)) {
-    return [
+    return withOptionalOpening([
       `Perfeito, ${leadFirstName}. Vou te ajudar a avancar sem enrolacao.`,
       "Para marcar certo: esse atendimento e para diagnostico inicial, revisao de beneficio/contrato, suporte de caso em andamento ou fechamento de proposta?",
       "Se quiser, ja me envie tambem o melhor periodo hoje: manha, tarde ou noite.",
-    ].join("\n\n");
+    ], input, leadFirstName);
   }
 
   if (/garantia|garantido|chance|ganhar|resultado|causa ganha|promete/.test(normalized)) {
-    return [
+    return withOptionalOpening([
       `Entendi, ${leadFirstName}. Eu nao vou te prometer resultado, porque isso seria irresponsavel.`,
       "O que eu consigo fazer agora e separar risco, documentos e caminho provavel para voce decidir com clareza.",
       "Me diga: voce ja tem decisao, negativa, contrato, cobranca ou documento principal do caso?",
-    ].join("\n\n");
+    ], input, leadFirstName);
   }
 
   if (/urgente|liminar|audiencia|prazo|bloqueio|prisao|ameaca/.test(normalized)) {
-    return [
+    return withOptionalOpening([
       `Entendi a urgencia, ${leadFirstName}. Vamos priorizar o que pode mudar o risco agora.`,
       "Me responda em uma linha: qual e o prazo ou data critica, e qual documento/prova voce ja tem em maos?",
       "Com isso eu organizo o proximo passo e, se for caso de reuniao, encaminho para agenda sem perder contexto.",
-    ].join("\n\n");
+    ], input, leadFirstName);
   }
 
   if (/caro|preco|valor|custa|custo|honorario|honorarios/.test(normalized)) {
-    return [
+    return withOptionalOpening([
       `Entendi, ${leadFirstName}. Consigo te ajudar com valor, mas primeiro preciso separar preco de risco para nao te orientar errado.`,
       "Me responde rapidinho: voce quer entender preco, forma de pagamento, seguranca do caminho ou prioridade de resolver isso agora?",
-    ].join("\n\n");
+    ], input, leadFirstName);
   }
 
   if (/vou pensar|depois|mais tarde|sem tempo/.test(normalized)) {
-    return [
+    return withOptionalOpening([
       `Claro, ${leadFirstName}. Sem pressa artificial; so nao quero te deixar com uma duvida solta.`,
       "O que ainda falta para voce decidir: seguranca, valor, prazo, falar com outra pessoa ou entender se esse caminho serve para voce?",
-    ].join("\n\n");
+    ], input, leadFirstName);
   }
 
   if (/humano|atendente|advogado|doutor|doutora|responsavel|falar com|conjuge|esposa|marido|socio|familia/.test(normalized)) {
-    return [
+    return withOptionalOpening([
       `Faz sentido, ${leadFirstName}. Eu vou organizar isso para a pessoa certa pegar o contexto sem voce repetir tudo.`,
       "Antes de eu encaminhar: o ponto principal e urgencia, documentos, valor, estrategia do caso ou falar com alguem especifico?",
-    ].join("\n\n");
+    ], input, leadFirstName);
   }
 
   return buildDiscoveryReply(plan, leadFirstName, input);
@@ -230,6 +261,8 @@ export function buildWhatsAppSalesReply(input: WhatsAppSalesReplyInput): WhatsAp
   const profile = input.salesProfile || null;
   const playbook = buildCommercialPlaybookModel({
     firmName: profile?.firmName,
+    attendantName: profile?.attendantName,
+    attendantRole: profile?.attendantRole,
     idealClient: profile?.idealClient,
     coreSolution: profile?.coreSolution,
     uniqueValueProposition: profile?.uniqueValueProposition,

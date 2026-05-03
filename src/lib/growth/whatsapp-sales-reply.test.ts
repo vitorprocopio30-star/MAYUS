@@ -2,6 +2,8 @@ import { describe, expect, it } from "vitest";
 import { buildWhatsAppSalesReply } from "./whatsapp-sales-reply";
 
 const salesProfile = {
+  attendantName: "Ana",
+  attendantRole: "especialista responsavel pelo seu atendimento",
   idealClient: "beneficiarios do INSS com negativa recente e urgencia de renda",
   coreSolution: "entender chance real, documentos faltantes e caminho para destravar o beneficio",
   uniqueValueProposition: "Diagnostico previdenciario consultivo antes de qualquer promessa.",
@@ -21,6 +23,8 @@ describe("buildWhatsAppSalesReply", () => {
 
     expect(reply.mode).toBe("suggested_reply");
     expect(reply.suggestedReply).toContain("Maria");
+    expect(reply.suggestedReply).toContain("Meu nome e Ana");
+    expect(reply.suggestedReply).not.toMatch(/\b(agente|bot|assistente|ia|cortex)\b/i);
     expect(reply.suggestedReply).toMatch(/o que aconteceu/i);
     expect(reply.mayAutoSend).toBe(true);
     expect(reply.externalSideEffectsBlocked).toBe(false);
@@ -39,6 +43,7 @@ describe("buildWhatsAppSalesReply", () => {
 
     expect(reply.mode).toBe("suggested_reply");
     expect(reply.suggestedReply).toContain("MAYUS");
+    expect(reply.suggestedReply).not.toMatch(/\b(agente|bot|assistente|ia|cortex)\b/i);
     expect(reply.internalNote).toContain("mensagem do lead");
     expect(reply.riskFlags).toContain("missing_firm_profile");
     expect(reply.mayAutoSend).toBe(true);
@@ -105,6 +110,40 @@ describe("buildWhatsAppSalesReply", () => {
     expect(dutraReply.suggestedReply).toContain("RMC/cartao consignado");
     expect(dutraReply.firstResponseSlaMinutes).toBe(5);
     expect(genericReply.suggestedReply).not.toMatch(/Dutra|GRAM|Blindagem|Roberto|Camila/);
+  });
+
+  it("nao repete apresentacao publica quando ja se apresentou na conversa", () => {
+    const reply = buildWhatsAppSalesReply({
+      contactName: "Maria Silva",
+      messages: [
+        { direction: "inbound", content: "Oi, voces atendem previdenciario?" },
+        { direction: "outbound", content: "Ola, Maria. Meu nome e Ana, sou especialista responsavel pelo seu atendimento. Vou cuidar do seu atendimento." },
+        { direction: "inbound", content: "E quanto custa?" },
+      ],
+      salesProfile,
+    });
+
+    expect(reply.suggestedReply).not.toContain("Meu nome e Ana");
+    expect(reply.suggestedReply).toContain("Consigo te ajudar com valor");
+  });
+
+  it("gera respostas diferentes para perguntas diferentes no mesmo perfil", () => {
+    const questions = [
+      "Voces fazem aposentadoria?",
+      "Quanto custa para entrar com o processo?",
+      "Tenho uma audiencia urgente amanha.",
+    ];
+
+    const replies = questions.map((content) => buildWhatsAppSalesReply({
+      contactName: "Maria",
+      messages: [{ direction: "inbound", content }],
+      salesProfile,
+    }).suggestedReply);
+
+    expect(new Set(replies).size).toBe(3);
+    replies.forEach((reply) => {
+      expect(reply).not.toMatch(/\b(agente|bot|assistente|ia|cortex)\b/i);
+    });
   });
 
   it("recomenda handoff e bloqueia autoenvio quando o lead pede humano", () => {

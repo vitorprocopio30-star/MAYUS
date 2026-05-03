@@ -976,6 +976,11 @@ function ConfiguracoesContent() {
     setHasUnsavedChanges(true);
   };
 
+  const updateAiFeature = (field: string, value: string) => {
+    setAiFeatures((prev: any) => ({ ...prev, [field]: value }));
+    setHasUnsavedChanges(true);
+  };
+
   const updateSalesProfile = (field: keyof SalesConsultationProfile, value: string | string[]) => {
     setSalesProfile((prev) => ({ ...prev, [field]: value, status: "draft" }));
     setHasUnsavedChanges(true);
@@ -1107,6 +1112,8 @@ function ConfiguracoesContent() {
         authorizedPhones: parseAuthorizedPhonesInput(authorizedPhonesInput),
         updated_at: new Date().toISOString(),
       };
+      const whatsappAttendantName = String(aiFeatures.whatsapp_attendant_name || "").trim() || "MAYUS";
+      const whatsappAttendantRole = String(aiFeatures.whatsapp_attendant_role || "").trim() || "especialista responsavel pelo seu atendimento";
       
       const payload = { 
         tenant_id: tenantId, 
@@ -1116,6 +1123,8 @@ function ConfiguracoesContent() {
           default_department_id: defaultDeptId,
           contract_flow_mode: aiFeatures.contract_flow_mode || 'ia_only',
           zapsign_template_id: aiFeatures.zapsign_template_id || '',
+          whatsapp_attendant_name: whatsappAttendantName,
+          whatsapp_attendant_role: whatsappAttendantRole,
           sales_consultation_profile: normalizedSalesProfile,
           daily_playbook: normalizedDailyPlaybook,
         },
@@ -1128,6 +1137,11 @@ function ConfiguracoesContent() {
 
       setSuccess(true);
       setHasUnsavedChanges(false);
+      setAiFeatures((prev: any) => ({
+        ...prev,
+        whatsapp_attendant_name: whatsappAttendantName,
+        whatsapp_attendant_role: whatsappAttendantRole,
+      }));
       setSalesProfile(normalizeSalesProfile(normalizedSalesProfile));
       setDailyPlaybook(normalizeDailyPlaybookPreferences(normalizedDailyPlaybook));
       setAuthorizedPhonesInput(normalizedDailyPlaybook.authorizedPhones.join("\n"));
@@ -1215,6 +1229,28 @@ function ConfiguracoesContent() {
               }`}>
                 {salesProfile.status === "validated" ? "Validado" : "Rascunho"}
               </span>
+            </div>
+
+            <div className="mb-6 grid grid-cols-1 lg:grid-cols-2 gap-4 rounded-2xl border border-white/10 bg-black/20 p-4">
+              <label className="space-y-2">
+                <span className="text-[10px] text-gray-500 uppercase tracking-widest font-black">Nome publico no WhatsApp</span>
+                <input
+                  value={aiFeatures.whatsapp_attendant_name || ""}
+                  onChange={(event) => updateAiFeature("whatsapp_attendant_name", event.target.value)}
+                  className="w-full rounded-2xl border border-white/10 bg-black/30 p-4 text-sm text-white focus:outline-none focus:border-[#CCA761]/60"
+                  placeholder="MAYUS"
+                />
+              </label>
+
+              <label className="space-y-2">
+                <span className="text-[10px] text-gray-500 uppercase tracking-widest font-black">Funcao publica no atendimento</span>
+                <input
+                  value={aiFeatures.whatsapp_attendant_role || ""}
+                  onChange={(event) => updateAiFeature("whatsapp_attendant_role", event.target.value)}
+                  className="w-full rounded-2xl border border-white/10 bg-black/30 p-4 text-sm text-white focus:outline-none focus:border-[#CCA761]/60"
+                  placeholder="especialista responsavel pelo seu atendimento"
+                />
+              </label>
             </div>
 
             <div className="grid grid-cols-1 lg:grid-cols-2 gap-4">

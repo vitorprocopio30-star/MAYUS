@@ -60,12 +60,14 @@ describe("commercial playbook template", () => {
     const genericReply = buildCommercialFirstReply({
       leadName: "Maria",
       lastInboundText: "Tenho desconto de RMC no contracheque e queria saber o que fazer.",
-      profile: { firmName: "Almeida Legal", legalArea: "previdenciario" },
+      profile: { firmName: "Almeida Legal", legalArea: "previdenciario", attendantName: "Ana", attendantRole: "especialista responsavel pelo atendimento" },
     });
 
     expect(dutraReply).toContain("RMC/cartao consignado");
     expect(dutraReply).toContain("qual banco");
     expect(genericReply).not.toMatch(/Dutra|GRAM|Blindagem|Roberto|Camila/);
+    expect(genericReply).toContain("Meu nome e Ana");
+    expect(genericReply).not.toMatch(/\b(agente|bot|assistente|ia|cortex)\b/i);
     expect(genericReply).toContain("o que aconteceu");
   });
 });

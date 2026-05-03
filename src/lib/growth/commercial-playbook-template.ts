@@ -1,5 +1,7 @@
 export type CommercialPlaybookOfficeProfile = {
   firmName?: string | null;
+  attendantName?: string | null;
+  attendantRole?: string | null;
   legalArea?: string | null;
   idealClient?: string | null;
   coreSolution?: string | null;
@@ -77,6 +79,13 @@ function shortContext(value?: string | null) {
   const text = cleanText(value);
   if (!text) return null;
   return text.length > 120 ? `${text.slice(0, 117).trim()}...` : text;
+}
+
+export function resolveCommercialAttendantIdentity(profile: CommercialPlaybookOfficeProfile = {}) {
+  return {
+    attendantName: cleanText(profile.attendantName)?.slice(0, 60) || "MAYUS",
+    attendantRole: cleanText(profile.attendantRole)?.slice(0, 120) || "especialista responsavel pelo seu atendimento",
+  };
 }
 
 function cleanList(value?: string[] | null) {
@@ -550,18 +559,21 @@ export function buildCommercialFirstReply(params: {
   leadName?: string | null;
   lastInboundText?: string | null;
   profile?: CommercialPlaybookOfficeProfile | null;
+  suppressIntroduction?: boolean;
 }) {
   const playbook = buildCommercialPlaybookModel(params.profile || {});
   const name = firstName(params.leadName);
   const normalized = normalizeText(params.lastInboundText);
   const context = shortContext(params.lastInboundText);
-  const officeLabel = playbook.officeName === "Escritorio" ? "escritorio" : playbook.officeName;
-  const opening = `Oi, ${name}. Aqui e o MAYUS, do ${officeLabel}. Vou cuidar da sua primeira triagem agora.`;
+  const identity = resolveCommercialAttendantIdentity(params.profile || {});
+  const opening = params.suppressIntroduction
+    ? `Entendi, ${name}.`
+    : `Ola, ${name}. Meu nome e ${identity.attendantName}, sou ${identity.attendantRole}. Vou cuidar do seu atendimento.`;
 
   if (playbook.playbookKey === "dutra_blindagem") {
     if (/reuni[aã]o|agenda|agendar|call|liga[cç][aã]o|telefone|marcar/.test(normalized)) {
       return [
-        `Oi, ${name}. Perfeito, eu vou te ajudar a avancar com a Dutra.`,
+        params.suppressIntroduction ? `Perfeito, ${name}. Vamos avancar com clareza.` : opening,
         "Para marcar a conversa certa: voce quer analisar RMC/cartao consignado, GRAM, contracheque ou fechamento de proposta?",
         "Se puder, ja me mande o melhor periodo hoje e uma foto do contracheque para eu chegar na call sem chute.",
       ].join("\n\n");
@@ -569,14 +581,16 @@ export function buildCommercialFirstReply(params: {
 
     if (/rmc|credcesta|bmg|cart[aã]o|consignado|desconto|contracheque/.test(normalized)) {
       return [
-        `Oi, ${name}. Entendi o sinal de RMC/cartao consignado.`,
+        opening,
+        `Entendi o sinal de RMC/cartao consignado, ${name}.`,
         "Antes de falar de valor, preciso entender a sangria: qual banco aparece no contracheque, qual valor desconta por mes e ha quanto tempo isso vem acontecendo?",
       ].join("\n\n");
     }
 
     if (/gram|gratifica[cç][aã]o|risco|ir|imposto/.test(normalized)) {
       return [
-        `Oi, ${name}. Entendi sua duvida sobre GRAM.`,
+        opening,
+        `Entendi sua duvida sobre GRAM, ${name}.`,
         "Para eu qualificar certo: voce e servidor do RJ, a GRAM aparece no contracheque e voce ja entrou com alguma acao sobre esse desconto de IR?",
       ].join("\n\n");
     }
@@ -600,6 +614,20 @@ export function buildCommercialFirstReply(params: {
     return [
       opening,
       "Sem pressa artificial. Para eu nao te abandonar com uma duvida solta, o que falta para voce decidir: clareza do direito, confianca, tempo, valor ou falar com alguem?",
+    ].join("\n\n");
+  }
+
+  if (/voces?\s+(faz|fazem|atua|atuam|atende|atendem)|tem\s+advogado|trabalha\s+com/.test(normalized)) {
+    return [
+      opening,
+      `${context ? `Sobre "${context}":` : "Sobre esse tipo de atendimento:"} eu preciso confirmar alguns sinais antes de te orientar. Qual e a area do problema, quando comecou e qual documento principal voce tem agora?`,
+    ].join("\n\n");
+  }
+
+  if (/processo|caso|andamento|status|prazo|audiencia|pericia|sentenca/.test(normalized)) {
+    return [
+      opening,
+      "Para falar do caso certo, me envie o numero do processo ou o nome completo do cliente. Tambem me diga o que voce quer saber agora: prazo, andamento, documento pendente ou proximo passo.",
     ].join("\n\n");
   }
 

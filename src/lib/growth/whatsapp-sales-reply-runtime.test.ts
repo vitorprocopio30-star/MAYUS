@@ -26,7 +26,7 @@ function makeSelectQuery(result: any, onInsert?: (payload: any) => void) {
 describe("prepareWhatsAppSalesReplyForContact", () => {
   it("divide resposta em blocos curtos para WhatsApp", () => {
     const blocks = splitWhatsAppReplyBlocks([
-      "Oi, Maria. Aqui e o MAYUS.",
+      "Ola, Maria. Meu nome e Ana.",
       "Vou entender seu caso antes de te responder no escuro.",
       "Me diga qual e a urgencia agora e se existe prazo.",
     ].join("\n\n"), 80, 3);
@@ -51,6 +51,8 @@ describe("prepareWhatsAppSalesReplyForContact", () => {
           return makeSelectQuery({
             data: {
               ai_features: {
+                whatsapp_attendant_name: "Ana",
+                whatsapp_attendant_role: "especialista juridica responsavel pelo atendimento",
                 sales_consultation_profile: {
                   ideal_client: "beneficiarios do INSS com negativa recente",
                   core_solution: "entender chance real e documentos faltantes",
@@ -91,6 +93,8 @@ describe("prepareWhatsAppSalesReplyForContact", () => {
     });
 
     expect(prepared.metadata.mode).toBe("suggested_reply");
+    expect(prepared.metadata.suggested_reply).toContain("Meu nome e Ana");
+    expect(prepared.metadata.suggested_reply).not.toMatch(/\b(agente|bot|assistente|ia|cortex)\b/i);
     expect(prepared.metadata.external_side_effects_blocked).toBe(false);
     expect(prepared.metadata.auto_sent).toBe(false);
     expect(inserts).toEqual(expect.arrayContaining([
@@ -102,6 +106,7 @@ describe("prepareWhatsAppSalesReplyForContact", () => {
             contact_id: "contact-1",
             trigger: "meta_webhook",
             may_auto_send: true,
+            latest_inbound_at: "2026-04-28T10:00:00.000Z",
             first_response_policy: expect.objectContaining({
               enabled: false,
               can_auto_send: false,

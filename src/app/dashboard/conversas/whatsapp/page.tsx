@@ -209,6 +209,7 @@ export default function WhatsAppChatPremiumPage({
   const [mayusDraft, setMayusDraft] = useState<any | null>(null);
   const [contractFlowMode, setContractFlowMode] = useState<'ia_only' | 'human_only' | 'hybrid'>('hybrid');
   const [zapsignTemplateId, setZapsignTemplateId] = useState<string>("");
+  const [whatsappAttendantName, setWhatsappAttendantName] = useState("MAYUS");
   const [isRightPanelCollapsed, setIsRightPanelCollapsed] = useState(false);
 
   const tenantId = profile?.tenant_id || null;
@@ -263,6 +264,7 @@ export default function WhatsAppChatPremiumPage({
       if (settings?.ai_features) {
         if (settings.ai_features.contract_flow_mode) setContractFlowMode(settings.ai_features.contract_flow_mode);
         if (settings.ai_features.zapsign_template_id) setZapsignTemplateId(settings.ai_features.zapsign_template_id);
+        setWhatsappAttendantName(String(settings.ai_features.whatsapp_attendant_name || "MAYUS").trim() || "MAYUS");
       }
     };
     loadDeps();
@@ -390,7 +392,7 @@ export default function WhatsAppChatPremiumPage({
     ? activeContact.assigned_user_id === profile?.id
       ? "Atendimento humano"
       : "Com responsavel"
-    : "MAYUS atendendo";
+    : `${whatsappAttendantName} atendendo`;
 
   // Transferir Atendimento
   const handleTransfer = async () => {
@@ -1106,7 +1108,7 @@ export default function WhatsAppChatPremiumPage({
   };
 
   const getTeamMemberName = (id?: string | null) => {
-    if (!id) return "MAYUS";
+    if (!id) return whatsappAttendantName;
     return teamMembers.find((member) => member.id === id)?.full_name || "Responsavel nao encontrado";
   };
 
@@ -1298,16 +1300,16 @@ export default function WhatsAppChatPremiumPage({
           <div className="flex-1 flex flex-col min-h-0">
             {(activeContact || messages.length > 0) ? (
               <>
-                <div className="min-h-[84px] border-b border-white/5 flex items-center justify-between px-4 py-3 bg-[#0a0a0a]/90 backdrop-blur-3xl z-10 flex-shrink-0 md:px-6">
-                    <div className="flex min-w-0 items-center gap-4">
-                       <div className="h-12 w-12 rounded-full border border-[#CCA761]/50 bg-gray-200 dark:bg-black flex flex-shrink-0 items-center justify-center text-[#CCA761] font-black text-base shadow-[0_0_20px_rgba(204,167,97,0.1)] overflow-hidden">
+                <div className="min-h-[64px] border-b border-white/5 flex items-center justify-between px-4 py-2 bg-[#0a0a0a]/90 backdrop-blur-3xl z-10 flex-shrink-0 md:px-5">
+                    <div className="flex min-w-0 items-center gap-3">
+                       <div className="h-10 w-10 rounded-full border border-[#CCA761]/50 bg-gray-200 dark:bg-black flex flex-shrink-0 items-center justify-center text-[#CCA761] font-black text-sm shadow-[0_0_20px_rgba(204,167,97,0.1)] overflow-hidden">
                            {activeContact?.profile_pic_url ? <img src={activeContact.profile_pic_url} alt={activeContact?.name || "Contato ativo"} className="w-full h-full object-cover" /> : (activeContact?.name?.substring(0, 2).toUpperCase() || "TS")}
                         </div>
                         <div className="min-w-0">
-                          <h2 className={`truncate text-2xl font-bold leading-none text-white tracking-wide ${cormorant.className} italic`}>
+                          <h2 className={`truncate text-xl font-bold leading-none text-white tracking-wide ${cormorant.className} italic`}>
                              {activeContact?.name || activeContact?.phone_number || "Lead de Teste (Simulado)"}
                            </h2>
-                          <div className="mt-2 flex min-w-0 flex-wrap items-center gap-2">
+                          <div className="mt-1.5 flex min-w-0 flex-wrap items-center gap-2">
                              <div className="w-2 h-2 rounded-full bg-green-500 animate-pulse shadow-[0_0_10px_#22c55e]" />
                              <span className={`text-[8px] px-2 py-0.5 rounded-full font-black uppercase tracking-widest border ${activeContact ? 'bg-[#25D366]/10 text-[#25D366] border-[#25D366]/20' : 'bg-[#CCA761]/10 text-[#CCA761] border-[#CCA761]/20'}`}>
                                {activeContact ? 'WhatsApp' : 'Simulacao'}
@@ -1318,7 +1320,7 @@ export default function WhatsAppChatPremiumPage({
                      </div>
                 </div>
 
-                <div className="flex-1 overflow-y-auto p-5 flex flex-col gap-5 no-scrollbar min-h-0 md:p-6 md:gap-6 lg:p-7">
+                <div className="flex-1 overflow-y-auto p-4 flex flex-col gap-4 no-scrollbar min-h-0 md:p-5 md:gap-5 lg:p-5">
                     {messages.map((msg, idx) => {
                        const isInternalNote = msg.message_type === "internal_note" || msg.status === "internal_note";
                        const isMe = msg.direction === 'outbound' && !isInternalNote;
@@ -1351,7 +1353,7 @@ export default function WhatsAppChatPremiumPage({
                         <div className="max-w-[82%] rounded-2xl rounded-tl-sm border border-white/10 bg-[#121212] px-5 py-4 text-gray-300 shadow-2xl md:max-w-[74%] xl:max-w-[66%]">
                           <div className="flex items-center gap-3">
                             <span className="text-[10px] font-black uppercase tracking-[0.2em] text-[#CCA761]">
-                              MAYUS digitando
+                              {whatsappAttendantName} digitando
                             </span>
                             <span className="flex items-center gap-1">
                               <span className="h-1.5 w-1.5 animate-bounce rounded-full bg-[#CCA761]" />
@@ -1379,9 +1381,9 @@ export default function WhatsAppChatPremiumPage({
           </div>
 
           {/* COMPOSER SLIM - DESIGN ULTRA COMPACTO E FUNCIONAL */}
-          <div className="p-3 bg-[#0a0a0a]/95 backdrop-blur-3xl border-t border-white/10 z-10 flex-shrink-0">
+          <div className="p-2 bg-[#0a0a0a]/95 backdrop-blur-3xl border-t border-white/10 z-10 flex-shrink-0">
               {/* Linha Fina de Controles Superiores */}
-              <div className="mb-2 flex flex-wrap items-center justify-between gap-2 px-2">
+              <div className="mb-1.5 flex flex-wrap items-center justify-between gap-2 px-2">
                   <div className="flex flex-wrap gap-3">
                     <button onClick={() => { console.log('Mode: Responder'); setInputMode("responder"); }} className={`text-[9px] font-black uppercase tracking-[0.16em] relative transition-all flex items-center gap-1.5 ${inputMode === "responder" ? "text-[#CCA761]" : "text-gray-600 hover:text-gray-400"}`}>
                         <MessageCircle size={12} /> Atendimento
@@ -1453,7 +1455,7 @@ export default function WhatsAppChatPremiumPage({
                            </div>
                          )}
 
-                         <div className="relative flex items-end w-full px-2 py-2">
+                         <div className="relative flex items-end w-full px-2 py-1.5">
                            {/* Input de Texto Slim */}
                            <textarea
                              value={inputText}
@@ -1465,13 +1467,13 @@ export default function WhatsAppChatPremiumPage({
                                }
                              }}
                              placeholder={inputMode === "nota" ? "Nota interna..." : "Mensagem..."}
-                             className="flex-1 bg-transparent border-none text-white text-[13px] px-3 py-2 outline-none resize-none min-h-[42px] max-h-[150px] placeholder:text-gray-700 transition-all font-medium scrollbar-none"
+                             className="flex-1 bg-transparent border-none text-white text-[13px] px-3 py-1.5 outline-none resize-none min-h-[34px] max-h-[104px] placeholder:text-gray-700 transition-all font-medium scrollbar-none"
                            />
                             {/* Botao de envio compacto */}
                            <button
                              onClick={(e) => { e.preventDefault(); handleSendMessage(); }}
                              disabled={isSending || (inputMode === "nota" ? !inputText.trim() : (!inputText.trim() && !isRecording && !selectedFile))}
-                             className={`ml-2 mb-1 shrink-0 h-9 px-4 rounded-lg font-black uppercase text-[9px] tracking-wider transition-all flex items-center gap-2 ${
+                             className={`ml-2 mb-0.5 shrink-0 h-8 px-4 rounded-lg font-black uppercase text-[9px] tracking-wider transition-all flex items-center gap-2 ${
                                isSending ? 'bg-white/10 text-gray-400' : 'bg-[#CCA761] text-black hover:bg-white active:scale-95 shadow-lg shadow-[#CCA761]/10'
                              }`}
                            >
@@ -1486,7 +1488,7 @@ export default function WhatsAppChatPremiumPage({
                          </div>
 
                          {/* Barra de ferramentas inferior - organizacao solicitada */}
-                         <div className="flex gap-4 px-3 py-2 border-t border-gray-100 dark:border-white/[0.03] bg-gray-200 dark:bg-black/20 rounded-b-xl relative items-center">
+                         <div className="flex gap-4 px-3 py-1.5 border-t border-gray-100 dark:border-white/[0.03] bg-gray-200 dark:bg-black/20 rounded-b-xl relative items-center">
                              {/* Input de Arquivo Oculto */}
                              <input
                                type="file"
@@ -1535,7 +1537,7 @@ export default function WhatsAppChatPremiumPage({
                                <button onClick={() => toast.info("Modelos de resposta em breve")} className="text-gray-500 hover:text-[#CCA761] transition-all p-1" title="Modelos de Resposta"><LayoutPanelLeft size={18} /></button>
                              </div>
 
-                             <span className="ml-auto text-[7px] text-gray-700 font-black tracking-tighter uppercase self-center hidden sm:block">Gerado pelo Cortex MAYUS</span>
+                             <span className="ml-auto text-[7px] text-gray-700 font-black tracking-tighter uppercase self-center hidden sm:block">Resposta preparada</span>
                          </div>
                       </div>
                   )}

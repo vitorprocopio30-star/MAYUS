@@ -60,17 +60,21 @@ async function loadSalesProfile(params: {
     .maybeSingle<{ ai_features: Record<string, any> | null }>();
 
   const profile = data?.ai_features?.sales_consultation_profile;
-  if (!profile || typeof profile !== "object") return null;
+  const aiFeatures = data?.ai_features || {};
+  const safeProfile = profile && typeof profile === "object" ? profile : {};
+  if (!data?.ai_features || typeof data.ai_features !== "object") return null;
 
   return {
-    firmName: getStringValue(data?.ai_features?.firm_name) || getStringValue(profile.firm_name),
-    idealClient: getStringValue(profile.ideal_client),
-    coreSolution: getStringValue(profile.core_solution),
-    uniqueValueProposition: getStringValue(profile.unique_value_proposition),
-    valuePillars: Array.isArray(profile.value_pillars)
-      ? profile.value_pillars.map((item: unknown) => getStringValue(item)).filter((item): item is string => Boolean(item))
+    firmName: getStringValue(aiFeatures.firm_name) || getStringValue(safeProfile.firm_name),
+    attendantName: getStringValue(aiFeatures.whatsapp_attendant_name) || getStringValue(safeProfile.whatsapp_attendant_name) || getStringValue(safeProfile.attendant_name),
+    attendantRole: getStringValue(aiFeatures.whatsapp_attendant_role) || getStringValue(safeProfile.whatsapp_attendant_role) || getStringValue(safeProfile.attendant_role),
+    idealClient: getStringValue(safeProfile.ideal_client),
+    coreSolution: getStringValue(safeProfile.core_solution),
+    uniqueValueProposition: getStringValue(safeProfile.unique_value_proposition),
+    valuePillars: Array.isArray(safeProfile.value_pillars)
+      ? safeProfile.value_pillars.map((item: unknown) => getStringValue(item)).filter((item): item is string => Boolean(item))
       : [],
-    positioningSummary: getStringValue(profile.positioning_summary),
+    positioningSummary: getStringValue(safeProfile.positioning_summary),
   };
 }
 
@@ -243,10 +247,15 @@ export async function prepareWhatsAppSalesReplyForContact(params: {
     .order("created_at", { ascending: false })
     .limit(20);
 
+  const orderedMessages = (messages || []).reverse();
+  const latestInboundAt = [...orderedMessages].reverse().find((message) => (
+    message.direction === "inbound" && getStringValue(message.content)
+  ))?.created_at || null;
+
   const reply = buildWhatsAppSalesReply({
     contactName: contact.name,
     phoneNumber: contact.phone_number,
-    messages: (messages || []).reverse(),
+    messages: orderedMessages,
     salesProfile: await loadSalesProfile({
       supabase: params.supabase,
       tenantId: params.tenantId,
@@ -274,6 +283,7 @@ export async function prepareWhatsAppSalesReplyForContact(params: {
     payload: {
       contact_id: contact.id,
       trigger: params.trigger,
+      latest_inbound_at: latestInboundAt,
       ...metadata,
       first_response_policy: {
         enabled: params.autoSendFirstResponse === true,
