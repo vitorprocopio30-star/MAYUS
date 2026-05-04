@@ -374,6 +374,63 @@ describe("whatsapp MAYUS agent runtime", () => {
     ]));
   });
 
+  it("ignora decisao preparada antiga com fala publica proibida e reprocessa o inbound", async () => {
+    const latestInboundAt = "2026-05-01T10:00:00.000Z";
+    prepareWhatsAppSalesReplyForContactMock.mockResolvedValue({
+      contact: { id: "contact-1" },
+      metadata: {
+        mode: "suggested_reply",
+        suggested_reply: "Ola, Maria. Meu nome e MAYUS, sou especialista responsavel pelo seu atendimento.",
+        may_auto_send: true,
+        auto_sent: false,
+        requires_human_review: false,
+        discovery_completeness: 70,
+      },
+    });
+    const supabase: any = {
+      from: vi.fn((table: string) => {
+        if (table === "whatsapp_contacts") {
+          return makeQuery({ data: { id: "contact-1", name: "Maria", phone_number: "5511999999999", assigned_user_id: null, lead_tags: [] }, error: null });
+        }
+        if (table === "whatsapp_messages") {
+          return makeQuery({ data: [{ direction: "inbound", content: "Voces fazem previdenciario?", message_type: "text", created_at: latestInboundAt }], error: null });
+        }
+        if (table === "tenant_settings") {
+          return makeQuery({ data: { ai_features: { contract_flow_mode: "hybrid" } }, error: null });
+        }
+        if (table === "system_event_logs") {
+          return makeQuery({
+            data: {
+              id: "event-old",
+              created_at: "2026-05-01T10:00:03.000Z",
+              payload: {
+                contact_id: "contact-1",
+                latest_inbound_at: latestInboundAt,
+                decision_status: "prepared",
+                suggested_reply: "Oi, Maria. Aqui e o MAYUS, assistente do Escritorio.",
+              },
+            },
+            error: null,
+          });
+        }
+        return { insert: vi.fn(async () => ({ error: null })) };
+      }),
+    };
+
+    const prepared = await prepareWhatsAppMayusReplyForContact({
+      supabase,
+      tenantId: "tenant-1",
+      contactId: "contact-1",
+      trigger: "evolution_webhook",
+      autoSendFirstResponse: true,
+    });
+
+    expect(prepared.intent).toBe("sales");
+    expect(prepared.metadata.decision_status).not.toBe("duplicate_suppressed");
+    expect(prepareWhatsAppSalesReplyForContactMock).toHaveBeenCalled();
+    expect((prepared.metadata as any).suggested_reply).not.toMatch(/Aqui e o MAYUS|assistente do Escritorio/i);
+  });
+
   it("respeita human_only ao rotear venda para rascunho", async () => {
     prepareWhatsAppSalesReplyForContactMock.mockResolvedValue({
       contact: { id: "contact-1" },

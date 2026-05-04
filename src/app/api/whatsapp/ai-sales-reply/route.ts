@@ -11,6 +11,26 @@ const adminSupabase = createClient(
   process.env.SUPABASE_SERVICE_ROLE_KEY!
 );
 
+const FORBIDDEN_PUBLIC_DRAFT = /\b(aqui\s+e\s+o\s+mayus|aqui\s+é\s+o\s+mayus|assistente\s+do\s+escritorio|assistente\s+do\s+escrit[oó]rio|o\s+escritorio\s+conduz|o\s+escrit[oó]rio\s+conduz|cortex\s+mayus|sou\s+um\s+agente|sou\s+uma\s+ia|bot)\b/i;
+
+function getDraftReply(payload: Record<string, unknown> | null | undefined) {
+  return typeof payload?.suggested_reply === "string" ? payload.suggested_reply : "";
+}
+
+function isReusableDraft(payload: Record<string, unknown> | null | undefined, latestInboundAt: string | null) {
+  if (!payload) return false;
+  if (payload.decision_status === "duplicate_suppressed") return false;
+  const suggestedReply = getDraftReply(payload);
+  if (!suggestedReply.trim()) return false;
+  if (FORBIDDEN_PUBLIC_DRAFT.test(suggestedReply)) return false;
+
+  if (latestInboundAt) {
+    return payload.latest_inbound_at === latestInboundAt;
+  }
+
+  return true;
+}
+
 async function getAuthenticatedTenant() {
   const cookieStore = await cookies();
   const authClient = createServerClient(
@@ -126,7 +146,7 @@ export async function GET(req: NextRequest) {
       .limit(1)
       .maybeSingle<{ id: string; payload: Record<string, unknown> | null; created_at: string }>();
 
-    if (!event?.payload) {
+    if (!event?.payload || !isReusableDraft(event.payload, latestInboundAt)) {
       return NextResponse.json({ ok: true, contact_id: contactId, latest_inbound_at: latestInboundAt, draft: null });
     }
 

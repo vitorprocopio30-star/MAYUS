@@ -145,6 +145,17 @@ function buildDecisionMetadata(params: {
   };
 }
 
+function hasForbiddenPublicDraftText(value?: string | null) {
+  return /\b(aqui\s+e\s+o\s+mayus|aqui\s+é\s+o\s+mayus|assistente\s+do\s+escritorio|assistente\s+do\s+escrit[oó]rio|o\s+escritorio\s+conduz|o\s+escrit[oó]rio\s+conduz|cortex\s+mayus|sou\s+um\s+agente|sou\s+uma\s+ia|bot)\b/i.test(String(value || ""));
+}
+
+function isReusablePreparedDecision(payload: Record<string, unknown> | null | undefined) {
+  if (!payload) return false;
+  if (payload.decision_status === "duplicate_suppressed") return false;
+  const suggestedReply = typeof payload.suggested_reply === "string" ? payload.suggested_reply : "";
+  return !suggestedReply.trim() || !hasForbiddenPublicDraftText(suggestedReply);
+}
+
 export function inferWhatsAppMayusIntent(params: {
   contact?: Pick<WhatsAppContactRecord, "lead_tags"> | null;
   messages: WhatsAppMessageRecord[];
@@ -299,7 +310,9 @@ async function loadExistingPreparedDecision(params: {
       ? await finalQuery.maybeSingle()
       : { data: null };
 
-    return data?.payload ? data as { id: string; payload: Record<string, unknown>; created_at: string } : null;
+    return isReusablePreparedDecision(data?.payload)
+      ? data as { id: string; payload: Record<string, unknown>; created_at: string }
+      : null;
   } catch {
     return null;
   }

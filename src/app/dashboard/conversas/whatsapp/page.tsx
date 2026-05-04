@@ -150,6 +150,10 @@ const renderWhatsAppContent = (content: string) => {
   });
 };
 
+const hasForbiddenMayusDraftText = (value: string) => {
+  return /\b(aqui\s+e\s+o\s+mayus|aqui\s+é\s+o\s+mayus|assistente\s+do\s+escritorio|assistente\s+do\s+escrit[oó]rio|o\s+escritorio\s+conduz|o\s+escrit[oó]rio\s+conduz|gerado\s+pelo\s+cortex\s+mayus|cortex\s+mayus|sou\s+um\s+agente|sou\s+uma\s+ia|bot)\b/i.test(String(value || ""));
+};
+
 type WhatsAppChatPremiumPageProps = {
   initialActiveTab?: string;
   initialFiltersOpen?: boolean;
@@ -497,6 +501,9 @@ export default function WhatsAppChatPremiumPage({
            }
            setMessages((current) => mergeMessage(current, payload.new));
            if (payload.new?.direction === "inbound") {
+             if (hasForbiddenMayusDraftText(inputTextRef.current)) {
+               setInputText("");
+             }
              setShowTypingIndicator(true);
              setTimeout(() => setShowTypingIndicator(false), 2600);
               setTimeout(() => loadLatestMayusDraft(contactId, { prepareIfMissing: true }), 1200);
@@ -551,8 +558,9 @@ export default function WhatsAppChatPremiumPage({
     const isCurrentContact = () => activeContactIdRef.current === contactId;
     const applyDraft = (draft: any) => {
       const wasAutoSent = draft?.auto_sent === true || draft?.metadata?.auto_sent === true;
+      const currentInputIsForbidden = hasForbiddenMayusDraftText(inputTextRef.current);
       setMayusDraft(draft);
-      if (!wasAutoSent && draft?.suggested_reply && !inputTextRef.current.trim()) {
+      if (!wasAutoSent && draft?.suggested_reply && (!inputTextRef.current.trim() || currentInputIsForbidden)) {
         setInputMode("responder");
         setInputText(draft.suggested_reply);
       }
@@ -564,6 +572,9 @@ export default function WhatsAppChatPremiumPage({
       if (!isCurrentContact()) return;
       if (!response.ok || !data) {
         setMayusDraft(null);
+        if (hasForbiddenMayusDraftText(inputTextRef.current)) {
+          setInputText("");
+        }
         return;
       }
 
@@ -573,6 +584,9 @@ export default function WhatsAppChatPremiumPage({
       }
 
       setMayusDraft(null);
+      if (hasForbiddenMayusDraftText(inputTextRef.current)) {
+        setInputText("");
+      }
 
       const autoPrepareKey = `${contactId}:${data.latest_inbound_at || "no-inbound"}`;
       if (!options.prepareIfMissing || autoPreparedDraftContactsRef.current.has(autoPrepareKey)) return;
