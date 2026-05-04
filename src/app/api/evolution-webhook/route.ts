@@ -4,11 +4,6 @@ import crypto from "crypto";
 import { prepareWhatsAppSalesReplyForContact } from "@/lib/growth/whatsapp-sales-reply-runtime";
 import { handleWhatsAppInternalCommand } from "@/lib/mayus/whatsapp-command-runtime";
 import { listTenantIntegrationsResolved } from "@/lib/integrations/server";
-import {
-  buildUnsupportedMediaRecord,
-  processEvolutionMedia,
-  type WhatsAppStoredMedia,
-} from "@/lib/whatsapp/media";
 
 const supabase = createClient(
   process.env.NEXT_PUBLIC_SUPABASE_URL!,
@@ -132,6 +127,16 @@ export async function POST(req: Request) {
         messageType = "unsupported";
       }
 
+      const mediaPayload = messagePayload?.imageMessage
+        || messagePayload?.audioMessage
+        || messagePayload?.documentMessage
+        || messagePayload?.videoMessage
+        || messagePayload?.stickerMessage
+        || null;
+      const mediaFilename = String(mediaPayload?.fileName || mediaPayload?.filename || "").trim() || null;
+      const mediaMimeType = String(mediaPayload?.mimetype || mediaPayload?.mimeType || "").trim() || null;
+      const shouldQueueMedia = ["image", "audio", "video", "document", "sticker"].includes(messageType);
+
       const instanceName = payload.instance;
 
       // 1. Descobrir qual o tenant_id dono desta instância
@@ -216,50 +221,6 @@ export async function POST(req: Request) {
           }).eq("id", contactId);
       }
 
-      let mediaRecord: WhatsAppStoredMedia | null = null;
-      if (["image", "audio", "video", "document", "sticker"].includes(messageType)) {
-        try {
-          const resolved = await listTenantIntegrationsResolved(tenantId, ["evolution"]);
-          const provider = resolved.find((item) => item.instance_name?.split("|")[1] === instanceName)
-            || resolved.find((item) => item.provider === "evolution");
-          const [baseUrlRaw] = String(provider?.instance_name || "").split("|");
-          const baseUrl = String(baseUrlRaw || "").replace(/\/$/, "");
-          const apiKey = String(provider?.api_key || "").trim();
-
-          if (!baseUrl || !apiKey || !instanceName) throw new Error("Integracao Evolution incompleta para baixar midia.");
-
-          mediaRecord = await processEvolutionMedia({
-            supabase,
-            tenantId,
-            contactId,
-            baseUrl,
-            instanceName,
-            apiKey,
-            messageEnvelope,
-            messagePayload,
-            kind: messageType,
-            caption: content,
-          });
-
-          if (!mediaRecord) {
-            mediaRecord = buildUnsupportedMediaRecord({
-              provider: "evolution",
-              kind: messageType,
-              providerMediaId: messageId,
-              reason: "Evolution nao enviou bytes/base64 da midia e o download automatico falhou.",
-            });
-          }
-        } catch (mediaError) {
-          console.error("[Evolution Webhook] Erro ao processar midia:", mediaError);
-          mediaRecord = buildUnsupportedMediaRecord({
-            provider: "evolution",
-            kind: messageType,
-            providerMediaId: messageId,
-            reason: mediaError instanceof Error ? mediaError.message : "Falha ao processar midia Evolution.",
-          });
-        }
-      }
-
       // 3. Salvar a Mensagem
       const { error: msgErr } = await supabase
         .from("whatsapp_messages")
@@ -267,20 +228,27 @@ export async function POST(req: Request) {
            tenant_id: tenantId,
             contact_id: contactId,
             direction: fromMe ? 'outbound' : 'inbound',
-            message_type: messageType,
-            content: content,
-            media_url: mediaRecord?.media_url || null,
-            media_mime_type: mediaRecord?.media_mime_type || null,
-            media_filename: mediaRecord?.media_filename || null,
-            media_size_bytes: mediaRecord?.media_size_bytes || null,
-            media_storage_path: mediaRecord?.media_storage_path || null,
-            media_provider: mediaRecord?.media_provider || (["image", "audio", "video", "document", "sticker"].includes(messageType) ? "evolution" : null),
-            media_processing_status: mediaRecord?.media_processing_status || (["image", "audio", "video", "document", "sticker"].includes(messageType) ? "unsupported" : "none"),
-            media_text: mediaRecord?.media_text || null,
-            media_summary: mediaRecord?.media_summary || null,
-            metadata: mediaRecord?.metadata || {},
-            message_id_from_evolution: messageId,
-            status: 'delivered'
+             message_type: messageType,
+             content: content,
+             media_url: null,
+             media_mime_type: mediaMimeType,
+             media_filename: mediaFilename,
+             media_size_bytes: null,
+             media_storage_path: null,
+             media_provider: shouldQueueMedia ? "evolution" : null,
+             media_processing_status: shouldQueueMedia ? "pending" : "none",
+             media_text: null,
+             media_summary: null,
+             metadata: shouldQueueMedia ? {
+               provider_media_id: messageId || null,
+               media_kind: messageType,
+               webhook_trigger: "evolution_webhook",
+               evolution_instance: instanceName,
+               evolution_message_envelope: messageEnvelope,
+               evolution_message_payload: messagePayload,
+             } : {},
+             message_id_from_evolution: messageId,
+             status: 'delivered'
         }]);
 
       if (msgErr) {
@@ -291,6 +259,18 @@ export async function POST(req: Request) {
       console.log(`[Webhook] Mensagem de ${remoteJid} salva com sucesso no tenant ${tenantId}`);
 
       if (!fromMe) {
+        if (shouldQueueMedia) {
+          await supabase.from("notifications").insert([{
+            tenant_id: tenantId,
+            user_id: null,
+            title: `WhatsApp: ${pushName}`,
+            message: `${content.substring(0, 100)} A midia sera processada em segundo plano.`.slice(0, 180),
+            type: "info",
+            link_url: "/dashboard/conversas/whatsapp",
+          }]);
+          return NextResponse.json({ success: true, pending_media: true });
+        }
+
         try {
           const internalCommand = await handleWhatsAppInternalCommand({
             supabase,

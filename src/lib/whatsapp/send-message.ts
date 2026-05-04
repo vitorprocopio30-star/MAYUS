@@ -188,8 +188,9 @@ export async function sendWhatsAppMessage(input: SendWhatsAppMessageInput): Prom
 
   const metadata = {
     ...(input.metadata || {}),
-    ...(input.audioUrl ? { audio_url: input.audioUrl } : {}),
-    ...(input.mediaUrl ? { media_url: input.mediaUrl, media_type: getOutgoingMessageType(input) } : {}),
+    ...(input.audioUrl && !input.mediaStoragePath ? { audio_url: input.audioUrl } : {}),
+    ...(input.mediaUrl && !input.mediaStoragePath ? { media_url: input.mediaUrl, media_type: getOutgoingMessageType(input) } : {}),
+    ...(input.mediaStoragePath ? { media_storage_path: input.mediaStoragePath, media_type: getOutgoingMessageType(input) } : {}),
   };
   const messageType = getOutgoingMessageType(input);
   const { error: dbError } = await input.supabase.from("whatsapp_messages").insert([{
@@ -202,7 +203,7 @@ export async function sendWhatsAppMessage(input: SendWhatsAppMessageInput): Prom
       : input.mediaUrl
         ? input.text || `[${messageType}]`
         : input.text,
-    media_url: input.audioUrl || input.mediaUrl || null,
+    media_url: input.mediaStoragePath ? null : input.audioUrl || input.mediaUrl || null,
     media_mime_type: input.mediaMimeType || null,
     media_filename: input.mediaFilename || null,
     media_storage_path: input.mediaStoragePath || null,

@@ -25,10 +25,12 @@ function buildSupabaseMock() {
   const messageInserts: unknown[] = [];
   const contactInserts: unknown[] = [];
   const messageUpdates: unknown[] = [];
+  const notificationInserts: unknown[] = [];
   return {
     messageInserts,
     contactInserts,
     messageUpdates,
+    notificationInserts,
     from: vi.fn((table: string) => {
       if (table === "tenant_integrations") {
         return {
@@ -77,6 +79,15 @@ function buildSupabaseMock() {
           }),
           insert: vi.fn(async (rows: unknown[]) => {
             messageInserts.push(...rows);
+            return { error: null };
+          }),
+        };
+      }
+
+      if (table === "notifications") {
+        return {
+          insert: vi.fn(async (rows: unknown[]) => {
+            notificationInserts.push(...rows);
             return { error: null };
           }),
         };
@@ -186,5 +197,58 @@ describe("/api/evolution-webhook", () => {
     expect(body).toEqual({ success: true, updated: true });
     expect(supabaseMock.messageUpdates).toEqual([{ status: "read" }]);
     expect(supabaseMock.messageInserts).toEqual([]);
+  });
+
+  it("salva midia Evolution como pending sem processar inline", async () => {
+    handleWhatsAppInternalCommandMock.mockResolvedValue({ handled: false });
+    const { POST } = await import("./route");
+    const request = new Request("http://localhost/api/evolution-webhook", {
+      method: "POST",
+      body: JSON.stringify({
+        event: "MESSAGES_UPSERT",
+        instance: "mayus-dutra",
+        data: {
+          key: {
+            remoteJid: "5521999990000@s.whatsapp.net",
+            fromMe: false,
+            id: "msg-media-1",
+          },
+          pushName: "Cliente Teste",
+          message: {
+            imageMessage: {
+              caption: "Veja o comprovante",
+              mimetype: "image/jpeg",
+              fileName: "comprovante.jpg",
+              mediaKey: "media-key",
+            },
+          },
+        },
+      }),
+    });
+
+    const response = await POST(request);
+    const body = await response.json();
+
+    expect(response.status).toBe(200);
+    expect(body).toEqual({ success: true, pending_media: true });
+    expect(supabaseMock.messageInserts).toEqual([
+      expect.objectContaining({
+        tenant_id: "tenant-1",
+        contact_id: "contact-1",
+        direction: "inbound",
+        message_type: "image",
+        content: "Veja o comprovante",
+        media_url: null,
+        media_provider: "evolution",
+        media_processing_status: "pending",
+        metadata: expect.objectContaining({
+          provider_media_id: "msg-media-1",
+          media_kind: "image",
+          evolution_instance: "mayus-dutra",
+        }),
+      }),
+    ]);
+    expect(prepareWhatsAppSalesReplyForContactMock).not.toHaveBeenCalled();
+    expect(global.fetch).toHaveBeenCalledTimes(1);
   });
 });

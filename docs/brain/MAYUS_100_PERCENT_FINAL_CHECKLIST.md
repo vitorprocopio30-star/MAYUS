@@ -25,7 +25,7 @@ Legenda:
 | MAYUS geral | 69% | Produto forte, mas ainda nao e o socio virtual completo. |
 | Produto juridico/base SaaS | 78% | Dashboard, CRM, documentos, juridico, agenda, marketing e permissoes ja existem. |
 | Maturidade agentica | 52% | Ha runtime, artifacts, skills e auditoria, mas ainda falta um operador central continuo. |
-| WhatsApp vendas/suporte | 60% | Ganhou camada multimodal, etiquetas e estado agentico parcial, mas precisa hardening de seguranca, privacidade e smokes reais. |
+| WhatsApp vendas/suporte | 65% | Ganhou multimodal privado, etiquetas, estado agentico parcial e processamento assíncrono; ainda precisa smokes reais e conversas longas. |
 | Growth/vendas | 70% | Intake, qualificacao, follow-up, reativacao e sales profile existem; falta fechar execucao real ponta a ponta. |
 | Juridico/Lex | 82% | Base juridica e documental esta forte; faltam contradicoes, cronologia, riscos e mais automacao segura. |
 | Financeiro | 48% | Asaas/fluxo planejado existem, mas cobranca operacional completa ainda precisa smoke e UX. |
@@ -49,7 +49,7 @@ Legenda:
 
 - [ ] MAYUS Operating Partner ainda nao domina todos os modulos como motor unico.
 - [ ] WhatsApp ainda precisa se comportar como vendedor/suporte real em conversas longas.
-- [ ] WhatsApp multimodal ainda precisa hardening: rota de envio autenticada, bucket privado/signed URLs, processamento async e idempotencia de webhooks.
+- [ ] WhatsApp multimodal ainda precisa smoke real Meta/Evolution, observabilidade e validacao em conversa longa.
 - [ ] Acoes reais supervisionadas ainda nao cobrem todo o ciclo CRM -> contrato -> cobranca -> caso.
 - [ ] Auto-configuracao ainda nao cobre juridico, documentos, equipe, permissoes, agenda, financeiro e playbooks.
 - [ ] Memoria e aprendizado ainda nao governam a proxima decisao em todos os fluxos.
@@ -115,12 +115,12 @@ O MAYUS pode agir, mas acoes juridicas, financeiras ou externas sensiveis exigem
 - [ ] Separar lead novo, cliente atual, suporte, status de processo, cobranca e pergunta fora de escopo.
 - [~] Autoenviar somente quando confianca, risco e politica permitirem; ainda falta smoke real e revisao de politica por tenant.
 - [~] Registrar por resposta: fonte, modelo, fase, confianca, risco, proxima acao e resultado esperado.
-- [ ] Proteger `POST /api/whatsapp/send` com autenticacao, sessao e validacao de tenant/contact.
-- [ ] Trocar `whatsapp-media` de publico para privado com signed URLs ou rota proxy autenticada.
-- [ ] Processar download, OCR/visao, transcricao e extracao documental fora do webhook para evitar timeout/reenvio.
-- [ ] Se o download de midia Meta falhar, salvar `media_url = null` e manter o ID apenas em metadata.
-- [ ] Criar idempotencia por `tenant_id` + `message_id_from_evolution` antes de inserir mensagem.
-- [ ] Ignorar ou tratar `messages.update` da Evolution como atualizacao de status, nao como nova mensagem.
+- [x] Proteger `POST /api/whatsapp/send` com autenticacao, sessao e validacao de tenant/contact.
+- [x] Trocar `whatsapp-media` de publico para privado com signed URLs ou rota proxy autenticada.
+- [x] Processar download, OCR/visao, transcricao e extracao documental fora do webhook para evitar timeout/reenvio.
+- [x] Se o download de midia Meta falhar, salvar `media_url = null` e manter o ID apenas em metadata.
+- [x] Criar idempotencia por `tenant_id` + `message_id_from_evolution` antes de inserir mensagem.
+- [x] Ignorar ou tratar `messages.update` da Evolution como atualizacao de status, nao como nova mensagem.
 - [ ] Validar com conversas reais de venda, suporte, objecao, fechamento e cliente irritado/confuso.
 - [ ] Smoke real com texto, imagem, audio, PDF/DOCX e envio manual em Meta Cloud e Evolution.
 
@@ -290,12 +290,12 @@ Foco: seguranca, privacidade e confiabilidade da entrega multimodal.
 - [x] Proteger `POST /api/whatsapp/send` com usuario autenticado, tenant da sessao e validacao de `contact_id`.
 - [x] Remover dependencia de `tenant_id` vindo do body em rotas server-side sensiveis.
 - [x] Tornar `whatsapp-media` privado; servir preview com signed URL curta ou rota proxy autenticada.
-- [ ] Salvar inbound rapidamente com `media_processing_status = 'pending'` e processar midia fora do webhook.
-- [ ] Criar job/rota interna para baixar midia, extrair texto, transcrever audio, descrever imagem e atualizar a mensagem.
+- [x] Salvar inbound rapidamente com `media_processing_status = 'pending'` e processar midia fora do webhook.
+- [x] Criar job/rota interna para baixar midia, extrair texto, transcrever audio, descrever imagem e atualizar a mensagem.
 - [x] Garantir que falha de download nao salve ID de provider como `media_url`.
 - [x] Criar idempotencia por `tenant_id` + `message_id_from_evolution` e ignorar duplicatas.
 - [x] Tratar `messages.update` da Evolution como atualizacao, nao como mensagem nova.
-- [~] Adicionar testes para rota autenticada, bucket privado/signed URL, duplicidade de webhook e falha de download de midia.
+- [x] Adicionar testes para rota autenticada, bucket privado/signed URL, duplicidade de webhook, fila pending e processor de midia.
 - [ ] Rodar smoke real controlado com Meta Cloud e Evolution antes de marcar qualquer item multimodal como `[x]`.
 
 ### Fase 1 - Subir de 68% para 75%
@@ -389,18 +389,23 @@ Entregas registradas:
 - [x] `/api/whatsapp/send` passou a autenticar sessao, buscar tenant em `profiles`, validar `contact_id` no tenant e usar telefone salvo do contato, ignorando `tenant_id/phone_number` do body.
 - [x] Bucket `whatsapp-media` passou para privado na migration e fluxos WhatsApp usam signed URLs temporarias em vez de URL publica permanente.
 - [x] Meta webhook deixou de salvar ID de provider em `media_url`; Evolution `messages.update` atualiza status e `messages.upsert` ignora duplicata por message id.
+- [x] Webhooks Meta/Evolution passaram a salvar midia recebida como `media_processing_status = 'pending'`, sem download/transcricao/visao inline.
+- [x] `src/lib/whatsapp/media-processor.ts` e `/api/whatsapp/media/process` processam a fila com `x-cron-secret`, baixam/analisam midia, atualizam a mensagem e so entao preparam resposta MAYUS para inbound.
+- [x] `vercel.json` agenda `/api/whatsapp/media/process` a cada 5 minutos.
+- [x] `media_url` deixou de persistir signed URL temporaria quando existe `media_storage_path`; a UI gera signed URL sob demanda para preview.
 
 Validacoes executadas:
 
 - [x] `npx.cmd tsc --noEmit --pretty false`
 - [x] `npx.cmd vitest run src/lib/whatsapp/send-message.test.ts src/lib/growth/whatsapp-sales-reply.test.ts src/lib/growth/sales-llm-reply.test.ts src/lib/growth/whatsapp-sales-reply-runtime.test.ts src/lib/agent/mayus-operating-partner.test.ts src/lib/agent/mayus-operating-partner-actions.test.ts src/app/api/whatsapp/send/route.test.ts src/app/api/evolution-webhook/route.test.ts` com 8 arquivos e 27 testes.
 - [x] `npx.cmd vitest run src/app/api/whatsapp/send/route.test.ts src/app/api/evolution-webhook/route.test.ts src/lib/whatsapp/send-message.test.ts` com 3 arquivos e 8 testes apos hardening de seguranca/midia.
+- [x] `npx.cmd vitest run src/lib/whatsapp/send-message.test.ts src/lib/whatsapp/media-processor.test.ts src/lib/growth/whatsapp-sales-reply.test.ts src/lib/growth/sales-llm-reply.test.ts src/lib/growth/whatsapp-sales-reply-runtime.test.ts src/lib/agent/mayus-operating-partner.test.ts src/lib/agent/mayus-operating-partner-actions.test.ts src/app/api/whatsapp/send/route.test.ts src/app/api/evolution-webhook/route.test.ts` com 9 arquivos e 31 testes apos processamento assincrono.
 
 Bloqueios antes de marcar como `[x]`:
 
 - [x] Autenticacao e autorizacao de `/api/whatsapp/send`.
 - [x] Bucket privado/signed URLs para midia juridica.
-- [ ] Processamento de midia fora dos webhooks.
+- [x] Processamento de midia fora dos webhooks.
 - [x] Idempotencia de mensagem inbound.
 - [ ] Smoke real Meta Cloud/Evolution com texto, imagem, audio e documento.
 

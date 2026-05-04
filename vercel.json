@@ -3,6 +3,10 @@
     {
       "path": "/api/agents/update-processos",
       "schedule": "0 2 * * *"
+    },
+    {
+      "path": "/api/whatsapp/media/process",
+      "schedule": "*/5 * * * *"
     }
   ]
 }

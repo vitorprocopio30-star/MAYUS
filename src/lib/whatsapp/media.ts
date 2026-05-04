@@ -292,7 +292,7 @@ async function uploadAndAnalyzeMedia(params: {
   }
 
   return {
-    media_url: signedUrl,
+    media_url: null,
     media_storage_path: storagePath,
     media_mime_type: params.downloaded.mimeType,
     media_filename: filename,

@@ -2,12 +2,6 @@ import { NextRequest, NextResponse } from "next/server";
 import { createClient } from "@supabase/supabase-js";
 import { prepareWhatsAppSalesReplyForContact } from "@/lib/growth/whatsapp-sales-reply-runtime";
 import { handleWhatsAppInternalCommand } from "@/lib/mayus/whatsapp-command-runtime";
-import { listTenantIntegrationsResolved } from "@/lib/integrations/server";
-import {
-  buildUnsupportedMediaRecord,
-  processMetaCloudMedia,
-  type WhatsAppStoredMedia,
-} from "@/lib/whatsapp/media";
 
 // ==============================================================================
 // 🚀 MAYUS - WEBHOOK OFICIAL META CLOUD API (WhatsApp Business Platform)
@@ -141,7 +135,6 @@ export async function POST(req: NextRequest) {
 
         // Extrair conteúdo baseado no tipo
         let content = "";
-        let mediaUrl = "";
         let providerMediaId = "";
         let mediaFilename = "";
 
@@ -266,38 +259,7 @@ export async function POST(req: NextRequest) {
             .eq("id", contactId);
         }
 
-        let mediaRecord: WhatsAppStoredMedia | null = null;
-        if (providerMediaId && ["image", "audio", "video", "document"].includes(messageType)) {
-          try {
-            const resolved = await listTenantIntegrationsResolved(tenantId, ["meta_cloud"]);
-            const provider = resolved.find((integration) => integration.instance_name?.split("|")[0] === phoneNumberId)
-              || resolved.find((integration) => integration.provider === "meta_cloud");
-            const token = provider?.api_key || null;
-
-            if (!token) throw new Error("Token Meta Cloud indisponivel para baixar midia.");
-
-            mediaRecord = await processMetaCloudMedia({
-              supabase,
-              tenantId,
-              contactId,
-              mediaId: providerMediaId,
-              token,
-              kind: messageType,
-              caption: content,
-              filename: mediaFilename || null,
-            });
-            mediaUrl = mediaRecord.media_url || mediaUrl;
-          } catch (mediaError) {
-            console.error("[Meta Webhook] Erro ao processar midia:", mediaError);
-            mediaRecord = buildUnsupportedMediaRecord({
-              provider: "meta_cloud",
-              kind: messageType,
-              providerMediaId,
-              filename: mediaFilename || null,
-              reason: mediaError instanceof Error ? mediaError.message : "Falha ao processar midia Meta.",
-            });
-          }
-        }
+        const shouldQueueMedia = Boolean(providerMediaId && ["image", "audio", "video", "document"].includes(messageType));
 
         // 4. Salvar Mensagem no Banco
         const { error: msgErr } = await supabase
@@ -308,16 +270,22 @@ export async function POST(req: NextRequest) {
             direction: "inbound",
             message_type: messageType,
             content: content,
-            media_url: mediaUrl || null,
-            media_mime_type: mediaRecord?.media_mime_type || null,
-            media_filename: mediaRecord?.media_filename || mediaFilename || null,
-            media_size_bytes: mediaRecord?.media_size_bytes || null,
-            media_storage_path: mediaRecord?.media_storage_path || null,
-            media_provider: mediaRecord?.media_provider || (providerMediaId ? "meta_cloud" : null),
-            media_processing_status: mediaRecord?.media_processing_status || (providerMediaId ? "unsupported" : "none"),
-            media_text: mediaRecord?.media_text || null,
-            media_summary: mediaRecord?.media_summary || null,
-            metadata: mediaRecord?.metadata || (providerMediaId ? { provider_media_id: providerMediaId, media_kind: messageType } : {}),
+            media_url: null,
+            media_mime_type: null,
+            media_filename: mediaFilename || null,
+            media_size_bytes: null,
+            media_storage_path: null,
+            media_provider: shouldQueueMedia ? "meta_cloud" : null,
+            media_processing_status: shouldQueueMedia ? "pending" : "none",
+            media_text: null,
+            media_summary: null,
+            metadata: shouldQueueMedia ? {
+              provider_media_id: providerMediaId,
+              media_kind: messageType,
+              meta_phone_number_id: phoneNumberId,
+              original_filename: mediaFilename || null,
+              webhook_trigger: "meta_webhook",
+            } : {},
             message_id_from_evolution: messageIdFromMeta, // Reutilizamos o campo para o ID da Meta
             status: "delivered",
           }]);
@@ -328,6 +296,18 @@ export async function POST(req: NextRequest) {
         }
 
         console.log(`[Meta Webhook] ✅ Mensagem de ${senderPhone} (${pushName}) salva no tenant ${tenantId}`);
+
+        if (shouldQueueMedia) {
+          await supabase.from("notifications").insert([{
+            tenant_id: tenantId,
+            user_id: null,
+            title: `WhatsApp: ${pushName}`,
+            message: `${content.substring(0, 100)} A midia sera processada em segundo plano.`.slice(0, 180),
+            type: "info",
+            link_url: "/dashboard/conversas/whatsapp",
+          }]);
+          continue;
+        }
 
         try {
           const internalCommand = await handleWhatsAppInternalCommand({
