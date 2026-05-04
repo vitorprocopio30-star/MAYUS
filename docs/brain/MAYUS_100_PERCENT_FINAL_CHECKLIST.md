@@ -391,7 +391,7 @@ Entregas registradas:
 - [x] Meta webhook deixou de salvar ID de provider em `media_url`; Evolution `messages.update` atualiza status e `messages.upsert` ignora duplicata por message id.
 - [x] Webhooks Meta/Evolution passaram a salvar midia recebida como `media_processing_status = 'pending'`, sem download/transcricao/visao inline.
 - [x] `src/lib/whatsapp/media-processor.ts` e `/api/whatsapp/media/process` processam a fila com `x-cron-secret`, baixam/analisam midia, atualizam a mensagem e so entao preparam resposta MAYUS para inbound.
-- [x] `vercel.json` agenda `/api/whatsapp/media/process` a cada 5 minutos.
+- [x] `vercel.json` agenda `/api/whatsapp/media/process` diariamente por compatibilidade com limite Hobby do Vercel; smoke e reprocessamento podem chamar a rota manualmente com `CRON_SECRET`.
 - [x] `media_url` deixou de persistir signed URL temporaria quando existe `media_storage_path`; a UI gera signed URL sob demanda para preview.
 
 Validacoes executadas:
@@ -408,6 +408,11 @@ Bloqueios antes de marcar como `[x]`:
 - [x] Processamento de midia fora dos webhooks.
 - [x] Idempotencia de mensagem inbound.
 - [ ] Smoke real Meta Cloud/Evolution com texto, imagem, audio e documento.
+
+Observacoes operacionais:
+
+- [x] Deploy do commit `571351a` falhou no Vercel porque cron `*/5 * * * *` excedia limite Hobby; ajustado para diario em commit posterior.
+- [ ] Se o projeto migrar para Vercel Pro, considerar voltar `/api/whatsapp/media/process` para frequencia de 5 minutos ou substituir por fila externa.
 
 ---
 
