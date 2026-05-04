@@ -344,6 +344,8 @@ function getArtifactTypeLabel(artifactType: string) {
       return "Lead Comercial";
     case "sales_profile_setup":
       return "Auto-configuracao Comercial";
+    case "sales_llm_testbench_report":
+      return "Bancada LLM de Vendas";
     case "sales_consultation_plan":
       return "Consultoria Comercial";
     case "lead_qualification_plan":
@@ -554,6 +556,18 @@ function getArtifactHighlights(artifact: BrainArtifactRecord) {
       : null,
     artifact.artifact_type === "sales_profile_setup" && typeof metadata?.persisted === "boolean"
       ? metadata.persisted ? "gravado" : "nao gravado"
+      : null,
+    artifact.artifact_type === "sales_llm_testbench_report" && typeof metadata?.recommended_default_model === "string" && metadata.recommended_default_model.trim()
+      ? `melhor ${metadata.recommended_default_model.trim()}`
+      : null,
+    artifact.artifact_type === "sales_llm_testbench_report" && typeof metadata?.best_average_score === "number"
+      ? `score ${metadata.best_average_score}/100`
+      : null,
+    artifact.artifact_type === "sales_llm_testbench_report" && typeof metadata?.model_count === "number"
+      ? `${metadata.model_count} modelos`
+      : null,
+    artifact.artifact_type === "sales_llm_testbench_report" && typeof metadata?.fixture_count === "number"
+      ? `${metadata.fixture_count} cenarios`
       : null,
     artifact.artifact_type === "sales_consultation_plan" && typeof metadata?.consultation_phase === "string" && metadata.consultation_phase.trim()
       ? `fase ${metadata.consultation_phase.trim().replaceAll("_", " ")}`

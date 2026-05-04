@@ -141,4 +141,35 @@ describe("llm-router", () => {
       { provider: "openai", source: "env", model: "gpt-5.4-nano", isPreferred: false },
     ]);
   });
+
+  it("usa DeepSeek V4 Pro como padrao de SDR WhatsApp no OpenRouter", async () => {
+    listTenantIntegrationsResolvedMock.mockResolvedValueOnce([
+      { provider: "openrouter", api_key: "openrouter-key", status: "connected" },
+    ]);
+
+    const client = await getLLMClient({} as any, "tenant-1", "sdr_whatsapp");
+
+    expect(client.provider).toBe("openrouter");
+    expect(client.model).toBe("deepseek/deepseek-v4-pro");
+  });
+
+  it("permite override de modelo somente para SDR WhatsApp", async () => {
+    listTenantIntegrationsResolvedMock
+      .mockResolvedValueOnce([
+        { provider: "openrouter", api_key: "openrouter-key", status: "connected" },
+      ])
+      .mockResolvedValueOnce([
+        { provider: "openrouter", api_key: "openrouter-key", status: "connected" },
+      ]);
+
+    const sdrClient = await getLLMClient({} as any, "tenant-1", "sdr_whatsapp", {
+      modelOverride: "minimax/minimax-m2.7",
+    });
+    const chatClient = await getLLMClient({} as any, "tenant-1", "chat_geral", {
+      modelOverride: "minimax/minimax-m2.7",
+    });
+
+    expect(sdrClient.model).toBe("minimax/minimax-m2.7");
+    expect(chatClient.model).toBe("qwen/qwen3.6-plus");
+  });
 });

@@ -71,6 +71,7 @@ export function isOpenAICompatibleProvider(provider: LLMProvider): boolean {
 interface GetLLMClientOptions {
   preferredProvider?: string | null
   allowNonOpenAICompatible?: boolean
+  modelOverride?: string | null
 }
 
 // ─── Tabela de modelos por provedor e caso de uso ────────────────────────────
@@ -83,7 +84,7 @@ const MODELS: Record<LLMProvider, Record<LLMUseCase, string>> = {
     organizar_processo:       'qwen/qwen3.6-plus',
     gerar_peca:               'anthropic/claude-sonnet-4.6',
     task_manager:             'qwen/qwen3.6-plus',
-    sdr_whatsapp:             'qwen/qwen3.6-plus',
+    sdr_whatsapp:             'deepseek/deepseek-v4-pro',
   },
   anthropic: {
     chat_geral:               'claude-haiku-4-5-20251001',
@@ -124,6 +125,21 @@ const MODELS: Record<LLMProvider, Record<LLMUseCase, string>> = {
 }
 
 export function getDefaultModelForUseCase(provider: LLMProvider, useCase: LLMUseCase): string {
+  return MODELS[provider][useCase]
+}
+
+function resolveModelForUseCase(provider: LLMProvider, useCase: LLMUseCase, optionsOverride?: string | null, integrationOverride?: string | null) {
+  const tenantModel = String(integrationOverride || '').trim()
+  const requestedModel = String(optionsOverride || '').trim()
+
+  if (useCase === 'sdr_whatsapp' && provider === 'openrouter' && requestedModel) {
+    return requestedModel
+  }
+
+  if (tenantModel) {
+    return tenantModel
+  }
+
   return MODELS[provider][useCase]
 }
 
@@ -256,7 +272,7 @@ export async function getLLMClient(
 
   return {
     provider:     selectedProvider,
-    model:        selectedModelOverride || MODELS[selectedProvider][useCase],
+    model:        resolveModelForUseCase(selectedProvider, useCase, options.modelOverride, selectedModelOverride),
     apiKey:       selectedKey,
     endpoint:     ENDPOINTS[selectedProvider],
     extraHeaders,

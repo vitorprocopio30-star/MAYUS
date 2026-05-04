@@ -129,6 +129,102 @@ describe("tenant doctor", () => {
     const commercial = report.checks.find((item) => item.id === "commercial:sales_profile");
     expect(commercial?.status).toBe("warning");
     expect(commercial?.nextAction).toContain("cliente ideal");
+    const testbench = report.checks.find((item) => item.id === "commercial:sales_llm_testbench");
+    expect(testbench?.status).toBe("warning");
+    expect(testbench?.nextAction).toContain("DeepSeek V4 Pro");
+    const operatingPartner = report.checks.find((item) => item.id === "agent:mayus_operating_partner");
+    expect(operatingPartner?.status).toBe("warning");
+    expect(operatingPartner?.nextAction).toContain("socio virtual");
+  });
+
+  it("auto-configures the sales LLM testbench with DeepSeek V4 Pro", async () => {
+    const upserts: any[] = [];
+    const supabase = {
+      from(table: string) {
+        const builder: any = {
+          select() { return this; },
+          eq() { return this; },
+          order() { return this; },
+          maybeSingle() {
+            if (table === "tenants") {
+              return Promise.resolve({ data: { id: "tenant-1", name: "Dutra", status: "active" }, error: null });
+            }
+            if (table === "tenant_settings") {
+              return Promise.resolve({ data: { ai_features: {} }, error: null });
+            }
+            return Promise.resolve({ data: null, error: null });
+          },
+          then(resolve: (value: any) => void) {
+            const rows: Record<string, any[]> = {
+              crm_pipelines: [{ id: "pipeline-1", name: "Comercial" }],
+              crm_stages: [{ id: "stage-1", name: "Novo Lead" }],
+              agent_skills: [{ id: "skill-1", name: "sales_consultation", is_active: true }],
+            };
+            resolve({ data: rows[table] || null, error: null });
+          },
+          insert() { return this; },
+          upsert(payload: any) {
+            upserts.push(payload);
+            return Promise.resolve({ error: null });
+          },
+          single() { return Promise.resolve({ data: { id: `${table}-1` }, error: null }); },
+        };
+        return builder;
+      },
+    };
+
+    const connectedIntegrations = ["openrouter", "openai", "google_drive", "zapsign", "asaas", "escavador", "elevenlabs"]
+      .map((provider) => ({ provider, status: "connected", has_api_key: true }));
+
+    const report = await runTenantDoctor({
+      tenantId: "tenant-1",
+      autoFix: true,
+      dependencies: {
+        supabase,
+        ensureDefaultSkills: async () => null,
+        googleDriveConfigured: () => true,
+        listIntegrations: async () => connectedIntegrations,
+      },
+    });
+
+    const check = report.checks.find((item) => item.id === "commercial:sales_llm_testbench");
+    expect(check?.status).toBe("fixed");
+    expect(upserts).toEqual(expect.arrayContaining([expect.objectContaining({
+      tenant_id: "tenant-1",
+      ai_features: expect.objectContaining({
+        sales_llm_testbench: expect.objectContaining({
+          enabled: true,
+          default_model: "deepseek/deepseek-v4-pro",
+          candidate_models: expect.arrayContaining([
+            "minimax/minimax-m2.7",
+            "xiaomi/mimo-v2.5",
+            "qwen/qwen3.6-plus",
+            "moonshotai/kimi-k2.6",
+          ]),
+        }),
+      }),
+    })]));
+    const operatingPartner = report.checks.find((item) => item.id === "agent:mayus_operating_partner");
+    expect(operatingPartner?.status).toBe("fixed");
+    expect(upserts).toEqual(expect.arrayContaining([expect.objectContaining({
+      tenant_id: "tenant-1",
+      ai_features: expect.objectContaining({
+        mayus_operating_partner: expect.objectContaining({
+          enabled: true,
+          autonomy_mode: "high_supervised",
+          active_modules: expect.objectContaining({
+            sales: true,
+            client_support: true,
+            legal_triage: true,
+            crm: true,
+            tasks: true,
+          }),
+        }),
+        whatsapp_agent: expect.objectContaining({
+          autonomy_mode: "high_supervised",
+        }),
+      }),
+    })]));
   });
 
   it("registers a brain mission, artifact and learning event for POST autofix results", async () => {
@@ -141,6 +237,10 @@ describe("tenant doctor", () => {
             inserts.push({ table, payload });
             this.payload = payload;
             return this;
+          },
+          upsert(payload: any) {
+            inserts.push({ table, payload });
+            return Promise.resolve({ error: null });
           },
           select() { return this; },
           eq() { return this; },

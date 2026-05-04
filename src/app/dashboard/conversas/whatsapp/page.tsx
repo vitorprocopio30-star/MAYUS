@@ -666,7 +666,7 @@ export default function WhatsAppChatPremiumPage() {
 
 
   return (
-    <div className={`h-[calc(100vh-6rem)] w-full flex bg-[#020104] rounded-tl-3xl border-t border-l border-white/5 overflow-hidden ${montserrat.className} text-sm`}>
+    <div className={`h-[calc(100vh-5rem)] w-[calc(100%+2rem)] md:w-[calc(100%+4rem)] -m-4 md:-m-8 flex bg-[#020104] rounded-tl-3xl border-t border-l border-white/5 overflow-hidden ${montserrat.className} text-sm`}>
 
       {/* 1. BARRA LATERAL ESQUERDA (LISTAGEM) */}
       <div className="w-[360px] flex-shrink-0 border-r border-white/10 bg-white dark:bg-[#050505] flex flex-col h-full z-10 transition-all">
@@ -775,13 +775,13 @@ export default function WhatsAppChatPremiumPage() {
           <div className="flex-1 flex flex-col min-h-0">
             {(activeContact || messages.length > 0) ? (
               <>
-                <div className="h-20 border-b border-white/5 flex items-center justify-between px-8 bg-[#0a0a0a]/90 backdrop-blur-3xl z-10 flex-shrink-0">
-                    <div className="flex items-center gap-5">
-                       <div className="w-11 h-11 rounded-full border border-[#CCA761]/50 bg-gray-200 dark:bg-black flex items-center justify-center text-[#CCA761] font-black text-lg shadow-[0_0_20px_rgba(204,167,97,0.1)] overflow-hidden">
+                <div className="h-16 border-b border-white/5 flex items-center justify-between px-6 bg-[#0a0a0a]/90 backdrop-blur-3xl z-10 flex-shrink-0">
+                    <div className="flex items-center gap-4">
+                       <div className="w-10 h-10 rounded-full border border-[#CCA761]/50 bg-gray-200 dark:bg-black flex items-center justify-center text-[#CCA761] font-black text-base shadow-[0_0_20px_rgba(204,167,97,0.1)] overflow-hidden">
                           {activeContact?.profile_pic_url ? <img src={activeContact.profile_pic_url} className="w-full h-full object-cover" /> : (activeContact?.name?.substring(0, 2).toUpperCase() || "TS")}
                        </div>
                        <div>
-                         <h2 className={`text-2xl font-bold text-white tracking-wide flex items-center gap-3 ${cormorant.className} italic`}>
+                         <h2 className={`text-xl font-bold text-white tracking-wide flex items-center gap-3 ${cormorant.className} italic`}>
                             {activeContact?.name || activeContact?.phone_number || "Lead de Teste (Simulado)"}
                             <div className="flex gap-1.5 translate-y-[-1px]">
                                <span className={`text-[8px] px-2.5 py-1 rounded-full font-black uppercase tracking-widest border ${activeContact ? 'bg-[#25D366]/10 text-[#25D366] border-[#25D366]/20' : 'bg-[#CCA761]/10 text-[#CCA761] border-[#CCA761]/20'}`}>
@@ -797,13 +797,13 @@ export default function WhatsAppChatPremiumPage() {
                     </div>
 
                     <div className="flex items-center gap-3">
-                       <button onClick={() => setShowTransferModal(true)} className="flex items-center gap-2 bg-white/5 border border-white/10 text-gray-400 px-4 py-2 rounded-xl text-[10px] font-black uppercase tracking-widest hover:bg-[#CCA761]/10 hover:text-[#CCA761] transition-all">
+                       <button onClick={() => setShowTransferModal(true)} className="flex items-center gap-2 bg-white/5 border border-white/10 text-gray-400 px-3 py-2 rounded-xl text-[9px] font-black uppercase tracking-widest hover:bg-[#CCA761]/10 hover:text-[#CCA761] transition-all">
                           <Share2 size={14} /> Transferir Atendimento
                        </button>
                        <button
                          onClick={handleResolveConversation}
                          disabled={isConversationActionPending}
-                         className="flex items-center gap-2 bg-[#CCA761] text-black px-6 py-2.5 rounded-xl text-[10px] font-black uppercase tracking-widest shadow-[0_0_25px_rgba(204,167,97,0.3)] hover:scale-105 transition-all disabled:opacity-50 disabled:cursor-not-allowed"
+                         className="flex items-center gap-2 bg-[#CCA761] text-black px-4 py-2 rounded-xl text-[9px] font-black uppercase tracking-widest shadow-[0_0_25px_rgba(204,167,97,0.3)] hover:scale-105 transition-all disabled:opacity-50 disabled:cursor-not-allowed"
                        >
                           {isConversationActionPending ? <Loader2 size={16} className="animate-spin" /> : <CheckCircle2 size={16} />} Resolver
                        </button>
@@ -811,7 +811,7 @@ export default function WhatsAppChatPremiumPage() {
                 </div>
 
                 {(mayusDraft || isLoadingMayusDraft) && (
-                  <div className="border-b border-[#CCA761]/15 bg-[#CCA761]/5 px-8 py-3 z-10 flex-shrink-0">
+                  <div className="border-b border-[#CCA761]/15 bg-[#CCA761]/5 px-6 py-2 z-10 flex-shrink-0">
                     <div className="flex items-start justify-between gap-5">
                       <div className="min-w-0 flex-1">
                         <div className="flex items-center gap-2 mb-1">
@@ -825,7 +825,7 @@ export default function WhatsAppChatPremiumPage() {
                             </span>
                           )}
                         </div>
-                        <p className="text-[12px] leading-relaxed text-gray-300 line-clamp-2">
+                        <p className="text-[12px] leading-relaxed text-gray-300 line-clamp-1">
                           {isLoadingMayusDraft
                             ? "Carregando rascunho consultivo..."
                             : mayusDraft?.suggested_reply || mayusDraft?.internal_note || "Sem rascunho disponivel para este contato."}
@@ -860,14 +860,14 @@ export default function WhatsAppChatPremiumPage() {
                   </div>
                 )}
 
-                <div className="flex-1 overflow-y-auto p-10 flex flex-col gap-10 no-scrollbar min-h-0">
+                <div className="flex-1 overflow-y-auto px-6 py-5 flex flex-col gap-5 no-scrollbar min-h-0">
                     {messages.map((msg, idx) => {
                        const isInternalNote = msg.message_type === "internal_note" || msg.status === "internal_note";
                        const isMe = msg.direction === 'outbound' && !isInternalNote;
                        return (
                           <div key={msg.id || idx} className={`flex ${isInternalNote ? 'justify-center' : isMe ? 'justify-end' : 'justify-start'} animate-in fade-in slide-in-from-bottom-4`}>
-                             <div className={`flex flex-col gap-2 ${isInternalNote ? 'items-center max-w-[72%]' : `max-w-[65%] ${isMe ? 'items-end' : 'items-start'}`}`}>
-                                <div className={`p-5 rounded-2xl text-[14px] leading-relaxed shadow-2xl relative border ${
+                             <div className={`flex flex-col gap-1.5 ${isInternalNote ? 'items-center max-w-[72%]' : `max-w-[68%] ${isMe ? 'items-end' : 'items-start'}`}`}>
+                                <div className={`p-3.5 rounded-2xl text-[14px] leading-relaxed shadow-2xl relative border ${
                                    isInternalNote
                                    ? 'bg-orange-500/10 border-orange-500/30 text-orange-100 rounded-xl'
                                    : isMe
@@ -905,31 +905,31 @@ export default function WhatsAppChatPremiumPage() {
           </div>
 
           {/* COMPOSER SLIM - DESIGN ULTRA COMPACTO E FUNCIONAL */}
-          <div className="p-3 pb-4 bg-[#0a0a0a]/95 backdrop-blur-3xl border-t border-white/10 z-10 flex-shrink-0">
+          <div className="px-3 py-2 bg-[#0a0a0a]/95 backdrop-blur-3xl border-t border-white/10 z-10 flex-shrink-0">
               {/* Linha Fina de Controles Superiores */}
-              <div className="flex justify-between items-center mb-2 px-3">
-                  <div className="flex gap-4">
-                    <button onClick={() => { console.log('Mode: Responder'); setInputMode("responder"); }} className={`text-[9px] font-black uppercase tracking-[0.2em] relative transition-all flex items-center gap-1.5 ${inputMode === "responder" ? "text-[#CCA761]" : "text-gray-600 hover:text-gray-400"}`}>
+              <div className="flex justify-between items-center mb-1.5 px-1 gap-3 flex-wrap">
+                  <div className="flex gap-3 flex-wrap">
+                    <button onClick={() => { console.log('Mode: Responder'); setInputMode("responder"); }} className={`text-[8px] font-black uppercase tracking-[0.18em] relative transition-all flex items-center gap-1.5 ${inputMode === "responder" ? "text-[#CCA761]" : "text-gray-600 hover:text-gray-400"}`}>
                         <MessageCircle size={12} /> Atendimento
                         {inputMode === "responder" && <div className="absolute -bottom-1 left-0 w-full h-[1px] bg-[#CCA761]" />}
                     </button>
-                    <button onClick={handleMayusControl} disabled={(isGeneratingMayusReply || isConversationActionPending) || !activeContact} className="text-[9px] font-black uppercase tracking-[0.2em] relative transition-all flex items-center gap-1.5 text-[#CCA761] disabled:opacity-40 disabled:cursor-not-allowed">
+                    <button onClick={handleMayusControl} disabled={(isGeneratingMayusReply || isConversationActionPending) || !activeContact} className="text-[8px] font-black uppercase tracking-[0.18em] relative transition-all flex items-center gap-1.5 text-[#CCA761] disabled:opacity-40 disabled:cursor-not-allowed">
                         {(isGeneratingMayusReply || isConversationActionPending) ? <Loader2 size={12} className="animate-spin" /> : <Bot size={12} />}
                         {activeContact?.assigned_user_id === profile?.id ? "Voltar MAYUS" : "MAYUS"}
                     </button>
-                    <button onClick={() => { console.log('Mode: Nota'); setInputMode("nota"); }} className={`text-[9px] font-black uppercase tracking-[0.2em] relative transition-all flex items-center gap-1.5 ${inputMode === "nota" ? "text-orange-500" : "text-gray-600 hover:text-gray-400"}`}>
+                    <button onClick={() => { console.log('Mode: Nota'); setInputMode("nota"); }} className={`text-[8px] font-black uppercase tracking-[0.18em] relative transition-all flex items-center gap-1.5 ${inputMode === "nota" ? "text-orange-500" : "text-gray-600 hover:text-gray-400"}`}>
                         <Lock size={12} /> Nota Interna
                         {inputMode === "nota" && <div className="absolute -bottom-1 left-0 w-full h-[1px] bg-orange-500" />}
                     </button>
                   </div>
-                  <div className="flex items-center gap-3">
+                  <div className="flex items-center gap-2">
                     {showSignature && (
                       <input
                         type="text"
                         value={signatureName}
                         onChange={(e) => setSignatureName(e.target.value)}
                         placeholder={profile?.full_name || 'Seu nome'}
-                        className="bg-transparent border-b border-white/10 text-[10px] text-gray-300 px-1 py-0.5 w-24 outline-none focus:border-[#CCA761] placeholder:text-gray-700 font-bold transition-colors"
+                        className="bg-transparent border-b border-white/10 text-[9px] text-gray-300 px-1 py-0.5 w-20 outline-none focus:border-[#CCA761] placeholder:text-gray-700 font-bold transition-colors"
                       />
                     )}
                     <label className="flex items-center gap-2 cursor-pointer group">
@@ -937,7 +937,7 @@ export default function WhatsAppChatPremiumPage() {
                         <div className={`w-6 h-3 rounded-full transition-all relative ${showSignature ? "bg-[#CCA761]" : "bg-white/10"}`}>
                           <div className={`absolute top-0.5 w-2 h-2 rounded-full bg-white transition-all ${showSignature ? "right-0.5" : "left-0.5"}`} />
                         </div>
-                        <span className="text-[8px] font-black text-gray-500 uppercase tracking-widest group-hover:text-white transition-colors">Assinatura</span>
+                        <span className="text-[7px] font-black text-gray-500 uppercase tracking-widest group-hover:text-white transition-colors">Assinatura</span>
                     </label>
                   </div>
               </div>
@@ -945,7 +945,7 @@ export default function WhatsAppChatPremiumPage() {
               {/* Area principal de input - estilo barra */}
               <div className={`rounded-xl border transition-all flex flex-col shadow-lg relative ${inputMode === "nota" ? "bg-orange-500/[0.02] border-orange-500/30" : "bg-gray-200 dark:bg-black/40 border-white/10 focus-within:border-[#CCA761]/40"} ${isRecording ? 'border-red-500 ring-1 ring-red-500/20' : ''}`}>
                   {isRecording ? (
-                    <div className="w-full flex items-center justify-between px-4 py-3 bg-red-500/5 rounded-xl animate-pulse">
+                    <div className="w-full flex items-center justify-between px-3 py-2 bg-red-500/5 rounded-xl animate-pulse">
                         <div className="flex items-center gap-3">
                           <div className="flex gap-1 items-center">
                             {[1, 2, 3, 4].map(i => (
@@ -973,7 +973,7 @@ export default function WhatsAppChatPremiumPage() {
                        <div className="flex flex-col">
                          {/* Preview de Anexo */}
                          {selectedFile && (
-                           <div className="px-4 py-2 bg-gray-200 dark:bg-black/40 border-t border-white/10 flex items-center justify-between animate-in slide-in-from-bottom-2">
+                           <div className="px-3 py-1.5 bg-gray-200 dark:bg-black/40 border-b border-white/10 flex items-center justify-between animate-in slide-in-from-bottom-2">
                              <div className="flex items-center gap-2">
                                <FileText size={16} className="text-[#CCA761]" />
                                <span className="text-[11px] text-gray-300 font-medium">{selectedFile.name}</span>
@@ -983,7 +983,52 @@ export default function WhatsAppChatPremiumPage() {
                            </div>
                          )}
 
-                         <div className="relative flex items-end w-full px-2 py-2">
+                         <div className="relative flex items-end w-full px-2 py-1.5 gap-1.5">
+                           <input
+                             type="file"
+                             ref={fileInputRef}
+                             className="hidden"
+                             onChange={(e) => {
+                               const file = e.target.files?.[0];
+                               if (file) {
+                                 setSelectedFile(file);
+                                 toast.success(`Anexo pronto para envio!`);
+                               }
+                             }}
+                           />
+
+                           <div className="flex items-center gap-1 pb-1">
+                             <button onClick={() => fileInputRef.current?.click()} className="text-gray-500 hover:text-[#CCA761] transition-all p-1" title="Anexar Arquivo"><Paperclip size={17} /></button>
+                             <button
+                               onClick={(e) => { e.preventDefault(); startRecording(); }}
+                               className="text-gray-500 hover:text-red-500 transition-all p-1"
+                               title="Gravar Audio"
+                             >
+                               <Mic size={17} />
+                             </button>
+                             <div className="relative">
+                               <button onClick={() => setShowEmojiPicker(!showEmojiPicker)} className={`transition-all p-1 ${showEmojiPicker ? 'text-[#CCA761]' : 'text-gray-500 hover:text-[#CCA761]'}`} title="Emoji"><Smile size={17} /></button>
+
+                               {showEmojiPicker && (
+                                 <div className="absolute bottom-full left-0 mb-3 z-50 shadow-2xl animate-in fade-in slide-in-from-bottom-2 duration-300">
+                                   <div className="fixed inset-0" onClick={() => setShowEmojiPicker(false)} />
+                                   <div className="relative">
+                                     <EmojiPicker
+                                       theme={EmojiTheme.DARK}
+                                       onEmojiClick={(emojiData) => {
+                                         setInputText(prev => prev + emojiData.emoji);
+                                         setShowEmojiPicker(false);
+                                       }}
+                                       lazyLoadEmojis={true}
+                                       searchPlaceholder="Buscar emoji..."
+                                     />
+                                   </div>
+                                 </div>
+                               )}
+                             </div>
+                             <button onClick={() => toast.info("Modelos de resposta em breve")} className="text-gray-500 hover:text-[#CCA761] transition-all p-1" title="Modelos de Resposta"><LayoutPanelLeft size={17} /></button>
+                           </div>
+
                            {/* Input de Texto Slim */}
                            <textarea
                              value={inputText}
@@ -995,7 +1040,7 @@ export default function WhatsAppChatPremiumPage() {
                                }
                              }}
                              placeholder={inputMode === "nota" ? "Nota interna..." : "Mensagem..."}
-                             className="flex-1 bg-transparent border-none text-white text-[13px] px-3 py-2 outline-none resize-none min-h-[42px] max-h-[150px] placeholder:text-gray-700 transition-all font-medium scrollbar-none"
+                             className="flex-1 bg-transparent border-none text-white text-[13px] px-2 py-1.5 outline-none resize-none min-h-[34px] max-h-[96px] placeholder:text-gray-700 transition-all font-medium scrollbar-none"
                            />
 
                            {/* Preview da Assinatura Minimalista */}
@@ -1009,7 +1054,7 @@ export default function WhatsAppChatPremiumPage() {
                            <button
                              onClick={(e) => { e.preventDefault(); handleSendMessage(); }}
                              disabled={isSending || (inputMode === "nota" ? !inputText.trim() : (!inputText.trim() && !isRecording && !selectedFile))}
-                             className={`ml-2 mb-1 shrink-0 h-9 px-4 rounded-lg font-black uppercase text-[9px] tracking-wider transition-all flex items-center gap-2 ${
+                             className={`mb-0.5 shrink-0 h-8 px-3 rounded-lg font-black uppercase text-[8px] tracking-wider transition-all flex items-center gap-1.5 ${
                                isSending ? 'bg-white/10 text-gray-400' : 'bg-[#CCA761] text-black hover:bg-white active:scale-95 shadow-lg shadow-[#CCA761]/10'
                              }`}
                            >
@@ -1023,58 +1068,6 @@ export default function WhatsAppChatPremiumPage() {
                            </button>
                          </div>
 
-                         {/* Barra de ferramentas inferior - organizacao solicitada */}
-                         <div className="flex gap-4 px-3 py-2 border-t border-gray-100 dark:border-white/[0.03] bg-gray-200 dark:bg-black/20 rounded-b-xl relative items-center">
-                             {/* Input de Arquivo Oculto */}
-                             <input
-                               type="file"
-                               ref={fileInputRef}
-                               className="hidden"
-                               onChange={(e) => {
-                                 const file = e.target.files?.[0];
-                                 if (file) {
-                                   setSelectedFile(file);
-                                   toast.success(`Anexo pronto para envio!`);
-                                 }
-                               }}
-                             />
-
-                             <div className="flex gap-3">
-                               <button onClick={() => fileInputRef.current?.click()} className="text-gray-500 hover:text-[#CCA761] transition-all p-1" title="Anexar Arquivo"><Paperclip size={18} /></button>
-                               <button
-                                 onClick={(e) => { e.preventDefault(); startRecording(); }}
-                                 className="text-gray-500 hover:text-red-500 transition-all p-1"
-                                 title="Gravar Audio"
-                               >
-                                 <Mic size={18} />
-                               </button>
-
-                               <div className="relative">
-                                 <button onClick={() => setShowEmojiPicker(!showEmojiPicker)} className={`transition-all p-1 ${showEmojiPicker ? 'text-[#CCA761]' : 'text-gray-500 hover:text-[#CCA761]'}`} title="Emoji"><Smile size={18} /></button>
-
-                                 {showEmojiPicker && (
-                                   <div className="absolute bottom-full left-0 mb-4 z-50 shadow-2xl animate-in fade-in slide-in-from-bottom-2 duration-300">
-                                     <div className="fixed inset-0" onClick={() => setShowEmojiPicker(false)} />
-                                     <div className="relative">
-                                       <EmojiPicker
-                                         theme={EmojiTheme.DARK}
-                                         onEmojiClick={(emojiData) => {
-                                           setInputText(prev => prev + emojiData.emoji);
-                                           setShowEmojiPicker(false);
-                                         }}
-                                         lazyLoadEmojis={true}
-                                         searchPlaceholder="Buscar emoji..."
-                                       />
-                                     </div>
-                                   </div>
-                                 )}
-                               </div>
-
-                               <button onClick={() => toast.info("Modelos de resposta em breve")} className="text-gray-500 hover:text-[#CCA761] transition-all p-1" title="Modelos de Resposta"><LayoutPanelLeft size={18} /></button>
-                             </div>
-
-                             <span className="ml-auto text-[7px] text-gray-700 font-black tracking-tighter uppercase self-center hidden sm:block">Gerado pelo Cortex MAYUS</span>
-                         </div>
                       </div>
                   )}
               </div>

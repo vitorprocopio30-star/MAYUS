@@ -69,6 +69,37 @@ const DEFAULT_CRM_STAGES = [
   { name: "Perdido", color: "#ef4444", order_index: 3, is_loss: true },
 ];
 
+const DEFAULT_SALES_LLM_TESTBENCH = {
+  enabled: true,
+  default_model: "deepseek/deepseek-v4-pro",
+  candidate_models: [
+    "deepseek/deepseek-v4-pro",
+    "minimax/minimax-m2.7",
+    "xiaomi/mimo-v2.5",
+    "qwen/qwen3.6-plus",
+    "moonshotai/kimi-k2.6",
+  ],
+  routing_mode: "fixed",
+};
+
+const DEFAULT_MAYUS_OPERATING_PARTNER = {
+  enabled: true,
+  autonomy_mode: "high_supervised",
+  confidence_thresholds: {
+    auto_send: 0.78,
+    auto_execute: 0.82,
+    approval: 0.65,
+  },
+  active_modules: {
+    setup: true,
+    sales: true,
+    client_support: true,
+    legal_triage: true,
+    crm: true,
+    tasks: true,
+  },
+};
+
 function check(params: TenantDoctorCheck): TenantDoctorCheck {
   return params;
 }
@@ -401,6 +432,135 @@ async function diagnoseCommercialSalesProfile(tenantId: string, supabase: Doctor
   });
 }
 
+async function ensureSalesLlmTestbench(tenantId: string, supabase: DoctorSupabase, autoFix: boolean) {
+  const { data, error } = await supabase
+    .from("tenant_settings")
+    .select("ai_features")
+    .eq("tenant_id", tenantId)
+    .maybeSingle();
+
+  if (error) throw error;
+
+  const aiFeatures = data?.ai_features && typeof data.ai_features === "object" ? data.ai_features as Record<string, any> : {};
+  const testbench = aiFeatures.sales_llm_testbench && typeof aiFeatures.sales_llm_testbench === "object"
+    ? aiFeatures.sales_llm_testbench as Record<string, any>
+    : null;
+
+  if (testbench?.enabled === true && typeof testbench.default_model === "string" && Array.isArray(testbench.candidate_models)) {
+    return check({
+      id: "commercial:sales_llm_testbench",
+      category: "commercial",
+      status: "ok",
+      title: "Bancada LLM de vendas configurada",
+      detail: `Modelo padrao de vendas: ${testbench.default_model}.`,
+      autoFixable: true,
+    });
+  }
+
+  if (!autoFix) {
+    return check({
+      id: "commercial:sales_llm_testbench",
+      category: "commercial",
+      status: "warning",
+      title: "Bancada LLM de vendas ausente",
+      detail: "O WhatsApp comercial ainda nao tem a bancada DeepSeek/MiniMax/MiMo/Qwen/Kimi configurada.",
+      autoFixable: true,
+      nextAction: "Rodar o Auto Setup Doctor para ativar DeepSeek V4 Pro como modelo padrao de teste de vendas.",
+    });
+  }
+
+  const { error: upsertError } = await supabase
+    .from("tenant_settings")
+    .upsert({
+      tenant_id: tenantId,
+      ai_features: {
+        ...aiFeatures,
+        sales_llm_testbench: DEFAULT_SALES_LLM_TESTBENCH,
+      },
+    }, { onConflict: "tenant_id" });
+
+  if (upsertError) throw upsertError;
+
+  return check({
+    id: "commercial:sales_llm_testbench",
+    category: "commercial",
+    status: "fixed",
+    title: "Bancada LLM de vendas ativada",
+    detail: "DeepSeek V4 Pro ficou como padrao e MiniMax, MiMo, Qwen e Kimi foram cadastrados como candidatos de teste.",
+    autoFixable: true,
+    fixed: true,
+  });
+}
+
+async function ensureMayusOperatingPartner(tenantId: string, supabase: DoctorSupabase, autoFix: boolean) {
+  const { data, error } = await supabase
+    .from("tenant_settings")
+    .select("ai_features")
+    .eq("tenant_id", tenantId)
+    .maybeSingle();
+
+  if (error) throw error;
+
+  const aiFeatures = data?.ai_features && typeof data.ai_features === "object" ? data.ai_features as Record<string, any> : {};
+  const operatingPartner = aiFeatures.mayus_operating_partner && typeof aiFeatures.mayus_operating_partner === "object"
+    ? aiFeatures.mayus_operating_partner as Record<string, any>
+    : null;
+
+  if (
+    operatingPartner?.enabled === true &&
+    typeof operatingPartner.autonomy_mode === "string" &&
+    operatingPartner.active_modules &&
+    typeof operatingPartner.active_modules === "object"
+  ) {
+    return check({
+      id: "agent:mayus_operating_partner",
+      category: "skills",
+      status: "ok",
+      title: "MAYUS socio virtual ativo",
+      detail: `Autonomia operacional: ${operatingPartner.autonomy_mode}.`,
+      autoFixable: true,
+    });
+  }
+
+  if (!autoFix) {
+    return check({
+      id: "agent:mayus_operating_partner",
+      category: "skills",
+      status: "warning",
+      title: "MAYUS socio virtual ainda nao ativado",
+      detail: "O tenant ainda nao tem a camada central que organiza vendas, suporte, CRM, tarefas e auto-setup.",
+      autoFixable: true,
+      nextAction: "Rodar o Auto Setup Doctor para ativar o MAYUS como socio virtual supervisionado.",
+    });
+  }
+
+  const { error: upsertError } = await supabase
+    .from("tenant_settings")
+    .upsert({
+      tenant_id: tenantId,
+      ai_features: {
+        ...aiFeatures,
+        mayus_operating_partner: DEFAULT_MAYUS_OPERATING_PARTNER,
+        whatsapp_agent: {
+          ...(aiFeatures.whatsapp_agent && typeof aiFeatures.whatsapp_agent === "object" ? aiFeatures.whatsapp_agent : {}),
+          autonomy_mode: "high_supervised",
+        },
+      },
+    }, { onConflict: "tenant_id" });
+
+  if (upsertError) throw upsertError;
+
+  return check({
+    id: "agent:mayus_operating_partner",
+    category: "skills",
+    status: "fixed",
+    title: "MAYUS socio virtual ativado",
+    detail: "MAYUS agora tem defaults para operar setup, vendas, suporte, triagem juridica, CRM e tarefas com autonomia supervisionada alta.",
+    autoFixable: true,
+    fixed: true,
+  });
+}
+
 async function registerDoctorEvent(params: {
   tenantId: string;
   userId: string | null;
@@ -602,6 +762,8 @@ export async function runTenantDoctor(params: {
   checks.push(...await ensureCrmDefaults(params.tenantId, supabase, autoFix));
   checks.push(await diagnoseAgentSkills(params.tenantId, supabase, ensureDefaultSkills, autoFix));
   checks.push(await diagnoseCommercialSalesProfile(params.tenantId, supabase));
+  checks.push(await ensureSalesLlmTestbench(params.tenantId, supabase, autoFix));
+  checks.push(await ensureMayusOperatingPartner(params.tenantId, supabase, autoFix));
 
   const integrations = await listIntegrations(params.tenantId, [...REQUIRED_INTEGRATIONS]);
   checks.push(...buildIntegrationDoctorChecks({
