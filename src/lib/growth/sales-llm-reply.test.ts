@@ -141,6 +141,47 @@ describe("sales-llm-reply", () => {
     expect(reply.risk_flags).toEqual(expect.arrayContaining(["case_status_request", "low_confidence"]));
   });
 
+  it("orienta a LLM a tratar desconto no contracheque com triagem especifica", async () => {
+    let requestBody: any = null;
+    const fetcher = vi.fn(async (_url: string, init: RequestInit) => {
+      requestBody = JSON.parse(String(init?.body || "{}"));
+      return {
+        ok: true,
+        json: async () => ({
+          choices: [{
+            message: {
+              content: JSON.stringify({
+                reply: "Entendi. Esse desconto aparece com qual nome no contracheque e comecou em que mes?",
+                lead_stage: "discovery",
+                intent: "legal_question",
+                confidence: 0.86,
+                risk_flags: [],
+                next_action: "pedir nome e inicio do desconto",
+                should_auto_send: true,
+                expected_outcome: "lead envia detalhes do desconto",
+              }),
+            },
+          }],
+        }),
+      };
+    }) as any;
+
+    const reply = await buildSalesLlmReply({
+      supabase: {} as any,
+      tenantId: "tenant-1",
+      contactName: "Vitor",
+      messages: [{ direction: "inbound", content: "Quero saber se tenho direito ao desconto do meu contracheque" }],
+      testbench: { enabled: true },
+      autonomyMode: "auto_respond",
+      fetcher,
+    });
+
+    expect(requestBody.messages[1].content).toContain("Se ele falou contracheque");
+    expect(requestBody.messages[1].content).toContain("Pergunte o nome do desconto");
+    expect(reply.risk_flags).toContain("legal_triage");
+    expect(reply.should_auto_send).toBe(true);
+  });
+
   it("pontua fixtures de teste de vendas sem aceitar promessa juridica", () => {
     const fixture = SALES_LLM_TEST_FIXTURES.find((item) => item.id === "price-objection")!;
     const score = scoreSalesLlmReply({

@@ -273,7 +273,7 @@ Abrir o plano atual, executar validacoes possiveis e avancar o proximo item segu
 Reconciliar o plano operacional com o estado real do codigo e executar o proximo item seguro antes do smoke final.
 
 ### Feitos
-- [x] Conferir fonte unica de execucao em `docs/brain/MAYUS_AGENTIC_EXECUTION_CHECKLIST.md`
+- [x] Conferir documento de execucao usado na epoca em `docs/brain/MAYUS_AGENTIC_EXECUTION_CHECKLIST.md`
 - [x] Confirmar que Google Drive ja importa `supabaseAdmin`
 - [x] Confirmar que fallbacks plaintext de Vault foram removidos da camada server-side
 - [x] Confirmar que writers operacionais usam `system_event_logs`
@@ -352,7 +352,7 @@ Fechamento do rollout de seguranca de `tenant_integrations` com Vault, separacao
 ## Sessao 2 - 24/04/2026
 
 ### Briefing
-Consolidar a documentacao principal e os planos secundarios do modelo agentico em uma fonte unica de execucao, com checklist marcavel por status.
+Consolidar a documentacao principal e os planos secundarios do modelo agentico no documento de execucao usado naquela etapa, com checklist marcavel por status.
 
 ### Feitos
 - [x] Criar `docs/brain/MAYUS_AGENTIC_EXECUTION_CHECKLIST.md`
@@ -370,7 +370,7 @@ Consolidar a documentacao principal e os planos secundarios do modelo agentico e
 - [ ] Ajustar webhook Escavador para nao depender de `tenant_integrations.api_key`
 
 ### Proximos passos
-1. Seguir `docs/brain/MAYUS_AGENTIC_EXECUTION_CHECKLIST.md`, secao `12. Proximo Passo Exato`.
+1. Historico da sessao: seguir `docs/brain/MAYUS_AGENTIC_EXECUTION_CHECKLIST.md`, secao `12. Proximo Passo Exato`.
 2. Fechar blockers antes do smoke final.
 3. Retomar `support_case_status` depois que integracoes e auditoria estiverem estaveis.
 

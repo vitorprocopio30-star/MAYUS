@@ -12,6 +12,11 @@ export type WhatsAppSalesMessage = {
   direction: "inbound" | "outbound" | string;
   content?: string | null;
   message_type?: string | null;
+  media_url?: string | null;
+  media_filename?: string | null;
+  media_mime_type?: string | null;
+  media_text?: string | null;
+  media_summary?: string | null;
   created_at?: string | null;
 };
 
@@ -37,11 +42,13 @@ export type WhatsAppSalesReply = {
   internalNote: string;
   plan: SalesConsultationPlan;
   riskFlags: string[];
+  leadTopic: string;
   mayAutoSend: boolean;
   requiresHumanReview: boolean;
   externalSideEffectsBlocked: boolean;
   firstResponseSlaMinutes: number;
   handoffRecommended: boolean;
+  repeatedOpenerBlocked: boolean;
 };
 
 function cleanText(value?: string | null) {
@@ -60,15 +67,65 @@ function getLastInbound(messages: WhatsAppSalesMessage[]) {
   return [...messages].reverse().find((message) => message.direction === "inbound" && cleanText(message.content)) || null;
 }
 
+function hasMayusIntroduced(messages: WhatsAppSalesMessage[]) {
+  return messages.some((message) => {
+    if (message.direction !== "outbound") return false;
+    const normalized = normalizeText(message.content);
+    return /aqui (e|sou) o mayus|sou o mayus|mayus, assistente/.test(normalized);
+  });
+}
+
 function buildConversationSummary(messages: WhatsAppSalesMessage[]) {
   return messages
     .slice(-12)
-    .map((message) => `${message.direction === "inbound" ? "lead" : "atendente"}: ${cleanText(message.content) || `[${message.message_type || "mensagem"}]`}`)
+    .map((message) => {
+      const mediaContext = [message.media_summary, message.media_text].map((item) => cleanText(item)).filter(Boolean).join(" | ");
+      const content = cleanText(message.content) || `[${message.message_type || "mensagem"}]`;
+      return `${message.direction === "inbound" ? "lead" : "atendente"}: ${mediaContext ? `${content} | midia: ${mediaContext}` : content}`;
+    })
     .join("\n");
+}
+
+function detectLeadTopic(lastInboundText: string | null) {
+  const normalized = normalizeText(lastInboundText);
+
+  if (/andamento|status|meu processo|numero do processo|cnj|movimentacao|processo/.test(normalized)) {
+    return "process_status";
+  }
+
+  if (
+    /contracheque|holerite|folha|margem consignavel|consignado|emprestimo consignado|rmc|rcc/.test(normalized)
+    || (/desconto|descontando|descontaram|desconta/.test(normalized) && /salario|beneficio|inss|aposentadoria|contracheque|holerite|folha/.test(normalized))
+  ) {
+    return "payroll_discount";
+  }
+
+  if (/beneficio|aposentadoria|inss|bpc|loas|indeferido|negado|negativa/.test(normalized)) {
+    return "benefit_or_inss";
+  }
+
+  if (/trabalhista|trabalho|rescisao|demissao|verbas|fgts|salario|patrao|empresa/.test(normalized)) {
+    return "employment";
+  }
+
+  if (/familia|divorcio|pensao|guarda|alimentos|partilha|filho/.test(normalized)) {
+    return "family";
+  }
+
+  if (/valor|preco|custa|custo|honorario|honorarios|parcel/.test(normalized)) {
+    return "price_question";
+  }
+
+  if (/humano|atendente|advogado|doutor|doutora|responsavel|falar com/.test(normalized)) {
+    return "human_request";
+  }
+
+  return "unknown";
 }
 
 function detectRiskFlags(lastInboundText: string | null, plan: SalesConsultationPlan) {
   const normalized = normalizeText(lastInboundText);
+  const topic = detectLeadTopic(lastInboundText);
   const flags: string[] = [];
 
   if (/contrato|assin|proposta|pix|boleto|pagamento|cobranca/.test(normalized)) {
@@ -91,6 +148,14 @@ function detectRiskFlags(lastInboundText: string | null, plan: SalesConsultation
     flags.push("human_requested");
   }
 
+  if (topic === "process_status") {
+    flags.push("case_status_unverified");
+  }
+
+  if (topic === "payroll_discount" || topic === "benefit_or_inss") {
+    flags.push("legal_triage");
+  }
+
   if (plan.firmProfile.missingSignals.length > 0) {
     flags.push("missing_firm_profile");
   }
@@ -102,11 +167,53 @@ function detectRiskFlags(lastInboundText: string | null, plan: SalesConsultation
   return flags;
 }
 
+function buildTopicSpecificReply(topic: string, leadFirstName: string) {
+  if (topic === "payroll_discount") {
+    return [
+      `Entendi, ${leadFirstName}. Para eu te orientar sem chute: esse desconto aparece com qual nome no contracheque e comecou em que mes?`,
+      "Se puder, envie um print so da parte do desconto.",
+    ].join("\n\n");
+  }
+
+  if (topic === "benefit_or_inss") {
+    return [
+      `Entendi, ${leadFirstName}. Para eu te direcionar sem promessa: qual beneficio ou pedido foi negado e em que data saiu a decisao?`,
+      "Se tiver o comunicado do INSS ou print do indeferimento, pode enviar aqui.",
+    ].join("\n\n");
+  }
+
+  if (topic === "employment") {
+    return [
+      `Entendi, ${leadFirstName}. Para eu organizar isso certo: o problema e demissao, salario/verbas, FGTS, assedio ou outro ponto do trabalho?`,
+      "Me diga tambem quando aconteceu, porque prazo pode mudar a prioridade.",
+    ].join("\n\n");
+  }
+
+  if (topic === "family") {
+    return [
+      `Entendi, ${leadFirstName}. Tema de familia precisa de cuidado. O ponto principal e divorcio, pensao, guarda, alimentos ou partilha?`,
+      "Me diga se existe alguma urgencia hoje para eu priorizar do jeito certo.",
+    ].join("\n\n");
+  }
+
+  if (topic === "process_status") {
+    return [
+      `Entendi, ${leadFirstName}. Para eu nao te passar status errado, preciso localizar a base correta antes.`,
+      "Me mande o CNJ, nome completo do cliente ou telefone cadastrado que eu organizo a verificacao com a equipe.",
+    ].join("\n\n");
+  }
+
+  return null;
+}
+
 function buildDiscoveryReply(plan: SalesConsultationPlan, leadFirstName: string, input: WhatsAppSalesReplyInput) {
+  const lastInboundText = getLastInbound(input.messages)?.content;
+  const repeatedOpenerBlocked = hasMayusIntroduced(input.messages);
   const question = plan.nextDiscoveryQuestion || plan.discoveryQuestions[1];
   const firstReply = buildCommercialFirstReply({
     leadName: leadFirstName,
-    lastInboundText: getLastInbound(input.messages)?.content,
+    lastInboundText,
+    includeOpening: !repeatedOpenerBlocked,
     profile: {
       firmName: input.salesProfile?.firmName,
       idealClient: input.salesProfile?.idealClient,
@@ -117,12 +224,21 @@ function buildDiscoveryReply(plan: SalesConsultationPlan, leadFirstName: string,
     },
   });
 
+  if (normalizeText(firstReply).includes(normalizeText(question))) {
+    return firstReply;
+  }
+
   return [firstReply, question].filter(Boolean).join("\n\n");
 }
 
 function buildSuggestedReply(plan: SalesConsultationPlan, lastInboundText: string | null, input: WhatsAppSalesReplyInput) {
   const leadFirstName = plan.leadName.split(/\s+/)[0] || "tudo bem";
   const normalized = normalizeText(lastInboundText);
+  const topicReply = buildTopicSpecificReply(detectLeadTopic(lastInboundText), leadFirstName);
+
+  if (topicReply) {
+    return topicReply;
+  }
 
   if (/caro|preco|valor|custa|custo|honorario|honorarios/.test(normalized)) {
     return [
@@ -153,6 +269,7 @@ function hasAutoSendBlockingRisk(flags: string[]) {
     flag === "legal_result_risk"
     || flag === "legal_urgency"
     || flag === "commercial_commitment"
+    || flag === "case_status_unverified"
   ));
 }
 
@@ -175,7 +292,10 @@ export function buildWhatsAppSalesReply(input: WhatsAppSalesReplyInput): WhatsAp
     conversationSummary: buildConversationSummary(input.messages),
     conversationTurns: input.messages.slice(-12).map((message) => ({
       role: message.direction === "inbound" ? "user" : "assistant",
-      content: cleanText(message.content) || `[${message.message_type || "mensagem"}]`,
+      content: [cleanText(message.content) || `[${message.message_type || "mensagem"}]`, message.media_summary, message.media_text]
+        .map((item) => cleanText(item))
+        .filter(Boolean)
+        .join(" | "),
     })),
     officeIdealClient: profile?.idealClient || null,
     officeSolution: profile?.coreSolution || null,
@@ -185,6 +305,8 @@ export function buildWhatsAppSalesReply(input: WhatsAppSalesReplyInput): WhatsAp
   };
   const plan = buildSalesConsultationPlan(consultationInput);
   const riskFlags = detectRiskFlags(lastInboundText, plan);
+  const leadTopic = detectLeadTopic(lastInboundText);
+  const repeatedOpenerBlocked = hasMayusIntroduced(input.messages);
   const suggestedReply = buildSuggestedReply(plan, lastInboundText, input);
   const blocksAutoSend = hasAutoSendBlockingRisk(riskFlags);
   const requiresHumanReview = blocksAutoSend;
@@ -197,15 +319,17 @@ export function buildWhatsAppSalesReply(input: WhatsAppSalesReplyInput): WhatsAp
     internalNote: requiresHumanReview
       ? "Resposta preparada para revisao humana antes de envio pelo WhatsApp."
       : plan.firmProfile.missingSignals.length > 0
-        ? `Resposta inicial preparada pelo Front Desk MAYUS com playbook generico. Depois configure o escritorio: ${plan.firmProfile.nextPositioningQuestion}`
+        ? `Resposta segura preparada pelo MAYUS com fallback comercial. Depois refine o perfil do escritorio: ${plan.firmProfile.nextPositioningQuestion}`
         : "Resposta consultiva preparada para o atendimento WhatsApp.",
     plan,
     riskFlags,
+    leadTopic,
     mayAutoSend,
     requiresHumanReview,
     externalSideEffectsBlocked: !mayAutoSend,
     firstResponseSlaMinutes: playbook.firstResponseSlaMinutes,
     handoffRecommended,
+    repeatedOpenerBlocked,
   };
 }
 
@@ -215,6 +339,8 @@ export function buildWhatsAppSalesReplyMetadata(reply: WhatsAppSalesReply) {
     suggested_reply: reply.suggestedReply,
     internal_note: reply.internalNote,
     risk_flags: reply.riskFlags,
+    lead_topic: reply.leadTopic,
+    repeated_opener_blocked: reply.repeatedOpenerBlocked,
     may_auto_send: reply.mayAutoSend,
     requires_human_review: reply.requiresHumanReview,
     external_side_effects_blocked: reply.externalSideEffectsBlocked,

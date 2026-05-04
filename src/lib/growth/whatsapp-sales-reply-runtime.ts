@@ -14,7 +14,9 @@ import {
   buildMayusOperatingPartnerDecision,
   normalizeMayusOperatingPartnerConfig,
   type MayusOperatingPartnerConfig,
+  type MayusOperatingPartnerCrmContext,
   type MayusOperatingPartnerDecision,
+  type MayusPreviousConversationEvent,
 } from "@/lib/agent/mayus-operating-partner";
 import {
   executeMayusOperatingPartnerActions,
@@ -24,6 +26,10 @@ import { sendWhatsAppMessage, type SendWhatsAppMessageResult } from "@/lib/whats
 
 function getStringValue(value: unknown) {
   return typeof value === "string" && value.trim().length > 0 ? value.trim() : null;
+}
+
+function isExplicitlyEnabled(value: unknown) {
+  return Boolean(value && typeof value === "object" && !Array.isArray(value) && (value as { enabled?: unknown }).enabled === true);
 }
 
 async function loadSalesRuntimeSettings(params: {
@@ -55,16 +61,126 @@ async function loadSalesRuntimeSettings(params: {
         positioningSummary: getStringValue(profile.positioning_summary),
       }
       : null,
-    salesLlmTestbench: testbench && typeof testbench === "object"
+    salesLlmTestbench: isExplicitlyEnabled(testbench)
       ? normalizeSalesLlmTestbenchConfig(testbench as Partial<SalesLlmTestbenchConfig>)
       : null,
-    mayusOperatingPartner: operatingPartner && typeof operatingPartner === "object"
+    mayusOperatingPartner: isExplicitlyEnabled(operatingPartner)
       ? normalizeMayusOperatingPartnerConfig(operatingPartner as Partial<MayusOperatingPartnerConfig>)
       : null,
     autonomyMode: whatsappAgent && typeof whatsappAgent === "object"
       ? getStringValue(whatsappAgent.autonomy_mode) || "auto_respond"
       : "auto_respond",
   };
+}
+
+function sanitizeFallbackReason(error: unknown) {
+  const message = error instanceof Error ? error.message : String(error || "");
+  if (!message.trim()) return "unknown_error";
+  if (/401|403|unauthorized|forbidden|api key|token|credential|chave/i.test(message)) return "provider_auth_or_credentials";
+  if (/429|rate limit|quota|limite/i.test(message)) return "provider_rate_limited";
+  if (/timeout|timed out|aborted/i.test(message)) return "provider_timeout";
+  if (/network|fetch failed|econn|enotfound|dns/i.test(message)) return "provider_network_error";
+  if (/json/i.test(message)) return "invalid_model_json";
+  return "provider_call_failed";
+}
+
+function normalizePhone(value?: string | null) {
+  const digits = String(value || "").replace(/\D/g, "");
+  return digits || null;
+}
+
+async function loadCrmContext(params: {
+  supabase: SupabaseClient;
+  tenantId: string;
+  contact: { phone_number: string | null; name: string | null };
+}): Promise<MayusOperatingPartnerCrmContext | null> {
+  const phone = normalizePhone(params.contact.phone_number);
+  if (!phone) return null;
+
+  try {
+    const query = params.supabase.from("crm_tasks");
+    if (typeof (query as any).select !== "function") return null;
+    const { data } = await query
+      .select("id, title, description, stage_id, pipeline_id, tags, source, lead_scoring, value, data_ultima_movimentacao")
+      .eq("tenant_id", params.tenantId)
+      .eq("phone", phone)
+      .order("data_ultima_movimentacao", { ascending: false })
+      .limit(1)
+      .maybeSingle<{
+        id: string;
+        title: string | null;
+        description: string | null;
+        stage_id: string | null;
+        pipeline_id: string | null;
+        tags: string[] | null;
+        source: string | null;
+        lead_scoring: number | null;
+        value: number | null;
+        data_ultima_movimentacao: string | null;
+      }>();
+
+    if (!data?.id) return null;
+
+    let stageName: string | null = null;
+    if (data.stage_id) {
+      const stageQuery = params.supabase.from("crm_stages");
+      if (typeof (stageQuery as any).select === "function") {
+        const { data: stage } = await stageQuery
+          .select("name")
+          .eq("id", data.stage_id)
+          .maybeSingle<{ name: string | null }>();
+        stageName = stage?.name || null;
+      }
+    }
+
+    return {
+      crm_task_id: data.id,
+      title: data.title,
+      description: data.description,
+      stage_id: data.stage_id,
+      stage_name: stageName,
+      tags: Array.isArray(data.tags) ? data.tags : [],
+      source: data.source,
+      lead_scoring: data.lead_scoring,
+      value: data.value,
+      last_movement_at: data.data_ultima_movimentacao,
+    };
+  } catch {
+    return null;
+  }
+}
+
+async function loadPreviousMayusEvent(params: {
+  supabase: SupabaseClient;
+  tenantId: string;
+  contactId: string;
+}): Promise<MayusPreviousConversationEvent | null> {
+  try {
+    const query = params.supabase.from("system_event_logs");
+    if (typeof (query as any).select !== "function") return null;
+    const { data } = await query
+      .select("payload, created_at")
+      .eq("tenant_id", params.tenantId)
+      .eq("event_name", "whatsapp_sales_reply_prepared")
+      .eq("payload->>contact_id", params.contactId)
+      .order("created_at", { ascending: false })
+      .limit(1)
+      .maybeSingle<{ payload: Record<string, any> | null; created_at: string | null }>();
+
+    const payload = data?.payload && typeof data.payload === "object" ? data.payload : null;
+    if (!payload) return null;
+
+    return {
+      created_at: data?.created_at || null,
+      reply_source: getStringValue(payload.reply_source),
+      conversation_state: payload.conversation_state && typeof payload.conversation_state === "object" ? payload.conversation_state : null,
+      closing_readiness: payload.closing_readiness && typeof payload.closing_readiness === "object" ? payload.closing_readiness : null,
+      next_action: getStringValue(payload.next_action) || getStringValue(payload.mayus_operating_partner?.next_action),
+      intent: getStringValue(payload.intent) || getStringValue(payload.mayus_operating_partner?.intent),
+    };
+  } catch {
+    return null;
+  }
 }
 
 function buildNotification(reply: WhatsAppSalesReply, contactName: string | null) {
@@ -167,7 +283,7 @@ export async function prepareWhatsAppSalesReplyForContact(params: {
 
   const { data: messages } = await params.supabase
     .from("whatsapp_messages")
-    .select("direction, content, message_type, created_at")
+    .select("direction, content, message_type, media_url, media_filename, media_mime_type, media_text, media_summary, created_at")
     .eq("tenant_id", params.tenantId)
     .eq("contact_id", contact.id)
     .order("created_at", { ascending: false })
@@ -177,6 +293,18 @@ export async function prepareWhatsAppSalesReplyForContact(params: {
     supabase: params.supabase,
     tenantId: params.tenantId,
   });
+  const [crmContext, previousMayusEvent] = await Promise.all([
+    loadCrmContext({
+      supabase: params.supabase,
+      tenantId: params.tenantId,
+      contact,
+    }),
+    loadPreviousMayusEvent({
+      supabase: params.supabase,
+      tenantId: params.tenantId,
+      contactId: contact.id,
+    }),
+  ]);
 
   const orderedMessages = (messages || []).reverse();
   const reply = buildWhatsAppSalesReply({
@@ -186,7 +314,13 @@ export async function prepareWhatsAppSalesReplyForContact(params: {
     salesProfile: runtimeSettings.salesProfile,
   });
   const deterministicMetadata = buildWhatsAppSalesReplyMetadata(reply);
-  let metadata: Record<string, any> = { ...deterministicMetadata };
+  const fallbackReasons: string[] = [];
+  let metadata: Record<string, any> = {
+    ...deterministicMetadata,
+    reply_source: "deterministic_fallback",
+    model_used: "deterministic",
+    fallback_reason: null,
+  };
   let llmReply: SalesLlmReply | null = null;
   let operatingPartnerDecision: MayusOperatingPartnerDecision | null = null;
   let operatingPartnerActionResults: MayusOperatingPartnerActionResult[] = [];
@@ -205,11 +339,16 @@ export async function prepareWhatsAppSalesReplyForContact(params: {
         phoneNumber: contact.phone_number,
         messages: orderedMessages,
         salesProfile: runtimeSettings.salesProfile,
+        crmContext,
+        previousMayusEvent,
         salesTestbench: runtimeSettings.salesLlmTestbench,
         operatingPartner: runtimeSettings.mayusOperatingPartner,
       });
       metadata = {
         ...deterministicMetadata,
+        reply_source: "operating_partner",
+        model_used: operatingPartnerDecision.model_used,
+        fallback_reason: null,
         mode: operatingPartnerDecision.should_auto_send ? "suggested_reply" : "human_review_required",
         suggested_reply: operatingPartnerDecision.reply,
         internal_note: `MAYUS socio virtual: ${operatingPartnerDecision.next_action}`,
@@ -226,16 +365,30 @@ export async function prepareWhatsAppSalesReplyForContact(params: {
           should_auto_send: operatingPartnerDecision.should_auto_send,
           requires_approval: operatingPartnerDecision.requires_approval,
           actions_to_execute: operatingPartnerDecision.actions_to_execute,
+          conversation_state: operatingPartnerDecision.conversation_state,
+          closing_readiness: operatingPartnerDecision.closing_readiness,
+          support_summary: operatingPartnerDecision.support_summary,
+          reasoning_summary_for_team: operatingPartnerDecision.reasoning_summary_for_team,
           expected_outcome: operatingPartnerDecision.expected_outcome,
         },
+        conversation_state: operatingPartnerDecision.conversation_state,
+        closing_readiness: operatingPartnerDecision.closing_readiness,
+        support_summary: operatingPartnerDecision.support_summary,
+        reasoning_summary_for_team: operatingPartnerDecision.reasoning_summary_for_team,
       };
     } catch (error) {
+      const reason = sanitizeFallbackReason(error);
+      fallbackReasons.push(`operating_partner:${reason}`);
       console.error("[whatsapp-sales-reply-runtime][operating-partner]", error);
       metadata = {
         ...deterministicMetadata,
+        reply_source: "deterministic_fallback",
+        model_used: "deterministic",
+        fallback_reason: fallbackReasons.join("|"),
         mayus_operating_partner: {
           enabled: true,
           failed: true,
+          failure_reason: reason,
           fallback: runtimeSettings.salesLlmTestbench?.enabled ? "sales_llm_reply" : "deterministic_whatsapp_sales_reply",
         },
       };
@@ -256,6 +409,9 @@ export async function prepareWhatsAppSalesReplyForContact(params: {
       });
       metadata = {
         ...deterministicMetadata,
+        reply_source: "sales_llm",
+        model_used: llmReply.model_used,
+        fallback_reason: fallbackReasons.length > 0 ? fallbackReasons.join("|") : null,
         mode: llmReply.should_auto_send ? "suggested_reply" : "human_review_required",
         suggested_reply: llmReply.reply,
         internal_note: `LLM de vendas ${llmReply.model_used}: ${llmReply.next_action}`,
@@ -273,16 +429,24 @@ export async function prepareWhatsAppSalesReplyForContact(params: {
           should_auto_send: llmReply.should_auto_send,
           expected_outcome: llmReply.expected_outcome,
         },
+        mayus_operating_partner: metadata.mayus_operating_partner,
       };
     } catch (error) {
+      const reason = sanitizeFallbackReason(error);
+      fallbackReasons.push(`sales_llm:${reason}`);
       console.error("[whatsapp-sales-reply-runtime][sales-llm]", error);
       metadata = {
         ...deterministicMetadata,
+        reply_source: "deterministic_fallback",
+        model_used: "deterministic",
+        fallback_reason: fallbackReasons.join("|"),
         sales_llm: {
           enabled: true,
           failed: true,
+          failure_reason: reason,
           fallback: "deterministic_whatsapp_sales_reply",
         },
+        mayus_operating_partner: metadata.mayus_operating_partner,
       };
     }
   }
@@ -296,7 +460,7 @@ export async function prepareWhatsAppSalesReplyForContact(params: {
       provider: operatingPartnerDecision.provider,
       intent: operatingPartnerDecision.intent,
       confidence: operatingPartnerDecision.confidence,
-      leadStage: null,
+      leadStage: operatingPartnerDecision.conversation_state?.stage || null,
       expectedOutcome: operatingPartnerDecision.expected_outcome,
       sentEventName: "whatsapp_mayus_operating_partner_auto_sent",
       failedEventName: "whatsapp_mayus_operating_partner_auto_send_failed",
@@ -337,6 +501,7 @@ export async function prepareWhatsAppSalesReplyForContact(params: {
     && params.trigger !== "manual"
     && !contact.assigned_user_id
     && contact.phone_number
+    && autoReply.source !== "deterministic_whatsapp_auto_reply"
   );
 
   await params.supabase.from("system_event_logs").insert({
@@ -349,6 +514,7 @@ export async function prepareWhatsAppSalesReplyForContact(params: {
     payload: {
       contact_id: contact.id,
       trigger: params.trigger,
+      crm_context: crmContext,
       ...metadata,
       first_response_policy: {
         enabled: params.autoSendFirstResponse === true,

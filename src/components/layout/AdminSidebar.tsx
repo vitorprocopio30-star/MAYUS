@@ -83,12 +83,26 @@ export function AdminSidebar() {
 
   useEffect(() => {
     const width = sidebarMode === "expanded" ? "280px" : sidebarMode === "mini" ? "80px" : "0px";
-    document.documentElement.style.setProperty("--mayus-sidebar-offset", width);
+    const root = document.documentElement;
 
-    return () => {
-      document.documentElement.style.setProperty("--mayus-sidebar-offset", "280px");
-    };
+    root.style.setProperty("--mayus-sidebar-offset", width);
+    root.dataset.mayusSidebarMode = sidebarMode;
+    root.dataset.mayusSidebarOffset = width;
+    window.dispatchEvent(
+      new CustomEvent("mayus-sidebar-mode-change", {
+        detail: { mode: sidebarMode, width },
+      }),
+    );
   }, [sidebarMode]);
+
+  useEffect(() => {
+    return () => {
+      const root = document.documentElement;
+      root.style.setProperty("--mayus-sidebar-offset", "280px");
+      root.dataset.mayusSidebarMode = "expanded";
+      root.dataset.mayusSidebarOffset = "280px";
+    };
+  }, []);
 
   const toggleSidebar = () => setIsOpen(!isOpen);
 

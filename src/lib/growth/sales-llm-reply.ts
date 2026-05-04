@@ -142,10 +142,17 @@ export const SALES_LLM_TEST_FIXTURES: SalesLlmFixture[] = [
     expectedStage: "closing",
   },
   {
-    id: "not-sales",
-    description: "Pergunta fora de vendas",
+    id: "payroll-discount",
+    description: "Lead perguntando sobre desconto no contracheque",
     messages: [{ direction: "inbound", content: "Quero saber sobre um desconto no meu contracheque." }],
     expectedIntent: "legal_question",
+    expectedStage: "discovery",
+  },
+  {
+    id: "not-sales",
+    description: "Pergunta fora de vendas",
+    messages: [{ direction: "inbound", content: "Voces sabem me dizer o horario de funcionamento do forum?" }],
+    expectedIntent: "out_of_scope",
     expectedStage: "handoff",
   },
   {
@@ -205,7 +212,11 @@ function getLastInbound(messages: WhatsAppSalesMessage[]) {
 function summarizeMessages(messages: WhatsAppSalesMessage[]) {
   return messages
     .slice(-14)
-    .map((message) => `${message.direction === "inbound" ? "lead" : "mayus"}: ${cleanText(message.content) || `[${message.message_type || "mensagem"}]`}`)
+    .map((message) => {
+      const mediaContext = [message.media_summary, message.media_text].map((item) => cleanText(item)).filter(Boolean).join(" | ");
+      const content = cleanText(message.content) || `[${message.message_type || "mensagem"}]`;
+      return `${message.direction === "inbound" ? "lead" : "mayus"}: ${mediaContext ? `${content} | midia: ${mediaContext}` : content}`;
+    })
     .join("\n");
 }
 
@@ -217,6 +228,7 @@ function detectDeterministicRisk(messages: WhatsAppSalesMessage[]) {
   if (/urgente|liminar|audiencia|prazo|bloqueio|prisao|ameaca/.test(lastInbound)) risks.push("legal_urgency");
   if (/contrato|assin|boleto|pix|pagamento|entrada|cobranca|honorario|valor fechado/.test(lastInbound)) risks.push("contract_or_billing");
   if (/andamento|status|meu processo|processo|movimentacao|cnj/.test(lastInbound)) risks.push("case_status_request");
+  if (/contracheque|holerite|folha|margem consignavel|consignado|desconto|beneficio|inss|aposentadoria/.test(lastInbound)) risks.push("legal_triage");
 
   return risks;
 }
@@ -243,6 +255,9 @@ function buildSalesLlmPrompt(input: SalesLlmReplyInput, model: string) {
     "Voce e o SDR/Closer agentico do MAYUS para WhatsApp juridico.",
     "Conduza o lead ate o fechamento com metodo DEF: descoberta antes da oferta, encantamento com diagnostico, fechamento sem pressao.",
     "Responda em portugues do Brasil, curto, natural e com uma pergunta por vez.",
+    "Use no maximo 2 blocos curtos. Nao mande discurso institucional nem explique a metodologia.",
+    "Reconheca o assunto especifico do lead antes de perguntar. Se ele falou contracheque, desconto, consignado, folha, beneficio ou INSS, responda sobre isso.",
+    "Para desconto em contracheque/beneficio, nao diga se a pessoa tem direito. Pergunte o nome do desconto, quando comecou, se houve autorizacao/emprestimo e peca print apenas do trecho do desconto.",
     "Nunca invente status de processo, preco, contrato, cobranca, prazo, documento, jurisprudencia ou promessa de resultado juridico.",
     "Se o usuario pedir status de processo, pergunta juridica fora de venda, urgencia grave, contrato ou pagamento, sinalize risco e recomende handoff.",
     "Se a descoberta ainda estiver fraca, nao feche. Faca a proxima pergunta.",

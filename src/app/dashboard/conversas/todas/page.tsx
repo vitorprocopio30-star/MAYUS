@@ -230,16 +230,19 @@ export default function TodasConversasPage() {
 
       if (uploadError) throw uploadError;
 
-      const { data: { publicUrl } } = supabase.storage.from('whatsapp-media').getPublicUrl(fileName);
+      const { data: signedAudio, error: signedAudioError } = await supabase.storage
+        .from('whatsapp-media')
+        .createSignedUrl(fileName, 60 * 60);
+
+      if (signedAudioError || !signedAudio?.signedUrl) throw signedAudioError || new Error("Falha ao assinar audio");
 
       const response = await fetch('/api/whatsapp/send', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
-          tenant_id: profile!.tenant_id,
           contact_id: activeContact.id,
-          phone_number: activeContact.phone_number,
-          audio_url: publicUrl
+          audio_url: signedAudio.signedUrl,
+          media_storage_path: fileName
         })
       });
 
@@ -362,13 +365,11 @@ export default function TodasConversasPage() {
 
        const response = await fetch('/api/whatsapp/send', {
           method: 'POST',
-          headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({
-             tenant_id: profile!.tenant_id,
-             contact_id: activeContact.id,
-             phone_number: activeContact.phone_number,
-             text: textToSend
-          })
+           headers: { 'Content-Type': 'application/json' },
+           body: JSON.stringify({
+              contact_id: activeContact.id,
+              text: textToSend
+           })
        });
 
        const resData = await response.json();

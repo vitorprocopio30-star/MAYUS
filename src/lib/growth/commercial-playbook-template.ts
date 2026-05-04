@@ -305,37 +305,35 @@ export function buildCommercialPlaybookReply(playbook: CommercialPlaybookModel) 
 export function buildCommercialFirstReply(params: {
   leadName?: string | null;
   lastInboundText?: string | null;
+  includeOpening?: boolean;
   profile?: CommercialPlaybookOfficeProfile | null;
 }) {
   const playbook = buildCommercialPlaybookModel(params.profile || {});
   const name = firstName(params.leadName);
   const normalized = normalizeText(params.lastInboundText);
   const opening = `Oi, ${name}. Aqui e o MAYUS, assistente do ${playbook.officeName}. Vou te ajudar agora e organizar o atendimento para ninguem te deixar esperando.`;
+  const includeOpening = params.includeOpening !== false;
+  const withOpening = (blocks: string[]) => (includeOpening ? [opening, ...blocks] : blocks).join("\n\n");
 
   if (/humano|atendente|advogado|doutor|doutora|responsavel|falar com/.test(normalized)) {
-    return [
-      opening,
+    return withOpening([
       "Claro, eu posso chamar a pessoa certa. Para eu encaminhar sem te fazer repetir tudo, me diga em uma frase: o assunto e urgencia, documentos, valor ou estrategia do caso?",
-    ].join("\n\n");
+    ]);
   }
 
   if (/valor|preco|custa|honorario|honorarios|parcel/.test(normalized)) {
-    return [
-      opening,
+    return withOpening([
       "Antes de falar em valor, eu preciso entender se o caminho faz sentido para o seu caso. Sua duvida principal hoje e seguranca, prazo, documentos ou forma de pagamento?",
-    ].join("\n\n");
+    ]);
   }
 
   if (/vou pensar|depois|mais tarde|nao sei/.test(normalized)) {
-    return [
-      opening,
+    return withOpening([
       "Sem pressa artificial. Para eu nao te abandonar com uma duvida solta, o que falta para voce decidir: clareza do direito, confianca, tempo, valor ou falar com alguem?",
-    ].join("\n\n");
+    ]);
   }
 
-  return [
-    opening,
-    `${playbook.positioning.uniqueValueProposition}`,
+  return withOpening([
     "Me conta em uma frase o que aconteceu e qual e a urgencia. Depois eu te digo o melhor proximo passo.",
-  ].join("\n\n");
+  ]);
 }

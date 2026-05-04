@@ -4,6 +4,11 @@ import crypto from "crypto";
 import { prepareWhatsAppSalesReplyForContact } from "@/lib/growth/whatsapp-sales-reply-runtime";
 import { handleWhatsAppInternalCommand } from "@/lib/mayus/whatsapp-command-runtime";
 import { listTenantIntegrationsResolved } from "@/lib/integrations/server";
+import {
+  buildUnsupportedMediaRecord,
+  processEvolutionMedia,
+  type WhatsAppStoredMedia,
+} from "@/lib/whatsapp/media";
 
 const supabase = createClient(
   process.env.NEXT_PUBLIC_SUPABASE_URL!,
@@ -99,16 +104,32 @@ export async function POST(req: Request) {
 
       // Extrair o conteúdo em texto (Seja texto puro, extended text, etc)
       let content = "";
+      let messageType = "text";
       if (messagePayload?.conversation) {
         content = messagePayload.conversation;
       } else if (messagePayload?.extendedTextMessage?.text) {
         content = messagePayload.extendedTextMessage.text;
       } else if (messagePayload?.imageMessage?.caption) {
-        content = messagePayload.imageMessage.caption || "[Imagem enviada]";
+        messageType = "image";
+        content = messagePayload.imageMessage.caption || "[Imagem recebida]";
+      } else if (messagePayload?.imageMessage) {
+        messageType = "image";
+        content = "[Imagem recebida]";
       } else if (messagePayload?.audioMessage) {
-        content = "[Áudio enviado]";
+        messageType = "audio";
+        content = "[Áudio recebido]";
+      } else if (messagePayload?.documentMessage) {
+        messageType = "document";
+        content = messagePayload.documentMessage.caption || `[Documento: ${messagePayload.documentMessage.fileName || "arquivo"}]`;
+      } else if (messagePayload?.videoMessage) {
+        messageType = "video";
+        content = messagePayload.videoMessage.caption || "[Vídeo recebido]";
+      } else if (messagePayload?.stickerMessage) {
+        messageType = "sticker";
+        content = "[Figurinha recebida]";
       } else {
         content = "[Mensagem não suportada/Mídia]";
+        messageType = "unsupported";
       }
 
       const instanceName = payload.instance;
@@ -127,6 +148,31 @@ export async function POST(req: Request) {
       }
 
       const tenantId = matched.tenant_id;
+      if (eventName === "messages.update") {
+        const updateStatus = payload.data?.status || messageEnvelope?.status || payload.data?.update?.status || "delivered";
+        if (messageId) {
+          await supabase
+            .from("whatsapp_messages")
+            .update({ status: updateStatus })
+            .eq("tenant_id", tenantId)
+            .eq("message_id_from_evolution", messageId);
+        }
+        return NextResponse.json({ success: true, updated: Boolean(messageId) });
+      }
+
+      if (messageId) {
+        const { data: existingMessage } = await supabase
+          .from("whatsapp_messages")
+          .select("id")
+          .eq("tenant_id", tenantId)
+          .eq("message_id_from_evolution", messageId)
+          .maybeSingle();
+
+        if (existingMessage?.id) {
+          return NextResponse.json({ success: true, duplicate: true });
+        }
+      }
+
       const avatarUrl = await fetchEvolutionProfilePicture({
         tenantId,
         instanceName,
@@ -167,7 +213,51 @@ export async function POST(req: Request) {
             last_message_at: new Date().toISOString(),
             unread_count: fromMe ? 0 : 1, // Se foi do cliente, marca 1 (simplificado)
             ...(avatarUrl && !contact?.profile_pic_url ? { profile_pic_url: avatarUrl } : {}),
-         }).eq("id", contactId);
+          }).eq("id", contactId);
+      }
+
+      let mediaRecord: WhatsAppStoredMedia | null = null;
+      if (["image", "audio", "video", "document", "sticker"].includes(messageType)) {
+        try {
+          const resolved = await listTenantIntegrationsResolved(tenantId, ["evolution"]);
+          const provider = resolved.find((item) => item.instance_name?.split("|")[1] === instanceName)
+            || resolved.find((item) => item.provider === "evolution");
+          const [baseUrlRaw] = String(provider?.instance_name || "").split("|");
+          const baseUrl = String(baseUrlRaw || "").replace(/\/$/, "");
+          const apiKey = String(provider?.api_key || "").trim();
+
+          if (!baseUrl || !apiKey || !instanceName) throw new Error("Integracao Evolution incompleta para baixar midia.");
+
+          mediaRecord = await processEvolutionMedia({
+            supabase,
+            tenantId,
+            contactId,
+            baseUrl,
+            instanceName,
+            apiKey,
+            messageEnvelope,
+            messagePayload,
+            kind: messageType,
+            caption: content,
+          });
+
+          if (!mediaRecord) {
+            mediaRecord = buildUnsupportedMediaRecord({
+              provider: "evolution",
+              kind: messageType,
+              providerMediaId: messageId,
+              reason: "Evolution nao enviou bytes/base64 da midia e o download automatico falhou.",
+            });
+          }
+        } catch (mediaError) {
+          console.error("[Evolution Webhook] Erro ao processar midia:", mediaError);
+          mediaRecord = buildUnsupportedMediaRecord({
+            provider: "evolution",
+            kind: messageType,
+            providerMediaId: messageId,
+            reason: mediaError instanceof Error ? mediaError.message : "Falha ao processar midia Evolution.",
+          });
+        }
       }
 
       // 3. Salvar a Mensagem
@@ -175,11 +265,22 @@ export async function POST(req: Request) {
         .from("whatsapp_messages")
         .insert([{
            tenant_id: tenantId,
-           contact_id: contactId,
-           direction: fromMe ? 'outbound' : 'inbound',
-           content: content,
-           message_id_from_evolution: messageId,
-           status: 'delivered'
+            contact_id: contactId,
+            direction: fromMe ? 'outbound' : 'inbound',
+            message_type: messageType,
+            content: content,
+            media_url: mediaRecord?.media_url || null,
+            media_mime_type: mediaRecord?.media_mime_type || null,
+            media_filename: mediaRecord?.media_filename || null,
+            media_size_bytes: mediaRecord?.media_size_bytes || null,
+            media_storage_path: mediaRecord?.media_storage_path || null,
+            media_provider: mediaRecord?.media_provider || (["image", "audio", "video", "document", "sticker"].includes(messageType) ? "evolution" : null),
+            media_processing_status: mediaRecord?.media_processing_status || (["image", "audio", "video", "document", "sticker"].includes(messageType) ? "unsupported" : "none"),
+            media_text: mediaRecord?.media_text || null,
+            media_summary: mediaRecord?.media_summary || null,
+            metadata: mediaRecord?.metadata || {},
+            message_id_from_evolution: messageId,
+            status: 'delivered'
         }]);
 
       if (msgErr) {

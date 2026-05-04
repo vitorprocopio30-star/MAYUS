@@ -1,5 +1,8 @@
 # MAYUS Voice Checklist
 
+> Arquivo historico. A fonte oficial atual do roadmap e checklist final do MAYUS e `docs/brain/MAYUS_100_PERCENT_FINAL_CHECKLIST.md`.
+> Use este arquivo apenas como evidencia tecnica por frente.
+
 Objetivo: voz deve ser apenas outro canal do mesmo Brain, nao um cerebro separado.
 
 ## Canal

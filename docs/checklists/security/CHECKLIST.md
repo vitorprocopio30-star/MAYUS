@@ -1,5 +1,8 @@
 # MAYUS Security Checklist
 
+> Arquivo historico. A fonte oficial atual do roadmap e checklist final do MAYUS e `docs/brain/MAYUS_100_PERCENT_FINAL_CHECKLIST.md`.
+> Use este arquivo apenas como evidencia tecnica por frente.
+
 Objetivo: proteger dados juridicos, clientes, chaves, artifacts e execucoes agenticas com padrao profissional de produto sensivel.
 
 ## Resultado da varredura de 2026-04-24

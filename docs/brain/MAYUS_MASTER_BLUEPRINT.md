@@ -1,4 +1,8 @@
 # MAYUS Master Blueprint
+
+> Arquivo historico. A fonte oficial atual do roadmap e checklist final do MAYUS e `docs/brain/MAYUS_100_PERCENT_FINAL_CHECKLIST.md`.
+> Use este arquivo como tese tecnica/produto original; novas prioridades e status devem refletir no documento mestre.
+
 ## Revenue-to-Case OS
 ### O primeiro sistema operacional agêntico para escritorios do Brasil
 

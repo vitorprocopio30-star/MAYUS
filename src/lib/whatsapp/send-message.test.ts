@@ -69,14 +69,15 @@ describe("sendWhatsAppMessage", () => {
     expect(inserts).toEqual([
       {
         table: "whatsapp_messages",
-        payload: [{
+        payload: [expect.objectContaining({
           tenant_id: "tenant-1",
           contact_id: "contact-1",
           direction: "outbound",
+          message_type: "text",
           content: "Mensagem de teste",
           status: "sent",
           metadata: { source: "sales_llm_auto_reply" },
-        }],
+        })],
       },
     ]);
   });

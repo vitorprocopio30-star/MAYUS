@@ -101,12 +101,87 @@ describe("mayus-operating-partner", () => {
       modelOverride: "deepseek/deepseek-v4-pro",
     });
     expect(decision).toEqual(expect.objectContaining({
-      intent: "sales_qualification",
+      intent: "legal_triage",
       should_auto_send: true,
       requires_approval: false,
       model_used: "deepseek/deepseek-v4-pro",
     }));
+    expect(decision.conversation_state).toEqual(expect.objectContaining({
+      stage: "new",
+      has_mayus_introduced: false,
+    }));
+    expect(decision.support_summary.issue_type).toBe("none");
     expect(decision.actions_to_execute[0].type).toBe("create_crm_lead");
+  });
+
+  it("envia estado conversacional para a LLM e normaliza objecao sem texto gravado", async () => {
+    let prompt = "";
+    const fetcher = vi.fn(async (_url: string, init: RequestInit) => {
+      const body = JSON.parse(String(init.body || "{}"));
+      prompt = body.messages[1].content;
+      return {
+        ok: true,
+        json: async () => ({
+          choices: [{
+            message: {
+              content: JSON.stringify({
+                reply: "Faz sentido voce olhar valor com cuidado. Quando voce diz caro, pesa mais o investimento, a seguranca do caminho ou o momento de decidir?",
+                intent: "sales_qualification",
+                confidence: 0.88,
+                risk_flags: [],
+                next_action: "isolar objecao real",
+                conversation_state: {
+                  stage: "objection",
+                  facts_known: ["lead entendeu proposta inicial"],
+                  missing_information: ["decisor"],
+                  objections: ["valor/preco"],
+                  urgency: "none",
+                  decision_maker: "unknown",
+                  documents_requested: [],
+                  last_customer_message: "Achei caro, vou pensar",
+                  last_mayus_message: "Pelo que voce contou, faz sentido avancar para analise.",
+                  next_action: "isolar objecao real",
+                  has_mayus_introduced: true,
+                  conversation_summary: "MAYUS ja se apresentou e o cliente objetou valor.",
+                },
+                closing_readiness: { score: 45, status: "warming", reasons: ["objecao verbalizada"] },
+                support_summary: { is_existing_client: false, issue_type: "none", verified_case_reference: false, summary: "sem suporte" },
+                reasoning_summary_for_team: "Lead esta em objecao de valor; precisa separar preco de seguranca.",
+                actions_to_execute: [
+                  { type: "add_internal_note", title: "Registrar objecao de valor", requires_approval: false },
+                ],
+                requires_approval: false,
+                should_auto_send: true,
+                expected_outcome: "cliente explica objecao real",
+              }),
+            },
+          }],
+        }),
+      };
+    }) as any;
+
+    const decision = await buildMayusOperatingPartnerDecision({
+      supabase: {} as any,
+      tenantId: "tenant-1",
+      channel: "whatsapp",
+      contactName: "Vitor",
+      phoneNumber: "5511999999999",
+      messages: [
+        { direction: "outbound", content: "Oi, Vitor. Aqui e o MAYUS, assistente do Escritorio." },
+        { direction: "outbound", content: "Pelo que voce contou, faz sentido avancar para analise." },
+        { direction: "inbound", content: "Achei caro, vou pensar" },
+      ],
+      crmContext: { crm_task_id: "crm-1", title: "Vitor", stage_name: "Qualificacao" },
+      previousMayusEvent: { next_action: "tratar objecao de valor" },
+      operatingPartner: { enabled: true, autonomy_mode: "high_supervised" },
+      fetcher,
+    });
+
+    expect(prompt).toContain("Estado conversacional MAYUS reconstruido");
+    expect(prompt).toContain("Contexto CRM do contato");
+    expect(decision.conversation_state.stage).toBe("objection");
+    expect(decision.reply).not.toContain("Aqui e o MAYUS");
+    expect(decision.reasoning_summary_for_team).toContain("objecao");
   });
 
   it("bloqueia autoenvio para status de processo sem base confirmada", async () => {

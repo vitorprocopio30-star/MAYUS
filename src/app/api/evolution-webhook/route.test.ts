@@ -24,9 +24,11 @@ vi.mock("@supabase/supabase-js", () => ({
 function buildSupabaseMock() {
   const messageInserts: unknown[] = [];
   const contactInserts: unknown[] = [];
+  const messageUpdates: unknown[] = [];
   return {
     messageInserts,
     contactInserts,
+    messageUpdates,
     from: vi.fn((table: string) => {
       if (table === "tenant_integrations") {
         return {
@@ -62,6 +64,17 @@ function buildSupabaseMock() {
 
       if (table === "whatsapp_messages") {
         return {
+          select: vi.fn(() => ({
+            eq: vi.fn(() => ({
+              eq: vi.fn(() => ({
+                maybeSingle: vi.fn(async () => ({ data: null, error: null })),
+              })),
+            })),
+          })),
+          update: vi.fn((values: unknown) => {
+            messageUpdates.push(values);
+            return { eq: vi.fn(() => ({ eq: vi.fn(async () => ({ error: null })) })) };
+          }),
           insert: vi.fn(async (rows: unknown[]) => {
             messageInserts.push(...rows);
             return { error: null };
@@ -143,5 +156,35 @@ describe("/api/evolution-webhook", () => {
       }),
     ]);
     expect(prepareWhatsAppSalesReplyForContactMock).not.toHaveBeenCalled();
+  });
+
+  it("atualiza messages.update sem inserir mensagem duplicada", async () => {
+    const { POST } = await import("./route");
+    const request = new Request("http://localhost/api/evolution-webhook", {
+      method: "POST",
+      body: JSON.stringify({
+        event: "MESSAGES_UPDATE",
+        instance: "mayus-dutra",
+        data: {
+          status: "read",
+          key: {
+            remoteJid: "5521999990000@s.whatsapp.net",
+            fromMe: false,
+            id: "msg-1",
+          },
+          message: {
+            conversation: "Mayus, relatorio do escritorio",
+          },
+        },
+      }),
+    });
+
+    const response = await POST(request);
+    const body = await response.json();
+
+    expect(response.status).toBe(200);
+    expect(body).toEqual({ success: true, updated: true });
+    expect(supabaseMock.messageUpdates).toEqual([{ status: "read" }]);
+    expect(supabaseMock.messageInserts).toEqual([]);
   });
 });

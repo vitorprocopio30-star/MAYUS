@@ -2,17 +2,19 @@
 
 Este arquivo agora funciona como indice de progresso.
 
-A fonte unica de execucao do rollout agentico esta em:
+A fonte oficial atual do roadmap, percentual e checklist final esta em:
 
-- `docs/brain/MAYUS_AGENTIC_EXECUTION_CHECKLIST.md`
+- `docs/brain/MAYUS_100_PERCENT_FINAL_CHECKLIST.md`
 
-Use esse checklist para marcar:
+Use esse documento mestre para marcar:
 
 - o que ja foi concluido
 - o que esta parcial
 - o que falta
 - blockers antes do smoke final
 - validacoes executadas
+
+O historico abaixo permanece como evidencia de entregas anteriores, mas nao e mais a fonte principal de decisao.
 
 ## Estado Atual
 

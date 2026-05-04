@@ -2,6 +2,9 @@
 
 Gerado em 2026-04-24.
 
+> Arquivo historico. A fonte oficial atual do roadmap e checklist final do MAYUS e `docs/brain/MAYUS_100_PERCENT_FINAL_CHECKLIST.md`.
+> Use estes checklists por servico como evidencia tecnica e detalhe operacional; novas prioridades consolidadas devem refletir no documento mestre.
+
 Esta pasta e o painel de execucao por servico do MAYUS. Cada subpasta tem um `CHECKLIST.md` com criterios objetivos para dar check. Marque `[x]` somente quando houver evidencia: teste, build, print, log, migration aplicada, endpoint validado ou aceite de produto.
 
 ## Como usar

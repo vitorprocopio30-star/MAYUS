@@ -27,7 +27,7 @@ describe("buildWhatsAppSalesReply", () => {
     expect(reply.firstResponseSlaMinutes).toBe(5);
   });
 
-  it("usa playbook generico quando falta perfil comercial do escritorio", () => {
+  it("usa fallback comercial seguro quando falta perfil comercial do escritorio", () => {
     const reply = buildWhatsAppSalesReply({
       contactName: "Carlos",
       messages: [
@@ -37,10 +37,46 @@ describe("buildWhatsAppSalesReply", () => {
     });
 
     expect(reply.mode).toBe("suggested_reply");
-    expect(reply.suggestedReply).toContain("MAYUS");
-    expect(reply.internalNote).toContain("playbook generico");
+    expect(reply.leadTopic).toBe("employment");
+    expect(reply.suggestedReply).toContain("demissao");
+    expect(reply.internalNote).toContain("fallback comercial");
     expect(reply.riskFlags).toContain("missing_firm_profile");
     expect(reply.mayAutoSend).toBe(true);
+  });
+
+  it("responde contracheque de forma especifica sem discurso institucional", () => {
+    const reply = buildWhatsAppSalesReply({
+      contactName: "Vitor Procopio",
+      messages: [
+        { direction: "inbound", content: "Quero saber se tenho direito ao desconto do meu contracheque" },
+      ],
+      salesProfile: null,
+    });
+
+    expect(reply.mode).toBe("suggested_reply");
+    expect(reply.leadTopic).toBe("payroll_discount");
+    expect(reply.suggestedReply).toContain("Vitor");
+    expect(reply.suggestedReply).toContain("qual nome no contracheque");
+    expect(reply.suggestedReply).toContain("comecou em que mes");
+    expect(reply.suggestedReply).toContain("print so da parte do desconto");
+    expect(reply.suggestedReply).not.toContain("O Escritorio conduz");
+    expect(reply.suggestedReply).not.toContain("Esse atendimento e de qual area");
+    expect(reply.riskFlags).toEqual(expect.arrayContaining(["legal_triage", "missing_firm_profile"]));
+    expect(reply.mayAutoSend).toBe(true);
+  });
+
+  it("bloqueia abertura repetida quando o MAYUS ja se apresentou", () => {
+    const reply = buildWhatsAppSalesReply({
+      contactName: "Vitor",
+      messages: [
+        { direction: "outbound", content: "Oi, Vitor. Aqui e o MAYUS, assistente do Escritorio." },
+        { direction: "inbound", content: "Preciso de ajuda" },
+      ],
+      salesProfile,
+    });
+
+    expect(reply.repeatedOpenerBlocked).toBe(true);
+    expect(reply.suggestedReply).not.toContain("Aqui e o MAYUS");
   });
 
   it("exige revisao humana para preco, contrato ou urgencia juridica", () => {

@@ -18,6 +18,7 @@ type ExecuteActionsInput = {
     id: string;
     name: string | null;
     phone_number: string | null;
+    assigned_user_id?: string | null;
   };
   trigger: string;
   actorUserId?: string | null;
@@ -152,6 +153,99 @@ async function createOrTouchCrmLead(input: ExecuteActionsInput) {
   return { id: task.id, detail: "Lead criado no CRM." };
 }
 
+async function findCrmLead(input: ExecuteActionsInput) {
+  const explicitId = cleanText(String(input.decision.actions_to_execute.find((action) => action.payload?.crm_task_id)?.payload?.crm_task_id || ""));
+  if (explicitId) return explicitId;
+
+  const phone = normalizePhone(input.contact.phone_number);
+  if (!phone) return null;
+
+  const { data, error } = await input.supabase
+    .from("crm_tasks")
+    .select("id")
+    .eq("tenant_id", input.tenantId)
+    .eq("phone", phone)
+    .limit(1)
+    .maybeSingle<{ id: string }>();
+
+  if (error) throw error;
+  return data?.id || null;
+}
+
+async function updateCrmStage(input: ExecuteActionsInput, action: MayusOperatingPartnerAction) {
+  const crmTaskId = cleanText(String(action.payload?.crm_task_id || "")) || await findCrmLead(input);
+  if (!crmTaskId) return { id: null, detail: "Nenhum lead CRM encontrado para atualizar etapa." };
+
+  let stageId = cleanText(String(action.payload?.stage_id || ""));
+  const stageName = cleanText(String(action.payload?.stage_name || action.payload?.stage || ""));
+
+  if (!stageId && stageName) {
+    const { data: task, error: taskError } = await input.supabase
+      .from("crm_tasks")
+      .select("pipeline_id")
+      .eq("tenant_id", input.tenantId)
+      .eq("id", crmTaskId)
+      .maybeSingle<{ pipeline_id: string | null }>();
+    if (taskError) throw taskError;
+
+    if (task?.pipeline_id) {
+      const { data: stages, error: stageError } = await input.supabase
+        .from("crm_stages")
+        .select("id, name")
+        .eq("pipeline_id", task.pipeline_id);
+      if (stageError) throw stageError;
+      const normalizedStageName = stageName.toLowerCase();
+      const match = (stages || []).find((stage) => String(stage.name || "").toLowerCase().includes(normalizedStageName));
+      stageId = match?.id || "";
+    }
+  }
+
+  if (!stageId) return { id: crmTaskId, detail: "Etapa CRM nao informada pelo agente." };
+
+  const { error } = await input.supabase
+    .from("crm_tasks")
+    .update({ stage_id: stageId, data_ultima_movimentacao: new Date().toISOString() })
+    .eq("tenant_id", input.tenantId)
+    .eq("id", crmTaskId);
+
+  if (error) throw error;
+  return { id: crmTaskId, detail: "Etapa do lead atualizada no CRM." };
+}
+
+async function createFollowUpTask(input: ExecuteActionsInput, action: MayusOperatingPartnerAction) {
+  const title = cleanText(action.title) || "Follow-up MAYUS WhatsApp";
+  const urgency = cleanText(String(action.payload?.urgency || "")) || (
+    input.decision.closing_readiness.status === "ready_for_human_close" ? "ATENCAO" : "ROTINA"
+  );
+  const sourceId = `mayus-whatsapp:${input.contact.id}:${Date.now()}:${title.slice(0, 32).toLowerCase().replace(/[^a-z0-9]+/g, "-")}`;
+  const { data, error } = await input.supabase
+    .from("user_tasks")
+    .insert({
+      tenant_id: input.tenantId,
+      title,
+      description: [
+        cleanText(String(action.payload?.description || "")) || input.decision.reasoning_summary_for_team,
+        `Contato WhatsApp: ${input.contact.name || input.contact.phone_number || input.contact.id}`,
+        `Proximo passo: ${input.decision.next_action}`,
+      ].filter(Boolean).join("\n"),
+      assigned_to: input.contact.assigned_user_id || input.actorUserId || null,
+      created_by: input.actorUserId || null,
+      created_by_agent: "mayus_operating_partner",
+      source_table: "whatsapp_contacts",
+      source_id: sourceId,
+      urgency,
+      status: "Pendente",
+      category: "WhatsApp",
+      type: "followup",
+      client_name: input.contact.name,
+    })
+    .select("id")
+    .single<{ id: string }>();
+
+  if (error || !data?.id) throw error || new Error("Tarefa de follow-up nao criada.");
+  return { id: data.id, detail: "Tarefa de follow-up criada." };
+}
+
 async function logAction(input: ExecuteActionsInput, action: MayusOperatingPartnerAction, result: MayusOperatingPartnerActionResult) {
   await input.supabase.from("system_event_logs").insert({
     tenant_id: input.tenantId,
@@ -199,7 +293,31 @@ export async function executeMayusOperatingPartnerActions(input: ExecuteActionsI
           detail: created.detail,
           record_id: created.id,
         };
-      } else if (action.type === "add_internal_note" || action.type === "answer_support" || action.type === "ask_discovery_question") {
+      } else if (action.type === "update_crm_stage") {
+        const updated = await updateCrmStage(input, action);
+        result = {
+          type: action.type,
+          status: updated.id ? "executed" : "skipped",
+          detail: updated.detail,
+          record_id: updated.id,
+        };
+      } else if (action.type === "create_task") {
+        const created = await createFollowUpTask(input, action);
+        result = {
+          type: action.type,
+          status: "executed",
+          detail: created.detail,
+          record_id: created.id,
+        };
+      } else if (
+        action.type === "add_internal_note"
+        || action.type === "answer_support"
+        || action.type === "ask_discovery_question"
+        || action.type === "request_document"
+        || action.type === "mark_ready_for_closing"
+        || action.type === "recommend_handoff"
+        || action.type === "handoff_human"
+      ) {
         result = {
           type: action.type,
           status: "executed",

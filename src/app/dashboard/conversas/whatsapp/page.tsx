@@ -8,7 +8,7 @@ import {
   Search, ChevronDown, Phone, Send,
   MessageCircle, Bot, Lock, CheckCircle2,
   Zap, Filter, FileText, Mic, Clock, Plus, X, Smartphone, Loader2, Smile, Paperclip, MoreVertical,
-  Users, UserCheck, LayoutPanelLeft, Share2, ClipboardList, Building2
+  Users, UserCheck, LayoutPanelLeft, Share2, ClipboardList, Building2, Download
 } from "lucide-react";
 import { toast } from "sonner";
 import EmojiPicker, { Theme as EmojiTheme } from "emoji-picker-react";
@@ -28,6 +28,24 @@ const formatDuration = (seconds: number) => {
   const secs = seconds % 60;
   return `${mins}:${secs.toString().padStart(2, '0')}`;
 };
+
+const sanitizeStorageName = (value: string) => (
+  value
+    .normalize("NFD")
+    .replace(/[\u0300-\u036f]/g, "")
+    .replace(/[^a-zA-Z0-9._-]+/g, "-")
+    .replace(/^-+|-+$/g, "")
+    .slice(0, 120) || "arquivo"
+);
+
+const inferWhatsAppMediaType = (file: File) => {
+  if (file.type.startsWith("image/")) return "image";
+  if (file.type.startsWith("video/")) return "video";
+  if (file.type.startsWith("audio/")) return "audio";
+  return "document";
+};
+
+const labelColorOptions = ["#CCA761", "#25D366", "#60A5FA", "#F97316", "#EF4444", "#A855F7"];
 
 export default function WhatsAppChatPremiumPage() {
   const { profile } = useUserProfile();
@@ -70,6 +88,8 @@ export default function WhatsAppChatPremiumPage() {
   const [mayusDraft, setMayusDraft] = useState<any | null>(null);
   const [contractFlowMode, setContractFlowMode] = useState<'ia_only' | 'human_only' | 'hybrid'>('hybrid');
   const [zapsignTemplateId, setZapsignTemplateId] = useState<string>("");
+  const [labelDraft, setLabelDraft] = useState("");
+  const [labelColorDraft, setLabelColorDraft] = useState("#CCA761");
 
   // Permissoes
   const isAdmin = profile?.role === 'Administrador' || profile?.role === 'mayus_admin' || profile?.role === 'Sócio';
@@ -106,6 +126,11 @@ export default function WhatsAppChatPremiumPage() {
     setTransferUserId(activeContact?.assigned_user_id || "");
   }, [activeContact?.id, activeContact?.department_id, activeContact?.assigned_user_id]);
 
+  useEffect(() => {
+    setLabelDraft(activeContact?.label || "");
+    setLabelColorDraft(activeContact?.label_color || "#CCA761");
+  }, [activeContact?.id, activeContact?.label, activeContact?.label_color]);
+
   const fetchContacts = async () => {
      setIsLoading(true);
      let query = supabase
@@ -139,7 +164,9 @@ export default function WhatsAppChatPremiumPage() {
   const filteredContacts = contacts.filter(c => {
     if (!searchQuery.trim()) return true;
     const q = searchQuery.toLowerCase();
-    return (c.name || '').toLowerCase().includes(q) || (c.phone_number || '').includes(q);
+    return (c.name || '').toLowerCase().includes(q)
+      || (c.phone_number || '').includes(q)
+      || (c.label || '').toLowerCase().includes(q);
   });
 
   const internalNotes = messages.filter((message) => (
@@ -152,7 +179,7 @@ export default function WhatsAppChatPremiumPage() {
       : "Com responsavel"
     : "MAYUS atendendo";
 
-  // Transferir Atendimento
+  // Transferencia de conversa
   const handleTransfer = async () => {
     if (!activeContact || (!transferDeptId && !transferUserId)) return toast.error("Selecione um departamento ou agente.");
     setIsTransferring(true);
@@ -210,7 +237,7 @@ export default function WhatsAppChatPremiumPage() {
          .order("created_at", { ascending: true });
 
        if (data) {
-          setMessages(data);
+          setMessages(await signMessageMediaUrls(data));
           scrollToBottom();
        }
     };
@@ -221,9 +248,10 @@ export default function WhatsAppChatPremiumPage() {
     const channel = supabase
        .channel(`chat_ws_meta_${activeContact.id}`)
        .on("postgres_changes", { event: "INSERT", schema: "public", table: "whatsapp_messages", filter: `contact_id=eq.${activeContact.id}` },
-         (payload) => {
-           setMessages((current) => current.some((message) => message.id === payload.new.id) ? current : [...current, payload.new]);
-           scrollToBottom();
+          async (payload) => {
+            const [signedMessage] = await signMessageMediaUrls([payload.new]);
+            setMessages((current) => current.some((message) => message.id === payload.new.id) ? current : [...current, signedMessage]);
+            scrollToBottom();
            if (payload.new?.direction === "inbound") {
              setTimeout(() => loadLatestMayusDraft(activeContact.id), 1200);
            }
@@ -235,6 +263,16 @@ export default function WhatsAppChatPremiumPage() {
 
   const scrollToBottom = () => {
     setTimeout(() => messagesEndRef.current?.scrollIntoView({ behavior: "smooth" }), 100);
+  };
+
+  const signMessageMediaUrls = async (rows: any[]) => {
+    return Promise.all(rows.map(async (message) => {
+      if (!message?.media_storage_path) return message;
+      const { data } = await supabase.storage
+        .from('whatsapp-media')
+        .createSignedUrl(message.media_storage_path, 60 * 60);
+      return data?.signedUrl ? { ...message, media_url: data.signedUrl } : message;
+    }));
   };
 
   const loadLatestMayusDraft = async (contactId: string) => {
@@ -339,16 +377,19 @@ export default function WhatsAppChatPremiumPage() {
 
       if (uploadError) throw uploadError;
 
-      const { data: { publicUrl } } = supabase.storage.from('whatsapp-media').getPublicUrl(fileName);
+      const { data: signedAudio, error: signedAudioError } = await supabase.storage
+        .from('whatsapp-media')
+        .createSignedUrl(fileName, 60 * 60);
+
+      if (signedAudioError || !signedAudio?.signedUrl) throw signedAudioError || new Error("Falha ao assinar audio");
 
       const response = await fetch('/api/whatsapp/send', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
-          tenant_id: profile!.tenant_id,
           contact_id: activeContact.id,
-          phone_number: activeContact.phone_number,
-          audio_url: publicUrl
+          audio_url: signedAudio.signedUrl,
+          media_storage_path: fileName
         })
       });
 
@@ -388,7 +429,7 @@ export default function WhatsAppChatPremiumPage() {
     // Aplicar Assinatura ACIMA da mensagem
     const displayName = signatureName || profile?.full_name || 'Equipe MAYUS';
     const signature = showSignature ? `*${displayName}*\n\n` : "";
-    const textToSend = signature + messageBody;
+    const textToSend = messageBody ? signature + messageBody : "";
 
     // MODO SIMULACAO (Liberado para Teste)
     if (!activeContact) {
@@ -413,12 +454,49 @@ export default function WhatsAppChatPremiumPage() {
     setInputText("");
 
     try {
-       if (selectedFile) toast.success(`Anexo ${selectedFile.name} pronto.`);
+        let uploadedMedia: {
+          media_url: string;
+          media_type: string;
+          media_filename: string;
+          media_mime_type: string;
+          media_storage_path: string;
+        } | null = null;
+
+       if (selectedFile) {
+         const safeName = sanitizeStorageName(selectedFile.name);
+         const filePath = `${profile!.tenant_id}/${activeContact.id}/${Date.now()}-${safeName}`;
+         const { error: uploadError } = await supabase.storage
+           .from('whatsapp-media')
+           .upload(filePath, selectedFile, {
+             contentType: selectedFile.type || 'application/octet-stream',
+             upsert: true,
+           });
+
+         if (uploadError) throw uploadError;
+
+          const { data: signedMedia, error: signedMediaError } = await supabase.storage
+            .from('whatsapp-media')
+            .createSignedUrl(filePath, 60 * 60);
+
+          if (signedMediaError || !signedMedia?.signedUrl) throw signedMediaError || new Error("Falha ao assinar midia");
+
+          uploadedMedia = {
+            media_url: signedMedia.signedUrl,
+            media_type: inferWhatsAppMediaType(selectedFile),
+            media_filename: selectedFile.name,
+            media_mime_type: selectedFile.type || 'application/octet-stream',
+            media_storage_path: filePath,
+          };
+       }
 
        const response = await fetch('/api/whatsapp/send', {
           method: 'POST',
           headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({ tenant_id: profile!.tenant_id, contact_id: activeContact.id, phone_number: activeContact.phone_number, text: textToSend })
+          body: JSON.stringify({
+             contact_id: activeContact.id,
+             text: textToSend,
+            ...(uploadedMedia || {}),
+          })
        });
        if (!response.ok) throw new Error("Erro no motor Meta");
 
@@ -468,13 +546,6 @@ export default function WhatsAppChatPremiumPage() {
     }
   };
 
-  const handleUseMayusDraft = () => {
-    if (!mayusDraft?.suggested_reply) return;
-    setInputMode("responder");
-    setInputText(mayusDraft.suggested_reply);
-    toast.success("Rascunho MAYUS carregado no atendimento.");
-  };
-
   const handleCreateContact = async () => {
      let cleanPhone = newContactPhone.replace(/\D/g, '');
      if (cleanPhone.length < 10) return toast.error("Numero invalido.");
@@ -522,6 +593,16 @@ export default function WhatsAppChatPremiumPage() {
     } finally {
       setIsConversationActionPending(false);
     }
+  };
+
+  const handleSaveContactLabel = async () => {
+    const label = labelDraft.trim().slice(0, 40);
+    const color = /^#[0-9a-fA-F]{6}$/.test(labelColorDraft) ? labelColorDraft : "#CCA761";
+
+    await updateActiveContact(
+      { label: label || null, label_color: color, updated_at: new Date().toISOString() },
+      label ? "Etiqueta atualizada." : "Etiqueta removida."
+    );
   };
 
   const saveInternalNote = async (content: string) => {
@@ -623,6 +704,76 @@ export default function WhatsAppChatPremiumPage() {
     return teamMembers.find((member) => member.id === id)?.full_name || "Responsavel nao encontrado";
   };
 
+  const getMessageMediaUrl = (message: any) => (
+    message?.media_url || message?.metadata?.media_url || message?.metadata?.audio_url || null
+  );
+
+  const getMessageMediaType = (message: any) => (
+    String(message?.message_type || message?.metadata?.media_type || "text").toLowerCase()
+  );
+
+  const renderMessageMedia = (message: any) => {
+    const mediaUrl = getMessageMediaUrl(message);
+    const mediaType = getMessageMediaType(message);
+    const filename = message?.media_filename || message?.metadata?.media_filename || message?.metadata?.fileName || "arquivo";
+    const isMediaMessage = ["image", "audio", "video", "document", "sticker"].includes(mediaType);
+
+    if (!isMediaMessage) return null;
+
+    if (!mediaUrl) {
+      return (
+        <div className="rounded-xl border border-white/10 bg-black/20 px-3 py-2 text-[11px] text-gray-400">
+          Midia recebida, mas ainda sem arquivo disponivel. {message?.media_summary || "Aguardando processamento."}
+        </div>
+      );
+    }
+
+    if (mediaType === "image" || mediaType === "sticker") {
+      return (
+        <a href={mediaUrl} target="_blank" rel="noreferrer" className="block overflow-hidden rounded-xl border border-white/10 bg-black/30">
+          <img src={mediaUrl} alt={filename} className="max-h-72 w-full object-contain" />
+        </a>
+      );
+    }
+
+    if (mediaType === "audio") {
+      return (
+        <audio controls src={mediaUrl} className="w-[260px] max-w-full" />
+      );
+    }
+
+    if (mediaType === "video") {
+      return (
+        <video controls src={mediaUrl} className="max-h-72 w-full rounded-xl border border-white/10 bg-black/30" />
+      );
+    }
+
+    return (
+      <a href={mediaUrl} target="_blank" rel="noreferrer" className="flex items-center gap-3 rounded-xl border border-white/10 bg-black/20 p-3 hover:border-[#CCA761]/40 transition-colors">
+        <FileText size={18} className="text-[#CCA761] shrink-0" />
+        <div className="min-w-0 flex-1">
+          <p className="truncate text-xs font-bold text-white">{filename}</p>
+          <p className="text-[9px] uppercase tracking-widest text-gray-500">Abrir documento</p>
+        </div>
+        <Download size={14} className="text-gray-500 shrink-0" />
+      </a>
+    );
+  };
+
+  const renderMediaInsight = (message: any) => {
+    const summary = message?.media_summary || null;
+    const text = message?.media_text || null;
+    const insight = summary || text;
+    if (!insight) return null;
+
+    return (
+      <div className="mt-2 rounded-xl border border-[#CCA761]/15 bg-[#CCA761]/10 px-3 py-2 text-[11px] leading-relaxed text-[#f0d9a6]">
+        <span className="font-black uppercase tracking-widest text-[8px] block mb-1">Leitura MAYUS</span>
+        {String(insight).slice(0, 900)}
+      </div>
+    );
+  };
+
   const handleSendZapSignContract = async () => {
     if (!activeContact || isSendingContract) return;
 
@@ -666,7 +817,7 @@ export default function WhatsAppChatPremiumPage() {
 
 
   return (
-    <div className={`h-[calc(100vh-5rem)] w-[calc(100%+2rem)] md:w-[calc(100%+4rem)] -m-4 md:-m-8 flex bg-[#020104] rounded-tl-3xl border-t border-l border-white/5 overflow-hidden ${montserrat.className} text-sm`}>
+    <div className={`h-[calc(100vh-5rem)] min-w-0 w-[calc(100%+2rem)] md:w-[calc(100%+4rem)] -m-4 md:-m-8 flex bg-[#020104] rounded-tl-3xl border-t border-l border-white/5 overflow-hidden ${montserrat.className} text-sm`}>
 
       {/* 1. BARRA LATERAL ESQUERDA (LISTAGEM) */}
       <div className="w-[360px] flex-shrink-0 border-r border-white/10 bg-white dark:bg-[#050505] flex flex-col h-full z-10 transition-all">
@@ -756,12 +907,24 @@ export default function WhatsAppChatPremiumPage() {
                     {contact.profile_pic_url ? <img src={contact.profile_pic_url} className="w-full h-full object-cover" /> : contact.name?.substring(0, 2).toUpperCase()}
                  </div>
                  <div className="flex-1 min-w-0">
-                    <div className="flex justify-between items-center mb-1">
-                       <h4 className="font-bold truncate text-sm text-gray-200">{contact.name || contact.phone_number}</h4>
-                       <span className="text-[9px] text-gray-600 font-bold uppercase">{contact.last_message_at ? formatTime(contact.last_message_at) : ''}</span>
-                    </div>
-                    <p className="text-gray-500 text-[10px] truncate italic font-medium">Sincronizado via Meta Cloud</p>
-                 </div>
+                     <div className="flex justify-between items-center mb-1">
+                        <h4 className="font-bold truncate text-sm text-gray-200">{contact.name || contact.phone_number}</h4>
+                        <span className="text-[9px] text-gray-600 font-bold uppercase">{contact.last_message_at ? formatTime(contact.last_message_at) : ''}</span>
+                     </div>
+                     <p className="text-gray-500 text-[10px] truncate italic font-medium">Sincronizado via Meta Cloud</p>
+                     {contact.label && (
+                       <span
+                         className="mt-2 inline-flex max-w-full items-center rounded-full border px-2 py-0.5 text-[8px] font-black uppercase tracking-widest"
+                         style={{
+                           color: contact.label_color || '#CCA761',
+                           borderColor: `${contact.label_color || '#CCA761'}55`,
+                           backgroundColor: `${contact.label_color || '#CCA761'}18`,
+                         }}
+                       >
+                         <span className="truncate">{contact.label}</span>
+                       </span>
+                     )}
+                  </div>
                  {contact.unread_count > 0 && <div className="bg-[#CCA761] text-black text-[9px] font-black w-4 h-4 rounded-full flex items-center justify-center animate-pulse">{contact.unread_count}</div>}
               </div>
            ))}
@@ -769,122 +932,98 @@ export default function WhatsAppChatPremiumPage() {
       </div>
 
       {/* 2. AREA DE CHAT (CENTRAL) */}
-      <div className="flex-1 flex flex-col h-full bg-[#010101] relative overflow-hidden">
-          <div className="absolute inset-0 opacity-[0.05] pointer-events-none bg-[radial-gradient(circle_at_center,_#CCA761_0%,_transparent_80%)]" />
+      <div className="flex-1 min-w-0 flex flex-col h-full relative bg-[#0a0a0a]/50 overflow-hidden">
+          <div className="absolute inset-0 opacity-5 pointer-events-none" style={{ backgroundImage: 'radial-gradient(circle at 50% 50%, #CCA761 0%, transparent 60%)' }} />
 
           <div className="flex-1 flex flex-col min-h-0">
             {(activeContact || messages.length > 0) ? (
               <>
-                <div className="h-16 border-b border-white/5 flex items-center justify-between px-6 bg-[#0a0a0a]/90 backdrop-blur-3xl z-10 flex-shrink-0">
-                    <div className="flex items-center gap-4">
-                       <div className="w-10 h-10 rounded-full border border-[#CCA761]/50 bg-gray-200 dark:bg-black flex items-center justify-center text-[#CCA761] font-black text-base shadow-[0_0_20px_rgba(204,167,97,0.1)] overflow-hidden">
+                <div className="h-16 border-b border-white/5 flex items-center justify-between px-6 bg-[#0a0a0a] z-10 flex-shrink-0">
+                    <div className="flex items-center gap-3">
+                       <div className="w-8 h-8 rounded-full bg-[#111] border border-white/10 flex items-center justify-center text-white font-bold overflow-hidden">
                           {activeContact?.profile_pic_url ? <img src={activeContact.profile_pic_url} className="w-full h-full object-cover" /> : (activeContact?.name?.substring(0, 2).toUpperCase() || "TS")}
                        </div>
                        <div>
-                         <h2 className={`text-xl font-bold text-white tracking-wide flex items-center gap-3 ${cormorant.className} italic`}>
+                         <h2 className="text-white font-bold tracking-wide flex items-center gap-2">
                             {activeContact?.name || activeContact?.phone_number || "Lead de Teste (Simulado)"}
-                            <div className="flex gap-1.5 translate-y-[-1px]">
-                               <span className={`text-[8px] px-2.5 py-1 rounded-full font-black uppercase tracking-widest border ${activeContact ? 'bg-[#25D366]/10 text-[#25D366] border-[#25D366]/20' : 'bg-[#CCA761]/10 text-[#CCA761] border-[#CCA761]/20'}`}>
-                                  {activeContact ? 'WhatsApp' : 'Simulacao'}
-                                </span>
-                            </div>
-                         </h2>
-                         <div className="flex items-center gap-2 mt-0.5">
-                            <div className="w-2 h-2 rounded-full bg-green-500 animate-pulse shadow-[0_0_10px_#22c55e]" />
-                            <span className="text-[9px] text-gray-600 uppercase font-black tracking-widest">Protocolo de Criptografia Ativo</span>
-                         </div>
+                            <span className={`text-[9px] px-1.5 py-0.5 rounded font-black uppercase tracking-widest border ${activeContact ? 'bg-[#25D366]/20 text-[#25D366] border-[#25D366]/30' : 'bg-[#CCA761]/10 text-[#CCA761] border-[#CCA761]/20'}`}>
+                              {activeContact ? 'WhatsApp' : 'Simulacao'}
+                            </span>
+                            {activeContact?.label && (
+                              <span
+                                className="text-[9px] px-1.5 py-0.5 rounded font-black uppercase tracking-widest border"
+                                style={{
+                                  color: activeContact.label_color || '#CCA761',
+                                  borderColor: `${activeContact.label_color || '#CCA761'}55`,
+                                  backgroundColor: `${activeContact.label_color || '#CCA761'}18`,
+                                }}
+                              >
+                                {activeContact.label}
+                              </span>
+                            )}
+                          </h2>
                        </div>
                     </div>
 
                     <div className="flex items-center gap-3">
-                       <button onClick={() => setShowTransferModal(true)} className="flex items-center gap-2 bg-white/5 border border-white/10 text-gray-400 px-3 py-2 rounded-xl text-[9px] font-black uppercase tracking-widest hover:bg-[#CCA761]/10 hover:text-[#CCA761] transition-all">
-                          <Share2 size={14} /> Transferir Atendimento
-                       </button>
                        <button
                          onClick={handleResolveConversation}
                          disabled={isConversationActionPending}
-                         className="flex items-center gap-2 bg-[#CCA761] text-black px-4 py-2 rounded-xl text-[9px] font-black uppercase tracking-widest shadow-[0_0_25px_rgba(204,167,97,0.3)] hover:scale-105 transition-all disabled:opacity-50 disabled:cursor-not-allowed"
+                         className="bg-[#CCA761] text-black font-black uppercase tracking-widest text-[10px] px-4 py-2 rounded shadow-[0_0_15px_rgba(204,167,97,0.4)] hover:scale-105 transition-transform flex items-center gap-2 disabled:opacity-50 disabled:cursor-not-allowed"
                        >
-                          {isConversationActionPending ? <Loader2 size={16} className="animate-spin" /> : <CheckCircle2 size={16} />} Resolver
+                          {isConversationActionPending ? <Loader2 size={14} className="animate-spin" /> : <CheckCircle2 size={14} />} Resolver
                        </button>
                     </div>
                 </div>
 
-                {(mayusDraft || isLoadingMayusDraft) && (
-                  <div className="border-b border-[#CCA761]/15 bg-[#CCA761]/5 px-6 py-2 z-10 flex-shrink-0">
-                    <div className="flex items-start justify-between gap-5">
-                      <div className="min-w-0 flex-1">
-                        <div className="flex items-center gap-2 mb-1">
-                          <Bot size={14} className="text-[#CCA761]" />
-                          <span className="text-[9px] font-black uppercase tracking-[0.2em] text-[#CCA761]">
-                            Rascunho MAYUS
-                          </span>
-                          {mayusDraft?.mode && (
-                            <span className="text-[8px] font-black uppercase tracking-widest text-gray-500">
-                              {String(mayusDraft.mode).replaceAll("_", " ")}
-                            </span>
-                          )}
-                        </div>
-                        <p className="text-[12px] leading-relaxed text-gray-300 line-clamp-1">
-                          {isLoadingMayusDraft
-                            ? "Carregando rascunho consultivo..."
-                            : mayusDraft?.suggested_reply || mayusDraft?.internal_note || "Sem rascunho disponivel para este contato."}
-                        </p>
-                        {Array.isArray(mayusDraft?.risk_flags) && mayusDraft.risk_flags.length > 0 && (
-                          <div className="mt-2 flex flex-wrap gap-1.5">
-                            {mayusDraft.risk_flags.slice(0, 4).map((flag: string) => (
-                              <span key={flag} className="text-[8px] font-black uppercase tracking-widest px-2 py-1 rounded-full bg-black/20 text-gray-400 border border-white/10">
-                                {flag.replaceAll("_", " ")}
-                              </span>
-                            ))}
-                          </div>
-                        )}
+                <div className="flex-1 overflow-y-auto p-6 flex flex-col gap-6 z-10 scroll-smooth no-scrollbar min-h-0">
+                    {activeContact && messages.length === 0 && (
+                      <div className="flex justify-center my-10 animate-in fade-in slide-in-from-bottom-2 duration-300">
+                         <span className="bg-[#CCA761]/10 border border-[#CCA761]/20 text-[#CCA761] px-4 py-2 rounded-full text-xs font-bold tracking-wide shadow-[0_0_15px_rgba(204,167,97,0.1)]">
+                            Novo contato detectado. Diga ola!
+                         </span>
                       </div>
-                      <div className="flex items-center gap-2 flex-shrink-0">
-                        <button
-                          onClick={handleUseMayusDraft}
-                          disabled={!mayusDraft?.suggested_reply}
-                          className="px-3 py-2 rounded-lg bg-[#CCA761] text-black text-[9px] font-black uppercase tracking-widest disabled:opacity-40 disabled:cursor-not-allowed"
-                        >
-                          Usar
-                        </button>
-                        <button
-                          onClick={handleGenerateMayusReply}
-                          disabled={isGeneratingMayusReply || !activeContact}
-                          className="px-3 py-2 rounded-lg border border-[#CCA761]/20 text-[#CCA761] text-[9px] font-black uppercase tracking-widest disabled:opacity-40"
-                        >
-                          {isGeneratingMayusReply ? "Atualizando" : "Atualizar"}
-                        </button>
-                      </div>
-                    </div>
-                  </div>
-                )}
-
-                <div className="flex-1 overflow-y-auto px-6 py-5 flex flex-col gap-5 no-scrollbar min-h-0">
+                    )}
                     {messages.map((msg, idx) => {
                        const isInternalNote = msg.message_type === "internal_note" || msg.status === "internal_note";
                        const isMe = msg.direction === 'outbound' && !isInternalNote;
                        return (
-                          <div key={msg.id || idx} className={`flex ${isInternalNote ? 'justify-center' : isMe ? 'justify-end' : 'justify-start'} animate-in fade-in slide-in-from-bottom-4`}>
-                             <div className={`flex flex-col gap-1.5 ${isInternalNote ? 'items-center max-w-[72%]' : `max-w-[68%] ${isMe ? 'items-end' : 'items-start'}`}`}>
-                                <div className={`p-3.5 rounded-2xl text-[14px] leading-relaxed shadow-2xl relative border ${
+                          <div key={msg.id || idx} className={`flex gap-4 ${isInternalNote ? 'justify-center' : isMe ? 'justify-end' : 'justify-start'} animate-in fade-in slide-in-from-bottom-2 duration-300`}>
+                             {!isMe && !isInternalNote && (
+                               <div className="w-8 h-8 rounded-full bg-[#111] border border-white/10 shrink-0 flex items-center justify-center text-xs font-bold text-gray-400">
+                                  {activeContact?.name ? activeContact.name.substring(0, 2).toUpperCase() : "WA"}
+                               </div>
+                             )}
+
+                             <div className={`flex flex-col gap-1 ${isInternalNote ? 'items-center max-w-[76%]' : `max-w-[70%] ${isMe ? 'items-end' : 'items-start'}`}`}>
+                                <div className={`p-3 rounded-2xl text-sm shadow-md whitespace-pre-wrap ${
                                    isInternalNote
                                    ? 'bg-orange-500/10 border-orange-500/30 text-orange-100 rounded-xl'
                                    : isMe
-                                   ? 'bg-gradient-to-br from-[#CCA761] to-[#b89552] text-black font-semibold rounded-tr-sm border-[#b89552]/40'
-                                   : 'bg-[#121212] border-white/10 text-gray-200 rounded-tl-sm'
+                                   ? 'bg-[#CCA761] text-black font-medium border border-[#b89552] rounded-tr-sm'
+                                   : 'bg-[#1a1a1a] border border-white/5 text-gray-200 rounded-tl-sm'
                                 }`}>
                                    {isInternalNote && (
                                      <div className="flex items-center gap-2 text-[9px] font-black uppercase tracking-[0.2em] text-orange-400 mb-2">
                                        <Lock size={12} /> Nota interna
                                      </div>
                                    )}
-                                   {msg.content}
-                                </div>
-                                <span className="text-[9px] text-gray-600 font-bold uppercase tracking-widest px-2">
-                                   {formatTime(msg.created_at)} {isInternalNote ? 'Somente equipe' : isMe ? '- Vitor P.' : ''}
+                                   {renderMessageMedia(msg)}
+                                   {msg.content && (
+                                     <div className={renderMessageMedia(msg) ? "mt-2" : ""}>{msg.content}</div>
+                                   )}
+                                   {renderMediaInsight(msg)}
+                                 </div>
+                                <span className="text-[9px] text-gray-500 font-bold tracking-widest uppercase mt-0.5 px-1">
+                                   {formatTime(msg.created_at)} {isInternalNote ? "Somente equipe" : ""}
                                 </span>
                              </div>
+
+                             {isMe && (
+                               <div className="w-8 h-8 rounded-full bg-white dark:bg-[#050505] border border-white/10 shrink-0 flex items-center justify-center text-xs font-bold text-[#CCA761]">
+                                  EU
+                               </div>
+                             )}
                           </div>
                        );
                     })}
@@ -904,48 +1043,34 @@ export default function WhatsAppChatPremiumPage() {
             )}
           </div>
 
-          {/* COMPOSER SLIM - DESIGN ULTRA COMPACTO E FUNCIONAL */}
-          <div className="px-3 py-2 bg-[#0a0a0a]/95 backdrop-blur-3xl border-t border-white/10 z-10 flex-shrink-0">
+          {(activeContact || messages.length > 0) && (
+          /* COMPOSER SLIM - DESIGN ULTRA COMPACTO E FUNCIONAL */
+          <div className="p-3 pb-4 bg-[#0a0a0a]/95 backdrop-blur-3xl border-t border-white/5 z-10 flex-shrink-0">
               {/* Linha Fina de Controles Superiores */}
-              <div className="flex justify-between items-center mb-1.5 px-1 gap-3 flex-wrap">
-                  <div className="flex gap-3 flex-wrap">
-                    <button onClick={() => { console.log('Mode: Responder'); setInputMode("responder"); }} className={`text-[8px] font-black uppercase tracking-[0.18em] relative transition-all flex items-center gap-1.5 ${inputMode === "responder" ? "text-[#CCA761]" : "text-gray-600 hover:text-gray-400"}`}>
+              <div className="flex justify-between items-center mb-2 px-3">
+                  <div className="flex gap-4">
+                    <button onClick={() => { console.log('Mode: Responder'); setInputMode("responder"); }} className={`text-[9px] font-black uppercase tracking-[0.2em] relative transition-all flex items-center gap-1.5 ${inputMode === "responder" ? "text-[#CCA761]" : "text-gray-600 hover:text-gray-400"}`}>
                         <MessageCircle size={12} /> Atendimento
                         {inputMode === "responder" && <div className="absolute -bottom-1 left-0 w-full h-[1px] bg-[#CCA761]" />}
                     </button>
-                    <button onClick={handleMayusControl} disabled={(isGeneratingMayusReply || isConversationActionPending) || !activeContact} className="text-[8px] font-black uppercase tracking-[0.18em] relative transition-all flex items-center gap-1.5 text-[#CCA761] disabled:opacity-40 disabled:cursor-not-allowed">
-                        {(isGeneratingMayusReply || isConversationActionPending) ? <Loader2 size={12} className="animate-spin" /> : <Bot size={12} />}
-                        {activeContact?.assigned_user_id === profile?.id ? "Voltar MAYUS" : "MAYUS"}
-                    </button>
-                    <button onClick={() => { console.log('Mode: Nota'); setInputMode("nota"); }} className={`text-[8px] font-black uppercase tracking-[0.18em] relative transition-all flex items-center gap-1.5 ${inputMode === "nota" ? "text-orange-500" : "text-gray-600 hover:text-gray-400"}`}>
+                    <button onClick={() => { console.log('Mode: Nota'); setInputMode("nota"); }} className={`text-[9px] font-black uppercase tracking-[0.2em] relative transition-all flex items-center gap-1.5 ${inputMode === "nota" ? "text-orange-500" : "text-gray-600 hover:text-gray-400"}`}>
                         <Lock size={12} /> Nota Interna
                         {inputMode === "nota" && <div className="absolute -bottom-1 left-0 w-full h-[1px] bg-orange-500" />}
                     </button>
                   </div>
-                  <div className="flex items-center gap-2">
-                    {showSignature && (
-                      <input
-                        type="text"
-                        value={signatureName}
-                        onChange={(e) => setSignatureName(e.target.value)}
-                        placeholder={profile?.full_name || 'Seu nome'}
-                        className="bg-transparent border-b border-white/10 text-[9px] text-gray-300 px-1 py-0.5 w-20 outline-none focus:border-[#CCA761] placeholder:text-gray-700 font-bold transition-colors"
-                      />
-                    )}
-                    <label className="flex items-center gap-2 cursor-pointer group">
-                        <input type="checkbox" checked={showSignature} onChange={() => setShowSignature(!showSignature)} className="hidden" />
-                        <div className={`w-6 h-3 rounded-full transition-all relative ${showSignature ? "bg-[#CCA761]" : "bg-white/10"}`}>
-                          <div className={`absolute top-0.5 w-2 h-2 rounded-full bg-white transition-all ${showSignature ? "right-0.5" : "left-0.5"}`} />
-                        </div>
-                        <span className="text-[7px] font-black text-gray-500 uppercase tracking-widest group-hover:text-white transition-colors">Assinatura</span>
-                    </label>
-                  </div>
+                  <label className="flex items-center gap-2 cursor-pointer group">
+                      <input type="checkbox" checked={showSignature} onChange={() => setShowSignature(!showSignature)} className="hidden" />
+                      <div className={`w-6 h-3 rounded-full transition-all relative ${showSignature ? "bg-[#CCA761]" : "bg-white/10"}`}>
+                        <div className={`absolute top-0.5 w-2 h-2 rounded-full bg-white transition-all ${showSignature ? "right-0.5" : "left-0.5"}`} />
+                      </div>
+                      <span className="text-[8px] font-black text-gray-500 uppercase tracking-widest group-hover:text-white transition-colors">Assinatura</span>
+                  </label>
               </div>
 
               {/* Area principal de input - estilo barra */}
               <div className={`rounded-xl border transition-all flex flex-col shadow-lg relative ${inputMode === "nota" ? "bg-orange-500/[0.02] border-orange-500/30" : "bg-gray-200 dark:bg-black/40 border-white/10 focus-within:border-[#CCA761]/40"} ${isRecording ? 'border-red-500 ring-1 ring-red-500/20' : ''}`}>
                   {isRecording ? (
-                    <div className="w-full flex items-center justify-between px-3 py-2 bg-red-500/5 rounded-xl animate-pulse">
+                    <div className="w-full flex items-center justify-between px-4 py-3 bg-red-500/5 rounded-xl animate-pulse">
                         <div className="flex items-center gap-3">
                           <div className="flex gap-1 items-center">
                             {[1, 2, 3, 4].map(i => (
@@ -973,7 +1098,7 @@ export default function WhatsAppChatPremiumPage() {
                        <div className="flex flex-col">
                          {/* Preview de Anexo */}
                          {selectedFile && (
-                           <div className="px-3 py-1.5 bg-gray-200 dark:bg-black/40 border-b border-white/10 flex items-center justify-between animate-in slide-in-from-bottom-2">
+                           <div className="px-4 py-2 bg-gray-200 dark:bg-black/40 border-t border-white/10 flex items-center justify-between animate-in slide-in-from-bottom-2">
                              <div className="flex items-center gap-2">
                                <FileText size={16} className="text-[#CCA761]" />
                                <span className="text-[11px] text-gray-300 font-medium">{selectedFile.name}</span>
@@ -983,7 +1108,48 @@ export default function WhatsAppChatPremiumPage() {
                            </div>
                          )}
 
-                         <div className="relative flex items-end w-full px-2 py-1.5 gap-1.5">
+                         <div className="relative flex items-end w-full px-2 py-2">
+                           {/* Input de Texto Slim */}
+                           <textarea
+                             value={inputText}
+                             onChange={(e) => setInputText(e.target.value)}
+                             onKeyDown={(e) => {
+                               if (e.key === 'Enter' && !e.shiftKey) {
+                                 e.preventDefault();
+                                 handleSendMessage();
+                               }
+                             }}
+                             placeholder={inputMode === "nota" ? "Escreva uma nota interna..." : "Digite sua mensagem..."}
+                             className="flex-1 bg-transparent border-none text-white text-[13px] px-3 py-2 outline-none resize-none min-h-[42px] max-h-[150px] placeholder:text-gray-700 transition-all font-medium scrollbar-none"
+                           />
+
+                           {/* Preview da Assinatura Minimalista */}
+                           {showSignature && inputMode === "responder" && (
+                             <div className="absolute bottom-1 right-[115px] pointer-events-none opacity-30 hidden sm:block">
+                                <span className="text-[8px] text-gray-500 italic font-bold">*{profile?.full_name || 'Equipe'}*</span>
+                             </div>
+                           )}
+
+                           {/* Botao de envio compacto */}
+                           <button
+                             onClick={(e) => { e.preventDefault(); handleSendMessage(); }}
+                             disabled={isSending || (inputMode === "nota" ? !inputText.trim() : (!inputText.trim() && !isRecording && !selectedFile))}
+                             className={`ml-2 mb-1 shrink-0 h-9 px-4 rounded-lg font-black uppercase text-[9px] tracking-wider transition-all flex items-center gap-2 ${
+                               isSending ? 'bg-white/10 text-gray-400' : 'bg-[#CCA761] text-black hover:bg-white active:scale-95 shadow-lg shadow-[#CCA761]/10'
+                             }`}
+                           >
+                             {isSending ? (
+                               <Loader2 className="animate-spin" size={12} />
+                             ) : inputMode === "nota" ? (
+                               <><Lock size={12} /> SALVAR NOTA</>
+                             ) : (
+                               <><Send size={12} /> ENVIAR</>
+                             )}
+                           </button>
+                         </div>
+
+                         {/* Barra de ferramentas inferior */}
+                         <div className="flex gap-4 px-3 py-2 border-t border-gray-100 dark:border-white/[0.03] bg-gray-200 dark:bg-black/20 rounded-b-xl relative items-center">
                            <input
                              type="file"
                              ref={fileInputRef}
@@ -997,20 +1163,20 @@ export default function WhatsAppChatPremiumPage() {
                              }}
                            />
 
-                           <div className="flex items-center gap-1 pb-1">
-                             <button onClick={() => fileInputRef.current?.click()} className="text-gray-500 hover:text-[#CCA761] transition-all p-1" title="Anexar Arquivo"><Paperclip size={17} /></button>
+                           <div className="flex gap-3">
+                             <button onClick={() => fileInputRef.current?.click()} className="text-gray-500 hover:text-[#CCA761] transition-all p-1" title="Anexar Arquivo"><Paperclip size={18} /></button>
                              <button
                                onClick={(e) => { e.preventDefault(); startRecording(); }}
                                className="text-gray-500 hover:text-red-500 transition-all p-1"
                                title="Gravar Audio"
                              >
-                               <Mic size={17} />
+                               <Mic size={18} />
                              </button>
                              <div className="relative">
-                               <button onClick={() => setShowEmojiPicker(!showEmojiPicker)} className={`transition-all p-1 ${showEmojiPicker ? 'text-[#CCA761]' : 'text-gray-500 hover:text-[#CCA761]'}`} title="Emoji"><Smile size={17} /></button>
+                               <button onClick={() => setShowEmojiPicker(!showEmojiPicker)} className={`transition-all p-1 ${showEmojiPicker ? 'text-[#CCA761]' : 'text-gray-500 hover:text-[#CCA761]'}`} title="Emoji"><Smile size={18} /></button>
 
                                {showEmojiPicker && (
-                                 <div className="absolute bottom-full left-0 mb-3 z-50 shadow-2xl animate-in fade-in slide-in-from-bottom-2 duration-300">
+                                 <div className="absolute bottom-full left-0 mb-4 z-50 shadow-2xl animate-in fade-in slide-in-from-bottom-2 duration-300">
                                    <div className="fixed inset-0" onClick={() => setShowEmojiPicker(false)} />
                                    <div className="relative">
                                      <EmojiPicker
@@ -1026,52 +1192,19 @@ export default function WhatsAppChatPremiumPage() {
                                  </div>
                                )}
                              </div>
-                             <button onClick={() => toast.info("Modelos de resposta em breve")} className="text-gray-500 hover:text-[#CCA761] transition-all p-1" title="Modelos de Resposta"><LayoutPanelLeft size={17} /></button>
+                             <button onClick={handleGenerateMayusReply} disabled={(isGeneratingMayusReply || isConversationActionPending) || !activeContact} className="text-gray-500 hover:text-[#CCA761] transition-all p-1 disabled:opacity-40 disabled:cursor-not-allowed" title="Preparar resposta MAYUS">
+                               {isGeneratingMayusReply ? <Loader2 size={18} className="animate-spin" /> : <Bot size={18} />}
+                             </button>
+                             <button onClick={() => toast.info("Modelos de resposta em breve")} className="text-gray-500 hover:text-[#CCA761] transition-all p-1" title="Modelos"><LayoutPanelLeft size={18} /></button>
                            </div>
 
-                           {/* Input de Texto Slim */}
-                           <textarea
-                             value={inputText}
-                             onChange={(e) => setInputText(e.target.value)}
-                             onKeyDown={(e) => {
-                               if (e.key === 'Enter' && !e.shiftKey) {
-                                 e.preventDefault();
-                                 handleSendMessage();
-                               }
-                             }}
-                             placeholder={inputMode === "nota" ? "Nota interna..." : "Mensagem..."}
-                             className="flex-1 bg-transparent border-none text-white text-[13px] px-2 py-1.5 outline-none resize-none min-h-[34px] max-h-[96px] placeholder:text-gray-700 transition-all font-medium scrollbar-none"
-                           />
-
-                           {/* Preview da Assinatura Minimalista */}
-                           {showSignature && inputMode === "responder" && (
-                             <div className="absolute bottom-1 right-[115px] pointer-events-none opacity-30 hidden sm:block">
-                                <span className="text-[8px] text-gray-500 italic font-bold">*{profile?.full_name || 'Equipe'}*</span>
-                             </div>
-                           )}
-
-                           {/* Botao de envio compacto */}
-                           <button
-                             onClick={(e) => { e.preventDefault(); handleSendMessage(); }}
-                             disabled={isSending || (inputMode === "nota" ? !inputText.trim() : (!inputText.trim() && !isRecording && !selectedFile))}
-                             className={`mb-0.5 shrink-0 h-8 px-3 rounded-lg font-black uppercase text-[8px] tracking-wider transition-all flex items-center gap-1.5 ${
-                               isSending ? 'bg-white/10 text-gray-400' : 'bg-[#CCA761] text-black hover:bg-white active:scale-95 shadow-lg shadow-[#CCA761]/10'
-                             }`}
-                           >
-                             {isSending ? (
-                               <Loader2 className="animate-spin" size={12} />
-                             ) : inputMode === "nota" ? (
-                               <><Lock size={12} /> SALVAR NOTA</>
-                             ) : (
-                               <><Send size={12} /> ENVIAR</>
-                             )}
-                           </button>
+                           <span className="ml-auto text-[7px] text-gray-700 font-black tracking-tighter uppercase self-center hidden sm:block">Focado na Experiencia MAYUS</span>
                          </div>
-
                       </div>
                   )}
               </div>
           </div>
+          )}
       </div>
 
       {/* 3. INFO E KANBAN (BARRA DIREITA) */}
@@ -1079,8 +1212,8 @@ export default function WhatsAppChatPremiumPage() {
          {activeContact && (
             <div className="p-8 space-y-10 animate-in slide-in-from-right-4 duration-700">
                {/* Header Perfil */}
-               <div className="flex flex-col items-center">
-                  <div className="w-28 h-28 rounded-full border-2 border-[#CCA761] bg-gray-200 dark:bg-black p-1 mb-5 relative group">
+                <div className="flex flex-col items-center">
+                   <div className="w-28 h-28 rounded-full border-2 border-[#CCA761] bg-gray-200 dark:bg-black p-1 mb-5 relative group">
                      {activeContact.profile_pic_url ? (
                         <img src={activeContact.profile_pic_url} className="w-full h-full object-cover rounded-full" />
                      ) : (
@@ -1090,12 +1223,45 @@ export default function WhatsAppChatPremiumPage() {
                      )}
                      <div className="absolute bottom-2 right-2 w-5 h-5 bg-[#25D366] rounded-full border-4 border-[#050505] shadow-[0_0_10px_#22c55e]" />
                   </div>
-                  <h3 className="text-2xl font-bold text-white text-center italic group-hover:text-[#CCA761] transition-colors">{activeContact.name}</h3>
-                  <div className="bg-[#CCA761]/10 border border-[#CCA761]/20 text-[#CCA761] px-4 py-1.5 rounded-full text-[9px] font-black uppercase mt-3 tracking-widest">{serviceStatusLabel}</div>
-               </div>
+                   <h3 className="text-2xl font-bold text-white text-center italic group-hover:text-[#CCA761] transition-colors">{activeContact.name}</h3>
+                   <div className="bg-[#CCA761]/10 border border-[#CCA761]/20 text-[#CCA761] px-4 py-1.5 rounded-full text-[9px] font-black uppercase mt-3 tracking-widest">{serviceStatusLabel}</div>
+                </div>
 
-               {/* Modulo Kanban */}
-               <div className="space-y-4">
+                <div className="space-y-4">
+                   <div className="flex items-center gap-2 text-gray-500 font-black uppercase text-[10px] tracking-widest"><Filter size={14} className="text-[#CCA761]" /> Etiqueta</div>
+                   <div className="p-5 bg-gray-200 dark:bg-black rounded-2xl border border-white/5 space-y-4">
+                     <input
+                       value={labelDraft}
+                       onChange={(event) => setLabelDraft(event.target.value)}
+                       placeholder="Ex: urgente, fechamento, suporte..."
+                       maxLength={40}
+                       className="w-full bg-[#111] border border-white/10 rounded-xl px-4 py-3 text-xs text-white outline-none placeholder:text-gray-700 focus:border-[#CCA761]"
+                     />
+                     <div className="flex items-center gap-2">
+                       {labelColorOptions.map((color) => (
+                         <button
+                           key={color}
+                           type="button"
+                           onClick={() => setLabelColorDraft(color)}
+                           className={`h-7 w-7 rounded-full border transition-all ${labelColorDraft === color ? 'border-white scale-110' : 'border-white/10'}`}
+                           style={{ backgroundColor: color }}
+                           aria-label={`Usar cor ${color}`}
+                         />
+                       ))}
+                     </div>
+                     <button
+                       onClick={handleSaveContactLabel}
+                       disabled={isConversationActionPending}
+                       className="w-full py-3 bg-white/5 border border-white/10 rounded-xl font-black uppercase text-[10px] tracking-[0.2em] flex items-center justify-center gap-3 hover:bg-[#CCA761] hover:text-black transition-all disabled:opacity-40 disabled:cursor-not-allowed"
+                     >
+                       {isConversationActionPending ? <Loader2 size={14} className="animate-spin" /> : <CheckCircle2 size={14} />}
+                       Salvar etiqueta
+                     </button>
+                   </div>
+                </div>
+
+                {/* Modulo Kanban */}
+                <div className="space-y-4">
                   <div className="flex items-center gap-2 text-gray-500 font-black uppercase text-[10px] tracking-widest"><ClipboardList size={14} className="text-[#CCA761]" /> Gestao Pipeline</div>
                   <div className="p-5 bg-gray-200 dark:bg-black rounded-2xl border border-white/5 space-y-4">
                      <div className="grid grid-cols-1 gap-3 text-xs">

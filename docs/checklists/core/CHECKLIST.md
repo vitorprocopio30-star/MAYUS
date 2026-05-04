@@ -1,5 +1,8 @@
 # MAYUS Core Checklist
 
+> Arquivo historico. A fonte oficial atual do roadmap e checklist final do MAYUS e `docs/brain/MAYUS_100_PERCENT_FINAL_CHECKLIST.md`.
+> Use este arquivo apenas como evidencia tecnica por frente.
+
 Objetivo: transformar o MAYUS em um Mission Engine governado, auditavel e facil de acionar por chat, voz, WhatsApp, jobs e eventos internos.
 
 ## Mission Engine

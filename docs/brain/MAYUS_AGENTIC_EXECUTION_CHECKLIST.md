@@ -1,6 +1,9 @@
 # MAYUS Agentic Execution Checklist
 
-Fonte unica de execucao para o rollout agentico do MAYUS.
+> Arquivo historico. A fonte oficial atual do roadmap e checklist final do MAYUS e `docs/brain/MAYUS_100_PERCENT_FINAL_CHECKLIST.md`.
+> Use este arquivo apenas como historico tecnico/evidencia; novas decisoes de produto e progresso devem refletir no documento mestre.
+
+Arquivo historico de execucao do rollout agentico do MAYUS.
 
 Este documento consolida:
 
@@ -14,11 +17,11 @@ Este documento consolida:
 - `docs/brain/IMPLEMENTATION-PLAN-voice-brain-execution.md`
 - plano operacional do rollout Vault / integracoes
 
-Regra de uso:
+Regra de uso historico:
 
-1. Toda nova sessao deve comecar lendo este arquivo.
-2. Ao concluir um item, marcar `[x]`.
-3. Ao concluir parcialmente, manter `[~]` no titulo ou registrar nota curta.
+1. Toda nova sessao deve comecar pelo `docs/brain/MAYUS_100_PERCENT_FINAL_CHECKLIST.md`.
+2. Use este arquivo para consultar evidencias e detalhes do rollout agentico antigo.
+3. Ao concluir item ainda representado aqui, reflita a decisao final no documento mestre.
 4. Ao encontrar bug real, registrar tambem em `docs/tracking/bugs.md`.
 5. Ao finalizar sessao, atualizar `docs/operations/sessions.md`.
 

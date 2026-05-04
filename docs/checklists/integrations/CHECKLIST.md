@@ -1,5 +1,8 @@
 # MAYUS Integrations Checklist
 
+> Arquivo historico. A fonte oficial atual do roadmap e checklist final do MAYUS e `docs/brain/MAYUS_100_PERCENT_FINAL_CHECKLIST.md`.
+> Use este arquivo apenas como evidencia tecnica por frente.
+
 Objetivo: integrar provedores externos com menor privilegio, secrets protegidos, webhooks auditados e falha segura.
 
 ## Supabase

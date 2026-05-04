@@ -12,6 +12,11 @@ export type SendWhatsAppMessageInput = {
   phoneNumber: string;
   text?: string | null;
   audioUrl?: string | null;
+  mediaUrl?: string | null;
+  mediaType?: "image" | "audio" | "video" | "document" | string | null;
+  mediaFilename?: string | null;
+  mediaMimeType?: string | null;
+  mediaStoragePath?: string | null;
   metadata?: Record<string, unknown> | null;
   fetcher?: typeof fetch;
 };
@@ -42,9 +47,15 @@ function pickProvider(integrations: ResolvedTenantIntegration[]) {
 }
 
 function assertSendInput(input: SendWhatsAppMessageInput) {
-  if (!input.tenantId || !input.contactId || !input.phoneNumber || (!input.text && !input.audioUrl)) {
+  if (!input.tenantId || !input.contactId || !input.phoneNumber || (!input.text && !input.audioUrl && !input.mediaUrl)) {
     throw new Error("Faltam parametros para enviar WhatsApp");
   }
+}
+
+function getOutgoingMessageType(input: SendWhatsAppMessageInput) {
+  if (input.audioUrl) return "audio";
+  if (input.mediaUrl) return input.mediaType || "document";
+  return "text";
 }
 
 async function parseApiResponse(response: Response) {
@@ -77,6 +88,21 @@ async function sendViaMetaCloud(input: SendWhatsAppMessageInput, provider: Resol
   if (input.audioUrl) {
     payload.type = "audio";
     payload.audio = { link: input.audioUrl };
+  } else if (input.mediaUrl) {
+    const mediaType = getOutgoingMessageType(input);
+    payload.type = mediaType;
+    if (mediaType === "image") {
+      payload.image = { link: input.mediaUrl, ...(input.text ? { caption: input.text } : {}) };
+    } else if (mediaType === "video") {
+      payload.video = { link: input.mediaUrl, ...(input.text ? { caption: input.text } : {}) };
+    } else {
+      payload.type = "document";
+      payload.document = {
+        link: input.mediaUrl,
+        filename: input.mediaFilename || "documento",
+        ...(input.text ? { caption: input.text } : {}),
+      };
+    }
   } else {
     payload.type = "text";
     payload.text = { body: input.text };
@@ -107,13 +133,24 @@ async function sendViaEvolution(input: SendWhatsAppMessageInput, provider: Resol
 
   validateEvolutionUrl(baseUrl);
 
-  const cleanPhone = input.phoneNumber.split("@")[0];
+  const cleanPhone = input.phoneNumber.split("@")[0].replace(/\D/g, "");
   const isAudio = Boolean(input.audioUrl);
+  const isMedia = Boolean(input.mediaUrl);
   const url = isAudio
     ? `${baseUrl}/message/sendWhatsAppAudio/${instanceName}`
+    : isMedia
+      ? `${baseUrl}/message/sendMedia/${instanceName}`
     : `${baseUrl}/message/sendText/${instanceName}`;
   const payload = isAudio
     ? { number: cleanPhone, audio: input.audioUrl }
+    : isMedia
+      ? {
+        number: cleanPhone,
+        mediatype: getOutgoingMessageType(input) === "video" ? "video" : getOutgoingMessageType(input) === "image" ? "image" : "document",
+        media: input.mediaUrl,
+        caption: input.text || "",
+        fileName: input.mediaFilename || "documento",
+      }
     : { number: cleanPhone, text: input.text };
 
   const response = await fetcher(url, {
@@ -152,12 +189,25 @@ export async function sendWhatsAppMessage(input: SendWhatsAppMessageInput): Prom
   const metadata = {
     ...(input.metadata || {}),
     ...(input.audioUrl ? { audio_url: input.audioUrl } : {}),
+    ...(input.mediaUrl ? { media_url: input.mediaUrl, media_type: getOutgoingMessageType(input) } : {}),
   };
+  const messageType = getOutgoingMessageType(input);
   const { error: dbError } = await input.supabase.from("whatsapp_messages").insert([{
     tenant_id: input.tenantId,
     contact_id: input.contactId,
     direction: "outbound",
-    content: input.audioUrl ? "[Audio Enviado]" : input.text,
+    message_type: messageType,
+    content: input.audioUrl
+      ? "[Audio Enviado]"
+      : input.mediaUrl
+        ? input.text || `[${messageType}]`
+        : input.text,
+    media_url: input.audioUrl || input.mediaUrl || null,
+    media_mime_type: input.mediaMimeType || null,
+    media_filename: input.mediaFilename || null,
+    media_storage_path: input.mediaStoragePath || null,
+    media_provider: provider.provider,
+    media_processing_status: input.audioUrl || input.mediaUrl ? "none" : "none",
     status: "sent",
     metadata: Object.keys(metadata).length > 0 ? metadata : null,
   }]);

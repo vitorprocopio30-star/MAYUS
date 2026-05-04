@@ -84,6 +84,8 @@ describe("prepareWhatsAppSalesReplyForContact", () => {
           return makeSelectQuery({
             data: {
               ai_features: {
+                mayus_operating_partner: { enabled: false },
+                sales_llm_testbench: { enabled: false },
                 sales_consultation_profile: {
                   ideal_client: "beneficiarios do INSS com negativa recente",
                   core_solution: "entender chance real e documentos faltantes",
@@ -124,6 +126,8 @@ describe("prepareWhatsAppSalesReplyForContact", () => {
     });
 
     expect(prepared.metadata.mode).toBe("suggested_reply");
+    expect(prepared.metadata.reply_source).toBe("deterministic_fallback");
+    expect(prepared.metadata.model_used).toBe("deterministic");
     expect(prepared.metadata.external_side_effects_blocked).toBe(false);
     expect(prepared.metadata.auto_sent).toBe(false);
     expect(prepared.autoSendResult).toEqual({ attempted: false, status: "skipped" });
@@ -134,13 +138,15 @@ describe("prepareWhatsAppSalesReplyForContact", () => {
         table: "system_event_logs",
         payload: expect.objectContaining({
           event_name: "whatsapp_sales_reply_prepared",
-          payload: expect.objectContaining({
-            contact_id: "contact-1",
-            trigger: "meta_webhook",
-            may_auto_send: true,
-            first_response_policy: expect.objectContaining({
-              enabled: false,
-              can_auto_send: false,
+            payload: expect.objectContaining({
+              contact_id: "contact-1",
+              trigger: "meta_webhook",
+              may_auto_send: true,
+              reply_source: "deterministic_fallback",
+              model_used: "deterministic",
+              first_response_policy: expect.objectContaining({
+                enabled: false,
+                can_auto_send: false,
             }),
           }),
         }),
@@ -150,6 +156,77 @@ describe("prepareWhatsAppSalesReplyForContact", () => {
         payload: expect.objectContaining({
           tenant_id: "tenant-1",
           link_url: "/dashboard/conversas/whatsapp",
+        }),
+      }),
+    ]));
+  });
+
+  it("mantem fallback deterministico especifico para desconto no contracheque quando LLM esta desabilitada", async () => {
+    const inserts: Array<{ table: string; payload: any }> = [];
+    const supabase: any = {
+      from: vi.fn((table: string) => {
+        if (table === "whatsapp_contacts") {
+          return makeSelectQuery({
+            data: { id: "contact-1", name: "Vitor", phone_number: "5511999999999", assigned_user_id: null },
+            error: null,
+          });
+        }
+
+        if (table === "tenant_settings") {
+          return makeSelectQuery({
+            data: {
+              ai_features: {
+                mayus_operating_partner: { enabled: false },
+                sales_llm_testbench: { enabled: false },
+              },
+            },
+            error: null,
+          });
+        }
+
+        if (table === "whatsapp_messages") {
+          return makeSelectQuery({
+            data: [
+              { direction: "inbound", content: "Quero saber se tenho direito ao desconto do meu contracheque", message_type: "text", created_at: "2026-05-04T13:15:00.000Z" },
+            ],
+            error: null,
+          });
+        }
+
+        return {
+          insert: vi.fn(async (payload: any) => {
+            inserts.push({ table, payload });
+            return { error: null };
+          }),
+        };
+      }),
+    };
+
+    const prepared = await prepareWhatsAppSalesReplyForContact({
+      supabase,
+      tenantId: "tenant-1",
+      contactId: "contact-1",
+      trigger: "manual",
+    });
+
+    expect(buildMayusOperatingPartnerDecisionMock).not.toHaveBeenCalled();
+    expect(buildSalesLlmReplyMock).not.toHaveBeenCalled();
+    expect(prepared.metadata.reply_source).toBe("deterministic_fallback");
+    expect(prepared.metadata.lead_topic).toBe("payroll_discount");
+    expect(prepared.metadata.suggested_reply).toContain("qual nome no contracheque");
+    expect(prepared.metadata.suggested_reply).toContain("comecou em que mes");
+    expect(prepared.metadata.suggested_reply).toContain("print so da parte do desconto");
+    expect(prepared.metadata.suggested_reply).not.toContain("O Escritorio conduz");
+    expect(prepared.metadata.suggested_reply).not.toContain("Esse atendimento e de qual area");
+    expect(inserts).toEqual(expect.arrayContaining([
+      expect.objectContaining({
+        table: "system_event_logs",
+        payload: expect.objectContaining({
+          payload: expect.objectContaining({
+            reply_source: "deterministic_fallback",
+            model_used: "deterministic",
+            lead_topic: "payroll_discount",
+          }),
         }),
       }),
     ]));
@@ -187,6 +264,9 @@ describe("prepareWhatsAppSalesReplyForContact", () => {
           return makeSelectQuery({
             data: {
               ai_features: {
+                mayus_operating_partner: {
+                  enabled: false,
+                },
                 sales_llm_testbench: {
                   enabled: true,
                   default_model: "deepseek/deepseek-v4-pro",
@@ -229,6 +309,8 @@ describe("prepareWhatsAppSalesReplyForContact", () => {
     });
 
     expect(prepared.llmReply?.model_used).toBe("deepseek/deepseek-v4-pro");
+    expect(prepared.metadata.reply_source).toBe("sales_llm");
+    expect(prepared.metadata.model_used).toBe("deepseek/deepseek-v4-pro");
     expect(prepared.autoSendResult).toEqual({
       attempted: true,
       status: "sent",
@@ -295,6 +377,9 @@ describe("prepareWhatsAppSalesReplyForContact", () => {
           return makeSelectQuery({
             data: {
               ai_features: {
+                mayus_operating_partner: {
+                  enabled: false,
+                },
                 sales_llm_testbench: {
                   enabled: true,
                   default_model: "deepseek/deepseek-v4-pro",
@@ -345,7 +430,7 @@ describe("prepareWhatsAppSalesReplyForContact", () => {
       provider: "openrouter",
       model_used: "deepseek/deepseek-v4-pro",
       reply: "Entendi. Esse desconto aparece com qual nome no contracheque?",
-      intent: "sales_qualification",
+      intent: "legal_triage",
       confidence: 0.91,
       risk_flags: [],
       next_action: "qualificar dor do desconto",
@@ -419,7 +504,9 @@ describe("prepareWhatsAppSalesReplyForContact", () => {
       autoSendFirstResponse: true,
     });
 
-    expect(prepared.operatingPartnerDecision?.intent).toBe("sales_qualification");
+    expect(prepared.operatingPartnerDecision?.intent).toBe("legal_triage");
+    expect(prepared.metadata.reply_source).toBe("operating_partner");
+    expect(prepared.metadata.model_used).toBe("deepseek/deepseek-v4-pro");
     expect(prepared.operatingPartnerActionResults).toEqual([
       { type: "create_crm_lead", status: "executed", detail: "Lead criado no CRM.", record_id: "crm-1" },
     ]);
@@ -427,13 +514,13 @@ describe("prepareWhatsAppSalesReplyForContact", () => {
     expect(executeMayusOperatingPartnerActionsMock).toHaveBeenCalledWith(expect.objectContaining({
       tenantId: "tenant-1",
       contact: expect.objectContaining({ id: "contact-1" }),
-      decision: expect.objectContaining({ intent: "sales_qualification" }),
+      decision: expect.objectContaining({ intent: "legal_triage" }),
     }));
     expect(sendWhatsAppMessageMock).toHaveBeenCalledWith(expect.objectContaining({
       text: "Entendi. Esse desconto aparece com qual nome no contracheque?",
       metadata: expect.objectContaining({
         source: "mayus_operating_partner_auto_reply",
-        intent: "sales_qualification",
+        intent: "legal_triage",
       }),
     }));
     expect(inserts).toEqual(expect.arrayContaining([

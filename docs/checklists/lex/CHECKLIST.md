@@ -1,5 +1,8 @@
 # MAYUS Lex Checklist
 
+> Arquivo historico. A fonte oficial atual do roadmap e checklist final do MAYUS e `docs/brain/MAYUS_100_PERCENT_FINAL_CHECKLIST.md`.
+> Use este arquivo apenas como evidencia tecnica por frente.
+
 Objetivo: criar o melhor cerebro juridico operacional para escritorio de advocacia no Brasil, com grounding, memoria do caso, artifacts e revisao humana.
 
 ## Case Brain
