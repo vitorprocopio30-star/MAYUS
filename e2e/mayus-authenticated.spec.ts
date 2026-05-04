@@ -1144,12 +1144,18 @@ async function openMayus(page: Page) {
   await expect(page.getByTestId("mayus-chat-input")).toBeVisible({ timeout: 120_000 });
 }
 
+async function expectInternalMissionUiHidden(page: Page) {
+  await expect(page.locator('[data-testid^="mayus-mission-card-"]')).toHaveCount(0);
+  await expect(page.locator('[data-testid^="mayus-artifact-"]')).toHaveCount(0);
+  await expect(page.locator('[data-testid^="mayus-event-"]')).toHaveCount(0);
+}
+
 test.describe("MAYUS authenticated", () => {
   const credentials = getPlaywrightCredentials();
 
   test.skip(!credentials.available, "Configure PLAYWRIGHT_EMAIL e PLAYWRIGHT_PASSWORD para rodar os testes autenticados.");
 
-  test("resolve o contexto juridico por chat e mostra a missao relacionada do Case Brain", async ({ page }) => {
+  test("resolve o contexto juridico por chat sem expor missoes internas", async ({ page }) => {
     test.setTimeout(180_000);
     await openMayus(page);
 
@@ -1158,24 +1164,11 @@ test.describe("MAYUS authenticated", () => {
 
     await expect(page.getByText(new RegExp(`Contexto jurídico resolvido para ${PROCESS_NUMBER.replace(/[-.]/g, "\\$&")}`, "i")).first()).toBeVisible();
 
-    const mayusMission = page.getByTestId(`mayus-mission-card-${CONTEXT_TASK_ID}`).first();
-    const caseBrainMission = page.getByTestId(`mayus-mission-card-${CASE_BRAIN_TASK_ID}`).first();
-    const contextArtifact = page.getByTestId("mayus-artifact-context-artifact-1").first();
-    const caseBrainArtifact = page.getByTestId("mayus-artifact-case-brain-artifact-1").first();
-
-    await expect(mayusMission).toBeVisible();
-    await expect(contextArtifact).toBeVisible();
-    await expect(contextArtifact).toContainText(/contexto jur[ií]dico/i);
-    await expect(contextArtifact).toContainText(PROCESS_NUMBER);
-    await expect(mayusMission.getByText(/minuta completed/i).first()).toBeVisible();
-
-    await expect(caseBrainMission).toBeVisible();
-    await expect(caseBrainArtifact).toBeVisible();
-    await expect(caseBrainArtifact).toContainText(/draft plan/i);
-    await expect(caseBrainMission.getByText(/draft plan pronto/i).first()).toBeVisible();
+    await expect(page.getByText(/Contestação Previdenciária/i).first()).toBeVisible();
+    await expectInternalMissionUiHidden(page);
   });
 
-  test("responde status do caso por chat e mostra artifact/event de suporte", async ({ page }) => {
+  test("responde status do caso por chat sem expor artifact/event interno", async ({ page }) => {
     test.setTimeout(180_000);
     await openMayus(page);
 
@@ -1187,20 +1180,8 @@ test.describe("MAYUS authenticated", () => {
     await expect(page.getByText(/Base confirmada:/i).first()).toBeVisible();
     await expect(page.getByText(/Inferencias:/i).first()).toBeVisible();
 
-    const supportMission = page.getByTestId(`mayus-mission-card-${SUPPORT_STATUS_TASK_ID}`).first();
-    const supportArtifact = page.getByTestId("mayus-artifact-support-status-artifact-1").first();
-    const supportEvent = page.getByTestId("mayus-event-support-status-event-1").first();
-
-    await expect(supportMission).toBeVisible();
-    await expect(supportArtifact).toBeVisible();
-    await expect(supportArtifact).toContainText(/status do caso/i);
-    await expect(supportArtifact).toContainText(PROCESS_NUMBER);
-    await expect(supportArtifact).toContainText(/modo answer/i);
-    await expect(supportArtifact).toContainText(/confianca high/i);
-    await expect(supportArtifact).toContainText(/fase Contestacao/i);
-    await expect(supportArtifact).toContainText(/1 sinais faltantes/i);
-    await expect(supportEvent).toBeVisible();
-    await expect(supportEvent).toContainText(/status do caso respondido/i);
+    await expect(page.getByText(PROCESS_NUMBER).first()).toBeVisible();
+    await expectInternalMissionUiHidden(page);
   });
 
   test("mostra handoff seguro quando status do caso tem referencia ambigua", async ({ page }) => {
@@ -1212,21 +1193,10 @@ test.describe("MAYUS authenticated", () => {
 
     await expect(page.getByText(/handoff humano recomendado/i).first()).toBeVisible();
 
-    const supportMission = page.getByTestId(`mayus-mission-card-${SUPPORT_STATUS_HANDOFF_TASK_ID}`).first();
-    const supportArtifact = page.getByTestId("mayus-artifact-support-status-handoff-artifact-1").first();
-    const supportEvent = page.getByTestId("mayus-event-support-status-handoff-event-1").first();
-
-    await expect(supportMission).toBeVisible();
-    await expect(supportArtifact).toBeVisible();
-    await expect(supportArtifact).toContainText(/status do caso/i);
-    await expect(supportArtifact).toContainText(/modo handoff/i);
-    await expect(supportArtifact).toContainText(/confianca low/i);
-    await expect(supportArtifact).toContainText(/handoff ambiguous case match/i);
-    await expect(supportEvent).toBeVisible();
-    await expect(supportEvent).toContainText(/status do caso respondido/i);
+    await expectInternalMissionUiHidden(page);
   });
 
-  test("solicita a primeira minuta por chat e acompanha a missao da Draft Factory", async ({ page }) => {
+  test("solicita a primeira minuta por chat sem cards de missao", async ({ page }) => {
     test.setTimeout(180_000);
     await openMayus(page);
 
@@ -1235,20 +1205,11 @@ test.describe("MAYUS authenticated", () => {
 
     await expect(page.getByText(/foi gerada pela draft factory jur[ií]dica/i).first()).toBeVisible();
 
-    const mayusMission = page.getByTestId(`mayus-mission-card-${DRAFT_TASK_ID}`).first();
-    const draftFactoryMission = page.getByTestId(`mayus-mission-card-${DRAFT_FACTORY_TASK_ID}`).first();
-
-    await expect(mayusMission).toBeVisible();
-    await expect(mayusMission.getByText(/resultado da primeira minuta/i)).toBeVisible();
-    await expect(mayusMission.getByText(/contestação previdenciária/i).first()).toBeVisible();
-
-    await expect(draftFactoryMission).toBeVisible();
-    await expect(draftFactoryMission.getByText(/artifact da primeira minuta/i)).toBeVisible();
-    await expect(draftFactoryMission.getByText(/previdenciário/i)).toBeVisible();
-    await expect(draftFactoryMission.getByText(/primeira minuta pronta/i).first()).toBeVisible();
+    await expect(page.getByText(/Primeira minuta pronta para revisão humana/i).first()).toBeVisible();
+    await expectInternalMissionUiHidden(page);
   });
 
-  test("sincroniza a memoria documental por chat e mostra a missao operacional do refresh", async ({ page }) => {
+  test("sincroniza a memoria documental por chat sem mostrar missao operacional", async ({ page }) => {
     test.setTimeout(180_000);
     await openMayus(page);
 
@@ -1257,17 +1218,9 @@ test.describe("MAYUS authenticated", () => {
 
     await expect(page.getByText(/Memoria documental atualizada/i).first()).toBeVisible();
 
-    const syncMission = page.getByTestId(`mayus-mission-card-${SYNC_TASK_ID}`).first();
-    const syncArtifact = page.getByTestId("mayus-artifact-document-sync-artifact-1").first();
-
-    await expect(syncMission).toBeVisible();
-    await expect(syncArtifact).toBeVisible();
-    await expect(syncArtifact).toContainText(/refresh documental/i);
-    await expect(syncArtifact).toContainText(/sync synced/i);
-    await expect(syncArtifact).toContainText(/3 docs/i);
-    await expect(syncArtifact).toContainText(/1 warnings/i);
-    await expect(syncArtifact).toContainText(/1 pendencias/i);
-    await expect(syncMission.getByText(/3 documento\(s\) sincronizados/i).first()).toBeVisible();
+    await expect(page.getByText(/Documentos sincronizados: 3/i).first()).toBeVisible();
+    await expect(page.getByText(/Status da sync: synced/i).first()).toBeVisible();
+    await expectInternalMissionUiHidden(page);
   });
 
   test("revisa a minuta por chat e mostra o guidance juridico orientado do MAYUS", async ({ page }) => {
@@ -1279,19 +1232,8 @@ test.describe("MAYUS authenticated", () => {
 
     await expect(page.getByText(/Revisão orientada da minuta/i).first()).toBeVisible();
 
-    const reviewMission = page.getByTestId(`mayus-mission-card-${REVIEW_TASK_ID}`).first();
-    const reviewArtifact = page.getByTestId("mayus-artifact-draft-review-artifact-1").first();
-    const caseBrainMission = page.getByTestId(`mayus-mission-card-${CASE_BRAIN_TASK_ID}`).first();
-
-    await expect(reviewMission).toBeVisible();
-    await expect(reviewArtifact).toBeVisible();
-    await expect(reviewArtifact).toContainText(/revisao da minuta/i);
-    await expect(reviewArtifact).toContainText(/veredito attention/i);
-    await expect(reviewArtifact).toContainText(/proximo passo strengthen before approval/i);
-    await expect(reviewMission.getByText(/a minuta está utilizável, mas ainda pede reforço jurídico/i).first()).toBeVisible();
-
-    await expect(caseBrainMission).toBeVisible();
-    await expect(caseBrainMission.getByText(/draft plan/i).first()).toBeVisible();
+    await expect(page.getByText(/Veredito MAYA: está utilizável, mas ainda pede reforço jurídico/i).first()).toBeVisible();
+    await expectInternalMissionUiHidden(page);
   });
 
   test("monta o loop supervisionado da minuta por chat e mostra o plano de reforco por secao", async ({ page }) => {
@@ -1303,18 +1245,8 @@ test.describe("MAYUS authenticated", () => {
 
     await expect(page.getByText(/Loop supervisionado da minuta/i).first()).toBeVisible();
 
-    const loopMission = page.getByTestId(`mayus-mission-card-${LOOP_TASK_ID}`).first();
-    const loopArtifact = page.getByTestId("mayus-artifact-draft-loop-artifact-1").first();
-
-    await expect(loopMission).toBeVisible();
-    await expect(loopArtifact).toBeVisible();
-    await expect(loopArtifact).toContainText(/loop da minuta/i);
-    await expect(loopArtifact).toContainText(/veredito attention/i);
-    await expect(loopArtifact).toContainText(/proximo passo apply revision plan/i);
-    await expect(loopArtifact).toContainText(/4 secoes/i);
-    await expect(loopArtifact).toContainText(/3 fracas/i);
-    await expect(loopArtifact).toContainText(/1 ausentes/i);
-    await expect(loopMission.getByText(/3 seção\(ões\) fracas/i).first()).toBeVisible();
+    await expect(page.getByText(/Secoes fracas: 3/i).first()).toBeVisible();
+    await expectInternalMissionUiHidden(page);
   });
 
   test("publica o artifact premium por chat e mostra o link final do Drive", async ({ page }) => {
@@ -1331,17 +1263,7 @@ test.describe("MAYUS authenticated", () => {
 
     await expect(page.getByText(/a[cç][aã]o executada com sucesso/i)).toBeVisible();
 
-    const publishMission = page.getByTestId(`mayus-mission-card-${PUBLISH_PREMIUM_TASK_ID}`).first();
-    const publishArtifact = page.getByTestId("mayus-artifact-publish-premium-artifact-1").first();
-
-    await expect(publishMission).toBeVisible();
-    await expect(publishArtifact).toBeVisible();
-    await expect(publishArtifact).toContainText(/artifact premium/i);
-    await expect(publishArtifact).toContainText(/formato pdf/i);
-    await expect(publishArtifact).toContainText(/publicacao published/i);
-    await expect(publishArtifact).toContainText(/Delta capturado contra a primeira minuta gerada/i);
-    await expect(publishMission.getByText(/09-Pecas Finais/i).first()).toBeVisible();
-    await expect(publishMission.getByText(/Delta capturado contra a primeira minuta gerada/i).first()).toBeVisible();
+    await expectInternalMissionUiHidden(page);
   });
 
   test("aprova a minuta formal por chat usando o approval card do MAYUS", async ({ page }) => {
@@ -1359,15 +1281,7 @@ test.describe("MAYUS authenticated", () => {
 
     await expect(page.getByText(/a[cç][aã]o executada com sucesso/i)).toBeVisible();
 
-    const missionCard = page.getByTestId(`mayus-mission-card-${APPROVE_TASK_ID}`).first();
-    const workflowArtifact = page.getByTestId("mayus-artifact-approve-workflow-artifact-1").first();
-
-    await expect(missionCard).toBeVisible();
-    await expect(workflowArtifact).toBeVisible();
-    await expect(workflowArtifact).toContainText(/resultado do workflow formal/i);
-    await expect(workflowArtifact).toContainText(/acao approve/i);
-    await expect(workflowArtifact).toContainText(/workflow approved/i);
-    await expect(missionCard.getByText(/aprovada com sucesso/i).first()).toBeVisible();
+    await expectInternalMissionUiHidden(page);
   });
 
   test("publica a minuta formal por chat apos confirmacao no approval card do MAYUS", async ({ page }) => {
@@ -1382,14 +1296,6 @@ test.describe("MAYUS authenticated", () => {
 
     await expect(page.getByText(/a[cç][aã]o executada com sucesso/i)).toBeVisible();
 
-    const missionCard = page.getByTestId(`mayus-mission-card-${PUBLISH_TASK_ID}`).first();
-    const workflowArtifact = page.getByTestId("mayus-artifact-publish-workflow-artifact-1").first();
-
-    await expect(missionCard).toBeVisible();
-    await expect(workflowArtifact).toBeVisible();
-    await expect(workflowArtifact).toContainText(/resultado do workflow formal/i);
-    await expect(workflowArtifact).toContainText(/acao publish/i);
-    await expect(workflowArtifact).toContainText(/workflow published/i);
-    await expect(missionCard.getByText(/aprovada e publicada com sucesso/i).first()).toBeVisible();
+    await expectInternalMissionUiHidden(page);
   });
 });
