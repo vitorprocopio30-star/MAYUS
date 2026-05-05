@@ -5,7 +5,7 @@ import { Cormorant_Garamond, Montserrat } from "next/font/google";
 import { createClient } from "@/lib/supabase/client";
 import { useUserProfile } from "@/hooks/useUserProfile";
 import {
-  Search, ChevronDown, Phone, Send,
+  Search, ChevronDown, ChevronLeft, ChevronRight, Phone, Send,
   MessageCircle, Bot, Lock, CheckCircle2,
   Zap, Filter, FileText, Mic, Clock, Plus, X, Smartphone, Loader2, Smile, Paperclip, MoreVertical,
   Users, UserCheck, LayoutPanelLeft, Share2, ClipboardList, Building2, Download
@@ -90,6 +90,8 @@ export default function WhatsAppChatPremiumPage() {
   const [zapsignTemplateId, setZapsignTemplateId] = useState<string>("");
   const [labelDraft, setLabelDraft] = useState("");
   const [labelColorDraft, setLabelColorDraft] = useState("#CCA761");
+  const [rightPanelMode, setRightPanelMode] = useState<"expanded" | "mini">("expanded");
+  const [areConversationFiltersExpanded, setAreConversationFiltersExpanded] = useState(true);
 
   // Permissoes
   const isAdmin = profile?.role === 'Administrador' || profile?.role === 'mayus_admin' || profile?.role === 'Sócio';
@@ -178,6 +180,12 @@ export default function WhatsAppChatPremiumPage() {
       ? "Atendimento humano"
       : "Com responsavel"
     : "MAYUS atendendo";
+
+  const activeTabLabel = activeTab === "minhas" ? "Minhas" : activeTab === "aguardando" ? "Espera" : "Todas";
+  const activeDepartmentLabel = filterDeptId
+    ? departments.find((department) => department.id === filterDeptId)?.name || "Setor filtrado"
+    : "Todos os setores";
+  const activeFilterSummary = `${activeTabLabel} - ${activeDepartmentLabel}`;
 
   // Transferencia de conversa
   const handleTransfer = async () => {
@@ -829,9 +837,18 @@ export default function WhatsAppChatPremiumPage() {
                  </div>
                  <h2 className={`text-xl font-black text-white italic tracking-tighter ${cormorant.className}`}>Conversas</h2>
               </div>
-              <button onClick={() => setIsAddingContact(!isAddingContact)} className="bg-white/5 p-2 rounded-lg border border-white/5 hover:bg-[#CCA761] hover:text-black transition-all">
-                 <Plus size={18} />
-              </button>
+              <div className="flex items-center gap-2">
+                <button
+                  onClick={() => setAreConversationFiltersExpanded((current) => !current)}
+                  className="bg-white/5 p-2 rounded-lg border border-white/5 hover:bg-[#CCA761] hover:text-black transition-all"
+                  title={areConversationFiltersExpanded ? "Recolher filtros" : "Expandir filtros"}
+                >
+                   <ChevronDown size={18} className={`transition-transform duration-300 ${areConversationFiltersExpanded ? "rotate-180" : ""}`} />
+                </button>
+                <button onClick={() => setIsAddingContact(!isAddingContact)} className="bg-white/5 p-2 rounded-lg border border-white/5 hover:bg-[#CCA761] hover:text-black transition-all" title="Novo atendimento">
+                   <Plus size={18} />
+                </button>
+              </div>
            </div>
 
            {/* BARRA DE BUSCA */}
@@ -846,48 +863,65 @@ export default function WhatsAppChatPremiumPage() {
               />
            </div>
 
-           {/* Filtros de Aba Estilo Premium */}
-           <div className="flex p-1 bg-gray-200 dark:bg-black/40 rounded-xl border border-white/5">
-              {[
-                { id: "minhas", label: "Minhas", icon: UserCheck },
-                { id: "aguardando", label: "Espera", icon: Clock },
-                ...(isAdmin ? [{ id: "todas", label: "Todas", icon: Users }] : [])
-              ].map((tab) => (
-                <button
-                  key={tab.id}
-                  onClick={() => setActiveTab(tab.id)}
-                  className={`flex-1 flex items-center justify-center gap-2 py-2 rounded-lg text-[10px] font-black uppercase tracking-widest transition-all ${activeTab === tab.id ? "bg-[#CCA761] text-black shadow-lg" : "text-gray-500 hover:text-gray-300"}`}
-                >
-                   <tab.icon size={12} /> {tab.label}
-                </button>
-              ))}
-           </div>
+           {areConversationFiltersExpanded ? (
+             <div className="space-y-3 animate-in slide-in-from-top-2 duration-200">
+               {/* Filtros de Aba Estilo Premium */}
+               <div className="flex p-1 bg-gray-200 dark:bg-black/40 rounded-xl border border-white/5">
+                  {[
+                    { id: "minhas", label: "Minhas", icon: UserCheck },
+                    { id: "aguardando", label: "Espera", icon: Clock },
+                    ...(isAdmin ? [{ id: "todas", label: "Todas", icon: Users }] : [])
+                  ].map((tab) => (
+                    <button
+                      key={tab.id}
+                      onClick={() => setActiveTab(tab.id)}
+                      className={`flex-1 flex items-center justify-center gap-2 py-2 rounded-lg text-[10px] font-black uppercase tracking-widest transition-all ${activeTab === tab.id ? "bg-[#CCA761] text-black shadow-lg" : "text-gray-500 hover:text-gray-300"}`}
+                    >
+                       <tab.icon size={12} /> {tab.label}
+                    </button>
+                  ))}
+               </div>
 
-           {/* FILTRO POR DEPARTAMENTO */}
-           {departments.length > 0 && (
-             <div className="flex gap-1.5 flex-wrap">
-               <button
-                 onClick={() => setFilterDeptId(null)}
-                 className={`text-[8px] font-black uppercase tracking-widest px-2.5 py-1 rounded-full border transition-all ${
-                   !filterDeptId ? 'bg-white/10 border-white/20 text-white' : 'border-white/5 text-gray-600 hover:text-gray-400'
-                 }`}
-               >
-                 Todos
-               </button>
-               {departments.map(dept => (
-                 <button
-                   key={dept.id}
-                   onClick={() => setFilterDeptId(filterDeptId === dept.id ? null : dept.id)}
-                   className={`text-[8px] font-black uppercase tracking-widest px-2.5 py-1 rounded-full border transition-all flex items-center gap-1 ${
-                     filterDeptId === dept.id ? 'border-white/20 text-white' : 'border-white/5 text-gray-600 hover:text-gray-400'
-                   }`}
-                   style={filterDeptId === dept.id ? { backgroundColor: `${dept.color}20`, borderColor: `${dept.color}40` } : {}}
-                 >
-                   <div className="w-1.5 h-1.5 rounded-full" style={{ backgroundColor: dept.color }} />
-                   {dept.name}
-                 </button>
-               ))}
+               {/* FILTRO POR DEPARTAMENTO */}
+               {departments.length > 0 && (
+                 <div className="flex gap-1.5 flex-wrap">
+                   <button
+                     onClick={() => setFilterDeptId(null)}
+                     className={`text-[8px] font-black uppercase tracking-widest px-2.5 py-1 rounded-full border transition-all ${
+                       !filterDeptId ? 'bg-white/10 border-white/20 text-white' : 'border-white/5 text-gray-600 hover:text-gray-400'
+                     }`}
+                   >
+                     Todos
+                   </button>
+                   {departments.map(dept => (
+                     <button
+                       key={dept.id}
+                       onClick={() => setFilterDeptId(filterDeptId === dept.id ? null : dept.id)}
+                       className={`text-[8px] font-black uppercase tracking-widest px-2.5 py-1 rounded-full border transition-all flex items-center gap-1 ${
+                         filterDeptId === dept.id ? 'border-white/20 text-white' : 'border-white/5 text-gray-600 hover:text-gray-400'
+                       }`}
+                       style={filterDeptId === dept.id ? { backgroundColor: `${dept.color}20`, borderColor: `${dept.color}40` } : {}}
+                     >
+                       <div className="w-1.5 h-1.5 rounded-full" style={{ backgroundColor: dept.color }} />
+                       {dept.name}
+                     </button>
+                   ))}
+                 </div>
+               )}
              </div>
+           ) : (
+             <button
+               type="button"
+               onClick={() => setAreConversationFiltersExpanded(true)}
+               className="flex items-center justify-between gap-3 rounded-xl border border-white/5 bg-gray-200 px-3 py-2 text-left transition-colors hover:border-[#CCA761]/30 dark:bg-black/40"
+             >
+               <div className="flex min-w-0 items-center gap-2">
+                 <Filter size={12} className="shrink-0 text-[#CCA761]" />
+                 <span className="shrink-0 text-[8px] font-black uppercase tracking-widest text-gray-600">Filtro</span>
+                 <span className="truncate text-[10px] font-bold uppercase tracking-wider text-gray-300">{activeFilterSummary}</span>
+               </div>
+               <ChevronDown size={14} className="shrink-0 text-gray-500" />
+             </button>
            )}
 
            {isAddingContact && (
@@ -904,7 +938,7 @@ export default function WhatsAppChatPremiumPage() {
            ) : filteredContacts.map((contact) => (
               <div key={contact.id} onClick={() => setActiveContact(contact)} className={`group relative flex items-start gap-4 p-4 rounded-2xl cursor-pointer transition-all border ${activeContact?.id === contact.id ? "bg-[#111] border-[#CCA761]/30" : "hover:bg-white/5 border-transparent opacity-80 hover:opacity-100"}`}>
                  <div className="w-12 h-12 rounded-full border border-[#CCA761]/20 bg-gray-200 dark:bg-black flex flex-shrink-0 items-center justify-center text-[#CCA761] font-black shadow-inner overflow-hidden">
-                    {contact.profile_pic_url ? <img src={contact.profile_pic_url} className="w-full h-full object-cover" /> : contact.name?.substring(0, 2).toUpperCase()}
+                     {contact.profile_pic_url ? <img src={contact.profile_pic_url} alt="" className="w-full h-full object-cover" /> : contact.name?.substring(0, 2).toUpperCase()}
                  </div>
                  <div className="flex-1 min-w-0">
                      <div className="flex justify-between items-center mb-1">
@@ -941,7 +975,7 @@ export default function WhatsAppChatPremiumPage() {
                 <div className="h-16 border-b border-white/5 flex items-center justify-between px-6 bg-[#0a0a0a] z-10 flex-shrink-0">
                     <div className="flex items-center gap-3">
                        <div className="w-8 h-8 rounded-full bg-[#111] border border-white/10 flex items-center justify-center text-white font-bold overflow-hidden">
-                          {activeContact?.profile_pic_url ? <img src={activeContact.profile_pic_url} className="w-full h-full object-cover" /> : (activeContact?.name?.substring(0, 2).toUpperCase() || "TS")}
+                           {activeContact?.profile_pic_url ? <img src={activeContact.profile_pic_url} alt="" className="w-full h-full object-cover" /> : (activeContact?.name?.substring(0, 2).toUpperCase() || "TS")}
                        </div>
                        <div>
                          <h2 className="text-white font-bold tracking-wide flex items-center gap-2">
@@ -1045,7 +1079,7 @@ export default function WhatsAppChatPremiumPage() {
 
           {(activeContact || messages.length > 0) && (
           /* COMPOSER SLIM - DESIGN ULTRA COMPACTO E FUNCIONAL */
-          <div className="p-3 pb-4 bg-[#0a0a0a]/95 backdrop-blur-3xl border-t border-white/5 z-10 flex-shrink-0">
+          <div className="min-w-0 p-3 pb-4 bg-[#0a0a0a]/95 backdrop-blur-3xl border-t border-white/5 z-10 flex-shrink-0">
               {/* Linha Fina de Controles Superiores */}
               <div className="flex justify-between items-center mb-2 px-3">
                   <div className="flex gap-4">
@@ -1108,7 +1142,7 @@ export default function WhatsAppChatPremiumPage() {
                            </div>
                          )}
 
-                         <div className="relative flex items-end w-full px-2 py-2">
+                         <div className="relative flex min-w-0 items-end w-full px-2 py-2">
                            {/* Input de Texto Slim */}
                            <textarea
                              value={inputText}
@@ -1120,7 +1154,7 @@ export default function WhatsAppChatPremiumPage() {
                                }
                              }}
                              placeholder={inputMode === "nota" ? "Escreva uma nota interna..." : "Digite sua mensagem..."}
-                             className="flex-1 bg-transparent border-none text-white text-[13px] px-3 py-2 outline-none resize-none min-h-[42px] max-h-[150px] placeholder:text-gray-700 transition-all font-medium scrollbar-none"
+                             className="min-w-0 flex-1 bg-transparent border-none text-white text-[13px] px-3 py-2 outline-none resize-none min-h-[42px] max-h-[150px] placeholder:text-gray-700 transition-all font-medium scrollbar-none"
                            />
 
                            {/* Preview da Assinatura Minimalista */}
@@ -1208,14 +1242,62 @@ export default function WhatsAppChatPremiumPage() {
       </div>
 
       {/* 3. INFO E KANBAN (BARRA DIREITA) */}
-      <div className="w-[340px] flex-shrink-0 border-l border-white/10 bg-white dark:bg-[#050505] flex flex-col h-full z-10 overflow-y-auto no-scrollbar">
-         {activeContact && (
-            <div className="p-8 space-y-10 animate-in slide-in-from-right-4 duration-700">
+      <div className={`relative flex-shrink-0 border-l border-white/10 bg-white dark:bg-[#050505] flex flex-col h-full z-10 overflow-visible transition-[width] duration-300 ease-in-out ${rightPanelMode === "mini" ? "w-[76px]" : "w-[340px]"}`}>
+         <button
+           onClick={() => setRightPanelMode((current) => current === "expanded" ? "mini" : "expanded")}
+           className="absolute top-6 -left-3 z-30 flex h-6 w-6 items-center justify-center rounded-full border border-white/10 bg-[#CCA761] text-black shadow-[0_0_15px_rgba(204,167,97,0.3)] transition-transform hover:scale-110"
+           title={rightPanelMode === "expanded" ? "Recolher painel" : "Expandir painel"}
+         >
+           {rightPanelMode === "expanded" ? <ChevronRight size={14} /> : <ChevronLeft size={14} />}
+         </button>
+
+         {activeContact && rightPanelMode === "mini" && (
+            <div className="flex h-full flex-col items-center gap-5 px-3 py-8 animate-in fade-in duration-300">
+               <button
+                 onClick={() => setRightPanelMode("expanded")}
+                 className="h-11 w-11 rounded-full border border-[#CCA761]/40 bg-gray-200 dark:bg-black p-0.5 shadow-[0_0_18px_rgba(204,167,97,0.12)]"
+                 title="Expandir painel do contato"
+               >
+                  {activeContact.profile_pic_url ? (
+                    <img src={activeContact.profile_pic_url} alt="" className="h-full w-full rounded-full object-cover" />
+                  ) : (
+                    <span className="flex h-full w-full items-center justify-center rounded-full text-xs font-black text-[#CCA761]">
+                      {activeContact.name?.substring(0, 2).toUpperCase()}
+                    </span>
+                  )}
+               </button>
+               <div className="h-px w-8 bg-white/10" />
+               <button
+                 onClick={() => setRightPanelMode("expanded")}
+                 className="flex h-10 w-10 items-center justify-center rounded-xl border border-white/5 bg-white/5 text-[#CCA761] transition-colors hover:bg-[#CCA761] hover:text-black"
+                 title="Gestao pipeline"
+               >
+                 <ClipboardList size={18} />
+               </button>
+               <button
+                 onClick={() => setRightPanelMode("expanded")}
+                 className="flex h-10 w-10 items-center justify-center rounded-xl border border-white/5 bg-white/5 text-[#CCA761] transition-colors hover:bg-[#CCA761] hover:text-black"
+                 title="Etiqueta"
+               >
+                 <Filter size={18} />
+               </button>
+               <button
+                 onClick={() => setRightPanelMode("expanded")}
+                 className="flex h-10 w-10 items-center justify-center rounded-xl border border-white/5 bg-white/5 text-orange-300 transition-colors hover:bg-orange-400 hover:text-black"
+                 title="Notas internas"
+               >
+                 <Lock size={18} />
+               </button>
+            </div>
+         )}
+
+         {activeContact && rightPanelMode === "expanded" && (
+            <div className="h-full overflow-y-auto no-scrollbar p-8 space-y-8 animate-in slide-in-from-right-4 duration-500">
                {/* Header Perfil */}
                 <div className="flex flex-col items-center">
                    <div className="w-28 h-28 rounded-full border-2 border-[#CCA761] bg-gray-200 dark:bg-black p-1 mb-5 relative group">
                      {activeContact.profile_pic_url ? (
-                        <img src={activeContact.profile_pic_url} className="w-full h-full object-cover rounded-full" />
+                        <img src={activeContact.profile_pic_url} alt="" className="w-full h-full object-cover rounded-full" />
                      ) : (
                         <div className="w-full h-full rounded-full flex items-center justify-center text-3xl font-black text-[#CCA761]">
                            {activeContact.name?.substring(0, 2).toUpperCase()}
@@ -1225,39 +1307,6 @@ export default function WhatsAppChatPremiumPage() {
                   </div>
                    <h3 className="text-2xl font-bold text-white text-center italic group-hover:text-[#CCA761] transition-colors">{activeContact.name}</h3>
                    <div className="bg-[#CCA761]/10 border border-[#CCA761]/20 text-[#CCA761] px-4 py-1.5 rounded-full text-[9px] font-black uppercase mt-3 tracking-widest">{serviceStatusLabel}</div>
-                </div>
-
-                <div className="space-y-4">
-                   <div className="flex items-center gap-2 text-gray-500 font-black uppercase text-[10px] tracking-widest"><Filter size={14} className="text-[#CCA761]" /> Etiqueta</div>
-                   <div className="p-5 bg-gray-200 dark:bg-black rounded-2xl border border-white/5 space-y-4">
-                     <input
-                       value={labelDraft}
-                       onChange={(event) => setLabelDraft(event.target.value)}
-                       placeholder="Ex: urgente, fechamento, suporte..."
-                       maxLength={40}
-                       className="w-full bg-[#111] border border-white/10 rounded-xl px-4 py-3 text-xs text-white outline-none placeholder:text-gray-700 focus:border-[#CCA761]"
-                     />
-                     <div className="flex items-center gap-2">
-                       {labelColorOptions.map((color) => (
-                         <button
-                           key={color}
-                           type="button"
-                           onClick={() => setLabelColorDraft(color)}
-                           className={`h-7 w-7 rounded-full border transition-all ${labelColorDraft === color ? 'border-white scale-110' : 'border-white/10'}`}
-                           style={{ backgroundColor: color }}
-                           aria-label={`Usar cor ${color}`}
-                         />
-                       ))}
-                     </div>
-                     <button
-                       onClick={handleSaveContactLabel}
-                       disabled={isConversationActionPending}
-                       className="w-full py-3 bg-white/5 border border-white/10 rounded-xl font-black uppercase text-[10px] tracking-[0.2em] flex items-center justify-center gap-3 hover:bg-[#CCA761] hover:text-black transition-all disabled:opacity-40 disabled:cursor-not-allowed"
-                     >
-                       {isConversationActionPending ? <Loader2 size={14} className="animate-spin" /> : <CheckCircle2 size={14} />}
-                       Salvar etiqueta
-                     </button>
-                   </div>
                 </div>
 
                 {/* Modulo Kanban */}
@@ -1312,6 +1361,39 @@ export default function WhatsAppChatPremiumPage() {
                      </button>
                   </div>
                </div>
+
+                <div className="space-y-4">
+                   <div className="flex items-center gap-2 text-gray-500 font-black uppercase text-[10px] tracking-widest"><Filter size={14} className="text-[#CCA761]" /> Etiqueta</div>
+                   <div className="p-5 bg-gray-200 dark:bg-black rounded-2xl border border-white/5 space-y-4">
+                     <input
+                       value={labelDraft}
+                       onChange={(event) => setLabelDraft(event.target.value)}
+                       placeholder="Ex: urgente, fechamento, suporte..."
+                       maxLength={40}
+                       className="w-full bg-[#111] border border-white/10 rounded-xl px-4 py-3 text-xs text-white outline-none placeholder:text-gray-700 focus:border-[#CCA761]"
+                     />
+                     <div className="flex items-center gap-2">
+                       {labelColorOptions.map((color) => (
+                         <button
+                           key={color}
+                           type="button"
+                           onClick={() => setLabelColorDraft(color)}
+                           className={`h-7 w-7 rounded-full border transition-all ${labelColorDraft === color ? 'border-white scale-110' : 'border-white/10'}`}
+                           style={{ backgroundColor: color }}
+                           aria-label={`Usar cor ${color}`}
+                         />
+                       ))}
+                     </div>
+                     <button
+                       onClick={handleSaveContactLabel}
+                       disabled={isConversationActionPending}
+                       className="w-full py-3 bg-white/5 border border-white/10 rounded-xl font-black uppercase text-[10px] tracking-[0.2em] flex items-center justify-center gap-3 hover:bg-[#CCA761] hover:text-black transition-all disabled:opacity-40 disabled:cursor-not-allowed"
+                     >
+                       {isConversationActionPending ? <Loader2 size={14} className="animate-spin" /> : <CheckCircle2 size={14} />}
+                       Salvar etiqueta
+                     </button>
+                   </div>
+                </div>
 
                <div className="space-y-4">
                   <div className="flex items-center gap-2 text-gray-500 font-black uppercase text-[10px] tracking-widest"><Lock size={14} className="text-orange-400" /> Notas internas</div>
