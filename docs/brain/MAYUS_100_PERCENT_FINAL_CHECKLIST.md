@@ -403,6 +403,8 @@ Validacoes executadas:
 - [x] Deploy Vercel do commit `2242893` concluido com sucesso em `mayus`, `mayus-premium`, `mayus-premium-pro` e `mayus-v9`.
 - [ ] Pre-smoke Supabase bloqueado: migration `20260504120000_whatsapp_media_labels.sql` ainda nao aplicada no banco validado por `.env.local`; faltam `whatsapp_messages.metadata`, colunas de midia e `whatsapp_contacts.label`.
 - [ ] Rota `/api/whatsapp/media/process` respondeu `403` com `CRON_SECRET` local no alias publico, indicando segredo de producao diferente do local ou ambiente/projeto divergente.
+- [x] Apos aplicar migration, `npm run verify:whatsapp-media` retornou `ok: true`, bucket privado e `pending_count: 0`.
+- [x] Rota publica `/api/whatsapp/media/process?limit=1` respondeu `200 OK` com `CRON_SECRET` de producao do Vercel e `picked: 0`.
 
 Bloqueios antes de marcar como `[x]`:
 
@@ -411,8 +413,8 @@ Bloqueios antes de marcar como `[x]`:
 - [x] Processamento de midia fora dos webhooks.
 - [x] Idempotencia de mensagem inbound.
 - [ ] Smoke real Meta Cloud/Evolution com texto, imagem, audio e documento.
-- [ ] Aplicar migration `20260504120000_whatsapp_media_labels.sql` antes do smoke real.
-- [ ] Confirmar `CRON_SECRET` efetivo do projeto Vercel usado no smoke ou atualizar `.env.local`/Vercel para ficarem alinhados.
+- [x] Aplicar migration `20260504120000_whatsapp_media_labels.sql` antes do smoke real.
+- [x] Confirmar `CRON_SECRET` efetivo do projeto Vercel usado no smoke ou atualizar `.env.local`/Vercel para ficarem alinhados.
 
 Observacoes operacionais:
 
