@@ -22,16 +22,16 @@ Legenda:
 
 | Frente | Percentual | Leitura honesta |
 | --- | ---: | --- |
-| MAYUS geral | 73% | Produto forte, WhatsApp multimodal, observabilidade e alertas evoluiram, mas ainda nao e o socio virtual completo. |
+| MAYUS geral | 74% | Produto forte, WhatsApp multimodal, observabilidade, alertas e fila de resposta evoluiram, mas ainda nao e o socio virtual completo. |
 | Produto juridico/base SaaS | 78% | Dashboard, CRM, documentos, juridico, agenda, marketing e permissoes ja existem. |
 | Maturidade agentica | 52% | Ha runtime, artifacts, skills e auditoria, mas ainda falta um operador central continuo. |
-| WhatsApp vendas/suporte | 80% | Evolution passou smoke real multimodal, ganhou observabilidade, painel e alertas; falta Meta Cloud e conversas longas. |
+| WhatsApp vendas/suporte | 82% | Evolution passou smoke real multimodal, ganhou observabilidade, painel, alertas e resposta assincrona; falta Meta Cloud, scheduler frequente e conversas longas. |
 | Growth/vendas | 70% | Intake, qualificacao, follow-up, reativacao e sales profile existem; falta fechar execucao real ponta a ponta. |
 | Juridico/Lex | 82% | Base juridica e documental esta forte; faltam contradicoes, cronologia, riscos e mais automacao segura. |
 | Financeiro | 48% | Asaas/fluxo planejado existem, mas cobranca operacional completa ainda precisa smoke e UX. |
 | Auto-configuracao | 45% | Setup Doctor e sales profile existem; falta onboarding completo do escritorio. |
 | UX sem curso | 60% | WhatsApp ganhou controles melhores, mas o usuario ainda precisa entender demais o sistema. |
-| Integracoes e operacao real | 66% | WhatsApp Evolution tem smoke, observabilidade e alerta de falha; faltam Meta Cloud e smokes sensiveis finais. |
+| Integracoes e operacao real | 68% | WhatsApp Evolution tem smoke, observabilidade, alerta de falha e job assincrono; faltam Meta Cloud, scheduler frequente e smokes sensiveis finais. |
 
 ### O que ja e usavel
 
@@ -49,7 +49,7 @@ Legenda:
 
 - [ ] MAYUS Operating Partner ainda nao domina todos os modulos como motor unico.
 - [ ] WhatsApp ainda precisa se comportar como vendedor/suporte real em conversas longas.
-- [ ] WhatsApp multimodal ainda precisa smoke real Meta/Evolution, observabilidade e validacao em conversa longa.
+- [ ] WhatsApp multimodal ainda precisa smoke real Meta Cloud, scheduler frequente e validacao em conversa longa.
 - [ ] Acoes reais supervisionadas ainda nao cobrem todo o ciclo CRM -> contrato -> cobranca -> caso.
 - [ ] Auto-configuracao ainda nao cobre juridico, documentos, equipe, permissoes, agenda, financeiro e playbooks.
 - [ ] Memoria e aprendizado ainda nao governam a proxima decisao em todos os fluxos.
@@ -272,8 +272,9 @@ O MAYUS pode agir, mas acoes juridicas, financeiras ou externas sensiveis exigem
 - [~] Vault/integracoes tiveram validacoes tecnicas, mas ainda faltam smokes funcionais finais.
 - [~] WhatsApp multimodal tem schema/helper/webhooks/UI iniciais, mas ainda precisa smokes reais, idempotencia e processamento async.
 - [ ] Smoke real controlado de Asaas, ZapSign, Escavador, WhatsApp e Drive.
-- [ ] Smoke real especifico de WhatsApp: inbound texto, imagem, audio, documento, outbound texto, audio, imagem/documento e fallback de provider.
+- [ ] Smoke real especifico de WhatsApp: inbound texto, imagem, audio, documento, outbound texto, audio, imagem/documento e fallback/override de provider.
 - [x] Observabilidade de midia WhatsApp: processor registra eventos sanitizados por midia/batch, tela WhatsApp mostra painel admin e falhas geram notificacoes internas.
+- [x] Respostas WhatsApp de texto podem ser enfileiradas fora do webhook em `/api/whatsapp/replies/process`, com eventos sanitizados, alerta de pendencia atrasada e alerta de falha.
 - [ ] Observabilidade por skill, rota, webhook, provedor LLM e custo.
 - [~] Alertas de falha de webhook e provider: midia WhatsApp ja alerta falha de processamento/batch; ainda faltam webhooks/providers gerais.
 - [ ] Checklist de release com build, typecheck, testes focados, E2E essencial e diff-check.
@@ -305,6 +306,7 @@ Foco: WhatsApp + Operating Partner + CRM actions.
 - [~] Fazer o WhatsApp usar o Operating Partner como caminho principal de conversa.
 - [~] Persistir estado conversacional por contato.
 - [~] Conectar acoes reais supervisionadas: atualizar lead, etapa, nota, tarefa, documento pedido e handoff.
+- [x] Tirar preparacao pesada de resposta de texto do webhook e enfileirar para processamento interno protegido.
 - [ ] Validar multi-turn com lead novo, dor clara, objecao, fechamento, suporte, status e cliente irritado.
 - [ ] Corrigir inconsistencias visuais restantes entre WhatsApp e Todas as Conversas.
 - [ ] Separar mudancas globais de layout/sidebar das mudancas de WhatsApp antes de commitar.
@@ -413,6 +415,11 @@ Validacoes executadas:
 - [x] Painel admin de observabilidade WhatsApp na tela `/dashboard/conversas/whatsapp` consome API sanitizada e mostra pendentes, falhas, processadas 24h, tempo medio, ultimo batch e eventos recentes sem expor texto de midia, signed URL ou segredo.
 - [x] Processor protegido em `mayus-premium-pro` reprocessou fila real com `picked: 8`, `processed: 5`, `unsupported: 3`, `failed: 0`, `replies_prepared: 8`; readiness voltou para `pending_count: 0`.
 - [x] Falhas de processamento de midia WhatsApp e batches com falha geram notificacoes internas sanitizadas em `notifications`, com dedupe basico e link para `/dashboard/conversas/whatsapp`.
+- [x] Deploy correto `mayus-premium-pro` do commit `2bdc50d` ficou `READY/PROMOTED`; readiness retornou `ok: true`, `pending_count: 0`, e a API admin `/api/whatsapp/media/observability` seguiu protegida com `401` sem sessao.
+- [x] Envio WhatsApp aceita override seguro `preferred_provider` para smoke Meta Cloud sem fallback silencioso para Evolution; padrao continua preferindo Evolution quando nada e informado.
+- [x] Webhooks Meta/Evolution de texto enfileiram resposta em `metadata.reply_processing_status = 'pending'` e retornam rapido; `/api/whatsapp/replies/process` prepara/envia resposta fora do webhook com `CRON_SECRET`.
+- [x] Fila de resposta preserva `reply_preferred_provider`, entao inbound Meta Cloud responde por Meta e inbound Evolution responde por Evolution sem fallback cruzado silencioso.
+- [x] Processor de respostas registra `whatsapp_reply_processed`, `whatsapp_reply_failed` e `whatsapp_reply_stale_pending` sem texto integral, signed URL ou segredo; falhas/pendencias atrasadas geram notificacoes internas deduplicadas.
 
 Bloqueios antes de marcar como `[x]`:
 
@@ -422,14 +429,15 @@ Bloqueios antes de marcar como `[x]`:
 - [x] Idempotencia de mensagem inbound.
 - [ ] Smoke real Meta Cloud/Evolution com texto, imagem, audio e documento.
 - [ ] Smoke real Meta Cloud ainda pendente; Evolution passou para texto, imagem, audio, PDF/DOCX e outbound texto.
-- [~] Observabilidade de midia existe no processor, painel admin e notificacoes de falha; ainda falta smoke Meta Cloud.
+- [~] Observabilidade de midia e resposta existe no processor, painel admin e notificacoes de falha; ainda falta smoke Meta Cloud e scheduler frequente.
 - [x] Aplicar migration `20260504120000_whatsapp_media_labels.sql` antes do smoke real.
 - [x] Confirmar `CRON_SECRET` efetivo do projeto Vercel usado no smoke ou atualizar `.env.local`/Vercel para ficarem alinhados.
 
 Observacoes operacionais:
 
 - [x] Deploy do commit `571351a` falhou no Vercel porque cron `*/5 * * * *` excedia limite Hobby; ajustado para diario em commit posterior.
-- [ ] Se o projeto migrar para Vercel Pro, considerar voltar `/api/whatsapp/media/process` para frequencia de 5 minutos ou substituir por fila externa.
+- [ ] No plano Hobby, configurar scheduler externo seguro para chamar `/api/whatsapp/media/process` e `/api/whatsapp/replies/process` a cada 1-5 minutos com `CRON_SECRET`; cron Vercel diario fica como fallback.
+- [ ] Se o projeto migrar para Vercel Pro, considerar voltar processors WhatsApp para frequencia de 5 minutos ou substituir por fila externa.
 
 ---
 

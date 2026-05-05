@@ -7,6 +7,10 @@
     {
       "path": "/api/whatsapp/media/process",
       "schedule": "0 3 * * *"
+    },
+    {
+      "path": "/api/whatsapp/replies/process",
+      "schedule": "15 3 * * *"
     }
   ]
 }

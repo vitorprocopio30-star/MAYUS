@@ -1,9 +1,9 @@
 import { NextResponse } from "next/server";
 import { createClient } from "@supabase/supabase-js";
 import crypto from "crypto";
-import { prepareWhatsAppSalesReplyForContact } from "@/lib/growth/whatsapp-sales-reply-runtime";
 import { handleWhatsAppInternalCommand } from "@/lib/mayus/whatsapp-command-runtime";
 import { listTenantIntegrationsResolved } from "@/lib/integrations/server";
+import { enqueueWhatsAppReply } from "@/lib/whatsapp/reply-processor";
 
 const supabase = createClient(
   process.env.NEXT_PUBLIC_SUPABASE_URL!,
@@ -222,7 +222,7 @@ export async function POST(req: Request) {
       }
 
       // 3. Salvar a Mensagem
-      const { error: msgErr } = await supabase
+      const { data: savedMessage, error: msgErr } = await supabase
         .from("whatsapp_messages")
         .insert([{
            tenant_id: tenantId,
@@ -239,17 +239,19 @@ export async function POST(req: Request) {
              media_processing_status: shouldQueueMedia ? "pending" : "none",
              media_text: null,
              media_summary: null,
-             metadata: shouldQueueMedia ? {
-               provider_media_id: messageId || null,
-               media_kind: messageType,
-               webhook_trigger: "evolution_webhook",
-               evolution_instance: instanceName,
-               evolution_message_envelope: messageEnvelope,
-               evolution_message_payload: messagePayload,
-             } : {},
-             message_id_from_evolution: messageId,
-             status: 'delivered'
-        }]);
+              metadata: shouldQueueMedia ? {
+                provider_media_id: messageId || null,
+                media_kind: messageType,
+                webhook_trigger: "evolution_webhook",
+                evolution_instance: instanceName,
+                evolution_message_envelope: messageEnvelope,
+                evolution_message_payload: messagePayload,
+              } : { reply_trigger: "evolution_webhook" },
+              message_id_from_evolution: messageId,
+              status: 'delivered'
+        }])
+        .select("id")
+        .single<{ id: string }>();
 
       if (msgErr) {
          console.error("Erro ao salvar mensagem:", msgErr);
@@ -293,17 +295,13 @@ export async function POST(req: Request) {
           console.error("[Evolution Webhook] Erro ao processar comando interno MAYUS:", commandError);
         }
 
-        try {
-          await prepareWhatsAppSalesReplyForContact({
+        if (savedMessage?.id) {
+          await enqueueWhatsAppReply({
             supabase,
-            tenantId,
-            contactId,
             trigger: "evolution_webhook",
-            notify: true,
-            autoSendFirstResponse: true,
+            messageId: savedMessage.id,
+            preferredProvider: "evolution",
           });
-        } catch (replyError) {
-          console.error("[Evolution Webhook] Erro ao preparar resposta MAYUS:", replyError);
         }
       }
       

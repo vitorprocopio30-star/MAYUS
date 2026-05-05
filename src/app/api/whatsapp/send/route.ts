@@ -60,6 +60,7 @@ export async function POST(req: NextRequest) {
       media_filename,
       media_mime_type,
       media_storage_path,
+      preferred_provider,
     } = body;
 
     const contactId = typeof contact_id === "string" && contact_id.trim() ? contact_id.trim() : null;
@@ -84,6 +85,7 @@ export async function POST(req: NextRequest) {
       tenantId: auth.tenantId,
       contactId,
       phoneNumber: contact.phone_number,
+      preferredProvider: preferred_provider === "meta_cloud" || preferred_provider === "evolution" ? preferred_provider : null,
       text,
       audioUrl: audio_url,
       mediaUrl: media_url,

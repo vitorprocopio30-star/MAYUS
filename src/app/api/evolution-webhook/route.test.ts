@@ -4,6 +4,7 @@ const handleWhatsAppInternalCommandMock = vi.hoisted(() => vi.fn());
 const prepareWhatsAppSalesReplyForContactMock = vi.hoisted(() => vi.fn());
 const createClientMock = vi.hoisted(() => vi.fn());
 const listTenantIntegrationsResolvedMock = vi.hoisted(() => vi.fn());
+const enqueueWhatsAppReplyMock = vi.hoisted(() => vi.fn());
 
 vi.mock("@/lib/mayus/whatsapp-command-runtime", () => ({
   handleWhatsAppInternalCommand: handleWhatsAppInternalCommandMock,
@@ -15,6 +16,10 @@ vi.mock("@/lib/growth/whatsapp-sales-reply-runtime", () => ({
 
 vi.mock("@/lib/integrations/server", () => ({
   listTenantIntegrationsResolved: listTenantIntegrationsResolvedMock,
+}));
+
+vi.mock("@/lib/whatsapp/reply-processor", () => ({
+  enqueueWhatsAppReply: enqueueWhatsAppReplyMock,
 }));
 
 vi.mock("@supabase/supabase-js", () => ({
@@ -77,9 +82,13 @@ function buildSupabaseMock() {
             messageUpdates.push(values);
             return { eq: vi.fn(() => ({ eq: vi.fn(async () => ({ error: null })) })) };
           }),
-          insert: vi.fn(async (rows: unknown[]) => {
+          insert: vi.fn((rows: unknown[]) => {
             messageInserts.push(...rows);
-            return { error: null };
+            return {
+              select: vi.fn(() => ({
+                single: vi.fn(async () => ({ data: { id: "message-1" }, error: null })),
+              })),
+            };
           }),
         };
       }
@@ -114,6 +123,7 @@ describe("/api/evolution-webhook", () => {
     }]);
     global.fetch = vi.fn(async () => new Response(JSON.stringify({ profilePictureUrl: "https://cdn.example/avatar.jpg" }), { status: 200 })) as any;
     handleWhatsAppInternalCommandMock.mockResolvedValue({ handled: true, sent: true, intent: "daily_playbook" });
+    enqueueWhatsAppReplyMock.mockResolvedValue(undefined);
   });
 
   it("processa mensagens da Evolution em formato MESSAGES_UPSERT", async () => {
@@ -167,6 +177,7 @@ describe("/api/evolution-webhook", () => {
       }),
     ]);
     expect(prepareWhatsAppSalesReplyForContactMock).not.toHaveBeenCalled();
+    expect(enqueueWhatsAppReplyMock).not.toHaveBeenCalled();
   });
 
   it("atualiza messages.update sem inserir mensagem duplicada", async () => {
@@ -249,6 +260,40 @@ describe("/api/evolution-webhook", () => {
       }),
     ]);
     expect(prepareWhatsAppSalesReplyForContactMock).not.toHaveBeenCalled();
+    expect(enqueueWhatsAppReplyMock).not.toHaveBeenCalled();
     expect(global.fetch).toHaveBeenCalledTimes(1);
+  });
+
+  it("enfileira resposta de texto Evolution preservando provider", async () => {
+    handleWhatsAppInternalCommandMock.mockResolvedValue({ handled: false });
+    const { POST } = await import("./route");
+    const request = new Request("http://localhost/api/evolution-webhook", {
+      method: "POST",
+      body: JSON.stringify({
+        event: "MESSAGES_UPSERT",
+        instance: "mayus-dutra",
+        data: {
+          key: {
+            remoteJid: "5521999990000@s.whatsapp.net",
+            fromMe: false,
+            id: "msg-text-2",
+          },
+          pushName: "Cliente Teste",
+          message: {
+            conversation: "Quero falar com o escritorio",
+          },
+        },
+      }),
+    });
+
+    const response = await POST(request);
+
+    expect(response.status).toBe(200);
+    expect(enqueueWhatsAppReplyMock).toHaveBeenCalledWith(expect.objectContaining({
+      messageId: "message-1",
+      trigger: "evolution_webhook",
+      preferredProvider: "evolution",
+    }));
+    expect(prepareWhatsAppSalesReplyForContactMock).not.toHaveBeenCalled();
   });
 });

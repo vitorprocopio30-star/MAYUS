@@ -23,6 +23,7 @@ import {
   type MayusOperatingPartnerActionResult,
 } from "@/lib/agent/mayus-operating-partner-actions";
 import { sendWhatsAppMessage, type SendWhatsAppMessageResult } from "@/lib/whatsapp/send-message";
+import type { WhatsAppSendProvider } from "@/lib/whatsapp/send-message";
 
 function getStringValue(value: unknown) {
   return typeof value === "string" && value.trim().length > 0 ? value.trim() : null;
@@ -269,6 +270,7 @@ export async function prepareWhatsAppSalesReplyForContact(params: {
   trigger: "manual" | "meta_webhook" | "evolution_webhook";
   notify?: boolean;
   autoSendFirstResponse?: boolean;
+  preferredProvider?: WhatsAppSendProvider | null;
 }) {
   const { data: contact, error: contactError } = await params.supabase
     .from("whatsapp_contacts")
@@ -543,6 +545,7 @@ export async function prepareWhatsAppSalesReplyForContact(params: {
         tenantId: params.tenantId,
         contactId: contact.id,
         phoneNumber: contact.phone_number || "",
+        preferredProvider: params.preferredProvider || null,
         text: autoReply.text,
         metadata: {
           source: autoReply.source,

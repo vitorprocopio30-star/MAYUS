@@ -124,6 +124,95 @@ describe("sendWhatsAppMessage", () => {
     expect(result.provider).toBe("evolution");
   });
 
+  it("usa Meta Cloud quando provider preferido e informado", async () => {
+    const { supabase, inserts } = makeSupabase();
+    const fetcher = vi.fn(async () => new Response(JSON.stringify({ messages: [{ id: "meta-msg-1" }] }), { status: 200 }));
+    listTenantIntegrationsResolvedMock.mockResolvedValueOnce([
+      {
+        id: "meta-1",
+        tenant_id: "tenant-1",
+        provider: "meta_cloud",
+        api_key: "meta-token",
+        webhook_secret: null,
+        webhook_url: null,
+        instance_name: "phone-id|business-id",
+        status: "active",
+        metadata: null,
+        display_name: "Meta",
+      },
+      {
+        id: "evo-1",
+        tenant_id: "tenant-1",
+        provider: "evolution",
+        api_key: "evo-key",
+        webhook_secret: null,
+        webhook_url: null,
+        instance_name: "https://evolution.example.com|mayus",
+        status: "active",
+        metadata: null,
+        display_name: "Evolution",
+      },
+    ]);
+
+    const result = await sendWhatsAppMessage({
+      supabase,
+      tenantId: "tenant-1",
+      contactId: "contact-1",
+      phoneNumber: "+55 (11) 99999-9999",
+      text: "Oi pela Meta",
+      preferredProvider: "meta_cloud",
+      fetcher: fetcher as any,
+    });
+
+    expect(result.provider).toBe("meta_cloud");
+    expect(fetcher).toHaveBeenCalledWith(
+      "https://graph.facebook.com/v22.0/phone-id/messages",
+      expect.objectContaining({
+        method: "POST",
+        headers: expect.objectContaining({ Authorization: "Bearer meta-token" }),
+        body: JSON.stringify({
+          messaging_product: "whatsapp",
+          recipient_type: "individual",
+          to: "5511999999999",
+          type: "text",
+          text: { body: "Oi pela Meta" },
+        }),
+      }),
+    );
+    expect(inserts[0].payload[0]).toEqual(expect.objectContaining({
+      media_provider: "meta_cloud",
+      content: "Oi pela Meta",
+    }));
+  });
+
+  it("falha sem fallback quando provider preferido nao existe", async () => {
+    const { supabase } = makeSupabase();
+    listTenantIntegrationsResolvedMock.mockResolvedValueOnce([
+      {
+        id: "evo-1",
+        tenant_id: "tenant-1",
+        provider: "evolution",
+        api_key: "evo-key",
+        webhook_secret: null,
+        webhook_url: null,
+        instance_name: "https://evolution.example.com|mayus",
+        status: "active",
+        metadata: null,
+        display_name: "Evolution",
+      },
+    ]);
+
+    await expect(sendWhatsAppMessage({
+      supabase,
+      tenantId: "tenant-1",
+      contactId: "contact-1",
+      phoneNumber: "5511999999999",
+      text: "Oi",
+      preferredProvider: "meta_cloud",
+      fetcher: vi.fn() as any,
+    })).rejects.toThrow("Integracao WhatsApp meta_cloud nao encontrada");
+  });
+
   it("bloqueia Evolution apontando para rede interna", async () => {
     const { supabase } = makeSupabase();
     listTenantIntegrationsResolvedMock.mockResolvedValueOnce([

@@ -10,6 +10,7 @@ export type SendWhatsAppMessageInput = {
   tenantId: string;
   contactId: string;
   phoneNumber: string;
+  preferredProvider?: WhatsAppSendProvider | null;
   text?: string | null;
   audioUrl?: string | null;
   mediaUrl?: string | null;
@@ -40,7 +41,11 @@ function validateEvolutionUrl(url: string): void {
   }
 }
 
-function pickProvider(integrations: ResolvedTenantIntegration[]) {
+function pickProvider(integrations: ResolvedTenantIntegration[], preferredProvider?: WhatsAppSendProvider | null) {
+  if (preferredProvider) {
+    return integrations.find((integration) => integration.provider === preferredProvider) || null;
+  }
+
   return integrations.find((integration) => integration.provider === "evolution")
     || integrations.find((integration) => integration.provider === "meta_cloud")
     || null;
@@ -171,10 +176,12 @@ export async function sendWhatsAppMessage(input: SendWhatsAppMessageInput): Prom
   assertSendInput(input);
 
   const integrations = await listTenantIntegrationsResolved(input.tenantId, ["meta_cloud", "evolution"]);
-  const provider = pickProvider(integrations);
+  const provider = pickProvider(integrations, input.preferredProvider);
 
   if (!provider) {
-    throw new Error("Nenhuma integracao de WhatsApp encontrada");
+    throw new Error(input.preferredProvider
+      ? `Integracao WhatsApp ${input.preferredProvider} nao encontrada`
+      : "Nenhuma integracao de WhatsApp encontrada");
   }
 
   let apiResponse: unknown = null;

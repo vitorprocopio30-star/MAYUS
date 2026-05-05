@@ -1,7 +1,7 @@
 import { NextRequest, NextResponse } from "next/server";
 import { createClient } from "@supabase/supabase-js";
-import { prepareWhatsAppSalesReplyForContact } from "@/lib/growth/whatsapp-sales-reply-runtime";
 import { handleWhatsAppInternalCommand } from "@/lib/mayus/whatsapp-command-runtime";
+import { enqueueWhatsAppReply } from "@/lib/whatsapp/reply-processor";
 
 // ==============================================================================
 // 🚀 MAYUS - WEBHOOK OFICIAL META CLOUD API (WhatsApp Business Platform)
@@ -262,7 +262,7 @@ export async function POST(req: NextRequest) {
         const shouldQueueMedia = Boolean(providerMediaId && ["image", "audio", "video", "document"].includes(messageType));
 
         // 4. Salvar Mensagem no Banco
-        const { error: msgErr } = await supabase
+        const { data: savedMessage, error: msgErr } = await supabase
           .from("whatsapp_messages")
           .insert([{
             tenant_id: tenantId,
@@ -285,10 +285,12 @@ export async function POST(req: NextRequest) {
               meta_phone_number_id: phoneNumberId,
               original_filename: mediaFilename || null,
               webhook_trigger: "meta_webhook",
-            } : {},
+            } : { reply_trigger: "meta_webhook" },
             message_id_from_evolution: messageIdFromMeta, // Reutilizamos o campo para o ID da Meta
             status: "delivered",
-          }]);
+          }])
+          .select("id")
+          .single<{ id: string }>();
 
         if (msgErr) {
           console.error("[Meta Webhook] Erro ao salvar mensagem:", msgErr);
@@ -341,17 +343,13 @@ export async function POST(req: NextRequest) {
           link_url: "/dashboard/conversas/whatsapp",
         }]);
 
-        try {
-          await prepareWhatsAppSalesReplyForContact({
+        if (savedMessage?.id) {
+          await enqueueWhatsAppReply({
             supabase,
-            tenantId,
-            contactId,
             trigger: "meta_webhook",
-            notify: true,
-            autoSendFirstResponse: true,
+            messageId: savedMessage.id,
+            preferredProvider: "meta_cloud",
           });
-        } catch (replyError) {
-          console.error("[Meta Webhook] Erro ao preparar resposta MAYUS:", replyError);
         }
       }
     }
