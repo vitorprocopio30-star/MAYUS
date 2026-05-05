@@ -32,6 +32,12 @@ type ProcessedMediaResult = {
   message_id: string;
   status: WhatsAppStoredMedia["media_processing_status"];
   reply_prepared: boolean;
+  provider: string | null;
+  kind: string;
+  duration_ms: number;
+  size_bytes?: number | null;
+  mime_type?: string | null;
+  has_storage_path?: boolean;
   error?: string;
 };
 
@@ -63,6 +69,84 @@ function pruneMetadataAfterSuccess(metadata: Record<string, any>, mediaRecord: W
   }
 
   return next;
+}
+
+function truncateError(value: string | null | undefined) {
+  const text = String(value || "").replace(/\s+/g, " ").trim();
+  return text ? text.slice(0, 500) : null;
+}
+
+async function recordMediaEvent(params: {
+  supabase: SupabaseClient;
+  tenantId: string;
+  row: PendingWhatsAppMediaMessage;
+  eventName: "whatsapp_media_processed" | "whatsapp_media_failed";
+  status: WhatsAppStoredMedia["media_processing_status"];
+  replyPrepared: boolean;
+  durationMs: number;
+  mediaRecord?: WhatsAppStoredMedia | null;
+  error?: string | null;
+}) {
+  try {
+    await params.supabase.from("system_event_logs").insert({
+      tenant_id: params.tenantId,
+      user_id: null,
+      source: "whatsapp",
+      provider: params.mediaRecord?.media_provider || params.row.media_provider || null,
+      event_name: params.eventName,
+      status: params.status === "failed" ? "error" : "ok",
+      payload: {
+        message_id: params.row.id,
+        contact_id: params.row.contact_id,
+        provider: params.mediaRecord?.media_provider || params.row.media_provider || null,
+        kind: mediaKind(params.row),
+        status: params.status,
+        duration_ms: params.durationMs,
+        mime_type: params.mediaRecord?.media_mime_type || null,
+        size_bytes: params.mediaRecord?.media_size_bytes ?? null,
+        has_storage_path: Boolean(params.mediaRecord?.media_storage_path),
+        reply_prepared: params.replyPrepared,
+        error: truncateError(params.error),
+      },
+      created_at: new Date().toISOString(),
+    });
+  } catch (error) {
+    console.error("[whatsapp-media-processor] Erro ao registrar observabilidade:", error);
+  }
+}
+
+async function recordBatchEvent(params: {
+  supabase: SupabaseClient;
+  durationMs: number;
+  limit?: number;
+  messageId?: string | null;
+  rows: PendingWhatsAppMediaMessage[];
+  results: ProcessedMediaResult[];
+}) {
+  const tenantIds = Array.from(new Set(params.rows.map((row) => row.tenant_id).filter(Boolean)));
+  try {
+    await params.supabase.from("system_event_logs").insert({
+      tenant_id: tenantIds.length === 1 ? tenantIds[0] : null,
+      user_id: null,
+      source: "whatsapp",
+      provider: "mayus",
+      event_name: "whatsapp_media_batch_processed",
+      status: params.results.some((result) => result.status === "failed") ? "error" : "ok",
+      payload: {
+        duration_ms: params.durationMs,
+        limit: normalizeLimit(params.limit),
+        message_id: params.messageId || null,
+        picked: params.results.length,
+        processed: params.results.filter((result) => result.status === "processed").length,
+        unsupported: params.results.filter((result) => result.status === "unsupported").length,
+        failed: params.results.filter((result) => result.status === "failed").length,
+        replies_prepared: params.results.filter((result) => result.reply_prepared).length,
+      },
+      created_at: new Date().toISOString(),
+    });
+  } catch (error) {
+    console.error("[whatsapp-media-processor] Erro ao registrar batch:", error);
+  }
 }
 
 async function prepareReplyAfterProcessing(params: {
@@ -160,6 +244,7 @@ async function processOnePendingMedia(params: {
   row: PendingWhatsAppMediaMessage;
 }): Promise<ProcessedMediaResult> {
   const metadata = params.row.metadata || {};
+  const startedAt = Date.now();
 
   try {
     const mediaRecord = params.row.media_provider === "meta_cloud"
@@ -185,10 +270,28 @@ async function processOnePendingMedia(params: {
     if (updateError) throw updateError;
 
     const replyPrepared = await prepareReplyAfterProcessing(params);
+    const durationMs = Date.now() - startedAt;
+    await recordMediaEvent({
+      supabase: params.supabase,
+      tenantId: params.row.tenant_id,
+      row: params.row,
+      eventName: "whatsapp_media_processed",
+      status: mediaRecord.media_processing_status,
+      replyPrepared,
+      durationMs,
+      mediaRecord,
+    });
+
     return {
       message_id: params.row.id,
       status: mediaRecord.media_processing_status,
       reply_prepared: replyPrepared,
+      provider: mediaRecord.media_provider || params.row.media_provider || null,
+      kind: mediaKind(params.row),
+      duration_ms: durationMs,
+      size_bytes: mediaRecord.media_size_bytes,
+      mime_type: mediaRecord.media_mime_type,
+      has_storage_path: Boolean(mediaRecord.media_storage_path),
     };
   } catch (error: any) {
     const message = error?.message || "Falha ao processar midia WhatsApp.";
@@ -207,16 +310,33 @@ async function processOnePendingMedia(params: {
       .eq("id", params.row.id);
 
     const replyPrepared = await prepareReplyAfterProcessing(params);
+    const durationMs = Date.now() - startedAt;
+    await recordMediaEvent({
+      supabase: params.supabase,
+      tenantId: params.row.tenant_id,
+      row: params.row,
+      eventName: "whatsapp_media_failed",
+      status: "failed",
+      replyPrepared,
+      durationMs,
+      error: message,
+    });
+
     return {
       message_id: params.row.id,
       status: "failed",
       reply_prepared: replyPrepared,
+      provider: params.row.media_provider || null,
+      kind: mediaKind(params.row),
+      duration_ms: durationMs,
+      has_storage_path: false,
       error: message,
     };
   }
 }
 
 export async function processPendingWhatsAppMediaBatch(params: ProcessWhatsAppMediaBatchParams) {
+  const startedAt = Date.now();
   let query = params.supabase
     .from("whatsapp_messages")
     .select("id, tenant_id, contact_id, direction, message_type, content, media_filename, media_provider, media_processing_status, metadata, message_id_from_evolution")
@@ -237,6 +357,15 @@ export async function processPendingWhatsAppMediaBatch(params: ProcessWhatsAppMe
   for (const row of rows) {
     results.push(await processOnePendingMedia({ supabase: params.supabase, row }));
   }
+
+  await recordBatchEvent({
+    supabase: params.supabase,
+    durationMs: Date.now() - startedAt,
+    limit: params.limit,
+    messageId: params.messageId,
+    rows,
+    results,
+  });
 
   return {
     picked: rows.length,

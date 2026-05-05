@@ -273,7 +273,7 @@ O MAYUS pode agir, mas acoes juridicas, financeiras ou externas sensiveis exigem
 - [~] WhatsApp multimodal tem schema/helper/webhooks/UI iniciais, mas ainda precisa smokes reais, idempotencia e processamento async.
 - [ ] Smoke real controlado de Asaas, ZapSign, Escavador, WhatsApp e Drive.
 - [ ] Smoke real especifico de WhatsApp: inbound texto, imagem, audio, documento, outbound texto, audio, imagem/documento e fallback de provider.
-- [ ] Observabilidade de midia WhatsApp: tempo de download, upload, transcricao, leitura de imagem/documento, falha e reprocessamento.
+- [~] Observabilidade de midia WhatsApp: processor registra eventos sanitizados por midia e batch com duracao/status; ainda falta dashboard/alerta operacional.
 - [ ] Observabilidade por skill, rota, webhook, provedor LLM e custo.
 - [ ] Alertas de falha de webhook e provider.
 - [ ] Checklist de release com build, typecheck, testes focados, E2E essencial e diff-check.
@@ -408,6 +408,7 @@ Validacoes executadas:
 - [x] Smoke real Evolution: inbound texto, imagem, audio, PDF e DOCX chegaram no banco; processor converteu midias para `processed`, gravou `media_storage_path`, `media_text/media_summary` quando aplicavel e zerou fila `pending`.
 - [x] Smoke real Evolution: outbound texto enviado com sucesso via provider `evolution` e registrado como `status = 'sent'`.
 - [x] Smoke real revelou e corrigiu politica de MIME do bucket para DOC/DOCX em `whatsapp-media`.
+- [x] Observabilidade inicial do processor WhatsApp registra `whatsapp_media_processed`, `whatsapp_media_failed` e `whatsapp_media_batch_processed` em `system_event_logs` sem texto integral, signed URL ou segredo.
 
 Bloqueios antes de marcar como `[x]`:
 
@@ -417,6 +418,7 @@ Bloqueios antes de marcar como `[x]`:
 - [x] Idempotencia de mensagem inbound.
 - [ ] Smoke real Meta Cloud/Evolution com texto, imagem, audio e documento.
 - [ ] Smoke real Meta Cloud ainda pendente; Evolution passou para texto, imagem, audio, PDF/DOCX e outbound texto.
+- [~] Observabilidade de midia existe no processor; ainda faltam dashboard/alertas e smoke Meta Cloud.
 - [x] Aplicar migration `20260504120000_whatsapp_media_labels.sql` antes do smoke real.
 - [x] Confirmar `CRON_SECRET` efetivo do projeto Vercel usado no smoke ou atualizar `.env.local`/Vercel para ficarem alinhados.
 

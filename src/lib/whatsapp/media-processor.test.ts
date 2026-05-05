@@ -26,8 +26,18 @@ import { processPendingWhatsAppMediaBatch } from "./media-processor";
 
 function makeSupabase(row: any) {
   const updates: any[] = [];
+  const eventInserts: any[] = [];
   const supabase: any = {
     from: vi.fn((table: string) => {
+      if (table === "system_event_logs") {
+        return {
+          insert: vi.fn(async (values: any) => {
+            eventInserts.push(values);
+            return { error: null };
+          }),
+        };
+      }
+
       if (table !== "whatsapp_messages") return {};
       return {
         select: vi.fn(() => ({
@@ -45,7 +55,7 @@ function makeSupabase(row: any) {
     }),
   };
 
-  return { supabase, updates };
+  return { supabase, updates, eventInserts };
 }
 
 describe("processPendingWhatsAppMediaBatch", () => {
@@ -73,7 +83,7 @@ describe("processPendingWhatsAppMediaBatch", () => {
         webhook_trigger: "meta_webhook",
       },
     };
-    const { supabase, updates } = makeSupabase(row);
+    const { supabase, updates, eventInserts } = makeSupabase(row);
     mocks.listTenantIntegrationsResolved.mockResolvedValueOnce([
       { provider: "meta_cloud", api_key: "meta-token", instance_name: "phone-1|waba-1" },
     ]);
@@ -112,6 +122,99 @@ describe("processPendingWhatsAppMediaBatch", () => {
       contactId: "contact-1",
       trigger: "meta_webhook",
       autoSendFirstResponse: true,
+    }));
+    expect(eventInserts).toHaveLength(2);
+    expect(eventInserts[0]).toEqual(expect.objectContaining({
+      tenant_id: "tenant-1",
+      source: "whatsapp",
+      provider: "meta_cloud",
+      event_name: "whatsapp_media_processed",
+      status: "ok",
+      payload: expect.objectContaining({
+        message_id: "message-1",
+        contact_id: "contact-1",
+        provider: "meta_cloud",
+        kind: "image",
+        status: "processed",
+        mime_type: "image/jpeg",
+        size_bytes: 123,
+        has_storage_path: true,
+        reply_prepared: true,
+      }),
+    }));
+    expect(eventInserts[0].payload).not.toHaveProperty("media_text");
+    expect(eventInserts[0].payload).not.toHaveProperty("media_url");
+    expect(eventInserts[1]).toEqual(expect.objectContaining({
+      tenant_id: "tenant-1",
+      source: "whatsapp",
+      provider: "mayus",
+      event_name: "whatsapp_media_batch_processed",
+      status: "ok",
+      payload: expect.objectContaining({
+        picked: 1,
+        processed: 1,
+        failed: 0,
+        replies_prepared: 1,
+      }),
+    }));
+  });
+
+  it("registra evento sanitizado quando processamento falha", async () => {
+    const row = {
+      id: "message-failed",
+      tenant_id: "tenant-1",
+      contact_id: "contact-1",
+      direction: "inbound",
+      message_type: "document",
+      content: "Documento do cliente",
+      media_filename: "contrato.pdf",
+      media_provider: "meta_cloud",
+      media_processing_status: "pending",
+      message_id_from_evolution: null,
+      metadata: {
+        provider_media_id: "meta-media-1",
+        media_kind: "document",
+        webhook_trigger: "meta_webhook",
+      },
+    };
+    const { supabase, updates, eventInserts } = makeSupabase(row);
+    mocks.listTenantIntegrationsResolved.mockResolvedValueOnce([]);
+
+    const result = await processPendingWhatsAppMediaBatch({ supabase, limit: 1 });
+
+    expect(result).toMatchObject({ picked: 1, processed: 0, failed: 1, replies_prepared: 1 });
+    expect(updates[0]).toEqual(expect.objectContaining({
+      media_url: null,
+      media_processing_status: "failed",
+    }));
+    expect(eventInserts[0]).toEqual(expect.objectContaining({
+      tenant_id: "tenant-1",
+      source: "whatsapp",
+      provider: "meta_cloud",
+      event_name: "whatsapp_media_failed",
+      status: "error",
+      payload: expect.objectContaining({
+        message_id: "message-failed",
+        contact_id: "contact-1",
+        provider: "meta_cloud",
+        kind: "document",
+        status: "failed",
+        has_storage_path: false,
+        reply_prepared: true,
+      }),
+    }));
+    expect(eventInserts[0].payload.error).toContain("Token Meta Cloud indisponivel");
+    expect(eventInserts[0].payload).not.toHaveProperty("media_text");
+    expect(eventInserts[0].payload).not.toHaveProperty("media_url");
+    expect(eventInserts[1]).toEqual(expect.objectContaining({
+      event_name: "whatsapp_media_batch_processed",
+      status: "error",
+      payload: expect.objectContaining({
+        picked: 1,
+        processed: 0,
+        failed: 1,
+        replies_prepared: 1,
+      }),
     }));
   });
 });
