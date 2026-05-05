@@ -443,6 +443,7 @@ Validacoes executadas:
 - [~] WhatsApp passou a priorizar o MAYUS Operating Partner como motor agentico padrao quando nao estiver explicitamente desativado no tenant; ele recebe playbook/documento de vendas, estado conversacional, CRM e regras de claims, com timeout operacional para nao empilhar LLM lenta no webhook.
 - [~] Processor de midia deixou de autoenviar resposta tardia quando existe mensagem inbound mais nova do mesmo contato; nesses casos registra `whatsapp_media_reply_suppressed_stale` e deixa o contexto processado para a proxima decisao agentica.
 - [x] Validacao local do ajuste agentico: `npx.cmd vitest run "src/app/api/evolution-webhook/route.test.ts" "src/app/api/whatsapp/webhook/route.test.ts" "src/lib/growth/sales-llm-reply.test.ts" "src/lib/growth/whatsapp-sales-reply-runtime.test.ts" "src/lib/whatsapp/media-processor.test.ts" "src/lib/whatsapp/reply-processor.test.ts" "src/lib/agent/mayus-operating-partner.test.ts"` com 7 arquivos e 36 testes; `npx.cmd tsc --noEmit --pretty false`; `npm run build` passou com warnings preexistentes de hooks/`<img>`.
+- [x] Deploy Vercel de producao `dpl_SBpdzMniKTtxjatX7TnvHqcraHou` do commit `4a60700` ficou `Ready` e aliasado em `https://mayus-premium-pro.vercel.app`.
 
 Bloqueios antes de marcar como `[x]`:
 
