@@ -22,16 +22,16 @@ Legenda:
 
 | Frente | Percentual | Leitura honesta |
 | --- | ---: | --- |
-| MAYUS geral | 74% | Produto forte, WhatsApp multimodal, observabilidade, alertas e fila de resposta evoluiram, mas ainda nao e o socio virtual completo. |
+| MAYUS geral | 75% | Produto forte, WhatsApp multimodal, observabilidade, alertas, fila de resposta e smoke fechado Evolution evoluiram, mas ainda nao e o socio virtual completo. |
 | Produto juridico/base SaaS | 78% | Dashboard, CRM, documentos, juridico, agenda, marketing e permissoes ja existem. |
 | Maturidade agentica | 52% | Ha runtime, artifacts, skills e auditoria, mas ainda falta um operador central continuo. |
-| WhatsApp vendas/suporte | 82% | Evolution passou smoke real multimodal, ganhou observabilidade, painel, alertas e resposta assincrona; falta Meta Cloud, scheduler frequente e conversas longas. |
+| WhatsApp vendas/suporte | 83% | Evolution passou smoke real multimodal e resposta automatica com MAYUS fechado; falta Meta Cloud, scheduler automatico observado e conversas longas. |
 | Growth/vendas | 70% | Intake, qualificacao, follow-up, reativacao e sales profile existem; falta fechar execucao real ponta a ponta. |
 | Juridico/Lex | 82% | Base juridica e documental esta forte; faltam contradicoes, cronologia, riscos e mais automacao segura. |
 | Financeiro | 48% | Asaas/fluxo planejado existem, mas cobranca operacional completa ainda precisa smoke e UX. |
 | Auto-configuracao | 45% | Setup Doctor e sales profile existem; falta onboarding completo do escritorio. |
 | UX sem curso | 60% | WhatsApp ganhou controles melhores, mas o usuario ainda precisa entender demais o sistema. |
-| Integracoes e operacao real | 68% | WhatsApp Evolution tem smoke, observabilidade, alerta de falha e job assincrono; faltam Meta Cloud, scheduler frequente e smokes sensiveis finais. |
+| Integracoes e operacao real | 69% | WhatsApp Evolution tem smoke, observabilidade, alerta de falha e job assincrono validado manualmente; faltam Meta Cloud, scheduler automatico observado e smokes sensiveis finais. |
 
 ### O que ja e usavel
 
@@ -422,6 +422,7 @@ Validacoes executadas:
 - [x] Processor de respostas registra `whatsapp_reply_processed`, `whatsapp_reply_failed` e `whatsapp_reply_stale_pending` sem texto integral, signed URL ou segredo; falhas/pendencias atrasadas geram notificacoes internas deduplicadas.
 - [x] Autoenvio para contato ja atribuido permanece bloqueado por padrao, mas pode ser liberado por tenant com `whatsapp_agent.autonomy_mode = 'auto_respond_assigned'`.
 - [x] Deploy correto `mayus-premium-pro` do commit `3ea6b7d` ficou `READY/PROMOTED`; rotas protegidas retornaram `403` sem segredo, processor de midia retornou `picked: 0` e processor de respostas retornou `picked: 0` com `CRON_SECRET` de producao sem expor o valor.
+- [x] Smoke Evolution com MAYUS fechado: mensagem `Boa tarde` entrou como inbound, ficou `pending`, foi reprocessada com `CRON_SECRET`, gerou outbound `sent` via Evolution e evento `whatsapp_sales_llm_auto_sent` sem expor segredo.
 
 Bloqueios antes de marcar como `[x]`:
 
@@ -429,9 +430,9 @@ Bloqueios antes de marcar como `[x]`:
 - [x] Bucket privado/signed URLs para midia juridica.
 - [x] Processamento de midia fora dos webhooks.
 - [x] Idempotencia de mensagem inbound.
-- [ ] Smoke real Meta Cloud/Evolution com texto, imagem, audio e documento.
+- [~] Smoke real Meta Cloud/Evolution com texto, imagem, audio e documento: Evolution validou texto fechado e multimodal anterior; falta repetir midia fechado e Meta Cloud.
 - [ ] Smoke real Meta Cloud ainda pendente; Evolution passou para texto, imagem, audio, PDF/DOCX e outbound texto.
-- [~] Observabilidade de midia e resposta existe no processor, painel admin e notificacoes de falha; ainda falta smoke Meta Cloud e scheduler frequente.
+- [~] Observabilidade de midia e resposta existe no processor, painel admin e notificacoes de falha; ainda falta smoke Meta Cloud e confirmar execucao automatica agendada do scheduler.
 - [x] Aplicar migration `20260504120000_whatsapp_media_labels.sql` antes do smoke real.
 - [x] Confirmar `CRON_SECRET` efetivo do projeto Vercel usado no smoke ou atualizar `.env.local`/Vercel para ficarem alinhados.
 
