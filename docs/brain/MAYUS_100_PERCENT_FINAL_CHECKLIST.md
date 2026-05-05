@@ -445,7 +445,8 @@ Validacoes executadas:
 - [x] Validacao local do ajuste agentico: `npx.cmd vitest run "src/app/api/evolution-webhook/route.test.ts" "src/app/api/whatsapp/webhook/route.test.ts" "src/lib/growth/sales-llm-reply.test.ts" "src/lib/growth/whatsapp-sales-reply-runtime.test.ts" "src/lib/whatsapp/media-processor.test.ts" "src/lib/whatsapp/reply-processor.test.ts" "src/lib/agent/mayus-operating-partner.test.ts"` com 7 arquivos e 36 testes; `npx.cmd tsc --noEmit --pretty false`; `npm run build` passou com warnings preexistentes de hooks/`<img>`.
 - [x] Deploy Vercel de producao `dpl_SBpdzMniKTtxjatX7TnvHqcraHou` do commit `4a60700` ficou `Ready` e aliasado em `https://mayus-premium-pro.vercel.app`.
 - [x] Tenant de smoke `a0000000-0000-0000-0000-000000000001` teve `mayus_operating_partner.enabled` alterado de `false` para `true` para validar o motor agentico real no WhatsApp.
-- [~] Bloqueio de grupos WhatsApp implementado em codigo: webhook Evolution ignora `remoteJid` `@g.us` antes de tenant/contato/mensagem/resposta, e `sendWhatsAppMessage` rejeita envio para JID de grupo; validado localmente e pendente deploy/smoke.
+- [x] Bloqueio de grupos WhatsApp implementado e deployado: webhook Evolution ignora `remoteJid` `@g.us` antes de tenant/contato/mensagem/resposta, e `sendWhatsAppMessage` rejeita envio para JID de grupo; validado localmente e publicado no deploy `dpl_7u3Mg6DwFHejgGCMVTaezKo5JMgJ`.
+- [x] Limpeza operacional pos-incidente: 1 contato de grupo WhatsApp e 50 mensagens recentes vinculadas foram marcadas com `group_chat_ignored = true`; replies pendentes/processando foram convertidas para `ignored_group_chat` e midias pendentes para `unsupported`, sem apagar historico.
 
 Bloqueios antes de marcar como `[x]`:
 
