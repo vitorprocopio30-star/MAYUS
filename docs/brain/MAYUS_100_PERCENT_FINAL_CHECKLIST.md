@@ -400,6 +400,9 @@ Validacoes executadas:
 - [x] `npx.cmd vitest run src/lib/whatsapp/send-message.test.ts src/lib/growth/whatsapp-sales-reply.test.ts src/lib/growth/sales-llm-reply.test.ts src/lib/growth/whatsapp-sales-reply-runtime.test.ts src/lib/agent/mayus-operating-partner.test.ts src/lib/agent/mayus-operating-partner-actions.test.ts src/app/api/whatsapp/send/route.test.ts src/app/api/evolution-webhook/route.test.ts` com 8 arquivos e 27 testes.
 - [x] `npx.cmd vitest run src/app/api/whatsapp/send/route.test.ts src/app/api/evolution-webhook/route.test.ts src/lib/whatsapp/send-message.test.ts` com 3 arquivos e 8 testes apos hardening de seguranca/midia.
 - [x] `npx.cmd vitest run src/lib/whatsapp/send-message.test.ts src/lib/whatsapp/media-processor.test.ts src/lib/growth/whatsapp-sales-reply.test.ts src/lib/growth/sales-llm-reply.test.ts src/lib/growth/whatsapp-sales-reply-runtime.test.ts src/lib/agent/mayus-operating-partner.test.ts src/lib/agent/mayus-operating-partner-actions.test.ts src/app/api/whatsapp/send/route.test.ts src/app/api/evolution-webhook/route.test.ts` com 9 arquivos e 31 testes apos processamento assincrono.
+- [x] Deploy Vercel do commit `2242893` concluido com sucesso em `mayus`, `mayus-premium`, `mayus-premium-pro` e `mayus-v9`.
+- [ ] Pre-smoke Supabase bloqueado: migration `20260504120000_whatsapp_media_labels.sql` ainda nao aplicada no banco validado por `.env.local`; faltam `whatsapp_messages.metadata`, colunas de midia e `whatsapp_contacts.label`.
+- [ ] Rota `/api/whatsapp/media/process` respondeu `403` com `CRON_SECRET` local no alias publico, indicando segredo de producao diferente do local ou ambiente/projeto divergente.
 
 Bloqueios antes de marcar como `[x]`:
 
@@ -408,6 +411,8 @@ Bloqueios antes de marcar como `[x]`:
 - [x] Processamento de midia fora dos webhooks.
 - [x] Idempotencia de mensagem inbound.
 - [ ] Smoke real Meta Cloud/Evolution com texto, imagem, audio e documento.
+- [ ] Aplicar migration `20260504120000_whatsapp_media_labels.sql` antes do smoke real.
+- [ ] Confirmar `CRON_SECRET` efetivo do projeto Vercel usado no smoke ou atualizar `.env.local`/Vercel para ficarem alinhados.
 
 Observacoes operacionais:
 

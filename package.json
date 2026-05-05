@@ -9,6 +9,7 @@
     "lint": "next lint",
     "test": "vitest run",
     "test:e2e": "playwright test",
+    "verify:whatsapp-media": "tsx scripts/verify-whatsapp-media-readiness.ts",
     "seed:e2e:documentos": "tsx scripts/setup-playwright-document-fixture.ts"
   },
   "dependencies": {
