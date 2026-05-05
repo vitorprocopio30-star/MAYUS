@@ -84,6 +84,14 @@ function isTextLike(mimeType: string | null, filename: string | null) {
   return String(mimeType || "").startsWith("text/") || ["txt", "md", "csv", "json"].includes(extension);
 }
 
+function getStorageContentType(mimeType: string | null, filename: string | null) {
+  const normalized = String(mimeType || "").toLowerCase().trim();
+  const extension = getExtension(filename, mimeType);
+
+  if (extension === "docx") return "application/octet-stream";
+  return normalized || "application/octet-stream";
+}
+
 async function extractDocumentText(params: {
   bytes: Uint8Array;
   mimeType: string | null;
@@ -240,7 +248,7 @@ async function uploadAndAnalyzeMedia(params: {
   const { error: uploadError } = await params.supabase.storage
     .from(WHATSAPP_MEDIA_BUCKET)
     .upload(storagePath, Buffer.from(params.downloaded.bytes), {
-      contentType: params.downloaded.mimeType || "application/octet-stream",
+      contentType: getStorageContentType(params.downloaded.mimeType, filename),
       upsert: true,
     });
 
