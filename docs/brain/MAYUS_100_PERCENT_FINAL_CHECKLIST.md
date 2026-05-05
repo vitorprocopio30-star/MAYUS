@@ -25,13 +25,13 @@ Legenda:
 | MAYUS geral | 76% | Produto forte, WhatsApp multimodal, observabilidade, alertas, fila de resposta e caminho imediato de texto evoluiram, mas ainda nao e o socio virtual completo. |
 | Produto juridico/base SaaS | 78% | Dashboard, CRM, documentos, juridico, agenda, marketing e permissoes ja existem. |
 | Maturidade agentica | 52% | Ha runtime, artifacts, skills e auditoria, mas ainda falta um operador central continuo. |
-| WhatsApp vendas/suporte | 85% | Evolution passou smoke real multimodal e resposta automatica com MAYUS fechado; texto agora aciona processor imediato com timeout e fallback juridico seguro, faltando deploy/smoke real desse ajuste, Meta Cloud e conversas longas. |
+| WhatsApp vendas/suporte | 86% | Evolution passou smoke real multimodal e resposta automatica imediata para envio de contracheque; faltam Meta Cloud, conversas longas, midia fechado e scheduler automatico observado. |
 | Growth/vendas | 70% | Intake, qualificacao, follow-up, reativacao e sales profile existem; falta fechar execucao real ponta a ponta. |
 | Juridico/Lex | 82% | Base juridica e documental esta forte; faltam contradicoes, cronologia, riscos e mais automacao segura. |
 | Financeiro | 48% | Asaas/fluxo planejado existem, mas cobranca operacional completa ainda precisa smoke e UX. |
 | Auto-configuracao | 45% | Setup Doctor e sales profile existem; falta onboarding completo do escritorio. |
 | UX sem curso | 60% | WhatsApp ganhou controles melhores, mas o usuario ainda precisa entender demais o sistema. |
-| Integracoes e operacao real | 71% | WhatsApp Evolution tem smoke, observabilidade, alerta de falha, job assincrono validado manualmente e caminho imediato de texto endurecido em codigo; faltam Meta Cloud, deploy/smoke do ajuste e scheduler automatico observado. |
+| Integracoes e operacao real | 72% | WhatsApp Evolution tem smoke, observabilidade, alerta de falha, job assincrono validado manualmente e fast-path imediato validado em producao; faltam Meta Cloud, midia fechado e scheduler automatico observado. |
 
 ### O que ja e usavel
 
@@ -429,6 +429,9 @@ Validacoes executadas:
 - [x] Validacao local do ajuste imediato endurecido: `npx.cmd vitest run src/lib/growth/sales-llm-reply.test.ts src/lib/growth/whatsapp-sales-reply-runtime.test.ts src/app/api/evolution-webhook/route.test.ts src/app/api/whatsapp/webhook/route.test.ts src/lib/whatsapp/reply-processor.test.ts` com 5 arquivos e 24 testes; `npx.cmd tsc --noEmit --pretty false`; `git diff --check` sem erro; `npm run verify:whatsapp-media` retornou `ok: true` com `pending_count: 1`; `npm run build` passou com warnings preexistentes de hooks/`<img>`.
 - [x] Deploy Vercel de producao `dpl_8CSoVVKeCgkjpoSS9xXaQ2NcZtU3` do commit `d84a630` ficou `Ready` e aliasado em `https://mayus-premium-pro.vercel.app`; falta smoke real Evolution com texto de contracheque.
 - [~] Smoke real Evolution com `Posso mandar meu contracheque para vc analisar?` entrou no banco, mas o caminho LLM/processor levou cerca de 49s quando acionado manualmente; para venda em segundos, Evolution ganhou fast-path deterministico seguro que responde pedido de envio/analise de contracheque direto no webhook, sem esperar LLM, e cai na fila se o envio falhar.
+- [x] Deploy Vercel de producao `dpl_69socey4Swtoj81Gp4SCoaUMQPCY` do commit `681ad4e` ficou `Ready` e aliasado em `https://mayus-premium-pro.vercel.app`.
+- [x] Webhook da Evolution foi reconfigurado para a URL estavel `https://mayus-premium-pro.vercel.app/api/evolution-webhook`; chamada `webhook/set` retornou `201` para a instancia `mayus-dutra` sem expor API key.
+- [x] Smoke real Evolution fast-path: inbound `Posso enviar meu contracheque?` gerou outbound `sent` via `evolution` em cerca de 4s, com `reply_processing_status = processed`, `reply_auto_sent = true`, `reply_source = immediate_safe_deterministic_reply` e evento `whatsapp_immediate_safe_reply_auto_sent`.
 
 Bloqueios antes de marcar como `[x]`:
 
@@ -436,7 +439,7 @@ Bloqueios antes de marcar como `[x]`:
 - [x] Bucket privado/signed URLs para midia juridica.
 - [x] Processamento de midia fora dos webhooks.
 - [x] Idempotencia de mensagem inbound.
-- [~] Smoke real Meta Cloud/Evolution com texto, imagem, audio e documento: Evolution validou texto fechado e multimodal anterior; falta repetir midia fechado e Meta Cloud.
+- [~] Smoke real Meta Cloud/Evolution com texto, imagem, audio e documento: Evolution validou texto imediato para contracheque, texto fechado anterior e multimodal anterior; falta repetir midia fechado e Meta Cloud.
 - [ ] Smoke real Meta Cloud ainda pendente; Evolution passou para texto, imagem, audio, PDF/DOCX e outbound texto.
 - [~] Observabilidade de midia e resposta existe no processor, painel admin e notificacoes de falha; ainda falta smoke Meta Cloud, smoke real do disparo imediato e confirmar execucao automatica agendada do scheduler.
 - [x] Aplicar migration `20260504120000_whatsapp_media_labels.sql` antes do smoke real.
