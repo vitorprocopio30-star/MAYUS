@@ -716,4 +716,92 @@ describe("prepareWhatsAppSalesReplyForContact", () => {
       }),
     ]));
   });
+
+  it("nao empilha Sales LLM quando o socio virtual expira no webhook", async () => {
+    const inserts: Array<{ table: string; payload: any }> = [];
+    buildMayusOperatingPartnerDecisionMock.mockRejectedValueOnce(new Error("Timeout em MAYUS Operating Partner apos 8000ms."));
+    sendWhatsAppMessageMock.mockResolvedValueOnce({
+      provider: "evolution",
+      apiResponse: { ok: true },
+    });
+
+    const supabase: any = {
+      from: vi.fn((table: string) => {
+        if (table === "whatsapp_contacts") {
+          return makeSelectQuery({
+            data: { id: "contact-1", name: "Vitor", phone_number: "5511999999999", assigned_user_id: null },
+            error: null,
+          });
+        }
+
+        if (table === "tenant_settings") {
+          return makeSelectQuery({
+            data: {
+              ai_features: {
+                sales_llm_testbench: {
+                  enabled: true,
+                  default_model: "deepseek/deepseek-v4-pro",
+                  candidate_models: ["deepseek/deepseek-v4-pro"],
+                  routing_mode: "fixed",
+                },
+                mayus_operating_partner: {
+                  enabled: true,
+                  autonomy_mode: "high_supervised",
+                },
+                whatsapp_agent: {
+                  autonomy_mode: "auto_respond",
+                },
+              },
+            },
+            error: null,
+          });
+        }
+
+        if (table === "whatsapp_messages") {
+          return makeSelectQuery({
+            data: [
+              { direction: "inbound", content: "Quero saber sobre um desconto no contracheque", message_type: "text", created_at: "2026-05-05T18:37:51.000Z" },
+            ],
+            error: null,
+          });
+        }
+
+        return {
+          insert: vi.fn(async (payload: any) => {
+            inserts.push({ table, payload });
+            return { error: null };
+          }),
+        };
+      }),
+    };
+
+    const prepared = await prepareWhatsAppSalesReplyForContact({
+      supabase,
+      tenantId: "tenant-1",
+      contactId: "contact-1",
+      trigger: "evolution_webhook",
+      autoSendFirstResponse: true,
+      preferredProvider: "evolution",
+    });
+
+    expect(buildSalesLlmReplyMock).not.toHaveBeenCalled();
+    expect(prepared.metadata.reply_source).toBe("deterministic_fallback");
+    expect(prepared.metadata.fallback_reason).toBe("operating_partner:provider_timeout");
+    expect(prepared.autoSendResult).toEqual({ attempted: false, status: "skipped" });
+    expect(sendWhatsAppMessageMock).not.toHaveBeenCalled();
+    expect(inserts).toEqual(expect.arrayContaining([
+      expect.objectContaining({
+        table: "system_event_logs",
+        payload: expect.objectContaining({
+          event_name: "whatsapp_sales_reply_prepared",
+          payload: expect.objectContaining({
+            mayus_operating_partner: expect.objectContaining({
+              failed: true,
+              fallback: "deterministic_whatsapp_sales_reply",
+            }),
+          }),
+        }),
+      }),
+    ]));
+  });
 });

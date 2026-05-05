@@ -145,6 +145,12 @@ export type MayusOperatingPartnerInput = {
     uniqueValueProposition?: string | null;
     valuePillars?: string[] | null;
     positioningSummary?: string | null;
+    salesPlaybookContext?: string | null;
+    salesDocumentSummary?: string | null;
+    salesRules?: string[] | null;
+    qualificationQuestions?: string[] | null;
+    offerPositioning?: string | null;
+    forbiddenClaims?: string[] | null;
   } | null;
   crmContext?: MayusOperatingPartnerCrmContext | null;
   previousMayusEvent?: MayusPreviousConversationEvent | null;
@@ -459,6 +465,9 @@ function chooseModel(input: MayusOperatingPartnerInput) {
 function buildPrompt(input: MayusOperatingPartnerInput, config: MayusOperatingPartnerConfig, model: string, deterministicIntent: MayusOperatingPartnerIntent, state: MayusConversationState, closingReadiness: MayusClosingReadiness, supportSummary: MayusSupportSummary) {
   const profile = input.salesProfile || {};
   const pillars = Array.isArray(profile.valuePillars) ? profile.valuePillars.filter(Boolean).join(", ") : "";
+  const salesRules = Array.isArray(profile.salesRules) ? profile.salesRules.filter(Boolean).join("; ") : "";
+  const qualificationQuestions = Array.isArray(profile.qualificationQuestions) ? profile.qualificationQuestions.filter(Boolean).join("; ") : "";
+  const forbiddenClaims = Array.isArray(profile.forbiddenClaims) ? profile.forbiddenClaims.filter(Boolean).join("; ") : "";
 
   return [
     "Voce e o MAYUS, socio virtual operacional de um escritorio de advocacia brasileiro.",
@@ -469,6 +478,8 @@ function buildPrompt(input: MayusOperatingPartnerInput, config: MayusOperatingPa
     "Se for venda, conduza com DEF: descubra dor, qualifique, encante com diagnostico e so feche quando houver sinais suficientes.",
     "Se o cliente estiver pronto para fechar, organize o fechamento humano/comercial; nao envie contrato, preco fechado, cobranca ou promessa juridica sozinho.",
     "Se for suporte, responda curto e util, com a proxima acao concreta.",
+    "Se faltar configuracao do escritorio para decidir a conversa, nao invente. Faca uma pergunta curta de alinhamento operacional ao dono/equipe no reasoning_summary_for_team e responda o cliente com seguranca sem prometer.",
+    "O objetivo nao e responder generico: conduza a conversa usando o produto, a solucao, o playbook, o estado e o documento do cliente.",
     "Use no maximo 2 blocos curtos. Nao mande discurso institucional nem explique a metodologia.",
     "Nunca repita apresentacao se o estado indicar que o MAYUS ja se apresentou.",
     "Reconheca o assunto especifico do cliente antes de perguntar. Se ele falou contracheque, desconto, consignado, folha, beneficio ou INSS, trate como triagem juridica/suporte qualificado.",
@@ -486,6 +497,12 @@ function buildPrompt(input: MayusOperatingPartnerInput, config: MayusOperatingPa
     `PUV: ${cleanText(profile.uniqueValueProposition) || "nao configurada"}`,
     `Pilares: ${pillars || "nao configurados"}`,
     `Posicionamento: ${cleanText(profile.positioningSummary) || "nao configurado"}`,
+    `Documento/playbook de vendas: ${cleanText(profile.salesPlaybookContext)?.slice(0, 2200) || "nao configurado"}`,
+    `Resumo do documento de vendas: ${cleanText(profile.salesDocumentSummary)?.slice(0, 900) || "nao configurado"}`,
+    `Posicionamento/oferta do playbook: ${cleanText(profile.offerPositioning)?.slice(0, 700) || "nao configurado"}`,
+    `Regras comerciais do playbook: ${salesRules || "nao configuradas"}`,
+    `Perguntas de qualificacao do playbook: ${qualificationQuestions || "nao configuradas"}`,
+    `Claims/promessas proibidas: ${forbiddenClaims || "nao configurados"}`,
     "",
     "Estado conversacional MAYUS reconstruido:",
     JSON.stringify(state),

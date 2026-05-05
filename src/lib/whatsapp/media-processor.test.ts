@@ -74,13 +74,25 @@ function makeSupabase(row: any) {
 
       if (table !== "whatsapp_messages") return {};
       return {
-        select: vi.fn(() => ({
-          eq: vi.fn(() => ({
-            order: vi.fn(() => ({
-              limit: vi.fn(async () => ({ data: row ? [row] : [], error: null })),
+        select: vi.fn((columns?: string) => {
+          if (columns === "id") {
+            const query: any = {
+              eq: vi.fn(() => query),
+              gt: vi.fn(() => query),
+              neq: vi.fn(() => query),
+              limit: vi.fn(async () => ({ data: row?.newerInboundMessages || [], error: null })),
+            };
+            return query;
+          }
+
+          return {
+            eq: vi.fn(() => ({
+              order: vi.fn(() => ({
+                limit: vi.fn(async () => ({ data: row ? [row] : [], error: null })),
+              })),
             })),
-          })),
-        })),
+          };
+        }),
         update: vi.fn((values: any) => {
           updates.push(values);
           return { eq: vi.fn(async () => ({ error: null })) };
@@ -326,6 +338,60 @@ describe("processPendingWhatsAppMediaBatch", () => {
       payload: expect.objectContaining({
         message_id: "message-sales-doc",
         source: "whatsapp_media_document",
+      }),
+    }));
+  });
+
+  it("nao autoenvia resposta de midia antiga quando o cliente ja mandou nova mensagem", async () => {
+    const row = {
+      id: "message-old-media",
+      tenant_id: "tenant-1",
+      contact_id: "contact-1",
+      direction: "inbound",
+      message_type: "document",
+      content: "[Documento: contracheque.pdf]",
+      media_filename: "contracheque.pdf",
+      media_provider: "evolution",
+      media_processing_status: "pending",
+      message_id_from_evolution: "evo-msg-1",
+      created_at: "2026-05-05T17:41:00.000Z",
+      newerInboundMessages: [{ id: "message-newer-text" }],
+      metadata: {
+        provider_media_id: "evo-msg-1",
+        media_kind: "document",
+        webhook_trigger: "evolution_webhook",
+        evolution_instance: "mayus-dutra",
+        evolution_message_envelope: { key: { id: "evo-msg-1" }, message: { documentMessage: {} } },
+        evolution_message_payload: { documentMessage: {} },
+      },
+    };
+    const { supabase, eventInserts } = makeSupabase(row);
+    mocks.listTenantIntegrationsResolved.mockResolvedValueOnce([
+      { provider: "evolution", api_key: "evolution-key", instance_name: "https://evolution.example|mayus-dutra" },
+    ]);
+    mocks.processEvolutionMedia.mockResolvedValueOnce({
+      media_url: null,
+      media_storage_path: "tenant-1/contact-1/contracheque.pdf",
+      media_mime_type: "application/pdf",
+      media_filename: "contracheque.pdf",
+      media_size_bytes: 456,
+      media_provider: "evolution",
+      media_processing_status: "processed",
+      media_text: "Contracheque com desconto Credcesta.",
+      media_summary: "Ha desconto Credcesta no contracheque.",
+      metadata: { provider_media_id: "evo-msg-1", media_kind: "document" },
+    });
+
+    const result = await processPendingWhatsAppMediaBatch({ supabase, limit: 1 });
+
+    expect(result).toMatchObject({ picked: 1, processed: 1, failed: 0, replies_prepared: 0 });
+    expect(mocks.prepareWhatsAppSalesReplyForContact).not.toHaveBeenCalled();
+    expect(eventInserts).toContainEqual(expect.objectContaining({
+      event_name: "whatsapp_media_reply_suppressed_stale",
+      status: "ok",
+      payload: expect.objectContaining({
+        message_id: "message-old-media",
+        reason: "newer_inbound_message_exists",
       }),
     }));
   });

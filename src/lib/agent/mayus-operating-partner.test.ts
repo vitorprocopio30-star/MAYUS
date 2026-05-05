@@ -171,6 +171,16 @@ describe("mayus-operating-partner", () => {
         { direction: "outbound", content: "Pelo que voce contou, faz sentido avancar para analise." },
         { direction: "inbound", content: "Achei caro, vou pensar" },
       ],
+      salesProfile: {
+        idealClient: "servidores com descontos em contracheque",
+        coreSolution: "diagnostico de descontos indevidos com plano de provas",
+        uniqueValueProposition: "triagem consultiva sem promessa",
+        valuePillars: ["Diagnostico", "Provas", "Conducao"],
+        positioningSummary: "Atendimento focado em desconto no contracheque.",
+        salesPlaybookContext: "Playbook: em Credcesta, perguntar autorizacao, contrato e inicio do desconto antes de falar em acao.",
+        qualificationQuestions: ["voce autorizou esse desconto?"],
+        forbiddenClaims: ["causa ganha"],
+      },
       crmContext: { crm_task_id: "crm-1", title: "Vitor", stage_name: "Qualificacao" },
       previousMayusEvent: { next_action: "tratar objecao de valor" },
       operatingPartner: { enabled: true, autonomy_mode: "high_supervised" },
@@ -179,6 +189,9 @@ describe("mayus-operating-partner", () => {
 
     expect(prompt).toContain("Estado conversacional MAYUS reconstruido");
     expect(prompt).toContain("Contexto CRM do contato");
+    expect(prompt).toContain("Documento/playbook de vendas");
+    expect(prompt).toContain("Credcesta");
+    expect(prompt).toContain("Se faltar configuracao do escritorio");
     expect(decision.conversation_state.stage).toBe("objection");
     expect(decision.reply).not.toContain("Aqui e o MAYUS");
     expect(decision.reasoning_summary_for_team).toContain("objecao");

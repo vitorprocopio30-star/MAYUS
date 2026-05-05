@@ -20,6 +20,7 @@ type PendingWhatsAppMediaMessage = {
   media_processing_status: string | null;
   metadata: Record<string, any> | null;
   message_id_from_evolution: string | null;
+  created_at?: string | null;
 };
 
 type ProcessWhatsAppMediaBatchParams = {
@@ -316,6 +317,23 @@ async function prepareReplyAfterProcessing(params: {
   row: PendingWhatsAppMediaMessage;
 }) {
   if (params.row.direction !== "inbound") return false;
+  if (await hasNewerInboundMessage(params)) {
+    await params.supabase.from("system_event_logs").insert({
+      tenant_id: params.row.tenant_id,
+      user_id: null,
+      source: "whatsapp",
+      provider: "mayus",
+      event_name: "whatsapp_media_reply_suppressed_stale",
+      status: "ok",
+      payload: {
+        message_id: params.row.id,
+        contact_id: params.row.contact_id,
+        reason: "newer_inbound_message_exists",
+      },
+      created_at: new Date().toISOString(),
+    });
+    return false;
+  }
 
   try {
     await prepareWhatsAppSalesReplyForContact({
@@ -329,6 +347,30 @@ async function prepareReplyAfterProcessing(params: {
     return true;
   } catch (error) {
     console.error("[whatsapp-media-processor] Erro ao preparar resposta MAYUS:", error);
+    return false;
+  }
+}
+
+async function hasNewerInboundMessage(params: {
+  supabase: SupabaseClient;
+  row: PendingWhatsAppMediaMessage;
+}) {
+  if (!params.row.created_at) return false;
+
+  try {
+    const query = params.supabase.from("whatsapp_messages").select("id");
+    if (typeof (query as any).eq !== "function") return false;
+    const { data, error } = await query
+      .eq("tenant_id", params.row.tenant_id)
+      .eq("contact_id", params.row.contact_id)
+      .eq("direction", "inbound")
+      .gt("created_at", params.row.created_at)
+      .neq("id", params.row.id)
+      .limit(1);
+
+    if (error) return false;
+    return Boolean(data?.length);
+  } catch {
     return false;
   }
 }
@@ -511,7 +553,7 @@ export async function processPendingWhatsAppMediaBatch(params: ProcessWhatsAppMe
   const startedAt = Date.now();
   let query = params.supabase
     .from("whatsapp_messages")
-    .select("id, tenant_id, contact_id, direction, message_type, content, media_filename, media_provider, media_processing_status, metadata, message_id_from_evolution")
+    .select("id, tenant_id, contact_id, direction, message_type, content, media_filename, media_provider, media_processing_status, metadata, message_id_from_evolution, created_at")
     .eq("media_processing_status", "pending")
     .order("created_at", { ascending: true })
     .limit(normalizeLimit(params.limit));

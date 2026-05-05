@@ -12,6 +12,7 @@ import {
 } from "./sales-llm-reply";
 import {
   buildMayusOperatingPartnerDecision,
+  DEFAULT_MAYUS_OPERATING_PARTNER,
   normalizeMayusOperatingPartnerConfig,
   type MayusOperatingPartnerConfig,
   type MayusOperatingPartnerCrmContext,
@@ -36,6 +37,10 @@ function getStringArray(value: unknown) {
 
 function isExplicitlyEnabled(value: unknown) {
   return Boolean(value && typeof value === "object" && !Array.isArray(value) && (value as { enabled?: unknown }).enabled === true);
+}
+
+function isExplicitlyDisabled(value: unknown) {
+  return Boolean(value && typeof value === "object" && !Array.isArray(value) && (value as { enabled?: unknown }).enabled === false);
 }
 
 async function loadSalesRuntimeSettings(params: {
@@ -87,9 +92,11 @@ async function loadSalesRuntimeSettings(params: {
     salesLlmTestbench: isExplicitlyEnabled(testbench)
       ? normalizeSalesLlmTestbenchConfig(testbench as Partial<SalesLlmTestbenchConfig>)
       : null,
-    mayusOperatingPartner: isExplicitlyEnabled(operatingPartner)
-      ? normalizeMayusOperatingPartnerConfig(operatingPartner as Partial<MayusOperatingPartnerConfig>)
-      : null,
+    mayusOperatingPartner: isExplicitlyDisabled(operatingPartner)
+      ? null
+      : normalizeMayusOperatingPartnerConfig((operatingPartner && typeof operatingPartner === "object"
+        ? operatingPartner
+        : DEFAULT_MAYUS_OPERATING_PARTNER) as Partial<MayusOperatingPartnerConfig>),
     autonomyMode: whatsappAgent && typeof whatsappAgent === "object"
       ? getStringValue(whatsappAgent.autonomy_mode) || "auto_respond"
       : "auto_respond",
@@ -105,6 +112,20 @@ function sanitizeFallbackReason(error: unknown) {
   if (/network|fetch failed|econn|enotfound|dns/i.test(message)) return "provider_network_error";
   if (/json/i.test(message)) return "invalid_model_json";
   return "provider_call_failed";
+}
+
+async function withOperationalTimeout<T>(promise: Promise<T>, timeoutMs: number, label: string): Promise<T> {
+  let timeout: ReturnType<typeof setTimeout> | null = null;
+  try {
+    return await Promise.race([
+      promise,
+      new Promise<T>((_, reject) => {
+        timeout = setTimeout(() => reject(new Error(`Timeout em ${label} apos ${timeoutMs}ms.`)), timeoutMs);
+      }),
+    ]);
+  } finally {
+    if (timeout) clearTimeout(timeout);
+  }
 }
 
 function normalizePhone(value?: string | null) {
@@ -367,7 +388,7 @@ export async function prepareWhatsAppSalesReplyForContact(params: {
 
   if (runtimeSettings.mayusOperatingPartner?.enabled) {
     try {
-      operatingPartnerDecision = await buildMayusOperatingPartnerDecision({
+      operatingPartnerDecision = await withOperationalTimeout(buildMayusOperatingPartnerDecision({
         supabase: params.supabase,
         tenantId: params.tenantId,
         channel: "whatsapp",
@@ -379,7 +400,7 @@ export async function prepareWhatsAppSalesReplyForContact(params: {
         previousMayusEvent,
         salesTestbench: runtimeSettings.salesLlmTestbench,
         operatingPartner: runtimeSettings.mayusOperatingPartner,
-      });
+      }), params.trigger === "manual" ? 12000 : 8000, "MAYUS Operating Partner");
       metadata = {
         ...deterministicMetadata,
         reply_source: "operating_partner",
@@ -425,13 +446,17 @@ export async function prepareWhatsAppSalesReplyForContact(params: {
           enabled: true,
           failed: true,
           failure_reason: reason,
-          fallback: runtimeSettings.salesLlmTestbench?.enabled ? "sales_llm_reply" : "deterministic_whatsapp_sales_reply",
+          fallback: runtimeSettings.salesLlmTestbench?.enabled && reason !== "provider_timeout" ? "sales_llm_reply" : "deterministic_whatsapp_sales_reply",
         },
       };
     }
   }
 
-  if (!operatingPartnerDecision && runtimeSettings.salesLlmTestbench?.enabled) {
+  const operatingPartnerTimedOut = fallbackReasons.some((reason) => reason === "operating_partner:provider_timeout");
+  const shouldTrySalesLlm = runtimeSettings.salesLlmTestbench?.enabled
+    && !(operatingPartnerTimedOut && params.trigger !== "manual");
+
+  if (!operatingPartnerDecision && shouldTrySalesLlm) {
     try {
       llmReply = await buildSalesLlmReply({
         supabase: params.supabase,
