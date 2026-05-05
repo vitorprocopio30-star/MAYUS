@@ -33,9 +33,27 @@ CREATE INDEX IF NOT EXISTS idx_whatsapp_contacts_label
 CREATE INDEX IF NOT EXISTS idx_whatsapp_messages_media_status
   ON public.whatsapp_messages(tenant_id, media_processing_status, created_at DESC);
 
-INSERT INTO storage.buckets (id, name, public)
-VALUES ('whatsapp-media', 'whatsapp-media', false)
-ON CONFLICT (id) DO UPDATE SET public = false;
+INSERT INTO storage.buckets (id, name, public, allowed_mime_types)
+VALUES (
+  'whatsapp-media',
+  'whatsapp-media',
+  false,
+  ARRAY[
+    'audio/*',
+    'image/*',
+    'video/*',
+    'application/pdf',
+    'application/msword',
+    'application/vnd.openxmlformats-officedocument.wordprocessingml.document',
+    'text/plain',
+    'text/markdown',
+    'text/csv',
+    'application/json'
+  ]
+)
+ON CONFLICT (id) DO UPDATE SET
+  public = false,
+  allowed_mime_types = EXCLUDED.allowed_mime_types;
 
 CREATE UNIQUE INDEX IF NOT EXISTS idx_whatsapp_messages_tenant_provider_message_id
   ON public.whatsapp_messages(tenant_id, message_id_from_evolution)

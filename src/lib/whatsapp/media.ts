@@ -86,9 +86,6 @@ function isTextLike(mimeType: string | null, filename: string | null) {
 
 function getStorageContentType(mimeType: string | null, filename: string | null) {
   const normalized = String(mimeType || "").toLowerCase().trim();
-  const extension = getExtension(filename, mimeType);
-
-  if (extension === "docx") return "application/octet-stream";
   return normalized || "application/octet-stream";
 }
 
