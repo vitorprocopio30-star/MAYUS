@@ -27,12 +27,31 @@ import { processPendingWhatsAppMediaBatch } from "./media-processor";
 function makeSupabase(row: any) {
   const updates: any[] = [];
   const eventInserts: any[] = [];
+  const notificationInserts: any[] = [];
   const supabase: any = {
     from: vi.fn((table: string) => {
       if (table === "system_event_logs") {
         return {
           insert: vi.fn(async (values: any) => {
             eventInserts.push(values);
+            return { error: null };
+          }),
+        };
+      }
+
+      if (table === "notifications") {
+        return {
+          select: vi.fn(() => ({
+            eq: vi.fn(() => ({
+              eq: vi.fn(() => ({
+                eq: vi.fn(() => ({
+                  limit: vi.fn(async () => ({ data: [], error: null })),
+                })),
+              })),
+            })),
+          })),
+          insert: vi.fn(async (values: any) => {
+            notificationInserts.push(values);
             return { error: null };
           }),
         };
@@ -55,7 +74,7 @@ function makeSupabase(row: any) {
     }),
   };
 
-  return { supabase, updates, eventInserts };
+  return { supabase, updates, eventInserts, notificationInserts };
 }
 
 describe("processPendingWhatsAppMediaBatch", () => {
@@ -83,7 +102,7 @@ describe("processPendingWhatsAppMediaBatch", () => {
         webhook_trigger: "meta_webhook",
       },
     };
-    const { supabase, updates, eventInserts } = makeSupabase(row);
+    const { supabase, updates, eventInserts, notificationInserts } = makeSupabase(row);
     mocks.listTenantIntegrationsResolved.mockResolvedValueOnce([
       { provider: "meta_cloud", api_key: "meta-token", instance_name: "phone-1|waba-1" },
     ]);
@@ -157,6 +176,7 @@ describe("processPendingWhatsAppMediaBatch", () => {
         replies_prepared: 1,
       }),
     }));
+    expect(notificationInserts).toHaveLength(0);
   });
 
   it("registra evento sanitizado quando processamento falha", async () => {
@@ -177,7 +197,7 @@ describe("processPendingWhatsAppMediaBatch", () => {
         webhook_trigger: "meta_webhook",
       },
     };
-    const { supabase, updates, eventInserts } = makeSupabase(row);
+    const { supabase, updates, eventInserts, notificationInserts } = makeSupabase(row);
     mocks.listTenantIntegrationsResolved.mockResolvedValueOnce([]);
 
     const result = await processPendingWhatsAppMediaBatch({ supabase, limit: 1 });
@@ -215,6 +235,24 @@ describe("processPendingWhatsAppMediaBatch", () => {
         failed: 1,
         replies_prepared: 1,
       }),
+    }));
+    expect(notificationInserts).toHaveLength(2);
+    expect(notificationInserts[0]).toEqual(expect.objectContaining({
+      tenant_id: "tenant-1",
+      user_id: null,
+      title: "WhatsApp: falha ao processar midia",
+      type: "error",
+      link_url: "/dashboard/conversas/whatsapp",
+    }));
+    expect(notificationInserts[0].message).toContain("message-failed");
+    expect(notificationInserts[0].message).toContain("meta_cloud");
+    expect(notificationInserts[0].message).not.toContain("provider_media_id");
+    expect(notificationInserts[1]).toEqual(expect.objectContaining({
+      tenant_id: "tenant-1",
+      user_id: null,
+      title: "WhatsApp: batch de midia com falha",
+      type: "error",
+      link_url: "/dashboard/conversas/whatsapp",
     }));
   });
 });
