@@ -438,6 +438,7 @@ Observacoes operacionais:
 
 - [x] Deploy do commit `571351a` falhou no Vercel porque cron `*/5 * * * *` excedia limite Hobby; ajustado para diario em commit posterior.
 - [x] Scheduler externo versionado em GitHub Actions chama `/api/whatsapp/media/process` e `/api/whatsapp/replies/process` a cada 5 minutos com `CRON_SECRET` em GitHub Secret; cron Vercel diario fica como fallback.
+- [x] Workflow manual `WhatsApp processors` executou com sucesso no GitHub Actions no commit `0f50e60`, validando o scheduler e o secret sem expor `CRON_SECRET`.
 - [ ] Se o projeto migrar para Vercel Pro, considerar voltar processors WhatsApp para frequencia de 5 minutos ou substituir por fila externa.
 
 ---
