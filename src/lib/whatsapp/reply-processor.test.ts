@@ -30,7 +30,15 @@ function makeSupabase(row: any) {
           })),
           update: vi.fn((payload: any) => {
             updates.push({ table, payload });
-            return { eq: vi.fn(async () => ({ error: null })) };
+            const query: any = {
+              eq: vi.fn(() => query),
+              select: vi.fn(() => query),
+              maybeSingle: vi.fn(async () => ({
+                data: row?.claimPending === false ? null : { id: row?.id || "message-1", metadata: payload.metadata || null },
+                error: null,
+              })),
+            };
+            return query;
           }),
         };
       }
@@ -163,5 +171,32 @@ describe("whatsapp reply processor", () => {
         type: "error",
       }),
     }));
+  });
+
+  it("pula processamento quando outra execucao ja claimou a resposta", async () => {
+    const row = {
+      id: "message-claimed",
+      tenant_id: "tenant-1",
+      contact_id: "contact-1",
+      direction: "inbound",
+      media_processing_status: "none",
+      created_at: new Date().toISOString(),
+      claimPending: false,
+      metadata: { reply_processing_status: "pending", reply_trigger: "evolution_webhook" },
+    };
+    const { supabase, updates, inserts } = makeSupabase(row);
+
+    const result = await processPendingWhatsAppRepliesBatch({ supabase, limit: 1 });
+
+    expect(result).toMatchObject({ picked: 1, processed: 0, failed: 0, skipped: 1, auto_sent: 0 });
+    expect(result.results[0]).toEqual(expect.objectContaining({
+      message_id: "message-claimed",
+      status: "skipped",
+      skipped_reason: "already_claimed",
+    }));
+    expect(mocks.prepareWhatsAppSalesReplyForContact).not.toHaveBeenCalled();
+    expect(updates.some((item) => item.payload.metadata?.reply_processing_status === "processing")).toBe(true);
+    expect(updates.some((item) => item.payload.metadata?.reply_processing_status === "processed")).toBe(false);
+    expect(inserts).toEqual([]);
   });
 });

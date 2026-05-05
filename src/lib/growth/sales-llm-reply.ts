@@ -71,6 +71,7 @@ export type SalesLlmReplyInput = {
   testbench?: Partial<SalesLlmTestbenchConfig> | null;
   leadStage?: SalesLlmLeadStage | null;
   autonomyMode?: "auto_respond" | "supervised" | "draft_only" | string | null;
+  timeoutMs?: number | null;
   fetcher?: typeof fetch;
 };
 
@@ -101,6 +102,8 @@ const HIGH_RISK_FLAGS = [
   "low_confidence",
   "out_of_scope",
 ];
+
+const DEFAULT_SALES_LLM_TIMEOUT_MS = 9000;
 
 export const DEFAULT_SALES_LLM_TESTBENCH: SalesLlmTestbenchConfig = {
   enabled: true,
@@ -289,6 +292,25 @@ function buildSalesLlmPrompt(input: SalesLlmReplyInput, model: string) {
   ].join("\n");
 }
 
+async function fetchWithTimeout(fetcher: typeof fetch, url: string, init: RequestInit, timeoutMs: number) {
+  const controller = new AbortController();
+  let timeout: ReturnType<typeof setTimeout> | null = null;
+
+  try {
+    return await Promise.race([
+      fetcher(url, { ...init, signal: controller.signal }),
+      new Promise<Response>((_, reject) => {
+        timeout = setTimeout(() => {
+          controller.abort();
+          reject(new Error(`Timeout ao chamar LLM de vendas apos ${timeoutMs}ms.`));
+        }, timeoutMs);
+      }),
+    ]);
+  } finally {
+    if (timeout) clearTimeout(timeout);
+  }
+}
+
 function extractJsonObject(text: string) {
   const fenced = text.match(/```(?:json)?\s*([\s\S]*?)```/i);
   const raw = fenced?.[1] || text;
@@ -363,7 +385,8 @@ export async function buildSalesLlmReply(input: SalesLlmReplyInput): Promise<Sal
     modelOverride: selectedModel,
   });
   const fetcher = input.fetcher || fetch;
-  const response = await fetcher(llm.endpoint, {
+  const timeoutMs = Math.min(Math.max(Number(input.timeoutMs || DEFAULT_SALES_LLM_TIMEOUT_MS), 1000), 30000);
+  const response = await fetchWithTimeout(fetcher, llm.endpoint, {
     method: "POST",
     headers: buildHeaders(llm),
     body: JSON.stringify({
@@ -375,7 +398,7 @@ export async function buildSalesLlmReply(input: SalesLlmReplyInput): Promise<Sal
         { role: "user", content: buildSalesLlmPrompt(input, llm.model) },
       ],
     }),
-  });
+  }, timeoutMs);
 
   if (!response.ok) {
     const text = await response.text().catch(() => "");

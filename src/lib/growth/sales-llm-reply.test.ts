@@ -182,6 +182,20 @@ describe("sales-llm-reply", () => {
     expect(reply.should_auto_send).toBe(true);
   });
 
+  it("interrompe chamada lenta da LLM para permitir fallback operacional", async () => {
+    const fetcher = vi.fn(() => new Promise<Response>(() => undefined)) as any;
+
+    await expect(buildSalesLlmReply({
+      supabase: {} as any,
+      tenantId: "tenant-1",
+      messages: [{ direction: "inbound", content: "Posso mandar meu contracheque?" }],
+      testbench: { enabled: true },
+      autonomyMode: "auto_respond",
+      timeoutMs: 1,
+      fetcher,
+    })).rejects.toThrow(/Timeout ao chamar LLM de vendas/);
+  });
+
   it("pontua fixtures de teste de vendas sem aceitar promessa juridica", () => {
     const fixture = SALES_LLM_TEST_FIXTURES.find((item) => item.id === "price-objection")!;
     const score = scoreSalesLlmReply({

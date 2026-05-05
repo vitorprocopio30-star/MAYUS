@@ -349,6 +349,92 @@ describe("prepareWhatsAppSalesReplyForContact", () => {
     ]));
   });
 
+  it("usa fallback deterministico seguro e autoenvia para contracheque quando a LLM falha", async () => {
+    const inserts: Array<{ table: string; payload: any }> = [];
+    buildSalesLlmReplyMock.mockRejectedValueOnce(new Error("Timeout ao chamar LLM de vendas apos 9000ms."));
+    sendWhatsAppMessageMock.mockResolvedValueOnce({
+      provider: "evolution",
+      apiResponse: { ok: true },
+    });
+
+    const supabase: any = {
+      from: vi.fn((table: string) => {
+        if (table === "whatsapp_contacts") {
+          return makeSelectQuery({
+            data: { id: "contact-1", name: "Vitor", phone_number: "5511999999999", assigned_user_id: null },
+            error: null,
+          });
+        }
+
+        if (table === "tenant_settings") {
+          return makeSelectQuery({
+            data: {
+              ai_features: {
+                mayus_operating_partner: { enabled: false },
+                sales_llm_testbench: {
+                  enabled: true,
+                  default_model: "deepseek/deepseek-v4-pro",
+                  candidate_models: ["deepseek/deepseek-v4-pro"],
+                  routing_mode: "fixed",
+                },
+                whatsapp_agent: {
+                  autonomy_mode: "auto_respond",
+                },
+              },
+            },
+            error: null,
+          });
+        }
+
+        if (table === "whatsapp_messages") {
+          return makeSelectQuery({
+            data: [
+              { direction: "inbound", content: "Posso mandar meu contracheque para analise?", message_type: "text", created_at: "2026-05-05T19:00:00.000Z" },
+            ],
+            error: null,
+          });
+        }
+
+        return {
+          insert: vi.fn(async (payload: any) => {
+            inserts.push({ table, payload });
+            return { error: null };
+          }),
+        };
+      }),
+    };
+
+    const prepared = await prepareWhatsAppSalesReplyForContact({
+      supabase,
+      tenantId: "tenant-1",
+      contactId: "contact-1",
+      trigger: "evolution_webhook",
+      autoSendFirstResponse: true,
+      preferredProvider: "evolution",
+    });
+
+    expect(prepared.metadata.reply_source).toBe("deterministic_fallback");
+    expect(prepared.metadata.fallback_reason).toBe("sales_llm:provider_timeout");
+    expect(prepared.metadata.lead_topic).toBe("payroll_discount");
+    expect(prepared.autoSendResult).toEqual({ attempted: true, status: "sent", provider: "evolution" });
+    expect(sendWhatsAppMessageMock).toHaveBeenCalledWith(expect.objectContaining({
+      preferredProvider: "evolution",
+      text: expect.stringContaining("print so da parte do desconto"),
+      metadata: expect.objectContaining({
+        source: "deterministic_whatsapp_auto_reply",
+        model_used: "deterministic",
+      }),
+    }));
+    expect(inserts).toEqual(expect.arrayContaining([
+      expect.objectContaining({
+        table: "system_event_logs",
+        payload: expect.objectContaining({
+          event_name: "whatsapp_sales_reply_auto_sent",
+        }),
+      }),
+    ]));
+  });
+
   it("envia automaticamente para contato atribuido quando autonomia permite atribuidos", async () => {
     const inserts: Array<{ table: string; payload: any }> = [];
     buildSalesLlmReplyMock.mockResolvedValueOnce({

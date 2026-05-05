@@ -22,16 +22,16 @@ Legenda:
 
 | Frente | Percentual | Leitura honesta |
 | --- | ---: | --- |
-| MAYUS geral | 75% | Produto forte, WhatsApp multimodal, observabilidade, alertas, fila de resposta e smoke fechado Evolution evoluiram, mas ainda nao e o socio virtual completo. |
+| MAYUS geral | 76% | Produto forte, WhatsApp multimodal, observabilidade, alertas, fila de resposta e caminho imediato de texto evoluiram, mas ainda nao e o socio virtual completo. |
 | Produto juridico/base SaaS | 78% | Dashboard, CRM, documentos, juridico, agenda, marketing e permissoes ja existem. |
 | Maturidade agentica | 52% | Ha runtime, artifacts, skills e auditoria, mas ainda falta um operador central continuo. |
-| WhatsApp vendas/suporte | 83% | Evolution passou smoke real multimodal e resposta automatica com MAYUS fechado; falta Meta Cloud, scheduler automatico observado e conversas longas. |
+| WhatsApp vendas/suporte | 85% | Evolution passou smoke real multimodal e resposta automatica com MAYUS fechado; texto agora aciona processor imediato com timeout e fallback juridico seguro, faltando deploy/smoke real desse ajuste, Meta Cloud e conversas longas. |
 | Growth/vendas | 70% | Intake, qualificacao, follow-up, reativacao e sales profile existem; falta fechar execucao real ponta a ponta. |
 | Juridico/Lex | 82% | Base juridica e documental esta forte; faltam contradicoes, cronologia, riscos e mais automacao segura. |
 | Financeiro | 48% | Asaas/fluxo planejado existem, mas cobranca operacional completa ainda precisa smoke e UX. |
 | Auto-configuracao | 45% | Setup Doctor e sales profile existem; falta onboarding completo do escritorio. |
 | UX sem curso | 60% | WhatsApp ganhou controles melhores, mas o usuario ainda precisa entender demais o sistema. |
-| Integracoes e operacao real | 69% | WhatsApp Evolution tem smoke, observabilidade, alerta de falha e job assincrono validado manualmente; faltam Meta Cloud, scheduler automatico observado e smokes sensiveis finais. |
+| Integracoes e operacao real | 71% | WhatsApp Evolution tem smoke, observabilidade, alerta de falha, job assincrono validado manualmente e caminho imediato de texto endurecido em codigo; faltam Meta Cloud, deploy/smoke do ajuste e scheduler automatico observado. |
 
 ### O que ja e usavel
 
@@ -108,7 +108,7 @@ O MAYUS pode agir, mas acoes juridicas, financeiras ou externas sensiveis exigem
 - [~] `mayus_operating_partner` reconstrói fase, fatos, objecoes, urgencia, decisor, suporte, prontidao de fechamento e proxima acao em parte do fluxo WhatsApp.
 - [~] LLM/MAYUS no runtime WhatsApp so ativam quando `tenant_settings.ai_features.*.enabled === true` explicitamente.
 - [~] Acoes CRM/tarefa do Operating Partner sao bloqueadas para aprovacao quando a confianca fica abaixo de `auto_execute`.
-- [~] Webhooks Meta/Evolution preparam resposta em background, mas envio real segue supervisionado.
+- [~] Webhooks Meta/Evolution enfileiram texto e acionam o processor da mensagem imediatamente com timeout curto; scheduler fica como retry/fallback.
 - [~] Fallback deterministico foi endurecido, mas o caminho normal deve ser agente conversacional real.
 - [~] Reconstruir estado conversacional por contato: fase, fatos, objecoes, urgencia, documentos, decisor, suporte e proxima acao.
 - [ ] Conduzir lead multi-turn ate fechamento humano/comercial sem discurso generico.
@@ -306,7 +306,7 @@ Foco: WhatsApp + Operating Partner + CRM actions.
 - [~] Fazer o WhatsApp usar o Operating Partner como caminho principal de conversa.
 - [~] Persistir estado conversacional por contato.
 - [~] Conectar acoes reais supervisionadas: atualizar lead, etapa, nota, tarefa, documento pedido e handoff.
-- [x] Tirar preparacao pesada de resposta de texto do webhook e enfileirar para processamento interno protegido.
+- [~] Tirar preparacao pesada de resposta de texto do webhook e enfileirar para processamento interno protegido, com disparo imediato por `message_id`, timeout curto e fallback juridico seguro; falta deploy/smoke real do ajuste.
 - [ ] Validar multi-turn com lead novo, dor clara, objecao, fechamento, suporte, status e cliente irritado.
 - [ ] Corrigir inconsistencias visuais restantes entre WhatsApp e Todas as Conversas.
 - [ ] Separar mudancas globais de layout/sidebar das mudancas de WhatsApp antes de commitar.
@@ -423,6 +423,10 @@ Validacoes executadas:
 - [x] Autoenvio para contato ja atribuido permanece bloqueado por padrao, mas pode ser liberado por tenant com `whatsapp_agent.autonomy_mode = 'auto_respond_assigned'`.
 - [x] Deploy correto `mayus-premium-pro` do commit `3ea6b7d` ficou `READY/PROMOTED`; rotas protegidas retornaram `403` sem segredo, processor de midia retornou `picked: 0` e processor de respostas retornou `picked: 0` com `CRON_SECRET` de producao sem expor o valor.
 - [x] Smoke Evolution com MAYUS fechado: mensagem `Boa tarde` entrou como inbound, ficou `pending`, foi reprocessada com `CRON_SECRET`, gerou outbound `sent` via Evolution e evento `whatsapp_sales_llm_auto_sent` sem expor segredo.
+- [~] Webhooks Evolution e Meta Cloud passaram a acionar `processPendingWhatsAppRepliesBatch` imediatamente para o `message_id` de texto salvo, preservando `reply_preferred_provider`, com timeout curto para nao prender o webhook; validado em testes locais, pendente deploy e smoke real com pergunta de contracheque.
+- [~] Sales LLM ganhou timeout operacional; quando falha/expira, o runtime pode autoenviar fallback deterministico apenas em triagem juridica segura (`payroll_discount`/`benefit_or_inss`), sem liberar status de processo, preco, contrato, pagamento ou urgencia.
+- [~] Processor de respostas ganhou claim atomico: antes de preparar/enviar, muda `reply_processing_status` de `pending` para `processing` somente se ainda estiver pendente; execucoes concorrentes pulam como `skipped`, reduzindo risco de resposta duplicada.
+- [x] Validacao local do ajuste imediato endurecido: `npx.cmd vitest run src/lib/growth/sales-llm-reply.test.ts src/lib/growth/whatsapp-sales-reply-runtime.test.ts src/app/api/evolution-webhook/route.test.ts src/app/api/whatsapp/webhook/route.test.ts src/lib/whatsapp/reply-processor.test.ts` com 5 arquivos e 24 testes; `npx.cmd tsc --noEmit --pretty false`; `git diff --check` sem erro; `npm run verify:whatsapp-media` retornou `ok: true` com `pending_count: 1`; `npm run build` passou com warnings preexistentes de hooks/`<img>`.
 
 Bloqueios antes de marcar como `[x]`:
 
@@ -432,7 +436,7 @@ Bloqueios antes de marcar como `[x]`:
 - [x] Idempotencia de mensagem inbound.
 - [~] Smoke real Meta Cloud/Evolution com texto, imagem, audio e documento: Evolution validou texto fechado e multimodal anterior; falta repetir midia fechado e Meta Cloud.
 - [ ] Smoke real Meta Cloud ainda pendente; Evolution passou para texto, imagem, audio, PDF/DOCX e outbound texto.
-- [~] Observabilidade de midia e resposta existe no processor, painel admin e notificacoes de falha; ainda falta smoke Meta Cloud e confirmar execucao automatica agendada do scheduler.
+- [~] Observabilidade de midia e resposta existe no processor, painel admin e notificacoes de falha; ainda falta smoke Meta Cloud, smoke real do disparo imediato e confirmar execucao automatica agendada do scheduler.
 - [x] Aplicar migration `20260504120000_whatsapp_media_labels.sql` antes do smoke real.
 - [x] Confirmar `CRON_SECRET` efetivo do projeto Vercel usado no smoke ou atualizar `.env.local`/Vercel para ficarem alinhados.
 

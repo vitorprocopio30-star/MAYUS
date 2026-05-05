@@ -1,7 +1,7 @@
 import { NextRequest, NextResponse } from "next/server";
 import { createClient } from "@supabase/supabase-js";
 import { handleWhatsAppInternalCommand } from "@/lib/mayus/whatsapp-command-runtime";
-import { enqueueWhatsAppReply } from "@/lib/whatsapp/reply-processor";
+import { enqueueWhatsAppReply, processPendingWhatsAppRepliesBatch } from "@/lib/whatsapp/reply-processor";
 
 // ==============================================================================
 // 🚀 MAYUS - WEBHOOK OFICIAL META CLOUD API (WhatsApp Business Platform)
@@ -15,6 +15,27 @@ const supabase = createClient(
   process.env.NEXT_PUBLIC_SUPABASE_URL!,
   process.env.SUPABASE_SERVICE_ROLE_KEY!
 );
+
+const IMMEDIATE_REPLY_TIMEOUT_MS = 8000;
+
+async function processImmediateReply(params: { messageId: string }) {
+  let timeout: ReturnType<typeof setTimeout> | null = null;
+
+  try {
+    await Promise.race([
+      processPendingWhatsAppRepliesBatch({
+        supabase,
+        messageId: params.messageId,
+        limit: 1,
+      }),
+      new Promise((_, reject) => {
+        timeout = setTimeout(() => reject(new Error(`Timeout ao processar resposta imediata apos ${IMMEDIATE_REPLY_TIMEOUT_MS}ms.`)), IMMEDIATE_REPLY_TIMEOUT_MS);
+      }),
+    ]);
+  } finally {
+    if (timeout) clearTimeout(timeout);
+  }
+}
 
 // ==============================================================================
 // GET — Verificação do Webhook (Meta envia na hora de cadastrar a URL)
@@ -350,6 +371,12 @@ export async function POST(req: NextRequest) {
             messageId: savedMessage.id,
             preferredProvider: "meta_cloud",
           });
+
+          try {
+            await processImmediateReply({ messageId: savedMessage.id });
+          } catch (replyError) {
+            console.error("[Meta Webhook] Erro ao processar resposta imediata:", replyError);
+          }
         }
       }
     }

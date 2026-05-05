@@ -3,12 +3,14 @@ import { createClient } from "@supabase/supabase-js";
 import crypto from "crypto";
 import { handleWhatsAppInternalCommand } from "@/lib/mayus/whatsapp-command-runtime";
 import { listTenantIntegrationsResolved } from "@/lib/integrations/server";
-import { enqueueWhatsAppReply } from "@/lib/whatsapp/reply-processor";
+import { enqueueWhatsAppReply, processPendingWhatsAppRepliesBatch } from "@/lib/whatsapp/reply-processor";
 
 const supabase = createClient(
   process.env.NEXT_PUBLIC_SUPABASE_URL!,
   process.env.SUPABASE_SERVICE_ROLE_KEY!
 );
+
+const IMMEDIATE_REPLY_TIMEOUT_MS = 10000;
 
 function verifySignature(body: string, signature: string | null): boolean {
   const secret = process.env.EVOLUTION_WEBHOOK_SECRET;
@@ -24,6 +26,25 @@ function verifySignature(body: string, signature: string | null): boolean {
 
 function cleanWhatsAppNumber(value: string | null | undefined) {
   return String(value || "").split("@")[0].replace(/\D/g, "");
+}
+
+async function processImmediateReply(params: { messageId: string }) {
+  let timeout: ReturnType<typeof setTimeout> | null = null;
+
+  try {
+    await Promise.race([
+      processPendingWhatsAppRepliesBatch({
+        supabase,
+        messageId: params.messageId,
+        limit: 1,
+      }),
+      new Promise((_, reject) => {
+        timeout = setTimeout(() => reject(new Error(`Timeout ao processar resposta imediata apos ${IMMEDIATE_REPLY_TIMEOUT_MS}ms.`)), IMMEDIATE_REPLY_TIMEOUT_MS);
+      }),
+    ]);
+  } finally {
+    if (timeout) clearTimeout(timeout);
+  }
 }
 
 async function fetchEvolutionProfilePicture(params: {
@@ -302,6 +323,12 @@ export async function POST(req: Request) {
             messageId: savedMessage.id,
             preferredProvider: "evolution",
           });
+
+          try {
+            await processImmediateReply({ messageId: savedMessage.id });
+          } catch (replyError) {
+            console.error("[Evolution Webhook] Erro ao processar resposta imediata:", replyError);
+          }
         }
       }
       

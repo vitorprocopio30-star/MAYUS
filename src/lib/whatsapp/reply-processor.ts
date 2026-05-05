@@ -123,6 +123,28 @@ async function insertDedupedNotification(params: {
   });
 }
 
+async function claimPendingReply(params: {
+  supabase: SupabaseClient;
+  row: PendingWhatsAppReplyMessage;
+}) {
+  const metadata = mergeMetadata(params.row, {
+    reply_processing_status: "processing",
+    reply_processing_started_at: new Date().toISOString(),
+  });
+  const { data, error } = await params.supabase
+    .from("whatsapp_messages")
+    .update({ metadata })
+    .eq("id", params.row.id)
+    .eq("metadata->>reply_processing_status", "pending")
+    .select("id, metadata")
+    .maybeSingle<{ id: string; metadata: Record<string, any> | null }>();
+
+  if (error) throw error;
+  if (!data?.id) return false;
+  params.row.metadata = data.metadata || metadata;
+  return true;
+}
+
 async function processOneReply(params: {
   supabase: SupabaseClient;
   row: PendingWhatsAppReplyMessage;
@@ -152,10 +174,20 @@ async function processOneReply(params: {
   }
 
   try {
-    await params.supabase
-      .from("whatsapp_messages")
-      .update({ metadata: mergeMetadata(params.row, { reply_processing_status: "processing", reply_processing_started_at: new Date().toISOString() }) })
-      .eq("id", params.row.id);
+    const claimed = await claimPendingReply({
+      supabase: params.supabase,
+      row: params.row,
+    });
+
+    if (!claimed) {
+      return {
+        message_id: params.row.id,
+        status: "skipped" as const,
+        auto_sent: false,
+        duration_ms: Date.now() - startedAt,
+        skipped_reason: "already_claimed",
+      };
+    }
 
     const prepared = await prepareWhatsAppSalesReplyForContact({
       supabase: params.supabase,
@@ -263,6 +295,7 @@ export async function processPendingWhatsAppRepliesBatch(params: ProcessWhatsApp
     picked: rows.length,
     processed: results.filter((result) => result.status === "processed").length,
     failed: results.filter((result) => result.status === "failed").length,
+    skipped: results.filter((result) => result.status === "skipped").length,
     auto_sent: results.filter((result) => result.auto_sent).length,
     results,
   };

@@ -246,6 +246,18 @@ function buildOperatingPartnerNotification(decision: MayusOperatingPartnerDecisi
   };
 }
 
+function canAutoSendDeterministicFallback(reply: WhatsAppSalesReply, fallbackReasons: string[]) {
+  const safeLegalTriageTopics = new Set(["payroll_discount", "benefit_or_inss"]);
+  const llmFailed = fallbackReasons.some((reason) => reason.startsWith("sales_llm:"));
+
+  return Boolean(
+    llmFailed
+    && reply.mayAutoSend
+    && !reply.requiresHumanReview
+    && safeLegalTriageTopics.has(reply.leadTopic)
+  );
+}
+
 type SalesAutoSendResult =
   | {
     attempted: true;
@@ -497,6 +509,8 @@ export async function prepareWhatsAppSalesReplyForContact(params: {
         }
         : null;
   const canAutoRespondAssigned = runtimeSettings.autonomyMode === "auto_respond_assigned";
+  const deterministicFallbackMaySend = autoReply?.source === "deterministic_whatsapp_auto_reply"
+    && canAutoSendDeterministicFallback(reply, fallbackReasons);
   const canAutoSend = Boolean(
     autoReply?.shouldAutoSend
     && metadata.may_auto_send === true
@@ -504,7 +518,7 @@ export async function prepareWhatsAppSalesReplyForContact(params: {
     && params.trigger !== "manual"
     && (!contact.assigned_user_id || canAutoRespondAssigned)
     && contact.phone_number
-    && autoReply.source !== "deterministic_whatsapp_auto_reply"
+    && (autoReply.source !== "deterministic_whatsapp_auto_reply" || deterministicFallbackMaySend)
   );
 
   await params.supabase.from("system_event_logs").insert({

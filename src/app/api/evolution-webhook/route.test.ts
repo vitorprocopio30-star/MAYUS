@@ -5,6 +5,7 @@ const prepareWhatsAppSalesReplyForContactMock = vi.hoisted(() => vi.fn());
 const createClientMock = vi.hoisted(() => vi.fn());
 const listTenantIntegrationsResolvedMock = vi.hoisted(() => vi.fn());
 const enqueueWhatsAppReplyMock = vi.hoisted(() => vi.fn());
+const processPendingWhatsAppRepliesBatchMock = vi.hoisted(() => vi.fn());
 
 vi.mock("@/lib/mayus/whatsapp-command-runtime", () => ({
   handleWhatsAppInternalCommand: handleWhatsAppInternalCommandMock,
@@ -20,6 +21,7 @@ vi.mock("@/lib/integrations/server", () => ({
 
 vi.mock("@/lib/whatsapp/reply-processor", () => ({
   enqueueWhatsAppReply: enqueueWhatsAppReplyMock,
+  processPendingWhatsAppRepliesBatch: processPendingWhatsAppRepliesBatchMock,
 }));
 
 vi.mock("@supabase/supabase-js", () => ({
@@ -124,6 +126,7 @@ describe("/api/evolution-webhook", () => {
     global.fetch = vi.fn(async () => new Response(JSON.stringify({ profilePictureUrl: "https://cdn.example/avatar.jpg" }), { status: 200 })) as any;
     handleWhatsAppInternalCommandMock.mockResolvedValue({ handled: true, sent: true, intent: "daily_playbook" });
     enqueueWhatsAppReplyMock.mockResolvedValue(undefined);
+    processPendingWhatsAppRepliesBatchMock.mockResolvedValue({ picked: 1, processed: 1, failed: 0, auto_sent: 1, results: [] });
   });
 
   it("processa mensagens da Evolution em formato MESSAGES_UPSERT", async () => {
@@ -261,10 +264,11 @@ describe("/api/evolution-webhook", () => {
     ]);
     expect(prepareWhatsAppSalesReplyForContactMock).not.toHaveBeenCalled();
     expect(enqueueWhatsAppReplyMock).not.toHaveBeenCalled();
+    expect(processPendingWhatsAppRepliesBatchMock).not.toHaveBeenCalled();
     expect(global.fetch).toHaveBeenCalledTimes(1);
   });
 
-  it("enfileira resposta de texto Evolution preservando provider", async () => {
+  it("enfileira e processa resposta de texto Evolution imediatamente preservando provider", async () => {
     handleWhatsAppInternalCommandMock.mockResolvedValue({ handled: false });
     const { POST } = await import("./route");
     const request = new Request("http://localhost/api/evolution-webhook", {
@@ -294,6 +298,42 @@ describe("/api/evolution-webhook", () => {
       trigger: "evolution_webhook",
       preferredProvider: "evolution",
     }));
+    expect(processPendingWhatsAppRepliesBatchMock).toHaveBeenCalledWith(expect.objectContaining({
+      messageId: "message-1",
+      limit: 1,
+    }));
     expect(prepareWhatsAppSalesReplyForContactMock).not.toHaveBeenCalled();
+  });
+
+  it("mantem webhook Evolution 200 quando processamento imediato falha", async () => {
+    handleWhatsAppInternalCommandMock.mockResolvedValue({ handled: false });
+    processPendingWhatsAppRepliesBatchMock.mockRejectedValueOnce(new Error("processor indisponivel"));
+    const { POST } = await import("./route");
+    const request = new Request("http://localhost/api/evolution-webhook", {
+      method: "POST",
+      body: JSON.stringify({
+        event: "MESSAGES_UPSERT",
+        instance: "mayus-dutra",
+        data: {
+          key: {
+            remoteJid: "5521999990000@s.whatsapp.net",
+            fromMe: false,
+            id: "msg-text-3",
+          },
+          pushName: "Cliente Teste",
+          message: {
+            conversation: "Posso mandar meu contracheque?",
+          },
+        },
+      }),
+    });
+
+    const response = await POST(request);
+    const body = await response.json();
+
+    expect(response.status).toBe(200);
+    expect(body).toEqual({ success: true });
+    expect(enqueueWhatsAppReplyMock).toHaveBeenCalledWith(expect.objectContaining({ messageId: "message-1" }));
+    expect(processPendingWhatsAppRepliesBatchMock).toHaveBeenCalledWith(expect.objectContaining({ messageId: "message-1" }));
   });
 });
