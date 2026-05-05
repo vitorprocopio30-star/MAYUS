@@ -437,7 +437,7 @@ Bloqueios antes de marcar como `[x]`:
 Observacoes operacionais:
 
 - [x] Deploy do commit `571351a` falhou no Vercel porque cron `*/5 * * * *` excedia limite Hobby; ajustado para diario em commit posterior.
-- [ ] No plano Hobby, configurar scheduler externo seguro para chamar `/api/whatsapp/media/process` e `/api/whatsapp/replies/process` a cada 1-5 minutos com `CRON_SECRET`; cron Vercel diario fica como fallback.
+- [x] Scheduler externo versionado em GitHub Actions chama `/api/whatsapp/media/process` e `/api/whatsapp/replies/process` a cada 5 minutos com `CRON_SECRET` em GitHub Secret; cron Vercel diario fica como fallback.
 - [ ] Se o projeto migrar para Vercel Pro, considerar voltar processors WhatsApp para frequencia de 5 minutos ou substituir por fila externa.
 
 ---
