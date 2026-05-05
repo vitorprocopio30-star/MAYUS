@@ -182,6 +182,55 @@ describe("sales-llm-reply", () => {
     expect(reply.should_auto_send).toBe(true);
   });
 
+  it("inclui documento de vendas como fonte comercial principal no prompt", async () => {
+    let requestBody: any = null;
+    const fetcher = vi.fn(async (_url: string, init: RequestInit) => {
+      requestBody = JSON.parse(String(init?.body || "{}"));
+      return {
+        ok: true,
+        json: async () => ({
+          choices: [{
+            message: {
+              content: JSON.stringify({
+                reply: "Perfeito. Antes de analisar, me diga qual desconto chamou sua atencao.",
+                lead_stage: "discovery",
+                intent: "sales_discovery",
+                confidence: 0.86,
+                risk_flags: [],
+                next_action: "usar pergunta do playbook comercial",
+                should_auto_send: true,
+                expected_outcome: "cliente informa desconto principal",
+              }),
+            },
+          }],
+        }),
+      };
+    }) as any;
+
+    await buildSalesLlmReply({
+      supabase: {} as any,
+      tenantId: "tenant-1",
+      messages: [{ direction: "inbound", content: "Enviei meu contracheque." }],
+      salesProfile: {
+        salesPlaybookContext: "Playbook enviado: vender com diagnostico, pedir documento, conduzir sem promessa.",
+        salesDocumentSummary: "Resumo: foco em descontos indevidos e triagem documental.",
+        offerPositioning: "Diagnostico inicial seguro antes de proposta.",
+        salesRules: ["uma pergunta por vez", "nao prometer resultado"],
+        qualificationQuestions: ["qual desconto chamou atencao?"],
+        forbiddenClaims: ["causa ganha", "indenizacao garantida"],
+      },
+      testbench: { enabled: true },
+      autonomyMode: "auto_respond",
+      fetcher,
+    });
+
+    const prompt = requestBody.messages[1].content;
+    expect(prompt).toContain("Use o Documento de Vendas abaixo como fonte comercial principal");
+    expect(prompt).toContain("Playbook enviado: vender com diagnostico");
+    expect(prompt).toContain("qual desconto chamou atencao?");
+    expect(prompt).toContain("causa ganha");
+  });
+
   it("interrompe chamada lenta da LLM para permitir fallback operacional", async () => {
     const fetcher = vi.fn(() => new Promise<Response>(() => undefined)) as any;
 

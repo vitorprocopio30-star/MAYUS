@@ -26,6 +26,7 @@ import { processPendingWhatsAppMediaBatch } from "./media-processor";
 
 function makeSupabase(row: any) {
   const updates: any[] = [];
+  const settingsUpdates: any[] = [];
   const eventInserts: any[] = [];
   const notificationInserts: any[] = [];
   const supabase: any = {
@@ -57,6 +58,20 @@ function makeSupabase(row: any) {
         };
       }
 
+      if (table === "tenant_settings") {
+        return {
+          select: vi.fn(() => ({
+            eq: vi.fn(() => ({
+              maybeSingle: vi.fn(async () => ({ data: { ai_features: row?.ai_features || {} }, error: null })),
+            })),
+          })),
+          update: vi.fn((values: any) => {
+            settingsUpdates.push(values);
+            return { eq: vi.fn(async () => ({ error: null })) };
+          }),
+        };
+      }
+
       if (table !== "whatsapp_messages") return {};
       return {
         select: vi.fn(() => ({
@@ -74,7 +89,7 @@ function makeSupabase(row: any) {
     }),
   };
 
-  return { supabase, updates, eventInserts, notificationInserts };
+  return { supabase, updates, settingsUpdates, eventInserts, notificationInserts };
 }
 
 describe("processPendingWhatsAppMediaBatch", () => {
@@ -253,6 +268,65 @@ describe("processPendingWhatsAppMediaBatch", () => {
       title: "WhatsApp: batch de midia com falha",
       type: "error",
       link_url: "/dashboard/conversas/whatsapp",
+    }));
+  });
+
+  it("promove documento de vendas processado para contexto comercial do tenant", async () => {
+    const row = {
+      id: "message-sales-doc",
+      tenant_id: "tenant-1",
+      contact_id: "contact-1",
+      direction: "inbound",
+      message_type: "document",
+      content: "Documento de vendas do escritorio",
+      media_filename: "playbook-vendas-contracheque.pdf",
+      media_provider: "evolution",
+      media_processing_status: "pending",
+      message_id_from_evolution: "evo-msg-1",
+      metadata: {
+        provider_media_id: "evo-msg-1",
+        media_kind: "document",
+        webhook_trigger: "evolution_webhook",
+        evolution_instance: "mayus-dutra",
+        evolution_message_envelope: { key: { id: "evo-msg-1" }, message: { documentMessage: {} } },
+        evolution_message_payload: { documentMessage: {} },
+      },
+    };
+    const { supabase, settingsUpdates, eventInserts } = makeSupabase(row);
+    mocks.listTenantIntegrationsResolved.mockResolvedValueOnce([
+      { provider: "evolution", api_key: "evolution-key", instance_name: "https://evolution.example|mayus-dutra" },
+    ]);
+    mocks.processEvolutionMedia.mockResolvedValueOnce({
+      media_url: null,
+      media_storage_path: "tenant-1/contact-1/playbook.pdf",
+      media_mime_type: "application/pdf",
+      media_filename: "playbook-vendas-contracheque.pdf",
+      media_size_bytes: 456,
+      media_provider: "evolution",
+      media_processing_status: "processed",
+      media_text: "Documento de vendas: qualificar leads de contracheque, desconto consignado e beneficio INSS. Perguntar uma coisa por vez e nao prometer resultado.",
+      media_summary: "Playbook comercial para triagem de contracheque.",
+      metadata: { provider_media_id: "evo-msg-1", media_kind: "document" },
+    });
+
+    const result = await processPendingWhatsAppMediaBatch({ supabase, limit: 1 });
+
+    expect(result).toMatchObject({ picked: 1, processed: 1, failed: 0 });
+    expect(settingsUpdates[0].ai_features).toEqual(expect.objectContaining({
+      sales_playbook_context: expect.stringContaining("Documento de vendas"),
+      sales_document_summary: expect.stringContaining("Playbook comercial"),
+      sales_playbook_source: expect.objectContaining({
+        message_id: "message-sales-doc",
+        media_filename: "playbook-vendas-contracheque.pdf",
+      }),
+    }));
+    expect(eventInserts).toContainEqual(expect.objectContaining({
+      event_name: "whatsapp_sales_playbook_promoted",
+      status: "ok",
+      payload: expect.objectContaining({
+        message_id: "message-sales-doc",
+        source: "whatsapp_media_document",
+      }),
     }));
   });
 });

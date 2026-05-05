@@ -76,6 +76,80 @@ function truncateError(value: string | null | undefined) {
   return text ? text.slice(0, 500) : null;
 }
 
+function normalizeText(value: string | null | undefined) {
+  return String(value || "")
+    .normalize("NFD")
+    .replace(/[\u0300-\u036f]/g, "")
+    .toLowerCase();
+}
+
+function shouldPromoteSalesPlaybook(row: PendingWhatsAppMediaMessage, mediaRecord: WhatsAppStoredMedia) {
+  if (mediaRecord.media_processing_status !== "processed" || !mediaRecord.media_text) return false;
+  const haystack = normalizeText([
+    row.content,
+    row.media_filename,
+    mediaRecord.media_filename,
+    mediaRecord.media_summary,
+    mediaRecord.media_text.slice(0, 3000),
+  ].filter(Boolean).join(" "));
+
+  const hasSalesSignal = /documento de vendas|playbook|comercial|vendas|sdr|closer|qualificacao|qualificar|proposta|oferta|cliente ideal|funil|lead/.test(haystack);
+  const hasLegalIntakeSignal = /contracheque|desconto|consignado|beneficio|inss|aposentadoria|diagnostico|triagem/.test(haystack);
+  return hasSalesSignal && hasLegalIntakeSignal;
+}
+
+async function promoteSalesPlaybookIfRelevant(params: {
+  supabase: SupabaseClient;
+  row: PendingWhatsAppMediaMessage;
+  mediaRecord: WhatsAppStoredMedia;
+}) {
+  if (!shouldPromoteSalesPlaybook(params.row, params.mediaRecord)) return false;
+
+  const { data } = await params.supabase
+    .from("tenant_settings")
+    .select("ai_features")
+    .eq("tenant_id", params.row.tenant_id)
+    .maybeSingle<{ ai_features: Record<string, any> | null }>();
+  const aiFeatures = data?.ai_features && typeof data.ai_features === "object" ? data.ai_features : {};
+  const mediaText = String(params.mediaRecord.media_text || "").replace(/\s+/g, " ").trim();
+  const summary = String(params.mediaRecord.media_summary || mediaText).replace(/\s+/g, " ").trim();
+  const nextAiFeatures = {
+    ...aiFeatures,
+    sales_playbook_context: mediaText.slice(0, 6000),
+    sales_document_summary: summary.slice(0, 1200),
+    sales_playbook_source: {
+      channel: "whatsapp",
+      message_id: params.row.id,
+      media_filename: params.mediaRecord.media_filename || params.row.media_filename || null,
+      promoted_at: new Date().toISOString(),
+    },
+  };
+
+  const { error } = await params.supabase
+    .from("tenant_settings")
+    .update({ ai_features: nextAiFeatures })
+    .eq("tenant_id", params.row.tenant_id);
+  if (error) throw error;
+
+  await params.supabase.from("system_event_logs").insert({
+    tenant_id: params.row.tenant_id,
+    user_id: null,
+    source: "whatsapp",
+    provider: "mayus",
+    event_name: "whatsapp_sales_playbook_promoted",
+    status: "ok",
+    payload: {
+      message_id: params.row.id,
+      contact_id: params.row.contact_id,
+      media_filename: params.mediaRecord.media_filename || params.row.media_filename || null,
+      source: "whatsapp_media_document",
+    },
+    created_at: new Date().toISOString(),
+  });
+
+  return true;
+}
+
 async function insertDedupedNotification(params: {
   supabase: SupabaseClient;
   tenantId: string;
@@ -356,6 +430,16 @@ async function processOnePendingMedia(params: {
       .eq("id", params.row.id);
 
     if (updateError) throw updateError;
+
+    try {
+      await promoteSalesPlaybookIfRelevant({
+        supabase: params.supabase,
+        row: params.row,
+        mediaRecord,
+      });
+    } catch (promotionError) {
+      console.error("[whatsapp-media-processor] Erro ao promover documento de vendas:", promotionError);
+    }
 
     const replyPrepared = await prepareReplyAfterProcessing(params);
     const durationMs = Date.now() - startedAt;

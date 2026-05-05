@@ -29,6 +29,11 @@ function getStringValue(value: unknown) {
   return typeof value === "string" && value.trim().length > 0 ? value.trim() : null;
 }
 
+function getStringArray(value: unknown) {
+  if (!Array.isArray(value)) return [];
+  return value.map((item) => getStringValue(item)).filter((item): item is string => Boolean(item));
+}
+
 function isExplicitlyEnabled(value: unknown) {
   return Boolean(value && typeof value === "object" && !Array.isArray(value) && (value as { enabled?: unknown }).enabled === true);
 }
@@ -57,9 +62,26 @@ async function loadSalesRuntimeSettings(params: {
         coreSolution: getStringValue(profile.core_solution),
         uniqueValueProposition: getStringValue(profile.unique_value_proposition),
         valuePillars: Array.isArray(profile.value_pillars)
-          ? profile.value_pillars.map((item: unknown) => getStringValue(item)).filter((item): item is string => Boolean(item))
+          ? getStringArray(profile.value_pillars)
           : [],
         positioningSummary: getStringValue(profile.positioning_summary),
+        salesPlaybookContext: getStringValue(features.sales_playbook_context)
+          || getStringValue(features.sales_document_context)
+          || getStringValue(profile.sales_playbook_context)
+          || getStringValue(profile.sales_document_context),
+        salesDocumentSummary: getStringValue(features.sales_document_summary)
+          || getStringValue(profile.sales_document_summary),
+        salesRules: getStringArray(features.sales_rules).length
+          ? getStringArray(features.sales_rules)
+          : getStringArray(profile.sales_rules),
+        qualificationQuestions: getStringArray(features.qualification_questions).length
+          ? getStringArray(features.qualification_questions)
+          : getStringArray(profile.qualification_questions),
+        offerPositioning: getStringValue(features.offer_positioning)
+          || getStringValue(profile.offer_positioning),
+        forbiddenClaims: getStringArray(features.forbidden_claims).length
+          ? getStringArray(features.forbidden_claims)
+          : getStringArray(profile.forbidden_claims),
       }
       : null,
     salesLlmTestbench: isExplicitlyEnabled(testbench)

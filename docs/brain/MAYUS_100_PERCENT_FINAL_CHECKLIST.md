@@ -22,16 +22,16 @@ Legenda:
 
 | Frente | Percentual | Leitura honesta |
 | --- | ---: | --- |
-| MAYUS geral | 76% | Produto forte, WhatsApp multimodal, observabilidade, alertas, fila de resposta e caminho imediato de texto evoluiram, mas ainda nao e o socio virtual completo. |
+| MAYUS geral | 77% | Produto forte, WhatsApp multimodal, observabilidade, alertas, fila de resposta, fast-path de texto e ACK imediato de midia evoluiram, mas ainda nao e o socio virtual completo. |
 | Produto juridico/base SaaS | 78% | Dashboard, CRM, documentos, juridico, agenda, marketing e permissoes ja existem. |
 | Maturidade agentica | 52% | Ha runtime, artifacts, skills e auditoria, mas ainda falta um operador central continuo. |
-| WhatsApp vendas/suporte | 86% | Evolution passou smoke real multimodal e resposta automatica imediata para envio de contracheque; faltam Meta Cloud, conversas longas, midia fechado e scheduler automatico observado. |
-| Growth/vendas | 70% | Intake, qualificacao, follow-up, reativacao e sales profile existem; falta fechar execucao real ponta a ponta. |
+| WhatsApp vendas/suporte | 88% | Evolution passou smoke real multimodal, resposta automatica imediata para envio de contracheque e ACK imediato de midia em codigo; faltam deploy/smoke do ACK, Meta Cloud, conversas longas e scheduler automatico observado. |
+| Growth/vendas | 72% | Intake, qualificacao, follow-up, reativacao, sales profile e uso do documento de vendas como playbook existem; falta fechar execucao real ponta a ponta. |
 | Juridico/Lex | 82% | Base juridica e documental esta forte; faltam contradicoes, cronologia, riscos e mais automacao segura. |
 | Financeiro | 48% | Asaas/fluxo planejado existem, mas cobranca operacional completa ainda precisa smoke e UX. |
 | Auto-configuracao | 45% | Setup Doctor e sales profile existem; falta onboarding completo do escritorio. |
 | UX sem curso | 60% | WhatsApp ganhou controles melhores, mas o usuario ainda precisa entender demais o sistema. |
-| Integracoes e operacao real | 72% | WhatsApp Evolution tem smoke, observabilidade, alerta de falha, job assincrono validado manualmente e fast-path imediato validado em producao; faltam Meta Cloud, midia fechado e scheduler automatico observado. |
+| Integracoes e operacao real | 73% | WhatsApp Evolution tem smoke, observabilidade, alerta de falha, job assincrono validado manualmente, fast-path imediato validado em producao e ACK de midia em codigo; faltam deploy/smoke do ACK, Meta Cloud, midia fechado e scheduler automatico observado. |
 
 ### O que ja e usavel
 
@@ -109,6 +109,7 @@ O MAYUS pode agir, mas acoes juridicas, financeiras ou externas sensiveis exigem
 - [~] LLM/MAYUS no runtime WhatsApp so ativam quando `tenant_settings.ai_features.*.enabled === true` explicitamente.
 - [~] Acoes CRM/tarefa do Operating Partner sao bloqueadas para aprovacao quando a confianca fica abaixo de `auto_execute`.
 - [~] Webhooks Meta/Evolution enfileiram texto e acionam o processor da mensagem imediatamente com timeout curto; scheduler fica como retry/fallback.
+- [~] Webhook Evolution confirma recebimento de imagem/documento/PDF em segundos com ACK deterministico e tenta processar a midia por `messageId` com timeout curto; pendente deploy e smoke real fechado.
 - [~] Fallback deterministico foi endurecido, mas o caminho normal deve ser agente conversacional real.
 - [~] Reconstruir estado conversacional por contato: fase, fatos, objecoes, urgencia, documentos, decisor, suporte e proxima acao.
 - [ ] Conduzir lead multi-turn ate fechamento humano/comercial sem discurso generico.
@@ -129,6 +130,7 @@ O MAYUS pode agir, mas acoes juridicas, financeiras ou externas sensiveis exigem
 - [x] `lead_intake`, referral intake, qualificacao, follow-up, agendamento e reativacao existem como skills/artifacts.
 - [x] CRM identifica lead sem proximo passo e o MAYUS organiza canal, horario, responsavel, objetivo e checklist.
 - [x] Sales profile setup auto-configura cliente ideal, solucao, PUV, pilares e anti-cliente.
+- [~] Sales LLM usa Documento de Vendas/playbook do tenant como fonte comercial principal para tom, oferta, qualificacao e claims proibidos; promocao automatica a partir de midia WhatsApp esta em codigo e pendente smoke real.
 - [x] Analise de call comercial existe e pode virar artifact seguro.
 - [~] Marketing -> Lead/CRM tem atribuicao inicial por campanha/conteudo/UTM.
 - [ ] Fechar Growth Frontdoor como uma trilha unica: entrada -> qualificacao -> follow-up -> proposta.
@@ -432,6 +434,11 @@ Validacoes executadas:
 - [x] Deploy Vercel de producao `dpl_69socey4Swtoj81Gp4SCoaUMQPCY` do commit `681ad4e` ficou `Ready` e aliasado em `https://mayus-premium-pro.vercel.app`.
 - [x] Webhook da Evolution foi reconfigurado para a URL estavel `https://mayus-premium-pro.vercel.app/api/evolution-webhook`; chamada `webhook/set` retornou `201` para a instancia `mayus-dutra` sem expor API key.
 - [x] Smoke real Evolution fast-path: inbound `Posso enviar meu contracheque?` gerou outbound `sent` via `evolution` em cerca de 4s, com `reply_processing_status = processed`, `reply_auto_sent = true`, `reply_source = immediate_safe_deterministic_reply` e evento `whatsapp_immediate_safe_reply_auto_sent`.
+- [~] Webhook Evolution ganhou ACK imediato para midia/documento/PDF: salva a mensagem como `pending`, envia confirmacao deterministica por Evolution com `source = immediate_media_ack`, marca `media_ack_sent` e `reply_processing_status = waiting_media_processing`, e tenta `processPendingWhatsAppMediaBatch({ messageId, limit: 1 })` com timeout curto para nao depender apenas do scheduler.
+- [~] ACK especifico para contracheque/PDF pede o desconto ou valor que o cliente quer conferir sem prometer resultado juridico; demais midias recebem confirmacao generica segura e pedido de ponto especifico.
+- [~] Sales LLM passou a incluir Documento de Vendas/playbook do tenant como fonte comercial principal para tom, oferta, qualificacao, perguntas e claims proibidos, mantendo documentos do cliente como evidencia do caso e nao promessa de resultado.
+- [~] Processor de midia promove automaticamente documento de vendas relevante para `tenant_settings.ai_features.sales_playbook_context`, `sales_document_summary` e `sales_playbook_source`, com evento sanitizado `whatsapp_sales_playbook_promoted`.
+- [x] Validacao local do ACK de midia/playbook: `npx.cmd vitest run "src/app/api/evolution-webhook/route.test.ts" "src/app/api/whatsapp/webhook/route.test.ts" "src/lib/growth/sales-llm-reply.test.ts" "src/lib/growth/whatsapp-sales-reply-runtime.test.ts" "src/lib/whatsapp/media-processor.test.ts" "src/lib/whatsapp/reply-processor.test.ts"` com 6 arquivos e 30 testes; `npx.cmd tsc --noEmit --pretty false`; `npm run verify:whatsapp-media` retornou `ok: true` com `pending_count: 3`; `git diff --check` sem erro alem de warnings CRLF; `npm run build` passou com warnings preexistentes de hooks/`<img>`.
 
 Bloqueios antes de marcar como `[x]`:
 
@@ -439,9 +446,9 @@ Bloqueios antes de marcar como `[x]`:
 - [x] Bucket privado/signed URLs para midia juridica.
 - [x] Processamento de midia fora dos webhooks.
 - [x] Idempotencia de mensagem inbound.
-- [~] Smoke real Meta Cloud/Evolution com texto, imagem, audio e documento: Evolution validou texto imediato para contracheque, texto fechado anterior e multimodal anterior; falta repetir midia fechado e Meta Cloud.
+- [~] Smoke real Meta Cloud/Evolution com texto, imagem, audio e documento: Evolution validou texto imediato para contracheque, texto fechado anterior e multimodal anterior; falta deploy/smoke do ACK imediato de midia, repetir midia fechado e Meta Cloud.
 - [ ] Smoke real Meta Cloud ainda pendente; Evolution passou para texto, imagem, audio, PDF/DOCX e outbound texto.
-- [~] Observabilidade de midia e resposta existe no processor, painel admin e notificacoes de falha; ainda falta smoke Meta Cloud, smoke real do disparo imediato e confirmar execucao automatica agendada do scheduler.
+- [~] Observabilidade de midia e resposta existe no processor, painel admin, notificacoes de falha e eventos sanitizados; ainda falta smoke Meta Cloud, smoke real do ACK imediato de midia e confirmar execucao automatica agendada do scheduler.
 - [x] Aplicar migration `20260504120000_whatsapp_media_labels.sql` antes do smoke real.
 - [x] Confirmar `CRON_SECRET` efetivo do projeto Vercel usado no smoke ou atualizar `.env.local`/Vercel para ficarem alinhados.
 

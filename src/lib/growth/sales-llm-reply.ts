@@ -67,6 +67,12 @@ export type SalesLlmReplyInput = {
     uniqueValueProposition?: string | null;
     valuePillars?: string[] | null;
     positioningSummary?: string | null;
+    salesPlaybookContext?: string | null;
+    salesDocumentSummary?: string | null;
+    salesRules?: string[] | null;
+    qualificationQuestions?: string[] | null;
+    offerPositioning?: string | null;
+    forbiddenClaims?: string[] | null;
   } | null;
   testbench?: Partial<SalesLlmTestbenchConfig> | null;
   leadStage?: SalesLlmLeadStage | null;
@@ -253,6 +259,9 @@ function chooseModel(config: SalesLlmTestbenchConfig, messages: WhatsAppSalesMes
 function buildSalesLlmPrompt(input: SalesLlmReplyInput, model: string) {
   const profile = input.salesProfile || {};
   const pillars = Array.isArray(profile.valuePillars) ? profile.valuePillars.filter(Boolean).join(", ") : "";
+  const salesRules = Array.isArray(profile.salesRules) ? profile.salesRules.filter(Boolean).join("; ") : "";
+  const qualificationQuestions = Array.isArray(profile.qualificationQuestions) ? profile.qualificationQuestions.filter(Boolean).join("; ") : "";
+  const forbiddenClaims = Array.isArray(profile.forbiddenClaims) ? profile.forbiddenClaims.filter(Boolean).join("; ") : "";
 
   return [
     "Voce e o SDR/Closer agentico do MAYUS para WhatsApp juridico.",
@@ -263,6 +272,8 @@ function buildSalesLlmPrompt(input: SalesLlmReplyInput, model: string) {
     "Para desconto em contracheque/beneficio, nao diga se a pessoa tem direito. Pergunte o nome do desconto, quando comecou, se houve autorizacao/emprestimo e peca print apenas do trecho do desconto.",
     "Nunca invente status de processo, preco, contrato, cobranca, prazo, documento, jurisprudencia ou promessa de resultado juridico.",
     "Se o usuario pedir status de processo, pergunta juridica fora de venda, urgencia grave, contrato ou pagamento, sinalize risco e recomende handoff.",
+    "Use o Documento de Vendas abaixo como fonte comercial principal para tom, oferta, qualificacao e conducao. Se houver conflito, ele prevalece sobre copy generica.",
+    "Use documentos enviados pelo cliente, como contracheque/PDF, apenas como evidencia do caso e nunca como promessa de resultado.",
     "Se a descoberta ainda estiver fraca, nao feche. Faca a proxima pergunta.",
     "",
     `Modelo em teste: ${model}`,
@@ -274,6 +285,12 @@ function buildSalesLlmPrompt(input: SalesLlmReplyInput, model: string) {
     `PUV: ${cleanText(profile.uniqueValueProposition) || "nao configurada"}`,
     `Pilares: ${pillars || "nao configurados"}`,
     `Resumo de posicionamento: ${cleanText(profile.positioningSummary) || "nao configurado"}`,
+    `Documento de Vendas - contexto principal: ${cleanText(profile.salesPlaybookContext)?.slice(0, 1800) || "nao configurado"}`,
+    `Resumo do documento de vendas: ${cleanText(profile.salesDocumentSummary)?.slice(0, 900) || "nao configurado"}`,
+    `Posicionamento/oferta do documento de vendas: ${cleanText(profile.offerPositioning)?.slice(0, 700) || "nao configurado"}`,
+    `Regras comerciais do documento de vendas: ${salesRules || "nao configuradas"}`,
+    `Perguntas de qualificacao do documento de vendas: ${qualificationQuestions || "nao configuradas"}`,
+    `Promessas/claims proibidos: ${forbiddenClaims || "nao configurados"}`,
     "",
     "Historico recente:",
     summarizeMessages(input.messages) || "Sem historico.",

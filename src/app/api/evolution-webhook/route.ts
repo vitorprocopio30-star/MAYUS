@@ -3,6 +3,7 @@ import { createClient } from "@supabase/supabase-js";
 import crypto from "crypto";
 import { handleWhatsAppInternalCommand } from "@/lib/mayus/whatsapp-command-runtime";
 import { listTenantIntegrationsResolved } from "@/lib/integrations/server";
+import { processPendingWhatsAppMediaBatch } from "@/lib/whatsapp/media-processor";
 import { enqueueWhatsAppReply, processPendingWhatsAppRepliesBatch } from "@/lib/whatsapp/reply-processor";
 import { sendWhatsAppMessage } from "@/lib/whatsapp/send-message";
 
@@ -12,6 +13,7 @@ const supabase = createClient(
 );
 
 const IMMEDIATE_REPLY_TIMEOUT_MS = 10000;
+const IMMEDIATE_MEDIA_TIMEOUT_MS = 8000;
 
 function verifySignature(body: string, signature: string | null): boolean {
   const secret = process.env.EVOLUTION_WEBHOOK_SECRET;
@@ -66,6 +68,110 @@ async function processImmediateReply(params: { messageId: string }) {
   } finally {
     if (timeout) clearTimeout(timeout);
   }
+}
+
+async function processImmediateMedia(params: { messageId: string }) {
+  let timeout: ReturnType<typeof setTimeout> | null = null;
+
+  try {
+    await Promise.race([
+      processPendingWhatsAppMediaBatch({
+        supabase,
+        messageId: params.messageId,
+        limit: 1,
+      }),
+      new Promise((_, reject) => {
+        timeout = setTimeout(() => reject(new Error(`Timeout ao processar midia imediata apos ${IMMEDIATE_MEDIA_TIMEOUT_MS}ms.`)), IMMEDIATE_MEDIA_TIMEOUT_MS);
+      }),
+    ]);
+  } finally {
+    if (timeout) clearTimeout(timeout);
+  }
+}
+
+function buildImmediateMediaAck(params: { messageType: string; content: string; filename: string | null }) {
+  const normalized = normalizeText(`${params.content} ${params.filename || ""}`);
+  const looksLikePayroll = /contracheque|holerite|folha|desconto|consignado|beneficio|inss|aposentadoria/.test(normalized);
+  const genericReceipt = params.messageType === "image"
+    ? "Recebi a imagem. Vou organizar a analise inicial com seguranca."
+    : params.messageType === "document"
+      ? "Recebi o documento. Vou organizar a analise inicial com seguranca."
+      : "Recebi o arquivo. Vou organizar a analise inicial com seguranca.";
+
+  if (looksLikePayroll) {
+    return [
+      "Recebi o contracheque. Vou analisar a parte dos descontos com cuidado.",
+      "Se puder, me diga qual desconto chamou sua atencao ou qual valor/nome voce quer conferir.",
+    ].join("\n\n");
+  }
+
+  return [
+    genericReceipt,
+    "Se tiver um ponto especifico para conferir, me diga em uma frase.",
+  ].join("\n\n");
+}
+
+async function sendImmediateMediaAck(params: {
+  tenantId: string;
+  contactId: string;
+  messageId: string;
+  phoneNumber: string;
+  messageType: string;
+  content: string;
+  filename: string | null;
+  metadata: Record<string, any>;
+}) {
+  const text = buildImmediateMediaAck({
+    messageType: params.messageType,
+    content: params.content,
+    filename: params.filename,
+  });
+  const sent = await sendWhatsAppMessage({
+    supabase,
+    tenantId: params.tenantId,
+    contactId: params.contactId,
+    phoneNumber: params.phoneNumber,
+    preferredProvider: "evolution",
+    text,
+    metadata: {
+      source: "immediate_media_ack",
+      model_used: "deterministic",
+      intent: "media_document_intake",
+      lead_stage: "discovery",
+      expected_outcome: "cliente confirma o desconto ou ponto do documento",
+    },
+  });
+
+  await supabase
+    .from("whatsapp_messages")
+    .update({
+      metadata: {
+        ...params.metadata,
+        media_ack_sent: true,
+        media_ack_source: "immediate_media_ack",
+        media_ack_sent_at: new Date().toISOString(),
+        reply_processing_status: "waiting_media_processing",
+      },
+    })
+    .eq("id", params.messageId);
+
+  await supabase.from("system_event_logs").insert({
+    tenant_id: params.tenantId,
+    user_id: null,
+    source: "whatsapp",
+    provider: "mayus",
+    event_name: "whatsapp_media_ack_auto_sent",
+    status: "ok",
+    payload: {
+      contact_id: params.contactId,
+      message_id: params.messageId,
+      trigger: "evolution_webhook",
+      model_used: "deterministic",
+      send_provider: sent.provider,
+      media_kind: params.messageType,
+    },
+    created_at: new Date().toISOString(),
+  });
 }
 
 async function trySendImmediateSafeReply(params: {
@@ -323,6 +429,15 @@ export async function POST(req: Request) {
           }).eq("id", contactId);
       }
 
+      const messageMetadata = shouldQueueMedia ? {
+        provider_media_id: messageId || null,
+        media_kind: messageType,
+        webhook_trigger: "evolution_webhook",
+        evolution_instance: instanceName,
+        evolution_message_envelope: messageEnvelope,
+        evolution_message_payload: messagePayload,
+      } : { reply_trigger: "evolution_webhook" };
+
       // 3. Salvar a Mensagem
       const { data: savedMessage, error: msgErr } = await supabase
         .from("whatsapp_messages")
@@ -341,14 +456,7 @@ export async function POST(req: Request) {
              media_processing_status: shouldQueueMedia ? "pending" : "none",
              media_text: null,
              media_summary: null,
-              metadata: shouldQueueMedia ? {
-                provider_media_id: messageId || null,
-                media_kind: messageType,
-                webhook_trigger: "evolution_webhook",
-                evolution_instance: instanceName,
-                evolution_message_envelope: messageEnvelope,
-                evolution_message_payload: messagePayload,
-              } : { reply_trigger: "evolution_webhook" },
+              metadata: messageMetadata,
               message_id_from_evolution: messageId,
               status: 'delivered'
         }])
@@ -364,6 +472,29 @@ export async function POST(req: Request) {
 
       if (!fromMe) {
         if (shouldQueueMedia) {
+          if (savedMessage?.id) {
+            try {
+              await sendImmediateMediaAck({
+                tenantId,
+                contactId,
+                messageId: savedMessage.id,
+                phoneNumber: remoteJid,
+                messageType,
+                content,
+                filename: mediaFilename,
+                metadata: messageMetadata,
+              });
+            } catch (ackError) {
+              console.error("[Evolution Webhook] Erro ao enviar confirmacao imediata de midia:", ackError);
+            }
+
+            try {
+              await processImmediateMedia({ messageId: savedMessage.id });
+            } catch (mediaError) {
+              console.error("[Evolution Webhook] Erro ao processar midia imediata:", mediaError);
+            }
+          }
+
           await supabase.from("notifications").insert([{
             tenant_id: tenantId,
             user_id: null,
