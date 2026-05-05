@@ -4,6 +4,7 @@ import crypto from "crypto";
 import { handleWhatsAppInternalCommand } from "@/lib/mayus/whatsapp-command-runtime";
 import { listTenantIntegrationsResolved } from "@/lib/integrations/server";
 import { enqueueWhatsAppReply, processPendingWhatsAppRepliesBatch } from "@/lib/whatsapp/reply-processor";
+import { sendWhatsAppMessage } from "@/lib/whatsapp/send-message";
 
 const supabase = createClient(
   process.env.NEXT_PUBLIC_SUPABASE_URL!,
@@ -28,6 +29,26 @@ function cleanWhatsAppNumber(value: string | null | undefined) {
   return String(value || "").split("@")[0].replace(/\D/g, "");
 }
 
+function normalizeText(value: string | null | undefined) {
+  return String(value || "")
+    .normalize("NFD")
+    .replace(/[\u0300-\u036f]/g, "")
+    .toLowerCase();
+}
+
+function buildImmediateSafeReply(content: string) {
+  const normalized = normalizeText(content);
+  const asksToSend = /posso|pode|vou|mandar|enviar|analisa|analisar|olhar|verificar/.test(normalized);
+  const hasPayroll = /contracheque|holerite|folha|desconto|consignado|beneficio|inss|aposentadoria/.test(normalized);
+
+  if (!asksToSend || !hasPayroll) return null;
+
+  return [
+    "Pode mandar sim. Envie uma foto ou print apenas da parte do desconto no contracheque.",
+    "Se puder, me diga também qual nome aparece no desconto e quando começou. Assim eu organizo a análise inicial com segurança, sem prometer resultado jurídico.",
+  ].join("\n\n");
+}
+
 async function processImmediateReply(params: { messageId: string }) {
   let timeout: ReturnType<typeof setTimeout> | null = null;
 
@@ -45,6 +66,66 @@ async function processImmediateReply(params: { messageId: string }) {
   } finally {
     if (timeout) clearTimeout(timeout);
   }
+}
+
+async function trySendImmediateSafeReply(params: {
+  tenantId: string;
+  contactId: string;
+  messageId: string;
+  phoneNumber: string;
+  content: string;
+}) {
+  const reply = buildImmediateSafeReply(params.content);
+  if (!reply) return false;
+
+  const sent = await sendWhatsAppMessage({
+    supabase,
+    tenantId: params.tenantId,
+    contactId: params.contactId,
+    phoneNumber: params.phoneNumber,
+    preferredProvider: "evolution",
+    text: reply,
+    metadata: {
+      source: "immediate_safe_deterministic_reply",
+      model_used: "deterministic",
+      intent: "payroll_document_intake",
+      lead_stage: "discovery",
+      expected_outcome: "cliente envia contracheque ou detalha desconto",
+    },
+  });
+
+  await supabase
+    .from("whatsapp_messages")
+    .update({
+      metadata: {
+        reply_trigger: "evolution_webhook",
+        reply_processing_status: "processed",
+        reply_processed_at: new Date().toISOString(),
+        reply_auto_sent: true,
+        reply_source: "immediate_safe_deterministic_reply",
+      },
+    })
+    .eq("id", params.messageId);
+
+  await supabase.from("system_event_logs").insert({
+    tenant_id: params.tenantId,
+    user_id: null,
+    source: "whatsapp",
+    provider: "mayus",
+    event_name: "whatsapp_immediate_safe_reply_auto_sent",
+    status: "ok",
+    payload: {
+      contact_id: params.contactId,
+      message_id: params.messageId,
+      trigger: "evolution_webhook",
+      model_used: "deterministic",
+      send_provider: sent.provider,
+      intent: "payroll_document_intake",
+    },
+    created_at: new Date().toISOString(),
+  });
+
+  return true;
 }
 
 async function fetchEvolutionProfilePicture(params: {
@@ -317,6 +398,21 @@ export async function POST(req: Request) {
         }
 
         if (savedMessage?.id) {
+          try {
+            const sentImmediate = await trySendImmediateSafeReply({
+              tenantId,
+              contactId,
+              messageId: savedMessage.id,
+              phoneNumber: remoteJid,
+              content,
+            });
+            if (sentImmediate) {
+              return NextResponse.json({ success: true, immediate_reply: true });
+            }
+          } catch (replyError) {
+            console.error("[Evolution Webhook] Erro ao enviar resposta segura imediata:", replyError);
+          }
+
           await enqueueWhatsAppReply({
             supabase,
             trigger: "evolution_webhook",

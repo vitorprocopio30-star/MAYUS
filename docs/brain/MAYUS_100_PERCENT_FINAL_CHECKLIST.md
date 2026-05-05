@@ -428,6 +428,7 @@ Validacoes executadas:
 - [~] Processor de respostas ganhou claim atomico: antes de preparar/enviar, muda `reply_processing_status` de `pending` para `processing` somente se ainda estiver pendente; execucoes concorrentes pulam como `skipped`, reduzindo risco de resposta duplicada.
 - [x] Validacao local do ajuste imediato endurecido: `npx.cmd vitest run src/lib/growth/sales-llm-reply.test.ts src/lib/growth/whatsapp-sales-reply-runtime.test.ts src/app/api/evolution-webhook/route.test.ts src/app/api/whatsapp/webhook/route.test.ts src/lib/whatsapp/reply-processor.test.ts` com 5 arquivos e 24 testes; `npx.cmd tsc --noEmit --pretty false`; `git diff --check` sem erro; `npm run verify:whatsapp-media` retornou `ok: true` com `pending_count: 1`; `npm run build` passou com warnings preexistentes de hooks/`<img>`.
 - [x] Deploy Vercel de producao `dpl_8CSoVVKeCgkjpoSS9xXaQ2NcZtU3` do commit `d84a630` ficou `Ready` e aliasado em `https://mayus-premium-pro.vercel.app`; falta smoke real Evolution com texto de contracheque.
+- [~] Smoke real Evolution com `Posso mandar meu contracheque para vc analisar?` entrou no banco, mas o caminho LLM/processor levou cerca de 49s quando acionado manualmente; para venda em segundos, Evolution ganhou fast-path deterministico seguro que responde pedido de envio/analise de contracheque direto no webhook, sem esperar LLM, e cai na fila se o envio falhar.
 
 Bloqueios antes de marcar como `[x]`:
 
