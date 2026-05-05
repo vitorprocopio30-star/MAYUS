@@ -55,6 +55,9 @@ function assertSendInput(input: SendWhatsAppMessageInput) {
   if (!input.tenantId || !input.contactId || !input.phoneNumber || (!input.text && !input.audioUrl && !input.mediaUrl)) {
     throw new Error("Faltam parametros para enviar WhatsApp");
   }
+  if (String(input.phoneNumber).toLowerCase().includes("@g.us")) {
+    throw new Error("Envio WhatsApp para grupos esta bloqueado");
+  }
 }
 
 function getOutgoingMessageType(input: SendWhatsAppMessageInput) {

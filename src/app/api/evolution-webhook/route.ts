@@ -31,6 +31,10 @@ function cleanWhatsAppNumber(value: string | null | undefined) {
   return String(value || "").split("@")[0].replace(/\D/g, "");
 }
 
+function isGroupJid(value: string | null | undefined) {
+  return String(value || "").toLowerCase().endsWith("@g.us");
+}
+
 function normalizeText(value: string | null | undefined) {
   return String(value || "")
     .normalize("NFD")
@@ -299,10 +303,19 @@ export async function POST(req: Request) {
       const fromMe = Boolean(messageEnvelope?.key?.fromMe || payload.data?.key?.fromMe);
       const messageId = messageEnvelope?.key?.id || payload.data?.key?.id;
       const pushName = messageEnvelope?.pushName || payload.data?.pushName || "Desconhecido";
-      
+
       // Ignoring status broadcasts
       if (remoteJid === "status@broadcast") {
         return NextResponse.json({ success: true });
+      }
+
+      // Nunca operar em grupos: evita criar contato, salvar mensagem ou auto responder em massa.
+      if (isGroupJid(remoteJid)) {
+        console.warn("[Evolution Webhook] Grupo ignorado sem persistencia ou resposta automatica.", {
+          instance: payload.instance,
+          message_id: messageId || null,
+        });
+        return NextResponse.json({ success: true, ignored: true, reason: "group_chat" });
       }
 
       // Extrair o conteúdo em texto (Seja texto puro, extended text, etc)

@@ -225,6 +225,43 @@ describe("/api/evolution-webhook", () => {
     expect(supabaseMock.messageInserts).toEqual([]);
   });
 
+  it("ignora mensagens de grupo Evolution sem persistir nem responder", async () => {
+    const { POST } = await import("./route");
+    const request = new Request("http://localhost/api/evolution-webhook", {
+      method: "POST",
+      body: JSON.stringify({
+        event: "MESSAGES_UPSERT",
+        instance: "mayus-dutra",
+        data: {
+          key: {
+            remoteJid: "120363401234567890@g.us",
+            participant: "557199582963@s.whatsapp.net",
+            fromMe: false,
+            id: "group-msg-1",
+          },
+          pushName: "Grupo Teste",
+          message: {
+            conversation: "Mensagem no grupo",
+          },
+        },
+      }),
+    });
+
+    const response = await POST(request);
+    const body = await response.json();
+
+    expect(response.status).toBe(200);
+    expect(body).toEqual({ success: true, ignored: true, reason: "group_chat" });
+    expect(supabaseMock.from).not.toHaveBeenCalledWith("tenant_integrations");
+    expect(supabaseMock.contactInserts).toEqual([]);
+    expect(supabaseMock.messageInserts).toEqual([]);
+    expect(sendWhatsAppMessageMock).not.toHaveBeenCalled();
+    expect(handleWhatsAppInternalCommandMock).not.toHaveBeenCalled();
+    expect(enqueueWhatsAppReplyMock).not.toHaveBeenCalled();
+    expect(processPendingWhatsAppRepliesBatchMock).not.toHaveBeenCalled();
+    expect(processPendingWhatsAppMediaBatchMock).not.toHaveBeenCalled();
+  });
+
   it("salva midia Evolution como pending, confirma recebimento e tenta processar por mensagem", async () => {
     handleWhatsAppInternalCommandMock.mockResolvedValue({ handled: false });
     const { POST } = await import("./route");

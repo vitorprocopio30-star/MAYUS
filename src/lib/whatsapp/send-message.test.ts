@@ -213,6 +213,21 @@ describe("sendWhatsAppMessage", () => {
     })).rejects.toThrow("Integracao WhatsApp meta_cloud nao encontrada");
   });
 
+  it("bloqueia envio para grupos WhatsApp", async () => {
+    const { supabase } = makeSupabase();
+
+    await expect(sendWhatsAppMessage({
+      supabase,
+      tenantId: "tenant-1",
+      contactId: "contact-group",
+      phoneNumber: "120363401234567890@g.us",
+      text: "Nao pode enviar para grupo",
+      fetcher: vi.fn() as any,
+    })).rejects.toThrow("Envio WhatsApp para grupos esta bloqueado");
+
+    expect(listTenantIntegrationsResolvedMock).not.toHaveBeenCalled();
+  });
+
   it("bloqueia Evolution apontando para rede interna", async () => {
     const { supabase } = makeSupabase();
     listTenantIntegrationsResolvedMock.mockResolvedValueOnce([
