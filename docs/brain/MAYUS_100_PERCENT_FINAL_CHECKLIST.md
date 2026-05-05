@@ -439,6 +439,7 @@ Validacoes executadas:
 - [~] Sales LLM passou a incluir Documento de Vendas/playbook do tenant como fonte comercial principal para tom, oferta, qualificacao, perguntas e claims proibidos, mantendo documentos do cliente como evidencia do caso e nao promessa de resultado.
 - [~] Processor de midia promove automaticamente documento de vendas relevante para `tenant_settings.ai_features.sales_playbook_context`, `sales_document_summary` e `sales_playbook_source`, com evento sanitizado `whatsapp_sales_playbook_promoted`.
 - [x] Validacao local do ACK de midia/playbook: `npx.cmd vitest run "src/app/api/evolution-webhook/route.test.ts" "src/app/api/whatsapp/webhook/route.test.ts" "src/lib/growth/sales-llm-reply.test.ts" "src/lib/growth/whatsapp-sales-reply-runtime.test.ts" "src/lib/whatsapp/media-processor.test.ts" "src/lib/whatsapp/reply-processor.test.ts"` com 6 arquivos e 30 testes; `npx.cmd tsc --noEmit --pretty false`; `npm run verify:whatsapp-media` retornou `ok: true` com `pending_count: 3`; `git diff --check` sem erro alem de warnings CRLF; `npm run build` passou com warnings preexistentes de hooks/`<img>`.
+- [x] Deploy Vercel de producao `dpl_9Dh7UAZotNUkLUdY71my8QYNyUu7` do commit `96cbc77` ficou `Ready` e aliasado em `https://mayus-premium-pro.vercel.app`; rotas protegidas `/api/whatsapp/media/process?limit=1` e `/api/whatsapp/replies/process?limit=1` retornaram `403` sem `CRON_SECRET`, como esperado.
 
 Bloqueios antes de marcar como `[x]`:
 
