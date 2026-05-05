@@ -405,6 +405,9 @@ Validacoes executadas:
 - [ ] Rota `/api/whatsapp/media/process` respondeu `403` com `CRON_SECRET` local no alias publico, indicando segredo de producao diferente do local ou ambiente/projeto divergente.
 - [x] Apos aplicar migration, `npm run verify:whatsapp-media` retornou `ok: true`, bucket privado e `pending_count: 0`.
 - [x] Rota publica `/api/whatsapp/media/process?limit=1` respondeu `200 OK` com `CRON_SECRET` de producao do Vercel e `picked: 0`.
+- [x] Smoke real Evolution: inbound texto, imagem, audio, PDF e DOCX chegaram no banco; processor converteu midias para `processed`, gravou `media_storage_path`, `media_text/media_summary` quando aplicavel e zerou fila `pending`.
+- [x] Smoke real Evolution: outbound texto enviado com sucesso via provider `evolution` e registrado como `status = 'sent'`.
+- [x] Smoke real revelou e corrigiu politica de MIME do bucket para DOC/DOCX em `whatsapp-media`.
 
 Bloqueios antes de marcar como `[x]`:
 
@@ -413,6 +416,7 @@ Bloqueios antes de marcar como `[x]`:
 - [x] Processamento de midia fora dos webhooks.
 - [x] Idempotencia de mensagem inbound.
 - [ ] Smoke real Meta Cloud/Evolution com texto, imagem, audio e documento.
+- [ ] Smoke real Meta Cloud ainda pendente; Evolution passou para texto, imagem, audio, PDF/DOCX e outbound texto.
 - [x] Aplicar migration `20260504120000_whatsapp_media_labels.sql` antes do smoke real.
 - [x] Confirmar `CRON_SECRET` efetivo do projeto Vercel usado no smoke ou atualizar `.env.local`/Vercel para ficarem alinhados.
 
