@@ -409,6 +409,7 @@ Validacoes executadas:
 - [x] Smoke real Evolution: outbound texto enviado com sucesso via provider `evolution` e registrado como `status = 'sent'`.
 - [x] Smoke real revelou e corrigiu politica de MIME do bucket para DOC/DOCX em `whatsapp-media`.
 - [x] Observabilidade inicial do processor WhatsApp registra `whatsapp_media_processed`, `whatsapp_media_failed` e `whatsapp_media_batch_processed` em `system_event_logs` sem texto integral, signed URL ou segredo.
+- [x] Deploy correto `mayus-premium-pro` do commit `d1d41fa` ficou `READY/PROMOTED`; rota `https://mayus-premium-pro.vercel.app/api/whatsapp/media/process?limit=1` respondeu `200 OK`, `picked: 0`, e gravou `whatsapp_media_batch_processed`.
 
 Bloqueios antes de marcar como `[x]`:
 
