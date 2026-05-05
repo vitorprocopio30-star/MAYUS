@@ -14,6 +14,8 @@ type PendingWhatsAppReplyMessage = {
   created_at: string | null;
 };
 
+type ReplyProcessingStatus = "pending" | "processing" | string | null;
+
 type ProcessWhatsAppReplyBatchParams = {
   supabase: SupabaseClient;
   limit?: number;
@@ -25,6 +27,10 @@ function normalizeLimit(value: number | null | undefined) {
   if (!Number.isFinite(parsed)) return 5;
   return Math.min(Math.max(Math.floor(parsed), 1), 10);
 }
+
+const STALE_PROCESSING_MS = 2 * 60 * 1000;
+const MAX_AUTO_RECOVERY_AGE_MS = 10 * 60 * 1000;
+const MAX_PROCESSING_RECOVERY_ATTEMPTS = 2;
 
 function truncateError(value: string | null | undefined) {
   const text = String(value || "").replace(/\s+/g, " ").trim();
@@ -71,10 +77,11 @@ export async function enqueueWhatsAppReply(params: {
 async function recordReplyEvent(params: {
   supabase: SupabaseClient;
   row: PendingWhatsAppReplyMessage;
-  eventName: "whatsapp_reply_processed" | "whatsapp_reply_failed" | "whatsapp_reply_stale_pending";
+  eventName: "whatsapp_reply_processed" | "whatsapp_reply_failed" | "whatsapp_reply_stale_pending" | "whatsapp_reply_stale_processing_recovered" | "whatsapp_reply_stale_processing_suppressed";
   status: "ok" | "error" | "warning";
   durationMs?: number;
   error?: string | null;
+  extraPayload?: Record<string, unknown>;
 }) {
   await params.supabase.from("system_event_logs").insert({
     tenant_id: params.row.tenant_id,
@@ -89,9 +96,51 @@ async function recordReplyEvent(params: {
       trigger: replyTrigger(params.row),
       duration_ms: params.durationMs || 0,
       error: truncateError(params.error),
+      ...(params.extraPayload || {}),
     },
     created_at: new Date().toISOString(),
   });
+}
+
+function getReplyProcessingStatus(row: PendingWhatsAppReplyMessage): ReplyProcessingStatus {
+  return row.metadata?.reply_processing_status || null;
+}
+
+function getProcessingStartedAt(row: PendingWhatsAppReplyMessage) {
+  return typeof row.metadata?.reply_processing_started_at === "string"
+    ? row.metadata.reply_processing_started_at
+    : row.created_at;
+}
+
+function isStaleProcessingReply(row: PendingWhatsAppReplyMessage) {
+  if (getReplyProcessingStatus(row) !== "processing") return false;
+  const startedAt = getProcessingStartedAt(row);
+  if (!startedAt) return false;
+  const startedMs = new Date(startedAt).getTime();
+  return Number.isFinite(startedMs) && Date.now() - startedMs > STALE_PROCESSING_MS;
+}
+
+function getRecoveryAttempts(row: PendingWhatsAppReplyMessage) {
+  const attempts = Number(row.metadata?.reply_processing_recovery_attempts || 0);
+  return Number.isFinite(attempts) && attempts > 0 ? Math.floor(attempts) : 0;
+}
+
+async function hasNewerMessageThan(params: {
+  supabase: SupabaseClient;
+  row: PendingWhatsAppReplyMessage;
+}) {
+  if (!params.row.created_at) return false;
+  const { data, error } = await params.supabase
+    .from("whatsapp_messages")
+    .select("id")
+    .eq("tenant_id", params.row.tenant_id)
+    .eq("contact_id", params.row.contact_id)
+    .gt("created_at", params.row.created_at)
+    .order("created_at", { ascending: false })
+    .limit(1);
+
+  if (error) throw error;
+  return Boolean(data?.length);
 }
 
 async function insertDedupedNotification(params: {
@@ -123,19 +172,32 @@ async function insertDedupedNotification(params: {
   });
 }
 
-async function claimPendingReply(params: {
+async function claimReply(params: {
   supabase: SupabaseClient;
   row: PendingWhatsAppReplyMessage;
 }) {
+  const currentStatus = getReplyProcessingStatus(params.row);
+  const recoveryAttempts = currentStatus === "processing" ? getRecoveryAttempts(params.row) + 1 : 0;
   const metadata = mergeMetadata(params.row, {
     reply_processing_status: "processing",
     reply_processing_started_at: new Date().toISOString(),
+    ...(currentStatus === "processing" ? {
+      reply_processing_recovered_at: new Date().toISOString(),
+      reply_processing_recovery_attempts: recoveryAttempts,
+    } : {}),
   });
-  const { data, error } = await params.supabase
+  let query = params.supabase
     .from("whatsapp_messages")
     .update({ metadata })
     .eq("id", params.row.id)
-    .eq("metadata->>reply_processing_status", "pending")
+
+  if (currentStatus === "processing") {
+    query = query.eq("metadata->>reply_processing_status", "processing");
+  } else {
+    query = query.eq("metadata->>reply_processing_status", "pending");
+  }
+
+  const { data, error } = await query
     .select("id, metadata")
     .maybeSingle<{ id: string; metadata: Record<string, any> | null }>();
 
@@ -151,6 +213,7 @@ async function processOneReply(params: {
 }) {
   const startedAt = Date.now();
   const staleMs = params.row.created_at ? Date.now() - new Date(params.row.created_at).getTime() : 0;
+  const currentStatus = getReplyProcessingStatus(params.row);
 
   if (staleMs > 10 * 60 * 1000 && !params.row.metadata?.reply_stale_alerted_at) {
     await recordReplyEvent({
@@ -174,7 +237,70 @@ async function processOneReply(params: {
   }
 
   try {
-    const claimed = await claimPendingReply({
+    if (currentStatus === "processing") {
+      if (!isStaleProcessingReply(params.row)) {
+        return {
+          message_id: params.row.id,
+          status: "skipped" as const,
+          auto_sent: false,
+          duration_ms: Date.now() - startedAt,
+          skipped_reason: "processing_not_stale",
+        };
+      }
+
+      const shouldSuppressStaleProcessing = staleMs > MAX_AUTO_RECOVERY_AGE_MS
+        ? "stale_processing_too_old"
+        : await hasNewerMessageThan({ supabase: params.supabase, row: params.row })
+          ? "newer_message_exists"
+          : null;
+
+      if (shouldSuppressStaleProcessing) {
+        await params.supabase
+          .from("whatsapp_messages")
+          .update({
+            metadata: mergeMetadata(params.row, {
+              reply_processing_status: "processed",
+              reply_processed_at: new Date().toISOString(),
+              reply_auto_sent: false,
+              reply_processing_recovery_suppressed_at: new Date().toISOString(),
+              reply_processing_recovery_reason: shouldSuppressStaleProcessing,
+            }),
+          })
+          .eq("id", params.row.id);
+
+        await recordReplyEvent({
+          supabase: params.supabase,
+          row: params.row,
+          eventName: "whatsapp_reply_stale_processing_suppressed",
+          status: "warning",
+          durationMs: Date.now() - startedAt,
+          extraPayload: { reason: shouldSuppressStaleProcessing },
+        });
+
+        return {
+          message_id: params.row.id,
+          status: "processed" as const,
+          auto_sent: false,
+          duration_ms: Date.now() - startedAt,
+          recovered_reason: shouldSuppressStaleProcessing,
+        };
+      }
+
+      if (getRecoveryAttempts(params.row) >= MAX_PROCESSING_RECOVERY_ATTEMPTS) {
+        throw new Error("stale_processing_retry_limit");
+      }
+
+      await recordReplyEvent({
+        supabase: params.supabase,
+        row: params.row,
+        eventName: "whatsapp_reply_stale_processing_recovered",
+        status: "warning",
+        durationMs: Date.now() - startedAt,
+        extraPayload: { recovery_attempt: getRecoveryAttempts(params.row) + 1 },
+      });
+    }
+
+    const claimed = await claimReply({
       supabase: params.supabase,
       row: params.row,
     });
@@ -283,8 +409,40 @@ export async function processPendingWhatsAppRepliesBatch(params: ProcessWhatsApp
   const { data, error } = await query;
   if (error) throw error;
 
-  const rows = ((data || []) as PendingWhatsAppReplyMessage[])
-    .filter((row) => row.media_processing_status !== "pending");
+  let staleProcessingRows: PendingWhatsAppReplyMessage[] = [];
+  if (!params.messageId) {
+    const { data: processingData, error: processingError } = await params.supabase
+      .from("whatsapp_messages")
+      .select("id, tenant_id, contact_id, direction, media_processing_status, metadata, created_at")
+      .eq("direction", "inbound")
+      .eq("metadata->>reply_processing_status", "processing")
+      .order("created_at", { ascending: true })
+      .limit(normalizeLimit(params.limit));
+
+    if (processingError) throw processingError;
+    staleProcessingRows = ((processingData || []) as PendingWhatsAppReplyMessage[])
+      .filter((row) => row.media_processing_status !== "pending")
+      .filter(isStaleProcessingReply);
+  } else if (!data?.length) {
+    const { data: processingData, error: processingError } = await params.supabase
+      .from("whatsapp_messages")
+      .select("id, tenant_id, contact_id, direction, media_processing_status, metadata, created_at")
+      .eq("id", params.messageId)
+      .eq("direction", "inbound")
+      .eq("metadata->>reply_processing_status", "processing")
+      .limit(1);
+
+    if (processingError) throw processingError;
+    staleProcessingRows = ((processingData || []) as PendingWhatsAppReplyMessage[])
+      .filter((row) => row.media_processing_status !== "pending")
+      .filter(isStaleProcessingReply);
+  }
+
+  const rows = [
+    ...((data || []) as PendingWhatsAppReplyMessage[])
+      .filter((row) => row.media_processing_status !== "pending"),
+    ...staleProcessingRows,
+  ].slice(0, normalizeLimit(params.limit));
   const results = [];
 
   for (const row of rows) {
