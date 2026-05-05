@@ -496,12 +496,13 @@ export async function prepareWhatsAppSalesReplyForContact(params: {
           failedEventName: "whatsapp_sales_reply_auto_send_failed",
         }
         : null;
+  const canAutoRespondAssigned = runtimeSettings.autonomyMode === "auto_respond_assigned";
   const canAutoSend = Boolean(
     autoReply?.shouldAutoSend
     && metadata.may_auto_send === true
     && params.autoSendFirstResponse === true
     && params.trigger !== "manual"
-    && !contact.assigned_user_id
+    && (!contact.assigned_user_id || canAutoRespondAssigned)
     && contact.phone_number
     && autoReply.source !== "deterministic_whatsapp_auto_reply"
   );
@@ -522,6 +523,7 @@ export async function prepareWhatsAppSalesReplyForContact(params: {
         enabled: params.autoSendFirstResponse === true,
         sla_minutes: reply.firstResponseSlaMinutes,
         can_auto_send: canAutoSend,
+        assigned_contact_auto_send: canAutoRespondAssigned,
       },
     },
     created_at: new Date().toISOString(),

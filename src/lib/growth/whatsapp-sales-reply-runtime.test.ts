@@ -349,6 +349,104 @@ describe("prepareWhatsAppSalesReplyForContact", () => {
     ]));
   });
 
+  it("envia automaticamente para contato atribuido quando autonomia permite atribuidos", async () => {
+    const inserts: Array<{ table: string; payload: any }> = [];
+    buildSalesLlmReplyMock.mockResolvedValueOnce({
+      provider: "openrouter",
+      model_used: "deepseek/deepseek-v4-pro",
+      reply: "Boa tarde. Como posso te ajudar hoje?",
+      lead_stage: "new",
+      intent: "new_lead",
+      confidence: 0.9,
+      risk_flags: [],
+      next_action: "entender demanda inicial",
+      should_auto_send: true,
+      expected_outcome: "cliente informa a demanda",
+    });
+    sendWhatsAppMessageMock.mockResolvedValueOnce({
+      provider: "evolution",
+      apiResponse: { ok: true },
+    });
+
+    const supabase: any = {
+      from: vi.fn((table: string) => {
+        if (table === "whatsapp_contacts") {
+          return makeSelectQuery({
+            data: { id: "contact-1", name: "Vitor", phone_number: "5511999999999", assigned_user_id: "user-1" },
+            error: null,
+          });
+        }
+
+        if (table === "tenant_settings") {
+          return makeSelectQuery({
+            data: {
+              ai_features: {
+                mayus_operating_partner: { enabled: false },
+                sales_llm_testbench: {
+                  enabled: true,
+                  default_model: "deepseek/deepseek-v4-pro",
+                  candidate_models: ["deepseek/deepseek-v4-pro"],
+                  routing_mode: "fixed",
+                },
+                whatsapp_agent: {
+                  autonomy_mode: "auto_respond_assigned",
+                },
+              },
+            },
+            error: null,
+          });
+        }
+
+        if (table === "whatsapp_messages") {
+          return makeSelectQuery({
+            data: [
+              { direction: "inbound", content: "Boa tarde", message_type: "text", created_at: "2026-05-05T18:37:51.000Z" },
+            ],
+            error: null,
+          });
+        }
+
+        return {
+          insert: vi.fn(async (payload: any) => {
+            inserts.push({ table, payload });
+            return { error: null };
+          }),
+        };
+      }),
+    };
+
+    const prepared = await prepareWhatsAppSalesReplyForContact({
+      supabase,
+      tenantId: "tenant-1",
+      contactId: "contact-1",
+      trigger: "evolution_webhook",
+      autoSendFirstResponse: true,
+    });
+
+    expect(prepared.autoSendResult).toEqual({
+      attempted: true,
+      status: "sent",
+      provider: "evolution",
+    });
+    expect(sendWhatsAppMessageMock).toHaveBeenCalledWith(expect.objectContaining({
+      text: "Boa tarde. Como posso te ajudar hoje?",
+    }));
+    expect(inserts).toEqual(expect.arrayContaining([
+      expect.objectContaining({
+        table: "system_event_logs",
+        payload: expect.objectContaining({
+          event_name: "whatsapp_sales_reply_prepared",
+          payload: expect.objectContaining({
+            first_response_policy: expect.objectContaining({
+              can_auto_send: true,
+              assigned_contact_auto_send: true,
+            }),
+          }),
+        }),
+      }),
+    ]));
+  });
+
   it("mantem revisao humana quando a LLM nao libera envio", async () => {
     const inserts: Array<{ table: string; payload: any }> = [];
     buildSalesLlmReplyMock.mockResolvedValueOnce({

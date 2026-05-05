@@ -420,6 +420,7 @@ Validacoes executadas:
 - [x] Webhooks Meta/Evolution de texto enfileiram resposta em `metadata.reply_processing_status = 'pending'` e retornam rapido; `/api/whatsapp/replies/process` prepara/envia resposta fora do webhook com `CRON_SECRET`.
 - [x] Fila de resposta preserva `reply_preferred_provider`, entao inbound Meta Cloud responde por Meta e inbound Evolution responde por Evolution sem fallback cruzado silencioso.
 - [x] Processor de respostas registra `whatsapp_reply_processed`, `whatsapp_reply_failed` e `whatsapp_reply_stale_pending` sem texto integral, signed URL ou segredo; falhas/pendencias atrasadas geram notificacoes internas deduplicadas.
+- [x] Autoenvio para contato ja atribuido permanece bloqueado por padrao, mas pode ser liberado por tenant com `whatsapp_agent.autonomy_mode = 'auto_respond_assigned'`.
 - [x] Deploy correto `mayus-premium-pro` do commit `3ea6b7d` ficou `READY/PROMOTED`; rotas protegidas retornaram `403` sem segredo, processor de midia retornou `picked: 0` e processor de respostas retornou `picked: 0` com `CRON_SECRET` de producao sem expor o valor.
 
 Bloqueios antes de marcar como `[x]`:
