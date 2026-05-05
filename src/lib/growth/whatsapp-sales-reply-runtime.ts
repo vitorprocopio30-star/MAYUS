@@ -17,6 +17,7 @@ import {
   type MayusOperatingPartnerConfig,
   type MayusOperatingPartnerCrmContext,
   type MayusOperatingPartnerDecision,
+  type MayusOfficeKnowledgeProfile,
   type MayusPreviousConversationEvent,
 } from "@/lib/agent/mayus-operating-partner";
 import {
@@ -58,6 +59,10 @@ async function loadSalesRuntimeSettings(params: {
   const testbench = features.sales_llm_testbench;
   const whatsappAgent = features.whatsapp_agent;
   const operatingPartner = features.mayus_operating_partner;
+  const officeKnowledge = features.office_knowledge_profile;
+  const officeProfile = officeKnowledge && typeof officeKnowledge === "object" && !Array.isArray(officeKnowledge)
+    ? officeKnowledge as Record<string, any>
+    : null;
 
   return {
     salesProfile: profile && typeof profile === "object"
@@ -88,6 +93,30 @@ async function loadSalesRuntimeSettings(params: {
           ? getStringArray(features.forbidden_claims)
           : getStringArray(profile.forbidden_claims),
       }
+      : null,
+    officeKnowledgeProfile: officeProfile
+      ? {
+        officeName: getStringValue(officeProfile.office_name) || getStringValue(officeProfile.officeName) || getStringValue(features.firm_name),
+        practiceAreas: getStringArray(officeProfile.practice_areas).length
+          ? getStringArray(officeProfile.practice_areas)
+          : getStringArray(officeProfile.practiceAreas),
+        triageRules: getStringArray(officeProfile.triage_rules).length
+          ? getStringArray(officeProfile.triage_rules)
+          : getStringArray(officeProfile.triageRules),
+        humanHandoffRules: getStringArray(officeProfile.human_handoff_rules).length
+          ? getStringArray(officeProfile.human_handoff_rules)
+          : getStringArray(officeProfile.humanHandoffRules),
+        communicationTone: getStringValue(officeProfile.communication_tone) || getStringValue(officeProfile.communicationTone),
+        requiredDocumentsByCase: getStringArray(officeProfile.required_documents_by_case).length
+          ? getStringArray(officeProfile.required_documents_by_case)
+          : getStringArray(officeProfile.requiredDocumentsByCase),
+        forbiddenClaims: getStringArray(officeProfile.forbidden_claims).length
+          ? getStringArray(officeProfile.forbidden_claims)
+          : getStringArray(officeProfile.forbiddenClaims),
+        pricingPolicy: getStringValue(officeProfile.pricing_policy) || getStringValue(officeProfile.pricingPolicy),
+        responseSla: getStringValue(officeProfile.response_sla) || getStringValue(officeProfile.responseSla),
+        departments: getStringArray(officeProfile.departments),
+      } satisfies MayusOfficeKnowledgeProfile
       : null,
     salesLlmTestbench: isExplicitlyEnabled(testbench)
       ? normalizeSalesLlmTestbenchConfig(testbench as Partial<SalesLlmTestbenchConfig>)
@@ -396,6 +425,7 @@ export async function prepareWhatsAppSalesReplyForContact(params: {
         phoneNumber: contact.phone_number,
         messages: orderedMessages,
         salesProfile: runtimeSettings.salesProfile,
+        officeKnowledgeProfile: runtimeSettings.officeKnowledgeProfile,
         crmContext,
         previousMayusEvent,
         salesTestbench: runtimeSettings.salesLlmTestbench,

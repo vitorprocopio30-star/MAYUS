@@ -181,6 +181,18 @@ describe("mayus-operating-partner", () => {
         qualificationQuestions: ["voce autorizou esse desconto?"],
         forbiddenClaims: ["causa ganha"],
       },
+      officeKnowledgeProfile: {
+        officeName: "Dutra Advocacia",
+        practiceAreas: ["bancario", "previdenciario"],
+        triageRules: ["em Credcesta, perguntar autorizacao e inicio do desconto"],
+        humanHandoffRules: ["preco e contrato exigem humano"],
+        communicationTone: "curto, seguro e consultivo",
+        requiredDocumentsByCase: ["contracheque com trecho do desconto"],
+        forbiddenClaims: ["resultado garantido"],
+        pricingPolicy: "nao informar honorarios no WhatsApp sem humano",
+        responseSla: "ate 5 minutos",
+        departments: ["Comercial", "Juridico"],
+      },
       crmContext: { crm_task_id: "crm-1", title: "Vitor", stage_name: "Qualificacao" },
       previousMayusEvent: { next_action: "tratar objecao de valor" },
       operatingPartner: { enabled: true, autonomy_mode: "high_supervised" },
@@ -190,7 +202,10 @@ describe("mayus-operating-partner", () => {
     expect(prompt).toContain("Estado conversacional MAYUS reconstruido");
     expect(prompt).toContain("Contexto CRM do contato");
     expect(prompt).toContain("Documento/playbook de vendas");
+    expect(prompt).toContain("Perfil operacional do escritorio");
     expect(prompt).toContain("Credcesta");
+    expect(prompt).toContain("Dutra Advocacia");
+    expect(prompt).toContain("preco e contrato exigem humano");
     expect(prompt).toContain("Se faltar configuracao do escritorio");
     expect(decision.conversation_state.stage).toBe("objection");
     expect(decision.reply).not.toContain("Aqui e o MAYUS");

@@ -135,6 +135,9 @@ describe("tenant doctor", () => {
     const operatingPartner = report.checks.find((item) => item.id === "agent:mayus_operating_partner");
     expect(operatingPartner?.status).toBe("warning");
     expect(operatingPartner?.nextAction).toContain("socio virtual");
+    const officeProfile = report.checks.find((item) => item.id === "office:knowledge_profile");
+    expect(officeProfile?.status).toBe("warning");
+    expect(officeProfile?.nextAction).toContain("Auto Setup Doctor");
   });
 
   it("auto-configures the sales LLM testbench with DeepSeek V4 Pro", async () => {
@@ -222,6 +225,20 @@ describe("tenant doctor", () => {
         }),
         whatsapp_agent: expect.objectContaining({
           autonomy_mode: "high_supervised",
+        }),
+      }),
+    })]));
+    const officeProfile = report.checks.find((item) => item.id === "office:knowledge_profile");
+    expect(officeProfile?.status).toBe("fixed");
+    expect(upserts).toEqual(expect.arrayContaining([expect.objectContaining({
+      tenant_id: "tenant-1",
+      ai_features: expect.objectContaining({
+        office_knowledge_profile: expect.objectContaining({
+          status: "draft",
+          triage_rules: expect.arrayContaining([expect.stringContaining("lead novo")]),
+          human_handoff_rules: expect.arrayContaining([expect.stringContaining("Escalar")]),
+          forbidden_claims: expect.arrayContaining(["causa ganha"]),
+          pricing_policy: expect.stringContaining("Nao informar preco fechado"),
         }),
       }),
     })]));

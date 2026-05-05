@@ -100,6 +100,30 @@ const DEFAULT_MAYUS_OPERATING_PARTNER = {
   },
 };
 
+const DEFAULT_OFFICE_KNOWLEDGE_PROFILE = {
+  status: "draft",
+  office_name: null,
+  practice_areas: [],
+  triage_rules: [
+    "Identificar se a pessoa e lead novo, cliente atual, suporte, cobranca ou fora de escopo antes de conduzir.",
+    "Pedir somente informacao minima para o proximo passo e evitar diagnostico juridico conclusivo sem humano.",
+  ],
+  human_handoff_rules: [
+    "Escalar quando houver pedido de advogado humano, urgencia juridica, preco/contrato/cobranca, status de processo sem base confirmada ou promessa de resultado.",
+  ],
+  communication_tone: "WhatsApp claro, humano, curto, seguro e consultivo, sem promessa juridica.",
+  required_documents_by_case: [],
+  forbidden_claims: [
+    "causa ganha",
+    "resultado garantido",
+    "direito confirmado sem analise humana",
+  ],
+  pricing_policy: "Nao informar preco fechado, contrato ou cobranca sem politica validada do escritorio e aprovacao humana.",
+  response_sla: "Responder primeiro contato em ate 5 minutos quando o canal estiver ativo.",
+  departments: [],
+  updated_at: null,
+};
+
 function check(params: TenantDoctorCheck): TenantDoctorCheck {
   return params;
 }
@@ -396,6 +420,20 @@ function getCommercialProfileMissingSignals(profile: Record<string, any> | null)
   return missing;
 }
 
+function getOfficeKnowledgeMissingSignals(profile: Record<string, any> | null) {
+  const missing = [
+    typeof profile?.office_name === "string" && profile.office_name.trim() ? null : "nome do escritorio",
+    Array.isArray(profile?.practice_areas) && profile.practice_areas.length > 0 ? null : "areas atendidas",
+    Array.isArray(profile?.triage_rules) && profile.triage_rules.length > 0 ? null : "regras de triagem",
+    Array.isArray(profile?.human_handoff_rules) && profile.human_handoff_rules.length > 0 ? null : "regras de handoff humano",
+    typeof profile?.communication_tone === "string" && profile.communication_tone.trim() ? null : "tom de comunicacao",
+    Array.isArray(profile?.forbidden_claims) && profile.forbidden_claims.length > 0 ? null : "promessas proibidas",
+    typeof profile?.pricing_policy === "string" && profile.pricing_policy.trim() ? null : "politica de preco/cobranca",
+  ].filter(Boolean) as string[];
+
+  return missing;
+}
+
 async function diagnoseCommercialSalesProfile(tenantId: string, supabase: DoctorSupabase) {
   const { data, error } = await supabase
     .from("tenant_settings")
@@ -429,6 +467,92 @@ async function diagnoseCommercialSalesProfile(tenantId: string, supabase: Doctor
     detail: `Faltam sinais para vendas consultivas: ${missing.join(", ")}.`,
     autoFixable: false,
     nextAction: "Responder no MAYUS: cliente ideal do escritorio, solucao central, PUV e 3 pilares autorais. Se nao houver PUV, pedir para o MAYUS montar uma proposta inicial.",
+  });
+}
+
+async function ensureOfficeKnowledgeProfile(tenantId: string, supabase: DoctorSupabase, autoFix: boolean) {
+  const { data, error } = await supabase
+    .from("tenant_settings")
+    .select("ai_features")
+    .eq("tenant_id", tenantId)
+    .maybeSingle();
+
+  if (error) throw error;
+
+  const aiFeatures = data?.ai_features && typeof data.ai_features === "object" ? data.ai_features as Record<string, any> : {};
+  const profile = aiFeatures.office_knowledge_profile && typeof aiFeatures.office_knowledge_profile === "object"
+    ? aiFeatures.office_knowledge_profile as Record<string, any>
+    : null;
+  const missing = getOfficeKnowledgeMissingSignals(profile);
+
+  if (missing.length === 0) {
+    return check({
+      id: "office:knowledge_profile",
+      category: "skills",
+      status: "ok",
+      title: "Perfil operacional do escritorio configurado",
+      detail: "Areas, triagem, handoff, tom, promessas proibidas e politica comercial estao disponiveis para o Operating Partner.",
+      autoFixable: true,
+    });
+  }
+
+  if (!autoFix) {
+    return check({
+      id: "office:knowledge_profile",
+      category: "skills",
+      status: "warning",
+      title: "Perfil operacional do escritorio incompleto",
+      detail: `Faltam sinais para o MAYUS operar como socio virtual: ${missing.join(", ")}.`,
+      autoFixable: true,
+      nextAction: "Rodar o Auto Setup Doctor para criar defaults seguros e depois validar areas, triagem, handoff, tom, documentos, preco e departamentos do escritorio.",
+    });
+  }
+
+  const existingProfile = profile && typeof profile === "object" ? profile : {};
+  const nextProfile = {
+    ...DEFAULT_OFFICE_KNOWLEDGE_PROFILE,
+    ...existingProfile,
+    triage_rules: Array.isArray(existingProfile.triage_rules) && existingProfile.triage_rules.length > 0
+      ? existingProfile.triage_rules
+      : DEFAULT_OFFICE_KNOWLEDGE_PROFILE.triage_rules,
+    human_handoff_rules: Array.isArray(existingProfile.human_handoff_rules) && existingProfile.human_handoff_rules.length > 0
+      ? existingProfile.human_handoff_rules
+      : DEFAULT_OFFICE_KNOWLEDGE_PROFILE.human_handoff_rules,
+    communication_tone: typeof existingProfile.communication_tone === "string" && existingProfile.communication_tone.trim()
+      ? existingProfile.communication_tone
+      : DEFAULT_OFFICE_KNOWLEDGE_PROFILE.communication_tone,
+    forbidden_claims: Array.isArray(existingProfile.forbidden_claims) && existingProfile.forbidden_claims.length > 0
+      ? existingProfile.forbidden_claims
+      : DEFAULT_OFFICE_KNOWLEDGE_PROFILE.forbidden_claims,
+    pricing_policy: typeof existingProfile.pricing_policy === "string" && existingProfile.pricing_policy.trim()
+      ? existingProfile.pricing_policy
+      : DEFAULT_OFFICE_KNOWLEDGE_PROFILE.pricing_policy,
+    response_sla: typeof existingProfile.response_sla === "string" && existingProfile.response_sla.trim()
+      ? existingProfile.response_sla
+      : DEFAULT_OFFICE_KNOWLEDGE_PROFILE.response_sla,
+    updated_at: new Date().toISOString(),
+  };
+
+  const { error: upsertError } = await supabase
+    .from("tenant_settings")
+    .upsert({
+      tenant_id: tenantId,
+      ai_features: {
+        ...aiFeatures,
+        office_knowledge_profile: nextProfile,
+      },
+    }, { onConflict: "tenant_id" });
+
+  if (upsertError) throw upsertError;
+
+  return check({
+    id: "office:knowledge_profile",
+    category: "skills",
+    status: "fixed",
+    title: "Perfil operacional do escritorio semeado",
+    detail: "Defaults seguros foram criados para triagem, handoff, tom, promessas proibidas, preco e SLA; faltam validar nome, areas, documentos e departamentos reais.",
+    autoFixable: true,
+    fixed: true,
   });
 }
 
@@ -762,6 +886,7 @@ export async function runTenantDoctor(params: {
   checks.push(...await ensureCrmDefaults(params.tenantId, supabase, autoFix));
   checks.push(await diagnoseAgentSkills(params.tenantId, supabase, ensureDefaultSkills, autoFix));
   checks.push(await diagnoseCommercialSalesProfile(params.tenantId, supabase));
+  checks.push(await ensureOfficeKnowledgeProfile(params.tenantId, supabase, autoFix));
   checks.push(await ensureSalesLlmTestbench(params.tenantId, supabase, autoFix));
   checks.push(await ensureMayusOperatingPartner(params.tenantId, supabase, autoFix));
 

@@ -24,12 +24,12 @@ Legenda:
 | --- | ---: | --- |
 | MAYUS geral | 78% | Produto forte, WhatsApp multimodal, bloqueio de grupos, recuperacao de locks, observabilidade, fila de resposta, fast-path de texto e ACK de midia evoluiram, mas ainda nao e o socio virtual completo. |
 | Produto juridico/base SaaS | 78% | Dashboard, CRM, documentos, juridico, agenda, marketing e permissoes ja existem. |
-| Maturidade agentica | 53% | Ha runtime, artifacts, skills, Operating Partner ativo em WhatsApp e auditoria, mas ainda falta um operador central continuo em todos os modulos. |
+| Maturidade agentica | 54% | Ha runtime, artifacts, skills, Operating Partner ativo em WhatsApp, perfil operacional do escritorio no prompt e auditoria, mas ainda falta um operador central continuo em todos os modulos. |
 | WhatsApp vendas/suporte | 90% | Evolution passou smoke multimodal anterior, fast-path de contracheque, ACK de midia deployado, bloqueio de grupos, filas zeradas e recuperacao de locks; faltam smoke privado fechado com PDF novo, Meta Cloud e conversas longas. |
 | Growth/vendas | 72% | Intake, qualificacao, follow-up, reativacao, sales profile e uso do documento de vendas como playbook existem; falta fechar execucao real ponta a ponta. |
 | Juridico/Lex | 82% | Base juridica e documental esta forte; faltam contradicoes, cronologia, riscos e mais automacao segura. |
 | Financeiro | 48% | Asaas/fluxo planejado existem, mas cobranca operacional completa ainda precisa smoke e UX. |
-| Auto-configuracao | 45% | Setup Doctor e sales profile existem; falta onboarding completo do escritorio. |
+| Auto-configuracao | 48% | Setup Doctor, sales profile e `office_knowledge_profile` inicial existem; falta onboarding completo do escritorio e validacao real das politicas por area/equipe. |
 | UX sem curso | 60% | WhatsApp ganhou controles melhores, mas o usuario ainda precisa entender demais o sistema. |
 | Integracoes e operacao real | 76% | WhatsApp Evolution tem smoke, observabilidade, alerta de falha, job assincrono validado manualmente, fast-path imediato, ACK de midia deployado, bloqueio de grupos e filas zeradas; faltam smoke privado fechado com PDF novo, Meta Cloud e scheduler automatico observado. |
 
@@ -88,6 +88,7 @@ O MAYUS pode agir, mas acoes juridicas, financeiras ou externas sensiveis exigem
 - [x] Registry de skills, roteamento e dispatcher para varios fluxos.
 - [x] Auditoria agentica separada de eventos operacionais em parte relevante do sistema.
 - [~] `mayus_operating_partner` existe e ja atua em vendas/suporte, mas ainda nao e o centro unico de toda conversa.
+- [~] Operating Partner ja consome `office_knowledge_profile` no WhatsApp quando configurado: areas, triagem, handoff, tom, documentos, promessas proibidas, preco/SLA e departamentos entram no prompt.
 - [ ] Fazer o Operating Partner ser o motor padrao de decisao nos modulos criticos.
 - [ ] Criar estado de missao reconstruivel: objetivo, contexto, etapa, ferramentas usadas, bloqueios, fontes e proxima acao.
 - [ ] Criar streaming/status incremental de missao na UI.
@@ -208,6 +209,7 @@ O MAYUS pode agir, mas acoes juridicas, financeiras ou externas sensiveis exigem
 - [x] Doctor aplica defaults seguros quando nao envolve credenciais/sensibilidade.
 - [x] Doctor cria artifact agentico e learning event.
 - [x] Sales profile setup auto-configura perfil comercial por chat.
+- [~] `office_knowledge_profile` inicial foi adicionado em `tenant_settings.ai_features`: Setup Doctor diagnostica/auto-semeia defaults seguros, e o Operating Partner usa o perfil no WhatsApp; ainda falta entrevista/onboarding para preencher dados reais do escritorio.
 - [~] Doctor identifica perfil comercial incompleto e orienta acao humana.
 - [ ] Onboarding conversacional completo: areas, equipe, tom, permissoes, objetivos e rotina.
 - [ ] Pipeline juridico padrao por area de atuacao e objetivo do escritorio.
@@ -448,6 +450,7 @@ Validacoes executadas:
 - [x] Bloqueio de grupos WhatsApp implementado e deployado: webhook Evolution ignora `remoteJid` `@g.us` antes de tenant/contato/mensagem/resposta, e `sendWhatsAppMessage` rejeita envio para JID de grupo; validado localmente e publicado no deploy `dpl_7u3Mg6DwFHejgGCMVTaezKo5JMgJ`.
 - [x] Limpeza operacional pos-incidente: 1 contato de grupo WhatsApp e 50 mensagens recentes vinculadas foram marcadas com `group_chat_ignored = true`; replies pendentes/processando foram convertidas para `ignored_group_chat` e midias pendentes para `unsupported`, sem apagar historico.
 - [x] Processor de respostas WhatsApp recupera locks `processing` antigos: se houver qualquer mensagem mais nova no contato ou se o lock passou de 10 minutos, marca como processado/suprimido sem autoenvio; se for lock recente sem mensagem mais nova, reprocessa com limite de tentativas e evento sanitizado. Validado com 24 testes focados, typecheck, deploy `dpl_6UaJmVwQC32D1rJCsRVXGLqcP4rz`, e limpeza operacional deixou `processing_count: 0`, `pending_reply_count: 0`, `pending_media_count: 0`.
+- [~] `office_knowledge_profile` implementado em codigo: runtime WhatsApp carrega o perfil operacional do escritorio de `tenant_settings.ai_features`, envia ao MAYUS Operating Partner e Setup Doctor diagnostica/auto-semeia defaults seguros. Validado localmente com `src/lib/agent/mayus-operating-partner.test.ts`, `src/lib/growth/whatsapp-sales-reply-runtime.test.ts`, `src/lib/setup/tenant-doctor.test.ts` e typecheck; falta deploy, seed controlado do tenant real e smoke privado fechado.
 
 Bloqueios antes de marcar como `[x]`:
 

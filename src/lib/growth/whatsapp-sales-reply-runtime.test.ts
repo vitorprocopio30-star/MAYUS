@@ -656,6 +656,18 @@ describe("prepareWhatsAppSalesReplyForContact", () => {
                   enabled: true,
                   autonomy_mode: "high_supervised",
                 },
+                office_knowledge_profile: {
+                  office_name: "Dutra Advocacia",
+                  practice_areas: ["bancario"],
+                  triage_rules: ["Perguntar nome do desconto antes de falar em acao."],
+                  human_handoff_rules: ["Preco, contrato e urgencia juridica exigem humano."],
+                  communication_tone: "curto e seguro",
+                  required_documents_by_case: ["contracheque com trecho do desconto"],
+                  forbidden_claims: ["resultado garantido"],
+                  pricing_policy: "Nao informar honorarios sem humano.",
+                  response_sla: "ate 5 minutos",
+                  departments: ["Comercial"],
+                },
               },
             },
             error: null,
@@ -695,6 +707,13 @@ describe("prepareWhatsAppSalesReplyForContact", () => {
       { type: "create_crm_lead", status: "executed", detail: "Lead criado no CRM.", record_id: "crm-1" },
     ]);
     expect(buildSalesLlmReplyMock).not.toHaveBeenCalled();
+    expect(buildMayusOperatingPartnerDecisionMock).toHaveBeenCalledWith(expect.objectContaining({
+      officeKnowledgeProfile: expect.objectContaining({
+        officeName: "Dutra Advocacia",
+        practiceAreas: ["bancario"],
+        pricingPolicy: "Nao informar honorarios sem humano.",
+      }),
+    }));
     expect(executeMayusOperatingPartnerActionsMock).toHaveBeenCalledWith(expect.objectContaining({
       tenantId: "tenant-1",
       contact: expect.objectContaining({ id: "contact-1" }),

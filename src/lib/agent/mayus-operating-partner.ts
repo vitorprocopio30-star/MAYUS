@@ -105,6 +105,19 @@ export type MayusOperatingPartnerCrmContext = {
   last_movement_at?: string | null;
 };
 
+export type MayusOfficeKnowledgeProfile = {
+  officeName?: string | null;
+  practiceAreas?: string[] | null;
+  triageRules?: string[] | null;
+  humanHandoffRules?: string[] | null;
+  communicationTone?: string | null;
+  requiredDocumentsByCase?: string[] | null;
+  forbiddenClaims?: string[] | null;
+  pricingPolicy?: string | null;
+  responseSla?: string | null;
+  departments?: string[] | null;
+};
+
 export type MayusPreviousConversationEvent = {
   created_at?: string | null;
   reply_source?: string | null;
@@ -152,6 +165,7 @@ export type MayusOperatingPartnerInput = {
     offerPositioning?: string | null;
     forbiddenClaims?: string[] | null;
   } | null;
+  officeKnowledgeProfile?: MayusOfficeKnowledgeProfile | null;
   crmContext?: MayusOperatingPartnerCrmContext | null;
   previousMayusEvent?: MayusPreviousConversationEvent | null;
   operatingPartner?: Partial<MayusOperatingPartnerConfig> | null;
@@ -464,10 +478,17 @@ function chooseModel(input: MayusOperatingPartnerInput) {
 
 function buildPrompt(input: MayusOperatingPartnerInput, config: MayusOperatingPartnerConfig, model: string, deterministicIntent: MayusOperatingPartnerIntent, state: MayusConversationState, closingReadiness: MayusClosingReadiness, supportSummary: MayusSupportSummary) {
   const profile = input.salesProfile || {};
+  const officeProfile = input.officeKnowledgeProfile || {};
   const pillars = Array.isArray(profile.valuePillars) ? profile.valuePillars.filter(Boolean).join(", ") : "";
   const salesRules = Array.isArray(profile.salesRules) ? profile.salesRules.filter(Boolean).join("; ") : "";
   const qualificationQuestions = Array.isArray(profile.qualificationQuestions) ? profile.qualificationQuestions.filter(Boolean).join("; ") : "";
   const forbiddenClaims = Array.isArray(profile.forbiddenClaims) ? profile.forbiddenClaims.filter(Boolean).join("; ") : "";
+  const officePracticeAreas = Array.isArray(officeProfile.practiceAreas) ? officeProfile.practiceAreas.filter(Boolean).join(", ") : "";
+  const officeTriageRules = Array.isArray(officeProfile.triageRules) ? officeProfile.triageRules.filter(Boolean).join("; ") : "";
+  const officeHandoffRules = Array.isArray(officeProfile.humanHandoffRules) ? officeProfile.humanHandoffRules.filter(Boolean).join("; ") : "";
+  const officeDocuments = Array.isArray(officeProfile.requiredDocumentsByCase) ? officeProfile.requiredDocumentsByCase.filter(Boolean).join("; ") : "";
+  const officeForbiddenClaims = Array.isArray(officeProfile.forbiddenClaims) ? officeProfile.forbiddenClaims.filter(Boolean).join("; ") : "";
+  const officeDepartments = Array.isArray(officeProfile.departments) ? officeProfile.departments.filter(Boolean).join(", ") : "";
 
   return [
     "Voce e o MAYUS, socio virtual operacional de um escritorio de advocacia brasileiro.",
@@ -503,6 +524,18 @@ function buildPrompt(input: MayusOperatingPartnerInput, config: MayusOperatingPa
     `Regras comerciais do playbook: ${salesRules || "nao configuradas"}`,
     `Perguntas de qualificacao do playbook: ${qualificationQuestions || "nao configuradas"}`,
     `Claims/promessas proibidas: ${forbiddenClaims || "nao configurados"}`,
+    "",
+    "Perfil operacional do escritorio:",
+    `Nome do escritorio: ${cleanText(officeProfile.officeName) || "nao configurado"}`,
+    `Areas atendidas: ${officePracticeAreas || "nao configuradas"}`,
+    `Regras de triagem: ${officeTriageRules || "nao configuradas"}`,
+    `Quando escalar humano: ${officeHandoffRules || "nao configurado"}`,
+    `Tom de comunicacao: ${cleanText(officeProfile.communicationTone) || "nao configurado"}`,
+    `Documentos por tipo de caso: ${officeDocuments || "nao configurados"}`,
+    `Promessas proibidas do escritorio: ${officeForbiddenClaims || "nao configuradas"}`,
+    `Politica de preco/cobranca: ${cleanText(officeProfile.pricingPolicy) || "nao configurada"}`,
+    `SLA de resposta: ${cleanText(officeProfile.responseSla) || "nao configurado"}`,
+    `Departamentos/responsaveis: ${officeDepartments || "nao configurados"}`,
     "",
     "Estado conversacional MAYUS reconstruido:",
     JSON.stringify(state),
