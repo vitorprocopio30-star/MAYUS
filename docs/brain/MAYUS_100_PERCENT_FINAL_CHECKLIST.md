@@ -2,7 +2,7 @@
 
 Fonte oficial atual para decidir o que falta para o MAYUS chegar a 100%.
 
-Atualizado em: 2026-05-04
+Atualizado em: 2026-05-05
 
 Este documento substitui os checklists espalhados como fonte principal de execucao. Os arquivos antigos continuam como historico tecnico, evidencias e detalhes de implementacao.
 
@@ -22,16 +22,16 @@ Legenda:
 
 | Frente | Percentual | Leitura honesta |
 | --- | ---: | --- |
-| MAYUS geral | 69% | Produto forte, mas ainda nao e o socio virtual completo. |
+| MAYUS geral | 72% | Produto forte, WhatsApp multimodal e observabilidade evoluiram, mas ainda nao e o socio virtual completo. |
 | Produto juridico/base SaaS | 78% | Dashboard, CRM, documentos, juridico, agenda, marketing e permissoes ja existem. |
 | Maturidade agentica | 52% | Ha runtime, artifacts, skills e auditoria, mas ainda falta um operador central continuo. |
-| WhatsApp vendas/suporte | 65% | Ganhou multimodal privado, etiquetas, estado agentico parcial e processamento assíncrono; ainda precisa smokes reais e conversas longas. |
+| WhatsApp vendas/suporte | 78% | Evolution passou smoke real multimodal, ganhou observabilidade e painel; falta Meta Cloud, alertas e conversas longas. |
 | Growth/vendas | 70% | Intake, qualificacao, follow-up, reativacao e sales profile existem; falta fechar execucao real ponta a ponta. |
 | Juridico/Lex | 82% | Base juridica e documental esta forte; faltam contradicoes, cronologia, riscos e mais automacao segura. |
 | Financeiro | 48% | Asaas/fluxo planejado existem, mas cobranca operacional completa ainda precisa smoke e UX. |
 | Auto-configuracao | 45% | Setup Doctor e sales profile existem; falta onboarding completo do escritorio. |
-| UX sem curso | 58% | Varias telas ajudam, mas o usuario ainda precisa entender demais o sistema. |
-| Integracoes e operacao real | 60% | Muitos endpoints e testes existem; faltam smokes reais e observabilidade final. |
+| UX sem curso | 60% | WhatsApp ganhou controles melhores, mas o usuario ainda precisa entender demais o sistema. |
+| Integracoes e operacao real | 64% | WhatsApp Evolution tem smoke e observabilidade; faltam Meta Cloud, alertas e smokes sensiveis finais. |
 
 ### O que ja e usavel
 
@@ -273,7 +273,7 @@ O MAYUS pode agir, mas acoes juridicas, financeiras ou externas sensiveis exigem
 - [~] WhatsApp multimodal tem schema/helper/webhooks/UI iniciais, mas ainda precisa smokes reais, idempotencia e processamento async.
 - [ ] Smoke real controlado de Asaas, ZapSign, Escavador, WhatsApp e Drive.
 - [ ] Smoke real especifico de WhatsApp: inbound texto, imagem, audio, documento, outbound texto, audio, imagem/documento e fallback de provider.
-- [~] Observabilidade de midia WhatsApp: processor registra eventos sanitizados por midia e batch com duracao/status; ainda falta dashboard/alerta operacional.
+- [~] Observabilidade de midia WhatsApp: processor registra eventos sanitizados por midia/batch e a tela WhatsApp mostra painel admin; ainda faltam alertas operacionais.
 - [ ] Observabilidade por skill, rota, webhook, provedor LLM e custo.
 - [ ] Alertas de falha de webhook e provider.
 - [ ] Checklist de release com build, typecheck, testes focados, E2E essencial e diff-check.
@@ -410,6 +410,8 @@ Validacoes executadas:
 - [x] Smoke real revelou e corrigiu politica de MIME do bucket para DOC/DOCX em `whatsapp-media`.
 - [x] Observabilidade inicial do processor WhatsApp registra `whatsapp_media_processed`, `whatsapp_media_failed` e `whatsapp_media_batch_processed` em `system_event_logs` sem texto integral, signed URL ou segredo.
 - [x] Deploy correto `mayus-premium-pro` do commit `d1d41fa` ficou `READY/PROMOTED`; rota `https://mayus-premium-pro.vercel.app/api/whatsapp/media/process?limit=1` respondeu `200 OK`, `picked: 0`, e gravou `whatsapp_media_batch_processed`.
+- [x] Painel admin de observabilidade WhatsApp na tela `/dashboard/conversas/whatsapp` consome API sanitizada e mostra pendentes, falhas, processadas 24h, tempo medio, ultimo batch e eventos recentes sem expor texto de midia, signed URL ou segredo.
+- [x] Processor protegido em `mayus-premium-pro` reprocessou fila real com `picked: 8`, `processed: 5`, `unsupported: 3`, `failed: 0`, `replies_prepared: 8`; readiness voltou para `pending_count: 0`.
 
 Bloqueios antes de marcar como `[x]`:
 
@@ -419,7 +421,7 @@ Bloqueios antes de marcar como `[x]`:
 - [x] Idempotencia de mensagem inbound.
 - [ ] Smoke real Meta Cloud/Evolution com texto, imagem, audio e documento.
 - [ ] Smoke real Meta Cloud ainda pendente; Evolution passou para texto, imagem, audio, PDF/DOCX e outbound texto.
-- [~] Observabilidade de midia existe no processor; ainda faltam dashboard/alertas e smoke Meta Cloud.
+- [~] Observabilidade de midia existe no processor e no painel admin; ainda faltam alertas e smoke Meta Cloud.
 - [x] Aplicar migration `20260504120000_whatsapp_media_labels.sql` antes do smoke real.
 - [x] Confirmar `CRON_SECRET` efetivo do projeto Vercel usado no smoke ou atualizar `.env.local`/Vercel para ficarem alinhados.
 

@@ -1,6 +1,6 @@
 ﻿"use client";
 
-import { useState, useEffect, useRef } from "react";
+import { useCallback, useState, useEffect, useRef } from "react";
 import { Cormorant_Garamond, Montserrat } from "next/font/google";
 import { createClient } from "@/lib/supabase/client";
 import { useUserProfile } from "@/hooks/useUserProfile";
@@ -47,6 +47,40 @@ const inferWhatsAppMediaType = (file: File) => {
 
 const labelColorOptions = ["#CCA761", "#25D366", "#60A5FA", "#F97316", "#EF4444", "#A855F7"];
 
+type WhatsAppMediaObservability = {
+  generated_at: string;
+  window_hours: number;
+  metrics: {
+    pending_media: number;
+    failed_media_total: number;
+    events_24h: number;
+    media_processed_24h: number;
+    media_failed_24h: number;
+    batches_24h: number;
+    avg_media_duration_ms: number;
+    last_batch: null | {
+      created_at: string;
+      picked: number;
+      processed: number;
+      failed: number;
+      duration_ms: number;
+    };
+  };
+  events: Array<{
+    event_name: string;
+    status: string;
+    provider: string | null;
+    created_at: string;
+    kind: string | null;
+    media_status: string | null;
+    duration_ms: number;
+    picked: number | null;
+    processed: number | null;
+    failed: number | null;
+    error: string | null;
+  }>;
+};
+
 export default function WhatsAppChatPremiumPage() {
   const { profile } = useUserProfile();
   const supabase = createClient();
@@ -92,6 +126,8 @@ export default function WhatsAppChatPremiumPage() {
   const [labelColorDraft, setLabelColorDraft] = useState("#CCA761");
   const [rightPanelMode, setRightPanelMode] = useState<"expanded" | "mini">("expanded");
   const [areConversationFiltersExpanded, setAreConversationFiltersExpanded] = useState(true);
+  const [mediaObservability, setMediaObservability] = useState<WhatsAppMediaObservability | null>(null);
+  const [isLoadingMediaObservability, setIsLoadingMediaObservability] = useState(false);
 
   // Permissoes
   const isAdmin = profile?.role === 'Administrador' || profile?.role === 'mayus_admin' || profile?.role === 'Sócio';
@@ -602,6 +638,26 @@ export default function WhatsAppChatPremiumPage() {
       setIsConversationActionPending(false);
     }
   };
+
+  const loadMediaObservability = useCallback(async () => {
+    if (!isAdmin) return;
+    setIsLoadingMediaObservability(true);
+    try {
+      const response = await fetch('/api/whatsapp/media/observability', { cache: 'no-store' });
+      const data = await response.json().catch(() => null);
+      if (!response.ok) throw new Error(data?.error || "Falha ao carregar observabilidade.");
+      setMediaObservability(data);
+    } catch (error: any) {
+      toast.error(error?.message || "Falha ao carregar observabilidade WhatsApp.");
+    } finally {
+      setIsLoadingMediaObservability(false);
+    }
+  }, [isAdmin]);
+
+  useEffect(() => {
+    if (!profile?.tenant_id || !isAdmin) return;
+    loadMediaObservability();
+  }, [profile?.tenant_id, isAdmin, loadMediaObservability]);
 
   const handleSaveContactLabel = async () => {
     const label = labelDraft.trim().slice(0, 40);
@@ -1288,6 +1344,15 @@ export default function WhatsAppChatPremiumPage() {
                >
                  <Lock size={18} />
                </button>
+               {isAdmin && (
+                 <button
+                   onClick={() => setRightPanelMode("expanded")}
+                   className="flex h-10 w-10 items-center justify-center rounded-xl border border-white/5 bg-white/5 text-emerald-300 transition-colors hover:bg-emerald-400 hover:text-black"
+                   title="Observabilidade de midia"
+                 >
+                   <Zap size={18} />
+                 </button>
+               )}
             </div>
          )}
 
@@ -1308,6 +1373,89 @@ export default function WhatsAppChatPremiumPage() {
                    <h3 className="text-2xl font-bold text-white text-center italic group-hover:text-[#CCA761] transition-colors">{activeContact.name}</h3>
                    <div className="bg-[#CCA761]/10 border border-[#CCA761]/20 text-[#CCA761] px-4 py-1.5 rounded-full text-[9px] font-black uppercase mt-3 tracking-widest">{serviceStatusLabel}</div>
                 </div>
+
+                {isAdmin && (
+                  <div className="space-y-4">
+                    <div className="flex items-center justify-between gap-3">
+                      <div className="flex items-center gap-2 text-gray-500 font-black uppercase text-[10px] tracking-widest">
+                        <Zap size={14} className="text-emerald-300" /> Observabilidade Midia
+                      </div>
+                      <button
+                        onClick={loadMediaObservability}
+                        disabled={isLoadingMediaObservability}
+                        className="rounded-full border border-white/10 bg-white/5 px-2.5 py-1 text-[8px] font-black uppercase tracking-widest text-gray-400 transition-colors hover:border-emerald-300/40 hover:text-emerald-200 disabled:opacity-40"
+                      >
+                        {isLoadingMediaObservability ? "Atualizando" : "Atualizar"}
+                      </button>
+                    </div>
+                    <div className="rounded-2xl border border-emerald-400/10 bg-emerald-400/[0.04] p-5 space-y-4">
+                      <div className="grid grid-cols-2 gap-3">
+                        <div className="rounded-xl border border-white/5 bg-[#111] p-3">
+                          <span className="block text-[8px] font-black uppercase tracking-widest text-gray-600">Pendentes</span>
+                          <span className="text-lg font-black text-white">{mediaObservability?.metrics.pending_media ?? 0}</span>
+                        </div>
+                        <div className="rounded-xl border border-white/5 bg-[#111] p-3">
+                          <span className="block text-[8px] font-black uppercase tracking-widest text-gray-600">Falhas</span>
+                          <span className={`text-lg font-black ${(mediaObservability?.metrics.failed_media_total || 0) > 0 ? "text-red-300" : "text-emerald-300"}`}>
+                            {mediaObservability?.metrics.failed_media_total ?? 0}
+                          </span>
+                        </div>
+                        <div className="rounded-xl border border-white/5 bg-[#111] p-3">
+                          <span className="block text-[8px] font-black uppercase tracking-widest text-gray-600">Processadas 24h</span>
+                          <span className="text-lg font-black text-white">{mediaObservability?.metrics.media_processed_24h ?? 0}</span>
+                        </div>
+                        <div className="rounded-xl border border-white/5 bg-[#111] p-3">
+                          <span className="block text-[8px] font-black uppercase tracking-widest text-gray-600">Tempo medio</span>
+                          <span className="text-lg font-black text-white">{Math.round((mediaObservability?.metrics.avg_media_duration_ms || 0) / 1000)}s</span>
+                        </div>
+                      </div>
+
+                      <div className="rounded-xl border border-white/5 bg-black/40 p-3">
+                        <div className="mb-2 flex items-center justify-between gap-2">
+                          <span className="text-[8px] font-black uppercase tracking-widest text-gray-600">Ultimo batch</span>
+                          <span className="text-[8px] font-bold uppercase text-gray-500">{mediaObservability?.metrics.batches_24h ?? 0} em 24h</span>
+                        </div>
+                        {mediaObservability?.metrics.last_batch ? (
+                          <div className="grid grid-cols-3 gap-2 text-center">
+                            <div>
+                              <span className="block text-[8px] uppercase text-gray-600">Pegou</span>
+                              <strong className="text-xs text-white">{mediaObservability.metrics.last_batch.picked}</strong>
+                            </div>
+                            <div>
+                              <span className="block text-[8px] uppercase text-gray-600">OK</span>
+                              <strong className="text-xs text-emerald-300">{mediaObservability.metrics.last_batch.processed}</strong>
+                            </div>
+                            <div>
+                              <span className="block text-[8px] uppercase text-gray-600">Falhou</span>
+                              <strong className="text-xs text-red-300">{mediaObservability.metrics.last_batch.failed}</strong>
+                            </div>
+                          </div>
+                        ) : (
+                          <p className="text-xs text-gray-500">Nenhum batch registrado nas ultimas 24h.</p>
+                        )}
+                      </div>
+
+                      <div className="space-y-2">
+                        <span className="text-[8px] font-black uppercase tracking-widest text-gray-600">Eventos recentes</span>
+                        {(mediaObservability?.events || []).slice(0, 4).map((event, index) => (
+                          <div key={`${event.event_name}-${event.created_at}-${index}`} className="rounded-xl border border-white/5 bg-black/30 p-3">
+                            <div className="flex items-center justify-between gap-2">
+                              <span className="truncate text-[10px] font-black uppercase tracking-widest text-gray-300">{event.event_name.replace("whatsapp_media_", "")}</span>
+                              <span className={`rounded-full px-2 py-0.5 text-[8px] font-black uppercase ${event.status === "error" ? "bg-red-400/10 text-red-300" : "bg-emerald-400/10 text-emerald-300"}`}>{event.status}</span>
+                            </div>
+                            <p className="mt-1 truncate text-[10px] text-gray-500">
+                              {event.provider || "mayus"} {event.kind ? `- ${event.kind}` : ""} {event.duration_ms ? `- ${Math.round(event.duration_ms / 1000)}s` : ""}
+                            </p>
+                            {event.error && <p className="mt-1 line-clamp-2 text-[10px] text-red-200/80">{event.error}</p>}
+                          </div>
+                        ))}
+                        {!mediaObservability && (
+                          <p className="text-xs text-gray-500">Carregando dados sanitizados de midia...</p>
+                        )}
+                      </div>
+                    </div>
+                  </div>
+                )}
 
                 {/* Modulo Kanban */}
                 <div className="space-y-4">
