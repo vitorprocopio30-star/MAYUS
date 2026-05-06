@@ -94,7 +94,7 @@ function detectLeadTopic(lastInboundText: string | null) {
   }
 
   if (
-    /contracheque|holerite|folha|margem consignavel|consignado|emprestimo consignado|rmc|rcc/.test(normalized)
+    /credcesta|contracheque|holerite|folha|margem consignavel|consignado|emprestimo consignado|rmc|rcc/.test(normalized)
     || (/desconto|descontando|descontaram|desconta/.test(normalized) && /salario|beneficio|inss|aposentadoria|contracheque|holerite|folha/.test(normalized))
   ) {
     return "payroll_discount";

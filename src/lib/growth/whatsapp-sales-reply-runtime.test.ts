@@ -605,6 +605,20 @@ describe("prepareWhatsAppSalesReplyForContact", () => {
     expect(prepared.autoSendResult).toEqual({ attempted: false, status: "skipped" });
     expect(sendWhatsAppMessageMock).not.toHaveBeenCalled();
     expect(prepared.metadata.requires_human_review).toBe(true);
+    expect(inserts).toEqual(expect.arrayContaining([
+      expect.objectContaining({
+        table: "system_event_logs",
+        payload: expect.objectContaining({
+          event_name: "whatsapp_sales_reply_prepared",
+          payload: expect.objectContaining({
+            first_response_policy: expect.objectContaining({
+              can_auto_send: false,
+              blocked_reason: "reply_not_marked_auto_send",
+            }),
+          }),
+        }),
+      }),
+    ]));
     expect(inserts.filter((insert) => insert.table === "system_event_logs")).toHaveLength(1);
   });
 
@@ -736,7 +750,7 @@ describe("prepareWhatsAppSalesReplyForContact", () => {
     ]));
   });
 
-  it("nao empilha Sales LLM quando o socio virtual expira no webhook", async () => {
+  it("autoenvia fallback seguro quando o socio virtual expira em desconto no contracheque", async () => {
     const inserts: Array<{ table: string; payload: any }> = [];
     buildMayusOperatingPartnerDecisionMock.mockRejectedValueOnce(new Error("Timeout em MAYUS Operating Partner apos 8000ms."));
     sendWhatsAppMessageMock.mockResolvedValueOnce({
@@ -806,8 +820,15 @@ describe("prepareWhatsAppSalesReplyForContact", () => {
     expect(buildSalesLlmReplyMock).not.toHaveBeenCalled();
     expect(prepared.metadata.reply_source).toBe("deterministic_fallback");
     expect(prepared.metadata.fallback_reason).toBe("operating_partner:provider_timeout");
-    expect(prepared.autoSendResult).toEqual({ attempted: false, status: "skipped" });
-    expect(sendWhatsAppMessageMock).not.toHaveBeenCalled();
+    expect(prepared.autoSendResult).toEqual({ attempted: true, status: "sent", provider: "evolution" });
+    expect(sendWhatsAppMessageMock).toHaveBeenCalledWith(expect.objectContaining({
+      preferredProvider: "evolution",
+      text: expect.stringContaining("qual nome no contracheque"),
+      metadata: expect.objectContaining({
+        source: "deterministic_whatsapp_auto_reply",
+        intent: "deterministic_whatsapp_sales_reply",
+      }),
+    }));
     expect(inserts).toEqual(expect.arrayContaining([
       expect.objectContaining({
         table: "system_event_logs",
@@ -817,6 +838,93 @@ describe("prepareWhatsAppSalesReplyForContact", () => {
             mayus_operating_partner: expect.objectContaining({
               failed: true,
               fallback: "deterministic_whatsapp_sales_reply",
+            }),
+            first_response_policy: expect.objectContaining({
+              can_auto_send: true,
+              blocked_reason: null,
+            }),
+          }),
+        }),
+      }),
+      expect.objectContaining({
+        table: "system_event_logs",
+        payload: expect.objectContaining({
+          event_name: "whatsapp_sales_reply_auto_sent",
+        }),
+      }),
+    ]));
+  });
+
+  it("classifica Credcesta como desconto em folha e autoenvia fallback seguro", async () => {
+    const inserts: Array<{ table: string; payload: any }> = [];
+    buildMayusOperatingPartnerDecisionMock.mockRejectedValueOnce(new Error("Timeout em MAYUS Operating Partner apos 8000ms."));
+
+    const supabase: any = {
+      from: vi.fn((table: string) => {
+        if (table === "whatsapp_contacts") {
+          return makeSelectQuery({
+            data: { id: "contact-1", name: "Vitor", phone_number: "5511999999999", assigned_user_id: null },
+            error: null,
+          });
+        }
+
+        if (table === "tenant_settings") {
+          return makeSelectQuery({
+            data: {
+              ai_features: {
+                sales_llm_testbench: { enabled: true },
+                mayus_operating_partner: { enabled: true },
+                whatsapp_agent: { autonomy_mode: "auto_respond" },
+              },
+            },
+            error: null,
+          });
+        }
+
+        if (table === "whatsapp_messages") {
+          return makeSelectQuery({
+            data: [
+              { direction: "inbound", content: "O credcesta", message_type: "text", created_at: "2026-05-05T18:37:51.000Z" },
+            ],
+            error: null,
+          });
+        }
+
+        return {
+          insert: vi.fn(async (payload: any) => {
+            inserts.push({ table, payload });
+            return { error: null };
+          }),
+        };
+      }),
+    };
+
+    sendWhatsAppMessageMock.mockResolvedValueOnce({ provider: "evolution", apiResponse: { ok: true } });
+
+    const prepared = await prepareWhatsAppSalesReplyForContact({
+      supabase,
+      tenantId: "tenant-1",
+      contactId: "contact-1",
+      trigger: "evolution_webhook",
+      autoSendFirstResponse: true,
+      preferredProvider: "evolution",
+    });
+
+    expect(prepared.metadata.lead_topic).toBe("payroll_discount");
+    expect(prepared.autoSendResult).toEqual({ attempted: true, status: "sent", provider: "evolution" });
+    expect(sendWhatsAppMessageMock).toHaveBeenCalledWith(expect.objectContaining({
+      text: expect.stringContaining("contracheque"),
+    }));
+    expect(inserts).toEqual(expect.arrayContaining([
+      expect.objectContaining({
+        table: "system_event_logs",
+        payload: expect.objectContaining({
+          event_name: "whatsapp_sales_reply_prepared",
+          payload: expect.objectContaining({
+            lead_topic: "payroll_discount",
+            first_response_policy: expect.objectContaining({
+              can_auto_send: true,
+              blocked_reason: null,
             }),
           }),
         }),

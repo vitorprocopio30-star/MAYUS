@@ -321,13 +321,37 @@ function buildOperatingPartnerNotification(decision: MayusOperatingPartnerDecisi
 function canAutoSendDeterministicFallback(reply: WhatsAppSalesReply, fallbackReasons: string[]) {
   const safeLegalTriageTopics = new Set(["payroll_discount", "benefit_or_inss"]);
   const llmFailed = fallbackReasons.some((reason) => reason.startsWith("sales_llm:"));
+  const operatingPartnerTimedOut = fallbackReasons.some((reason) => reason === "operating_partner:provider_timeout");
 
   return Boolean(
-    llmFailed
+    (llmFailed || operatingPartnerTimedOut)
     && reply.mayAutoSend
     && !reply.requiresHumanReview
     && safeLegalTriageTopics.has(reply.leadTopic)
   );
+}
+
+function getAutoSendBlockedReason(params: {
+  autoReply: { shouldAutoSend: boolean; source: string } | null;
+  metadata: Record<string, any>;
+  autoSendFirstResponse?: boolean;
+  trigger: "manual" | "meta_webhook" | "evolution_webhook";
+  assignedUserId?: string | null;
+  canAutoRespondAssigned: boolean;
+  phoneNumber?: string | null;
+  deterministicFallbackMaySend: boolean;
+}) {
+  if (!params.autoReply) return "no_auto_reply";
+  if (!params.autoReply.shouldAutoSend) return "reply_not_marked_auto_send";
+  if (params.metadata.may_auto_send !== true) return "metadata_disallows_auto_send";
+  if (params.autoSendFirstResponse !== true) return "auto_send_disabled";
+  if (params.trigger === "manual") return "manual_trigger";
+  if (params.assignedUserId && !params.canAutoRespondAssigned) return "assigned_contact_blocked";
+  if (!params.phoneNumber) return "missing_phone_number";
+  if (params.autoReply.source === "deterministic_whatsapp_auto_reply" && !params.deterministicFallbackMaySend) {
+    return "deterministic_fallback_not_safe";
+  }
+  return null;
 }
 
 type SalesAutoSendResult =
@@ -588,6 +612,16 @@ export async function prepareWhatsAppSalesReplyForContact(params: {
   const canAutoRespondAssigned = runtimeSettings.autonomyMode === "auto_respond_assigned";
   const deterministicFallbackMaySend = autoReply?.source === "deterministic_whatsapp_auto_reply"
     && canAutoSendDeterministicFallback(reply, fallbackReasons);
+  const blockedReason = getAutoSendBlockedReason({
+    autoReply,
+    metadata,
+    autoSendFirstResponse: params.autoSendFirstResponse,
+    trigger: params.trigger,
+    assignedUserId: contact.assigned_user_id,
+    canAutoRespondAssigned,
+    phoneNumber: contact.phone_number,
+    deterministicFallbackMaySend,
+  });
   const canAutoSend = Boolean(
     autoReply?.shouldAutoSend
     && metadata.may_auto_send === true
@@ -615,6 +649,7 @@ export async function prepareWhatsAppSalesReplyForContact(params: {
         sla_minutes: reply.firstResponseSlaMinutes,
         can_auto_send: canAutoSend,
         assigned_contact_auto_send: canAutoRespondAssigned,
+        blocked_reason: canAutoSend ? null : blockedReason,
       },
     },
     created_at: new Date().toISOString(),
