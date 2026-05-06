@@ -356,7 +356,8 @@ export async function POST(req: Request) {
         || null;
       const mediaFilename = String(mediaPayload?.fileName || mediaPayload?.filename || "").trim() || null;
       const mediaMimeType = String(mediaPayload?.mimetype || mediaPayload?.mimeType || "").trim() || null;
-      const shouldQueueMedia = ["image", "audio", "video", "document", "sticker"].includes(messageType);
+      const isSupportedMedia = ["image", "audio", "video", "document", "sticker"].includes(messageType);
+      const shouldQueueMedia = !fromMe && isSupportedMedia;
 
       const instanceName = payload.instance;
 
@@ -442,7 +443,7 @@ export async function POST(req: Request) {
           }).eq("id", contactId);
       }
 
-      const messageMetadata = shouldQueueMedia ? {
+      const messageMetadata = isSupportedMedia ? {
         provider_media_id: messageId || null,
         media_kind: messageType,
         webhook_trigger: "evolution_webhook",

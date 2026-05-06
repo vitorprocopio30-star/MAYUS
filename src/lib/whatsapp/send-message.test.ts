@@ -58,6 +58,7 @@ describe("sendWhatsAppMessage", () => {
     });
 
     expect(result.provider).toBe("evolution");
+    expect(result.messageId).toBe("msg-1");
     expect(fetcher).toHaveBeenCalledWith(
       "https://evolution.example.com/message/sendText/mayus",
       expect.objectContaining({
@@ -76,6 +77,7 @@ describe("sendWhatsAppMessage", () => {
           message_type: "text",
           content: "Mensagem de teste",
           status: "sent",
+          message_id_from_evolution: "msg-1",
           metadata: { source: "sales_llm_auto_reply" },
         })],
       },
@@ -165,6 +167,7 @@ describe("sendWhatsAppMessage", () => {
     });
 
     expect(result.provider).toBe("meta_cloud");
+    expect(result.messageId).toBe("meta-msg-1");
     expect(fetcher).toHaveBeenCalledWith(
       "https://graph.facebook.com/v22.0/phone-id/messages",
       expect.objectContaining({
@@ -181,6 +184,7 @@ describe("sendWhatsAppMessage", () => {
     );
     expect(inserts[0].payload[0]).toEqual(expect.objectContaining({
       media_provider: "meta_cloud",
+      message_id_from_evolution: null,
       content: "Oi pela Meta",
     }));
   });

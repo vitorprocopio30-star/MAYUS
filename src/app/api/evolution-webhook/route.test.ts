@@ -341,6 +341,56 @@ describe("/api/evolution-webhook", () => {
     expect(global.fetch).toHaveBeenCalledTimes(1);
   });
 
+  it("nao enfileira midia enviada pelo proprio WhatsApp conectado", async () => {
+    handleWhatsAppInternalCommandMock.mockResolvedValue({ handled: false });
+    const { POST } = await import("./route");
+    const request = new Request("http://localhost/api/evolution-webhook", {
+      method: "POST",
+      body: JSON.stringify({
+        event: "MESSAGES_UPSERT",
+        instance: "mayus-dutra",
+        data: {
+          key: {
+            remoteJid: "5521999990000@s.whatsapp.net",
+            fromMe: true,
+            id: "msg-from-me-media-1",
+          },
+          pushName: "Cliente Teste",
+          message: {
+            imageMessage: {
+              caption: "Imagem enviada pelo escritorio",
+              mimetype: "image/jpeg",
+              fileName: "saida.jpg",
+              mediaKey: "media-key",
+            },
+          },
+        },
+      }),
+    });
+
+    const response = await POST(request);
+    const body = await response.json();
+
+    expect(response.status).toBe(200);
+    expect(body).toEqual({ success: true });
+    expect(supabaseMock.messageInserts).toEqual([
+      expect.objectContaining({
+        direction: "outbound",
+        message_type: "image",
+        media_provider: null,
+        media_processing_status: "none",
+        metadata: expect.objectContaining({
+          provider_media_id: "msg-from-me-media-1",
+          media_kind: "image",
+          evolution_instance: "mayus-dutra",
+        }),
+      }),
+    ]);
+    expect(sendWhatsAppMessageMock).not.toHaveBeenCalled();
+    expect(processPendingWhatsAppMediaBatchMock).not.toHaveBeenCalled();
+    expect(enqueueWhatsAppReplyMock).not.toHaveBeenCalled();
+  });
+
   it("confirma PDF de contracheque com texto especifico", async () => {
     handleWhatsAppInternalCommandMock.mockResolvedValue({ handled: false });
     const { POST } = await import("./route");

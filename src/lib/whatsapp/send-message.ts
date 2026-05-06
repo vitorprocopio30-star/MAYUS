@@ -25,7 +25,25 @@ export type SendWhatsAppMessageInput = {
 export type SendWhatsAppMessageResult = {
   provider: WhatsAppSendProvider;
   apiResponse: unknown;
+  messageId: string | null;
 };
+
+function extractProviderMessageId(provider: WhatsAppSendProvider, apiResponse: unknown) {
+  if (!apiResponse || typeof apiResponse !== "object") return null;
+  const data = apiResponse as Record<string, any>;
+
+  if (provider === "meta_cloud") {
+    return typeof data.messages?.[0]?.id === "string" ? data.messages[0].id : null;
+  }
+
+  return [
+    data.key?.id,
+    data.message?.key?.id,
+    data.data?.key?.id,
+    data.response?.key?.id,
+    data.id,
+  ].find((value) => typeof value === "string" && value.trim()) || null;
+}
 
 function validateEvolutionUrl(url: string): void {
   try {
@@ -196,6 +214,8 @@ export async function sendWhatsAppMessage(input: SendWhatsAppMessageInput): Prom
     throw new Error("Integracao de WhatsApp nao suportada");
   }
 
+  const messageId = extractProviderMessageId(provider.provider as WhatsAppSendProvider, apiResponse);
+
   const metadata = {
     ...(input.metadata || {}),
     ...(input.audioUrl && !input.mediaStoragePath ? { audio_url: input.audioUrl } : {}),
@@ -219,6 +239,7 @@ export async function sendWhatsAppMessage(input: SendWhatsAppMessageInput): Prom
     media_storage_path: input.mediaStoragePath || null,
     media_provider: provider.provider,
     media_processing_status: input.audioUrl || input.mediaUrl ? "none" : "none",
+    message_id_from_evolution: provider.provider === "evolution" ? messageId : null,
     status: "sent",
     metadata: Object.keys(metadata).length > 0 ? metadata : null,
   }]);
@@ -230,5 +251,6 @@ export async function sendWhatsAppMessage(input: SendWhatsAppMessageInput): Prom
   return {
     provider: provider.provider as WhatsAppSendProvider,
     apiResponse,
+    messageId,
   };
 }
