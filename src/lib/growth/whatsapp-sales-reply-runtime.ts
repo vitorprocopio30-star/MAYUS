@@ -318,19 +318,6 @@ function buildOperatingPartnerNotification(decision: MayusOperatingPartnerDecisi
   };
 }
 
-function canAutoSendDeterministicFallback(reply: WhatsAppSalesReply, fallbackReasons: string[]) {
-  const safeLegalTriageTopics = new Set(["payroll_discount", "benefit_or_inss"]);
-  const llmFailed = fallbackReasons.some((reason) => reason.startsWith("sales_llm:"));
-  const operatingPartnerTimedOut = fallbackReasons.some((reason) => reason === "operating_partner:provider_timeout");
-
-  return Boolean(
-    (llmFailed || operatingPartnerTimedOut)
-    && reply.mayAutoSend
-    && !reply.requiresHumanReview
-    && safeLegalTriageTopics.has(reply.leadTopic)
-  );
-}
-
 function getAutoSendBlockedReason(params: {
   autoReply: { shouldAutoSend: boolean; source: string } | null;
   metadata: Record<string, any>;
@@ -339,7 +326,6 @@ function getAutoSendBlockedReason(params: {
   assignedUserId?: string | null;
   canAutoRespondAssigned: boolean;
   phoneNumber?: string | null;
-  deterministicFallbackMaySend: boolean;
 }) {
   if (!params.autoReply) return "no_auto_reply";
   if (!params.autoReply.shouldAutoSend) return "reply_not_marked_auto_send";
@@ -348,8 +334,12 @@ function getAutoSendBlockedReason(params: {
   if (params.trigger === "manual") return "manual_trigger";
   if (params.assignedUserId && !params.canAutoRespondAssigned) return "assigned_contact_blocked";
   if (!params.phoneNumber) return "missing_phone_number";
-  if (params.autoReply.source === "deterministic_whatsapp_auto_reply" && !params.deterministicFallbackMaySend) {
-    return "deterministic_fallback_not_safe";
+  if (params.autoReply.source !== "mayus_operating_partner_auto_reply") {
+    return params.autoReply.source === "deterministic_whatsapp_auto_reply"
+      ? params.metadata.fallback_reason === "operating_partner:provider_timeout"
+        ? "operating_partner_timeout_no_agentic_answer"
+        : "deterministic_fallback_not_agentic"
+      : "non_agentic_reply_source";
   }
   return null;
 }
@@ -610,8 +600,6 @@ export async function prepareWhatsAppSalesReplyForContact(params: {
         }
         : null;
   const canAutoRespondAssigned = runtimeSettings.autonomyMode === "auto_respond_assigned";
-  const deterministicFallbackMaySend = autoReply?.source === "deterministic_whatsapp_auto_reply"
-    && canAutoSendDeterministicFallback(reply, fallbackReasons);
   const blockedReason = getAutoSendBlockedReason({
     autoReply,
     metadata,
@@ -620,17 +608,23 @@ export async function prepareWhatsAppSalesReplyForContact(params: {
     assignedUserId: contact.assigned_user_id,
     canAutoRespondAssigned,
     phoneNumber: contact.phone_number,
-    deterministicFallbackMaySend,
   });
   const canAutoSend = Boolean(
     autoReply?.shouldAutoSend
+    && autoReply.source === "mayus_operating_partner_auto_reply"
     && metadata.may_auto_send === true
     && params.autoSendFirstResponse === true
     && params.trigger !== "manual"
     && (!contact.assigned_user_id || canAutoRespondAssigned)
     && contact.phone_number
-    && (autoReply.source !== "deterministic_whatsapp_auto_reply" || deterministicFallbackMaySend)
   );
+  const firstResponsePolicy = {
+    enabled: params.autoSendFirstResponse === true,
+    sla_minutes: reply.firstResponseSlaMinutes,
+    can_auto_send: canAutoSend,
+    assigned_contact_auto_send: canAutoRespondAssigned,
+    blocked_reason: canAutoSend ? null : blockedReason,
+  };
 
   await params.supabase.from("system_event_logs").insert({
     tenant_id: params.tenantId,
@@ -644,13 +638,7 @@ export async function prepareWhatsAppSalesReplyForContact(params: {
       trigger: params.trigger,
       crm_context: crmContext,
       ...metadata,
-      first_response_policy: {
-        enabled: params.autoSendFirstResponse === true,
-        sla_minutes: reply.firstResponseSlaMinutes,
-        can_auto_send: canAutoSend,
-        assigned_contact_auto_send: canAutoRespondAssigned,
-        blocked_reason: canAutoSend ? null : blockedReason,
-      },
+      first_response_policy: firstResponsePolicy,
     },
     created_at: new Date().toISOString(),
   });
@@ -767,6 +755,7 @@ export async function prepareWhatsAppSalesReplyForContact(params: {
     autoSendResult,
     metadata: {
       ...metadata,
+      first_response_policy: firstResponsePolicy,
       auto_sent: autoSendResult.status === "sent",
       auto_send_error: autoSendResult.status === "failed" ? autoSendResult.error : null,
     } as Record<string, any>,

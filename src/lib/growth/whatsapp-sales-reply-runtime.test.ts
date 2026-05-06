@@ -311,45 +311,25 @@ describe("prepareWhatsAppSalesReplyForContact", () => {
     expect(prepared.llmReply?.model_used).toBe("deepseek/deepseek-v4-pro");
     expect(prepared.metadata.reply_source).toBe("sales_llm");
     expect(prepared.metadata.model_used).toBe("deepseek/deepseek-v4-pro");
-    expect(prepared.autoSendResult).toEqual({
-      attempted: true,
-      status: "sent",
-      provider: "evolution",
-    });
-    expect(sendWhatsAppMessageMock).toHaveBeenCalledWith(expect.objectContaining({
-      tenantId: "tenant-1",
-      contactId: "contact-1",
-      phoneNumber: "5511999999999",
-      text: "Entendi. Esse desconto aparece com qual nome no contracheque?",
-      metadata: expect.objectContaining({
-        source: "sales_llm_auto_reply",
-        model_used: "deepseek/deepseek-v4-pro",
-        lead_stage: "discovery",
-      }),
-    }));
+    expect(prepared.autoSendResult).toEqual({ attempted: false, status: "skipped" });
+    expect(sendWhatsAppMessageMock).not.toHaveBeenCalled();
     expect(inserts).toEqual(expect.arrayContaining([
       expect.objectContaining({
         table: "system_event_logs",
         payload: expect.objectContaining({
           event_name: "whatsapp_sales_reply_prepared",
           payload: expect.objectContaining({
-            first_response_policy: expect.objectContaining({ can_auto_send: true }),
-          }),
-        }),
-      }),
-      expect.objectContaining({
-        table: "system_event_logs",
-        payload: expect.objectContaining({
-          event_name: "whatsapp_sales_llm_auto_sent",
-          payload: expect.objectContaining({
-            send_provider: "evolution",
+            first_response_policy: expect.objectContaining({
+              can_auto_send: false,
+              blocked_reason: "non_agentic_reply_source",
+            }),
           }),
         }),
       }),
     ]));
   });
 
-  it("usa fallback deterministico seguro e autoenvia para contracheque quando a LLM falha", async () => {
+  it("usa fallback deterministico so como rascunho quando a LLM falha", async () => {
     const inserts: Array<{ table: string; payload: any }> = [];
     buildSalesLlmReplyMock.mockRejectedValueOnce(new Error("Timeout ao chamar LLM de vendas apos 9000ms."));
     sendWhatsAppMessageMock.mockResolvedValueOnce({
@@ -416,26 +396,25 @@ describe("prepareWhatsAppSalesReplyForContact", () => {
     expect(prepared.metadata.reply_source).toBe("deterministic_fallback");
     expect(prepared.metadata.fallback_reason).toBe("sales_llm:provider_timeout");
     expect(prepared.metadata.lead_topic).toBe("payroll_discount");
-    expect(prepared.autoSendResult).toEqual({ attempted: true, status: "sent", provider: "evolution" });
-    expect(sendWhatsAppMessageMock).toHaveBeenCalledWith(expect.objectContaining({
-      preferredProvider: "evolution",
-      text: expect.stringContaining("print so da parte do desconto"),
-      metadata: expect.objectContaining({
-        source: "deterministic_whatsapp_auto_reply",
-        model_used: "deterministic",
-      }),
-    }));
+    expect(prepared.autoSendResult).toEqual({ attempted: false, status: "skipped" });
+    expect(sendWhatsAppMessageMock).not.toHaveBeenCalled();
     expect(inserts).toEqual(expect.arrayContaining([
       expect.objectContaining({
         table: "system_event_logs",
         payload: expect.objectContaining({
-          event_name: "whatsapp_sales_reply_auto_sent",
+          event_name: "whatsapp_sales_reply_prepared",
+          payload: expect.objectContaining({
+            first_response_policy: expect.objectContaining({
+              can_auto_send: false,
+              blocked_reason: "deterministic_fallback_not_agentic",
+            }),
+          }),
         }),
       }),
     ]));
   });
 
-  it("envia automaticamente para contato atribuido quando autonomia permite atribuidos", async () => {
+  it("nao autoenvia resposta da Sales LLM mesmo quando contato atribuido permite autonomia", async () => {
     const inserts: Array<{ table: string; payload: any }> = [];
     buildSalesLlmReplyMock.mockResolvedValueOnce({
       provider: "openrouter",
@@ -509,14 +488,8 @@ describe("prepareWhatsAppSalesReplyForContact", () => {
       autoSendFirstResponse: true,
     });
 
-    expect(prepared.autoSendResult).toEqual({
-      attempted: true,
-      status: "sent",
-      provider: "evolution",
-    });
-    expect(sendWhatsAppMessageMock).toHaveBeenCalledWith(expect.objectContaining({
-      text: "Boa tarde. Como posso te ajudar hoje?",
-    }));
+    expect(prepared.autoSendResult).toEqual({ attempted: false, status: "skipped" });
+    expect(sendWhatsAppMessageMock).not.toHaveBeenCalled();
     expect(inserts).toEqual(expect.arrayContaining([
       expect.objectContaining({
         table: "system_event_logs",
@@ -524,8 +497,9 @@ describe("prepareWhatsAppSalesReplyForContact", () => {
           event_name: "whatsapp_sales_reply_prepared",
           payload: expect.objectContaining({
             first_response_policy: expect.objectContaining({
-              can_auto_send: true,
+              can_auto_send: false,
               assigned_contact_auto_send: true,
+              blocked_reason: "non_agentic_reply_source",
             }),
           }),
         }),
@@ -750,7 +724,7 @@ describe("prepareWhatsAppSalesReplyForContact", () => {
     ]));
   });
 
-  it("autoenvia fallback seguro quando o socio virtual expira em desconto no contracheque", async () => {
+  it("nao autoenvia fallback quando o socio virtual expira em desconto no contracheque", async () => {
     const inserts: Array<{ table: string; payload: any }> = [];
     buildMayusOperatingPartnerDecisionMock.mockRejectedValueOnce(new Error("Timeout em MAYUS Operating Partner apos 8000ms."));
     sendWhatsAppMessageMock.mockResolvedValueOnce({
@@ -820,15 +794,8 @@ describe("prepareWhatsAppSalesReplyForContact", () => {
     expect(buildSalesLlmReplyMock).not.toHaveBeenCalled();
     expect(prepared.metadata.reply_source).toBe("deterministic_fallback");
     expect(prepared.metadata.fallback_reason).toBe("operating_partner:provider_timeout");
-    expect(prepared.autoSendResult).toEqual({ attempted: true, status: "sent", provider: "evolution" });
-    expect(sendWhatsAppMessageMock).toHaveBeenCalledWith(expect.objectContaining({
-      preferredProvider: "evolution",
-      text: expect.stringContaining("qual nome no contracheque"),
-      metadata: expect.objectContaining({
-        source: "deterministic_whatsapp_auto_reply",
-        intent: "deterministic_whatsapp_sales_reply",
-      }),
-    }));
+    expect(prepared.autoSendResult).toEqual({ attempted: false, status: "skipped" });
+    expect(sendWhatsAppMessageMock).not.toHaveBeenCalled();
     expect(inserts).toEqual(expect.arrayContaining([
       expect.objectContaining({
         table: "system_event_logs",
@@ -840,22 +807,16 @@ describe("prepareWhatsAppSalesReplyForContact", () => {
               fallback: "deterministic_whatsapp_sales_reply",
             }),
             first_response_policy: expect.objectContaining({
-              can_auto_send: true,
-              blocked_reason: null,
+              can_auto_send: false,
+              blocked_reason: "operating_partner_timeout_no_agentic_answer",
             }),
           }),
-        }),
-      }),
-      expect.objectContaining({
-        table: "system_event_logs",
-        payload: expect.objectContaining({
-          event_name: "whatsapp_sales_reply_auto_sent",
         }),
       }),
     ]));
   });
 
-  it("classifica Credcesta como desconto em folha e autoenvia fallback seguro", async () => {
+  it("classifica Credcesta como desconto em folha mas aguarda resposta agentica", async () => {
     const inserts: Array<{ table: string; payload: any }> = [];
     buildMayusOperatingPartnerDecisionMock.mockRejectedValueOnce(new Error("Timeout em MAYUS Operating Partner apos 8000ms."));
 
@@ -911,10 +872,8 @@ describe("prepareWhatsAppSalesReplyForContact", () => {
     });
 
     expect(prepared.metadata.lead_topic).toBe("payroll_discount");
-    expect(prepared.autoSendResult).toEqual({ attempted: true, status: "sent", provider: "evolution" });
-    expect(sendWhatsAppMessageMock).toHaveBeenCalledWith(expect.objectContaining({
-      text: expect.stringContaining("contracheque"),
-    }));
+    expect(prepared.autoSendResult).toEqual({ attempted: false, status: "skipped" });
+    expect(sendWhatsAppMessageMock).not.toHaveBeenCalled();
     expect(inserts).toEqual(expect.arrayContaining([
       expect.objectContaining({
         table: "system_event_logs",
@@ -923,8 +882,8 @@ describe("prepareWhatsAppSalesReplyForContact", () => {
           payload: expect.objectContaining({
             lead_topic: "payroll_discount",
             first_response_policy: expect.objectContaining({
-              can_auto_send: true,
-              blocked_reason: null,
+              can_auto_send: false,
+              blocked_reason: "operating_partner_timeout_no_agentic_answer",
             }),
           }),
         }),

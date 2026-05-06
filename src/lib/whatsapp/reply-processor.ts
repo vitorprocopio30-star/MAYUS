@@ -31,6 +31,7 @@ function normalizeLimit(value: number | null | undefined) {
 const STALE_PROCESSING_MS = 2 * 60 * 1000;
 const MAX_AUTO_RECOVERY_AGE_MS = 10 * 60 * 1000;
 const MAX_PROCESSING_RECOVERY_ATTEMPTS = 2;
+const MAX_AGENT_TIMEOUT_ATTEMPTS = 3;
 
 function truncateError(value: string | null | undefined) {
   const text = String(value || "").replace(/\s+/g, " ").trim();
@@ -123,6 +124,15 @@ function isStaleProcessingReply(row: PendingWhatsAppReplyMessage) {
 function getRecoveryAttempts(row: PendingWhatsAppReplyMessage) {
   const attempts = Number(row.metadata?.reply_processing_recovery_attempts || 0);
   return Number.isFinite(attempts) && attempts > 0 ? Math.floor(attempts) : 0;
+}
+
+function getAgentTimeoutAttempts(row: PendingWhatsAppReplyMessage) {
+  const attempts = Number(row.metadata?.reply_agent_timeout_attempts || 0);
+  return Number.isFinite(attempts) && attempts > 0 ? Math.floor(attempts) : 0;
+}
+
+function shouldRetryAgenticAnswer(preparedMetadata: Record<string, any>) {
+  return preparedMetadata?.first_response_policy?.blocked_reason === "operating_partner_timeout_no_agentic_answer";
 }
 
 async function hasNewerMessageThan(params: {
@@ -327,14 +337,20 @@ async function processOneReply(params: {
         : null,
     });
     const durationMs = Date.now() - startedAt;
+    const shouldRetryAgentic = shouldRetryAgenticAnswer(prepared.metadata);
+    const agentTimeoutAttempts = getAgentTimeoutAttempts(params.row) + 1;
+    const nextStatus = shouldRetryAgentic && agentTimeoutAttempts < MAX_AGENT_TIMEOUT_ATTEMPTS ? "pending" : "processed";
 
     await params.supabase
       .from("whatsapp_messages")
       .update({
         metadata: mergeMetadata(params.row, {
-          reply_processing_status: "processed",
+          reply_processing_status: nextStatus,
           reply_processed_at: new Date().toISOString(),
           reply_auto_sent: prepared.autoSendResult.status === "sent",
+          reply_agent_timeout_at: shouldRetryAgentic ? new Date().toISOString() : params.row.metadata?.reply_agent_timeout_at || null,
+          reply_agent_timeout_attempts: shouldRetryAgentic ? agentTimeoutAttempts : params.row.metadata?.reply_agent_timeout_attempts || null,
+          reply_blocked_reason: prepared.metadata?.first_response_policy?.blocked_reason || null,
         }),
       })
       .eq("id", params.row.id);
@@ -345,6 +361,11 @@ async function processOneReply(params: {
       eventName: "whatsapp_reply_processed",
       status: "ok",
       durationMs,
+      extraPayload: {
+        reply_processing_status: nextStatus,
+        blocked_reason: prepared.metadata?.first_response_policy?.blocked_reason || null,
+        agent_timeout_attempts: shouldRetryAgentic ? agentTimeoutAttempts : null,
+      },
     });
 
     return {
@@ -352,6 +373,7 @@ async function processOneReply(params: {
       status: "processed" as const,
       auto_sent: prepared.autoSendResult.status === "sent",
       duration_ms: durationMs,
+      reply_processing_status: nextStatus,
     };
   } catch (error: any) {
     const message = error?.message || "Falha ao preparar resposta WhatsApp.";

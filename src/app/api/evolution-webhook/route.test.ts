@@ -463,7 +463,7 @@ describe("/api/evolution-webhook", () => {
     expect(prepareWhatsAppSalesReplyForContactMock).not.toHaveBeenCalled();
   });
 
-  it("responde contracheque por fast-path seguro sem esperar LLM", async () => {
+  it("enfileira pedido de contracheque para resposta agentica sem fast-path deterministico", async () => {
     handleWhatsAppInternalCommandMock.mockResolvedValue({ handled: false });
     const { POST } = await import("./route");
     const request = new Request("http://localhost/api/evolution-webhook", {
@@ -489,29 +489,16 @@ describe("/api/evolution-webhook", () => {
     const body = await response.json();
 
     expect(response.status).toBe(200);
-    expect(body).toEqual({ success: true, immediate_reply: true });
-    expect(sendWhatsAppMessageMock).toHaveBeenCalledWith(expect.objectContaining({
-      tenantId: "tenant-1",
-      contactId: "contact-1",
-      phoneNumber: "5521999990000@s.whatsapp.net",
+    expect(body).toEqual({ success: true });
+    expect(sendWhatsAppMessageMock).not.toHaveBeenCalled();
+    expect(enqueueWhatsAppReplyMock).toHaveBeenCalledWith(expect.objectContaining({
+      messageId: "message-1",
       preferredProvider: "evolution",
-      text: expect.stringContaining("Pode mandar sim"),
-      metadata: expect.objectContaining({
-        source: "immediate_safe_deterministic_reply",
-        model_used: "deterministic",
-      }),
     }));
-    expect(enqueueWhatsAppReplyMock).not.toHaveBeenCalled();
-    expect(processPendingWhatsAppRepliesBatchMock).not.toHaveBeenCalled();
-    expect(supabaseMock.messageUpdates).toEqual(expect.arrayContaining([
-      expect.objectContaining({
-        metadata: expect.objectContaining({
-          reply_processing_status: "processed",
-          reply_auto_sent: true,
-          reply_source: "immediate_safe_deterministic_reply",
-        }),
-      }),
-    ]));
+    expect(processPendingWhatsAppRepliesBatchMock).toHaveBeenCalledWith(expect.objectContaining({
+      messageId: "message-1",
+      limit: 1,
+    }));
   });
 
   it("mantem webhook Evolution 200 quando processamento imediato falha", async () => {
