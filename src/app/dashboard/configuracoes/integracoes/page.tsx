@@ -2,7 +2,7 @@
 
 import { useState, useEffect, useCallback } from "react";
 import { Cormorant_Garamond, Montserrat } from "next/font/google";
-import { QrCode, Smartphone, Zap, Bot, BrainCircuit, Plus, X, Eye, Settings, CheckCircle2, AlertCircle, Loader2, FolderOpen, ExternalLink } from "lucide-react";
+import { QrCode, Smartphone, Zap, Bot, BrainCircuit, Plus, X, Eye, Settings, CheckCircle2, AlertCircle, Loader2, FolderOpen, ExternalLink, Instagram } from "lucide-react";
 import { toast } from "sonner";
 import { useUserProfile } from "@/hooks/useUserProfile";
 import { fetchSafeIntegrations, type SafeTenantIntegration } from "@/lib/integrations/fetch-safe-integrations";
@@ -22,6 +22,15 @@ interface GoogleDriveState {
   rootFolderName: string | null;
   rootFolderUrl: string | null;
 }
+
+type InstagramAutomation = {
+  id: string;
+  keyword: string;
+  response_text: string;
+  direct_message: string;
+  file_url: string;
+  is_active: boolean;
+};
 
 export default function IntegracoesPage() {
   const [integrations, setIntegrations] = useState<SafeTenantIntegration[]>([]);
@@ -103,12 +112,32 @@ export default function IntegracoesPage() {
     }
   }, [profile?.tenant_id]);
 
+  const [instagramAutomations, setInstagramAutomations] = useState<InstagramAutomation[]>([]);
+  const [isAddingInsta, setIsAddingInsta] = useState(false);
+  const [newInstaKeyword, setNewInstaKeyword] = useState("");
+  const [newInstaResponse, setNewInstaResponse] = useState("");
+  const [newInstaDM, setNewInstaDM] = useState("");
+  const [newInstaFile, setNewInstaFile] = useState("");
+
+  const loadInstagramAutomations = useCallback(async () => {
+    if (!profile?.tenant_id) return;
+    try {
+      const response = await fetch("/api/instagram/automations", { cache: "no-store" });
+      const data = await response.json().catch(() => null);
+      if (!response.ok) throw new Error(data?.error || "Nao foi possivel carregar automacoes do Instagram.");
+      setInstagramAutomations(Array.isArray(data?.automations) ? data.automations : []);
+    } catch (error: any) {
+      toast.error(error?.message || "Nao foi possivel carregar automacoes do Instagram.");
+    }
+  }, [profile?.tenant_id]);
+
   useEffect(() => {
     if (profile?.tenant_id) {
       loadIntegrations();
       loadGoogleDriveStatus();
+      loadInstagramAutomations();
     }
-  }, [profile?.tenant_id, loadGoogleDriveStatus, loadIntegrations]);
+  }, [profile?.tenant_id, loadGoogleDriveStatus, loadIntegrations, loadInstagramAutomations]);
 
   useEffect(() => {
     if (typeof window === "undefined") return;
@@ -278,6 +307,45 @@ export default function IntegracoesPage() {
       toast.error(error?.message || "Não foi possível desconectar o Google Drive.");
     } finally {
       setGoogleDriveBusy(null);
+    }
+  };
+
+  const handleSaveInstaAutomation = async () => {
+    if (!profile?.tenant_id || !newInstaKeyword) return;
+    try {
+      const response = await fetch("/api/instagram/automations", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+        keyword: newInstaKeyword,
+        response_text: newInstaResponse,
+        direct_message: newInstaDM,
+          file_url: newInstaFile,
+        }),
+      });
+      const data = await response.json().catch(() => null);
+      if (!response.ok) throw new Error(data?.error || "Erro ao salvar automacao.");
+      toast.success("Automação do Instagram salva!");
+      setIsAddingInsta(false);
+      setNewInstaKeyword("");
+      setNewInstaResponse("");
+      setNewInstaDM("");
+      setNewInstaFile("");
+      loadInstagramAutomations();
+    } catch (e: any) {
+      toast.error(e?.message || "Erro ao salvar automação.");
+    }
+  };
+
+  const handleDeleteInstaAutomation = async (id: string) => {
+    try {
+      const response = await fetch(`/api/instagram/automations/${id}`, { method: "DELETE" });
+      const data = await response.json().catch(() => null);
+      if (!response.ok) throw new Error(data?.error || "Erro ao remover automacao.");
+      toast.success("Automação removida.");
+      loadInstagramAutomations();
+    } catch (e: any) {
+      toast.error(e?.message || "Erro ao remover.");
     }
   };
 
@@ -589,6 +657,134 @@ export default function IntegracoesPage() {
                   </div>
                 </div>
               )}
+            </div>
+
+            {/* INSTAGRAM GRAPH CARD */}
+            <div className={`relative flex flex-col justify-between bg-gradient-to-br from-[#111111] via-[#0a0a0a] to-[#050505] p-6 border rounded-2xl transition-all duration-500 overflow-hidden ${
+              getIntegration('instagram')?.status === 'connected' ? 'border-pink-500/40 shadow-[0_20px_40px_rgba(236,72,153,0.08)]' : 'border-white/5 hover:border-pink-500/20'
+            }`}>
+              <div className="absolute top-0 right-0 w-40 h-40 bg-pink-500/5 rounded-bl-full blur-3xl pointer-events-none" />
+              <div className="relative z-10">
+                <div className="flex justify-between items-start mb-2 text-white">
+                  <div>
+                    <div className="bg-pink-500/10 w-12 h-12 rounded-xl flex items-center justify-center border border-pink-500/30 mb-4 shadow-[inset_0_0_15px_rgba(236,72,153,0.2)]">
+                      <Instagram size={22} className="text-pink-500" />
+                    </div>
+                    <h3 className="text-xl font-black tracking-tight italic flex items-center gap-2">
+                      Instagram Graph
+                      <span className="text-[10px] bg-white/10 text-gray-300 px-2 py-0.5 rounded-full uppercase tracking-widest font-bold">Comentários + Direct</span>
+                    </h3>
+                  </div>
+                  {getIntegration('instagram')?.status === 'connected' && editingProvider !== 'instagram' && (
+                    <button onClick={() => { setEditingProvider('instagram'); setTempApiKey(''); setTempModel(getIntegration('instagram')?.instance_name || ''); }} className="p-2 border border-white/10 rounded-lg text-gray-400 hover:text-white transition-colors">
+                      <Settings size={18} />
+                    </button>
+                  )}
+                </div>
+
+                <p className="text-gray-400 text-xs leading-relaxed mb-4">
+                  Receba comentários de posts, identifique palavras-chave e entregue links ou arquivos pelo Direct com trilha de idempotência.
+                </p>
+
+                {editingProvider === 'instagram' ? (
+                  <div className="space-y-4 bg-white/5 p-5 rounded-xl border border-white/10 animate-in slide-in-from-top-2">
+                    <div>
+                      <label className="text-[10px] font-black uppercase tracking-widest text-pink-500 mb-1.5 block">Token Permanente da Meta</label>
+                      <input value={tempApiKey} onChange={e => setTempApiKey(e.target.value)} type="password" placeholder="EAAB..." className="w-full bg-[#111] border border-white/10 rounded-lg px-4 py-2 text-sm text-white focus:outline-none focus:border-pink-500/50 font-mono" />
+                    </div>
+                    <div>
+                      <label className="text-[10px] font-black uppercase tracking-widest text-pink-500 mb-1.5 block">Instagram Business Account ID</label>
+                      <input value={tempModel} onChange={e => setTempModel(e.target.value)} type="text" placeholder="1784..." className="w-full bg-[#111] border border-white/10 rounded-lg px-4 py-2 text-sm text-white focus:outline-none focus:border-pink-500/50" />
+                      <p className="text-[10px] text-gray-500 mt-2">Use o ID da conta profissional do Instagram conectada ao app Meta.</p>
+                    </div>
+                    <div className="flex gap-2 pt-2">
+                      <button onClick={() => setEditingProvider(null)} className="flex-1 py-2 text-[10px] font-black uppercase text-gray-500 hover:text-white">Cancelar</button>
+                      <button onClick={handleSaveIntegration} className="flex-1 py-2 bg-pink-500 text-white text-[10px] font-black uppercase rounded-lg hover:bg-pink-400 transition-all">Salvar Instagram</button>
+                    </div>
+                  </div>
+                ) : getIntegration('instagram')?.status === 'connected' ? (
+                  <div className="space-y-2 mb-1 text-xs font-medium bg-pink-500/5 p-4 rounded-xl border border-pink-500/20 backdrop-blur-sm">
+                    <div className="flex items-center gap-3 text-pink-400">
+                      <CheckCircle2 size={14} /> Instagram conectado
+                    </div>
+                    <div className="text-gray-500 text-[10px] mt-1 truncate">IG Business ID: {getIntegration('instagram')?.instance_name}</div>
+                  </div>
+                ) : (
+                  <button
+                    onClick={() => { setEditingProvider('instagram'); setTempApiKey(''); setTempModel(''); }}
+                    className="relative z-10 w-full border border-pink-500/30 bg-pink-500/5 hover:bg-pink-500/10 text-pink-500 flex items-center justify-center gap-2 py-3 rounded-xl font-black uppercase text-[10px] tracking-widest transition-all"
+                  >
+                    <Plus size={14} /> Configurar Instagram Graph
+                  </button>
+                )}
+              </div>
+            </div>
+
+            {/* INSTAGRAM AUTOMATION CARD */}
+            <div className={`relative flex flex-col justify-between bg-gradient-to-br from-[#111111] via-[#0a0a0a] to-[#050505] p-6 border rounded-2xl transition-all duration-500 overflow-hidden ${
+               getIntegration('instagram')?.status === 'connected' ? 'border-pink-500/40 shadow-[0_20px_40px_rgba(236,72,153,0.05)]' : 'border-white/5'
+            }`}>
+               <div className="absolute top-0 right-0 w-40 h-40 bg-pink-500/5 rounded-bl-full blur-3xl pointer-events-none" />
+               <div className="relative z-10">
+                  <div className="bg-pink-500/10 w-12 h-12 rounded-xl flex items-center justify-center border border-pink-500/30 mb-4 shadow-[inset_0_0_15px_rgba(236,72,153,0.2)]">
+                     <Instagram size={22} className="text-pink-500" />
+                  </div>
+                  <div className="flex justify-between items-start mb-2 text-white">
+                    <h3 className="text-xl font-black tracking-tight italic">Instagram Automation</h3>
+                  </div>
+                  <p className="text-gray-400 text-xs leading-relaxed mb-6">
+                    Responda comentários e envie arquivos automaticamente via palavra-chave no Direct.
+                  </p>
+
+                  {/* LISTA DE AUTOMAÇÕES */}
+                  <div className="space-y-3 mb-6">
+                     {instagramAutomations.map(auto => (
+                       <div key={auto.id} className="group bg-white/5 border border-white/10 rounded-xl p-3 flex justify-between items-center hover:border-pink-500/30 transition-all">
+                          <div>
+                             <p className="text-[10px] font-black uppercase text-pink-500">Palavra: "{auto.keyword}"</p>
+                             <p className="text-xs text-gray-300 mt-1 truncate max-w-[200px]">{auto.response_text}</p>
+                          </div>
+                          <button onClick={() => handleDeleteInstaAutomation(auto.id)} className="p-2 text-gray-500 hover:text-red-500 opacity-0 group-hover:opacity-100 transition-all">
+                             <X size={14} />
+                          </button>
+                       </div>
+                     ))}
+                  </div>
+
+                  {isAddingInsta ? (
+                     <div className="space-y-4 bg-white/5 p-4 rounded-xl border border-white/10 animate-in slide-in-from-top-2">
+                       <div className="grid grid-cols-2 gap-3">
+                          <div>
+                             <label className="text-[9px] font-black uppercase tracking-widest text-pink-500 mb-1 block">Palavra-Chave</label>
+                             <input value={newInstaKeyword} onChange={e => setNewInstaKeyword(e.target.value)} placeholder="Ex: PDF" className="w-full bg-black border border-white/10 rounded-lg px-3 py-2 text-xs text-white outline-none focus:border-pink-500/50" />
+                          </div>
+                          <div>
+                             <label className="text-[9px] font-black uppercase tracking-widest text-pink-500 mb-1 block">Link do Arquivo</label>
+                             <input value={newInstaFile} onChange={e => setNewInstaFile(e.target.value)} placeholder="https://..." className="w-full bg-black border border-white/10 rounded-lg px-3 py-2 text-xs text-white outline-none focus:border-pink-500/50" />
+                          </div>
+                       </div>
+                       <div>
+                          <label className="text-[9px] font-black uppercase tracking-widest text-pink-500 mb-1 block">Resposta no Post (Público)</label>
+                          <input value={newInstaResponse} onChange={e => setNewInstaResponse(e.target.value)} placeholder="Enviamos no seu Direct!" className="w-full bg-black border border-white/10 rounded-lg px-3 py-2 text-xs text-white outline-none focus:border-pink-500/50" />
+                       </div>
+                       <div>
+                          <label className="text-[9px] font-black uppercase tracking-widest text-pink-500 mb-1 block">Mensagem no Direct</label>
+                          <textarea value={newInstaDM} onChange={e => setNewInstaDM(e.target.value)} placeholder="Aqui está seu material..." className="w-full bg-black border border-white/10 rounded-lg px-3 py-2 text-xs text-white outline-none focus:border-pink-500/50 h-20 resize-none" />
+                       </div>
+                       <div className="flex gap-2">
+                          <button onClick={() => setIsAddingInsta(false)} className="flex-1 py-2 text-[10px] font-black uppercase text-gray-500">Cancelar</button>
+                          <button onClick={handleSaveInstaAutomation} className="flex-1 py-2 bg-pink-500 text-white text-[10px] font-black uppercase rounded-lg">Salvar</button>
+                       </div>
+                     </div>
+                  ) : (
+                     <button
+                       onClick={() => setIsAddingInsta(true)}
+                       className="w-full border border-pink-500/30 bg-pink-500/5 hover:bg-pink-500/10 text-pink-500 flex items-center justify-center gap-2 py-3 rounded-xl font-black uppercase text-[10px] tracking-widest transition-all"
+                     >
+                       <Plus size={14} /> Nova Automação de Comentário
+                     </button>
+                  )}
+               </div>
             </div>
 
           </div>
