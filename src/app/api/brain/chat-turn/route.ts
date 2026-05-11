@@ -71,6 +71,7 @@ export async function POST(req: NextRequest) {
       taskId: turn.taskId,
       runId: turn.runId,
       stepId: turn.stepId,
+      orb: turn.orb,
     }, { status: turn.responseStatus });
   } catch (error: any) {
     console.error("[brain/chat-turn] fatal", error);

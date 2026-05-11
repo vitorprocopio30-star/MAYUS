@@ -7,9 +7,18 @@ import {
   Send, Bot, User, BrainCircuit, Sparkles, Loader2, KeyRound,
   AlertCircle, CheckCircle, XCircle, ShieldAlert,
   History, Plus, Trash2, Menu, X, MessageSquare, ChevronLeft, Search,
-  Mic, Volume2, Square, VolumeX, SlidersHorizontal
+  Mic, Volume2, Square, VolumeX, SlidersHorizontal, ChevronDown, Headphones
 } from "lucide-react";
 import { useUserProfile } from "@/hooks/useUserProfile";
+import { useOrbState } from "@/components/dashboard/mayus-orb/OrbStateProvider";
+import {
+  DEFAULT_MAYUS_REALTIME_VOICE,
+  REALTIME_VOICE_OPTIONS,
+  estimateMayusRealtimeUsageCost,
+  type MayusRealtimeCostEstimate,
+  type MayusRealtimeVoice,
+  type RealtimeUsage,
+} from "@/lib/voice/realtime-persona";
 import { toast } from "sonner";
 import Link from "next/link";
 import dayjs from "dayjs";
@@ -61,6 +70,42 @@ type ModelOption = {
   model: string;
   label: string;
   description: string;
+};
+
+type RealtimeStatus =
+  | "idle"
+  | "connecting"
+  | "listening"
+  | "thinking"
+  | "speaking"
+  | "tool_calling"
+  | "error";
+
+type ConversationTransport = "idle" | "realtime" | "legacy";
+
+type RealtimeFunctionCall = {
+  type?: string;
+  name?: string;
+  call_id?: string;
+  arguments?: string;
+};
+
+type RealtimeSessionResponse = {
+  client_secret?: string;
+  model?: string;
+  voice?: MayusRealtimeVoice;
+  expires_at?: string | null;
+  error?: string;
+};
+
+const REALTIME_STATUS_LABEL: Record<RealtimeStatus, string> = {
+  idle: "Realtime pronto",
+  connecting: "Conectando Realtime",
+  listening: "Ouvindo",
+  thinking: "Pensando",
+  speaking: "Falando",
+  tool_calling: "Consultando Brain",
+  error: "Realtime bloqueado",
 };
 
 const MODEL_PRESETS: Record<string, Array<Omit<ModelOption, "provider">>> = {
@@ -276,16 +321,31 @@ export default function MAYUSPlayground() {
   const [currentConversationId, setCurrentConversationId] = useState<string | null>(null);
   const [isSidebarOpen, setIsSidebarOpen] = useState(true);
   const [isMobileMenuOpen, setIsMobileMenuOpen] = useState(false);
+  const [selectedRealtimeVoice, setSelectedRealtimeVoice] = useState<MayusRealtimeVoice>(DEFAULT_MAYUS_REALTIME_VOICE);
+  const [isVoiceSwitcherOpen, setIsVoiceSwitcherOpen] = useState(false);
+  const [realtimeStatus, setRealtimeStatus] = useState<RealtimeStatus>("idle");
+  const [conversationTransport, setConversationTransport] = useState<ConversationTransport>("idle");
+  const [realtimeCost, setRealtimeCost] = useState<MayusRealtimeCostEstimate | null>(null);
 
   const messagesEndRef = useRef<HTMLDivElement>(null);
   const audioRef = useRef<HTMLAudioElement | null>(null);
   const silenceTimerRef = useRef<NodeJS.Timeout | null>(null);
   const recognitionRef = useRef<any>(null);
   const isConversationModeRef = useRef(false);
+  const conversationTransportRef = useRef<ConversationTransport>("idle");
+  const currentConversationIdRef = useRef<string | null>(null);
+  const realtimePeerRef = useRef<RTCPeerConnection | null>(null);
+  const realtimeDataChannelRef = useRef<RTCDataChannel | null>(null);
+  const realtimeMediaStreamRef = useRef<MediaStream | null>(null);
+  const realtimeAudioRef = useRef<HTMLAudioElement | null>(null);
+  const realtimeFunctionArgsRef = useRef<Record<string, string>>({});
+  const realtimeProcessedCallsRef = useRef<Set<string>>(new Set());
+  const realtimeStartedAtRef = useRef<number | null>(null);
   const [isRecording, setIsRecording] = useState(false);
   const [isConversationMode, setIsConversationMode] = useState(false);
   const [playingMessageId, setPlayingMessageId] = useState<number | string | null>(null);
   const { profile, isLoading: profileLoading } = useUserProfile();
+  const { startWorking, present } = useOrbState();
 
   const modelOptions = useMemo<ModelOption[]>(() => {
     const seen = new Set<string>();
@@ -389,8 +449,7 @@ export default function MAYUSPlayground() {
   useEffect(() => {
     const handleKeyDown = (e: KeyboardEvent) => {
       if (e.key === "Escape" && isConversationMode) {
-        setIsConversationMode(false);
-        setIsRecording(false);
+        stopConversationMode();
         toast.info("Modo Conversa desativado.");
       }
     };
@@ -402,6 +461,14 @@ export default function MAYUSPlayground() {
     isConversationModeRef.current = isConversationMode;
   }, [isConversationMode]);
 
+  useEffect(() => {
+    conversationTransportRef.current = conversationTransport;
+  }, [conversationTransport]);
+
+  useEffect(() => {
+    currentConversationIdRef.current = currentConversationId;
+  }, [currentConversationId]);
+
   const fetchConversations = async () => {
     try {
       const res = await fetch("/api/ai/conversations");
@@ -412,7 +479,53 @@ export default function MAYUSPlayground() {
     }
   };
 
+  const ensureConversationForRealtime = async () => {
+    if (currentConversationIdRef.current) return currentConversationIdRef.current;
+
+    const response = await fetch("/api/ai/conversations", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ title: "Conversa por voz" }),
+    });
+    if (!response.ok) throw new Error("Falha ao iniciar conversa por voz.");
+
+    const data = await response.json();
+    const conversationId = String(data?.conversation?.id || "");
+    if (!conversationId) throw new Error("Conversa por voz sem identificador.");
+
+    currentConversationIdRef.current = conversationId;
+    setCurrentConversationId(conversationId);
+    setConversations((prev) => [data.conversation, ...prev]);
+    return conversationId;
+  };
+
+  const persistRealtimeMessage = async (message: Message) => {
+    try {
+      const conversationId = await ensureConversationForRealtime();
+      await fetch(`/api/ai/conversations/${conversationId}`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          role: message.role,
+          content: message.content,
+          kernel: message.kernel || {},
+        }),
+      });
+    } catch (error) {
+      console.warn("[MAYUS Realtime] Falha ao persistir mensagem de voz", error);
+    }
+  };
+
+  const appendRealtimeMessage = (message: Message) => {
+    const content = message.content.trim();
+    if (!content) return;
+    const finalMessage = { ...message, content };
+    setMessages((prev) => [...prev, finalMessage]);
+    void persistRealtimeMessage(finalMessage);
+  };
+
   const loadConversation = async (id: string) => {
+    stopConversationMode();
     setIsLoading(true);
     setCurrentConversationId(id);
     try {
@@ -429,6 +542,7 @@ export default function MAYUSPlayground() {
   };
 
   const createNewChat = () => {
+    stopConversationMode();
     setCurrentConversationId(null);
     setMessages([]);
     if (window.innerWidth < 768) setIsMobileMenuOpen(false);
@@ -521,6 +635,7 @@ export default function MAYUSPlayground() {
     let fallbackOutput = "";
 
     try {
+      startWorking({ source: "chat" });
       const response = await fetch("/api/brain/chat-turn", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
@@ -536,8 +651,20 @@ export default function MAYUSPlayground() {
       });
 
       const data = await response.json();
-      if (!response.ok) throw new Error(data.error || "A IA não conseguiu responder.");
+      if (!response.ok) {
+        present({
+          source: "chat",
+          event: data?.orb,
+          message: data?.error || "O MAYUS encontrou um bloqueio e vai mostrar o que aconteceu.",
+        });
+        throw new Error(data.error || "A IA não conseguiu responder.");
+      }
       aiResponseData = data;
+      present({
+        source: "chat",
+        event: data?.orb,
+        message: data?.orb?.message,
+      });
 
       // ── Fluxo de aprovação humana ──────────────────────────────────────
       if (
@@ -577,6 +704,10 @@ export default function MAYUSPlayground() {
         setMessages(prev => [...prev, ...newMessages]);
       }
     } catch (err: any) {
+      present({
+        source: "chat",
+        message: "O MAYUS encontrou um bloqueio e vai mostrar o que aconteceu.",
+      });
       toast.error(err.message);
       fallbackStatus = true;
       fallbackOutput = "Erro Crítico: A conexão com o córtex falhou.";
@@ -606,7 +737,7 @@ export default function MAYUSPlayground() {
             });
             
             // Se estiver no Modo Conversa, tocar áudio automaticamente
-           if (isConversationModeRef.current) {
+           if (isConversationModeRef.current && conversationTransportRef.current === "legacy") {
              playMessage(aiResponseData.reply, "latest_conv");
            }
          }
@@ -774,7 +905,7 @@ export default function MAYUSPlayground() {
       audio.onended = () => {
         setPlayingMessageId(null);
         // Se estiver no Modo Conversa, reabrir microfone após a IA terminar de falar
-        if (isConversationModeRef.current) {
+        if (isConversationModeRef.current && conversationTransportRef.current === "legacy") {
           setTimeout(() => {
             toggleRecording();
           }, 500); // 500ms para hardware sync estável
@@ -791,6 +922,328 @@ export default function MAYUSPlayground() {
       setPlayingMessageId(null);
     }
   };
+
+  const stopRealtimeSession = () => {
+    realtimeDataChannelRef.current?.close();
+    realtimeDataChannelRef.current = null;
+
+    realtimePeerRef.current?.getSenders().forEach((sender) => sender.track?.stop());
+    realtimePeerRef.current?.close();
+    realtimePeerRef.current = null;
+
+    realtimeMediaStreamRef.current?.getTracks().forEach((track) => track.stop());
+    realtimeMediaStreamRef.current = null;
+
+    if (realtimeAudioRef.current) {
+      realtimeAudioRef.current.pause();
+      realtimeAudioRef.current.srcObject = null;
+      realtimeAudioRef.current.remove();
+      realtimeAudioRef.current = null;
+    }
+
+    realtimeFunctionArgsRef.current = {};
+    realtimeProcessedCallsRef.current.clear();
+    realtimeStartedAtRef.current = null;
+    setRealtimeStatus("idle");
+  };
+
+  const stopConversationMode = () => {
+    if (recognitionRef.current) {
+      recognitionRef.current.stop();
+      recognitionRef.current = null;
+    }
+    if (silenceTimerRef.current) clearTimeout(silenceTimerRef.current);
+    audioRef.current?.pause();
+    setPlayingMessageId(null);
+    setIsRecording(false);
+    stopRealtimeSession();
+    setConversationTransport("idle");
+    setIsConversationMode(false);
+  };
+
+  const sendRealtimeEvent = (event: Record<string, unknown>) => {
+    const channel = realtimeDataChannelRef.current;
+    if (!channel || channel.readyState !== "open") return false;
+    channel.send(JSON.stringify(event));
+    return true;
+  };
+
+  const handleRealtimeCost = (usage: RealtimeUsage | null | undefined) => {
+    const estimate = estimateMayusRealtimeUsageCost(usage);
+    if (!estimate.usd) return;
+
+    setRealtimeCost((previous) => ({
+      usd: (previous?.usd || 0) + estimate.usd,
+      brl: (previous?.brl || 0) + estimate.brl,
+      textInputTokens: (previous?.textInputTokens || 0) + estimate.textInputTokens,
+      textOutputTokens: (previous?.textOutputTokens || 0) + estimate.textOutputTokens,
+      audioInputTokens: (previous?.audioInputTokens || 0) + estimate.audioInputTokens,
+      audioOutputTokens: (previous?.audioOutputTokens || 0) + estimate.audioOutputTokens,
+    }));
+  };
+
+  const handleRealtimeFunctionCall = async (call: RealtimeFunctionCall) => {
+    if (call.name !== "consultar_cerebro_mayus" || !call.call_id) return;
+    if (realtimeProcessedCallsRef.current.has(call.call_id)) return;
+    realtimeProcessedCallsRef.current.add(call.call_id);
+    setRealtimeStatus("tool_calling");
+
+    let args: Record<string, unknown> = {};
+    try {
+      args = JSON.parse(call.arguments || "{}");
+    } catch {
+      args = {};
+    }
+
+    const prompt = typeof args.prompt === "string" && args.prompt.trim()
+      ? args.prompt.trim()
+      : "Consulta de voz recebida pelo Realtime do MAYUS.";
+    const reason = typeof args.reason === "string" ? args.reason : "realtime_voice";
+    const conversationSummary = typeof args.conversationSummary === "string" ? args.conversationSummary : "";
+
+    appendRealtimeMessage({
+      role: "system",
+      content: "MAYUS Realtime consultou o Brain operacional.",
+    });
+
+    try {
+      const response = await fetch("/api/agent/voice/brain-bridge", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          toolName: "consultar_cerebro_mayus",
+          prompt,
+          toolPayload: {
+            prompt,
+            reason,
+            conversationSummary,
+            provider: "openai_realtime",
+            voice: selectedRealtimeVoice,
+          },
+          history: messages
+            .filter((message) => message.role === "user" || message.role === "model")
+            .slice(-8)
+            .map((message) => ({ role: message.role, content: message.content })),
+        }),
+      });
+      const data = await response.json().catch(() => ({}));
+
+      const output = response.ok
+        ? {
+            ok: true,
+            reply: data?.reply || "Brain consultado sem resposta textual.",
+            kernel: data?.kernel || {},
+            taskId: data?.taskId || null,
+            runId: data?.runId || null,
+            stepId: data?.stepId || null,
+          }
+        : {
+            ok: false,
+            error: data?.error || "Falha ao consultar o MAYUS Brain.",
+          };
+
+      sendRealtimeEvent({
+        type: "conversation.item.create",
+        item: {
+          type: "function_call_output",
+          call_id: call.call_id,
+          output: JSON.stringify(output),
+        },
+      });
+      sendRealtimeEvent({ type: "response.create" });
+      setRealtimeStatus("thinking");
+    } catch (error: any) {
+      sendRealtimeEvent({
+        type: "conversation.item.create",
+        item: {
+          type: "function_call_output",
+          call_id: call.call_id,
+          output: JSON.stringify({
+            ok: false,
+            error: error?.message || "Falha de rede ao consultar o MAYUS Brain.",
+          }),
+        },
+      });
+      sendRealtimeEvent({ type: "response.create" });
+      setRealtimeStatus("error");
+    }
+  };
+
+  const handleRealtimeEvent = (event: any) => {
+    if (!event?.type) return;
+
+    if (event.type === "error") {
+      console.error("[MAYUS Realtime]", event);
+      setRealtimeStatus("error");
+      toast.error(event?.error?.message || "Realtime encontrou um bloqueio.");
+      return;
+    }
+
+    if (event.type === "input_audio_buffer.speech_started") {
+      setRealtimeStatus("listening");
+      return;
+    }
+
+    if (event.type === "input_audio_buffer.speech_stopped") {
+      setRealtimeStatus("thinking");
+      return;
+    }
+
+    if (event.type === "response.created") {
+      setRealtimeStatus("thinking");
+      return;
+    }
+
+    if (event.type === "response.audio.delta") {
+      setRealtimeStatus("speaking");
+      return;
+    }
+
+    if (event.type === "response.audio.done") {
+      setRealtimeStatus("listening");
+      return;
+    }
+
+    if (event.type === "conversation.item.input_audio_transcription.completed" && event.transcript) {
+      appendRealtimeMessage({ role: "user", content: String(event.transcript) });
+      setInput("");
+      return;
+    }
+
+    if (
+      (event.type === "response.audio_transcript.done" || event.type === "response.output_text.done") &&
+      event.transcript
+    ) {
+      appendRealtimeMessage({ role: "model", content: String(event.transcript) });
+      return;
+    }
+
+    if (event.type === "response.function_call_arguments.delta" && event.call_id) {
+      realtimeFunctionArgsRef.current[event.call_id] =
+        (realtimeFunctionArgsRef.current[event.call_id] || "") + String(event.delta || "");
+      return;
+    }
+
+    if (event.type === "response.done") {
+      handleRealtimeCost(event.response?.usage);
+      const output = Array.isArray(event.response?.output) ? event.response.output : [];
+      const functionCalls = output.filter((item: RealtimeFunctionCall) => item?.type === "function_call");
+      for (const call of functionCalls) {
+        const mergedCall = {
+          ...call,
+          arguments: call.arguments || realtimeFunctionArgsRef.current[call.call_id || ""],
+        };
+        void handleRealtimeFunctionCall(mergedCall);
+      }
+      if (functionCalls.length === 0) setRealtimeStatus("listening");
+    }
+  };
+
+  const startRealtimeSession = async () => {
+    if (!navigator.mediaDevices?.getUserMedia) {
+      throw new Error("Seu navegador nao liberou microfone para Realtime.");
+    }
+
+    setRealtimeStatus("connecting");
+    setRealtimeCost(null);
+    realtimeStartedAtRef.current = Date.now();
+
+    const sessionResponse = await fetch("/api/agent/voice/realtime-session", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ voice: selectedRealtimeVoice }),
+    });
+    const sessionData = (await sessionResponse.json().catch(() => ({}))) as RealtimeSessionResponse;
+    if (!sessionResponse.ok || !sessionData.client_secret) {
+      throw new Error(sessionData.error || "Falha ao criar sessao Realtime.");
+    }
+
+    const peer = new RTCPeerConnection();
+    realtimePeerRef.current = peer;
+
+    const remoteAudio = document.createElement("audio");
+    remoteAudio.autoplay = true;
+    realtimeAudioRef.current = remoteAudio;
+    peer.ontrack = (event) => {
+      remoteAudio.srcObject = event.streams[0];
+      void remoteAudio.play().catch(() => {});
+    };
+
+    const stream = await navigator.mediaDevices.getUserMedia({ audio: true });
+    realtimeMediaStreamRef.current = stream;
+    stream.getTracks().forEach((track) => peer.addTrack(track, stream));
+
+    const channel = peer.createDataChannel("oai-events");
+    realtimeDataChannelRef.current = channel;
+    channel.addEventListener("open", () => {
+      setRealtimeStatus("listening");
+      setConversationTransport("realtime");
+      toast.success("MAYUS Realtime ativo.");
+    });
+    channel.addEventListener("message", (message) => {
+      try {
+        handleRealtimeEvent(JSON.parse(message.data));
+      } catch (error) {
+        console.warn("[MAYUS Realtime] Evento invalido", error);
+      }
+    });
+    channel.addEventListener("close", () => {
+      if (conversationTransportRef.current === "realtime") setRealtimeStatus("idle");
+    });
+
+    const offer = await peer.createOffer();
+    await peer.setLocalDescription(offer);
+
+    const sdpResponse = await fetch("https://api.openai.com/v1/realtime/calls", {
+      method: "POST",
+      body: offer.sdp,
+      headers: {
+        Authorization: `Bearer ${sessionData.client_secret}`,
+        "Content-Type": "application/sdp",
+      },
+    });
+    if (!sdpResponse.ok) {
+      throw new Error("OpenAI Realtime recusou a conexao WebRTC.");
+    }
+
+    await peer.setRemoteDescription({
+      type: "answer",
+      sdp: await sdpResponse.text(),
+    });
+  };
+
+  const startLegacyConversationMode = () => {
+    setConversationTransport("legacy");
+    setRealtimeStatus("error");
+    setTimeout(() => {
+      if (!isRecording && !playingMessageId) toggleRecording();
+    }, 500);
+  };
+
+  const toggleConversationMode = async () => {
+    if (isConversationMode) {
+      stopConversationMode();
+      toast.info("Modo Conversa desativado.");
+      return;
+    }
+
+    setIsConversationMode(true);
+    setConversationTransport("realtime");
+    try {
+      await startRealtimeSession();
+    } catch (error: any) {
+      console.error("[MAYUS Realtime] fallback", error);
+      stopRealtimeSession();
+      toast.error(error?.message || "Realtime indisponivel. Usando fallback de voz.");
+      startLegacyConversationMode();
+    }
+  };
+
+  useEffect(() => {
+    return () => {
+      stopConversationMode();
+    };
+  }, []);
 
   if (checkingVault) {
     return <div className="p-8 flex items-center justify-center animate-pulse text-[#CCA761]">Acessando Cofre de Chaves...</div>;
@@ -909,27 +1362,76 @@ export default function MAYUSPlayground() {
             </div>
           </div>
           <div className="flex items-center gap-3">
-            <button
-              onClick={() => {
-                const newState = !isConversationMode;
-                setIsConversationMode(newState);
-                if (newState) {
-                  toast.success("Modo Conversa Ativado");
-                  if (!isRecording && !playingMessageId) {
-                    setTimeout(() => toggleRecording(), 500);
-                  }
-                } else {
-                  setIsRecording(false);
-                }
-              }}
-              className={`flex items-center gap-2 px-4 py-2 rounded-xl border transition-all text-[10px] font-black uppercase tracking-[0.2em] ${
-                isConversationMode 
-                  ? 'bg-[#CCA761] border-[#CCA761] text-black shadow-[0_0_20px_rgba(204,167,97,0.4)] animate-pulse' 
-                  : 'bg-white/5 border-white/10 text-gray-500 hover:border-[#CCA761]/40'
-              }`}
-            >
-              <Sparkles size={14} /> {isConversationMode ? 'Modo Conversa Ativo' : 'Ativar Modo Conversa'}
-            </button>
+            <div className="relative flex items-stretch rounded-xl border border-white/10 bg-white/5">
+              <button
+                onClick={toggleConversationMode}
+                disabled={realtimeStatus === "connecting"}
+                className={`flex items-center gap-2 px-4 py-2 transition-all text-[10px] font-black uppercase tracking-[0.2em] ${
+                  isConversationMode
+                    ? 'bg-[#CCA761] text-black shadow-[0_0_20px_rgba(204,167,97,0.4)]'
+                    : 'text-gray-500 hover:text-[#CCA761] hover:bg-white/5'
+                }`}
+              >
+                {realtimeStatus === "connecting" ? <Loader2 size={14} className="animate-spin" /> : <Sparkles size={14} />}
+                {isConversationMode ? REALTIME_STATUS_LABEL[realtimeStatus] : 'Ativar Modo Conversa'}
+              </button>
+              <button
+                type="button"
+                onClick={() => setIsVoiceSwitcherOpen((value) => !value)}
+                className="flex items-center gap-1 border-l border-white/10 px-3 text-[10px] font-black uppercase tracking-[0.18em] text-[#CCA761] hover:bg-[#CCA761]/10 transition-colors"
+                title="Escolher voz Realtime"
+              >
+                <Headphones size={13} />
+                {selectedRealtimeVoice}
+                <ChevronDown size={12} />
+              </button>
+
+              {isVoiceSwitcherOpen && (
+                <div className="absolute right-0 top-full mt-3 w-[min(86vw,300px)] rounded-2xl border border-[#CCA761]/25 bg-[#080808] shadow-2xl shadow-black/60 z-50 overflow-hidden">
+                  <div className="p-4 border-b border-white/10">
+                    <p className="text-[10px] uppercase tracking-[0.25em] text-[#CCA761] font-black">Voz Realtime</p>
+                    <p className="mt-1 text-[11px] text-gray-500 normal-case tracking-normal">
+                      Trocar a voz exige reiniciar a sessao ativa.
+                    </p>
+                  </div>
+                  <div className="max-h-72 overflow-y-auto p-2 space-y-1">
+                    {REALTIME_VOICE_OPTIONS.map((voice) => {
+                      const active = selectedRealtimeVoice === voice.value;
+                      return (
+                        <button
+                          key={voice.value}
+                          type="button"
+                          onClick={() => {
+                            setSelectedRealtimeVoice(voice.value);
+                            setIsVoiceSwitcherOpen(false);
+                            if (isConversationMode) {
+                              stopConversationMode();
+                              toast.info("Voz alterada. Ative o modo conversa novamente para testar.");
+                            }
+                          }}
+                          className={`w-full text-left rounded-xl px-3 py-3 border transition-colors ${
+                            active
+                              ? "border-[#CCA761]/50 bg-[#CCA761]/10"
+                              : "border-transparent hover:border-white/10 hover:bg-white/[0.04]"
+                          }`}
+                        >
+                          <div className="flex items-start justify-between gap-3">
+                            <div>
+                              <p className="text-sm font-bold text-gray-100">{voice.label}</p>
+                              <p className="mt-1 text-[11px] text-gray-500">{voice.description}</p>
+                            </div>
+                            {active && <CheckCircle size={16} className="text-[#CCA761] shrink-0 mt-0.5" />}
+                          </div>
+                        </button>
+                      );
+                    })}
+                    <div className="px-3 py-2 text-[10px] text-gray-600">
+                      Onyx continua no fallback TTS, nao no Realtime.
+                    </div>
+                  </div>
+                </div>
+              )}
+            </div>
             <div className="relative">
               <button
                 type="button"
@@ -1040,7 +1542,7 @@ export default function MAYUSPlayground() {
                       auditLogId={msg.kernel.auditLogId}
                       awaitingPayload={msg.kernel.awaitingPayload as AwaitingPayload}
                       onDecided={(decision) => {
-                        if (isConversationModeRef.current) {
+                        if (isConversationModeRef.current && conversationTransportRef.current === "legacy") {
                           const confirmMsg = decision === 'approved'
                             ? "Excelente! Aprovado. Executando agora mesmo, Doutor!"
                             : "Entendido. Ação cancelada conforme solicitado.";
@@ -1129,7 +1631,11 @@ export default function MAYUSPlayground() {
                 type="text"
                 value={input}
                 onChange={(e) => setInput(e.target.value)}
-                placeholder={isConversationMode ? "Ouvindo... Pode falar." : "Sua instrução para a IA..."}
+                placeholder={
+                  isConversationMode
+                    ? `${REALTIME_STATUS_LABEL[realtimeStatus]}... voz ${selectedRealtimeVoice}.`
+                    : "Sua instrução para a IA..."
+                }
                 className={`w-full bg-gray-50 dark:bg-[#141414] border rounded-2xl pl-6 pr-14 py-4 focus:outline-none transition-all text-sm text-gray-200 shadow-xl ${
                   isConversationMode 
                     ? 'border-[#CCA761]/40 shadow-[#CCA761]/5' 
@@ -1139,18 +1645,28 @@ export default function MAYUSPlayground() {
               />
               <button
                 type="button"
-                onClick={toggleRecording}
+                onClick={isConversationMode && conversationTransport === "realtime" ? toggleConversationMode : toggleRecording}
                 disabled={isLoading}
                 className={`absolute right-4 top-1/2 -translate-y-1/2 p-2 rounded-full transition-all ${
-                  isRecording 
+                  realtimeStatus === "connecting"
+                    ? 'bg-[#CCA761]/20 text-[#CCA761] border border-[#CCA761]/30'
+                    : conversationTransport === "realtime" && realtimeStatus === "speaking"
+                    ? 'bg-[#CCA761] text-black animate-pulse shadow-[0_0_15px_rgba(204,167,97,0.4)]'
+                    : isRecording
                     ? 'bg-[#CCA761] text-black animate-pulse shadow-[0_0_15px_rgba(204,167,97,0.4)]' 
                     : playingMessageId 
                     ? 'bg-[#CCA761]/20 text-[#CCA761] border border-[#CCA761]/30'
                     : 'text-gray-500 hover:text-[#CCA761]'
                 }`}
-                title={isRecording ? "Ouvindo..." : playingMessageId ? "IA Falando" : "Ditar Mensagem"}
+                title={conversationTransport === "realtime" ? "Encerrar Realtime" : isRecording ? "Ouvindo..." : playingMessageId ? "IA Falando" : "Ditar Mensagem"}
               >
-                {playingMessageId ? <Volume2 size={18} className="animate-pulse" /> : <Mic size={18} />}
+                {realtimeStatus === "connecting"
+                  ? <Loader2 size={18} className="animate-spin" />
+                  : conversationTransport === "realtime" && realtimeStatus === "speaking"
+                    ? <Volume2 size={18} className="animate-pulse" />
+                    : playingMessageId
+                      ? <Volume2 size={18} className="animate-pulse" />
+                      : <Mic size={18} />}
               </button>
             </div>
             <button
@@ -1167,7 +1683,9 @@ export default function MAYUSPlayground() {
           <div className="text-center mt-3 flex items-center justify-center gap-2">
              {isConversationMode && <span className="w-1.5 h-1.5 rounded-full bg-[#CCA761] animate-ping" />}
              <p className="text-[10px] text-gray-600 font-medium lowercase tracking-widest">
-               {isConversationMode ? 'Modo conversa ativo • kernel em escuta' : 'As sessões e decisões do kernel no ambiente logado são auditáveis.'}
+               {isConversationMode
+                 ? `modo conversa ${conversationTransport} • ${REALTIME_STATUS_LABEL[realtimeStatus].toLowerCase()} • voz ${selectedRealtimeVoice}${realtimeCost ? ` • US$ ${realtimeCost.usd.toFixed(3)} / R$ ${realtimeCost.brl.toFixed(2)}` : ""}`
+                 : 'As sessões e decisões do kernel no ambiente logado são auditáveis.'}
              </p>
           </div>
         </div>

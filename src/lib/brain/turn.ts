@@ -3,6 +3,13 @@ import { brainAdminSupabase } from "@/lib/brain/server";
 import { createBrainArtifact } from "@/lib/brain/artifacts";
 import { listTenantIntegrationsResolved } from "@/lib/integrations/server";
 import { normalizeLLMProvider, type LLMProvider } from "@/lib/llm-router";
+import {
+  buildMayusOrbPresentingEvent,
+  buildMayusOrbWorkingEvent,
+  withMayusOrbEvent,
+  type MayusOrbEvent,
+  type MayusOrbStatus,
+} from "@/lib/brain/orb-events";
 
 const PROVIDER_PRIORITY: readonly LLMProvider[] = ["openrouter", "openai", "google", "groq", "anthropic"];
 
@@ -37,6 +44,7 @@ export interface ExecuteBrainTurnOutput {
   stepId: string;
   provider: LLMProvider;
   responseStatus: number;
+  orb: MayusOrbEvent;
   error?: string | null;
 }
 
@@ -108,7 +116,7 @@ export async function resolvePreferredBrainProvider(
   return preferred || configuredProvider;
 }
 
-function mapKernelStatusToBrainStatus(status: string | undefined) {
+function mapKernelStatusToBrainStatus(status: string | undefined): Exclude<MayusOrbStatus, "executing"> {
   switch (status) {
     case "awaiting_approval":
       return "awaiting_approval";
@@ -122,6 +130,12 @@ function mapKernelStatusToBrainStatus(status: string | undefined) {
     default:
       return "completed_with_warnings";
   }
+}
+
+function getRecord(value: unknown): Record<string, unknown> {
+  return value && typeof value === "object" && !Array.isArray(value)
+    ? (value as Record<string, unknown>)
+    : {};
 }
 
 export async function executeBrainTurn(input: ExecuteBrainTurnInput): Promise<ExecuteBrainTurnOutput> {
@@ -162,10 +176,24 @@ export async function executeBrainTurn(input: ExecuteBrainTurnInput): Promise<Ex
   const runId = String(dispatchData.run.id);
   const stepId = String(dispatchData.step.id);
   const startedAt = new Date().toISOString();
+  const initialStepPayload = getRecord(dispatchData.step.input_payload);
+  const workingOrb = buildMayusOrbWorkingEvent({
+    taskId,
+    runId,
+    stepId,
+    sourceModule: input.module,
+  });
 
   await Promise.all([
     brainAdminSupabase.from("brain_runs").update({ status: "executing", started_at: startedAt }).eq("id", runId),
-    brainAdminSupabase.from("brain_steps").update({ status: "running", started_at: startedAt }).eq("id", stepId),
+    brainAdminSupabase
+      .from("brain_steps")
+      .update({
+        status: "running",
+        started_at: startedAt,
+        input_payload: withMayusOrbEvent(initialStepPayload, workingOrb),
+      })
+      .eq("id", stepId),
     brainAdminSupabase.from("brain_tasks").update({ status: "executing" }).eq("id", taskId),
   ]);
 
@@ -193,13 +221,24 @@ export async function executeBrainTurn(input: ExecuteBrainTurnInput): Promise<Ex
   const completedAt = new Date().toISOString();
   const reply = typeof chatData?.reply === "string" ? chatData.reply : "";
   const errorMessage = chatResponse.ok ? null : String(chatData?.error || "Falha ao consultar o cerebro principal.");
+  const chatKernel = getRecord(chatData?.kernel);
+  const finalOrb = buildMayusOrbPresentingEvent({
+    status: brainStatus,
+    taskId,
+    runId,
+    stepId,
+    capabilityName: chatKernel.capabilityName,
+    handlerType: chatKernel.handlerType,
+    sourceModule: input.module,
+  });
 
   const kernel = {
-    ...(chatData?.kernel && typeof chatData.kernel === "object" ? chatData.kernel : {}),
+    ...chatKernel,
     status: kernelStatus,
     taskId,
     runId,
     stepId,
+    orb: finalOrb,
   } as Record<string, unknown>;
 
   await Promise.all([
@@ -228,6 +267,7 @@ export async function executeBrainTurn(input: ExecuteBrainTurnInput): Promise<Ex
         output_payload: {
           reply,
           kernel,
+          mayus_orb: finalOrb,
         },
         error_payload: errorMessage ? { error: errorMessage } : {},
         completed_at: brainStatus === "awaiting_approval" ? null : completedAt,
@@ -246,6 +286,7 @@ export async function executeBrainTurn(input: ExecuteBrainTurnInput): Promise<Ex
         model: input.model || null,
         kernel_status: kernelStatus,
         reply,
+        mayus_orb: finalOrb,
         ...(input.learningPayload || {}),
       },
       created_by: input.authContext.userId,
@@ -287,6 +328,7 @@ export async function executeBrainTurn(input: ExecuteBrainTurnInput): Promise<Ex
           provider: preferredProvider,
           model: input.model || null,
           status: brainStatus,
+          mayus_orb: finalOrb,
         },
       });
     } catch (artifactError) {
@@ -302,6 +344,7 @@ export async function executeBrainTurn(input: ExecuteBrainTurnInput): Promise<Ex
     stepId,
     provider: preferredProvider,
     responseStatus: chatResponse.ok ? 200 : chatResponse.status || 500,
+    orb: finalOrb,
     error: errorMessage,
   };
 }

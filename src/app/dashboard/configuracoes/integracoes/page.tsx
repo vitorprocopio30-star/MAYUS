@@ -741,7 +741,7 @@ export default function IntegracoesPage() {
                      {instagramAutomations.map(auto => (
                        <div key={auto.id} className="group bg-white/5 border border-white/10 rounded-xl p-3 flex justify-between items-center hover:border-pink-500/30 transition-all">
                           <div>
-                             <p className="text-[10px] font-black uppercase text-pink-500">Palavra: "{auto.keyword}"</p>
+                             <p className="text-[10px] font-black uppercase text-pink-500">Palavra: &quot;{auto.keyword}&quot;</p>
                              <p className="text-xs text-gray-300 mt-1 truncate max-w-[200px]">{auto.response_text}</p>
                           </div>
                           <button onClick={() => handleDeleteInstaAutomation(auto.id)} className="p-2 text-gray-500 hover:text-red-500 opacity-0 group-hover:opacity-100 transition-all">
