@@ -17,6 +17,11 @@ type InstagramIntegrationRow = {
   metadata: Record<string, unknown> | null;
 };
 
+type ResolvedInstagramIntegration = InstagramIntegrationRow & {
+  graphSenderId: string;
+  matchedBy: "instagram_business_account_id" | "page_id" | "instance_name";
+};
+
 function normalizeText(value: unknown) {
   return String(value || "").trim();
 }
@@ -51,7 +56,7 @@ function verifyMetaSignature(rawBody: string, signatureHeader: string | null) {
   return crypto.timingSafeEqual(Buffer.from(signatureHeader), Buffer.from(expected));
 }
 
-async function resolveInstagramIntegration(instagramBusinessId: string) {
+async function resolveInstagramIntegration(entryId: string): Promise<ResolvedInstagramIntegration | null> {
   const { data, error } = await supabase
     .from("tenant_integrations")
     .select("tenant_id, provider, instance_name, metadata")
@@ -60,18 +65,38 @@ async function resolveInstagramIntegration(instagramBusinessId: string) {
   if (error) throw error;
 
   const rows = (data || []) as InstagramIntegrationRow[];
-  return rows.find((row) => {
+  for (const row of rows) {
     const metadataBusinessId = metadataString(row.metadata, [
       "instagram_business_account_id",
       "instagram_business_id",
       "ig_business_account_id",
       "ig_user_id",
     ]);
-    if (metadataBusinessId === instagramBusinessId) return true;
+    if (metadataBusinessId === entryId) {
+      return { ...row, graphSenderId: metadataBusinessId, matchedBy: "instagram_business_account_id" };
+    }
+
+    const metadataPageId = metadataString(row.metadata, [
+      "page_id",
+      "facebook_page_id",
+      "meta_page_id",
+    ]);
+    if (metadataPageId === entryId) {
+      return { ...row, graphSenderId: metadataBusinessId || entryId, matchedBy: "page_id" };
+    }
 
     const instanceParts = normalizeText(row.instance_name).split("|").map((part) => part.trim()).filter(Boolean);
-    return instanceParts.includes(instagramBusinessId);
-  }) || null;
+    const instanceMatchIndex = instanceParts.findIndex((part) => part === entryId);
+    if (instanceMatchIndex >= 0) {
+      return {
+        ...row,
+        graphSenderId: metadataBusinessId || instanceParts[0] || entryId,
+        matchedBy: instanceMatchIndex === 0 ? "instagram_business_account_id" : "instance_name",
+      };
+    }
+  }
+
+  return null;
 }
 
 async function recordWebhookEvent(params: {
@@ -113,8 +138,8 @@ async function postPublicReply(params: { commentId: string; accessToken: string;
   });
 }
 
-async function sendPrivateReply(params: { instagramBusinessId: string; commentId: string; accessToken: string; message: string }) {
-  return fetch(`https://graph.facebook.com/v21.0/${encodeURIComponent(params.instagramBusinessId)}/messages`, {
+async function sendPrivateReply(params: { graphSenderId: string; commentId: string; accessToken: string; message: string }) {
+  return fetch(`https://graph.facebook.com/v21.0/${encodeURIComponent(params.graphSenderId)}/messages`, {
     method: "POST",
     headers: { "Content-Type": "application/json" },
     body: JSON.stringify({
@@ -155,6 +180,7 @@ export async function POST(req: NextRequest) {
       const instagramBusinessId = normalizeText(entry?.id);
       const changes = Array.isArray(entry?.changes) ? entry.changes : [];
       if (!instagramBusinessId || changes.length === 0) continue;
+      console.info(`[Instagram Webhook] Entrada recebida entry.id=${instagramBusinessId} changes=${changes.length}.`);
 
       const integration = await resolveInstagramIntegration(instagramBusinessId);
       if (!integration) {
@@ -163,6 +189,8 @@ export async function POST(req: NextRequest) {
       }
 
       const tenantId = integration.tenant_id;
+      const graphSenderId = integration.graphSenderId;
+      console.info(`[Instagram Webhook] Integracao resolvida entry.id=${instagramBusinessId} graph_sender_id=${graphSenderId} matched_by=${integration.matchedBy}.`);
       const resolvedIntegration = await getTenantIntegrationResolved(tenantId, integration.provider);
       const accessToken = normalizeText(resolvedIntegration?.api_key);
       if (!accessToken) {
@@ -171,6 +199,7 @@ export async function POST(req: NextRequest) {
       }
 
       for (const change of changes) {
+        console.info(`[Instagram Webhook] Processando change.field=${normalizeText(change?.field) || "unknown"} entry.id=${instagramBusinessId}.`);
         if (change?.field !== "comments") continue;
 
         const value = change.value || {};
@@ -207,12 +236,14 @@ export async function POST(req: NextRequest) {
         const directText = buildDeliveryMessage(automation);
 
         const publicReply = await postPublicReply({ commentId, accessToken, message: responseText });
+        console.info(`[Instagram Webhook] Resposta publica status=${publicReply.status} comment_id=${commentId}.`);
         if (!publicReply.ok) {
           throw new Error(`Falha ao responder comentario no Instagram: ${publicReply.status}`);
         }
 
         if (directText) {
-          const privateReply = await sendPrivateReply({ instagramBusinessId, commentId, accessToken, message: directText });
+          const privateReply = await sendPrivateReply({ graphSenderId, commentId, accessToken, message: directText });
+          console.info(`[Instagram Webhook] Private reply status=${privateReply.status} comment_id=${commentId} graph_sender_id=${graphSenderId}.`);
           if (!privateReply.ok) {
             throw new Error(`Falha ao enviar direct no Instagram: ${privateReply.status}`);
           }

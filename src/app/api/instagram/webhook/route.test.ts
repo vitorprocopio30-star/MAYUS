@@ -118,4 +118,52 @@ describe("instagram webhook", () => {
       automation_id: "auto-1",
     }));
   });
+
+  it("resolve integracao quando entry.id corresponde ao Page ID salvo em metadata", async () => {
+    const integrations = [{
+      tenant_id: "tenant-1",
+      provider: "instagram",
+      instance_name: "ig-business-1|page-1",
+      metadata: {
+        instagram_business_account_id: "ig-business-1",
+        page_id: "page-1",
+      },
+    }];
+    const automations = [{
+      id: "auto-1",
+      keyword: "prompt",
+      response_text: "Te enviei no direct.",
+      direct_message: "Aqui esta.",
+      file_url: "https://mayus.test/prompt.pdf",
+    }];
+    const eventsChain = chain(null, null);
+
+    fromMock.mockImplementation((table: string) => {
+      if (table === "tenant_integrations") return chain(integrations, null);
+      if (table === "instagram_automations") return chain(automations, null);
+      if (table === "instagram_webhook_events") return eventsChain;
+      return chain();
+    });
+
+    const response = await POST(buildWebhookRequest({
+      entry: [{
+        id: "page-1",
+        changes: [{
+          field: "comments",
+          value: {
+            id: "comment-page-1",
+            text: "manda o prompt",
+            from: { id: "ig-user-1", username: "maria" },
+          },
+        }],
+      }],
+    }));
+
+    expect(response.status).toBe(200);
+    expect(getTenantIntegrationResolvedMock).toHaveBeenCalledWith("tenant-1", "instagram");
+    expect(fetch).toHaveBeenCalledWith("https://graph.facebook.com/v21.0/ig-business-1/messages", expect.objectContaining({
+      method: "POST",
+      body: expect.stringContaining("https://mayus.test/prompt.pdf"),
+    }));
+  });
 });
