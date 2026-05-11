@@ -3,8 +3,8 @@ import { NextRequest, NextResponse } from "next/server";
 import { getBrainAuthContext, brainAdminSupabase } from "@/lib/brain/server";
 import { requireTenantApiKey } from "@/lib/integrations/server";
 import {
-  MAYUS_REALTIME_BRAIN_TOOL,
   MAYUS_REALTIME_MODEL,
+  MAYUS_REALTIME_TOOLS,
   buildMayusRealtimeInstructions,
   normalizeMayusRealtimeVoice,
 } from "@/lib/voice/realtime-persona";
@@ -110,7 +110,7 @@ export async function POST(req: NextRequest) {
             voice,
           },
         },
-        tools: [MAYUS_REALTIME_BRAIN_TOOL],
+        tools: MAYUS_REALTIME_TOOLS,
         tool_choice: "auto",
       },
     };

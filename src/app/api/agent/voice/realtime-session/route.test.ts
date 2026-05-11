@@ -88,7 +88,12 @@ describe("POST /api/agent/voice/realtime-session", () => {
     const body = JSON.parse(String(vi.mocked(global.fetch).mock.calls[0]?.[1]?.body));
     expect(body.session.audio.output.voice).toBe("marin");
     expect(body.session.instructions).toContain("Dutra Advocacia");
-    expect(body.session.tools[0].name).toBe("consultar_cerebro_mayus");
+    expect(body.session.tools.map((tool: any) => tool.name)).toEqual([
+      "consultar_cerebro_mayus",
+      "criar_tarefa_mayus",
+      "pesquisar_web_mayus",
+      "responder_sobre_mayus",
+    ]);
   });
 
   it("bloqueia usuario sem role executiva", async () => {

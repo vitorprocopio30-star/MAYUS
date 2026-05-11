@@ -12,6 +12,8 @@ import {
 import { useUserProfile } from "@/hooks/useUserProfile";
 import {
   DEFAULT_MAYUS_REALTIME_VOICE,
+  MAYUS_REALTIME_BRL_PER_USD,
+  MAYUS_REALTIME_WEB_SEARCH_USD_PER_CALL,
   REALTIME_VOICE_OPTIONS,
   estimateMayusRealtimeUsageCost,
   type MayusRealtimeCostEstimate,
@@ -79,6 +81,10 @@ type RealtimeStatus =
   | "thinking"
   | "speaking"
   | "tool_calling"
+  | "searching"
+  | "creating_task"
+  | "consulting_mayus"
+  | "awaiting_approval"
   | "error";
 
 type ConversationTransport = "idle" | "realtime" | "legacy";
@@ -105,8 +111,32 @@ const REALTIME_STATUS_LABEL: Record<RealtimeStatus, string> = {
   thinking: "Pensando",
   speaking: "Falando",
   tool_calling: "Consultando Brain",
+  searching: "Pesquisando",
+  creating_task: "Criando tarefa",
+  consulting_mayus: "Consultando MAYUS",
+  awaiting_approval: "Aguardando aprovacao",
   error: "Realtime bloqueado",
 };
+
+const REALTIME_STUCK_STATUSES = new Set<RealtimeStatus>([
+  "thinking",
+  "tool_calling",
+  "searching",
+  "creating_task",
+  "consulting_mayus",
+]);
+
+async function fetchJsonWithTimeout(url: string, init: RequestInit, timeoutMs = 40_000) {
+  const controller = new AbortController();
+  const timeout = window.setTimeout(() => controller.abort(), timeoutMs);
+  try {
+    const response = await fetch(url, { ...init, signal: controller.signal });
+    const data = await response.json().catch(() => ({}));
+    return { response, data };
+  } finally {
+    window.clearTimeout(timeout);
+  }
+}
 
 const MODEL_PRESETS: Record<string, Array<Omit<ModelOption, "provider">>> = {
   openrouter: [
@@ -463,6 +493,18 @@ export default function MAYUSPlayground() {
   useEffect(() => {
     conversationTransportRef.current = conversationTransport;
   }, [conversationTransport]);
+
+  useEffect(() => {
+    if (conversationTransport !== "realtime" || !REALTIME_STUCK_STATUSES.has(realtimeStatus)) return;
+
+    const timeout = window.setTimeout(() => {
+      if (conversationTransportRef.current !== "realtime") return;
+      setRealtimeStatus("listening");
+      toast.warning("O MAYUS demorou nesse estado. Resetei a escuta para evitar travamento.");
+    }, 45_000);
+
+    return () => window.clearTimeout(timeout);
+  }, [conversationTransport, realtimeStatus]);
 
   useEffect(() => {
     currentConversationIdRef.current = currentConversationId;
@@ -980,11 +1022,44 @@ export default function MAYUSPlayground() {
     }));
   };
 
+  const addRealtimeFixedCost = (usd: number) => {
+    if (!usd) return;
+    setRealtimeCost((previous) => ({
+      usd: (previous?.usd || 0) + usd,
+      brl: (previous?.brl || 0) + usd * MAYUS_REALTIME_BRL_PER_USD,
+      textInputTokens: previous?.textInputTokens || 0,
+      textOutputTokens: previous?.textOutputTokens || 0,
+      audioInputTokens: previous?.audioInputTokens || 0,
+      audioOutputTokens: previous?.audioOutputTokens || 0,
+    }));
+  };
+
+  const sendRealtimeToolOutput = (callId: string, output: Record<string, unknown>) => {
+    sendRealtimeEvent({
+      type: "conversation.item.create",
+      item: {
+        type: "function_call_output",
+        call_id: callId,
+        output: JSON.stringify(output),
+      },
+    });
+    sendRealtimeEvent({ type: "response.create" });
+  };
+
+  const formatRealtimeSources = (sources: Array<{ title?: string; url?: string }> = []) => {
+    const validSources = sources.filter((source) => source?.url);
+    if (!validSources.length) return "";
+    return [
+      "",
+      "Fontes:",
+      ...validSources.map((source, index) => `${index + 1}. [${source.title || source.url}](${source.url})`),
+    ].join("\n");
+  };
+
   const handleRealtimeFunctionCall = async (call: RealtimeFunctionCall) => {
-    if (call.name !== "consultar_cerebro_mayus" || !call.call_id) return;
+    if (!call.name || !call.call_id) return;
     if (realtimeProcessedCallsRef.current.has(call.call_id)) return;
     realtimeProcessedCallsRef.current.add(call.call_id);
-    setRealtimeStatus("tool_calling");
 
     let args: Record<string, unknown> = {};
     try {
@@ -993,76 +1068,160 @@ export default function MAYUSPlayground() {
       args = {};
     }
 
-    const prompt = typeof args.prompt === "string" && args.prompt.trim()
-      ? args.prompt.trim()
-      : "Consulta de voz recebida pelo Realtime do MAYUS.";
-    const reason = typeof args.reason === "string" ? args.reason : "realtime_voice";
-    const conversationSummary = typeof args.conversationSummary === "string" ? args.conversationSummary : "";
-
-    appendRealtimeMessage({
-      role: "system",
-      content: "MAYUS Realtime consultou o Brain operacional.",
-    });
+    let nextStatus: RealtimeStatus = "thinking";
 
     try {
-      const response = await fetch("/api/agent/voice/brain-bridge", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({
-          toolName: "consultar_cerebro_mayus",
-          prompt,
-          toolPayload: {
+      if (call.name === "consultar_cerebro_mayus") {
+        setRealtimeStatus("tool_calling");
+        const prompt = typeof args.prompt === "string" && args.prompt.trim()
+          ? args.prompt.trim()
+          : "Consulta de voz recebida pelo Realtime do MAYUS.";
+        const reason = typeof args.reason === "string" ? args.reason : "realtime_voice";
+        const conversationSummary = typeof args.conversationSummary === "string" ? args.conversationSummary : "";
+
+        appendRealtimeMessage({
+          role: "system",
+          content: "MAYUS Realtime consultou o Brain operacional.",
+        });
+
+        const { response, data } = await fetchJsonWithTimeout("/api/agent/voice/brain-bridge", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({
+            toolName: "consultar_cerebro_mayus",
             prompt,
-            reason,
-            conversationSummary,
-            provider: "openai_realtime",
-            voice: selectedRealtimeVoice,
-          },
-          history: messages
-            .filter((message) => message.role === "user" || message.role === "model")
-            .slice(-8)
-            .map((message) => ({ role: message.role, content: message.content })),
-        }),
-      });
-      const data = await response.json().catch(() => ({}));
-
-      const output = response.ok
-        ? {
-            ok: true,
-            reply: data?.reply || "Brain consultado sem resposta textual.",
-            kernel: data?.kernel || {},
-            taskId: data?.taskId || null,
-            runId: data?.runId || null,
-            stepId: data?.stepId || null,
-          }
-        : {
-            ok: false,
-            error: data?.error || "Falha ao consultar o MAYUS Brain.",
-          };
-
-      sendRealtimeEvent({
-        type: "conversation.item.create",
-        item: {
-          type: "function_call_output",
-          call_id: call.call_id,
-          output: JSON.stringify(output),
-        },
-      });
-      sendRealtimeEvent({ type: "response.create" });
-      setRealtimeStatus("thinking");
-    } catch (error: any) {
-      sendRealtimeEvent({
-        type: "conversation.item.create",
-        item: {
-          type: "function_call_output",
-          call_id: call.call_id,
-          output: JSON.stringify({
-            ok: false,
-            error: error?.message || "Falha de rede ao consultar o MAYUS Brain.",
+            toolPayload: {
+              prompt,
+              reason,
+              conversationSummary,
+              provider: "openai_realtime",
+              voice: selectedRealtimeVoice,
+            },
+            history: messages
+              .filter((message) => message.role === "user" || message.role === "model")
+              .slice(-8)
+              .map((message) => ({ role: message.role, content: message.content })),
           }),
-        },
+        });
+
+        sendRealtimeToolOutput(call.call_id, response.ok
+          ? {
+              ok: true,
+              reply: data?.reply || "Brain consultado sem resposta textual.",
+              kernel: data?.kernel || {},
+              taskId: data?.taskId || null,
+              runId: data?.runId || null,
+              stepId: data?.stepId || null,
+            }
+          : {
+              ok: false,
+              error: data?.error || "Falha ao consultar o MAYUS Brain.",
+            });
+      } else if (call.name === "pesquisar_web_mayus") {
+        setRealtimeStatus("searching");
+        const query = typeof args.query === "string" && args.query.trim() ? args.query.trim() : "";
+        const { response, data } = await fetchJsonWithTimeout("/api/agent/voice/realtime-web-search", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({
+            query,
+            reason: args.reason,
+            conversationSummary: args.conversationSummary,
+          }),
+        });
+
+        if (response.ok) {
+          addRealtimeFixedCost(Number(data?.cost?.usd || MAYUS_REALTIME_WEB_SEARCH_USD_PER_CALL));
+          appendRealtimeMessage({
+            role: "model",
+            content: `Pesquisa web concluida:\n${data?.answer || "Sem resposta textual."}${formatRealtimeSources(data?.sources || [])}`,
+          });
+        }
+
+        sendRealtimeToolOutput(call.call_id, response.ok
+          ? {
+              ok: true,
+              answer: data?.answer,
+              sources: data?.sources || [],
+              cost: data?.cost || null,
+            }
+          : {
+              ok: false,
+              error: data?.error || "Falha ao pesquisar na web.",
+            });
+      } else if (call.name === "criar_tarefa_mayus") {
+        setRealtimeStatus("creating_task");
+        const { response, data } = await fetchJsonWithTimeout("/api/agent/voice/realtime-task", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify(args),
+        });
+
+        if (response.ok) {
+          if (data?.requiresApproval) nextStatus = "awaiting_approval";
+          appendRealtimeMessage({
+            role: "model",
+            content: `${data?.reply || "Tarefa registrada."}${data?.task?.title ? `\n\nTarefa: ${data.task.title}` : ""}`,
+          });
+        }
+
+        sendRealtimeToolOutput(call.call_id, response.ok
+          ? {
+              ok: true,
+              reply: data?.reply,
+              task: data?.task || null,
+              requiresApproval: Boolean(data?.requiresApproval),
+            }
+          : {
+              ok: false,
+              error: data?.error || "Falha ao criar tarefa.",
+            });
+      } else if (call.name === "responder_sobre_mayus") {
+        setRealtimeStatus("consulting_mayus");
+        const question = typeof args.question === "string" && args.question.trim()
+          ? args.question.trim()
+          : "O que e o MAYUS?";
+        const { response, data } = await fetchJsonWithTimeout("/api/agent/voice/mayus-knowledge", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({
+            question,
+            conversationSummary: args.conversationSummary,
+          }),
+        });
+
+        if (response.ok) {
+          appendRealtimeMessage({
+            role: "model",
+            content: data?.answer || "Consultei a base interna do MAYUS.",
+          });
+        }
+
+        sendRealtimeToolOutput(call.call_id, response.ok
+          ? {
+              ok: true,
+              answer: data?.answer,
+              sources: data?.sources || [],
+            }
+          : {
+              ok: false,
+              error: data?.error || "Falha ao consultar a base do MAYUS.",
+            });
+      } else {
+        sendRealtimeToolOutput(call.call_id, {
+          ok: false,
+          error: `Ferramenta Realtime nao reconhecida: ${call.name}.`,
+        });
+      }
+
+      setRealtimeStatus(nextStatus);
+    } catch (error: any) {
+      sendRealtimeToolOutput(call.call_id, {
+        ok: false,
+        error: error?.name === "AbortError"
+          ? "Tempo limite da ferramenta MAYUS Realtime esgotado."
+          : error?.message || "Falha de rede ao executar ferramenta MAYUS Realtime.",
       });
-      sendRealtimeEvent({ type: "response.create" });
       setRealtimeStatus("error");
     }
   };

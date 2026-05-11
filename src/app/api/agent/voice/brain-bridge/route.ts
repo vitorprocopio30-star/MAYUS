@@ -32,11 +32,15 @@ function resolvePrompt(prompt: unknown, toolName: unknown, toolPayload: unknown)
   if (typeof embeddedPrompt === "string") return embeddedPrompt.trim();
 
   return [
-    "Solicitacao recebida pelo shell de voz ElevenLabs do MAYUS.",
+    "Solicitacao recebida pelo shell de voz do MAYUS.",
     `Tool solicitado: ${normalizedToolName}.`,
     `Payload: ${JSON.stringify(payload)}.`,
     "Interprete o pedido, decida a melhor acao e responda em linguagem natural para o usuario.",
   ].join("\n");
+}
+
+function cleanString(value: unknown, fallback = "") {
+  return typeof value === "string" && value.trim() ? value.trim() : fallback;
 }
 
 
@@ -64,6 +68,7 @@ export async function POST(req: NextRequest) {
     const toolPayload = body.toolPayload && typeof body.toolPayload === "object" && !Array.isArray(body.toolPayload)
       ? body.toolPayload
       : {};
+    const provider = cleanString(toolPayload.provider, "elevenlabs");
 
     const turn = await executeBrainTurn({
       authContext: auth.context,
@@ -80,8 +85,8 @@ export async function POST(req: NextRequest) {
         tool_payload: toolPayload,
       },
       taskContext: {
-        source: "elevenlabs_voice_shell",
-        provider: "elevenlabs",
+        source: provider === "openai_realtime" ? "openai_realtime_voice" : "voice_shell",
+        provider,
         humanized_layer: true,
       },
       policySnapshot: {

@@ -1,6 +1,8 @@
 import { describe, expect, it } from "vitest";
 import {
   DEFAULT_MAYUS_REALTIME_VOICE,
+  MAYUS_REALTIME_TOOLS,
+  MAYUS_REALTIME_WEB_SEARCH_USD_PER_CALL,
   buildMayusRealtimeInstructions,
   estimateMayusRealtimeUsageCost,
   normalizeMayusRealtimeVoice,
@@ -22,8 +24,21 @@ describe("mayus realtime persona", () => {
     expect(instructions).toContain("MAYUS AI");
     expect(instructions).toContain("Dutra Advocacia");
     expect(instructions).toContain("consultar_cerebro_mayus");
+    expect(instructions).toContain("criar_tarefa_mayus");
+    expect(instructions).toContain("pesquisar_web_mayus");
+    expect(instructions).toContain("responder_sobre_mayus");
     expect(instructions).toContain("Nunca invente processo");
     expect(instructions).toContain("frases curtas");
+  });
+
+  it("expoe ferramentas do piloto realtime", () => {
+    expect(MAYUS_REALTIME_TOOLS.map((tool) => tool.name)).toEqual([
+      "consultar_cerebro_mayus",
+      "criar_tarefa_mayus",
+      "pesquisar_web_mayus",
+      "responder_sobre_mayus",
+    ]);
+    expect(MAYUS_REALTIME_WEB_SEARCH_USD_PER_CALL).toBe(0.01);
   });
 
   it("estima custo de texto e audio em USD e BRL", () => {
