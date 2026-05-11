@@ -5,6 +5,7 @@ import {
   initialOrbState,
   orbStateReducer,
   parseMayusOrbEvent,
+  shouldShowWorkingOrb,
 } from "./orb-state-core";
 
 const workingEvent: MayusOrbEvent = {
@@ -45,6 +46,20 @@ describe("orb state core", () => {
       message: MAYUS_ORB_VISUAL_CHANGE_MESSAGE,
       updatedAt: "2026-05-08T12:00:00.000Z",
     });
+  });
+
+  it("so mostra o mini-Orb de execucao para origem de voz", () => {
+    const chatWorking = orbStateReducer(initialOrbState, {
+      type: "start_working",
+      source: "chat",
+    });
+    const voiceWorking = orbStateReducer(initialOrbState, {
+      type: "start_working",
+      source: "voice",
+    });
+
+    expect(shouldShowWorkingOrb(chatWorking)).toBe(false);
+    expect(shouldShowWorkingOrb(voiceWorking)).toBe(true);
   });
 
   it("extrai mayus_orb de brain_steps preferindo output_payload final", () => {

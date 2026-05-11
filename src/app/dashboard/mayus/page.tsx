@@ -10,7 +10,6 @@ import {
   Mic, Volume2, Square, VolumeX, SlidersHorizontal, ChevronDown, Headphones
 } from "lucide-react";
 import { useUserProfile } from "@/hooks/useUserProfile";
-import { useOrbState } from "@/components/dashboard/mayus-orb/OrbStateProvider";
 import {
   DEFAULT_MAYUS_REALTIME_VOICE,
   REALTIME_VOICE_OPTIONS,
@@ -28,6 +27,7 @@ import "dayjs/locale/pt-br";
 dayjs.extend(relativeTime);
 dayjs.locale("pt-br");
 
+const CHAT_TURN_TIMEOUT_MS = 35_000;
 const cormorant = Cormorant_Garamond({ subsets: ["latin"], weight: ["400","500","600","700"], style: ["italic"] });
 const montserrat = Montserrat({ subsets: ["latin"], weight: ["300","400","500","600"] });
 
@@ -345,7 +345,6 @@ export default function MAYUSPlayground() {
   const [isConversationMode, setIsConversationMode] = useState(false);
   const [playingMessageId, setPlayingMessageId] = useState<number | string | null>(null);
   const { profile, isLoading: profileLoading } = useUserProfile();
-  const { startWorking, present } = useOrbState();
 
   const modelOptions = useMemo<ModelOption[]>(() => {
     const seen = new Set<string>();
@@ -635,36 +634,33 @@ export default function MAYUSPlayground() {
     let fallbackOutput = "";
 
     try {
-      startWorking({ source: "chat" });
-      const response = await fetch("/api/brain/chat-turn", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({
-          message: userMsg,
-          provider: currentProvider,
-          model: currentModel,
-          conversationId: convId,
-          history: messages
-            .filter(m => m.role === "user" || m.role === "model")
-            .map(m => ({ role: m.role, content: m.content })),
-        }),
-      });
+      const controller = new AbortController();
+      const timeout = window.setTimeout(() => controller.abort(), CHAT_TURN_TIMEOUT_MS);
+      let response: Response;
+      try {
+        response = await fetch("/api/brain/chat-turn", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          signal: controller.signal,
+          body: JSON.stringify({
+            message: userMsg,
+            provider: currentProvider,
+            model: currentModel,
+            conversationId: convId,
+            history: messages
+              .filter(m => m.role === "user" || m.role === "model")
+              .map(m => ({ role: m.role, content: m.content })),
+          }),
+        });
+      } finally {
+        window.clearTimeout(timeout);
+      }
 
       const data = await response.json();
       if (!response.ok) {
-        present({
-          source: "chat",
-          event: data?.orb,
-          message: data?.error || "O MAYUS encontrou um bloqueio e vai mostrar o que aconteceu.",
-        });
         throw new Error(data.error || "A IA não conseguiu responder.");
       }
       aiResponseData = data;
-      present({
-        source: "chat",
-        event: data?.orb,
-        message: data?.orb?.message,
-      });
 
       // ── Fluxo de aprovação humana ──────────────────────────────────────
       if (
@@ -704,13 +700,15 @@ export default function MAYUSPlayground() {
         setMessages(prev => [...prev, ...newMessages]);
       }
     } catch (err: any) {
-      present({
-        source: "chat",
-        message: "O MAYUS encontrou um bloqueio e vai mostrar o que aconteceu.",
-      });
-      toast.error(err.message);
+      const timedOut = err?.name === "AbortError";
+      const errorMessage = timedOut
+        ? "O MAYUS demorou mais que o limite seguro para responder. Pode tentar de novo em alguns segundos."
+        : err.message;
+      toast.error(errorMessage);
       fallbackStatus = true;
-      fallbackOutput = "Erro Crítico: A conexão com o córtex falhou.";
+      fallbackOutput = timedOut
+        ? "O MAYUS demorou mais que o limite seguro para responder. A conversa foi encerrada para nao ficar presa em analise."
+        : "Erro Critico: A conexao com o cortex falhou.";
       setMessages(prev => [...prev, { role: "system", content: fallbackOutput }]);
     } finally {
       setIsLoading(false);

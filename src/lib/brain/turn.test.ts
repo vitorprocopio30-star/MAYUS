@@ -160,4 +160,63 @@ describe("executeBrainTurn", () => {
       metadata: expect.objectContaining({ status: "completed" }),
     }));
   });
+
+  it("encerra a missao como failed quando a chamada interna do chat aborta", async () => {
+    const abortError = new Error("aborted");
+    abortError.name = "AbortError";
+
+    const fetchMock = vi.fn(async (input: RequestInfo | URL, init?: RequestInit) => {
+      const url = input.toString();
+      const body = JSON.parse(String(init?.body || "{}"));
+
+      if (url.endsWith("/api/brain/dispatch")) {
+        return new Response(JSON.stringify({
+          task: { id: "brain-task-timeout" },
+          run: { id: "brain-run-timeout" },
+          step: { id: "brain-step-timeout", input_payload: { goal: body.goal } },
+        }), { status: 200 });
+      }
+
+      if (url.endsWith("/api/ai/chat")) {
+        throw abortError;
+      }
+
+      throw new Error(`Unexpected fetch: ${url}`);
+    });
+    vi.stubGlobal("fetch", fetchMock);
+
+    const result = await executeBrainTurn({
+      authContext: {
+        userId: "user-1",
+        tenantId: "tenant-1",
+        userRole: "admin",
+      },
+      baseUrl: "http://localhost:3000/api/brain/chat-turn",
+      cookieHeader: "session=abc",
+      goal: "Mayus, veja o proximo passo do processo.",
+      module: "mayus",
+      channel: "chat",
+      learningEventType: "chat_turn_processed",
+    });
+
+    expect(result.responseStatus).toBe(504);
+    expect(result.kernel).toEqual(expect.objectContaining({
+      status: "timeout",
+      taskId: "brain-task-timeout",
+      runId: "brain-run-timeout",
+      stepId: "brain-step-timeout",
+    }));
+    expect(result.orb).toBeNull();
+    expect(updates).toEqual(expect.arrayContaining([
+      expect.objectContaining({ table: "brain_tasks", payload: expect.objectContaining({ status: "failed" }) }),
+      expect.objectContaining({ table: "brain_runs", payload: expect.objectContaining({ status: "failed" }) }),
+      expect.objectContaining({
+        table: "brain_steps",
+        payload: expect.objectContaining({
+          status: "failed",
+          error_payload: expect.objectContaining({ error: expect.stringContaining("Timeout") }),
+        }),
+      }),
+    ]));
+  });
 });

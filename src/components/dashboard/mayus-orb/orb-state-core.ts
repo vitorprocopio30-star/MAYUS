@@ -140,6 +140,10 @@ export function extractMayusOrbEventFromBrainStep(row: unknown): MayusOrbEvent |
   );
 }
 
+export function shouldShowWorkingOrb(state: Pick<OrbState, "stage" | "source">) {
+  return state.stage === "working" && state.source === "voice";
+}
+
 function sameExecution(state: OrbState, event: MayusOrbEvent | null) {
   if (!event) return false;
   if (event.stepId && state.stepId && event.stepId === state.stepId) return true;

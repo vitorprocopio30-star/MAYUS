@@ -5,6 +5,7 @@ import { X } from "lucide-react";
 import * as THREE from "three";
 import { useOrbState } from "./OrbStateProvider";
 import { OrbVisual } from "./OrbVisual";
+import { shouldShowWorkingOrb } from "./orb-state-core";
 
 export type OrbVoiceControls = {
   status: string;
@@ -21,7 +22,7 @@ export function OrbStage({ voice }: { voice: OrbVoiceControls }) {
 
   const isVoiceSource = state.source === "voice";
   const isFaceToFace = isVoiceSource && (state.stage === "summoned" || state.stage === "presenting");
-  const isWorking = state.stage === "working";
+  const isWorking = shouldShowWorkingOrb(state);
   const isOpen = isFaceToFace;
   const isOrbActive = voice.status === "connected" || voice.status === "connecting" || voice.isSpeaking || isWorking;
 

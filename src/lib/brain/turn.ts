@@ -12,6 +12,7 @@ import {
 } from "@/lib/brain/orb-events";
 
 const PROVIDER_PRIORITY: readonly LLMProvider[] = ["openrouter", "openai", "google", "groq", "anthropic"];
+const BRAIN_CHAT_TIMEOUT_MS = 35_000;
 
 export interface NormalizedHistoryItem {
   role: "user" | "model";
@@ -44,7 +45,7 @@ export interface ExecuteBrainTurnOutput {
   stepId: string;
   provider: LLMProvider;
   responseStatus: number;
-  orb: MayusOrbEvent;
+  orb: MayusOrbEvent | null;
   error?: string | null;
 }
 
@@ -138,6 +139,29 @@ function getRecord(value: unknown): Record<string, unknown> {
     : {};
 }
 
+function isAbortError(error: unknown) {
+  return error instanceof DOMException && error.name === "AbortError" ||
+    Boolean(error && typeof error === "object" && (error as { name?: unknown }).name === "AbortError");
+}
+
+async function fetchWithTimeout(input: RequestInfo | URL, init: RequestInit, timeoutMs: number) {
+  const controller = new AbortController();
+  const timeout = setTimeout(() => controller.abort(), timeoutMs);
+
+  try {
+    return await fetch(input, {
+      ...init,
+      signal: controller.signal,
+    });
+  } finally {
+    clearTimeout(timeout);
+  }
+}
+
+function withOptionalOrbPayload<T extends Record<string, unknown>>(payload: T, orb: MayusOrbEvent | null) {
+  return orb ? { ...payload, mayus_orb: orb } : payload;
+}
+
 export async function executeBrainTurn(input: ExecuteBrainTurnInput): Promise<ExecuteBrainTurnOutput> {
   const preferredProvider = await resolvePreferredBrainProvider(input.authContext.tenantId, input.preferredProvider);
   if (!preferredProvider) {
@@ -177,12 +201,15 @@ export async function executeBrainTurn(input: ExecuteBrainTurnInput): Promise<Ex
   const stepId = String(dispatchData.step.id);
   const startedAt = new Date().toISOString();
   const initialStepPayload = getRecord(dispatchData.step.input_payload);
-  const workingOrb = buildMayusOrbWorkingEvent({
-    taskId,
-    runId,
-    stepId,
-    sourceModule: input.module,
-  });
+  const shouldEmitOrb = input.channel === "voice";
+  const workingOrb = shouldEmitOrb
+    ? buildMayusOrbWorkingEvent({
+        taskId,
+        runId,
+        stepId,
+        sourceModule: input.module,
+      })
+    : null;
 
   await Promise.all([
     brainAdminSupabase.from("brain_runs").update({ status: "executing", started_at: startedAt }).eq("id", runId),
@@ -191,29 +218,115 @@ export async function executeBrainTurn(input: ExecuteBrainTurnInput): Promise<Ex
       .update({
         status: "running",
         started_at: startedAt,
-        input_payload: withMayusOrbEvent(initialStepPayload, workingOrb),
+        input_payload: workingOrb ? withMayusOrbEvent(initialStepPayload, workingOrb) : initialStepPayload,
       })
       .eq("id", stepId),
     brainAdminSupabase.from("brain_tasks").update({ status: "executing" }).eq("id", taskId),
   ]);
 
-  const chatResponse = await fetch(chatUrl, {
-    method: "POST",
-    headers: {
-      "Content-Type": "application/json",
-      cookie: input.cookieHeader,
-    },
-    body: JSON.stringify({
-      message: input.goal,
-      provider: preferredProvider,
-      model: input.model || undefined,
-      history: input.history || [],
-      channel: input.channel,
+  let chatResponse: Response;
+  try {
+    chatResponse = await fetchWithTimeout(chatUrl, {
+      method: "POST",
+      headers: {
+        "Content-Type": "application/json",
+        cookie: input.cookieHeader,
+      },
+      body: JSON.stringify({
+        message: input.goal,
+        provider: preferredProvider,
+        model: input.model || undefined,
+        history: input.history || [],
+        channel: input.channel,
+        taskId,
+        runId,
+        stepId,
+      }),
+    }, BRAIN_CHAT_TIMEOUT_MS);
+  } catch (error) {
+    if (!isAbortError(error)) throw error;
+
+    const completedAt = new Date().toISOString();
+    const errorMessage = "Timeout: o MAYUS Brain demorou mais que o limite seguro para responder.";
+    const finalOrb = shouldEmitOrb
+      ? buildMayusOrbPresentingEvent({
+          status: "failed",
+          taskId,
+          runId,
+          stepId,
+          sourceModule: input.module,
+        })
+      : null;
+    const kernel = {
+      status: "timeout",
       taskId,
       runId,
       stepId,
-    }),
-  });
+      ...(finalOrb ? { orb: finalOrb } : {}),
+    } as Record<string, unknown>;
+
+    await Promise.all([
+      brainAdminSupabase
+        .from("brain_tasks")
+        .update({
+          status: "failed",
+          result_summary: null,
+          error_message: errorMessage,
+          completed_at: completedAt,
+        })
+        .eq("id", taskId),
+      brainAdminSupabase
+        .from("brain_runs")
+        .update({
+          status: "failed",
+          summary: null,
+          error_message: errorMessage,
+          completed_at: completedAt,
+        })
+        .eq("id", runId),
+      brainAdminSupabase
+        .from("brain_steps")
+        .update({
+          status: "failed",
+          output_payload: withOptionalOrbPayload({
+            reply: errorMessage,
+            kernel,
+          }, finalOrb),
+          error_payload: { error: errorMessage },
+          completed_at: completedAt,
+        })
+        .eq("id", stepId),
+      brainAdminSupabase.from("learning_events").insert({
+        tenant_id: input.authContext.tenantId,
+        task_id: taskId,
+        run_id: runId,
+        step_id: stepId,
+        event_type: input.learningEventType,
+        source_module: input.module,
+        payload: withOptionalOrbPayload({
+          goal: input.goal,
+          provider: preferredProvider,
+          model: input.model || null,
+          kernel_status: "timeout",
+          reply: errorMessage,
+          ...(input.learningPayload || {}),
+        }, finalOrb),
+        created_by: input.authContext.userId,
+      }),
+    ]);
+
+    return {
+      reply: errorMessage,
+      kernel,
+      taskId,
+      runId,
+      stepId,
+      provider: preferredProvider,
+      responseStatus: 504,
+      orb: finalOrb,
+      error: errorMessage,
+    };
+  }
 
   const chatData = await chatResponse.json().catch(() => ({}));
   const kernelStatus = String(chatData?.kernel?.status || (chatResponse.ok ? "success" : "failed"));
@@ -222,15 +335,17 @@ export async function executeBrainTurn(input: ExecuteBrainTurnInput): Promise<Ex
   const reply = typeof chatData?.reply === "string" ? chatData.reply : "";
   const errorMessage = chatResponse.ok ? null : String(chatData?.error || "Falha ao consultar o cerebro principal.");
   const chatKernel = getRecord(chatData?.kernel);
-  const finalOrb = buildMayusOrbPresentingEvent({
-    status: brainStatus,
-    taskId,
-    runId,
-    stepId,
-    capabilityName: chatKernel.capabilityName,
-    handlerType: chatKernel.handlerType,
-    sourceModule: input.module,
-  });
+  const finalOrb = shouldEmitOrb
+    ? buildMayusOrbPresentingEvent({
+        status: brainStatus,
+        taskId,
+        runId,
+        stepId,
+        capabilityName: chatKernel.capabilityName,
+        handlerType: chatKernel.handlerType,
+        sourceModule: input.module,
+      })
+    : null;
 
   const kernel = {
     ...chatKernel,
@@ -238,7 +353,7 @@ export async function executeBrainTurn(input: ExecuteBrainTurnInput): Promise<Ex
     taskId,
     runId,
     stepId,
-    orb: finalOrb,
+    ...(finalOrb ? { orb: finalOrb } : {}),
   } as Record<string, unknown>;
 
   await Promise.all([
@@ -264,11 +379,10 @@ export async function executeBrainTurn(input: ExecuteBrainTurnInput): Promise<Ex
       .from("brain_steps")
       .update({
         status: brainStatus === "awaiting_approval" ? "awaiting_approval" : brainStatus === "completed" ? "completed" : "failed",
-        output_payload: {
+        output_payload: withOptionalOrbPayload({
           reply,
           kernel,
-          mayus_orb: finalOrb,
-        },
+        }, finalOrb),
         error_payload: errorMessage ? { error: errorMessage } : {},
         completed_at: brainStatus === "awaiting_approval" ? null : completedAt,
       })
@@ -280,15 +394,14 @@ export async function executeBrainTurn(input: ExecuteBrainTurnInput): Promise<Ex
       step_id: stepId,
       event_type: input.learningEventType,
       source_module: input.module,
-      payload: {
+      payload: withOptionalOrbPayload({
         goal: input.goal,
         provider: preferredProvider,
         model: input.model || null,
         kernel_status: kernelStatus,
         reply,
-        mayus_orb: finalOrb,
         ...(input.learningPayload || {}),
-      },
+      }, finalOrb),
       created_by: input.authContext.userId,
     }),
   ]);
@@ -322,14 +435,13 @@ export async function executeBrainTurn(input: ExecuteBrainTurnInput): Promise<Ex
         sourceModule: input.module,
         mimeType: "text/markdown",
         dedupeKey: `mission-result:${taskId}:${stepId}`,
-        metadata: {
+        metadata: withOptionalOrbPayload({
           reply,
           channel: input.channel,
           provider: preferredProvider,
           model: input.model || null,
           status: brainStatus,
-          mayus_orb: finalOrb,
-        },
+        }, finalOrb),
       });
     } catch (artifactError) {
       console.error("[brain/turn] artifact registrar", artifactError);

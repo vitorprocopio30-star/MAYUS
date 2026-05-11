@@ -290,6 +290,7 @@ async function assignBrainStepCapability(params: {
   taskId?: string;
   runId?: string;
   stepId?: string;
+  channel?: string;
   toolName: string;
   handlerType?: string | null;
   toolArguments: string;
@@ -305,20 +306,22 @@ async function assignBrainStepCapability(params: {
     parsedArguments = params.toolArguments;
   }
 
-  const orb = buildMayusOrbWorkingEvent({
-    taskId: params.taskId,
-    runId: params.runId,
-    stepId: params.stepId,
-    capabilityName: params.toolName,
-    handlerType: params.handlerType,
-    sourceModule: "mayus",
-  });
-  const inputPayload = withMayusOrbEvent({
+  const orb = params.channel === "voice"
+    ? buildMayusOrbWorkingEvent({
+        taskId: params.taskId,
+        runId: params.runId,
+        stepId: params.stepId,
+        capabilityName: params.toolName,
+        handlerType: params.handlerType,
+        sourceModule: "mayus",
+      })
+    : null;
+  const inputPayload = {
     tool_name: params.toolName,
     tool_arguments: parsedArguments,
     task_id: params.taskId || null,
     run_id: params.runId || null,
-  }, orb);
+  };
 
   const { error } = await adminSupabase
     .from("brain_steps")
@@ -328,7 +331,7 @@ async function assignBrainStepCapability(params: {
       handler_type: params.handlerType || null,
       step_type: "capability",
       status: "running",
-      input_payload: inputPayload,
+      input_payload: orb ? withMayusOrbEvent(inputPayload, orb) : inputPayload,
     })
     .eq("id", params.stepId);
 
@@ -360,6 +363,7 @@ async function executeToolInvocation(params: {
     taskId: params.taskId,
     runId: params.runId,
     stepId: params.stepId,
+    channel: params.executorContext.channel,
     toolName: params.toolName,
     handlerType,
     toolArguments: params.toolArguments,
@@ -491,6 +495,7 @@ async function executeRouterIntentInvocation(params: {
     taskId: params.taskId,
     runId: params.runId,
     stepId: params.stepId,
+    channel: params.executorContext.channel,
     toolName: params.routerIntent.intent,
     handlerType,
     toolArguments: JSON.stringify(params.routerIntent.entities || {}),
