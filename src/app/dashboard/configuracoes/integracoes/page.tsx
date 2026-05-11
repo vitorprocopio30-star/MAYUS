@@ -233,11 +233,18 @@ export default function IntegracoesPage() {
     if (!profile?.tenant_id || !editingProvider) return;
 
     try {
+      const instagramParts = editingProvider === "instagram"
+        ? tempModel.split("|").map((part) => part.trim()).filter(Boolean)
+        : [];
       const payload = {
         provider: editingProvider,
         apiKey: tempApiKey,
         instanceName: tempModel,
-        status: tempApiKey ? 'connected' : 'disconnected'
+        status: tempApiKey ? 'connected' : 'disconnected',
+        metadata: editingProvider === "instagram" ? {
+          instagram_business_account_id: instagramParts[0] || tempModel.trim(),
+          page_id: instagramParts[1] || null,
+        } : null,
       };
 
       await saveTenantIntegration(payload);
@@ -693,9 +700,9 @@ export default function IntegracoesPage() {
                       <input value={tempApiKey} onChange={e => setTempApiKey(e.target.value)} type="password" placeholder="EAAB..." className="w-full bg-[#111] border border-white/10 rounded-lg px-4 py-2 text-sm text-white focus:outline-none focus:border-pink-500/50 font-mono" />
                     </div>
                     <div>
-                      <label className="text-[10px] font-black uppercase tracking-widest text-pink-500 mb-1.5 block">Instagram Business Account ID</label>
-                      <input value={tempModel} onChange={e => setTempModel(e.target.value)} type="text" placeholder="1784..." className="w-full bg-[#111] border border-white/10 rounded-lg px-4 py-2 text-sm text-white focus:outline-none focus:border-pink-500/50" />
-                      <p className="text-[10px] text-gray-500 mt-2">Use o ID da conta profissional do Instagram conectada ao app Meta.</p>
+                      <label className="text-[10px] font-black uppercase tracking-widest text-pink-500 mb-1.5 block">Instagram Business Account ID | Page ID opcional</label>
+                      <input value={tempModel} onChange={e => setTempModel(e.target.value)} type="text" placeholder="IG_BUSINESS_ID|PAGE_ID" className="w-full bg-[#111] border border-white/10 rounded-lg px-4 py-2 text-sm text-white focus:outline-none focus:border-pink-500/50" />
+                      <p className="text-[10px] text-gray-500 mt-2">Use o ID da conta profissional do Instagram. Se o webhook enviar Page ID no entry.id, adicione depois de uma barra vertical.</p>
                     </div>
                     <div className="flex gap-2 pt-2">
                       <button onClick={() => setEditingProvider(null)} className="flex-1 py-2 text-[10px] font-black uppercase text-gray-500 hover:text-white">Cancelar</button>
@@ -741,7 +748,7 @@ export default function IntegracoesPage() {
                      {instagramAutomations.map(auto => (
                        <div key={auto.id} className="group bg-white/5 border border-white/10 rounded-xl p-3 flex justify-between items-center hover:border-pink-500/30 transition-all">
                           <div>
-                             <p className="text-[10px] font-black uppercase text-pink-500">Palavra: "{auto.keyword}"</p>
+                             <p className="text-[10px] font-black uppercase text-pink-500">Palavra: &quot;{auto.keyword}&quot;</p>
                              <p className="text-xs text-gray-300 mt-1 truncate max-w-[200px]">{auto.response_text}</p>
                           </div>
                           <button onClick={() => handleDeleteInstaAutomation(auto.id)} className="p-2 text-gray-500 hover:text-red-500 opacity-0 group-hover:opacity-100 transition-all">
