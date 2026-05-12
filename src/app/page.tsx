@@ -5,7 +5,7 @@ import Link from "next/link";
 import { useEffect, useState } from "react";
 import { motion } from "framer-motion";
 import { Play, Plus } from "lucide-react";
-import { Cormorant_Garamond } from "next/font/google";
+import { Cormorant_Garamond, Syncopate } from "next/font/google";
 import { Hero } from "@/components/sections/Hero";
 import { CinematicReveal } from "@/components/sections/CinematicReveal";
 import { LuxVortexCard } from "@/components/ui/lux-vortex-card";
@@ -15,6 +15,12 @@ const cormorant = Cormorant_Garamond({
   weight: ["300", "400", "500", "600", "700"],
   style: ["normal", "italic"],
   variable: "--font-display",
+});
+
+const syncopate = Syncopate({ 
+  subsets: ["latin"], 
+  weight: ["400", "700"],
+  variable: "--font-logo",
 });
 
 const tickerItems = [
@@ -336,23 +342,25 @@ export default function LandingPage() {
       >
         <div className="mx-auto flex max-w-[1280px] items-center justify-between px-6 lg:px-12">
           <div className="flex items-center gap-3">
-            <div className="relative h-12 w-12 transition-transform duration-500 hover:scale-[1.05] [perspective:900px]">
-              <div
-                className="relative h-full w-full [transform-style:preserve-3d]"
-                style={{ animation: "mayusPlateRotate 12s ease-in-out infinite" }}
-              >
-                <Image
-                  src="/mayus_logo.png"
-                  alt="MAYUS Monograma"
-                  fill
-                  sizes="48px"
-                  className="object-contain drop-shadow-[0_4px_12px_rgba(0,0,0,0.3)]"
-                  priority
+            <div className="relative h-16 w-16 transition-transform duration-500 hover:scale-[1.05] mix-blend-screen">
+              <div className="relative h-full w-full">
+                <video
+                  src="/logo-mayus-gira.mp4"
+                  autoPlay
+                  loop
+                  muted
+                  playsInline
+                  className="object-contain w-full h-full scale-[1.45] contrast-[1.15] brightness-[0.95] drop-shadow-[0_4px_12px_rgba(0,0,0,0.3)]"
+                  style={{ 
+                    pointerEvents: "none",
+                    WebkitMaskImage: "radial-gradient(circle at center, black 40%, transparent 68%)",
+                    maskImage: "radial-gradient(circle at center, black 40%, transparent 68%)"
+                  }}
                 />
               </div>
             </div>
             <div className="leading-none">
-              <p className="font-display text-2xl font-semibold tracking-[0.22em]">MAYUS</p>
+              <p className={`text-2xl font-bold tracking-[0.3em] ${syncopate.className}`}>MAYUS</p>
               <p className="mt-1 font-mono text-[8px] uppercase tracking-[0.24em] text-[#F5F0E8]/50">
                 IA jurídica agêntica
               </p>
