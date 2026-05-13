@@ -1010,32 +1010,32 @@ const FinanceiroView = ({ metrics }: { metrics: DashboardMetrics }) => {
         : "border-[#22d3ee]/30 bg-[#22d3ee]/10 text-[#22d3ee]";
 
   return (
-  <div className="space-y-6 animate-fade-in-up">
+  <div data-testid="dashboard-finance-view" className="space-y-6 animate-fade-in-up">
     <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-4">
       <GlassCard>
         <p className="text-[10px] text-gray-500 uppercase tracking-widest font-bold mb-1">Recebido</p>
-        <h3 className="text-3xl font-bold text-[#4ade80] tracking-wide mt-2">
+        <h3 data-testid="finance-received-value" className="text-3xl font-bold text-[#4ade80] tracking-wide mt-2">
           R$ <AnimatedNumber value={metrics.revenueReceived} />
         </h3>
         <p className="text-[10px] text-gray-400 mt-2">Honorarios e exito registrados</p>
       </GlassCard>
       <GlassCard>
         <p className="text-[10px] text-gray-500 uppercase tracking-widest font-bold mb-1">Previsto</p>
-        <h3 className="text-3xl font-bold text-[#22d3ee] tracking-wide mt-2">
+        <h3 data-testid="finance-forecast-value" className="text-3xl font-bold text-[#22d3ee] tracking-wide mt-2">
           R$ <AnimatedNumber value={metrics.financeForecast} />
         </h3>
         <p className="text-[10px] text-gray-400 mt-2">{metrics.financeForecastCount} cobrancas a vencer</p>
       </GlassCard>
       <GlassCard>
         <p className="text-[10px] text-gray-500 uppercase tracking-widest font-bold mb-1">Cobrancas Abertas</p>
-        <h3 className="text-3xl font-bold text-[#CCA761] tracking-wide mt-2">
+        <h3 data-testid="finance-open-charges-value" className="text-3xl font-bold text-[#CCA761] tracking-wide mt-2">
           R$ <AnimatedNumber value={metrics.openChargesAmount} />
         </h3>
         <p className="text-[10px] text-gray-400 mt-2">{metrics.openChargesCount} cobrancas em aberto</p>
       </GlassCard>
       <GlassCard>
         <p className="text-[10px] text-gray-500 uppercase tracking-widest font-bold mb-1">Inadimplencia</p>
-        <h3 className="text-3xl font-bold text-[#f87171] tracking-wide mt-2">
+        <h3 data-testid="finance-overdue-value" className="text-3xl font-bold text-[#f87171] tracking-wide mt-2">
           R$ <AnimatedNumber value={metrics.delinquencyAmount} />
         </h3>
         <p className="text-[10px] text-[#f87171] mt-2">{metrics.delinquencyCount} vencidas / {metrics.delinquencyRate}% das abertas</p>
@@ -1088,7 +1088,7 @@ const FinanceiroView = ({ metrics }: { metrics: DashboardMetrics }) => {
         </div>
       </GlassCard>
 
-      <div className="bg-card border border-primary/20 rounded-2xl flex flex-col justify-center p-8 relative overflow-hidden group hover:border-primary/40 transition-colors">
+      <div data-testid="finance-projection-followup" className="bg-card border border-primary/20 rounded-2xl flex flex-col justify-center p-8 relative overflow-hidden group hover:border-primary/40 transition-colors">
         <div className="absolute inset-x-0 h-px top-1/2 bg-gradient-to-r from-transparent via-[#CCA761]/20 to-transparent" />
         <h4 className="text-[10px] text-gray-400 font-bold uppercase tracking-widest mb-6 relative z-10 flex items-center gap-2">
           <Calendar size={14} className="text-[#CCA761]" /> Projecao e Follow-up
@@ -1120,7 +1120,7 @@ const FinanceiroView = ({ metrics }: { metrics: DashboardMetrics }) => {
             <div className="space-y-2">
               <p className="text-[9px] text-gray-500 uppercase tracking-widest font-bold">Forecast</p>
               {forecastBuckets.map((item) => (
-                <div key={item.label} className="flex justify-between gap-3 text-[11px]">
+                <div key={item.label} data-testid={`finance-forecast-bucket-${item.label}`} className="flex justify-between gap-3 text-[11px]">
                   <span className="text-gray-400">{item.label}</span>
                   <span className="text-[#22d3ee] whitespace-nowrap">
                     R$ {item.bucket.amount.toLocaleString('pt-BR')}
@@ -1132,7 +1132,7 @@ const FinanceiroView = ({ metrics }: { metrics: DashboardMetrics }) => {
             <div className="space-y-2">
               <p className="text-[9px] text-gray-500 uppercase tracking-widest font-bold">Vencidos</p>
               {overdueBuckets.map((item) => (
-                <div key={item.label} className="flex justify-between gap-3 text-[11px]">
+                <div key={item.label} data-testid={`finance-overdue-bucket-${item.label}`} className="flex justify-between gap-3 text-[11px]">
                   <span className="text-gray-400">{item.label}</span>
                   <span className="text-[#f87171] whitespace-nowrap">
                     R$ {item.bucket.amount.toLocaleString('pt-BR')}
@@ -1143,15 +1143,15 @@ const FinanceiroView = ({ metrics }: { metrics: DashboardMetrics }) => {
             </div>
           </div>
           <div className="grid grid-cols-3 gap-2 pt-2 border-t border-white/5 text-center">
-            <div>
+            <div data-testid="finance-reconciliation-matched">
               <p className="text-[9px] text-gray-500 uppercase tracking-widest">Casados</p>
               <p className="text-sm font-bold text-[#4ade80]">{metrics.revenueReconciliationMatched}</p>
             </div>
-            <div>
+            <div data-testid="finance-reconciliation-partial">
               <p className="text-[9px] text-gray-500 uppercase tracking-widest">Parciais</p>
               <p className="text-sm font-bold text-[#CCA761]">{metrics.revenueReconciliationPartial}</p>
             </div>
-            <div>
+            <div data-testid="finance-reconciliation-blocked">
               <p className="text-[9px] text-gray-500 uppercase tracking-widest">Bloqueios</p>
               <p className="text-sm font-bold text-[#f87171]">{metrics.revenueReconciliationBlocked}</p>
             </div>
@@ -1163,7 +1163,7 @@ const FinanceiroView = ({ metrics }: { metrics: DashboardMetrics }) => {
           {collectionPlans.length > 0 && (
             <div className="space-y-2 pt-2 border-t border-white/5">
               {collectionPlans.map((plan) => (
-                <div key={plan.id || `${plan.clientName}-${plan.createdAt}`} className="flex justify-between gap-4 text-[11px]">
+                <div key={plan.id || `${plan.clientName}-${plan.createdAt}`} data-testid="finance-collection-plan" className="flex justify-between gap-4 text-[11px]">
                   <span className="text-gray-300 truncate">{plan.clientName || plan.title}</span>
                   <span className="text-gray-500 whitespace-nowrap">
                     {plan.amount !== null ? `R$ ${plan.amount.toLocaleString('pt-BR')}` : plan.priority || "revisao"}
@@ -1176,7 +1176,7 @@ const FinanceiroView = ({ metrics }: { metrics: DashboardMetrics }) => {
             <div className="space-y-2 pt-2 border-t border-white/5">
               <p className="text-[9px] text-gray-500 uppercase tracking-widest font-bold">Maiores riscos</p>
               {riskItems.map((item) => (
-                <div key={item.key} className="rounded-xl border border-white/5 bg-black/20 px-3 py-2">
+                <div key={item.key} data-testid="finance-risk-item" className="rounded-xl border border-white/5 bg-black/20 px-3 py-2">
                   <div className="flex items-start justify-between gap-3">
                     <div className="min-w-0">
                       <p className="truncate text-[11px] font-bold text-gray-200">{item.clientName || item.label}</p>
@@ -1877,6 +1877,7 @@ export default function DashboardHomePage() {
           {/* Dropdown Personalizado do Módulo */}
           <div className="relative">
             <button
+              data-testid="dashboard-module-switcher"
               onClick={() => setIsDropdownOpen(!isDropdownOpen)}
               className="flex items-center justify-between gap-4 bg-[#0a0a0a] border border-[#CCA761]/40 hover:border-[#CCA761] text-white px-5 py-2.5 rounded-xl transition-all shadow-[0_0_20px_rgba(204,167,97,0.15)] group min-w-[240px]"
             >
@@ -1892,6 +1893,7 @@ export default function DashboardHomePage() {
                 {TABS.map((tab) => (
                   <button
                     key={tab.id}
+                    data-testid={`dashboard-module-option-${tab.id}`}
                     onClick={() => { setActiveView(tab.id); setIsDropdownOpen(false); }}
                     className={`text-right px-6 py-3.5 text-[11px] font-bold uppercase tracking-widest transition-all hover:bg-white/5 border-l-2 ${activeView === tab.id ? "text-[#0a0a0a] bg-[#CCA761] hover:bg-[#b58e46] border-transparent" : "text-gray-400 hover:text-[#CCA761] border-transparent"
                       }`}
