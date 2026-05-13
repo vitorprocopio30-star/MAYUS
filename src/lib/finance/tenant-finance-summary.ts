@@ -112,6 +112,54 @@ export type TenantFinanceRiskItem = {
   nextBestAction: string;
 };
 
+export type TenantFinanceSalesRow = {
+  id?: string | null;
+  client_name?: string | null;
+  ticket_total?: number | string | null;
+  installments?: number | string | null;
+  contract_date?: string | null;
+  status?: string | null;
+  professional_name?: string | null;
+  created_at?: string | null;
+};
+
+export type TenantFinanceCrmTaskRow = {
+  id?: string | null;
+  title?: string | null;
+  value?: number | string | null;
+  source?: string | null;
+  stage_id?: string | null;
+  created_at?: string | null;
+  data_ultima_movimentacao?: string | null;
+};
+
+export type TenantFinanceCrmStageRow = {
+  id?: string | null;
+  name?: string | null;
+  is_win?: boolean | null;
+  is_loss?: boolean | null;
+};
+
+export type TenantFinanceCommercialStage = {
+  stageId: string;
+  stageName: string;
+  amount: number;
+  count: number;
+  isWin: boolean;
+  isLoss: boolean;
+};
+
+export type TenantFinanceCommercialOpportunity = {
+  id: string;
+  kind: "sale" | "crm";
+  label: string;
+  amount: number;
+  stage: string;
+  source: string | null;
+  expectedDate: string | null;
+  nextBestAction: string;
+};
+
 export type TenantFinanceSummary = {
   tenantId: string;
   generatedAt: string;
@@ -130,6 +178,16 @@ export type TenantFinanceSummary = {
       fixed: TenantFinanceBucket;
       marketing: TenantFinanceBucket;
     };
+  };
+  commercialForecast: {
+    source: "sales+crm_tasks";
+    available: boolean;
+    pipelineAmount: number;
+    pendingContracts: TenantFinanceBucket;
+    closedContracts: TenantFinanceBucket;
+    lostAmount: number;
+    byStage: TenantFinanceCommercialStage[];
+    topOpportunities: TenantFinanceCommercialOpportunity[];
   };
   collectionsFollowup: {
     source: "brain_artifacts";
@@ -412,6 +470,125 @@ function buildRiskItems(rows: TenantFinanceFinancialRow[], today: Date): TenantF
     .slice(0, 8);
 }
 
+function salesStatusKind(status: unknown): "pending" | "closed" | "lost" {
+  const normalized = normalizeText(status);
+  if (/(perdid|lost|cancelad|rejeitad)/.test(normalized)) return "lost";
+  if (/(fechad|ganh|won|closed|pago|paid|assinado|signed)/.test(normalized)) return "closed";
+  return "pending";
+}
+
+function commercialStageName(stage?: TenantFinanceCrmStageRow | null) {
+  return compactText(stage?.name, "Sem etapa");
+}
+
+function commercialOpportunityAction(params: { kind: "sale" | "crm"; stage: string; isLoss?: boolean; isWin?: boolean }) {
+  if (params.isLoss) return "Revisar motivo de perda antes de reativar oportunidade.";
+  if (params.isWin) return "Conferir se contrato fechado ja virou financeiro recebido ou cobranca aberta.";
+  if (params.kind === "sale") return "Confirmar assinatura/pagamento antes de tratar como receita recebida.";
+  const stage = normalizeText(params.stage);
+  if (/(proposta|contrato|negociacao|negociacao)/.test(stage)) return "Priorizar follow-up humano e confirmar proximo compromisso.";
+  return "Qualificar valor, etapa e probabilidade antes de entrar no forecast firme.";
+}
+
+function buildCommercialForecast(input: {
+  salesRows?: TenantFinanceSalesRow[] | null;
+  crmTasks?: TenantFinanceCrmTaskRow[] | null;
+  crmStages?: TenantFinanceCrmStageRow[] | null;
+  salesAvailable?: boolean;
+  crmAvailable?: boolean;
+}) {
+  const salesRows = Array.isArray(input.salesRows) ? input.salesRows : [];
+  const crmTasks = Array.isArray(input.crmTasks) ? input.crmTasks : [];
+  const stageMap = new Map(
+    (input.crmStages || [])
+      .filter((stage) => stage.id)
+      .map((stage) => [String(stage.id), stage])
+  );
+
+  const pendingSales = salesRows.filter((sale) => salesStatusKind(sale.status) === "pending");
+  const closedSales = salesRows.filter((sale) => salesStatusKind(sale.status) === "closed");
+  const lostSales = salesRows.filter((sale) => salesStatusKind(sale.status) === "lost");
+  const stageGroups = new Map<string, TenantFinanceCommercialStage>();
+
+  for (const task of crmTasks) {
+    const stage = stageMap.get(String(task.stage_id || "")) || null;
+    const stageName = commercialStageName(stage);
+    const key = compactText(stage?.id, "") || `stage:${stageName}`;
+    const current = stageGroups.get(key) || {
+      stageId: key,
+      stageName,
+      amount: 0,
+      count: 0,
+      isWin: stage?.is_win === true,
+      isLoss: stage?.is_loss === true,
+    };
+    current.amount = roundMoney(current.amount + money(task.value));
+    current.count += 1;
+    stageGroups.set(key, current);
+  }
+
+  const openCrmTasks = crmTasks.filter((task) => {
+    const stage = stageMap.get(String(task.stage_id || ""));
+    return stage?.is_win !== true && stage?.is_loss !== true;
+  });
+  const wonCrmTasks = crmTasks.filter((task) => stageMap.get(String(task.stage_id || ""))?.is_win === true);
+  const lostCrmTasks = crmTasks.filter((task) => stageMap.get(String(task.stage_id || ""))?.is_loss === true);
+  const openCrmBucket = bucketFromRows(openCrmTasks.map((task) => ({ amount: task.value })));
+  const pendingSalesBucket = bucketFromRows(pendingSales.map((sale) => ({ amount: sale.ticket_total })));
+  const closedSalesBucket = bucketFromRows(closedSales.map((sale) => ({ amount: sale.ticket_total })));
+  const wonCrmBucket = bucketFromRows(wonCrmTasks.map((task) => ({ amount: task.value })));
+  const lostSalesAmount = bucketFromRows(lostSales.map((sale) => ({ amount: sale.ticket_total }))).amount;
+  const lostCrmAmount = bucketFromRows(lostCrmTasks.map((task) => ({ amount: task.value }))).amount;
+  const topOpportunities: TenantFinanceCommercialOpportunity[] = [
+    ...pendingSales.map((sale) => ({
+      id: `sale:${compactText(sale.id, compactText(sale.client_name, "sem-id"))}`,
+      kind: "sale" as const,
+      label: compactText(sale.client_name, "Contrato pendente"),
+      amount: roundMoney(money(sale.ticket_total)),
+      stage: compactText(sale.status, "Pendente"),
+      source: "sales",
+      expectedDate: sale.contract_date || sale.created_at || null,
+      nextBestAction: commercialOpportunityAction({ kind: "sale", stage: compactText(sale.status, "Pendente") }),
+    })),
+    ...openCrmTasks.map((task) => {
+      const stage = stageMap.get(String(task.stage_id || ""));
+      const stageName = commercialStageName(stage);
+      return {
+        id: `crm:${compactText(task.id, compactText(task.title, "sem-id"))}`,
+        kind: "crm" as const,
+        label: compactText(task.title, "Oportunidade comercial"),
+        amount: roundMoney(money(task.value)),
+        stage: stageName,
+        source: compactText(task.source, "") || null,
+        expectedDate: task.data_ultima_movimentacao || task.created_at || null,
+        nextBestAction: commercialOpportunityAction({ kind: "crm", stage: stageName }),
+      };
+    }),
+  ]
+    .filter((item) => item.amount > 0)
+    .sort((a, b) => b.amount - a.amount || a.label.localeCompare(b.label))
+    .slice(0, 8);
+
+  return {
+    source: "sales+crm_tasks" as const,
+    available: input.salesAvailable !== false || input.crmAvailable !== false,
+    pipelineAmount: roundMoney(pendingSalesBucket.amount + openCrmBucket.amount),
+    pendingContracts: {
+      amount: roundMoney(pendingSalesBucket.amount),
+      count: pendingSalesBucket.count,
+    },
+    closedContracts: {
+      amount: roundMoney(closedSalesBucket.amount + wonCrmBucket.amount),
+      count: closedSalesBucket.count + wonCrmBucket.count,
+    },
+    lostAmount: roundMoney(lostSalesAmount + lostCrmAmount),
+    byStage: Array.from(stageGroups.values())
+      .sort((a, b) => Number(a.isLoss) - Number(b.isLoss) || Number(b.isWin) - Number(a.isWin) || b.amount - a.amount)
+      .slice(0, 8),
+    topOpportunities,
+  };
+}
+
 function isCollectionsFollowupArtifact(row: TenantFinanceBrainArtifactRow) {
   const metadata = row.metadata && typeof row.metadata === "object" ? row.metadata : {};
   const artifactType = normalizeText(row.artifact_type);
@@ -528,6 +705,10 @@ export function buildTenantFinanceSummaryFromRows(input: {
         marketing: bucketFromRows(marketingExpenseRows, (row) => Math.abs(money(row.amount))),
       },
     },
+    commercialForecast: buildCommercialForecast({
+      salesAvailable: false,
+      crmAvailable: false,
+    }),
     collectionsFollowup: {
       source: "brain_artifacts",
       available: input.brainArtifactsAvailable !== false,
