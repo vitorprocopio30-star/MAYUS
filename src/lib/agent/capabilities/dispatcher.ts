@@ -110,6 +110,11 @@ import {
   type MarketingOpsAssistantInput,
 } from "@/lib/growth/marketing-ops-assistant";
 import {
+  buildCollectionsFollowupArtifactMetadata,
+  buildCollectionsFollowupPlan,
+  type CollectionsFollowupInput,
+} from "@/lib/finance/collections-followup";
+import {
   buildMarketingCopywriterArtifactMetadata,
   buildMarketingCopywriterDraft,
 } from "@/lib/marketing/marketing-copywriter";
@@ -1107,6 +1112,94 @@ async function runAsaasBilling(input: DispatchCapabilityInput): Promise<Dispatch
       billing_status: "created",
     },
     data: result,
+  };
+}
+
+async function runFinanceCollectionsFollowup(input: DispatchCapabilityInput): Promise<DispatchCapabilityResult> {
+  const commercialContext = await resolveCommercialContext(input);
+  const amount =
+    toNullableNumber(input.entities.amount) ??
+    toNullableNumber(input.entities.valor) ??
+    toNullableNumber(input.entities.value) ??
+    commercialContext.amount;
+  const clientName =
+    getStringValue(input.entities.client_name) ||
+    getStringValue(input.entities.nome_cliente) ||
+    getStringValue(input.entities.lead_name) ||
+    commercialContext.clientName;
+  const crmTaskId = commercialContext.crmTask?.id || getStringValue(input.entities.crm_task_id);
+  const billingArtifactId =
+    commercialContext.billingArtifact?.id ||
+    getStringValue(input.entities.billing_artifact_id) ||
+    getStringValue(input.entities.asaas_billing_id);
+  const plan = buildCollectionsFollowupPlan({
+    clientName,
+    legalArea: getStringValue(input.entities.legal_area) || commercialContext.crmTask?.sector || null,
+    amount,
+    daysOverdue: input.entities.days_overdue || input.entities.dias_atraso || input.entities.delay_days,
+    dueDate: input.entities.due_date || input.entities.vencimento,
+    stage: input.entities.collection_stage || input.entities.stage || input.entities.status,
+    tone: input.entities.tone || input.entities.tom,
+    channel: input.entities.channel || input.entities.canal,
+    notes: input.entities.notes || input.entities.observacao || input.entities.context,
+    paymentPromiseAt: input.entities.payment_promise_at || input.entities.promessa_pagamento,
+    nextContactAt: input.entities.next_contact_at || input.entities.proximo_contato,
+  } satisfies CollectionsFollowupInput);
+  const metadata = buildCollectionsFollowupArtifactMetadata({
+    crmTaskId,
+    billingArtifactId,
+    financialId: getStringValue(input.entities.financial_id),
+    plan,
+  });
+
+  await registerArtifact(input, {
+    artifactType: "collections_followup_plan",
+    title: `Cobranca supervisionada - ${plan.clientName}`,
+    mimeType: "application/json",
+    dedupeKey: input.auditLogId
+      ? `collections-followup:${input.auditLogId}`
+      : crmTaskId
+        ? `collections-followup:${crmTaskId}:${plan.stage}:${plan.dueDate || "sem-vencimento"}`
+        : null,
+    metadata,
+  });
+
+  await registerLearningEvent(input, "collections_followup_plan_created", {
+    crm_task_id: crmTaskId || null,
+    billing_artifact_id: billingArtifactId || null,
+    financial_id: metadata.financial_id,
+    client_name: plan.clientName,
+    collection_stage: plan.stage,
+    collection_priority: plan.priority,
+    amount: plan.amount,
+    days_overdue: plan.daysOverdue,
+    payment_promise_at: plan.promiseTracking.paymentPromiseAt,
+    next_contact_at: plan.promiseTracking.nextContactAt,
+    external_side_effects_blocked: true,
+  });
+
+  return {
+    status: "executed",
+    reply: [
+      `Plano de cobranca supervisionada criado para ${plan.clientName}.`,
+      `Estagio: ${plan.stage}. Prioridade: ${plan.priority}.`,
+      `Mensagem sugerida: ${plan.suggestedFirstMessage}`,
+      "Nenhum envio externo foi feito; a mensagem precisa de revisao/aprovacao humana.",
+    ].join("\n"),
+    outputPayload: {
+      auditLogId: input.auditLogId || null,
+      handler_type: input.handlerType,
+      crm_task_id: crmTaskId || null,
+      billing_artifact_id: billingArtifactId || null,
+      collection_stage: plan.stage,
+      collection_priority: plan.priority,
+      days_overdue: plan.daysOverdue,
+      payment_promise_at: plan.promiseTracking.paymentPromiseAt,
+      next_contact_at: plan.promiseTracking.nextContactAt,
+      external_side_effects_blocked: true,
+      requires_human_approval: true,
+    },
+    data: plan,
   };
 }
 
@@ -5500,6 +5593,8 @@ export async function dispatchCapabilityExecution(input: DispatchCapabilityInput
     case "asaas_cobrar":
     case "billing_create":
       return runAsaasBilling(input);
+    case "finance_collections_followup":
+      return runFinanceCollectionsFollowup(input);
     case "kanban_update":
       return runKanbanUpdate(input);
     case "calculator": {

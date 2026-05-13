@@ -1,3 +1,9 @@
+import {
+  buildDefOfficeTrainingPlan,
+  buildDefSkillMatrix,
+  type DefExcellenceSkill,
+} from "./def-excellence-protocol";
+
 export type SalesConsultationInput = {
   crmTaskId?: string | null;
   leadName?: string | null;
@@ -96,6 +102,8 @@ export type SalesConsultationPlan = {
   nextDiscoveryQuestion: string;
   adaptiveInstructions: string[];
   qualityScorecard: string[];
+  defSkillMatrix: Array<DefExcellenceSkill & { active: boolean; legalArea: string }>;
+  trainingPlan: string[];
   forbiddenMoves: string[];
   nextBestAction: string;
   requiresHumanReview: boolean;
@@ -537,6 +545,13 @@ export function buildSalesConsultationPlan(input: SalesConsultationInput): Sales
   const firmProfile = buildFirmProfile(input, areaAngle);
   const objectionMoves = buildObjectionMoves(objection);
   const channelMoves = buildChannelMoves({ leadName, channel, phase, legalArea });
+  const defSkillMatrix = buildDefSkillMatrix({
+    legalArea,
+    phase,
+    channel,
+    discoveryCompleteness: discoverySignals.completeness,
+    firmProfileCompleteness: firmProfile.positioningCompleteness,
+  });
   const valueLabel = ticketValue !== null
     ? `Investimento informado: R$ ${ticketValue.toLocaleString("pt-BR")}.`
     : "Investimento ainda nao informado.";
@@ -621,7 +636,11 @@ export function buildSalesConsultationPlan(input: SalesConsultationInput): Sales
       "Dor, motivacao, decisor e impedimento ficaram claros.",
       "Proposta foi personalizada ao que o lead disse.",
       "Fechamento pediu decisao sem pressao e sem manipular informacao.",
+      "Objecao foi isolada antes de qualquer resposta defensiva.",
+      "WhatsApp ficou curto, especifico e com uma pergunta por vez.",
     ],
+    defSkillMatrix,
+    trainingPlan: buildDefOfficeTrainingPlan(),
     forbiddenMoves: [
       "Prometer resultado juridico.",
       "Inventar escassez, prazo, depoimento ou prova social.",
@@ -673,6 +692,8 @@ export function buildSalesConsultationArtifactMetadata(params: {
     next_discovery_question: params.plan.nextDiscoveryQuestion,
     adaptive_instructions: params.plan.adaptiveInstructions,
     quality_scorecard: params.plan.qualityScorecard,
+    def_skill_matrix: params.plan.defSkillMatrix,
+    training_plan: params.plan.trainingPlan,
     forbidden_moves: params.plan.forbiddenMoves,
     next_best_action: params.plan.nextBestAction,
     requires_human_review: params.plan.requiresHumanReview,

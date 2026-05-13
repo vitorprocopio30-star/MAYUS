@@ -1,3 +1,9 @@
+import {
+  buildDefOfficeTrainingPlan,
+  buildDefSkillMatrix,
+  type DefExcellenceSkill,
+} from "./def-excellence-protocol";
+
 export type CommercialPlaybookOfficeProfile = {
   firmName?: string | null;
   legalArea?: string | null;
@@ -40,6 +46,8 @@ export type CommercialPlaybookModel = {
   objections: CommercialObjectionMove[];
   callAnalysisChecklist: string[];
   dailyReportSections: Array<{ id: string; label: string; detail: string }>;
+  defSkills: Array<DefExcellenceSkill & { active: boolean; legalArea: string }>;
+  officeTrainingPlan: string[];
   adaptationNotes: string[];
 };
 
@@ -236,6 +244,14 @@ export function buildCommercialPlaybookModel(profile: CommercialPlaybookOfficePr
       { id: "calls", label: "Calls e qualidade", detail: "Checklist de call, objecoes e oportunidades perdidas." },
       { id: "playbook", label: "Playbook do dia", detail: "Acoes prioritarias em estilo operacional premium." },
     ],
+    defSkills: buildDefSkillMatrix({
+      legalArea,
+      phase: "discovery",
+      channel: "whatsapp",
+      discoveryCompleteness: 0,
+      firmProfileCompleteness: cleanText(profile.uniqueValueProposition) ? 90 : 45,
+    }),
+    officeTrainingPlan: buildDefOfficeTrainingPlan(),
     adaptationNotes: [
       "Dutra usa linguagem de RMC/GRAM e Metodologia Blindagem; outros escritorios devem trocar area, promessa, provas, oferta e objecoes.",
       "O modelo estrutural e reutilizavel: resposta rapida, descoberta, decisor, termometro, encantamento, objecao e fechamento.",
@@ -285,6 +301,8 @@ export function buildCommercialPlaybookArtifactMetadata(playbook: CommercialPlay
     objections: playbook.objections,
     call_analysis_checklist: playbook.callAnalysisChecklist,
     daily_report_sections: playbook.dailyReportSections,
+    def_skills: playbook.defSkills,
+    office_training_plan: playbook.officeTrainingPlan,
     adaptation_notes: playbook.adaptationNotes,
     mayus_role: "first_attendant_sdr_closer_router",
     requires_human_review_for_legal_commitments: true,
@@ -298,6 +316,7 @@ export function buildCommercialPlaybookReply(playbook: CommercialPlaybookModel) 
     `SLA do primeiro atendimento: ate ${playbook.firstResponseSlaMinutes} minutos.`,
     `Metodo: ${playbook.methodName}.`,
     `Fases ativas: ${playbook.steps.map((step) => step.title).join(" -> ")}.`,
+    `Skills de excelencia: ${playbook.defSkills.filter((skill) => skill.active).map((skill) => skill.label).join(" -> ")}.`,
     "MAYUS atua como primeiro atendimento, qualifica, conduz descoberta, prepara fechamento e transfere quando houver pedido humano, urgencia juridica ou pessoa/setor especifico.",
   ].join("\n");
 }

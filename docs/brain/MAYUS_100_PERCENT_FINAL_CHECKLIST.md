@@ -2,7 +2,7 @@
 
 Fonte oficial atual para decidir o que falta para o MAYUS chegar a 100%.
 
-Atualizado em: 2026-05-12
+Atualizado em: 2026-05-13
 
 Este documento substitui os checklists espalhados como fonte principal de execucao. Os arquivos antigos continuam como historico tecnico, evidencias e detalhes de implementacao.
 
@@ -28,7 +28,7 @@ Legenda:
 | WhatsApp vendas/suporte | 92% | Evolution passou smoke multimodal anterior, ACK de midia deployado, bloqueio de grupos, filas zeradas, recuperacao de locks, audio autorizado do dono roteado por transcricao antes do ACK e autoenvio conversacional restrito ao Operating Partner; respostas agora usam digitando/delay humanizado no envio Evolution agentico. Faltam smoke privado fechado com conversa longa real e Meta Cloud. |
 | Growth/vendas | 72% | Intake, qualificacao, follow-up, reativacao, sales profile e uso do documento de vendas como playbook existem; falta fechar execucao real ponta a ponta. |
 | Juridico/Lex | 82% | Base juridica e documental esta forte; faltam contradicoes, cronologia, riscos e mais automacao segura. |
-| Financeiro | 55% | `billing_create` via Chat MAYUS agora normaliza cobranca, exige aprovacao humana, cria `asaas_billing` e bloqueia duplicidade em codigo/testes; ainda faltam smoke real Asaas, UX financeira, forecast e reconciliacao completa. |
+| Financeiro | 61% | `billing_create` via Chat MAYUS normaliza cobranca, exige aprovacao humana, cria `asaas_billing` e bloqueia duplicidade; `collections_followup` organiza inadimplencia/renegociacao; Chat/Brain ganhou labels financeiros e reconciliacao leve em codigo/teste. Ainda faltam smoke real Asaas, UX financeira, forecast e reconciliacao operacional completa. |
 | Auto-configuracao | 48% | Setup Doctor, sales profile e `office_knowledge_profile` inicial existem; falta onboarding completo do escritorio e validacao real das politicas por area/equipe. |
 | UX sem curso | 60% | WhatsApp ganhou controles melhores, mas o usuario ainda precisa entender demais o sistema. |
 | Integracoes e operacao real | 77% | WhatsApp Evolution tem smoke, observabilidade, alerta de falha, job assincrono validado manualmente, ACK de midia deployado, bloqueio de grupos, filas zeradas, audio de comando interno tratado antes do ACK e autoenvio agentico endurecido. Faltam smoke privado fechado com audio real do dono, PDF novo, Meta Cloud e scheduler automatico observado. |
@@ -44,6 +44,7 @@ Legenda:
 - [x] Document Brain, Draft Factory, publicacao, export e learning loop juridico.
 - [x] Auto Setup Doctor inicial com artifact e defaults seguros.
 - [~] Cobranca agentica pelo Chat MAYUS: `billing_create` prepara cobranca com aprovacao obrigatoria, valor/vencimento/tipo normalizados, idempotencia e artifact `asaas_billing`; falta smoke real Asaas.
+- [~] Visibilidade financeira no Chat/Brain: respostas do MAYUS destacam `asaas_billing`, `collections_followup_plan` e revenue-to-case quando o kernel retorna essas capabilities/artifacts; falta painel financeiro agregado e smoke real com dados de producao controlada.
 - [x] Marketing OS com perfil, referencias, calendario, aprovados e copy supervisionada.
 - [x] Auditoria e eventos em `agent_audit_logs` / `system_event_logs` em varios fluxos.
 
@@ -197,6 +198,9 @@ O MAYUS pode agir, mas acoes juridicas, financeiras ou externas sensiveis exigem
 - [x] Validar valor, vencimento futuro, tipo de cobranca e descricao antes da aprovacao; vencimento ausente usa hoje + 3 dias uteis.
 - [~] Registrar artifact de cobranca `asaas_billing` com link, status inicial, vencimento, cliente/CRM e chave de idempotencia; falta confirmacao com Asaas real.
 - [~] Conectar pagamento confirmado a abertura/execucao do caso: webhook continua usando `asaas_billing` para `revenue-to-case`, com teste focado passando; falta smoke real controlado.
+- [x] `collections_followup` organiza cobranca vencida pelo Chat MAYUS: classifica atraso leve/inadimplencia/renegociacao, gera mensagem por tom/canal, registra promessa/proximo contato, cria artifact e learning event, mantendo qualquer envio externo bloqueado para aprovacao humana.
+- [~] Chat/Brain MAYUS agora rotula artifacts financeiros (`asaas_billing`, `collections_followup_plan`, revenue-to-case) nas respostas do kernel; falta validar visualmente em fluxo autenticado real.
+- [~] Reconciliacao leve `financials` + Brain artifacts + `process_tasks` existe em helper testado, com status `matched`/`partial`/`blocked`/`unmatched`; falta conectar a uma rotina/painel com dados reais antes de marcar como operacional.
 - [ ] Criar forecast por funil, proposta, contrato, cobranca e inadimplencia.
 - [ ] Mostrar risco financeiro por tenant e por cliente.
 

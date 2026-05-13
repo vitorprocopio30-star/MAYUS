@@ -24,16 +24,18 @@ Evidencia 2026-05-12: `src/lib/agent/capabilities/billing-normalization.ts`, `sr
 - [ ] Criar regra clara: qual pagamento abre caso, qual apenas registra receita.
 - [~] Criar reconciliacao entre financials, billing artifact e process task.
 Evidencia 2026-05-12: webhook Asaas preservado usando `asaas_billing` para `revenue-to-case` e teste focado de pagamento confirmado passando; ainda falta reconciliacao completa com `financials` e smoke real.
+Evidencia 2026-05-13: `src/lib/finance/revenue-reconciliation.ts` adiciona reconciliacao leve e testada entre `financials`, artifacts `asaas_billing`/`revenue_case_opening`/`revenue_flow_plan` e `process_tasks`, classificando ciclos como `matched`, `partial`, `blocked` ou `unmatched`; ainda falta plugar em rotina/painel com dados reais.
 - [ ] Criar rollback operacional se abertura de caso falhar apos pagamento.
 - [ ] Notificar responsavel juridico quando caso abrir por receita.
 
 ## Collections
 
-- [ ] Criar skill `collections_followup`.
-- [ ] Gerar mensagens de cobranca por tom do escritorio.
-- [ ] Separar atraso leve, inadimplencia e renegociacao.
-- [ ] Exigir aprovacao para mensagem externa.
-- [ ] Registrar promessa de pagamento e proximo contato.
+- [x] Criar skill `collections_followup`.
+- [x] Gerar mensagens de cobranca por tom do escritorio.
+- [x] Separar atraso leve, inadimplencia e renegociacao.
+- [x] Exigir aprovacao para mensagem externa.
+- [x] Registrar promessa de pagamento e proximo contato.
+Evidencia 2026-05-13: `src/lib/finance/collections-followup.ts`, router, registry e dispatcher implementam `collections_followup` pelo Chat MAYUS. A skill cria artifact `collections_followup_plan`, learning event, classifica `light_overdue`/`delinquency`/`renegotiation`, monta mensagem por tom/canal, registra promessa/proximo contato e bloqueia side effects externos ate revisao humana. Validado com Vitest focado; ainda falta smoke real com operador financeiro.
 
 ## Forecast e Unidade Economica
 
@@ -47,4 +49,5 @@ Evidencia 2026-05-12: webhook Asaas preservado usando `asaas_billing` para `reve
 
 - [~] Comando "Mayus, cobre a entrada do cliente X" encontra contexto, monta cobranca, pede aprovacao e registra artifact.
 - [x] Nenhuma cobranca externa e enviada sem aprovacao.
-- [ ] O sistema mostra dinheiro previsto, dinheiro recebido e casos abertos por receita.
+- [~] O sistema mostra dinheiro previsto, dinheiro recebido e casos abertos por receita.
+Evidencia 2026-05-13: Chat/Brain MAYUS ganhou labels de artifact para `asaas_billing`, `collections_followup_plan` e revenue-to-case, e a reconciliacao leve calcula receita recebida vs caso aberto em codigo/teste; falta tela agregada e smoke real.

@@ -152,6 +152,96 @@ const KERNEL_STATUS_LABELS: Record<string, string> = {
   timeout: "Tempo esgotado",
 };
 
+const FINANCE_ARTIFACT_TYPE_LABELS: Record<string, string> = {
+  asaas_billing: "Asaas billing",
+  collections_followup_plan: "Plano de cobranca",
+  revenue_flow_plan: "Revenue-to-case",
+  revenue_case_opening: "Caso aberto por receita",
+  revenue_to_case: "Revenue-to-case",
+};
+
+const FINANCE_CAPABILITY_ARTIFACT_TYPES: Record<string, string> = {
+  billing_create: "asaas_billing",
+  asaas_cobrar: "asaas_billing",
+  collections_followup: "collections_followup_plan",
+  finance_collections_followup: "collections_followup_plan",
+  revenue_flow_plan: "revenue_flow_plan",
+  growth_revenue_flow_plan: "revenue_flow_plan",
+  revenue_to_case: "revenue_to_case",
+};
+
+type FinanceArtifactHighlight = {
+  artifactType: string;
+  label: string;
+  status: string;
+  details: string[];
+};
+
+function getPayloadString(payload: Record<string, unknown> | undefined, keys: string[]) {
+  if (!payload) return null;
+  for (const key of keys) {
+    const value = payload[key];
+    if (typeof value === "string" && value.trim()) return value.trim();
+    if (typeof value === "number" && Number.isFinite(value)) return String(value);
+    if (typeof value === "boolean") return value ? "sim" : "nao";
+  }
+  return null;
+}
+
+function inferFinanceArtifactType(kernel?: MessageKernel) {
+  if (!kernel) return null;
+  const payload = kernel.outputPayload || {};
+  const directType = getPayloadString(payload, ["artifact_type", "artifactType"]);
+  if (directType && FINANCE_ARTIFACT_TYPE_LABELS[directType]) return directType;
+
+  if (getPayloadString(payload, ["cobranca_id", "billing_idempotency_key", "billing_status"])) {
+    return "asaas_billing";
+  }
+  if (getPayloadString(payload, ["collection_stage", "collection_priority", "days_overdue"])) {
+    return "collections_followup_plan";
+  }
+  if (getPayloadString(payload, ["revenue_flow_step_count", "revenue_flow_blocked_reason"])) {
+    return "revenue_flow_plan";
+  }
+
+  const capability = kernel.capabilityName || kernel.awaitingPayload?.skillName || "";
+  const handlerType = kernel.handlerType || "";
+  return FINANCE_CAPABILITY_ARTIFACT_TYPES[capability] ||
+    FINANCE_CAPABILITY_ARTIFACT_TYPES[handlerType] ||
+    null;
+}
+
+function getFinanceArtifactHighlights(kernel?: MessageKernel): FinanceArtifactHighlight[] {
+  const artifactType = inferFinanceArtifactType(kernel);
+  if (!artifactType || !kernel) return [];
+  const payload = kernel.outputPayload || {};
+  const label = FINANCE_ARTIFACT_TYPE_LABELS[artifactType] || artifactType;
+  const status = artifactType === "asaas_billing"
+    ? getPayloadString(payload, ["billing_status", "status_inicial"]) || (kernel.approvalRequired ? "aguardando aprovacao" : "registrado")
+    : artifactType === "collections_followup_plan"
+      ? getPayloadString(payload, ["collection_priority", "collection_stage"]) || "plano criado"
+      : getPayloadString(payload, ["revenue_flow_blocked_reason"]) || getPayloadString(payload, ["status"]) || "trilha supervisionada";
+
+  const cobrancaId = getPayloadString(payload, ["cobranca_id"]);
+  const collectionStage = getPayloadString(payload, ["collection_stage"]);
+  const revenueStepCount = getPayloadString(payload, ["revenue_flow_step_count"]);
+  const crmTaskId = getPayloadString(payload, ["crm_task_id"]);
+  const billingArtifactId = getPayloadString(payload, ["billing_artifact_id"]);
+  const financialId = getPayloadString(payload, ["financial_id"]);
+  const details = [
+    artifactType === "asaas_billing" && cobrancaId ? `cobranca: ${cobrancaId}` : null,
+    artifactType === "collections_followup_plan" && collectionStage ? `estagio: ${collectionStage}` : null,
+    artifactType === "revenue_flow_plan" && revenueStepCount ? `etapas: ${revenueStepCount}` : null,
+    crmTaskId ? `crm: ${crmTaskId}` : null,
+    billingArtifactId ? `billing: ${billingArtifactId}` : null,
+    financialId ? `financial: ${financialId}` : null,
+  ]
+    .filter((value): value is string => Boolean(value))
+    .slice(0, 4);
+
+  return [{ artifactType, label, status, details }];
+}
+
 function getKernelHighlight(kernel?: MessageKernel) {
   if (!kernel) return null;
 
@@ -165,7 +255,8 @@ function getKernelHighlight(kernel?: MessageKernel) {
           ? "process_execute_next"
           : ""
   );
-  const label = missionKind ? MISSION_KIND_LABELS[missionKind] : null;
+  const financeLabel = FINANCE_ARTIFACT_TYPE_LABELS[inferFinanceArtifactType(kernel) || ""] || null;
+  const label = financeLabel || (missionKind ? MISSION_KIND_LABELS[missionKind] : null);
   const statusLabel = KERNEL_STATUS_LABELS[kernel.status] || kernel.status;
   const approval = Boolean(kernel.approvalRequired || kernel.status === "awaiting_approval");
 
@@ -320,6 +411,8 @@ function ApprovalCard({
     low:      "text-green-400 border-green-500/40 bg-green-500/10",
   };
   const badgeClass = riskBadge[awaitingPayload.riskLevel] ?? riskBadge.medium;
+  const financeArtifactType = FINANCE_CAPABILITY_ARTIFACT_TYPES[awaitingPayload.skillName] || null;
+  const financeArtifactLabel = financeArtifactType ? FINANCE_ARTIFACT_TYPE_LABELS[financeArtifactType] : null;
 
   return (
     <div className="border border-[#CCA761]/30 bg-[#0f0f0f] rounded-2xl p-5 max-w-[85%] space-y-4 animate-in fade-in slide-in-from-bottom-2">
@@ -330,6 +423,11 @@ function ApprovalCard({
             <ShieldAlert size={11} /> Aprovação necessária
           </p>
           <p className="text-white font-semibold text-sm">{awaitingPayload.skillName}</p>
+          {financeArtifactLabel && (
+            <p className="mt-1 inline-flex rounded-full border border-[#CCA761]/30 bg-[#CCA761]/10 px-2.5 py-1 text-[10px] font-black uppercase tracking-[0.18em] text-[#E2C37A]">
+              {financeArtifactLabel}
+            </p>
+          )}
         </div>
         <span className={`text-[10px] font-bold uppercase tracking-widest px-2.5 py-1 rounded-full border whitespace-nowrap ${badgeClass}`}>
           {awaitingPayload.riskLevel ?? "desconhecido"}
@@ -819,6 +917,7 @@ export default function MAYUSPlayground() {
             taskId: data.kernel.taskId,
             runId: data.kernel.runId,
             stepId: data.kernel.stepId,
+            outputPayload: data.kernel.outputPayload,
           },
         });
         setMessages(prev => [...prev, ...newMessages]);
@@ -1231,6 +1330,7 @@ export default function MAYUSPlayground() {
               taskId: data.taskId || data.kernel.taskId,
               runId: data.runId || data.kernel.runId,
               stepId: data.stepId || data.kernel.stepId,
+              outputPayload: data.kernel.outputPayload,
             },
           });
         }
@@ -1896,6 +1996,7 @@ export default function MAYUSPlayground() {
 
           {messages.map((msg, idx) => {
             const kernelHighlight = getKernelHighlight(msg.kernel);
+            const financeArtifactHighlights = getFinanceArtifactHighlights(msg.kernel);
 
             if (msg.role === "approval" && msg.kernel?.auditLogId && msg.kernel?.awaitingPayload) {
               return (
@@ -1967,6 +2068,32 @@ export default function MAYUSPlayground() {
                     </div>
                   )}
 
+                  {msg.role === 'model' && financeArtifactHighlights.length > 0 && (
+                    <div className="mt-3 space-y-2 rounded-xl border border-[#CCA761]/20 bg-[#CCA761]/5 p-3">
+                      {financeArtifactHighlights.map((highlight) => (
+                        <div key={highlight.artifactType} className="space-y-2">
+                          <div className="flex flex-wrap items-center gap-2">
+                            <span className="rounded-full border border-[#CCA761]/30 bg-[#CCA761]/10 px-2.5 py-1 text-[10px] font-black uppercase tracking-[0.18em] text-[#E2C37A]">
+                              {highlight.label}
+                            </span>
+                            <span className="text-[10px] uppercase tracking-[0.16em] text-gray-500">
+                              {highlight.status}
+                            </span>
+                          </div>
+                          {highlight.details.length > 0 && (
+                            <div className="flex flex-wrap gap-1.5">
+                              {highlight.details.map((detail) => (
+                                <span key={detail} className="rounded-full border border-white/10 bg-black/30 px-2 py-1 text-[10px] text-gray-400">
+                                  {detail}
+                                </span>
+                              ))}
+                            </div>
+                          )}
+                        </div>
+                      ))}
+                    </div>
+                  )}
+
                   {msg.role === 'model' && (
                     <button
                       onClick={() => playMessage(msg.content, msg.id || idx)}
@@ -2034,8 +2161,8 @@ export default function MAYUSPlayground() {
                     : conversationTransport === "realtime" && realtimeStatus === "speaking"
                     ? 'bg-[#CCA761] text-black animate-pulse shadow-[0_0_15px_rgba(204,167,97,0.4)]'
                     : isRecording
-                    ? 'bg-[#CCA761] text-black animate-pulse shadow-[0_0_15px_rgba(204,167,97,0.4)]' 
-                    : playingMessageId 
+                    ? 'bg-[#CCA761] text-black animate-pulse shadow-[0_0_15px_rgba(204,167,97,0.4)]'
+                    : playingMessageId
                     ? 'bg-[#CCA761]/20 text-[#CCA761] border border-[#CCA761]/30'
                     : 'text-gray-500 hover:text-[#CCA761]'
                 }`}

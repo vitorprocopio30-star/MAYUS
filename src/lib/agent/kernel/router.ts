@@ -157,6 +157,9 @@ const INTENT_PATTERNS: IntentDefinition[] = [
       /posicionamento\s+comercial/i,
       /bate[-\s]?papo\s+(de\s+)?(vendas|comercial|consultivo)/i,
       /roteiro\s+(de\s+)?(vendas|atendimento\s+comercial)/i,
+      /atendimento\s+de\s+excel[eÃª]ncia/i,
+      /trein(ar|e|amento)\s+(de\s+)?(atendimento|vendas|closer|sdr)/i,
+      /sparring\s+(comercial|de\s+atendimento|de\s+vendas)/i,
       /metodo\s+def/i,
       /descoberta.*encantamento.*fechamento/i,
       /mayus.*(vender|vendas).*melhor/i,
@@ -224,6 +227,8 @@ const INTENT_PATTERNS: IntentDefinition[] = [
       /relatorio\s+diario.*menu.*playbook/i,
       /mayus.*(sdr|closer|head|vendedor).*(escritorio|comercial)/i,
       /primeiro\s+atendimento.*mayus/i,
+      /skills?\s+para\s+(escritorios|escrit[oÃ³]rios).*(atendimento|vendas|comercial)/i,
+      /playbook\s+def\s+(para|do)\s+escritorio/i,
     ],
     entityExtractors: [
       {
@@ -334,6 +339,61 @@ const INTENT_PATTERNS: IntentDefinition[] = [
       },
     ],
     baseConfidence: 0.88,
+  },
+  {
+    intent: 'collections_followup',
+    patterns: [
+      /follow[-\s]?up\s+de\s+cobran(?:ca|\u00e7a)/i,
+      /cobran(?:ca|\u00e7a)\s+(vencida|atrasada|em\s+atraso)/i,
+      /cliente\s+inadimplente/i,
+      /inadimplencia|inadimpl\u00eancia/i,
+      /renegoci(?:ar|acao|\u00e7\u00e3o)\s+(pagamento|cobran(?:ca|\u00e7a)|divida|d\u00edvida)/i,
+      /promessa\s+de\s+pagamento/i,
+      /organize\s+(a\s+)?cobran(?:ca|\u00e7a)\s+(atrasada|vencida)/i,
+    ],
+    entityExtractors: [
+      {
+        key: 'client_name',
+        pattern: /(?:cliente|nome)\s*[:\-]?\s*([^\d,.;:!?]+?)(?=\s*(?:area|\u00e1rea|valor|dias|venc|tom|canal|promessa|proximo|pr\u00f3ximo|,|\.|$))/i,
+      },
+      {
+        key: 'legal_area',
+        pattern: /(?:area|\u00e1rea)\s*[:\-]?\s*([^,.;:!?]+?)(?=\s*(?:valor|dias|venc|tom|canal|promessa|proximo|pr\u00f3ximo|,|\.|$))/i,
+      },
+      {
+        key: 'amount',
+        pattern: /(?:valor|pendencia|pend\u00eancia|total|em)\s*[:R$\s]*([0-9]+(?:[.,][0-9]+)*)/i,
+      },
+      {
+        key: 'days_overdue',
+        pattern: /(?:atraso|atrasado|vencida|vencido|ha|h\u00e1)\s*([0-9]{1,3})\s*dias/i,
+      },
+      {
+        key: 'due_date',
+        pattern: /venc(?:imento|e)?\s*(?:em|:)?\s*(\d{2}[\/\-]\d{2}[\/\-]\d{4}|\d{4}-\d{2}-\d{2})/i,
+      },
+      {
+        key: 'collection_stage',
+        pattern: /(atraso\s+leve|inadimplencia|inadimpl\u00eancia|renegociacao|renegocia\u00e7\u00e3o)/i,
+      },
+      {
+        key: 'tone',
+        pattern: /(?:tom)\s*[:\-]?\s*(firme|empatico|emp\u00e1tico|neutro|objetivo)/i,
+      },
+      {
+        key: 'channel',
+        pattern: /(?:canal|por)\s*[:\-]?\s*(WhatsApp|telefone|email|e-mail)/i,
+      },
+      {
+        key: 'payment_promise_at',
+        pattern: /(?:promessa|prometeu\s+pagar|paga\s+em)\s*[:\-]?\s*(\d{2}[\/\-]\d{2}[\/\-]\d{4}|\d{4}-\d{2}-\d{2})/i,
+      },
+      {
+        key: 'next_contact_at',
+        pattern: /(?:proximo\s+contato|pr\u00f3ximo\s+contato|retorno)\s*[:\-]?\s*([0-9]{4}-[0-9]{2}-[0-9]{2}(?:[T\s][0-9]{2}:?[0-9]{2}(?::?[0-9]{2})?)?)/i,
+      },
+    ],
+    baseConfidence: 0.89,
   },
   {
     intent: 'external_action_preview',

@@ -1,6 +1,7 @@
 import type { SupabaseClient } from "@supabase/supabase-js";
 import { buildHeaders, getLLMClient } from "@/lib/llm-router";
 import type { WhatsAppSalesMessage } from "./whatsapp-sales-reply";
+import { buildDefPromptProtocol } from "./def-excellence-protocol";
 
 export const SALES_LLM_TESTBENCH_MODELS = [
   "openai/gpt-5.4-nano",
@@ -267,6 +268,7 @@ function buildSalesLlmPrompt(input: SalesLlmReplyInput, model: string) {
   return [
     "Voce e o SDR/Closer agentico do MAYUS para WhatsApp juridico.",
     "Conduza o lead ate o fechamento com metodo DEF: descoberta antes da oferta, encantamento com diagnostico, fechamento sem pressao.",
+    buildDefPromptProtocol(),
     "Responda em portugues do Brasil, curto, natural e com uma pergunta por vez.",
     "Use no maximo 2 blocos curtos. Nao mande discurso institucional nem explique a metodologia.",
     "Reconheca o assunto especifico do lead antes de perguntar. Se ele falou contracheque, desconto, consignado, folha, beneficio ou INSS, responda sobre isso.",

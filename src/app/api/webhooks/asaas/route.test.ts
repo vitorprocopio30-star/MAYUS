@@ -35,6 +35,12 @@ function makeInsertQuery() {
   };
 }
 
+function makeUpsertQuery() {
+  return {
+    upsert: vi.fn(async () => ({ error: null })),
+  };
+}
+
 function makeTenantSelectQuery(tenant: Record<string, unknown> | null) {
   const query: any = {
     select: vi.fn(() => query),
@@ -94,11 +100,13 @@ describe("/api/webhooks/asaas", () => {
       processTaskId: "task-1",
     });
     const logsQuery = makeInsertQuery();
-    const tenantSelect = makeTenantSelectQuery({ id: "tenant-1", status: "trial" });
+    const platformEventsQuery = makeUpsertQuery();
+    const tenantSelect = makeTenantSelectQuery({ id: "tenant-1", status: "trial", billing_cycle: "mensal" });
     const tenantUpdate = makeTenantUpdateQuery();
     let tenantsCalls = 0;
     fromMock.mockImplementation((table: string) => {
       if (table === "system_event_logs") return logsQuery;
+      if (table === "platform_billing_events") return platformEventsQuery;
       if (table === "tenants") {
         tenantsCalls++;
         return tenantsCalls === 1 ? tenantSelect : tenantUpdate;
@@ -116,8 +124,53 @@ describe("/api/webhooks/asaas", () => {
       customerId: "cus-1",
       paymentValue: 397,
     });
+    expect(platformEventsQuery.upsert).toHaveBeenCalledWith(expect.objectContaining({
+      tenant_id: "tenant-1",
+      provider: "asaas",
+      event_name: "PAYMENT_CONFIRMED",
+      external_id: "pay-1",
+      payment_id: "pay-1",
+      asaas_event: "PAYMENT_CONFIRMED",
+      event_type: "received",
+      billing_status: "received",
+      amount_cents: 39700,
+      gross_amount: 397,
+      status: "received",
+    }), expect.objectContaining({ onConflict: "provider,event_name,external_id" }));
     expect(tenantUpdate.update).toHaveBeenCalledWith(expect.objectContaining({ status: "ativo" }));
     expect(logsQuery.insert).toHaveBeenCalledWith(expect.objectContaining({ event_name: "asaas_webhook" }));
+    expect(response.status).toBe(200);
+  });
+
+  it("registra evento SaaS pendente sem mudar status do tenant", async () => {
+    const logsQuery = makeInsertQuery();
+    const platformEventsQuery = makeUpsertQuery();
+    const tenantSelect = makeTenantSelectQuery({ id: "tenant-1", status: "trial", billing_cycle: "mensal" });
+    fromMock.mockImplementation((table: string) => {
+      if (table === "system_event_logs") return logsQuery;
+      if (table === "platform_billing_events") return platformEventsQuery;
+      if (table === "tenants") return tenantSelect;
+      throw new Error(`unexpected table ${table}`);
+    });
+
+    const response = await POST(buildRequest({
+      event: "PAYMENT_CREATED",
+      payment: { id: "pay-2", customer: "cus-1", subscription: "sub-1", value: 647, dueDate: "2026-05-20" },
+    }));
+
+    expect(platformEventsQuery.upsert).toHaveBeenCalledWith(expect.objectContaining({
+      tenant_id: "tenant-1",
+      payment_id: "pay-2",
+      subscription_id: "sub-1",
+      event_type: "pending",
+      billing_status: "pending",
+      amount_cents: 64700,
+      due_date: "2026-05-20",
+    }), expect.objectContaining({ onConflict: "provider,event_name,external_id" }));
+    expect(logsQuery.insert).toHaveBeenCalledWith(expect.objectContaining({
+      event_name: "asaas_webhook",
+      payload: expect.objectContaining({ status_updated: false }),
+    }));
     expect(response.status).toBe(200);
   });
 

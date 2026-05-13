@@ -10,9 +10,37 @@ type Tenant = {
   name: string
   plan_type: string | null
   status: 'trial' | 'ativo' | 'inadimplente' | 'cancelado' | string | null
-  billing_cycle: 'mensal' | 'anual' | string | null
-  created_at: string | null
-  max_processos: number | null
+  planType?: string | null
+  billing_cycle?: 'mensal' | 'anual' | string | null
+  billingCycle?: 'mensal' | 'anual' | string | null
+  created_at?: string | null
+  createdAt?: string | null
+  max_processos?: number | null
+  maxProcessos?: number | null
+  expectedMonthlyValue?: number
+  expectedAnnualValue?: number
+  lastPaymentAt?: string | null
+  lastPaymentValue?: number
+  daysOverdue?: number
+  billingCycleEnd?: string | null
+}
+
+type PlatformFinanceSummary = {
+  generatedAt: string
+  totals: {
+    tenants: number
+    active: number
+    trial: number
+    delinquent: number
+    canceled: number
+    mrr: number
+    arr: number
+    atRiskMrr: number
+    receivedTotal: number
+    receivedThisMonth: number
+    overdueExpectedAmount: number
+    trialEndingSoon: number
+  }
 }
 
 function formatDate(date: string | null) {
@@ -32,11 +60,32 @@ function statusBadgeClass(status: Tenant['status']) {
   }
 }
 
+function formatCurrency(value: number | null | undefined) {
+  return `R$ ${(Number(value) || 0).toLocaleString('pt-BR')}`
+}
+
+function tenantPlan(t: Tenant) {
+  return t.planType || t.plan_type || '—'
+}
+
+function tenantBillingCycle(t: Tenant) {
+  return t.billingCycle || t.billing_cycle || '—'
+}
+
+function tenantCreatedAt(t: Tenant) {
+  return t.createdAt || t.created_at || null
+}
+
+function tenantMaxProcessos(t: Tenant) {
+  return t.maxProcessos ?? t.max_processos ?? null
+}
+
 export default function AdminPage() {
   const router = useRouter()
   const [loading, setLoading] = useState(true)
   const [error, setError] = useState('')
   const [tenants, setTenants] = useState<Tenant[]>([])
+  const [summary, setSummary] = useState<PlatformFinanceSummary | null>(null)
 
   useEffect(() => {
     let isMounted = true
@@ -50,12 +99,15 @@ export default function AdminPage() {
         }
         // Middleware já garante que só superadmin chega aqui
 
-        const res = await fetch('/api/admin/tenants', {
+        const res = await fetch('/api/admin/finance/summary', {
           headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${session.access_token}` },
         })
         const data = await res.json().catch(() => null)
-        if (!res.ok) throw new Error(data?.error || 'Não foi possível carregar os escritórios.')
-        if (isMounted) setTenants(Array.isArray(data?.tenants) ? data.tenants : [])
+        if (!res.ok) throw new Error(data?.error || 'Nao foi possivel carregar o financeiro da plataforma.')
+        if (isMounted) {
+          setSummary(data?.summary || null)
+          setTenants(Array.isArray(data?.summary?.tenants) ? data.summary.tenants : [])
+        }
       } catch (err) {
         if (isMounted) setError(err instanceof Error ? err.message : 'Erro ao carregar painel.')
       } finally {
@@ -84,10 +136,35 @@ export default function AdminPage() {
           <div>
             <h1 className="text-3xl font-semibold tracking-tight text-white">Painel MAYUS</h1>
             <p className="mt-2 text-sm text-zinc-400">
-              {loading ? 'Carregando...' : `${tenants.length} escritórios cadastrados`}
+              {loading ? 'Carregando...' : `${summary?.totals.tenants ?? tenants.length} escritorios cadastrados`}
             </p>
           </div>
         </div>
+
+        {!loading && !error && summary && (
+          <div className="mb-6 grid grid-cols-1 gap-4 md:grid-cols-2 xl:grid-cols-4">
+            <div className="rounded-2xl border border-white/10 bg-white/[0.03] p-5">
+              <p className="text-xs font-semibold uppercase tracking-[0.14em] text-zinc-500">MRR ativo</p>
+              <p className="mt-2 text-2xl font-semibold text-emerald-300">{formatCurrency(summary.totals.mrr)}</p>
+              <p className="mt-1 text-xs text-zinc-500">{summary.totals.active} tenants ativos</p>
+            </div>
+            <div className="rounded-2xl border border-white/10 bg-white/[0.03] p-5">
+              <p className="text-xs font-semibold uppercase tracking-[0.14em] text-zinc-500">ARR projetado</p>
+              <p className="mt-2 text-2xl font-semibold text-white">{formatCurrency(summary.totals.arr)}</p>
+              <p className="mt-1 text-xs text-zinc-500">{summary.totals.trial} trials, {summary.totals.trialEndingSoon} vencendo em 7 dias</p>
+            </div>
+            <div className="rounded-2xl border border-white/10 bg-white/[0.03] p-5">
+              <p className="text-xs font-semibold uppercase tracking-[0.14em] text-zinc-500">Receita recebida no mes</p>
+              <p className="mt-2 text-2xl font-semibold text-[#CCA761]">{formatCurrency(summary.totals.receivedThisMonth)}</p>
+              <p className="mt-1 text-xs text-zinc-500">Total historico: {formatCurrency(summary.totals.receivedTotal)}</p>
+            </div>
+            <div className="rounded-2xl border border-red-500/20 bg-red-500/[0.05] p-5">
+              <p className="text-xs font-semibold uppercase tracking-[0.14em] text-red-300/80">Inadimplencia SaaS</p>
+              <p className="mt-2 text-2xl font-semibold text-red-300">{formatCurrency(summary.totals.overdueExpectedAmount)}</p>
+              <p className="mt-1 text-xs text-red-200/70">{summary.totals.delinquent} tenants, {formatCurrency(summary.totals.atRiskMrr)} MRR em risco</p>
+            </div>
+          </div>
+        )}
 
         <div className="overflow-hidden rounded-3xl border border-white/10 bg-white/[0.03] shadow-2xl backdrop-blur-sm">
           {loading ? (
@@ -107,7 +184,7 @@ export default function AdminPage() {
               <table className="min-w-full border-collapse">
                 <thead>
                   <tr className="border-b border-white/10 bg-white/[0.02]">
-                    {['Escritório','Plano','Status','Ciclo','Criado em','Processos','Ações'].map(h => (
+                    {['Escritorio','Plano','Status','Ciclo','MRR','Ultimo pagamento','Vencido','Acoes'].map(h => (
                       <th key={h} className="px-5 py-4 text-left text-xs font-semibold uppercase tracking-[0.14em] text-zinc-400">{h}</th>
                     ))}
                   </tr>

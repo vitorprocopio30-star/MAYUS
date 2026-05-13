@@ -30,6 +30,7 @@ const serviceClient = createClient(
 );
 
 const EXECUTIVE_ROLES = ["admin", "administrador", "socio", "sócio", "mayus_admin"];
+const FINANCE_ROLES = [...EXECUTIVE_ROLES, "financeiro"];
 
 const SECURITY_FLOOR_SKILLS = {
   legal_artifact_publish_premium: {
@@ -132,7 +133,7 @@ const DEFAULT_CAPABILITY_SEEDS: DefaultCapabilitySeed[] = [
   },
   {
     name: "sales_consultation",
-    description: "Investiga o lead em bate-papo consultivo pelo metodo DEF, grava sinais comerciais, adapta atendimento, objecoes e proxima pergunta sem acao externa automatica.",
+    description: "Investiga o lead em bate-papo consultivo pelo metodo DEF, ativa matriz de skills de excelencia, grava sinais comerciais, adapta atendimento, objecoes e proxima pergunta sem acao externa automatica.",
     version: "1.0",
     schema_version: "1",
     input_schema: {
@@ -164,7 +165,7 @@ const DEFAULT_CAPABILITY_SEEDS: DefaultCapabilitySeed[] = [
   },
   {
     name: "commercial_playbook_setup",
-    description: "Cria ou adapta o playbook comercial do escritorio a partir de um modelo premium: menu diario, primeiro atendimento MAYUS, fases SDR/closer, objecoes e analise de call.",
+    description: "Cria ou adapta o playbook comercial do escritorio a partir de um modelo premium: atendimento DEF, primeiro atendimento MAYUS, fases SDR/closer, objecoes, treino de equipe e analise de call.",
     version: "1.0",
     schema_version: "1",
     input_schema: {
@@ -474,6 +475,40 @@ const DEFAULT_CAPABILITY_SEEDS: DefaultCapabilitySeed[] = [
     risk_level: "high",
     is_active: true,
     handler_type: "asaas_cobrar",
+  },
+  {
+    name: "collections_followup",
+    description: "Monta plano supervisionado de cobranca/inadimplencia, separando atraso leve, inadimplencia e renegociacao, com mensagem sugerida, promessa de pagamento e proximo contato sem envio externo automatico.",
+    version: "1.0",
+    schema_version: "1",
+    input_schema: {
+      type: "object",
+      properties: {
+        client_name: { type: "string", description: "Nome do cliente ou responsavel financeiro." },
+        nome_cliente: { type: "string", description: "Alias para nome do cliente." },
+        crm_task_id: { type: "string", description: "ID do card CRM relacionado, se houver." },
+        billing_artifact_id: { type: "string", description: "ID do artifact asaas_billing relacionado, se houver." },
+        financial_id: { type: "string", description: "ID do lancamento financeiro relacionado, se houver." },
+        legal_area: { type: "string", description: "Area juridica ou frente do atendimento." },
+        amount: { type: "number", description: "Valor pendente." },
+        valor: { type: "number", description: "Alias para valor pendente." },
+        days_overdue: { type: "number", description: "Dias em atraso." },
+        due_date: { type: "string", description: "Vencimento original." },
+        collection_stage: { type: "string", enum: ["light_overdue", "delinquency", "renegotiation"] },
+        tone: { type: "string", description: "Tom desejado: firm, empathetic ou neutral." },
+        channel: { type: "string", description: "Canal sugerido: whatsapp, phone ou email." },
+        payment_promise_at: { type: "string", description: "Data prometida de pagamento, se o cliente informou." },
+        next_contact_at: { type: "string", description: "Proximo contato combinado." },
+        notes: { type: "string", description: "Contexto adicional da cobranca." },
+      },
+    },
+    output_schema: { type: "object" },
+    allowed_roles: FINANCE_ROLES,
+    allowed_channels: ["chat"],
+    requires_human_confirmation: false,
+    risk_level: "medium",
+    is_active: true,
+    handler_type: "finance_collections_followup",
   },
   {
     name: "whatsapp_followup",

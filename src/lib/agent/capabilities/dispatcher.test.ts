@@ -715,6 +715,65 @@ describe("dispatchCapabilityExecution - juridico", () => {
     expect(createBrainArtifactMock).not.toHaveBeenCalled();
   });
 
+  it("executa collections_followup pelo chat e registra plano financeiro supervisionado", async () => {
+    const inserts: Array<{ table: string; payload: any }> = [];
+    fromMock.mockImplementation((table: string) => makeGrowthQuery(table, inserts));
+
+    const result = await dispatchCapabilityExecution({
+      handlerType: "finance_collections_followup",
+      capabilityName: "collections_followup",
+      tenantId: "tenant-1",
+      userId: "finance-1",
+      entities: {
+        client_name: "Maria Silva",
+        legal_area: "Previdenciario",
+        amount: "1500",
+        days_overdue: "12",
+        collection_stage: "inadimplencia",
+        tone: "firme",
+        channel: "WhatsApp",
+        payment_promise_at: "2026-05-20",
+        next_contact_at: "2026-05-18T13:00:00.000Z",
+      },
+      auditLogId: "audit-collections-1",
+      brainContext: {
+        taskId: "brain-task-collections-1",
+        runId: "brain-run-collections-1",
+        stepId: "brain-step-collections-1",
+        sourceModule: "mayus",
+      },
+    });
+
+    expect(result.status).toBe("executed");
+    expect(result.reply).toContain("Plano de cobranca supervisionada");
+    expect(result.outputPayload).toEqual(expect.objectContaining({
+      collection_stage: "renegotiation",
+      collection_priority: "medium",
+      external_side_effects_blocked: true,
+      requires_human_approval: true,
+      payment_promise_at: "2026-05-20",
+      next_contact_at: "2026-05-18T13:00:00.000Z",
+    }));
+    expect(createBrainArtifactMock).toHaveBeenCalledWith(expect.objectContaining({
+      tenantId: "tenant-1",
+      taskId: "brain-task-collections-1",
+      artifactType: "collections_followup_plan",
+      metadata: expect.objectContaining({
+        client_name: "Maria Silva",
+        legal_area: "Previdenciario",
+        amount: 1500,
+        days_overdue: 12,
+        collection_stage: "renegotiation",
+        suggested_first_message: expect.stringContaining("Maria"),
+        external_side_effects_blocked: true,
+        requires_human_approval: true,
+      }),
+    }));
+    expect(inserts.some((item) => item.table === "learning_events" && item.payload.event_type === "collections_followup_plan_created")).toBe(true);
+    expect(executarCobranca).not.toHaveBeenCalled();
+    expect(JSON.stringify(createBrainArtifactMock.mock.calls[0][0].metadata)).not.toMatch(/api_key|webhook_secret|sk_live|sk_test|sk-or-v1/i);
+  });
+
   it("executa external_action_preview pelo chat sem executar integracao externa", async () => {
     const inserts: Array<{ table: string; payload: any }> = [];
     fromMock.mockImplementation((table: string) => makeGrowthQuery(table, inserts));
@@ -911,6 +970,7 @@ describe("dispatchCapabilityExecution - juridico", () => {
 
   it("executa marketing_ops_assistant pelo chat sem side effects externos", async () => {
     const inserts: Array<{ table: string; payload: any }> = [];
+    const nextMarketingDate = new Date(Date.now() + 24 * 60 * 60 * 1000).toISOString().slice(0, 10);
     fromMock.mockImplementation((table: string) => {
       if (table === "tenant_settings") {
         const query: any = {
@@ -944,7 +1004,7 @@ describe("dispatchCapabilityExecution - juridico", () => {
                       angle: "guia educativo",
                       guardrails: [],
                       sourcePatternIds: [],
-                      date: "2026-05-12",
+                      date: nextMarketingDate,
                       status: "approved",
                       notes: "",
                     },

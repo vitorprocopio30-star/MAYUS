@@ -51,6 +51,7 @@ const MAX_CHAT_MESSAGE_CHARS = 20_000;
 const MAX_CHAT_HISTORY_ITEMS = 100;
 const DETERMINISTIC_ROUTER_INTENTS = new Set([
   "support_case_status",
+  "collections_followup",
   "legal_process_mission_plan",
   "legal_process_mission_execute_next",
 ]);
@@ -105,6 +106,7 @@ REGRAS DE EXECUÇÃO DE SKILLS:
 - Para recuperar ou reativar leads frios por segmento com lista, mensagens e aprovacao humana, use a skill lead_reactivation.
 - Para criar agendamento interno supervisionado de consulta, qualificacao ou retorno de lead, use a skill lead_schedule.
 - Para montar o plano proposta -> contrato -> cobranca -> abertura de caso sem executar integracoes externas automaticamente, use a skill revenue_flow_plan.
+- Para organizar cobranca vencida, inadimplencia, renegociacao ou promessa de pagamento sem envio externo automatico, use a skill collections_followup.
 - Para criar preview/checklist de aprovacao antes de ZapSign, Asaas, WhatsApp ou outra acao externa, use a skill external_action_preview.
 - Para registrar aceite do cliente com trilha auditavel sem executar contrato/cobranca/caso automaticamente, use a skill client_acceptance_record.
 - Para responder cliente sobre status do caso em linguagem curta, segura e com handoff humano quando faltar base suficiente, use a skill support_case_status.
