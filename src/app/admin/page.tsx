@@ -116,15 +116,23 @@ export default function AdminPage() {
                   {tenants.map((t) => (
                     <tr key={t.id} className="border-b border-white/5 transition hover:bg-white/[0.02]">
                       <td className="px-5 py-4 text-sm font-medium text-white">{t.name || '—'}</td>
-                      <td className="px-5 py-4 text-sm text-zinc-300">{t.plan_type || '—'}</td>
+                      <td className="px-5 py-4 text-sm text-zinc-300">{tenantPlan(t)}</td>
                       <td className="px-5 py-4">
                         <span className={`inline-flex rounded-full border px-2.5 py-1 text-xs font-medium ${statusBadgeClass(t.status)}`}>
                           {t.status || '—'}
                         </span>
                       </td>
-                      <td className="px-5 py-4 text-sm text-zinc-300">{t.billing_cycle || '—'}</td>
-                      <td className="px-5 py-4 text-sm text-zinc-300">{formatDate(t.created_at)}</td>
-                      <td className="px-5 py-4 text-sm text-zinc-300">{t.max_processos ?? '—'}</td>
+                      <td className="px-5 py-4 text-sm text-zinc-300">{tenantBillingCycle(t)}</td>
+                      <td className="px-5 py-4 text-sm font-semibold text-emerald-300">{formatCurrency(t.expectedMonthlyValue)}</td>
+                      <td className="px-5 py-4 text-sm text-zinc-300">
+                        <div>{formatDate(t.lastPaymentAt || null)}</div>
+                        <div className="mt-0.5 text-xs text-zinc-500">{formatCurrency(t.lastPaymentValue)}</div>
+                      </td>
+                      <td className="px-5 py-4 text-sm">
+                        <span className={Number(t.daysOverdue || 0) > 0 ? 'text-red-300' : 'text-zinc-500'}>
+                          {Number(t.daysOverdue || 0) > 0 ? `${t.daysOverdue} dias` : 'Em dia'}
+                        </span>
+                      </td>
                       <td className="px-5 py-4">
                         <Link href={`/admin/tenants/${t.id}`}
                           className="inline-flex items-center rounded-xl border border-[#CCA761]/30 bg-[#CCA761]/10 px-3 py-2 text-sm font-medium text-[#CCA761] transition hover:bg-[#CCA761]/15"

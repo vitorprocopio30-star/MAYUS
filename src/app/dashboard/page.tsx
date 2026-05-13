@@ -31,6 +31,91 @@ type ProcessTypeMetric = {
   percentage: number;
 };
 
+type FinanceBucketPreview = {
+  amount: number;
+  count: number;
+};
+
+type FinanceForecastBucketsPreview = {
+  dueIn7Days: FinanceBucketPreview;
+  dueIn30Days: FinanceBucketPreview;
+  future: FinanceBucketPreview;
+  noDueDate: FinanceBucketPreview;
+};
+
+type FinanceOverdueAgingPreview = {
+  days1To7: FinanceBucketPreview;
+  days8To14: FinanceBucketPreview;
+  days15To30: FinanceBucketPreview;
+  days31Plus: FinanceBucketPreview;
+};
+
+type FinanceRiskItemPreview = {
+  key: string;
+  label: string;
+  clientName: string | null;
+  caseId: string | null;
+  openAmount: number;
+  overdueAmount: number;
+  forecastAmount: number;
+  openCount: number;
+  overdueCount: number;
+  maxDaysOverdue: number;
+  oldestDueDate: string | null;
+  riskLevel: "low" | "medium" | "high";
+  nextBestAction: string;
+};
+
+type FinanceCollectionPlanPreview = {
+  id: string;
+  title: string;
+  createdAt: string | null;
+  clientName: string | null;
+  amount: number | null;
+  daysOverdue: number | null;
+  dueDate: string | null;
+  stage: string | null;
+  priority: string | null;
+  nextBestAction: string | null;
+  requiresHumanApproval: boolean;
+  externalSideEffectsBlocked: boolean;
+};
+
+type FinanceSummaryPayload = {
+  financials?: {
+    received?: { amount?: number; count?: number };
+    forecast?: { amount?: number; count?: number };
+    overdue?: { amount?: number; count?: number };
+    delinquency?: { amount?: number; count?: number; rate?: number };
+    openCharges?: { amount?: number; count?: number };
+    forecastBuckets?: Partial<Record<keyof FinanceForecastBucketsPreview, Partial<FinanceBucketPreview>>>;
+    overdueAging?: Partial<Record<keyof FinanceOverdueAgingPreview, Partial<FinanceBucketPreview>>>;
+    riskItems?: FinanceRiskItemPreview[];
+    expenses?: {
+      fixed?: { amount?: number; count?: number };
+      marketing?: { amount?: number; count?: number };
+    };
+  };
+  collectionsFollowup?: {
+    totalPlans?: number;
+    highPriorityPlans?: number;
+    recentPlans?: FinanceCollectionPlanPreview[];
+  };
+  revenueReconciliation?: {
+    available?: boolean;
+    report?: {
+      totals?: {
+        matched?: number;
+        partial?: number;
+        blocked?: number;
+        unmatched?: number;
+        receivedRevenue?: number;
+        openedCaseRevenue?: number;
+      };
+    };
+  };
+};
+
 type DashboardMetrics = {
   totalRevenue: number;
   activeContracts: number;
@@ -43,6 +128,11 @@ type DashboardMetrics = {
   estimatedLtv: number;
   delinquencyAmount: number;
   delinquencyCount: number;
+  delinquencyRate: number;
+  financeForecast: number;
+  financeForecastCount: number;
+  openChargesAmount: number;
+  openChargesCount: number;
   fixedCosts: number;
   marketingSpend: number;
   leadCount: number;
@@ -64,6 +154,16 @@ type DashboardMetrics = {
   salesByProfessional: SalesProfessionalMetrics[];
   leadSources: LeadSourceMetrics;
   processTypeDistribution: ProcessTypeMetric[];
+  collectionsFollowupPlansCount: number;
+  collectionsFollowupHighPriorityCount: number;
+  collectionsFollowupPlans: FinanceCollectionPlanPreview[];
+  financeForecastBuckets: FinanceForecastBucketsPreview;
+  financeOverdueAging: FinanceOverdueAgingPreview;
+  financeRiskItems: FinanceRiskItemPreview[];
+  revenueReconciliationMatched: number;
+  revenueReconciliationPartial: number;
+  revenueReconciliationBlocked: number;
+  revenueReconciliationOpenedCaseRevenue: number;
 };
 
 type OfficeGoal = {
@@ -132,6 +232,100 @@ const isReceivedRevenue = (row: FinancialRow) => {
   return type.includes("receita") && Boolean(row.reference_date || source.includes("asaas"));
 };
 
+const finiteNumber = (value: unknown, fallback = 0) =>
+  typeof value === "number" && Number.isFinite(value) ? value : fallback;
+
+const emptyFinanceBucket = (): FinanceBucketPreview => ({ amount: 0, count: 0 });
+
+const sanitizeFinanceBucket = (bucket: unknown): FinanceBucketPreview => {
+  const item = bucket && typeof bucket === "object" ? bucket as Partial<FinanceBucketPreview> : {};
+  return {
+    amount: finiteNumber(item.amount, 0),
+    count: finiteNumber(item.count, 0),
+  };
+};
+
+const sanitizeForecastBuckets = (buckets: unknown): FinanceForecastBucketsPreview => {
+  const item = buckets && typeof buckets === "object" ? buckets as Partial<FinanceForecastBucketsPreview> : {};
+  return {
+    dueIn7Days: sanitizeFinanceBucket(item.dueIn7Days),
+    dueIn30Days: sanitizeFinanceBucket(item.dueIn30Days),
+    future: sanitizeFinanceBucket(item.future),
+    noDueDate: sanitizeFinanceBucket(item.noDueDate),
+  };
+};
+
+const sanitizeOverdueAging = (buckets: unknown): FinanceOverdueAgingPreview => {
+  const item = buckets && typeof buckets === "object" ? buckets as Partial<FinanceOverdueAgingPreview> : {};
+  return {
+    days1To7: sanitizeFinanceBucket(item.days1To7),
+    days8To14: sanitizeFinanceBucket(item.days8To14),
+    days15To30: sanitizeFinanceBucket(item.days15To30),
+    days31Plus: sanitizeFinanceBucket(item.days31Plus),
+  };
+};
+
+const sanitizeRiskItems = (items: unknown): FinanceRiskItemPreview[] => {
+  if (!Array.isArray(items)) return [];
+
+  return items.slice(0, 8).map((item) => {
+    const risk = item && typeof item === "object" ? item as Partial<FinanceRiskItemPreview> : {};
+    const riskLevel = risk.riskLevel === "high" || risk.riskLevel === "medium" || risk.riskLevel === "low"
+      ? risk.riskLevel
+      : "low";
+
+    return {
+      key: String(risk.key || risk.caseId || risk.clientName || risk.label || "risco"),
+      label: String(risk.label || risk.clientName || "Risco financeiro"),
+      clientName: typeof risk.clientName === "string" ? risk.clientName : null,
+      caseId: typeof risk.caseId === "string" ? risk.caseId : null,
+      openAmount: finiteNumber(risk.openAmount, 0),
+      overdueAmount: finiteNumber(risk.overdueAmount, 0),
+      forecastAmount: finiteNumber(risk.forecastAmount, 0),
+      openCount: finiteNumber(risk.openCount, 0),
+      overdueCount: finiteNumber(risk.overdueCount, 0),
+      maxDaysOverdue: finiteNumber(risk.maxDaysOverdue, 0),
+      oldestDueDate: typeof risk.oldestDueDate === "string" ? risk.oldestDueDate : null,
+      riskLevel,
+      nextBestAction: String(risk.nextBestAction || "Revisar risco financeiro."),
+    };
+  });
+};
+
+const sanitizeCollectionPlans = (plans: unknown): FinanceCollectionPlanPreview[] => {
+  if (!Array.isArray(plans)) return [];
+
+  return plans.slice(0, 5).map((plan) => {
+    const item = plan && typeof plan === "object" ? plan as Partial<FinanceCollectionPlanPreview> : {};
+    return {
+      id: String(item.id || ""),
+      title: String(item.title || "Plano de cobranca"),
+      createdAt: typeof item.createdAt === "string" ? item.createdAt : null,
+      clientName: typeof item.clientName === "string" ? item.clientName : null,
+      amount: typeof item.amount === "number" && Number.isFinite(item.amount) ? item.amount : null,
+      daysOverdue: typeof item.daysOverdue === "number" && Number.isFinite(item.daysOverdue) ? item.daysOverdue : null,
+      dueDate: typeof item.dueDate === "string" ? item.dueDate : null,
+      stage: typeof item.stage === "string" ? item.stage : null,
+      priority: typeof item.priority === "string" ? item.priority : null,
+      nextBestAction: typeof item.nextBestAction === "string" ? item.nextBestAction : null,
+      requiresHumanApproval: item.requiresHumanApproval === true,
+      externalSideEffectsBlocked: item.externalSideEffectsBlocked !== false,
+    };
+  });
+};
+
+const fetchTenantFinanceSummary = async (): Promise<FinanceSummaryPayload | null> => {
+  try {
+    const response = await fetch("/api/financeiro/summary", { cache: "no-store" });
+    if (!response.ok) return null;
+    const payload = await response.json();
+    return payload?.summary && typeof payload.summary === "object" ? payload.summary as FinanceSummaryPayload : null;
+  } catch (error) {
+    console.warn("MAYUS BI: resumo financeiro indisponivel", error);
+    return null;
+  }
+};
+
 const classifyLeadSource = (source?: string | null): keyof LeadSourceMetrics | null => {
   const value = normalizeMetricText(source);
   if (!value) return null;
@@ -179,6 +373,11 @@ const INITIAL_DASHBOARD_METRICS: DashboardMetrics = {
   estimatedLtv: 0,
   delinquencyAmount: 0,
   delinquencyCount: 0,
+  delinquencyRate: 0,
+  financeForecast: 0,
+  financeForecastCount: 0,
+  openChargesAmount: 0,
+  openChargesCount: 0,
   fixedCosts: 0,
   marketingSpend: 0,
   leadCount: 0,
@@ -204,6 +403,26 @@ const INITIAL_DASHBOARD_METRICS: DashboardMetrics = {
     referral: 0,
   },
   processTypeDistribution: [],
+  collectionsFollowupPlansCount: 0,
+  collectionsFollowupHighPriorityCount: 0,
+  collectionsFollowupPlans: [],
+  financeForecastBuckets: {
+    dueIn7Days: emptyFinanceBucket(),
+    dueIn30Days: emptyFinanceBucket(),
+    future: emptyFinanceBucket(),
+    noDueDate: emptyFinanceBucket(),
+  },
+  financeOverdueAging: {
+    days1To7: emptyFinanceBucket(),
+    days8To14: emptyFinanceBucket(),
+    days15To30: emptyFinanceBucket(),
+    days31Plus: emptyFinanceBucket(),
+  },
+  financeRiskItems: [],
+  revenueReconciliationMatched: 0,
+  revenueReconciliationPartial: 0,
+  revenueReconciliationBlocked: 0,
+  revenueReconciliationOpenedCaseRevenue: 0,
 };
 
 /**
@@ -765,36 +984,61 @@ const ComercialView = ({ metrics, officeGoals = [] }: { metrics: DashboardMetric
   );
 };
 
-const FinanceiroView = ({ metrics }: { metrics: DashboardMetrics }) => (
+const FinanceiroView = ({ metrics }: { metrics: DashboardMetrics }) => {
+  const operationalProfit = metrics.revenueReceived - metrics.totalCommissions - metrics.fixedCosts - metrics.marketingSpend;
+  const projectionMax = Math.max(metrics.revenueReceived, metrics.financeForecast, metrics.openChargesAmount, 1);
+  const heightFor = (value: number) => `${Math.max(12, Math.min(100, Math.round((value / projectionMax) * 100)))}%`;
+  const collectionPlans = metrics.collectionsFollowupPlans.slice(0, 3);
+  const forecastBuckets = [
+    { label: "7 dias", bucket: metrics.financeForecastBuckets.dueIn7Days },
+    { label: "30 dias", bucket: metrics.financeForecastBuckets.dueIn30Days },
+    { label: "Futuro", bucket: metrics.financeForecastBuckets.future },
+    { label: "Sem data", bucket: metrics.financeForecastBuckets.noDueDate },
+  ];
+  const overdueBuckets = [
+    { label: "1-7d", bucket: metrics.financeOverdueAging.days1To7 },
+    { label: "8-14d", bucket: metrics.financeOverdueAging.days8To14 },
+    { label: "15-30d", bucket: metrics.financeOverdueAging.days15To30 },
+    { label: "31d+", bucket: metrics.financeOverdueAging.days31Plus },
+  ];
+  const riskItems = metrics.financeRiskItems.slice(0, 3);
+  const riskBadgeClass = (risk: FinanceRiskItemPreview["riskLevel"]) =>
+    risk === "high"
+      ? "border-[#f87171]/40 bg-[#f87171]/10 text-[#f87171]"
+      : risk === "medium"
+        ? "border-[#CCA761]/40 bg-[#CCA761]/10 text-[#CCA761]"
+        : "border-[#22d3ee]/30 bg-[#22d3ee]/10 text-[#22d3ee]";
+
+  return (
   <div className="space-y-6 animate-fade-in-up">
     <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-4">
       <GlassCard>
-        <p className="text-[10px] text-gray-500 uppercase tracking-widest font-bold mb-1">Receita Total Mês</p>
+        <p className="text-[10px] text-gray-500 uppercase tracking-widest font-bold mb-1">Recebido</p>
         <h3 className="text-3xl font-bold text-[#4ade80] tracking-wide mt-2">
           R$ <AnimatedNumber value={metrics.revenueReceived} />
         </h3>
-        <p className="text-[10px] text-gray-400 mt-2">Honorários + Êxito</p>
+        <p className="text-[10px] text-gray-400 mt-2">Honorarios e exito registrados</p>
       </GlassCard>
       <GlassCard>
-        <p className="text-[10px] text-gray-500 uppercase tracking-widest font-bold mb-1">Custo Comissões</p>
-        <h3 className="text-3xl font-bold text-[#CCA761] tracking-wide mt-2">
-          R$ <AnimatedNumber value={metrics.totalCommissions} />
-        </h3>
-        <p className="text-[10px] text-gray-400 mt-2">SDR / Closer</p>
-      </GlassCard>
-      <GlassCard>
-        <p className="text-[10px] text-gray-500 uppercase tracking-widest font-bold mb-1">LTV Estimado (Por Cliente)</p>
+        <p className="text-[10px] text-gray-500 uppercase tracking-widest font-bold mb-1">Previsto</p>
         <h3 className="text-3xl font-bold text-[#22d3ee] tracking-wide mt-2">
-          R$ <AnimatedNumber value={metrics.estimatedLtv} />
+          R$ <AnimatedNumber value={metrics.financeForecast} />
         </h3>
-        <p className="text-[10px] text-gray-400 mt-2">{metrics.clientCount} clientes na carteira</p>
+        <p className="text-[10px] text-gray-400 mt-2">{metrics.financeForecastCount} cobrancas a vencer</p>
       </GlassCard>
       <GlassCard>
-        <p className="text-[10px] text-gray-500 uppercase tracking-widest font-bold mb-1">Inadimplência</p>
+        <p className="text-[10px] text-gray-500 uppercase tracking-widest font-bold mb-1">Cobrancas Abertas</p>
+        <h3 className="text-3xl font-bold text-[#CCA761] tracking-wide mt-2">
+          R$ <AnimatedNumber value={metrics.openChargesAmount} />
+        </h3>
+        <p className="text-[10px] text-gray-400 mt-2">{metrics.openChargesCount} cobrancas em aberto</p>
+      </GlassCard>
+      <GlassCard>
+        <p className="text-[10px] text-gray-500 uppercase tracking-widest font-bold mb-1">Inadimplencia</p>
         <h3 className="text-3xl font-bold text-[#f87171] tracking-wide mt-2">
           R$ <AnimatedNumber value={metrics.delinquencyAmount} />
         </h3>
-        <p className="text-[10px] text-[#f87171] mt-2">{metrics.delinquencyCount} parcelas vencidas</p>
+        <p className="text-[10px] text-[#f87171] mt-2">{metrics.delinquencyCount} vencidas / {metrics.delinquencyRate}% das abertas</p>
       </GlassCard>
     </div>
 
@@ -803,20 +1047,30 @@ const FinanceiroView = ({ metrics }: { metrics: DashboardMetrics }) => (
         <div className="space-y-6">
           <div>
             <p className="text-[10px] text-gray-500 uppercase tracking-widest mb-3 font-bold">Resumo de Caixa</p>
-            <div className="flex justify-between items-center text-sm font-medium mb-2">
-              <span className="text-gray-300">Entradas (Parcelas Recebidas)</span>
-              <span className="text-[#4ade80]">R$ {metrics.revenueReceived.toLocaleString('pt-BR')}</span>
+            <div className="space-y-2 text-sm font-medium">
+              <div className="flex justify-between items-center">
+                <span className="text-gray-300">Entradas recebidas</span>
+                <span className="text-[#4ade80]">R$ {metrics.revenueReceived.toLocaleString('pt-BR')}</span>
+              </div>
+              <div className="flex justify-between items-center">
+                <span className="text-gray-300">Previsto em aberto</span>
+                <span className="text-[#22d3ee]">R$ {metrics.financeForecast.toLocaleString('pt-BR')}</span>
+              </div>
+              <div className="flex justify-between items-center">
+                <span className="text-gray-300">Vencido</span>
+                <span className="text-[#f87171]">R$ {metrics.delinquencyAmount.toLocaleString('pt-BR')}</span>
+              </div>
             </div>
           </div>
           <div>
-            <p className="text-[10px] text-gray-500 uppercase tracking-widest mb-3 font-bold">Saídas (Operacional)</p>
+            <p className="text-[10px] text-gray-500 uppercase tracking-widest mb-3 font-bold">Saidas (Operacional)</p>
             <div className="space-y-2 text-sm">
               <div className="flex justify-between items-center">
                 <span className="text-gray-400">Custos Fixos Cadastrados</span>
                 <span className="text-[#f87171]">- R$ {metrics.fixedCosts.toLocaleString('pt-BR')}</span>
               </div>
               <div className="flex justify-between items-center">
-                <span className="text-gray-400">Comissões Pagas</span>
+                <span className="text-gray-400">Comissoes Pagas</span>
                 <span className="text-[#f87171]">- R$ {metrics.totalCommissions.toLocaleString('pt-BR')}</span>
               </div>
               <div className="flex justify-between items-center">
@@ -827,7 +1081,9 @@ const FinanceiroView = ({ metrics }: { metrics: DashboardMetrics }) => (
           </div>
           <div className="pt-4 border-t border-white/5 flex justify-between items-center font-bold">
             <span className="text-gray-300">Lucro Operacional Estimado</span>
-            <span className="text-[#4ade80]">R$ {(metrics.revenueReceived - metrics.totalCommissions - metrics.fixedCosts - metrics.marketingSpend).toLocaleString('pt-BR')}</span>
+            <span className={operationalProfit >= 0 ? "text-[#4ade80]" : "text-[#f87171]"}>
+              R$ {operationalProfit.toLocaleString('pt-BR')}
+            </span>
           </div>
         </div>
       </GlassCard>
@@ -835,29 +1091,118 @@ const FinanceiroView = ({ metrics }: { metrics: DashboardMetrics }) => (
       <div className="bg-card border border-primary/20 rounded-2xl flex flex-col justify-center p-8 relative overflow-hidden group hover:border-primary/40 transition-colors">
         <div className="absolute inset-x-0 h-px top-1/2 bg-gradient-to-r from-transparent via-[#CCA761]/20 to-transparent" />
         <h4 className="text-[10px] text-gray-400 font-bold uppercase tracking-widest mb-6 relative z-10 flex items-center gap-2">
-          <Calendar size={14} className="text-[#CCA761]" /> Projeção de Caixa
+          <Calendar size={14} className="text-[#CCA761]" /> Projecao e Follow-up
         </h4>
         <div className="flex items-end gap-2 h-32 relative z-10">
-          <div className="flex-1 bg-[#1a1a1a] rounded-t-md relative group-hover:bg-[#22d3ee]/10 transition-colors h-[40%]" title="Mês Atual">
-            <span className="absolute -top-6 left-1/2 -translate-x-1/2 text-[10px] text-gray-500">Hoje</span>
+          <div className="flex-1 bg-[#1a1a1a] rounded-t-md relative group-hover:bg-[#4ade80]/10 transition-colors" style={{ height: heightFor(metrics.revenueReceived) }} title="Recebido">
+            <span className="absolute -top-6 left-1/2 -translate-x-1/2 text-[10px] text-gray-500">Recebido</span>
           </div>
-          <div className="flex-1 bg-[#1a1a1a] rounded-t-md relative group-hover:bg-[#22d3ee]/20 transition-colors h-[60%]" title="Mês +1">
-            <span className="absolute -top-6 left-1/2 -translate-x-1/2 text-[10px] text-gray-500">+30d</span>
+          <div className="flex-1 bg-[#1a1a1a] rounded-t-md relative group-hover:bg-[#22d3ee]/20 transition-colors" style={{ height: heightFor(metrics.financeForecast) }} title="Previsto">
+            <span className="absolute -top-6 left-1/2 -translate-x-1/2 text-[10px] text-gray-500">Previsto</span>
           </div>
-          <div className="flex-1 bg-[#1a1a1a] rounded-t-md relative group-hover:bg-[#22d3ee]/30 transition-colors h-[75%]" title="Mês +2">
-            <span className="absolute -top-6 left-1/2 -translate-x-1/2 text-[10px] text-gray-500">+60d</span>
+          <div className="flex-1 bg-[#1a1a1a] rounded-t-md relative group-hover:bg-[#f87171]/20 transition-colors" style={{ height: heightFor(metrics.delinquencyAmount) }} title="Vencido">
+            <span className="absolute -top-6 left-1/2 -translate-x-1/2 text-[10px] text-gray-500">Vencido</span>
           </div>
-          <div className="flex-1 bg-gradient-to-t from-[#CCA761]/20 to-[#CCA761]/80 rounded-t-md relative shadow-[0_0_20px_rgba(204,167,97,0.2)] h-[100%]" title="Mês +3">
-            <span className="absolute -top-6 left-1/2 -translate-x-1/2 text-[12px] font-bold text-[#CCA761]">+90d</span>
+          <div className="flex-1 bg-gradient-to-t from-[#CCA761]/20 to-[#CCA761]/80 rounded-t-md relative shadow-[0_0_20px_rgba(204,167,97,0.2)]" style={{ height: heightFor(metrics.openChargesAmount) }} title="Aberto">
+            <span className="absolute -top-6 left-1/2 -translate-x-1/2 text-[10px] font-bold text-[#CCA761]">Aberto</span>
           </div>
         </div>
-        <div className="mt-8 text-center relative z-10">
-          <p className="text-xs text-gray-400">Projeção considerando parcelas Asaas e acordos caindo nos próximos 90 dias.</p>
+        <div className="mt-8 relative z-10 space-y-3">
+          <div className="flex justify-between items-center text-xs">
+            <span className="text-gray-400">Planos supervisionados</span>
+            <span className="text-[#CCA761] font-bold">{metrics.collectionsFollowupPlansCount}</span>
+          </div>
+          <div className="flex justify-between items-center text-xs">
+            <span className="text-gray-400">Alta prioridade</span>
+            <span className="text-[#f87171] font-bold">{metrics.collectionsFollowupHighPriorityCount}</span>
+          </div>
+          <div className="grid grid-cols-1 sm:grid-cols-2 gap-3 pt-3 border-t border-white/5">
+            <div className="space-y-2">
+              <p className="text-[9px] text-gray-500 uppercase tracking-widest font-bold">Forecast</p>
+              {forecastBuckets.map((item) => (
+                <div key={item.label} className="flex justify-between gap-3 text-[11px]">
+                  <span className="text-gray-400">{item.label}</span>
+                  <span className="text-[#22d3ee] whitespace-nowrap">
+                    R$ {item.bucket.amount.toLocaleString('pt-BR')}
+                    <span className="ml-1 text-gray-600">({item.bucket.count})</span>
+                  </span>
+                </div>
+              ))}
+            </div>
+            <div className="space-y-2">
+              <p className="text-[9px] text-gray-500 uppercase tracking-widest font-bold">Vencidos</p>
+              {overdueBuckets.map((item) => (
+                <div key={item.label} className="flex justify-between gap-3 text-[11px]">
+                  <span className="text-gray-400">{item.label}</span>
+                  <span className="text-[#f87171] whitespace-nowrap">
+                    R$ {item.bucket.amount.toLocaleString('pt-BR')}
+                    <span className="ml-1 text-gray-600">({item.bucket.count})</span>
+                  </span>
+                </div>
+              ))}
+            </div>
+          </div>
+          <div className="grid grid-cols-3 gap-2 pt-2 border-t border-white/5 text-center">
+            <div>
+              <p className="text-[9px] text-gray-500 uppercase tracking-widest">Casados</p>
+              <p className="text-sm font-bold text-[#4ade80]">{metrics.revenueReconciliationMatched}</p>
+            </div>
+            <div>
+              <p className="text-[9px] text-gray-500 uppercase tracking-widest">Parciais</p>
+              <p className="text-sm font-bold text-[#CCA761]">{metrics.revenueReconciliationPartial}</p>
+            </div>
+            <div>
+              <p className="text-[9px] text-gray-500 uppercase tracking-widest">Bloqueios</p>
+              <p className="text-sm font-bold text-[#f87171]">{metrics.revenueReconciliationBlocked}</p>
+            </div>
+          </div>
+          <div className="flex justify-between items-center text-xs">
+            <span className="text-gray-400">Receita ja virou caso</span>
+            <span className="text-[#4ade80] font-bold">R$ {metrics.revenueReconciliationOpenedCaseRevenue.toLocaleString('pt-BR')}</span>
+          </div>
+          {collectionPlans.length > 0 && (
+            <div className="space-y-2 pt-2 border-t border-white/5">
+              {collectionPlans.map((plan) => (
+                <div key={plan.id || `${plan.clientName}-${plan.createdAt}`} className="flex justify-between gap-4 text-[11px]">
+                  <span className="text-gray-300 truncate">{plan.clientName || plan.title}</span>
+                  <span className="text-gray-500 whitespace-nowrap">
+                    {plan.amount !== null ? `R$ ${plan.amount.toLocaleString('pt-BR')}` : plan.priority || "revisao"}
+                  </span>
+                </div>
+              ))}
+            </div>
+          )}
+          {riskItems.length > 0 && (
+            <div className="space-y-2 pt-2 border-t border-white/5">
+              <p className="text-[9px] text-gray-500 uppercase tracking-widest font-bold">Maiores riscos</p>
+              {riskItems.map((item) => (
+                <div key={item.key} className="rounded-xl border border-white/5 bg-black/20 px-3 py-2">
+                  <div className="flex items-start justify-between gap-3">
+                    <div className="min-w-0">
+                      <p className="truncate text-[11px] font-bold text-gray-200">{item.clientName || item.label}</p>
+                      <p className="mt-0.5 text-[10px] text-gray-500">
+                        {item.overdueCount > 0 ? `${item.overdueCount} vencida(s)` : `${item.openCount} em aberto`}
+                        {item.maxDaysOverdue > 0 ? ` / ${item.maxDaysOverdue}d` : ""}
+                      </p>
+                    </div>
+                    <span className={`shrink-0 rounded-full border px-2 py-0.5 text-[9px] font-bold uppercase tracking-widest ${riskBadgeClass(item.riskLevel)}`}>
+                      {item.riskLevel}
+                    </span>
+                  </div>
+                  <div className="mt-2 flex justify-between gap-3 text-[11px]">
+                    <span className="text-gray-500">Aberto</span>
+                    <span className="font-bold text-[#CCA761]">R$ {item.openAmount.toLocaleString('pt-BR')}</span>
+                  </div>
+                </div>
+              ))}
+            </div>
+          )}
         </div>
       </div>
     </div>
   </div>
-);
+  );
+};
 
 const MarketingView = ({ metrics }: { metrics: DashboardMetrics }) => (
   <div className="space-y-6 animate-fade-in-up">
@@ -1320,12 +1665,14 @@ export default function DashboardHomePage() {
         nextMetrics.revenueReceived = totalRev;
       }
 
+      const financeSummaryPromise = fetchTenantFinanceSummary();
       const [
         { count: clientCount },
         { count: leadCount },
         { data: financialRows },
         { data: commercialTasks },
         { data: crmTasks },
+        financeSummary,
       ] = await Promise.all([
         supabase
           .from('clients')
@@ -1347,6 +1694,7 @@ export default function DashboardHomePage() {
           .from('crm_tasks')
           .select('source')
           .eq('tenant_id', tenantId),
+        financeSummaryPromise,
       ]);
 
       const normalizedClientCount = clientCount || 0;
@@ -1358,12 +1706,20 @@ export default function DashboardHomePage() {
       const receivedRevenue = financials
         .filter(isReceivedRevenue)
         .reduce((acc, row) => acc + (Number(row.amount) || 0), 0);
-      const overdueRows = financials.filter((row) => {
-        if (!row.due_date || isReceivedRevenue(row) || isExpenseRow(row)) return false;
+      const openRevenueRows = financials.filter((row) => !isReceivedRevenue(row) && !isExpenseRow(row));
+      const overdueRows = openRevenueRows.filter((row) => {
+        if (!row.due_date) return false;
         const dueDate = new Date(`${row.due_date}T00:00:00`);
         return !Number.isNaN(dueDate.getTime()) && dueDate < today;
       });
+      const forecastRows = openRevenueRows.filter((row) => {
+        if (!row.due_date) return true;
+        const dueDate = new Date(`${row.due_date}T00:00:00`);
+        return Number.isNaN(dueDate.getTime()) || dueDate >= today;
+      });
       const delinquencyAmount = overdueRows.reduce((acc, row) => acc + (Number(row.amount) || 0), 0);
+      const financeForecast = forecastRows.reduce((acc, row) => acc + (Number(row.amount) || 0), 0);
+      const openChargesAmount = openRevenueRows.reduce((acc, row) => acc + (Number(row.amount) || 0), 0);
       const marketingSpend = financials
         .filter(isMarketingExpense)
         .reduce((acc, row) => acc + Math.abs(Number(row.amount) || 0), 0);
@@ -1384,29 +1740,63 @@ export default function DashboardHomePage() {
       const commercialScheduled = commercialTaskRows.length;
       const commercialCompleted = commercialTaskRows.filter((task) => task.status === 'Concluído').length;
 
-      const revenueBase = receivedRevenue > 0 ? receivedRevenue : nextMetrics.revenueReceived;
       const leadToScheduleRate = normalizedLeadCount > 0 ? Math.round((commercialScheduled / normalizedLeadCount) * 100) : 0;
       const scheduleCompletionRate = commercialScheduled > 0 ? Math.round((commercialCompleted / commercialScheduled) * 100) : 0;
       const noShowRate = commercialScheduled > 0 ? Math.max(0, 100 - scheduleCompletionRate) : 0;
+      const hasFinanceSummary = Boolean(financeSummary?.financials);
+      const financeReceivedFallback = receivedRevenue > 0 ? receivedRevenue : nextMetrics.revenueReceived;
+      const financeReceived = finiteNumber(financeSummary?.financials?.received?.amount, financeReceivedFallback);
+      const financeOverdueAmount = finiteNumber(financeSummary?.financials?.overdue?.amount, delinquencyAmount);
+      const financeOverdueCount = finiteNumber(financeSummary?.financials?.overdue?.count, overdueRows.length);
+      const financeForecastAmount = finiteNumber(financeSummary?.financials?.forecast?.amount, financeForecast);
+      const financeForecastCount = finiteNumber(financeSummary?.financials?.forecast?.count, forecastRows.length);
+      const financeOpenChargesAmount = finiteNumber(financeSummary?.financials?.openCharges?.amount, openChargesAmount);
+      const financeOpenChargesCount = finiteNumber(financeSummary?.financials?.openCharges?.count, openRevenueRows.length);
+      const financeDelinquencyRate = finiteNumber(
+        financeSummary?.financials?.delinquency?.rate,
+        financeOpenChargesAmount > 0 ? Math.round((financeOverdueAmount / financeOpenChargesAmount) * 1000) / 10 : 0
+      );
+      const financeMarketingSpend = finiteNumber(financeSummary?.financials?.expenses?.marketing?.amount, marketingSpend);
+      const financeFixedCosts = finiteNumber(financeSummary?.financials?.expenses?.fixed?.amount, fixedCosts);
+      const forecastBuckets = sanitizeForecastBuckets(financeSummary?.financials?.forecastBuckets);
+      const overdueAging = sanitizeOverdueAging(financeSummary?.financials?.overdueAging);
+      const riskItems = sanitizeRiskItems(financeSummary?.financials?.riskItems);
+      const collectionPlans = sanitizeCollectionPlans(financeSummary?.collectionsFollowup?.recentPlans);
+      const reconciliationTotals = financeSummary?.revenueReconciliation?.report?.totals;
 
       nextMetrics.clientCount = normalizedClientCount;
-      nextMetrics.estimatedLtv = normalizedClientCount > 0 ? revenueBase / normalizedClientCount : 0;
-      nextMetrics.delinquencyAmount = delinquencyAmount;
-      nextMetrics.delinquencyCount = overdueRows.length;
-      nextMetrics.fixedCosts = fixedCosts;
-      nextMetrics.marketingSpend = marketingSpend;
+      nextMetrics.estimatedLtv = normalizedClientCount > 0 ? financeReceived / normalizedClientCount : 0;
+      nextMetrics.delinquencyAmount = financeOverdueAmount;
+      nextMetrics.delinquencyCount = financeOverdueCount;
+      nextMetrics.delinquencyRate = financeDelinquencyRate;
+      nextMetrics.financeForecast = financeForecastAmount;
+      nextMetrics.financeForecastCount = financeForecastCount;
+      nextMetrics.openChargesAmount = financeOpenChargesAmount;
+      nextMetrics.openChargesCount = financeOpenChargesCount;
+      nextMetrics.fixedCosts = financeFixedCosts;
+      nextMetrics.marketingSpend = financeMarketingSpend;
       nextMetrics.leadCount = normalizedLeadCount;
       nextMetrics.costPerLead = normalizedLeadCount > 0 ? nextMetrics.marketingSpend / normalizedLeadCount : 0;
       nextMetrics.leadConversionRate = normalizedLeadCount > 0 ? Math.round((nextMetrics.activeContracts / normalizedLeadCount) * 1000) / 10 : 0;
-      nextMetrics.marketingRoas = nextMetrics.marketingSpend > 0 ? revenueBase / nextMetrics.marketingSpend : 0;
+      nextMetrics.marketingRoas = nextMetrics.marketingSpend > 0 ? financeReceived / nextMetrics.marketingSpend : 0;
       nextMetrics.commercialScheduled = commercialScheduled;
       nextMetrics.commercialCompleted = commercialCompleted;
       nextMetrics.leadToScheduleRate = leadToScheduleRate;
       nextMetrics.scheduleCompletionRate = scheduleCompletionRate;
       nextMetrics.noShowRate = noShowRate;
       nextMetrics.operationRate = Math.max(0, 100 - noShowRate);
-      nextMetrics.revenueReceived = receivedRevenue > 0 ? receivedRevenue : nextMetrics.revenueReceived;
+      nextMetrics.revenueReceived = hasFinanceSummary ? financeReceived : financeReceivedFallback;
       nextMetrics.leadSources = leadSources;
+      nextMetrics.collectionsFollowupPlansCount = finiteNumber(financeSummary?.collectionsFollowup?.totalPlans, collectionPlans.length);
+      nextMetrics.collectionsFollowupHighPriorityCount = finiteNumber(financeSummary?.collectionsFollowup?.highPriorityPlans, collectionPlans.filter((plan) => normalizeMetricText(plan.priority) === "high").length);
+      nextMetrics.collectionsFollowupPlans = collectionPlans;
+      nextMetrics.financeForecastBuckets = forecastBuckets;
+      nextMetrics.financeOverdueAging = overdueAging;
+      nextMetrics.financeRiskItems = riskItems;
+      nextMetrics.revenueReconciliationMatched = finiteNumber(reconciliationTotals?.matched, 0);
+      nextMetrics.revenueReconciliationPartial = finiteNumber(reconciliationTotals?.partial, 0);
+      nextMetrics.revenueReconciliationBlocked = finiteNumber(reconciliationTotals?.blocked, 0);
+      nextMetrics.revenueReconciliationOpenedCaseRevenue = finiteNumber(reconciliationTotals?.openedCaseRevenue, 0);
 
       const { data: processTasks, error: processTasksError } = await supabase
         .from('process_tasks')
