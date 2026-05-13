@@ -143,22 +143,22 @@ export default function AdminPage() {
 
         {!loading && !error && summary && (
           <div className="mb-6 grid grid-cols-1 gap-4 md:grid-cols-2 xl:grid-cols-4">
-            <div className="rounded-2xl border border-white/10 bg-white/[0.03] p-5">
+            <div data-testid="admin-finance-mrr" className="rounded-2xl border border-white/10 bg-white/[0.03] p-5">
               <p className="text-xs font-semibold uppercase tracking-[0.14em] text-zinc-500">MRR ativo</p>
               <p className="mt-2 text-2xl font-semibold text-emerald-300">{formatCurrency(summary.totals.mrr)}</p>
               <p className="mt-1 text-xs text-zinc-500">{summary.totals.active} tenants ativos</p>
             </div>
-            <div className="rounded-2xl border border-white/10 bg-white/[0.03] p-5">
+            <div data-testid="admin-finance-arr" className="rounded-2xl border border-white/10 bg-white/[0.03] p-5">
               <p className="text-xs font-semibold uppercase tracking-[0.14em] text-zinc-500">ARR projetado</p>
               <p className="mt-2 text-2xl font-semibold text-white">{formatCurrency(summary.totals.arr)}</p>
               <p className="mt-1 text-xs text-zinc-500">{summary.totals.trial} trials, {summary.totals.trialEndingSoon} vencendo em 7 dias</p>
             </div>
-            <div className="rounded-2xl border border-white/10 bg-white/[0.03] p-5">
+            <div data-testid="admin-finance-received" className="rounded-2xl border border-white/10 bg-white/[0.03] p-5">
               <p className="text-xs font-semibold uppercase tracking-[0.14em] text-zinc-500">Receita recebida no mes</p>
               <p className="mt-2 text-2xl font-semibold text-[#CCA761]">{formatCurrency(summary.totals.receivedThisMonth)}</p>
               <p className="mt-1 text-xs text-zinc-500">Total historico: {formatCurrency(summary.totals.receivedTotal)}</p>
             </div>
-            <div className="rounded-2xl border border-red-500/20 bg-red-500/[0.05] p-5">
+            <div data-testid="admin-finance-delinquency" className="rounded-2xl border border-red-500/20 bg-red-500/[0.05] p-5">
               <p className="text-xs font-semibold uppercase tracking-[0.14em] text-red-300/80">Inadimplencia SaaS</p>
               <p className="mt-2 text-2xl font-semibold text-red-300">{formatCurrency(summary.totals.overdueExpectedAmount)}</p>
               <p className="mt-1 text-xs text-red-200/70">{summary.totals.delinquent} tenants, {formatCurrency(summary.totals.atRiskMrr)} MRR em risco</p>
@@ -181,7 +181,7 @@ export default function AdminPage() {
             </div>
           ) : (
             <div className="overflow-x-auto">
-              <table className="min-w-full border-collapse">
+              <table data-testid="admin-finance-tenants-table" className="min-w-full border-collapse">
                 <thead>
                   <tr className="border-b border-white/10 bg-white/[0.02]">
                     {['Escritorio','Plano','Status','Ciclo','MRR','Ultimo pagamento','Vencido','Acoes'].map(h => (

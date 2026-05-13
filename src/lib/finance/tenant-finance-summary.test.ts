@@ -41,9 +41,10 @@ describe("tenant finance summary", () => {
         {
           id: "fin-overdue-old",
           amount: 4000,
-          status: "Pendente",
+          status: "inadimplente",
           type: "receita",
           due_date: "2026-04-01",
+          reference_date: "2026-04-01",
           metadata: {
             client_id: "client-joao",
             nome_cliente: "Joao",

@@ -30,6 +30,10 @@ const OPEN_STATUS_TEXTS = new Set([
   "overdue",
   "vencido",
   "vencida",
+  "inadimplente",
+  "inadimplencia",
+  "delinquent",
+  "delinquency",
 ]);
 
 export type TenantFinanceFinancialRow = {
