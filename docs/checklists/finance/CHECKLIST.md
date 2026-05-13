@@ -24,7 +24,7 @@ Evidencia 2026-05-12: `src/lib/agent/capabilities/billing-normalization.ts`, `sr
 - [ ] Criar regra clara: qual pagamento abre caso, qual apenas registra receita.
 - [~] Criar reconciliacao entre financials, billing artifact e process task.
 Evidencia 2026-05-12: webhook Asaas preservado usando `asaas_billing` para `revenue-to-case` e teste focado de pagamento confirmado passando; ainda falta reconciliacao completa com `financials` e smoke real.
-Evidencia 2026-05-13: `src/lib/finance/revenue-reconciliation.ts` adiciona reconciliacao leve e testada entre `financials`, artifacts `asaas_billing`/`revenue_case_opening`/`revenue_flow_plan` e `process_tasks`, classificando ciclos como `matched`, `partial`, `blocked` ou `unmatched`; ainda falta plugar em rotina/painel com dados reais.
+Evidencia 2026-05-13: `src/lib/finance/revenue-reconciliation.ts` adiciona reconciliacao leve e testada entre `financials`, artifacts `asaas_billing`/`revenue_case_opening`/`revenue_flow_plan` e `process_tasks`, classificando ciclos como `matched`, `partial`, `blocked` ou `unmatched`; ja esta plugada no resumo financeiro do tenant em codigo/teste, faltando smoke real com dados controlados.
 - [ ] Criar rollback operacional se abertura de caso falhar apos pagamento.
 - [ ] Notificar responsavel juridico quando caso abrir por receita.
 
@@ -43,11 +43,12 @@ Evidencia 2026-05-13: `src/lib/finance/collections-followup.ts`, router, registr
 - [ ] Criar margem estimada por caso.
 - [ ] Criar receita por area juridica.
 - [ ] Criar comissao por origem/responsavel.
-- [ ] Mostrar risco financeiro por tenant.
+- [~] Mostrar risco financeiro por tenant.
+Evidencia 2026-05-13: o painel superadmin financeiro mostra risco por escritorio/tenant e separa receita SaaS do MAYUS em `platform_billing_events`; ainda falta granularidade por cliente/caso e smoke visual autenticado.
 
 ## Criterios de aceite
 
 - [~] Comando "Mayus, cobre a entrada do cliente X" encontra contexto, monta cobranca, pede aprovacao e registra artifact.
 - [x] Nenhuma cobranca externa e enviada sem aprovacao.
 - [~] O sistema mostra dinheiro previsto, dinheiro recebido e casos abertos por receita.
-Evidencia 2026-05-13: Chat/Brain MAYUS ganhou labels de artifact para `asaas_billing`, `collections_followup_plan` e revenue-to-case, e a reconciliacao leve calcula receita recebida vs caso aberto em codigo/teste; falta tela agregada e smoke real.
+Evidencia 2026-05-13: Chat/Brain MAYUS ganhou labels de artifact para `asaas_billing`, `collections_followup_plan` e revenue-to-case, e a reconciliacao leve calcula receita recebida vs caso aberto em codigo/teste; painel superadmin e summary financeiro do tenant foram implementados em codigo/teste, faltando smoke visual/autenticado e dados reais.
