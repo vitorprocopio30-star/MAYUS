@@ -1,5 +1,6 @@
 import type { SupabaseClient } from "@supabase/supabase-js";
 import { listTenantIntegrationsResolved, type ResolvedTenantIntegration } from "@/lib/integrations/server";
+import { sendEvolutionPresence } from "@/lib/whatsapp/evolution-presence";
 
 const PRIVATE_IP = /^(localhost|127\.|10\.|172\.(1[6-9]|2[0-9]|3[01])\.|192\.168\.|0\.0\.0\.0|::1)/;
 
@@ -19,6 +20,7 @@ export type SendWhatsAppMessageInput = {
   mediaMimeType?: string | null;
   mediaStoragePath?: string | null;
   metadata?: Record<string, unknown> | null;
+  humanizeDelivery?: boolean | null;
   fetcher?: typeof fetch;
 };
 
@@ -193,6 +195,63 @@ async function sendViaEvolution(input: SendWhatsAppMessageInput, provider: Resol
   return apiResponse;
 }
 
+function getHumanizedDelayMs(text?: string | null) {
+  if (process.env.NODE_ENV === "test") return 0;
+  const length = String(text || "").trim().length;
+  if (length <= 0) return 0;
+  return Math.min(10000, Math.max(2600, 1500 + length * 22));
+}
+
+async function sleep(ms: number) {
+  if (ms <= 0) return;
+  await new Promise((resolve) => setTimeout(resolve, ms));
+}
+
+async function sendEvolutionTypingPulse(input: SendWhatsAppMessageInput, delayMs: number) {
+  await sendEvolutionPresence({
+    tenantId: input.tenantId,
+    remoteJid: input.phoneNumber,
+    presence: "composing",
+    delayMs: Math.min(Math.max(delayMs, 1000), 10000),
+    supabase: input.supabase,
+    fetcher: input.fetcher,
+  });
+
+  let elapsed = 0;
+  while (elapsed + 3500 < delayMs) {
+    await sleep(3500);
+    elapsed += 3500;
+    await sendEvolutionPresence({
+      tenantId: input.tenantId,
+      remoteJid: input.phoneNumber,
+      presence: "composing",
+      delayMs: Math.min(Math.max(delayMs - elapsed, 1000), 10000),
+      supabase: input.supabase,
+      fetcher: input.fetcher,
+    });
+  }
+
+  await sleep(delayMs - elapsed);
+}
+
+async function sendViaEvolutionHumanized(input: SendWhatsAppMessageInput, provider: ResolvedTenantIntegration) {
+  const shouldHumanize = Boolean(input.humanizeDelivery && input.text && !input.audioUrl && !input.mediaUrl);
+  if (!shouldHumanize) return sendViaEvolution(input, provider);
+
+  try {
+    await sendEvolutionTypingPulse(input, getHumanizedDelayMs(input.text));
+    return await sendViaEvolution(input, provider);
+  } finally {
+    await sendEvolutionPresence({
+      tenantId: input.tenantId,
+      remoteJid: input.phoneNumber,
+      presence: "paused",
+      supabase: input.supabase,
+      fetcher: input.fetcher,
+    });
+  }
+}
+
 export async function sendWhatsAppMessage(input: SendWhatsAppMessageInput): Promise<SendWhatsAppMessageResult> {
   assertSendInput(input);
 
@@ -209,7 +268,7 @@ export async function sendWhatsAppMessage(input: SendWhatsAppMessageInput): Prom
   if (provider.provider === "meta_cloud") {
     apiResponse = await sendViaMetaCloud(input, provider);
   } else if (provider.provider === "evolution") {
-    apiResponse = await sendViaEvolution(input, provider);
+    apiResponse = await sendViaEvolutionHumanized(input, provider);
   } else {
     throw new Error("Integracao de WhatsApp nao suportada");
   }

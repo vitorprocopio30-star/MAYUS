@@ -53,6 +53,8 @@ function makeSelectQuery(result: any) {
   const query: any = {
     select: vi.fn(() => query),
     eq: vi.fn(() => query),
+    or: vi.fn(() => query),
+    ilike: vi.fn(() => query),
     order: vi.fn(() => query),
     limit: vi.fn(async () => result),
     maybeSingle: vi.fn(async () => result),
@@ -644,6 +646,10 @@ describe("prepareWhatsAppSalesReplyForContact", () => {
                   enabled: true,
                   autonomy_mode: "high_supervised",
                 },
+                whatsapp_agent: {
+                  assistant_name: "Maya",
+                  autonomy_mode: "auto_respond",
+                },
                 office_knowledge_profile: {
                   office_name: "Dutra Advocacia",
                   practice_areas: ["bancario"],
@@ -655,6 +661,21 @@ describe("prepareWhatsAppSalesReplyForContact", () => {
                   pricing_policy: "Nao informar honorarios sem humano.",
                   response_sla: "ate 5 minutos",
                   departments: ["Comercial"],
+                },
+                office_playbook_profile: {
+                  status: "active",
+                  office_name: "Dutra Advocacia",
+                  main_legal_areas: ["bancario"],
+                  thesis_by_area: [{ area: "bancario", thesis: "desconto em folha sem clareza de origem" }],
+                  ideal_client: "aposentados com desconto que nao entenderam a contratacao",
+                  common_pains: ["desconto alto", "nao sabe quando contratou"],
+                  offer_positioning: "triagem segura de desconto em folha sem promessa de resultado",
+                  qualification_questions: ["Voce tem contrato ou comprovante do valor liberado?"],
+                  required_documents: ["contracheque atual"],
+                  forbidden_claims: ["garantir suspensao do desconto"],
+                  handoff_rules: ["Escalar humano antes de falar em suspender desconto."],
+                  objection_handling: [{ objection: "quero parar agora", response: "Nao orientar suspender sem analise.", next_question: "Voce tem contrato?" }],
+                  next_best_actions: ["pedir contrato ou comprovante"],
                 },
               },
             },
@@ -697,9 +718,15 @@ describe("prepareWhatsAppSalesReplyForContact", () => {
     expect(buildSalesLlmReplyMock).not.toHaveBeenCalled();
     expect(buildMayusOperatingPartnerDecisionMock).toHaveBeenCalledWith(expect.objectContaining({
       officeKnowledgeProfile: expect.objectContaining({
+        assistantName: "Maya",
         officeName: "Dutra Advocacia",
         practiceAreas: ["bancario"],
         pricingPolicy: "Nao informar honorarios sem humano.",
+      }),
+      officePlaybookProfile: expect.objectContaining({
+        main_legal_areas: ["bancario"],
+        thesis_by_area: [{ area: "bancario", thesis: "desconto em folha sem clareza de origem" }],
+        qualification_questions: ["Voce tem contrato ou comprovante do valor liberado?"],
       }),
     }));
     expect(executeMayusOperatingPartnerActionsMock).toHaveBeenCalledWith(expect.objectContaining({
@@ -726,7 +753,7 @@ describe("prepareWhatsAppSalesReplyForContact", () => {
 
   it("nao autoenvia fallback quando o socio virtual expira em desconto no contracheque", async () => {
     const inserts: Array<{ table: string; payload: any }> = [];
-    buildMayusOperatingPartnerDecisionMock.mockRejectedValueOnce(new Error("Timeout em MAYUS Operating Partner apos 8000ms."));
+    buildMayusOperatingPartnerDecisionMock.mockRejectedValueOnce(new Error("Timeout em MAYUS Operating Partner."));
     sendWhatsAppMessageMock.mockResolvedValueOnce({
       provider: "evolution",
       apiResponse: { ok: true },
@@ -889,5 +916,369 @@ describe("prepareWhatsAppSalesReplyForContact", () => {
         }),
       }),
     ]));
+  });
+
+  it("injeta playbook RMC quando template do tenant esta ativo", async () => {
+    buildMayusOperatingPartnerDecisionMock.mockResolvedValueOnce({
+      provider: "openrouter",
+      model_used: "minimax/minimax-m2.7",
+      reply: "Entendi. Como ja existe desconto no contracheque, nao vou orientar parar sem analise. Voce tem contrato ou comprovante do valor liberado?",
+      intent: "legal_triage",
+      confidence: 0.91,
+      risk_flags: [],
+      next_action: "pedir contrato ou comprovante",
+      should_auto_send: true,
+      requires_approval: false,
+      actions_to_execute: [],
+      conversation_state: { stage: "qualification" },
+      closing_readiness: { score: 45, status: "warming", reasons: [] },
+      support_summary: { is_existing_client: false, issue_type: "documents", verified_case_reference: false, summary: "triagem" },
+      reasoning_summary_for_team: "Usou playbook RMC.",
+      expected_outcome: "cliente envia contrato",
+    });
+
+    const supabase: any = {
+      from: vi.fn((table: string) => {
+        if (table === "whatsapp_contacts") {
+          return makeSelectQuery({ data: { id: "contact-1", name: "Vitor", phone_number: "5511999999999", assigned_user_id: null }, error: null });
+        }
+        if (table === "tenant_settings") {
+          return makeSelectQuery({
+            data: {
+              ai_features: {
+                sales_playbook_template: "rmc_dutra",
+                sales_llm_testbench: { enabled: true, default_model: "minimax/minimax-m2.7" },
+                mayus_operating_partner: { enabled: true },
+                whatsapp_agent: { autonomy_mode: "auto_respond" },
+                sales_consultation_profile: { ideal_client: "clientes com desconto em folha" },
+              },
+            },
+            error: null,
+          });
+        }
+        if (table === "whatsapp_messages") {
+          return makeSelectQuery({ data: [{ direction: "inbound", content: "Quero parar de pagar Credcesta", message_type: "text", created_at: "2026-05-05T18:37:51.000Z" }], error: null });
+        }
+        return { insert: vi.fn(async () => ({ error: null })) };
+      }),
+    };
+
+    sendWhatsAppMessageMock.mockResolvedValueOnce({ provider: "evolution", apiResponse: { ok: true } });
+
+    await prepareWhatsAppSalesReplyForContact({
+      supabase,
+      tenantId: "tenant-1",
+      contactId: "contact-1",
+      trigger: "evolution_webhook",
+      autoSendFirstResponse: true,
+      preferredProvider: "evolution",
+    });
+
+    expect(buildMayusOperatingPartnerDecisionMock).toHaveBeenCalledWith(expect.objectContaining({
+      salesProfile: expect.objectContaining({
+        salesPlaybookContext: expect.stringContaining("Playbook RMC/Credcesta"),
+        salesRules: expect.arrayContaining([expect.stringContaining("Nao perguntar se ainda esta pagando")]),
+        qualificationQuestions: expect.arrayContaining([expect.stringContaining("contrato")]),
+        forbiddenClaims: expect.arrayContaining([expect.stringContaining("orientar parar de pagar")]),
+      }),
+    }));
+  });
+
+  it("limpa case_status_unverified do metadata quando o processo foi verificado", async () => {
+    const inserts: Array<{ table: string; payload: any }> = [];
+    buildMayusOperatingPartnerDecisionMock.mockResolvedValueOnce({
+      provider: "openrouter",
+      model_used: "openai/gpt-5.4-nano",
+      reply: "Oi, Maria. Verifiquei aqui com segurança. Seu processo está na fase de réplica. Última movimentação: contestação juntada. Próximo passo: a equipe revisar a defesa. No momento, não vi pendência sua registrada.",
+      intent: "process_status",
+      confidence: 0.91,
+      risk_flags: [],
+      next_action: "responder status processual verificado",
+      should_auto_send: true,
+      requires_approval: false,
+      actions_to_execute: [{ type: "answer_support", title: "Responder status", requires_approval: false }],
+      conversation_state: { stage: "client_support", conversation_role: "case_status", conversation_goal: "responder status", customer_temperature: "existing_client" },
+      closing_readiness: { score: 0, status: "not_ready", reasons: [] },
+      support_summary: { is_existing_client: true, issue_type: "process_status", verified_case_reference: true, summary: "status verificado" },
+      reasoning_summary_for_team: "Processo verificado.",
+      expected_outcome: "cliente entende status",
+    });
+    sendWhatsAppMessageMock.mockResolvedValueOnce({ provider: "evolution", apiResponse: { ok: true } });
+
+    const supabase: any = {
+      from: vi.fn((table: string) => {
+        if (table === "whatsapp_contacts") {
+          return makeSelectQuery({ data: { id: "contact-1", name: "Maria", phone_number: "5511999999999@s.whatsapp.net", assigned_user_id: null }, error: null });
+        }
+        if (table === "tenant_settings") {
+          return makeSelectQuery({ data: { ai_features: { mayus_operating_partner: { enabled: true }, whatsapp_agent: { autonomy_mode: "auto_respond" } } }, error: null });
+        }
+        if (table === "whatsapp_messages") {
+          return makeSelectQuery({ data: [{ direction: "inbound", content: "Como está meu processo 1234567-89.2024.8.26.0100?", message_type: "text", created_at: "2026-05-05T18:37:51.000Z" }], error: null });
+        }
+        if (table === "clients") return makeSelectQuery({ data: null, error: null });
+        if (table === "process_tasks") {
+          return makeSelectQuery({
+            data: [{
+              id: "process-1",
+              title: "Maria x Banco",
+              description: "Contestação recebida.",
+              phone: "11999999999",
+              client_name: "Maria Silva",
+              process_number: "1234567-89.2024.8.26.0100",
+              processo_1grau: null,
+              processo_2grau: null,
+              andamento_1grau: "Contestação juntada",
+              andamento_2grau: null,
+              orgao_julgador: null,
+              tutela_urgencia: null,
+              sentenca: null,
+              prazo_fatal: null,
+              liminar_deferida: false,
+              data_ultima_movimentacao: "2026-05-02T00:00:00.000Z",
+              tags: [],
+              urgency: "ROTINA",
+              process_stages: { name: "Réplica" },
+            }],
+            error: null,
+          });
+        }
+        if (table === "process_movimentacoes_inbox") {
+          return makeSelectQuery({ data: { latest_data: "2026-05-02", latest_conteudo: "Contestação juntada.", latest_created_at: null, quantidade_eventos: 1 }, error: null });
+        }
+        return { insert: vi.fn(async (payload: any) => { inserts.push({ table, payload }); return { error: null }; }) };
+      }),
+    };
+
+    const prepared = await prepareWhatsAppSalesReplyForContact({
+      supabase,
+      tenantId: "tenant-1",
+      contactId: "contact-1",
+      trigger: "evolution_webhook",
+      autoSendFirstResponse: true,
+      preferredProvider: "evolution",
+    });
+
+    expect(buildMayusOperatingPartnerDecisionMock).toHaveBeenCalledWith(expect.objectContaining({
+      processStatusContext: expect.objectContaining({ verified: true, processTaskId: "process-1" }),
+    }));
+    expect(prepared.metadata.risk_flags).not.toContain("case_status_unverified");
+    expect(prepared.metadata.risk_flags).toContain("case_status_verified");
+    expect(prepared.metadata.process_status_context).toEqual(expect.objectContaining({ verified: true }));
+    expect(prepared.autoSendResult.status).toBe("sent");
+  });
+
+  it("numero autorizado recebe escopo tenant_authorized para consultar processo por nome", async () => {
+    buildMayusOperatingPartnerDecisionMock.mockResolvedValueOnce({
+      provider: "openrouter",
+      model_used: "openai/gpt-5.4-nano",
+      reply: "Verifiquei o processo da Camila com segurança.",
+      intent: "process_status",
+      confidence: 0.9,
+      risk_flags: [],
+      next_action: "responder status processual verificado",
+      should_auto_send: false,
+      requires_approval: false,
+      actions_to_execute: [],
+      conversation_state: { stage: "client_support", conversation_role: "case_status", conversation_goal: "responder status", customer_temperature: "existing_client" },
+      closing_readiness: { score: 0, status: "not_ready", reasons: [] },
+      support_summary: { is_existing_client: true, issue_type: "process_status", verified_case_reference: true, summary: "status verificado" },
+      reasoning_summary_for_team: "Número autorizado consultou processo do tenant.",
+      expected_outcome: "dono recebe status",
+    });
+
+    const supabase: any = {
+      from: vi.fn((table: string) => {
+        if (table === "whatsapp_contacts") {
+          return makeSelectQuery({ data: { id: "contact-owner", name: "Dono", phone_number: "5521999990000@s.whatsapp.net", assigned_user_id: null }, error: null });
+        }
+        if (table === "tenant_settings") {
+          return makeSelectQuery({ data: { ai_features: { daily_playbook: { authorizedPhones: ["5521999990000"] }, mayus_operating_partner: { enabled: true } } }, error: null });
+        }
+        if (table === "whatsapp_messages") {
+          return makeSelectQuery({ data: [{ direction: "inbound", content: "Como está o processo da Camila Autorizada?", message_type: "text", created_at: "2026-05-05T18:37:51.000Z" }], error: null });
+        }
+        if (table === "clients") return makeSelectQuery({ data: null, error: null });
+        if (table === "process_tasks") {
+          return makeSelectQuery({
+            data: [{
+              id: "process-owner-1",
+              title: "Camila Autorizada x Banco",
+              description: "Contestação recebida.",
+              phone: "5511888877777",
+              client_name: "Camila Autorizada",
+              process_number: "2222222-22.2024.8.26.0100",
+              processo_1grau: null,
+              processo_2grau: null,
+              andamento_1grau: "Contestação juntada",
+              andamento_2grau: null,
+              orgao_julgador: null,
+              tutela_urgencia: null,
+              sentenca: null,
+              prazo_fatal: null,
+              liminar_deferida: false,
+              data_ultima_movimentacao: "2026-05-02T00:00:00.000Z",
+              tags: [],
+              urgency: "ROTINA",
+              process_stages: { name: "Réplica" },
+            }],
+            error: null,
+          });
+        }
+        if (table === "process_movimentacoes_inbox") return makeSelectQuery({ data: null, error: null });
+        return { insert: vi.fn(async () => ({ error: null })) };
+      }),
+    };
+
+    const prepared = await prepareWhatsAppSalesReplyForContact({
+      supabase,
+      tenantId: "tenant-1",
+      contactId: "contact-owner",
+      trigger: "manual",
+      autoSendFirstResponse: false,
+      preferredProvider: "evolution",
+    });
+
+    expect(buildMayusOperatingPartnerDecisionMock).toHaveBeenCalledWith(expect.objectContaining({
+      processStatusContext: expect.objectContaining({
+        verified: true,
+        accessScope: "tenant_authorized",
+        senderPhoneAuthorized: true,
+        processTaskId: "process-owner-1",
+      }),
+    }));
+    expect(prepared.metadata.process_status_context).toEqual(expect.objectContaining({
+      accessScope: "tenant_authorized",
+      senderPhoneAuthorized: true,
+    }));
+  });
+
+  it("autoenvia resposta segura em contato atribuido quando cria tarefa para advogado", async () => {
+    const inserts: Array<{ table: string; payload: any }> = [];
+    buildMayusOperatingPartnerDecisionMock.mockResolvedValueOnce({
+      provider: "openrouter",
+      model_used: "openai/gpt-5.4-nano",
+      reply: "Boa tarde, Ana. Aqui é a Maya, assistente do Dutra. Me adianta em poucas palavras o assunto para eu organizar certinho e passar ao advogado responsável.",
+      intent: "client_support",
+      confidence: 0.91,
+      risk_flags: [],
+      next_action: "criar tarefa para advogado responsavel",
+      actions_to_execute: [{ type: "create_task", title: "Atender cliente WhatsApp - Ana", payload: { urgency: "ATENCAO" }, requires_approval: false }],
+      requires_approval: false,
+      should_auto_send: true,
+      conversation_state: { stage: "client_support" },
+      closing_readiness: { score: 0, status: "not_ready", reasons: [] },
+      support_summary: { is_existing_client: true, issue_type: "support", verified_case_reference: false, summary: "outra demanda" },
+      reasoning_summary_for_team: "Cliente precisa de retorno humano.",
+      expected_outcome: "advogado recebe tarefa e cliente adianta assunto",
+    });
+    executeMayusOperatingPartnerActionsMock.mockResolvedValueOnce([
+      { type: "create_task", status: "executed", detail: "Tarefa de follow-up criada.", record_id: "task-1" },
+    ]);
+    sendWhatsAppMessageMock.mockResolvedValueOnce({ provider: "evolution", apiResponse: { ok: true } });
+
+    const supabase: any = {
+      from: vi.fn((table: string) => {
+        if (table === "whatsapp_contacts") {
+          return makeSelectQuery({ data: { id: "contact-1", name: "Ana", phone_number: "5511999999999", assigned_user_id: "lawyer-1" }, error: null });
+        }
+        if (table === "tenant_settings") {
+          return makeSelectQuery({ data: { ai_features: { mayus_operating_partner: { enabled: true }, whatsapp_agent: { assistant_name: "Maya", autonomy_mode: "auto_respond" } } }, error: null });
+        }
+        if (table === "whatsapp_messages") {
+          return makeSelectQuery({ data: [{ direction: "inbound", content: "Boa tarde, queria falar sobre outra demanda", message_type: "text", created_at: "2026-05-07T18:00:00.000Z" }], error: null });
+        }
+        return {
+          insert: vi.fn(async (payload: any) => {
+            inserts.push({ table, payload });
+            return { error: null };
+          }),
+        };
+      }),
+    };
+
+    const prepared = await prepareWhatsAppSalesReplyForContact({
+      supabase,
+      tenantId: "tenant-1",
+      contactId: "contact-1",
+      trigger: "evolution_webhook",
+      autoSendFirstResponse: true,
+      preferredProvider: "evolution",
+    });
+
+    expect(sendWhatsAppMessageMock).toHaveBeenCalledWith(expect.objectContaining({
+      text: expect.stringContaining("Maya"),
+      phoneNumber: "5511999999999",
+    }));
+    expect(prepared.autoSendResult).toEqual({ attempted: true, status: "sent", provider: "evolution" });
+    expect(prepared.operatingPartnerActionResults).toEqual([
+      { type: "create_task", status: "executed", detail: "Tarefa de follow-up criada.", record_id: "task-1" },
+    ]);
+    expect(inserts).toEqual(expect.arrayContaining([
+      expect.objectContaining({
+        table: "system_event_logs",
+        payload: expect.objectContaining({
+          event_name: "whatsapp_sales_reply_prepared",
+          payload: expect.objectContaining({
+            first_response_policy: expect.objectContaining({
+              can_auto_send: true,
+              blocked_reason: null,
+              assigned_contact_safe_auto_send: true,
+            }),
+          }),
+        }),
+      }),
+    ]));
+  });
+
+  it("quebra resposta automatica longa em blocos de WhatsApp", async () => {
+    const longReply = [
+      "Boa tarde, Ana. Aqui é a Maya, assistente do Dutra. Encontrei o contexto e vou te explicar de forma simples.",
+      "O primeiro ponto é que eu preciso confirmar o assunto certo antes de passar qualquer detalhe sensível do processo para não misturar informações.",
+      "Se for sobre andamento processual, me mande o nome completo do cliente ou o número do processo. Se for outro assunto, me diga em uma frase que eu organizo para o advogado responsável.",
+      "Assim eu consigo te responder com segurança, sem reaproveitar conversa antiga e sem te mandar um texto enorme de uma vez.",
+    ].join(" ");
+    buildMayusOperatingPartnerDecisionMock.mockResolvedValueOnce({
+      provider: "openrouter",
+      model_used: "openai/gpt-5.4-nano",
+      reply: longReply.repeat(3),
+      intent: "client_support",
+      confidence: 0.92,
+      risk_flags: [],
+      next_action: "pedir identificador seguro",
+      actions_to_execute: [],
+      requires_approval: false,
+      should_auto_send: true,
+      conversation_state: { stage: "client_support" },
+      closing_readiness: { score: 0, status: "not_ready", reasons: [] },
+      support_summary: { is_existing_client: true, issue_type: "support", verified_case_reference: false, summary: "suporte" },
+      reasoning_summary_for_team: "Resposta longa precisa ser enviada em blocos.",
+      expected_outcome: "cliente responde com identificador",
+    });
+    sendWhatsAppMessageMock.mockResolvedValue({ provider: "evolution", apiResponse: { ok: true } });
+
+    const supabase: any = {
+      from: vi.fn((table: string) => {
+        if (table === "whatsapp_contacts") return makeSelectQuery({ data: { id: "contact-1", name: "Ana", phone_number: "5511999999999", assigned_user_id: null }, error: null });
+        if (table === "tenant_settings") return makeSelectQuery({ data: { ai_features: { mayus_operating_partner: { enabled: true }, whatsapp_agent: { assistant_name: "Maya", autonomy_mode: "auto_respond" } } }, error: null });
+        if (table === "whatsapp_messages") return makeSelectQuery({ data: [{ direction: "inbound", content: "Boa tarde", message_type: "text", created_at: "2026-05-08T18:00:00.000Z" }], error: null });
+        return { insert: vi.fn(async () => ({ error: null })) };
+      }),
+    };
+
+    await prepareWhatsAppSalesReplyForContact({
+      supabase,
+      tenantId: "tenant-1",
+      contactId: "contact-1",
+      trigger: "evolution_webhook",
+      autoSendFirstResponse: true,
+      preferredProvider: "evolution",
+    });
+
+    expect(sendWhatsAppMessageMock.mock.calls.length).toBeGreaterThan(1);
+    for (const call of sendWhatsAppMessageMock.mock.calls) {
+      expect(call[0].text.length).toBeLessThanOrEqual(650);
+      expect(call[0].metadata.reply_block_count).toBeGreaterThan(1);
+    }
   });
 });

@@ -1,8 +1,22 @@
 export const MAYUS_REALTIME_MODEL = "gpt-realtime-2";
+export const DEFAULT_MAYUS_REALTIME_MODEL = MAYUS_REALTIME_MODEL;
 export const DEFAULT_MAYUS_REALTIME_VOICE = "cedar";
 export const MAYUS_TTS_FALLBACK_VOICE = "onyx";
 export const MAYUS_REALTIME_BRL_PER_USD = 4.9;
 export const MAYUS_REALTIME_WEB_SEARCH_USD_PER_CALL = 0.01;
+
+export const REALTIME_MODEL_OPTIONS = [
+  {
+    value: "gpt-realtime-2",
+    label: "Premium",
+    description: "Modelo principal do Orb MAYUS, melhor para governanca, ferramentas e Brain.",
+  },
+  {
+    value: "gpt-realtime-mini",
+    label: "Mini teste",
+    description: "Modelo economico experimental para comparar custo, latencia e obediencia.",
+  },
+] as const;
 
 export const REALTIME_VOICE_OPTIONS = [
   { value: "cedar", label: "Cedar", description: "Executiva, grave e premium" },
@@ -17,6 +31,7 @@ export const REALTIME_VOICE_OPTIONS = [
   { value: "verse", label: "Verse", description: "Narrativa e elegante" },
 ] as const;
 
+export type MayusRealtimeModel = typeof REALTIME_MODEL_OPTIONS[number]["value"];
 export type MayusRealtimeVoice = typeof REALTIME_VOICE_OPTIONS[number]["value"];
 
 export type RealtimeUsage = {
@@ -33,6 +48,7 @@ export type RealtimeUsage = {
 };
 
 export type MayusRealtimeCostEstimate = {
+  model: MayusRealtimeModel;
   usd: number;
   brl: number;
   textInputTokens: number;
@@ -41,6 +57,27 @@ export type MayusRealtimeCostEstimate = {
   audioOutputTokens: number;
 };
 
+const REALTIME_MODEL_COSTS_USD_PER_1M: Record<MayusRealtimeModel, {
+  textInput: number;
+  textOutput: number;
+  audioInput: number;
+  audioOutput: number;
+}> = {
+  "gpt-realtime-2": {
+    textInput: 4,
+    textOutput: 24,
+    audioInput: 32,
+    audioOutput: 64,
+  },
+  "gpt-realtime-mini": {
+    textInput: 0.6,
+    textOutput: 2.4,
+    audioInput: 10,
+    audioOutput: 20,
+  },
+};
+
+const MODEL_VALUES = new Set<string>(REALTIME_MODEL_OPTIONS.map((model) => model.value));
 const VOICE_VALUES = new Set<string>(REALTIME_VOICE_OPTIONS.map((voice) => voice.value));
 
 function cleanText(value: unknown, fallback = "") {
@@ -49,6 +86,15 @@ function cleanText(value: unknown, fallback = "") {
 
 export function isMayusRealtimeVoice(value: unknown): value is MayusRealtimeVoice {
   return typeof value === "string" && VOICE_VALUES.has(value);
+}
+
+export function isMayusRealtimeModel(value: unknown): value is MayusRealtimeModel {
+  return typeof value === "string" && MODEL_VALUES.has(value);
+}
+
+export function normalizeMayusRealtimeModel(value: unknown): MayusRealtimeModel {
+  const normalized = typeof value === "string" ? value.trim() : value;
+  return isMayusRealtimeModel(normalized) ? normalized : DEFAULT_MAYUS_REALTIME_MODEL;
 }
 
 export function normalizeMayusRealtimeVoice(value: unknown): MayusRealtimeVoice {
@@ -92,6 +138,7 @@ export function buildMayusRealtimeInstructions(params: {
     "Se o usuario pedir para criar tarefa, lembrete ou pendencia interna simples, use criar_tarefa_mayus.",
     "Se o usuario pedir informacao atual externa, noticia, status publico, preco, regra recente ou pesquisa na internet, use pesquisar_web_mayus e cite as fontes.",
     "Se o usuario perguntar o que e o MAYUS, o que ele faz, limites, modulos ou como usar o produto, use responder_sobre_mayus.",
+    "Se o usuario pedir status ou resumo de um processo, proximo passo processual ou execucao segura de uma missao juridica, use consultar_cerebro_mayus. O Brain decide se e status, plano de missao ou execucao supervisionada.",
     "Quando o pedido exigir dado real interno, memoria, consulta juridica, CRM, financeiro, documento, processo, acao externa ou aprovacao, chame consultar_cerebro_mayus.",
     "Nao prometa que executou algo antes da ferramenta retornar.",
     "Acoes sensiveis precisam respeitar o fluxo de aprovacao do MAYUS. Se o Brain pedir aprovacao, explique isso em voz curta.",
@@ -128,6 +175,12 @@ export const MAYUS_REALTIME_BRAIN_TOOL = {
       conversationSummary: {
         type: "string",
         description: "Resumo curto do que o usuario acabou de pedir e do contexto falado ate agora.",
+      },
+      missionKind: {
+        type: "string",
+        enum: ["case_status", "process_mission_plan", "process_execute_next", "general_brain"],
+        description:
+          "Classificacao opcional: status de caso, plano de missao processual, executar proximo passo seguro ou Brain geral.",
       },
     },
     required: ["prompt"],
@@ -239,20 +292,24 @@ export const MAYUS_REALTIME_TOOLS = [
 
 export function estimateMayusRealtimeUsageCost(
   usage: RealtimeUsage | null | undefined,
-  brlPerUsd = MAYUS_REALTIME_BRL_PER_USD
+  brlPerUsd = MAYUS_REALTIME_BRL_PER_USD,
+  model: MayusRealtimeModel | string = DEFAULT_MAYUS_REALTIME_MODEL
 ): MayusRealtimeCostEstimate {
+  const normalizedModel = normalizeMayusRealtimeModel(model);
+  const costs = REALTIME_MODEL_COSTS_USD_PER_1M[normalizedModel];
   const textInputTokens = Math.max(0, Number(usage?.input_token_details?.text_tokens || 0));
   const audioInputTokens = Math.max(0, Number(usage?.input_token_details?.audio_tokens || 0));
   const textOutputTokens = Math.max(0, Number(usage?.output_token_details?.text_tokens || 0));
   const audioOutputTokens = Math.max(0, Number(usage?.output_token_details?.audio_tokens || 0));
 
   const usd =
-    (textInputTokens * 4) / 1_000_000 +
-    (textOutputTokens * 24) / 1_000_000 +
-    (audioInputTokens * 32) / 1_000_000 +
-    (audioOutputTokens * 64) / 1_000_000;
+    (textInputTokens * costs.textInput) / 1_000_000 +
+    (textOutputTokens * costs.textOutput) / 1_000_000 +
+    (audioInputTokens * costs.audioInput) / 1_000_000 +
+    (audioOutputTokens * costs.audioOutput) / 1_000_000;
 
   return {
+    model: normalizedModel,
     usd,
     brl: usd * brlPerUsd,
     textInputTokens,

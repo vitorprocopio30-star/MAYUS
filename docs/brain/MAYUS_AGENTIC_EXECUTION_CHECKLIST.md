@@ -529,7 +529,8 @@ Evidencia parcial 2026-04-30: `POST /api/mayus/daily-playbook` gera playbook com
 - [ ] Entregar status de caso por voz.
 - [ ] Handoff seguro de approval por voz.
 - [ ] Refletir missao de voz no inbox.
-- [ ] Feedback operacional no `MAYUSOrb`.
+- [ ] MAYUSOrb Streamer Mode: `idle` -> `summoned` -> `working` -> `presenting`, com ElevenLabs como voz, Brain como execucao e frontend como presenca visual.
+- [ ] Feedback operacional no `MAYUSOrb`: working no canto superior esquerdo, anel dourado ativo, tela clicavel e presenting para resultado/aprovacao/erro.
 - [ ] Missao de voz visivel no `dashboard/mayus`.
 - [ ] Unit/integration tests.
 - [ ] E2E observavel.

@@ -1,6 +1,7 @@
 import type { SupabaseClient } from "@supabase/supabase-js";
 import { prepareWhatsAppSalesReplyForContact } from "@/lib/growth/whatsapp-sales-reply-runtime";
 import type { WhatsAppSendProvider } from "@/lib/whatsapp/send-message";
+import { sendEvolutionPresenceForContact } from "@/lib/whatsapp/evolution-presence";
 
 type WhatsAppReplyTrigger = "meta_webhook" | "evolution_webhook";
 
@@ -32,6 +33,8 @@ const STALE_PROCESSING_MS = 2 * 60 * 1000;
 const MAX_AUTO_RECOVERY_AGE_MS = 10 * 60 * 1000;
 const MAX_PROCESSING_RECOVERY_ATTEMPTS = 2;
 const MAX_AGENT_TIMEOUT_ATTEMPTS = 3;
+const MAX_NON_AGENTIC_REPLY_ATTEMPTS = 3;
+const EVOLUTION_TYPING_PULSE_MS = 8_000;
 
 function truncateError(value: string | null | undefined) {
   const text = String(value || "").replace(/\s+/g, " ").trim();
@@ -40,6 +43,51 @@ function truncateError(value: string | null | undefined) {
 
 function replyTrigger(row: PendingWhatsAppReplyMessage): WhatsAppReplyTrigger {
   return row.metadata?.reply_trigger === "meta_webhook" ? "meta_webhook" : "evolution_webhook";
+}
+
+async function runWithEvolutionTypingPulse<T>(params: {
+  enabled: boolean;
+  supabase: SupabaseClient;
+  tenantId: string;
+  contactId: string;
+  task: () => Promise<T>;
+}) {
+  if (!params.enabled) return params.task();
+
+  let stopped = false;
+  let timer: ReturnType<typeof setTimeout> | null = null;
+
+  const pulse = async () => {
+    await sendEvolutionPresenceForContact({
+      supabase: params.supabase,
+      tenantId: params.tenantId,
+      contactId: params.contactId,
+      presence: "composing",
+      delayMs: EVOLUTION_TYPING_PULSE_MS,
+    });
+  };
+
+  const schedule = () => {
+    if (process.env.NODE_ENV === "test" || stopped) return;
+    timer = setTimeout(() => {
+      void pulse().finally(schedule);
+    }, EVOLUTION_TYPING_PULSE_MS);
+  };
+
+  try {
+    await pulse();
+    schedule();
+    return await params.task();
+  } finally {
+    stopped = true;
+    if (timer) clearTimeout(timer);
+    await sendEvolutionPresenceForContact({
+      supabase: params.supabase,
+      tenantId: params.tenantId,
+      contactId: params.contactId,
+      presence: "paused",
+    });
+  }
 }
 
 function mergeMetadata(row: PendingWhatsAppReplyMessage, patch: Record<string, any>) {
@@ -131,8 +179,17 @@ function getAgentTimeoutAttempts(row: PendingWhatsAppReplyMessage) {
   return Number.isFinite(attempts) && attempts > 0 ? Math.floor(attempts) : 0;
 }
 
-function shouldRetryAgenticAnswer(preparedMetadata: Record<string, any>) {
-  return preparedMetadata?.first_response_policy?.blocked_reason === "operating_partner_timeout_no_agentic_answer";
+function getNonAgenticReplyAttempts(row: PendingWhatsAppReplyMessage) {
+  const attempts = Number(row.metadata?.reply_non_agentic_attempts || 0);
+  return Number.isFinite(attempts) && attempts > 0 ? Math.floor(attempts) : 0;
+}
+
+function getAgenticRetryReason(preparedMetadata: Record<string, any>) {
+  const blockedReason = preparedMetadata?.first_response_policy?.blocked_reason;
+  if (blockedReason === "operating_partner_timeout_no_agentic_answer") return blockedReason;
+  if (blockedReason === "non_agentic_reply_source") return blockedReason;
+  if (blockedReason === "deterministic_fallback_not_agentic") return blockedReason;
+  return null;
 }
 
 async function hasNewerMessageThan(params: {
@@ -325,21 +382,38 @@ async function processOneReply(params: {
       };
     }
 
-    const prepared = await prepareWhatsAppSalesReplyForContact({
+    const preferredProvider = params.row.metadata?.reply_preferred_provider === "meta_cloud" || params.row.metadata?.reply_preferred_provider === "evolution"
+      ? params.row.metadata.reply_preferred_provider
+      : null;
+    const shouldSignalEvolutionTyping = replyTrigger(params.row) === "evolution_webhook" && preferredProvider !== "meta_cloud";
+
+    let prepared: Awaited<ReturnType<typeof prepareWhatsAppSalesReplyForContact>>;
+    prepared = await runWithEvolutionTypingPulse({
+      enabled: shouldSignalEvolutionTyping,
       supabase: params.supabase,
       tenantId: params.row.tenant_id,
       contactId: params.row.contact_id,
-      trigger: replyTrigger(params.row),
-      notify: true,
-      autoSendFirstResponse: true,
-      preferredProvider: params.row.metadata?.reply_preferred_provider === "meta_cloud" || params.row.metadata?.reply_preferred_provider === "evolution"
-        ? params.row.metadata.reply_preferred_provider
-        : null,
+      task: () => prepareWhatsAppSalesReplyForContact({
+        supabase: params.supabase,
+        tenantId: params.row.tenant_id,
+        contactId: params.row.contact_id,
+        trigger: replyTrigger(params.row),
+        notify: true,
+        autoSendFirstResponse: true,
+        preferredProvider,
+      }),
     });
     const durationMs = Date.now() - startedAt;
-    const shouldRetryAgentic = shouldRetryAgenticAnswer(prepared.metadata);
+    const agenticRetryReason = getAgenticRetryReason(prepared.metadata);
     const agentTimeoutAttempts = getAgentTimeoutAttempts(params.row) + 1;
-    const nextStatus = shouldRetryAgentic && agentTimeoutAttempts < MAX_AGENT_TIMEOUT_ATTEMPTS ? "pending" : "processed";
+    const nonAgenticAttempts = getNonAgenticReplyAttempts(params.row) + 1;
+    const retryLimit = agenticRetryReason === "operating_partner_timeout_no_agentic_answer"
+      ? MAX_AGENT_TIMEOUT_ATTEMPTS
+      : MAX_NON_AGENTIC_REPLY_ATTEMPTS;
+    const retryAttempts = agenticRetryReason === "operating_partner_timeout_no_agentic_answer"
+      ? agentTimeoutAttempts
+      : nonAgenticAttempts;
+    const nextStatus = agenticRetryReason && retryAttempts < retryLimit ? "pending" : "processed";
 
     await params.supabase
       .from("whatsapp_messages")
@@ -348,8 +422,12 @@ async function processOneReply(params: {
           reply_processing_status: nextStatus,
           reply_processed_at: new Date().toISOString(),
           reply_auto_sent: prepared.autoSendResult.status === "sent",
-          reply_agent_timeout_at: shouldRetryAgentic ? new Date().toISOString() : params.row.metadata?.reply_agent_timeout_at || null,
-          reply_agent_timeout_attempts: shouldRetryAgentic ? agentTimeoutAttempts : params.row.metadata?.reply_agent_timeout_attempts || null,
+          reply_agentic_retry_reason: agenticRetryReason,
+          reply_agentic_retry_at: agenticRetryReason ? new Date().toISOString() : params.row.metadata?.reply_agentic_retry_at || null,
+          reply_agentic_retry_exhausted_at: agenticRetryReason && nextStatus !== "pending" ? new Date().toISOString() : null,
+          reply_agent_timeout_at: agenticRetryReason === "operating_partner_timeout_no_agentic_answer" ? new Date().toISOString() : params.row.metadata?.reply_agent_timeout_at || null,
+          reply_agent_timeout_attempts: agenticRetryReason === "operating_partner_timeout_no_agentic_answer" ? agentTimeoutAttempts : params.row.metadata?.reply_agent_timeout_attempts || null,
+          reply_non_agentic_attempts: agenticRetryReason && agenticRetryReason !== "operating_partner_timeout_no_agentic_answer" ? nonAgenticAttempts : params.row.metadata?.reply_non_agentic_attempts || null,
           reply_blocked_reason: prepared.metadata?.first_response_policy?.blocked_reason || null,
         }),
       })
@@ -364,16 +442,19 @@ async function processOneReply(params: {
       extraPayload: {
         reply_processing_status: nextStatus,
         blocked_reason: prepared.metadata?.first_response_policy?.blocked_reason || null,
-        agent_timeout_attempts: shouldRetryAgentic ? agentTimeoutAttempts : null,
+        agentic_retry_reason: agenticRetryReason,
+        agent_timeout_attempts: agenticRetryReason === "operating_partner_timeout_no_agentic_answer" ? agentTimeoutAttempts : null,
+        non_agentic_attempts: agenticRetryReason && agenticRetryReason !== "operating_partner_timeout_no_agentic_answer" ? nonAgenticAttempts : null,
       },
     });
 
     return {
       message_id: params.row.id,
-      status: "processed" as const,
+      status: nextStatus === "pending" ? "skipped" as const : "processed" as const,
       auto_sent: prepared.autoSendResult.status === "sent",
       duration_ms: durationMs,
       reply_processing_status: nextStatus,
+      skipped_reason: nextStatus === "pending" ? "agentic_retry_scheduled" : undefined,
     };
   } catch (error: any) {
     const message = error?.message || "Falha ao preparar resposta WhatsApp.";

@@ -3,8 +3,9 @@ import { buildHeaders, getLLMClient } from "@/lib/llm-router";
 import type { WhatsAppSalesMessage } from "./whatsapp-sales-reply";
 
 export const SALES_LLM_TESTBENCH_MODELS = [
-  "deepseek/deepseek-v4-pro",
+  "openai/gpt-5.4-nano",
   "minimax/minimax-m2.7",
+  "deepseek/deepseek-v4-pro",
   "xiaomi/mimo-v2.5",
   "qwen/qwen3.6-plus",
   "moonshotai/kimi-k2.6",
@@ -113,7 +114,7 @@ const DEFAULT_SALES_LLM_TIMEOUT_MS = 9000;
 
 export const DEFAULT_SALES_LLM_TESTBENCH: SalesLlmTestbenchConfig = {
   enabled: true,
-  default_model: "deepseek/deepseek-v4-pro",
+  default_model: "openai/gpt-5.4-nano",
   candidate_models: [...SALES_LLM_TESTBENCH_MODELS],
   routing_mode: "fixed",
 };

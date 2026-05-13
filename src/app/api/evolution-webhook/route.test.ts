@@ -8,6 +8,8 @@ const enqueueWhatsAppReplyMock = vi.hoisted(() => vi.fn());
 const processPendingWhatsAppRepliesBatchMock = vi.hoisted(() => vi.fn());
 const sendWhatsAppMessageMock = vi.hoisted(() => vi.fn());
 const processPendingWhatsAppMediaBatchMock = vi.hoisted(() => vi.fn());
+const markEvolutionMessageAsReadMock = vi.hoisted(() => vi.fn());
+const sendEvolutionPresenceMock = vi.hoisted(() => vi.fn());
 
 vi.mock("@/lib/mayus/whatsapp-command-runtime", () => ({
   handleWhatsAppInternalCommand: handleWhatsAppInternalCommandMock,
@@ -34,6 +36,11 @@ vi.mock("@/lib/whatsapp/send-message", () => ({
   sendWhatsAppMessage: sendWhatsAppMessageMock,
 }));
 
+vi.mock("@/lib/whatsapp/evolution-presence", () => ({
+  markEvolutionMessageAsRead: markEvolutionMessageAsReadMock,
+  sendEvolutionPresence: sendEvolutionPresenceMock,
+}));
+
 vi.mock("@supabase/supabase-js", () => ({
   createClient: createClientMock,
 }));
@@ -42,11 +49,13 @@ function buildSupabaseMock() {
   const messageInserts: unknown[] = [];
   const contactInserts: unknown[] = [];
   const messageUpdates: unknown[] = [];
+  const messageRows: Record<string, any> = {};
   const notificationInserts: unknown[] = [];
   return {
     messageInserts,
     contactInserts,
     messageUpdates,
+    messageRows,
     notificationInserts,
     from: vi.fn((table: string) => {
       if (table === "tenant_integrations") {
@@ -55,6 +64,25 @@ function buildSupabaseMock() {
             eq: vi.fn(async () => ({
               data: [{ tenant_id: "tenant-1", instance_name: "http://evolution.local|mayus-dutra" }],
               error: null,
+            })),
+          })),
+        };
+      }
+
+      if (table === "tenant_settings") {
+        return {
+          select: vi.fn(() => ({
+            eq: vi.fn(() => ({
+              maybeSingle: vi.fn(async () => ({
+                data: {
+                  ai_features: {
+                    daily_playbook: {
+                      authorizedPhones: ["5521999990000"],
+                    },
+                  },
+                },
+                error: null,
+              })),
             })),
           })),
         };
@@ -83,19 +111,36 @@ function buildSupabaseMock() {
 
       if (table === "whatsapp_messages") {
         return {
-          select: vi.fn(() => ({
-            eq: vi.fn(() => ({
-              eq: vi.fn(() => ({
+          select: vi.fn((columns?: string) => ({
+            eq: vi.fn((field: string, value: string) => {
+              if (String(columns || "").includes("media_text") && field === "id") {
+                return {
+                  maybeSingle: vi.fn(async () => ({ data: messageRows[value] || null, error: null })),
+                };
+              }
+
+              return {
+                eq: vi.fn(() => ({
+                  maybeSingle: vi.fn(async () => ({ data: null, error: null })),
+                })),
                 maybeSingle: vi.fn(async () => ({ data: null, error: null })),
-              })),
-            })),
+              };
+            }),
           })),
           update: vi.fn((values: unknown) => {
             messageUpdates.push(values);
-            return { eq: vi.fn(() => ({ eq: vi.fn(async () => ({ error: null })) })) };
+            return {
+              eq: vi.fn((field: string, value: string) => {
+                if (field === "id") {
+                  messageRows[value] = { ...(messageRows[value] || {}), ...(values as Record<string, any>) };
+                }
+                return { eq: vi.fn(async () => ({ error: null })) };
+              }),
+            };
           }),
           insert: vi.fn((rows: unknown[]) => {
             messageInserts.push(...rows);
+            messageRows["message-1"] = { ...(rows[0] as Record<string, any>), id: "message-1" };
             return {
               select: vi.fn(() => ({
                 single: vi.fn(async () => ({ data: { id: "message-1" }, error: null })),
@@ -139,6 +184,8 @@ describe("/api/evolution-webhook", () => {
     processPendingWhatsAppRepliesBatchMock.mockResolvedValue({ picked: 1, processed: 1, failed: 0, auto_sent: 1, results: [] });
     processPendingWhatsAppMediaBatchMock.mockResolvedValue({ picked: 1, processed: 1, failed: 0, replies_prepared: 1, results: [] });
     sendWhatsAppMessageMock.mockResolvedValue({ provider: "evolution", apiResponse: { ok: true } });
+    markEvolutionMessageAsReadMock.mockResolvedValue({ ok: true });
+    sendEvolutionPresenceMock.mockResolvedValue({ ok: true });
   });
 
   it("processa mensagens da Evolution em formato MESSAGES_UPSERT", async () => {
@@ -193,6 +240,16 @@ describe("/api/evolution-webhook", () => {
     ]);
     expect(prepareWhatsAppSalesReplyForContactMock).not.toHaveBeenCalled();
     expect(enqueueWhatsAppReplyMock).not.toHaveBeenCalled();
+    expect(markEvolutionMessageAsReadMock).toHaveBeenCalledWith(expect.objectContaining({
+      tenantId: "tenant-1",
+      remoteJid: "5521999990000@s.whatsapp.net",
+      messageId: "msg-1",
+    }));
+    expect(sendEvolutionPresenceMock).toHaveBeenCalledWith(expect.objectContaining({
+      tenantId: "tenant-1",
+      remoteJid: "5521999990000@s.whatsapp.net",
+      presence: "available",
+    }));
   });
 
   it("atualiza messages.update sem inserir mensagem duplicada", async () => {
@@ -260,6 +317,8 @@ describe("/api/evolution-webhook", () => {
     expect(enqueueWhatsAppReplyMock).not.toHaveBeenCalled();
     expect(processPendingWhatsAppRepliesBatchMock).not.toHaveBeenCalled();
     expect(processPendingWhatsAppMediaBatchMock).not.toHaveBeenCalled();
+    expect(markEvolutionMessageAsReadMock).not.toHaveBeenCalled();
+    expect(sendEvolutionPresenceMock).not.toHaveBeenCalled();
   });
 
   it("salva midia Evolution como pending, confirma recebimento e tenta processar por mensagem", async () => {
@@ -339,6 +398,189 @@ describe("/api/evolution-webhook", () => {
     expect(enqueueWhatsAppReplyMock).not.toHaveBeenCalled();
     expect(processPendingWhatsAppRepliesBatchMock).not.toHaveBeenCalled();
     expect(global.fetch).toHaveBeenCalledTimes(1);
+  });
+
+  it("transcreve audio antes do ACK e roteia comando interno quando for pedido MAYUS", async () => {
+    processPendingWhatsAppMediaBatchMock.mockImplementationOnce(async ({ messageId }: { messageId: string }) => {
+      supabaseMock.messageRows[messageId] = {
+        ...(supabaseMock.messageRows[messageId] || {}),
+        media_text: "Mayus, relatorio do escritorio",
+        media_summary: "Audio transcrito: Mayus, relatorio do escritorio",
+        metadata: {
+          ...(supabaseMock.messageRows[messageId]?.metadata || {}),
+          media_processed_at: "2026-05-06T12:00:00.000Z",
+        },
+      };
+      return { picked: 1, processed: 1, failed: 0, replies_prepared: 0, results: [] };
+    });
+
+    const { POST } = await import("./route");
+    const request = new Request("http://localhost/api/evolution-webhook", {
+      method: "POST",
+      body: JSON.stringify({
+        event: "MESSAGES_UPSERT",
+        instance: "mayus-dutra",
+        data: {
+          key: {
+            remoteJid: "5521999990000@s.whatsapp.net",
+            fromMe: false,
+            id: "msg-audio-command-1",
+          },
+          pushName: "Dono Teste",
+          message: {
+            audioMessage: {
+              mimetype: "audio/ogg",
+              mediaKey: "media-key",
+            },
+          },
+        },
+      }),
+    });
+
+    const response = await POST(request);
+    const body = await response.json();
+
+    expect(response.status).toBe(200);
+    expect(body).toEqual({ success: true, internal_command: true, audio_transcribed: true });
+    expect(processPendingWhatsAppMediaBatchMock).toHaveBeenCalledWith(expect.objectContaining({
+      messageId: "message-1",
+      limit: 1,
+    }));
+    expect(handleWhatsAppInternalCommandMock).toHaveBeenCalledWith(expect.objectContaining({
+      tenantId: "tenant-1",
+      senderPhone: "5521999990000@s.whatsapp.net",
+      content: "Mayus, relatorio do escritorio",
+      contactId: "contact-1",
+      source: "evolution_webhook",
+    }));
+    expect(sendWhatsAppMessageMock).not.toHaveBeenCalled();
+    expect(enqueueWhatsAppReplyMock).not.toHaveBeenCalled();
+    expect(supabaseMock.messageUpdates).toEqual(expect.arrayContaining([
+      expect.objectContaining({
+        content: "Mayus, relatorio do escritorio",
+        metadata: expect.objectContaining({
+          audio_transcript_used_as_command: true,
+          reply_processing_status: "processed",
+        }),
+      }),
+    ]));
+  });
+
+  it("confirma audio sem texto de contracheque quando nao vira comando interno", async () => {
+    handleWhatsAppInternalCommandMock.mockResolvedValue({ handled: false, sent: false, intent: "unknown" });
+    processPendingWhatsAppMediaBatchMock.mockImplementationOnce(async ({ messageId }: { messageId: string }) => {
+      supabaseMock.messageRows[messageId] = {
+        ...(supabaseMock.messageRows[messageId] || {}),
+        media_text: "Tenho uma duvida sobre beneficio do INSS",
+        media_summary: "Audio transcrito: Tenho uma duvida sobre beneficio do INSS",
+      };
+      return { picked: 1, processed: 1, failed: 0, replies_prepared: 0, results: [] };
+    });
+
+    const { POST } = await import("./route");
+    const request = new Request("http://localhost/api/evolution-webhook", {
+      method: "POST",
+      body: JSON.stringify({
+        event: "MESSAGES_UPSERT",
+        instance: "mayus-dutra",
+        data: {
+          key: {
+            remoteJid: "5511888887777@s.whatsapp.net",
+            fromMe: false,
+            id: "msg-audio-client-1",
+          },
+          pushName: "Cliente Teste",
+          message: {
+            audioMessage: {
+              mimetype: "audio/ogg",
+              mediaKey: "media-key",
+            },
+          },
+        },
+      }),
+    });
+
+    const response = await POST(request);
+    const body = await response.json();
+
+    expect(response.status).toBe(200);
+    expect(body).toEqual({ success: true, pending_media: true });
+    expect(sendWhatsAppMessageMock).toHaveBeenCalledWith(expect.objectContaining({
+      text: expect.stringContaining("Recebi o audio"),
+    }));
+    expect(sendWhatsAppMessageMock).toHaveBeenCalledWith(expect.objectContaining({
+      text: expect.not.stringContaining("contracheque"),
+    }));
+  });
+
+  it("audio de dono autorizado sem transcricao nao cai no ACK nem na resposta de cliente", async () => {
+    handleWhatsAppInternalCommandMock.mockResolvedValue({ handled: false, sent: false, intent: "unknown" });
+    processPendingWhatsAppMediaBatchMock.mockImplementationOnce(async ({ messageId }: { messageId: string }) => {
+      supabaseMock.messageRows[messageId] = {
+        ...(supabaseMock.messageRows[messageId] || {}),
+        media_text: null,
+        media_summary: "Evolution nao enviou bytes/base64 da midia e o download automatico falhou.",
+        metadata: {
+          ...(supabaseMock.messageRows[messageId]?.metadata || {}),
+          owner_audio_command_attempted: true,
+          media_reply_suppressed: "owner_audio",
+        },
+      };
+      return { picked: 1, processed: 1, failed: 0, replies_prepared: 0, results: [] };
+    });
+
+    const { POST } = await import("./route");
+    const request = new Request("http://localhost/api/evolution-webhook", {
+      method: "POST",
+      body: JSON.stringify({
+        event: "MESSAGES_UPSERT",
+        instance: "mayus-dutra",
+        data: {
+          key: {
+            remoteJid: "5521999990000@s.whatsapp.net",
+            fromMe: false,
+            id: "msg-owner-audio-no-transcript-1",
+          },
+          pushName: "Dono Teste",
+          message: {
+            audioMessage: {
+              mimetype: "audio/ogg",
+              mediaKey: "media-key",
+            },
+          },
+        },
+      }),
+    });
+
+    const response = await POST(request);
+    const body = await response.json();
+
+    expect(response.status).toBe(200);
+    expect(body).toEqual({
+      success: true,
+      owner_audio_command: true,
+      handled: false,
+      reason: "audio_transcription_unavailable",
+    });
+    expect(handleWhatsAppInternalCommandMock).not.toHaveBeenCalled();
+    expect(sendWhatsAppMessageMock).toHaveBeenCalledTimes(1);
+    expect(sendWhatsAppMessageMock).toHaveBeenCalledWith(expect.objectContaining({
+      text: expect.stringContaining("Nao consegui entender esse audio como comando interno"),
+      metadata: expect.objectContaining({ source: "owner_audio_command_fallback" }),
+    }));
+    expect(sendWhatsAppMessageMock).not.toHaveBeenCalledWith(expect.objectContaining({
+      metadata: expect.objectContaining({ source: "immediate_media_ack" }),
+    }));
+    expect(enqueueWhatsAppReplyMock).not.toHaveBeenCalled();
+    expect(supabaseMock.messageUpdates).toEqual(expect.arrayContaining([
+      expect.objectContaining({
+        metadata: expect.objectContaining({
+          owner_audio_command_suppressed: true,
+          media_reply_suppressed: "owner_audio",
+          reply_processing_status: "processed",
+        }),
+      }),
+    ]));
   });
 
   it("nao enfileira midia enviada pelo proprio WhatsApp conectado", async () => {
@@ -426,7 +668,7 @@ describe("/api/evolution-webhook", () => {
     expect(processPendingWhatsAppMediaBatchMock).toHaveBeenCalledWith(expect.objectContaining({ messageId: "message-1" }));
   });
 
-  it("enfileira e processa resposta de texto Evolution imediatamente preservando provider", async () => {
+  it("enfileira e aciona resposta agentica de texto Evolution preservando provider", async () => {
     handleWhatsAppInternalCommandMock.mockResolvedValue({ handled: false });
     const { POST } = await import("./route");
     const request = new Request("http://localhost/api/evolution-webhook", {
@@ -459,6 +701,13 @@ describe("/api/evolution-webhook", () => {
     expect(processPendingWhatsAppRepliesBatchMock).toHaveBeenCalledWith(expect.objectContaining({
       messageId: "message-1",
       limit: 1,
+    }));
+    expect(sendEvolutionPresenceMock).toHaveBeenCalledWith(expect.objectContaining({
+      presence: "composing",
+      delayMs: 8000,
+    }));
+    expect(sendEvolutionPresenceMock).toHaveBeenCalledWith(expect.objectContaining({
+      presence: "paused",
     }));
     expect(prepareWhatsAppSalesReplyForContactMock).not.toHaveBeenCalled();
   });
@@ -501,7 +750,7 @@ describe("/api/evolution-webhook", () => {
     }));
   });
 
-  it("mantem webhook Evolution 200 quando processamento imediato falha", async () => {
+  it("mantem webhook Evolution 200 quando processamento agentico enfileirado falha", async () => {
     handleWhatsAppInternalCommandMock.mockResolvedValue({ handled: false });
     processPendingWhatsAppRepliesBatchMock.mockRejectedValueOnce(new Error("processor indisponivel"));
     const { POST } = await import("./route");

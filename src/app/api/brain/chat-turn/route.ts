@@ -61,6 +61,10 @@ export async function POST(req: NextRequest) {
     if (isSimpleMayusGreeting(message)) {
       return NextResponse.json({
         reply: MAYUS_SIMPLE_GREETING_REPLY,
+        voiceReply: MAYUS_SIMPLE_GREETING_REPLY,
+        missionKind: "general_brain",
+        approvalRequired: false,
+        approvalId: null,
         kernel: {
           status: "success",
           fastPath: "simple_greeting",
@@ -90,6 +94,7 @@ export async function POST(req: NextRequest) {
       },
       taskContext: {
         source: "dashboard_mayus",
+        provider: preferredProvider,
         conversation_id: conversationId,
       },
       policySnapshot: {
@@ -106,6 +111,10 @@ export async function POST(req: NextRequest) {
 
     return NextResponse.json({
       reply: turn.reply,
+      voiceReply: turn.voiceReply,
+      missionKind: turn.missionKind,
+      approvalRequired: turn.approvalRequired,
+      approvalId: turn.approvalId,
       kernel: turn.kernel,
       taskId: turn.taskId,
       runId: turn.runId,

@@ -46,7 +46,11 @@ describe("POST /api/brain/chat-turn", () => {
     });
     executeBrainTurnMock.mockResolvedValue({
       reply: "Resposta operacional.",
-      kernel: { status: "success" },
+      voiceReply: "Resposta curta.",
+      missionKind: "process_mission_plan",
+      approvalRequired: false,
+      approvalId: null,
+      kernel: { status: "success", missionKind: "process_mission_plan" },
       taskId: "task-1",
       runId: "run-1",
       stepId: "step-1",
@@ -62,6 +66,10 @@ describe("POST /api/brain/chat-turn", () => {
     expect(response.status).toBe(200);
     expect(json).toEqual({
       reply: "Olá, Doutor. Estou pronto. Como posso ajudar?",
+      voiceReply: "Olá, Doutor. Estou pronto. Como posso ajudar?",
+      missionKind: "general_brain",
+      approvalRequired: false,
+      approvalId: null,
       kernel: {
         status: "success",
         fastPath: "simple_greeting",
@@ -81,6 +89,10 @@ describe("POST /api/brain/chat-turn", () => {
 
     expect(response.status).toBe(200);
     expect(json.reply).toBe("Resposta operacional.");
+    expect(json.voiceReply).toBe("Resposta curta.");
+    expect(json.missionKind).toBe("process_mission_plan");
+    expect(json.approvalRequired).toBe(false);
+    expect(json.approvalId).toBeNull();
     expect(executeBrainTurnMock).toHaveBeenCalledWith(expect.objectContaining({
       goal: "Mayus, veja o próximo passo desse processo.",
       channel: "chat",

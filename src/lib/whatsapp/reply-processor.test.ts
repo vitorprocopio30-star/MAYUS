@@ -2,10 +2,15 @@ import { beforeEach, describe, expect, it, vi } from "vitest";
 
 const mocks = vi.hoisted(() => ({
   prepareWhatsAppSalesReplyForContact: vi.fn(),
+  sendEvolutionPresenceForContact: vi.fn(),
 }));
 
 vi.mock("@/lib/growth/whatsapp-sales-reply-runtime", () => ({
   prepareWhatsAppSalesReplyForContact: mocks.prepareWhatsAppSalesReplyForContact,
+}));
+
+vi.mock("@/lib/whatsapp/evolution-presence", () => ({
+  sendEvolutionPresenceForContact: mocks.sendEvolutionPresenceForContact,
 }));
 
 import { enqueueWhatsAppReply, processPendingWhatsAppRepliesBatch } from "./reply-processor";
@@ -89,6 +94,7 @@ function makeSupabase(row: any, options: { newerMessage?: boolean } = {}) {
 describe("whatsapp reply processor", () => {
   beforeEach(() => {
     vi.clearAllMocks();
+    mocks.sendEvolutionPresenceForContact.mockResolvedValue({ ok: true });
   });
 
   it("enfileira resposta preservando metadata existente", async () => {
@@ -146,6 +152,17 @@ describe("whatsapp reply processor", () => {
       trigger: "evolution_webhook",
       preferredProvider: "evolution",
       autoSendFirstResponse: true,
+    }));
+    expect(mocks.sendEvolutionPresenceForContact).toHaveBeenCalledWith(expect.objectContaining({
+      tenantId: "tenant-1",
+      contactId: "contact-1",
+      presence: "composing",
+      delayMs: 8000,
+    }));
+    expect(mocks.sendEvolutionPresenceForContact).toHaveBeenCalledWith(expect.objectContaining({
+      tenantId: "tenant-1",
+      contactId: "contact-1",
+      presence: "paused",
     }));
     expect(updates.some((item) => item.payload.metadata?.reply_processing_status === "processing")).toBe(true);
     expect(updates.some((item) => item.payload.metadata?.reply_processing_status === "processed")).toBe(true);
@@ -307,5 +324,84 @@ describe("whatsapp reply processor", () => {
     expect(result).toMatchObject({ picked: 1, processed: 1, failed: 0, auto_sent: 0 });
     expect(mocks.prepareWhatsAppSalesReplyForContact).not.toHaveBeenCalled();
     expect(updates.some((item) => item.payload.metadata?.reply_processing_recovery_reason === "stale_processing_too_old")).toBe(true);
+  });
+
+  it("reagenda resposta quando o rascunho nao e agentico", async () => {
+    const row = {
+      id: "message-non-agentic",
+      tenant_id: "tenant-1",
+      contact_id: "contact-1",
+      direction: "inbound",
+      media_processing_status: "none",
+      created_at: new Date().toISOString(),
+      metadata: { reply_processing_status: "pending", reply_trigger: "evolution_webhook" },
+    };
+    const { supabase, updates, inserts } = makeSupabase(row);
+    mocks.prepareWhatsAppSalesReplyForContact.mockResolvedValueOnce({
+      autoSendResult: { status: "skipped" },
+      metadata: {
+        first_response_policy: {
+          blocked_reason: "non_agentic_reply_source",
+        },
+      },
+    });
+
+    const result = await processPendingWhatsAppRepliesBatch({ supabase, limit: 1 });
+
+    expect(result).toMatchObject({ picked: 1, processed: 0, failed: 0, skipped: 1, auto_sent: 0 });
+    expect(result.results[0]).toEqual(expect.objectContaining({
+      message_id: "message-non-agentic",
+      status: "skipped",
+      reply_processing_status: "pending",
+      skipped_reason: "agentic_retry_scheduled",
+    }));
+    expect(updates.some((item) => item.payload.metadata?.reply_processing_status === "pending")).toBe(true);
+    expect(updates.some((item) => item.payload.metadata?.reply_non_agentic_attempts === 1)).toBe(true);
+    expect(updates.some((item) => item.payload.metadata?.reply_blocked_reason === "non_agentic_reply_source")).toBe(true);
+    expect(inserts).toContainEqual(expect.objectContaining({
+      table: "system_event_logs",
+      payload: expect.objectContaining({
+        event_name: "whatsapp_reply_processed",
+        status: "ok",
+        payload: expect.objectContaining({
+          reply_processing_status: "pending",
+          blocked_reason: "non_agentic_reply_source",
+          agentic_retry_reason: "non_agentic_reply_source",
+          non_agentic_attempts: 1,
+        }),
+      }),
+    }));
+  });
+
+  it("nao encerra como processado resposta nao agentica ate o limite de retry", async () => {
+    const row = {
+      id: "message-non-agentic-second",
+      tenant_id: "tenant-1",
+      contact_id: "contact-1",
+      direction: "inbound",
+      media_processing_status: "none",
+      created_at: new Date().toISOString(),
+      metadata: {
+        reply_processing_status: "pending",
+        reply_trigger: "evolution_webhook",
+        reply_non_agentic_attempts: 1,
+      },
+    };
+    const { supabase, updates } = makeSupabase(row);
+    mocks.prepareWhatsAppSalesReplyForContact.mockResolvedValueOnce({
+      autoSendResult: { status: "skipped" },
+      metadata: {
+        first_response_policy: {
+          blocked_reason: "deterministic_fallback_not_agentic",
+        },
+      },
+    });
+
+    const result = await processPendingWhatsAppRepliesBatch({ supabase, limit: 1 });
+
+    expect(result).toMatchObject({ picked: 1, processed: 0, failed: 0, skipped: 1, auto_sent: 0 });
+    expect(updates.some((item) => item.payload.metadata?.reply_processing_status === "pending")).toBe(true);
+    expect(updates.some((item) => item.payload.metadata?.reply_non_agentic_attempts === 2)).toBe(true);
+    expect(updates.some((item) => item.payload.metadata?.reply_processing_status === "processed")).toBe(false);
   });
 });

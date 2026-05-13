@@ -86,6 +86,7 @@ describe("POST /api/agent/voice/realtime-session", () => {
       })
     );
     const body = JSON.parse(String(vi.mocked(global.fetch).mock.calls[0]?.[1]?.body));
+    expect(body.session.model).toBe("gpt-realtime-2");
     expect(body.session.audio.output.voice).toBe("marin");
     expect(body.session.instructions).toContain("Dutra Advocacia");
     expect(body.session.tools.map((tool: any) => tool.name)).toEqual([
@@ -94,6 +95,33 @@ describe("POST /api/agent/voice/realtime-session", () => {
       "pesquisar_web_mayus",
       "responder_sobre_mayus",
     ]);
+    const brainTool = body.session.tools.find((tool: any) => tool.name === "consultar_cerebro_mayus") as any;
+    expect(brainTool.parameters.properties.missionKind.enum).toEqual([
+      "case_status",
+      "process_mission_plan",
+      "process_execute_next",
+      "general_brain",
+    ]);
+  });
+
+  it("permite gpt-realtime-mini como modelo economico experimental", async () => {
+    const response = await POST(request({ voice: "cedar", model: "gpt-realtime-mini" }));
+    const json = await response.json();
+    const body = JSON.parse(String(vi.mocked(global.fetch).mock.calls[0]?.[1]?.body));
+
+    expect(response.status).toBe(200);
+    expect(json.model).toBe("gpt-realtime-mini");
+    expect(body.session.model).toBe("gpt-realtime-mini");
+    expect(body.session.tools.map((tool: any) => tool.name)).toContain("consultar_cerebro_mayus");
+  });
+
+  it("rejeita modelos realtime fora da allowlist", async () => {
+    const response = await POST(request({ voice: "cedar", model: "gpt-realtime-2-mini" }));
+
+    expect(response.status).toBe(400);
+    await expect(response.json()).resolves.toEqual({ error: "Modelo Realtime nao permitido para o MAYUS." });
+    expect(requireTenantApiKeyMock).not.toHaveBeenCalled();
+    expect(global.fetch).not.toHaveBeenCalled();
   });
 
   it("bloqueia usuario sem role executiva", async () => {

@@ -59,6 +59,78 @@ function getTaskBadge(status: string) {
   }
 }
 
+function humanizeEntityKey(key: string) {
+  const labels: Record<string, string> = {
+    process_task_id: "Processo interno",
+    process_number: "Numero do processo",
+    recommended_piece_input: "Peca solicitada",
+    recommended_piece_label: "Peca sugerida",
+  };
+
+  return labels[key] || key.replaceAll("_", " ");
+}
+
+function getStringEntity(approval: BrainInboxApprovalItem, key: string) {
+  const value = approval.awaiting_payload?.entities?.[key];
+  return typeof value === "string" && value.trim() ? value.trim() : null;
+}
+
+function isLegalDraftApproval(approval: BrainInboxApprovalItem) {
+  return approval.awaiting_payload?.skillName === "legal_first_draft_generate";
+}
+
+function LegalDraftApprovalDetails({ approval }: { approval: BrainInboxApprovalItem }) {
+  const payload = approval.awaiting_payload;
+  const processLabel = payload?.processLabel || getStringEntity(approval, "process_number") || getStringEntity(approval, "process_task_id");
+  const pieceLabel = getStringEntity(approval, "recommended_piece_label") || getStringEntity(approval, "recommended_piece_input");
+
+  return (
+    <div className="rounded-2xl border border-[#CCA761]/20 bg-[#CCA761]/10 p-4 space-y-4">
+      <div className="flex items-start gap-3">
+        <ShieldAlert size={18} className="mt-0.5 shrink-0 text-[#CCA761]" />
+        <div>
+          <p className="text-[10px] uppercase tracking-[0.2em] text-[#CCA761]">Missao juridica supervisionada</p>
+          <p className="mt-1 text-sm text-white/90">
+            O MAYUS quer gerar uma minuta juridica. A Draft Factory so sera acionada se esta aprovacao for confirmada.
+          </p>
+        </div>
+      </div>
+
+      <div className="grid gap-3 md:grid-cols-2">
+        <div className="rounded-xl border border-white/10 bg-black/20 p-3">
+          <p className="text-[10px] uppercase tracking-[0.18em] text-gray-500">Processo</p>
+          <p className="mt-1 text-sm font-semibold text-white break-words">{processLabel || "Nao informado"}</p>
+        </div>
+        <div className="rounded-xl border border-white/10 bg-black/20 p-3">
+          <p className="text-[10px] uppercase tracking-[0.18em] text-gray-500">Peca sugerida</p>
+          <p className="mt-1 text-sm font-semibold text-white break-words">{pieceLabel || "Primeira minuta juridica"}</p>
+        </div>
+      </div>
+
+      {payload?.proposedActionLabel && (
+        <div className="rounded-xl border border-white/10 bg-black/20 p-3">
+          <p className="text-[10px] uppercase tracking-[0.18em] text-gray-500">Acao proposta</p>
+          <p className="mt-1 text-sm text-gray-200">{payload.proposedActionLabel}</p>
+        </div>
+      )}
+
+      {payload?.missionGoal && (
+        <div className="rounded-xl border border-white/10 bg-black/20 p-3">
+          <p className="text-[10px] uppercase tracking-[0.18em] text-gray-500">Objetivo juridico</p>
+          <p className="mt-1 text-sm text-gray-200">{payload.missionGoal}</p>
+        </div>
+      )}
+
+      {payload?.reason && (
+        <div className="rounded-xl border border-orange-500/20 bg-orange-500/10 p-3">
+          <p className="text-[10px] uppercase tracking-[0.18em] text-orange-300">Motivo da aprovacao</p>
+          <p className="mt-1 text-sm text-orange-100">{payload.reason}</p>
+        </div>
+      )}
+    </div>
+  );
+}
+
 function ApprovalActions({
   approval,
   onDecided,
@@ -145,13 +217,15 @@ function ApprovalCard({ approval, onRefresh }: { approval: BrainInboxApprovalIte
         </div>
       )}
 
+      {isLegalDraftApproval(approval) && <LegalDraftApprovalDetails approval={approval} />}
+
       {approval.awaiting_payload?.entities && Object.keys(approval.awaiting_payload.entities).length > 0 && (
         <div className="rounded-xl border border-white/5 bg-gray-200 dark:bg-black/30 p-3 space-y-2">
           <p className="text-[10px] uppercase tracking-[0.18em] text-gray-500">Dados que serao executados</p>
           <div className="space-y-1.5 text-xs">
             {Object.entries(approval.awaiting_payload.entities).map(([key, value]) => (
               <div key={key} className="flex gap-2">
-                <span className="w-32 shrink-0 text-gray-500">{key}:</span>
+                <span className="w-32 shrink-0 text-gray-500">{humanizeEntityKey(key)}:</span>
                 <span className="text-gray-200 break-all">{value || "—"}</span>
               </div>
             ))}
@@ -259,6 +333,12 @@ function getEventTitle(event: BrainInboxEventItem) {
       return "Contexto juridico resolvido";
     case "support_case_status_resolved":
       return "Status do caso respondido";
+    case "process_mission_plan_created":
+      return "Missao processual planejada";
+    case "process_mission_step_executed":
+      return "Passo da missao processual executado";
+    case "mission_result":
+      return "Resultado de missao registrado";
     case "legal_first_draft_requested_via_chat":
       return "Minuta juridica solicitada via chat";
     default:

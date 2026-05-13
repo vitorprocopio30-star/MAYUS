@@ -56,6 +56,10 @@ export interface BrainInboxApprovalItem {
     entities?: Record<string, string>;
     idempotencyKey?: string;
     schemaVersion?: string;
+    reason?: string;
+    proposedActionLabel?: string;
+    processLabel?: string;
+    missionGoal?: string;
   } | null;
   task: BrainInboxTaskItem | null;
   step: BrainInboxStepItem | null;

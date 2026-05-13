@@ -1,5 +1,11 @@
 import { createClient } from "@supabase/supabase-js";
+import crypto from "node:crypto";
 import { createBrainArtifact } from "@/lib/brain/artifacts";
+import { createAgentAuditLog } from "@/lib/agent/audit";
+import {
+  buildBillingIdempotencyKey,
+  normalizeBillingEntities,
+} from "@/lib/agent/capabilities/billing-normalization";
 import { ZapSignService } from "@/lib/services/zapsign";
 import { EscavadorService } from "@/lib/services/escavador";
 import { executarCobranca } from "@/lib/agent/skills/asaas-cobrar";
@@ -13,6 +19,7 @@ import {
   getLegalCaseContextSnapshot,
   type LegalCaseContextSnapshot,
 } from "@/lib/lex/case-context";
+import { buildProcessMissionContext } from "@/lib/lex/process-mission-context";
 import {
   executeDraftFactoryForProcessTask,
   type DraftFactoryExecutionResult,
@@ -135,7 +142,7 @@ export interface DispatchCapabilityInput {
 }
 
 export interface DispatchCapabilityResult {
-  status: "executed" | "blocked" | "failed" | "unsupported";
+  status: "executed" | "blocked" | "failed" | "unsupported" | "awaiting_approval";
   reply: string;
   data?: unknown;
   outputPayload?: Record<string, unknown>;
@@ -910,29 +917,126 @@ async function runProposalGenerate(input: DispatchCapabilityInput): Promise<Disp
   };
 }
 
+async function findExistingBillingByIdempotencyKey(tenantId: string, billingIdempotencyKey: string) {
+  const { data } = await serviceSupabase
+    .from("brain_artifacts")
+    .select("id, title, storage_url, metadata, created_at")
+    .eq("tenant_id", tenantId)
+    .eq("artifact_type", "asaas_billing")
+    .eq("metadata->>billing_idempotency_key", billingIdempotencyKey)
+    .order("created_at", { ascending: false })
+    .limit(1)
+    .maybeSingle<{
+      id: string;
+      title: string | null;
+      storage_url: string | null;
+      metadata: Record<string, unknown> | null;
+      created_at: string;
+    }>();
+
+  return data || null;
+}
+
 async function runAsaasBilling(input: DispatchCapabilityInput): Promise<DispatchCapabilityResult> {
-  const commercialContext = await resolveCommercialContext(input);
-  const valor = Number.isFinite(parseNumber(input.entities.valor))
-    ? parseNumber(input.entities.valor)
+  const normalizedBilling = normalizeBillingEntities(input.entities);
+  if (normalizedBilling.errors.length > 0) {
+    return {
+      status: "failed",
+      reply: normalizedBilling.errors[0],
+      outputPayload: {
+        auditLogId: input.auditLogId || null,
+        handler_type: input.handlerType,
+        billing_validation_error: normalizedBilling.errors[0],
+      },
+    };
+  }
+
+  const normalizedInput = {
+    ...input,
+    entities: normalizedBilling.entities,
+  };
+  const commercialContext = await resolveCommercialContext(normalizedInput);
+  const valor = Number.isFinite(parseNumber(normalizedInput.entities.valor))
+    ? parseNumber(normalizedInput.entities.valor)
     : commercialContext.amount ?? NaN;
   const nomeResolvido =
-    getStringValue(input.entities.nome_cliente) ||
+    getStringValue(normalizedInput.entities.nome_cliente) ||
     extractBillingNameFromHistory(input.history) ||
     commercialContext.clientName ||
     undefined;
+
+  if (!Number.isFinite(valor) || valor <= 0) {
+    return {
+      status: "failed",
+      reply: "Valor da cobranca precisa ser positivo.",
+      outputPayload: {
+        auditLogId: input.auditLogId || null,
+        handler_type: input.handlerType,
+        billing_validation_error: "invalid_amount",
+      },
+    };
+  }
+
+  const clientKey =
+    commercialContext.client?.id ||
+    commercialContext.customerId ||
+    getStringValue(normalizedInput.entities.customer_id) ||
+    nomeResolvido ||
+    null;
+
+  if (!clientKey) {
+    return {
+      status: "failed",
+      reply: "Nao foi possivel identificar o cliente da cobranca.",
+      outputPayload: {
+        auditLogId: input.auditLogId || null,
+        handler_type: input.handlerType,
+        billing_validation_error: "missing_client",
+      },
+    };
+  }
+
+  const originKey =
+    commercialContext.crmTask?.id ||
+    normalizedInput.brainContext?.taskId ||
+    normalizedInput.auditLogId ||
+    normalizedInput.capabilityName;
+  const billingIdempotencyKey = buildBillingIdempotencyKey({
+    tenantId: input.tenantId,
+    clientKey,
+    amount: valor,
+    dueDate: normalizedInput.entities.vencimento,
+    originKey,
+  });
+  const existingBilling = await findExistingBillingByIdempotencyKey(input.tenantId, billingIdempotencyKey);
+  if (existingBilling) {
+    return {
+      status: "blocked",
+      reply: "Cobranca duplicada bloqueada: ja existe uma cobranca com mesmo cliente, valor, vencimento e origem.",
+      outputPayload: {
+        auditLogId: input.auditLogId || null,
+        handler_type: input.handlerType,
+        billing_duplicate: true,
+        billing_artifact_id: existingBilling.id,
+        billing_idempotency_key: billingIdempotencyKey,
+      },
+      data: existingBilling,
+    };
+  }
+
   const result = await executarCobranca({
     tenantId: input.tenantId,
-    customer_id: input.entities.customer_id || commercialContext.customerId || undefined,
+    customer_id: normalizedInput.entities.customer_id || commercialContext.customerId || undefined,
     nome_cliente: nomeResolvido,
-    cpf_cnpj: input.entities.cpf_cnpj || commercialContext.document || undefined,
-    email: input.entities.email || commercialContext.email || undefined,
+    cpf_cnpj: normalizedInput.entities.cpf_cnpj || commercialContext.document || undefined,
+    email: normalizedInput.entities.email || commercialContext.email || undefined,
     valor,
-    vencimento: input.entities.vencimento,
-    descricao: input.entities.descricao,
-    billing_type: input.entities.billing_type as "BOLETO" | "PIX" | "UNDEFINED" | undefined,
-    parcelas: input.entities.parcelas ? Number(input.entities.parcelas) : undefined,
-    recorrente: input.entities.recorrente === "true",
-    ciclo: input.entities.ciclo as "WEEKLY" | "BIWEEKLY" | "MONTHLY" | "QUARTERLY" | "SEMIANNUALLY" | "YEARLY" | undefined,
+    vencimento: normalizedInput.entities.vencimento,
+    descricao: normalizedInput.entities.descricao,
+    billing_type: normalizedInput.entities.billing_type as "BOLETO" | "CREDIT_CARD" | "PIX" | "UNDEFINED" | undefined,
+    parcelas: normalizedInput.entities.parcelas ? Number(normalizedInput.entities.parcelas) : undefined,
+    recorrente: normalizedInput.entities.recorrente === "true",
+    ciclo: normalizedInput.entities.ciclo as "WEEKLY" | "BIWEEKLY" | "MONTHLY" | "QUARTERLY" | "SEMIANNUALLY" | "YEARLY" | undefined,
   });
 
   if (!result.success) {
@@ -941,42 +1045,47 @@ async function runAsaasBilling(input: DispatchCapabilityInput): Promise<Dispatch
 
   const paymentUrl = result.invoiceUrl ?? result.bankSlipUrl ?? result.paymentLink ?? null;
 
-  await registerArtifact(input, {
+  await registerArtifact(normalizedInput, {
     artifactType: "asaas_billing",
-    title: `Cobranca ${nomeResolvido || input.entities.customer_id || result.cobrancaId || "cliente"}`,
+    title: `Cobranca ${nomeResolvido || normalizedInput.entities.customer_id || result.cobrancaId || "cliente"}`,
     storageUrl: paymentUrl,
     mimeType: "text/uri-list",
-    dedupeKey: input.auditLogId ? `asaas:${input.auditLogId}` : `asaas:${result.cobrancaId || paymentUrl || input.capabilityName}`,
+    dedupeKey: billingIdempotencyKey,
     metadata: {
-      customer_id: result.asaasCustomerId || input.entities.customer_id || null,
+      billing_idempotency_key: billingIdempotencyKey,
+      billing_status: "created",
+      status_inicial: "created",
+      customer_id: result.asaasCustomerId || normalizedInput.entities.customer_id || null,
       nome_cliente: result.clientName || nomeResolvido || null,
       cobranca_id: result.cobrancaId || null,
       invoice_url: result.invoiceUrl || null,
       bank_slip_url: result.bankSlipUrl || null,
       payment_link: result.paymentLink || null,
       client_id: result.clientId || null,
-      asaas_customer_id: result.asaasCustomerId || input.entities.customer_id || null,
+      asaas_customer_id: result.asaasCustomerId || normalizedInput.entities.customer_id || null,
       crm_task_id: commercialContext.crmTask?.id || null,
       crm_pipeline_id: commercialContext.crmTask?.pipeline_id || null,
       crm_stage_id: commercialContext.crmTask?.stage_id || null,
       assigned_to: commercialContext.crmTask?.assigned_to || null,
       phone: commercialContext.phone,
-      sector: commercialContext.crmTask?.sector || input.entities.sector || null,
-      legal_area: input.entities.legal_area || input.entities.area || input.entities.segmento || null,
+      sector: commercialContext.crmTask?.sector || normalizedInput.entities.sector || null,
+      legal_area: normalizedInput.entities.legal_area || normalizedInput.entities.area || normalizedInput.entities.segmento || null,
       proposal_source: commercialContext.crmTask ? "crm_task" : input.brainContext?.taskId ? "brain_task" : null,
       valor: Number.isFinite(valor) ? valor : null,
-      parcelas: input.entities.parcelas ? Number(input.entities.parcelas) : 1,
-      billing_type: input.entities.billing_type || null,
-      vencimento: input.entities.vencimento || null,
+      parcelas: normalizedInput.entities.parcelas ? Number(normalizedInput.entities.parcelas) : 1,
+      billing_type: normalizedInput.entities.billing_type || null,
+      vencimento: normalizedInput.entities.vencimento || null,
+      defaulted_fields: normalizedBilling.defaultedFields,
     },
   });
 
-  await registerLearningEvent(input, "billing_created", {
+  await registerLearningEvent(normalizedInput, "billing_created", {
     cobranca_id: result.cobrancaId || null,
-    asaas_customer_id: result.asaasCustomerId || input.entities.customer_id || null,
+    asaas_customer_id: result.asaasCustomerId || normalizedInput.entities.customer_id || null,
     client_id: result.clientId || null,
     crm_task_id: commercialContext.crmTask?.id || null,
     value: Number.isFinite(valor) ? valor : null,
+    billing_idempotency_key: billingIdempotencyKey,
   });
 
   return {
@@ -992,8 +1101,10 @@ async function runAsaasBilling(input: DispatchCapabilityInput): Promise<Dispatch
       bank_slip_url: result.bankSlipUrl || null,
       payment_link: result.paymentLink || null,
       client_id: result.clientId || null,
-      asaas_customer_id: result.asaasCustomerId || input.entities.customer_id || null,
+      asaas_customer_id: result.asaasCustomerId || normalizedInput.entities.customer_id || null,
       crm_task_id: commercialContext.crmTask?.id || null,
+      billing_idempotency_key: billingIdempotencyKey,
+      billing_status: "created",
     },
     data: result,
   };
@@ -2804,6 +2915,7 @@ async function runLegalCaseContext(input: DispatchCapabilityInput): Promise<Disp
     tenantId: input.tenantId,
     entities: input.entities,
   });
+  const processMissionContext = buildProcessMissionContext(snapshot);
   const reply = buildLegalCaseContextReply(snapshot);
   const summary = `Contexto juridico resolvido para ${snapshot.processTask.processNumber || snapshot.processTask.title}.`;
 
@@ -2828,6 +2940,7 @@ async function runLegalCaseContext(input: DispatchCapabilityInput): Promise<Disp
       first_draft_status: snapshot.firstDraft.status,
       first_draft_stale: snapshot.firstDraft.isStale,
       first_draft_artifact_id: snapshot.firstDraft.artifactId,
+      process_mission_context: processMissionContext,
     },
   });
 
@@ -2840,6 +2953,8 @@ async function runLegalCaseContext(input: DispatchCapabilityInput): Promise<Disp
     recommended_piece_label: snapshot.caseBrain.recommendedPieceLabel,
     first_draft_status: snapshot.firstDraft.status,
     first_draft_stale: snapshot.firstDraft.isStale,
+    process_mission_confidence: processMissionContext.confidence,
+    process_mission_recommended_action: processMissionContext.recommendedAction,
   });
 
   return {
@@ -2853,8 +2968,551 @@ async function runLegalCaseContext(input: DispatchCapabilityInput): Promise<Disp
       first_draft_status: snapshot.firstDraft.status,
       first_draft_stale: snapshot.firstDraft.isStale,
       recommended_piece_label: snapshot.caseBrain.recommendedPieceLabel,
+      process_mission_confidence: processMissionContext.confidence,
+      process_mission_recommended_action: processMissionContext.recommendedAction,
+      process_mission_goal: processMissionContext.missionGoal,
     },
     data: snapshot,
+  };
+}
+
+function formatProcessMissionRecommendedAction(action: ReturnType<typeof buildProcessMissionContext>["recommendedAction"]) {
+  switch (action) {
+    case "refresh_document_memory":
+      return "Atualizar memoria documental";
+    case "generate_first_draft":
+      return "Gerar primeira minuta";
+    case "review_existing_draft":
+      return "Revisar minuta existente";
+    case "collect_missing_documents":
+      return "Coletar/organizar documentos pendentes";
+    case "human_review":
+      return "Revisao humana antes de agir";
+    default:
+      return "Consolidar contexto do caso";
+  }
+}
+
+function buildProcessMissionPlanReply(context: ReturnType<typeof buildProcessMissionContext>) {
+  const processLabel = context.process.processNumber || context.process.title;
+  return [
+    "## Missao agentica do processo",
+    `- Processo: ${processLabel}`,
+    context.process.clientName ? `- Cliente: ${context.process.clientName}` : null,
+    context.status.currentPhase ? `- Fase atual: ${context.status.currentPhase}` : null,
+    context.status.progressSummary ? `- Resumo operacional: ${context.status.progressSummary}` : null,
+    `- Confianca: ${context.confidence}`,
+    `- Acao recomendada: ${formatProcessMissionRecommendedAction(context.recommendedAction)}`,
+    `- Objetivo da missao: ${context.missionGoal}`,
+    context.status.nextStep ? `- Proximo passo: ${context.status.nextStep}` : null,
+    context.status.pendingItems.length > 0
+      ? `- Pendencias: ${context.status.pendingItems.join("; ")}`
+      : "- Pendencias: nenhuma pendencia critica registrada",
+    `- Memoria documental: ${context.documents.freshness}${context.documents.lastSyncedAt ? ` em ${formatDateTimeLabel(context.documents.lastSyncedAt)}` : ""}`,
+    context.draft.recommendedPiece ? `- Peca/minuta sugerida: ${context.draft.recommendedPiece}` : null,
+    context.grounding.factualSources.length > 0
+      ? `- Fontes: ${context.grounding.factualSources.join("; ")}`
+      : null,
+    context.grounding.inferenceNotes.length > 0
+      ? `- Inferencias: ${context.grounding.inferenceNotes.join("; ")}`
+      : "- Inferencias: sem inferencias relevantes",
+    context.grounding.missingSignals.length > 0
+      ? `- Sinais faltantes: ${context.grounding.missingSignals.join("; ")}`
+      : null,
+    "- Execucao: plano registrado sem side effects externos. Acoes juridicas, Drive, minuta, publicacao ou comunicacao externa seguem supervisionadas.",
+  ].filter(Boolean).join("\n");
+}
+
+async function runLegalProcessMissionPlan(input: DispatchCapabilityInput): Promise<DispatchCapabilityResult> {
+  const snapshot = await getLegalCaseContextSnapshot({
+    tenantId: input.tenantId,
+    entities: input.entities,
+  });
+  const processMissionContext = buildProcessMissionContext(snapshot);
+  const reply = buildProcessMissionPlanReply(processMissionContext);
+  const processLabel = snapshot.processTask.processNumber || snapshot.processTask.title;
+  const summary = `Missao agentica planejada para ${processLabel}: ${formatProcessMissionRecommendedAction(processMissionContext.recommendedAction)}.`;
+
+  await registerArtifact(input, {
+    artifactType: "process_mission_plan",
+    title: `Missao processual - ${snapshot.processTask.clientName || snapshot.processTask.title}`,
+    mimeType: "application/json",
+    dedupeKey: input.auditLogId
+      ? `process-mission-plan:${input.auditLogId}`
+      : `process-mission-plan:${snapshot.processTask.id}:${processMissionContext.recommendedAction}:${processMissionContext.confidence}`,
+    metadata: {
+      reply,
+      summary,
+      process_task_id: snapshot.processTask.id,
+      process_number: snapshot.processTask.processNumber,
+      process_label: processLabel,
+      client_name: snapshot.processTask.clientName,
+      case_brain_task_id: snapshot.caseBrain.taskId,
+      process_mission_context: processMissionContext,
+      process_mission_confidence: processMissionContext.confidence,
+      process_mission_recommended_action: processMissionContext.recommendedAction,
+      process_mission_goal: processMissionContext.missionGoal,
+      external_side_effects_blocked: true,
+    },
+  });
+
+  await registerLearningEvent(input, "process_mission_plan_created", {
+    summary,
+    process_task_id: snapshot.processTask.id,
+    process_number: snapshot.processTask.processNumber,
+    client_name: snapshot.processTask.clientName,
+    case_brain_task_id: snapshot.caseBrain.taskId,
+    confidence: processMissionContext.confidence,
+    recommended_action: processMissionContext.recommendedAction,
+    mission_goal: processMissionContext.missionGoal,
+    factual_sources: processMissionContext.grounding.factualSources,
+    inference_notes: processMissionContext.grounding.inferenceNotes,
+    missing_signals: processMissionContext.grounding.missingSignals,
+    external_side_effects_blocked: true,
+  });
+
+  return {
+    status: "executed",
+    reply,
+    outputPayload: {
+      auditLogId: input.auditLogId || null,
+      handler_type: input.handlerType,
+      process_task_id: snapshot.processTask.id,
+      process_number: snapshot.processTask.processNumber,
+      case_brain_task_id: snapshot.caseBrain.taskId,
+      process_mission_confidence: processMissionContext.confidence,
+      process_mission_recommended_action: processMissionContext.recommendedAction,
+      process_mission_goal: processMissionContext.missionGoal,
+      factual_source_count: processMissionContext.grounding.factualSources.length,
+      missing_signal_count: processMissionContext.grounding.missingSignals.length,
+      external_side_effects_blocked: true,
+    },
+    data: {
+      snapshot,
+      processMissionContext,
+    },
+  };
+}
+
+function buildProcessMissionExecutionBlockedReply(params: {
+  context: ReturnType<typeof buildProcessMissionContext>;
+  reason: string;
+}) {
+  const processLabel = params.context.process.processNumber || params.context.process.title;
+  return [
+    "## Execucao da missao processual",
+    `- Processo: ${processLabel}`,
+    `- Status: bloqueada para supervisao`,
+    `- Motivo: ${params.reason}`,
+    `- Confianca: ${params.context.confidence}`,
+    `- Acao recomendada: ${formatProcessMissionRecommendedAction(params.context.recommendedAction)}`,
+    `- Objetivo da missao: ${params.context.missionGoal}`,
+    "- Execucao: nenhum side effect externo foi realizado.",
+  ].join("\n");
+}
+
+function buildProcessMissionApprovalReply(params: {
+  context: ReturnType<typeof buildProcessMissionContext>;
+  proposedCapability: string;
+  proposedActionLabel: string;
+}) {
+  const processLabel = params.context.process.processNumber || params.context.process.title;
+  return [
+    "## Missao juridica supervisionada",
+    `- Processo: ${processLabel}`,
+    params.context.process.clientName ? `- Cliente: ${params.context.process.clientName}` : null,
+    `- Status: aguardando aprovacao humana`,
+    `- Acao proposta: ${params.proposedActionLabel}`,
+    `- Capability proposta: ${params.proposedCapability}`,
+    `- Confianca: ${params.context.confidence}`,
+    `- Objetivo da missao: ${params.context.missionGoal}`,
+    params.context.draft.recommendedPiece ? `- Peca sugerida: ${params.context.draft.recommendedPiece}` : null,
+    params.context.grounding.factualSources.length > 0
+      ? `- Fontes: ${params.context.grounding.factualSources.join("; ")}`
+      : null,
+    params.context.grounding.missingSignals.length > 0
+      ? `- Lacunas/sinais faltantes: ${params.context.grounding.missingSignals.join("; ")}`
+      : "- Lacunas/sinais faltantes: nenhuma lacuna critica registrada",
+    "- Guardrail: nenhuma minuta foi gerada ainda. A Draft Factory juridica so sera chamada se um aprovador autorizar.",
+  ].filter(Boolean).join("\n");
+}
+
+function buildProcessMissionApprovalAuditKey(input: DispatchCapabilityInput, context: ReturnType<typeof buildProcessMissionContext>) {
+  const raw = [
+    input.tenantId,
+    input.userId || "system",
+    input.auditLogId || "no-audit",
+    context.process.processTaskId,
+    context.recommendedAction,
+    Date.now(),
+    crypto.randomUUID(),
+  ].join(":");
+
+  return crypto.createHash("sha256").update(raw).digest("hex");
+}
+
+async function requestProcessMissionDraftApproval(
+  input: DispatchCapabilityInput,
+  params: {
+    snapshot: LegalCaseContextSnapshot;
+    context: ReturnType<typeof buildProcessMissionContext>;
+  }
+): Promise<DispatchCapabilityResult> {
+  const proposedCapability = "legal_first_draft_generate";
+  const proposedHandlerType = "lex_first_draft_generate";
+  const proposedActionLabel = "Gerar primeira minuta juridica";
+  const processLabel = params.snapshot.processTask.processNumber || params.snapshot.processTask.title;
+  const reply = buildProcessMissionApprovalReply({
+    context: params.context,
+    proposedCapability,
+    proposedActionLabel,
+  });
+  const summary = `Missao processual de ${processLabel} pediu aprovacao para gerar primeira minuta.`;
+  const pendingEntities: Record<string, string> = {
+    process_task_id: params.snapshot.processTask.id,
+  };
+
+  if (params.snapshot.processTask.processNumber) {
+    pendingEntities.process_number = params.snapshot.processTask.processNumber;
+  }
+  if (params.snapshot.caseBrain.recommendedPieceInput) {
+    pendingEntities.recommended_piece_input = params.snapshot.caseBrain.recommendedPieceInput;
+  }
+  if (params.snapshot.caseBrain.recommendedPieceLabel) {
+    pendingEntities.recommended_piece_label = params.snapshot.caseBrain.recommendedPieceLabel;
+  }
+
+  if (!input.userId) {
+    const errorMessage = "Nao foi possivel abrir aprovacao juridica sem usuario solicitante autenticado.";
+    const blockedReply = buildProcessMissionExecutionBlockedReply({
+      context: params.context,
+      reason: errorMessage,
+    });
+    await registerProcessMissionStepResult(input, {
+      context: params.context,
+      status: "failed",
+      reply: blockedReply,
+      summary: `Falha ao abrir aprovacao para ${processLabel}.`,
+      errorMessage,
+    });
+
+    return {
+      status: "failed",
+      reply: blockedReply,
+      outputPayload: {
+        auditLogId: input.auditLogId || null,
+        handler_type: input.handlerType,
+        process_task_id: params.snapshot.processTask.id,
+        process_number: params.snapshot.processTask.processNumber,
+        process_mission_confidence: params.context.confidence,
+        process_mission_recommended_action: params.context.recommendedAction,
+        proposed_capability: proposedCapability,
+        approval_error: errorMessage,
+        external_side_effects_blocked: true,
+      },
+      data: { snapshot: params.snapshot, processMissionContext: params.context },
+    };
+  }
+
+  const idempotencyKey = buildProcessMissionApprovalAuditKey(input, params.context);
+  const { id: approvalAuditLogId, error } = await createAgentAuditLog({
+    tenantId: input.tenantId,
+    userId: input.userId,
+    skillInvoked: proposedCapability,
+    intentionRaw: `Missao processual supervisionada: ${proposedActionLabel} para ${processLabel}`,
+    status: "awaiting_approval",
+    idempotencyKey,
+    approvalStatus: "pending",
+    approvalContext: {
+      risk_level: "high",
+      source_capability: input.capabilityName,
+      source_handler_type: input.handlerType,
+      proposed_capability: proposedCapability,
+      proposed_handler_type: proposedHandlerType,
+      process_task_id: params.snapshot.processTask.id,
+      process_number: params.snapshot.processTask.processNumber,
+      client_name: params.snapshot.processTask.clientName,
+      recommended_piece_label: params.snapshot.caseBrain.recommendedPieceLabel,
+      mission_goal: params.context.missionGoal,
+      confidence: params.context.confidence,
+      factual_sources: params.context.grounding.factualSources,
+      missing_signals: params.context.grounding.missingSignals,
+      requested_at: new Date().toISOString(),
+    },
+    pendingExecutionPayload: {
+      entities: pendingEntities,
+      idempotencyKey,
+      skillName: proposedCapability,
+      schemaVersion: "1.0.0",
+      source: "legal_process_mission_execute_next",
+    },
+    idempotencyExpiresAt: new Date(Date.now() + 24 * 60 * 60 * 1000).toISOString(),
+  });
+
+  if (error || !approvalAuditLogId) {
+    const errorMessage = error || "Nao foi possivel criar a aprovacao supervisionada da minuta.";
+    const blockedReply = buildProcessMissionExecutionBlockedReply({
+      context: params.context,
+      reason: errorMessage,
+    });
+    await registerProcessMissionStepResult(input, {
+      context: params.context,
+      status: "failed",
+      reply: blockedReply,
+      summary: `Falha ao abrir aprovacao para ${processLabel}.`,
+      errorMessage,
+    });
+
+    return {
+      status: "failed",
+      reply: blockedReply,
+      outputPayload: {
+        auditLogId: input.auditLogId || null,
+        handler_type: input.handlerType,
+        process_task_id: params.snapshot.processTask.id,
+        process_number: params.snapshot.processTask.processNumber,
+        process_mission_confidence: params.context.confidence,
+        process_mission_recommended_action: params.context.recommendedAction,
+        proposed_capability: proposedCapability,
+        approval_error: errorMessage,
+        external_side_effects_blocked: true,
+      },
+      data: { snapshot: params.snapshot, processMissionContext: params.context },
+    };
+  }
+
+  await registerProcessMissionStepResult(input, {
+    context: params.context,
+    status: "blocked",
+    reply,
+    summary,
+    executedCapability: proposedCapability,
+    executedHandlerType: proposedHandlerType,
+    stepOutputPayload: {
+      approval_audit_log_id: approvalAuditLogId,
+      proposed_capability: proposedCapability,
+      proposed_handler_type: proposedHandlerType,
+      proposed_entities: pendingEntities,
+      external_side_effects_blocked: true,
+    },
+  });
+
+  return {
+    status: "awaiting_approval",
+    reply,
+    outputPayload: {
+      auditLogId: approvalAuditLogId,
+      sourceAuditLogId: input.auditLogId || null,
+      handler_type: input.handlerType,
+      process_task_id: params.snapshot.processTask.id,
+      process_number: params.snapshot.processTask.processNumber,
+      case_brain_task_id: params.snapshot.caseBrain.taskId,
+      process_mission_confidence: params.context.confidence,
+      process_mission_recommended_action: params.context.recommendedAction,
+      process_mission_goal: params.context.missionGoal,
+      proposed_capability: proposedCapability,
+      proposed_handler_type: proposedHandlerType,
+      proposed_action_label: proposedActionLabel,
+      recommended_piece_label: params.snapshot.caseBrain.recommendedPieceLabel,
+      approval_required: true,
+      external_side_effects_blocked: true,
+      awaitingPayload: {
+        idempotencyKey,
+        entities: pendingEntities,
+        skillName: proposedCapability,
+        riskLevel: "high",
+        schemaVersion: "1.0.0",
+        reason: "Geracao de minuta juridica exige aprovacao humana antes de chamar a Draft Factory.",
+        proposedActionLabel,
+        processLabel,
+        missionGoal: params.context.missionGoal,
+      },
+    },
+    data: {
+      snapshot: params.snapshot,
+      processMissionContext: params.context,
+      proposedCapability,
+      approvalAuditLogId,
+    },
+  };
+}
+
+async function registerProcessMissionStepResult(
+  input: DispatchCapabilityInput,
+  params: {
+    context: ReturnType<typeof buildProcessMissionContext>;
+    status: "executed" | "blocked" | "failed";
+    reply: string;
+    summary: string;
+    executedCapability?: string | null;
+    executedHandlerType?: string | null;
+    errorMessage?: string | null;
+    stepOutputPayload?: Record<string, unknown> | null;
+  }
+) {
+  const processLabel = params.context.process.processNumber || params.context.process.title;
+  await registerArtifact(input, {
+    artifactType: "process_mission_step_result",
+    title: `Resultado da missao processual - ${params.context.process.clientName || params.context.process.title}`,
+    mimeType: "application/json",
+    dedupeKey: input.auditLogId
+      ? `process-mission-step-result:${input.auditLogId}`
+      : `process-mission-step-result:${params.context.process.processTaskId}:${params.context.recommendedAction}:${params.status}`,
+    metadata: {
+      reply: params.reply,
+      summary: params.summary,
+      result_status: params.status,
+      process_task_id: params.context.process.processTaskId,
+      process_number: params.context.process.processNumber,
+      process_label: processLabel,
+      client_name: params.context.process.clientName,
+      process_mission_context: params.context,
+      process_mission_confidence: params.context.confidence,
+      process_mission_recommended_action: params.context.recommendedAction,
+      process_mission_goal: params.context.missionGoal,
+      executed_capability: params.executedCapability || null,
+      executed_handler_type: params.executedHandlerType || null,
+      step_output_payload: params.stepOutputPayload || null,
+      error_message: params.errorMessage || null,
+    },
+  });
+
+  await registerLearningEvent(input, "process_mission_step_executed", {
+    summary: params.summary,
+    result_status: params.status,
+    process_task_id: params.context.process.processTaskId,
+    process_number: params.context.process.processNumber,
+    client_name: params.context.process.clientName,
+    confidence: params.context.confidence,
+    recommended_action: params.context.recommendedAction,
+    mission_goal: params.context.missionGoal,
+    executed_capability: params.executedCapability || null,
+    executed_handler_type: params.executedHandlerType || null,
+    error_message: params.errorMessage || null,
+  });
+}
+
+async function runLegalProcessMissionExecuteNext(input: DispatchCapabilityInput): Promise<DispatchCapabilityResult> {
+  const snapshot = await getLegalCaseContextSnapshot({
+    tenantId: input.tenantId,
+    entities: input.entities,
+  });
+  const processMissionContext = buildProcessMissionContext(snapshot);
+  const processLabel = snapshot.processTask.processNumber || snapshot.processTask.title;
+
+  if (processMissionContext.confidence === "low") {
+    const reason = "a base do processo ainda esta fraca para execucao automatica";
+    const reply = buildProcessMissionExecutionBlockedReply({ context: processMissionContext, reason });
+    const summary = `Missao processual de ${processLabel} bloqueada por baixa confianca.`;
+    await registerProcessMissionStepResult(input, {
+      context: processMissionContext,
+      status: "blocked",
+      reply,
+      summary,
+      errorMessage: reason,
+    });
+
+    return {
+      status: "blocked",
+      reply,
+      outputPayload: {
+        auditLogId: input.auditLogId || null,
+        handler_type: input.handlerType,
+        process_task_id: snapshot.processTask.id,
+        process_number: snapshot.processTask.processNumber,
+        process_mission_confidence: processMissionContext.confidence,
+        process_mission_recommended_action: processMissionContext.recommendedAction,
+        blocked_reason: "low_confidence_process_mission",
+        external_side_effects_blocked: true,
+      },
+      data: { snapshot, processMissionContext },
+    };
+  }
+
+  if (processMissionContext.recommendedAction === "generate_first_draft") {
+    return requestProcessMissionDraftApproval(input, {
+      snapshot,
+      context: processMissionContext,
+    });
+  }
+
+  if (processMissionContext.recommendedAction !== "refresh_document_memory") {
+    const reason = `a acao ${formatProcessMissionRecommendedAction(processMissionContext.recommendedAction)} ainda exige supervisao explicita nesta fase`;
+    const reply = buildProcessMissionExecutionBlockedReply({ context: processMissionContext, reason });
+    const summary = `Missao processual de ${processLabel} bloqueada: ${processMissionContext.recommendedAction} ainda nao executa automaticamente.`;
+    await registerProcessMissionStepResult(input, {
+      context: processMissionContext,
+      status: "blocked",
+      reply,
+      summary,
+      errorMessage: reason,
+    });
+
+    return {
+      status: "blocked",
+      reply,
+      outputPayload: {
+        auditLogId: input.auditLogId || null,
+        handler_type: input.handlerType,
+        process_task_id: snapshot.processTask.id,
+        process_number: snapshot.processTask.processNumber,
+        process_mission_confidence: processMissionContext.confidence,
+        process_mission_recommended_action: processMissionContext.recommendedAction,
+        blocked_reason: "recommended_action_requires_supervision",
+        external_side_effects_blocked: true,
+      },
+      data: { snapshot, processMissionContext },
+    };
+  }
+
+  const refreshResult = await runLegalDocumentMemoryRefresh({
+    ...input,
+    capabilityName: "legal_document_memory_refresh",
+    handlerType: "lex_document_memory_refresh",
+    entities: { ...input.entities, process_task_id: snapshot.processTask.id },
+  });
+  const summary = refreshResult.status === "executed"
+    ? `Missao processual de ${processLabel} executou atualizacao de memoria documental.`
+    : `Missao processual de ${processLabel} tentou atualizar memoria documental, mas terminou com status ${refreshResult.status}.`;
+  const reply = [
+    "## Execucao da missao processual",
+    `- Processo: ${processLabel}`,
+    `- Acao executada: ${formatProcessMissionRecommendedAction(processMissionContext.recommendedAction)}`,
+    `- Status da acao: ${refreshResult.status}`,
+    "",
+    refreshResult.reply,
+  ].filter(Boolean).join("\n");
+
+  await registerProcessMissionStepResult(input, {
+    context: processMissionContext,
+    status: refreshResult.status === "executed" ? "executed" : refreshResult.status === "failed" ? "failed" : "blocked",
+    reply,
+    summary,
+    executedCapability: "legal_document_memory_refresh",
+    executedHandlerType: "lex_document_memory_refresh",
+    stepOutputPayload: refreshResult.outputPayload || null,
+  });
+
+  return {
+    status: refreshResult.status,
+    reply,
+    outputPayload: {
+      auditLogId: input.auditLogId || null,
+      handler_type: input.handlerType,
+      process_task_id: snapshot.processTask.id,
+      process_number: snapshot.processTask.processNumber,
+      process_mission_confidence: processMissionContext.confidence,
+      process_mission_recommended_action: processMissionContext.recommendedAction,
+      executed_capability: "legal_document_memory_refresh",
+      executed_handler_type: "lex_document_memory_refresh",
+      step_status: refreshResult.status,
+      step_output_payload: refreshResult.outputPayload || null,
+    },
+    data: {
+      snapshot,
+      processMissionContext,
+      refreshResult,
+    },
   };
 }
 
@@ -2864,6 +3522,7 @@ async function runSupportCaseStatus(input: DispatchCapabilityInput): Promise<Dis
       tenantId: input.tenantId,
       entities: input.entities,
     });
+    const processMissionContext = buildProcessMissionContext(snapshot);
     const contract = buildSupportCaseStatusContract(snapshot);
     const reply = buildSupportCaseStatusReply(contract);
     const summary = contract.responseMode === "handoff"
@@ -2896,6 +3555,7 @@ async function runSupportCaseStatus(input: DispatchCapabilityInput): Promise<Dis
         support_status_inference_notes: contract.grounding.inferenceNotes,
         support_status_missing_signals: contract.grounding.missingSignals,
         support_status_handoff_reason: contract.handoffReason,
+        process_mission_context: processMissionContext,
       },
     });
 
@@ -2917,6 +3577,8 @@ async function runSupportCaseStatus(input: DispatchCapabilityInput): Promise<Dis
       inference_notes: contract.grounding.inferenceNotes,
       missing_signals: contract.grounding.missingSignals,
       handoff_reason: contract.handoffReason,
+      process_mission_confidence: processMissionContext.confidence,
+      process_mission_recommended_action: processMissionContext.recommendedAction,
     });
 
     return {
@@ -2936,10 +3598,14 @@ async function runSupportCaseStatus(input: DispatchCapabilityInput): Promise<Dis
         support_status_inference_count: contract.grounding.inferenceNotes.length,
         support_status_missing_signal_count: contract.grounding.missingSignals.length,
         support_status_handoff_reason: contract.handoffReason,
+        process_mission_confidence: processMissionContext.confidence,
+        process_mission_recommended_action: processMissionContext.recommendedAction,
+        process_mission_goal: processMissionContext.missionGoal,
       },
       data: {
         snapshot,
         contract,
+        processMissionContext,
       },
     };
   } catch (error) {
@@ -4793,6 +5459,10 @@ export async function dispatchCapabilityExecution(input: DispatchCapabilityInput
       return runGrowthLeadQualify(input);
     case "growth_lead_intake":
       return runGrowthLeadIntake(input);
+    case "lex_process_mission_plan":
+      return runLegalProcessMissionPlan(input);
+    case "lex_process_mission_execute_next":
+      return runLegalProcessMissionExecuteNext(input);
     case "lex_case_context":
       return runLegalCaseContext(input);
     case "lex_support_case_status":

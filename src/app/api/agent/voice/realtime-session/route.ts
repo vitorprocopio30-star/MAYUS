@@ -6,6 +6,8 @@ import {
   MAYUS_REALTIME_MODEL,
   MAYUS_REALTIME_TOOLS,
   buildMayusRealtimeInstructions,
+  isMayusRealtimeModel,
+  normalizeMayusRealtimeModel,
   normalizeMayusRealtimeVoice,
 } from "@/lib/voice/realtime-persona";
 
@@ -67,9 +69,11 @@ export async function POST(req: NextRequest) {
 
     const body = await req.json().catch(() => ({}));
     const voice = normalizeMayusRealtimeVoice(body?.voice);
-    const model = typeof body?.model === "string" && body.model.trim()
-      ? body.model.trim()
-      : MAYUS_REALTIME_MODEL;
+    const requestedModel = typeof body?.model === "string" ? body.model.trim() : "";
+    if (requestedModel && !isMayusRealtimeModel(requestedModel)) {
+      return NextResponse.json({ error: "Modelo Realtime nao permitido para o MAYUS." }, { status: 400 });
+    }
+    const model = requestedModel ? normalizeMayusRealtimeModel(requestedModel) : MAYUS_REALTIME_MODEL;
 
     const { apiKey } = await requireTenantApiKey(auth.context.tenantId, "openai");
     if (!apiKey) {

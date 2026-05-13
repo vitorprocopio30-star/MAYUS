@@ -19,6 +19,7 @@ import { checkTenantLimits } from './limits';
 import { fetchAgentSkillByName } from '@/lib/agent/capabilities/registry';
 import { toCanonicalAccessRole } from '@/lib/permissions';
 import { createAgentAuditLog } from '@/lib/agent/audit';
+import { isBillingCapability, normalizeBillingEntities } from '@/lib/agent/capabilities/billing-normalization';
 
 // ─── Cliente Supabase (singleton no módulo) ───────────────────────────────────
 
@@ -182,24 +183,36 @@ export async function execute(
   }
 
   // 5. Gera idempotency_key antes de qualquer ação externa
+  const normalizedRouterResult = { ...routerResult };
+  if (isBillingCapability(skill.name, skill.handler_type)) {
+    const normalizedBilling = normalizeBillingEntities(routerResult.entities);
+    if (normalizedBilling.errors.length > 0) {
+      return {
+        status: 'failed',
+        message: normalizedBilling.errors[0],
+      };
+    }
+    normalizedRouterResult.entities = normalizedBilling.entities;
+  }
+
   const idempotencyKey = generateIdempotencyKey(
     context.tenantId,
     context.userId,
-    routerResult.intent
+    normalizedRouterResult.intent
   );
 
   // 6. Se requer confirmação humana
   if (skill.requires_human_confirmation) {
     // banco: entidades sanitizadas (sem PII)
-    const safeEntities = sanitizeEntities(routerResult.entities);
+    const safeEntities = sanitizeEntities(normalizedRouterResult.entities);
     // UI: entidades reais para decisão informada do aprovador (não persiste)
-    const rawEntities = routerResult.entities;
+    const rawEntities = normalizedRouterResult.entities;
 
     const auditLogId = await writeAuditLog({
       tenantId: context.tenantId,
       userId: context.userId,
       skillInvoked: skill.name,
-      intentionRaw: routerResult.safeText,
+      intentionRaw: normalizedRouterResult.safeText,
       status: 'awaiting_approval',
       idempotencyKey,
       approvalStatus: 'pending',
@@ -244,9 +257,9 @@ export async function execute(
     tenantId: context.tenantId,
     userId: context.userId,
     skillInvoked: skill.name,
-    intentionRaw: routerResult.safeText,
+    intentionRaw: normalizedRouterResult.safeText,
     payloadExecuted: {
-      entities: sanitizeEntities(routerResult.entities), // Banco: sem PII
+      entities: sanitizeEntities(normalizedRouterResult.entities), // Banco: sem PII
       idempotencyKey,
     },
     status: 'skill_executed',

@@ -101,7 +101,7 @@ describe("/api/whatsapp/webhook", () => {
     processPendingWhatsAppRepliesBatchMock.mockResolvedValue({ picked: 1, processed: 1, failed: 0, auto_sent: 1, results: [] });
   });
 
-  it("enfileira e processa resposta de texto Meta imediatamente preservando provider", async () => {
+  it("enfileira e aciona resposta agentica de texto Meta preservando provider", async () => {
     const { POST } = await import("./route");
     const request = new Request("http://localhost/api/whatsapp/webhook", {
       method: "POST",

@@ -35,7 +35,7 @@ describe("sales-llm-reply", () => {
     });
   });
 
-  it("normaliza bancada com DeepSeek V4 Pro e candidatos unicos", () => {
+  it("normaliza bancada com modelo rapido e candidatos unicos", () => {
     const config = normalizeSalesLlmTestbenchConfig({
       enabled: true,
       default_model: "deepseek/deepseek-v4-pro",
@@ -49,7 +49,8 @@ describe("sales-llm-reply", () => {
       candidate_models: ["deepseek/deepseek-v4-pro", "minimax/minimax-m2.7", "qwen/qwen3.6-plus"],
       routing_mode: "ab_test",
     });
-    expect(DEFAULT_SALES_LLM_TESTBENCH.default_model).toBe("deepseek/deepseek-v4-pro");
+    expect(DEFAULT_SALES_LLM_TESTBENCH.default_model).toBe("openai/gpt-5.4-nano");
+    expect(SALES_LLM_TESTBENCH_MODELS).toContain("openai/gpt-5.4-nano");
     expect(SALES_LLM_TESTBENCH_MODELS).toContain("moonshotai/kimi-k2.6");
   });
 

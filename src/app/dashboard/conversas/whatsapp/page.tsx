@@ -84,7 +84,10 @@ type WhatsAppMediaObservability = {
 export default function WhatsAppChatPremiumPage() {
   const { profile } = useUserProfile();
   const supabase = createClient();
+  const messagesContainerRef = useRef<HTMLDivElement>(null);
   const messagesEndRef = useRef<HTMLDivElement>(null);
+  const shouldAutoScrollRef = useRef(true);
+  const pendingScrollRestoreRef = useRef<{ top: number; height: number } | null>(null);
 
   const [activeTab, setActiveTab] = useState("minhas"); // minhas, aguardando, todas
   const [inputMode, setInputMode] = useState("responder");
@@ -103,6 +106,7 @@ export default function WhatsAppChatPremiumPage() {
   const [activeContact, setActiveContact] = useState<any | null>(null);
   const [messages, setMessages] = useState<any[]>([]);
   const [isLoading, setIsLoading] = useState(true);
+  const [hasUnreadNewMessages, setHasUnreadNewMessages] = useState(false);
 
   // Busca e Filtros
   const [searchQuery, setSearchQuery] = useState("");
@@ -272,7 +276,16 @@ export default function WhatsAppChatPremiumPage() {
   useEffect(() => {
     if (!profile?.tenant_id || !activeContact) return;
 
-    const fetchMessages = async () => {
+    const rememberScrollPosition = () => {
+      const container = messagesContainerRef.current;
+      if (!container || shouldAutoScrollRef.current) return;
+      pendingScrollRestoreRef.current = {
+        top: container.scrollTop,
+        height: container.scrollHeight,
+      };
+    };
+
+    const fetchMessages = async (options?: { forceScroll?: boolean }) => {
        const { data } = await supabase
          .from("whatsapp_messages")
          .select("*")
@@ -280,33 +293,101 @@ export default function WhatsAppChatPremiumPage() {
          .eq("contact_id", activeContact.id)
          .order("created_at", { ascending: true });
 
-       if (data) {
-          setMessages(await signMessageMediaUrls(data));
-          scrollToBottom();
-       }
+        if (data) {
+          if (options?.forceScroll !== true) rememberScrollPosition();
+           setMessages(await signMessageMediaUrls(data));
+          if (options?.forceScroll === true || shouldAutoScrollRef.current) {
+            scrollToBottom({ force: options?.forceScroll === true, behavior: options?.forceScroll ? "auto" : "smooth" });
+          }
+        }
     };
 
-    fetchMessages();
+    fetchMessages({ forceScroll: true });
     loadLatestMayusDraft(activeContact.id);
+
+    const upsertSignedMessage = async (row: any) => {
+      const [signedMessage] = await signMessageMediaUrls([row]);
+      const shouldScroll = shouldAutoScrollRef.current;
+      if (!shouldScroll) {
+        const container = messagesContainerRef.current;
+        if (container) pendingScrollRestoreRef.current = { top: container.scrollTop, height: container.scrollHeight };
+      }
+      setMessages((current) => {
+        const exists = current.some((message) => message.id === row.id);
+        if (exists) return current.map((message) => message.id === row.id ? { ...message, ...signedMessage } : message);
+        return [...current, signedMessage];
+      });
+      if (shouldScroll) {
+        scrollToBottom();
+      } else {
+        setHasUnreadNewMessages(true);
+      }
+    };
 
     const channel = supabase
        .channel(`chat_ws_meta_${activeContact.id}`)
        .on("postgres_changes", { event: "INSERT", schema: "public", table: "whatsapp_messages", filter: `contact_id=eq.${activeContact.id}` },
           async (payload) => {
-            const [signedMessage] = await signMessageMediaUrls([payload.new]);
-            setMessages((current) => current.some((message) => message.id === payload.new.id) ? current : [...current, signedMessage]);
-            scrollToBottom();
-           if (payload.new?.direction === "inbound") {
-             setTimeout(() => loadLatestMayusDraft(activeContact.id), 1200);
-           }
-         }
+            await upsertSignedMessage(payload.new);
+            fetchContacts();
+            if (payload.new?.direction === "inbound") {
+              setTimeout(() => loadLatestMayusDraft(activeContact.id), 1200);
+            }
+          }
+       )
+       .on("postgres_changes", { event: "UPDATE", schema: "public", table: "whatsapp_messages", filter: `contact_id=eq.${activeContact.id}` },
+          async (payload) => {
+            await upsertSignedMessage(payload.new);
+            fetchContacts();
+          }
        ).subscribe();
 
-    return () => { supabase.removeChannel(channel); };
-  }, [activeContact]);
+    const poll = window.setInterval(() => {
+      if (document.visibilityState === "visible") fetchMessages();
+    }, 4000);
+    const onFocus = () => fetchMessages();
+    window.addEventListener("focus", onFocus);
 
-  const scrollToBottom = () => {
-    setTimeout(() => messagesEndRef.current?.scrollIntoView({ behavior: "smooth" }), 100);
+    return () => {
+      supabase.removeChannel(channel);
+      window.clearInterval(poll);
+      window.removeEventListener("focus", onFocus);
+    };
+  }, [activeContact?.id, profile?.tenant_id]);
+
+  useEffect(() => {
+    const restore = pendingScrollRestoreRef.current;
+    if (!restore) return;
+    pendingScrollRestoreRef.current = null;
+    window.requestAnimationFrame(() => {
+      const container = messagesContainerRef.current;
+      if (!container) return;
+      const heightDelta = container.scrollHeight - restore.height;
+      container.scrollTop = restore.top + Math.max(0, heightDelta);
+      shouldAutoScrollRef.current = false;
+    });
+  }, [messages]);
+
+  const updateScrollIntent = () => {
+    const container = messagesContainerRef.current;
+    if (!container) return;
+    const distanceFromBottom = container.scrollHeight - container.scrollTop - container.clientHeight;
+    const nearBottom = distanceFromBottom < 120;
+    shouldAutoScrollRef.current = nearBottom;
+    if (nearBottom) setHasUnreadNewMessages(false);
+  };
+
+  const scrollToBottom = (options?: { force?: boolean; behavior?: ScrollBehavior }) => {
+    const shouldScroll = options?.force || shouldAutoScrollRef.current;
+    if (!shouldScroll) {
+      setHasUnreadNewMessages(true);
+      return;
+    }
+    setTimeout(() => {
+      messagesEndRef.current?.scrollIntoView({ behavior: options?.behavior || "smooth" });
+      shouldAutoScrollRef.current = true;
+      setHasUnreadNewMessages(false);
+    }, 100);
   };
 
   const signMessageMediaUrls = async (rows: any[]) => {
@@ -390,7 +471,7 @@ export default function WhatsAppChatPremiumPage() {
         is_simulated: true
       };
       setMessages(prev => [...prev, audioMsg]);
-      scrollToBottom();
+      scrollToBottom({ force: true });
       toast.success("Audio simulado enviado.");
     }
   };
@@ -489,7 +570,7 @@ export default function WhatsAppChatPremiumPage() {
       setMessages(prev => [...prev, simulatedMsg]);
       setInputText("");
       setSelectedFile(null);
-      scrollToBottom();
+      scrollToBottom({ force: true });
       toast.success("Mensagem de teste enviada.");
       return;
     }
@@ -695,7 +776,7 @@ export default function WhatsAppChatPremiumPage() {
     if (data) {
       setMessages((current) => current.some((message) => message.id === data.id) ? current : [...current, data]);
     }
-    scrollToBottom();
+    scrollToBottom({ force: true });
     toast.success("Nota interna salva somente para a equipe.");
     return data;
   };
@@ -869,7 +950,7 @@ export default function WhatsAppChatPremiumPage() {
         created_at: new Date().toISOString()
       };
       setMessages(prev => [...prev, contractMsg]);
-      scrollToBottom();
+      scrollToBottom({ force: true });
 
     } catch (error: any) {
       toast.error(error.message || "Erro inesperado", { id: toastId });
@@ -1066,7 +1147,7 @@ export default function WhatsAppChatPremiumPage() {
                     </div>
                 </div>
 
-                <div className="flex-1 overflow-y-auto p-6 flex flex-col gap-6 z-10 scroll-smooth no-scrollbar min-h-0">
+                <div ref={messagesContainerRef} onScroll={updateScrollIntent} className="relative flex-1 overflow-y-auto p-6 flex flex-col gap-6 z-10 scroll-smooth no-scrollbar min-h-0">
                     {activeContact && messages.length === 0 && (
                       <div className="flex justify-center my-10 animate-in fade-in slide-in-from-bottom-2 duration-300">
                          <span className="bg-[#CCA761]/10 border border-[#CCA761]/20 text-[#CCA761] px-4 py-2 rounded-full text-xs font-bold tracking-wide shadow-[0_0_15px_rgba(204,167,97,0.1)]">
@@ -1116,9 +1197,18 @@ export default function WhatsAppChatPremiumPage() {
                              )}
                           </div>
                        );
-                    })}
-                    <div ref={messagesEndRef} />
-                </div>
+                     })}
+                     <div ref={messagesEndRef} />
+                     {hasUnreadNewMessages && (
+                       <button
+                         type="button"
+                         onClick={() => scrollToBottom({ force: true })}
+                         className="sticky bottom-3 self-center rounded-full border border-[#CCA761]/30 bg-[#0a0a0a]/95 px-4 py-2 text-[10px] font-black uppercase tracking-widest text-[#CCA761] shadow-[0_0_20px_rgba(204,167,97,0.18)] backdrop-blur hover:bg-[#CCA761] hover:text-black transition-colors"
+                       >
+                         Novas mensagens
+                       </button>
+                     )}
+                 </div>
               </>
             ) : (
                 <div className="flex-1 flex flex-col items-center justify-center p-20 z-10 min-h-0">

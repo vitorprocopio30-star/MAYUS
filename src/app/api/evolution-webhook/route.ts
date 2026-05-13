@@ -2,18 +2,23 @@ import { NextResponse } from "next/server";
 import { createClient } from "@supabase/supabase-js";
 import crypto from "crypto";
 import { handleWhatsAppInternalCommand } from "@/lib/mayus/whatsapp-command-runtime";
+import { isAuthorizedWhatsAppCommandSender } from "@/lib/mayus/whatsapp-command-center";
 import { listTenantIntegrationsResolved } from "@/lib/integrations/server";
 import { processPendingWhatsAppMediaBatch } from "@/lib/whatsapp/media-processor";
 import { enqueueWhatsAppReply, processPendingWhatsAppRepliesBatch } from "@/lib/whatsapp/reply-processor";
 import { sendWhatsAppMessage } from "@/lib/whatsapp/send-message";
+import { markEvolutionMessageAsRead, sendEvolutionPresence } from "@/lib/whatsapp/evolution-presence";
+
+export const maxDuration = 60;
 
 const supabase = createClient(
   process.env.NEXT_PUBLIC_SUPABASE_URL!,
   process.env.SUPABASE_SERVICE_ROLE_KEY!
 );
 
-const IMMEDIATE_REPLY_TIMEOUT_MS = 10000;
 const IMMEDIATE_MEDIA_TIMEOUT_MS = 8000;
+const IMMEDIATE_AUDIO_COMMAND_TIMEOUT_MS = 25000;
+const QUEUED_REPLY_TIMEOUT_MS = 58000;
 
 function verifySignature(body: string, signature: string | null): boolean {
   const secret = process.env.EVOLUTION_WEBHOOK_SECRET;
@@ -42,7 +47,27 @@ function normalizeText(value: string | null | undefined) {
     .toLowerCase();
 }
 
-async function processImmediateReply(params: { messageId: string }) {
+async function processImmediateMedia(params: { messageId: string; timeoutMs?: number }) {
+  let timeout: ReturnType<typeof setTimeout> | null = null;
+  const timeoutMs = params.timeoutMs || IMMEDIATE_MEDIA_TIMEOUT_MS;
+
+  try {
+    return await Promise.race([
+      processPendingWhatsAppMediaBatch({
+        supabase,
+        messageId: params.messageId,
+        limit: 1,
+      }),
+      new Promise((_, reject) => {
+        timeout = setTimeout(() => reject(new Error(`Timeout ao processar midia imediata apos ${timeoutMs}ms.`)), timeoutMs);
+      }),
+    ]);
+  } finally {
+    if (timeout) clearTimeout(timeout);
+  }
+}
+
+async function processQueuedReply(params: { messageId: string }) {
   let timeout: ReturnType<typeof setTimeout> | null = null;
 
   try {
@@ -53,26 +78,7 @@ async function processImmediateReply(params: { messageId: string }) {
         limit: 1,
       }),
       new Promise((_, reject) => {
-        timeout = setTimeout(() => reject(new Error(`Timeout ao processar resposta imediata apos ${IMMEDIATE_REPLY_TIMEOUT_MS}ms.`)), IMMEDIATE_REPLY_TIMEOUT_MS);
-      }),
-    ]);
-  } finally {
-    if (timeout) clearTimeout(timeout);
-  }
-}
-
-async function processImmediateMedia(params: { messageId: string }) {
-  let timeout: ReturnType<typeof setTimeout> | null = null;
-
-  try {
-    await Promise.race([
-      processPendingWhatsAppMediaBatch({
-        supabase,
-        messageId: params.messageId,
-        limit: 1,
-      }),
-      new Promise((_, reject) => {
-        timeout = setTimeout(() => reject(new Error(`Timeout ao processar midia imediata apos ${IMMEDIATE_MEDIA_TIMEOUT_MS}ms.`)), IMMEDIATE_MEDIA_TIMEOUT_MS);
+        timeout = setTimeout(() => reject(new Error(`Timeout ao processar resposta agentica apos ${QUEUED_REPLY_TIMEOUT_MS}ms.`)), QUEUED_REPLY_TIMEOUT_MS);
       }),
     ]);
   } finally {
@@ -87,9 +93,11 @@ function buildImmediateMediaAck(params: { messageType: string; content: string; 
     ? "Recebi a imagem. Vou organizar a analise inicial com seguranca."
     : params.messageType === "document"
       ? "Recebi o documento. Vou organizar a analise inicial com seguranca."
+      : params.messageType === "audio"
+        ? "Recebi o audio. Vou organizar o contexto com seguranca."
       : "Recebi o arquivo. Vou organizar a analise inicial com seguranca.";
 
-  if (looksLikePayroll) {
+  if (looksLikePayroll && params.messageType !== "audio") {
     return [
       "Recebi o contracheque. Vou analisar a parte dos descontos com cuidado.",
       "Se puder, me diga qual desconto chamou sua atencao ou qual valor/nome voce quer conferir.",
@@ -100,6 +108,98 @@ function buildImmediateMediaAck(params: { messageType: string; content: string; 
     genericReceipt,
     "Se tiver um ponto especifico para conferir, me diga em uma frase.",
   ].join("\n\n");
+}
+
+async function readProcessedAudioTranscript(messageId: string) {
+  const { data } = await supabase
+    .from("whatsapp_messages")
+    .select("media_text, media_summary, metadata")
+    .eq("id", messageId)
+    .maybeSingle<{ media_text: string | null; media_summary: string | null; metadata: Record<string, any> | null }>();
+
+  const transcript = String(data?.media_text || "").replace(/\s+/g, " ").trim();
+  return {
+    transcript: transcript || null,
+    metadata: data?.metadata || null,
+  };
+}
+
+async function markAudioInternalCommandHandled(params: {
+  messageId: string;
+  metadata: Record<string, any> | null;
+  transcript: string;
+}) {
+  await supabase
+    .from("whatsapp_messages")
+    .update({
+      content: params.transcript,
+      metadata: {
+        ...(params.metadata || {}),
+        audio_transcript_used_as_command: true,
+        audio_transcript_used_as_command_at: new Date().toISOString(),
+        reply_processing_status: "processed",
+        reply_processed_at: new Date().toISOString(),
+        reply_auto_sent: false,
+      },
+    })
+    .eq("id", params.messageId);
+}
+
+async function fetchTenantAiFeatures(tenantId: string) {
+  const { data } = await supabase
+    .from("tenant_settings")
+    .select("ai_features")
+    .eq("tenant_id", tenantId)
+    .maybeSingle<{ ai_features: Record<string, any> | null }>();
+
+  return data?.ai_features && typeof data.ai_features === "object" ? data.ai_features : {};
+}
+
+async function markOwnerAudioCommandSuppressed(params: {
+  messageId: string;
+  metadata: Record<string, any> | null;
+  transcript?: string | null;
+  reason: string;
+}) {
+  await supabase
+    .from("whatsapp_messages")
+    .update({
+      ...(params.transcript ? { content: params.transcript } : {}),
+      metadata: {
+        ...(params.metadata || {}),
+        owner_audio_command_attempted: true,
+        owner_audio_command_suppressed: true,
+        owner_audio_command_suppressed_reason: params.reason,
+        owner_audio_command_suppressed_at: new Date().toISOString(),
+        reply_processing_status: "processed",
+        reply_processed_at: new Date().toISOString(),
+        reply_auto_sent: false,
+        media_reply_suppressed: "owner_audio",
+      },
+    })
+    .eq("id", params.messageId);
+}
+
+async function sendOwnerAudioFallback(params: {
+  tenantId: string;
+  contactId: string;
+  phoneNumber: string;
+  reason: string;
+}) {
+  await sendWhatsAppMessage({
+    supabase,
+    tenantId: params.tenantId,
+    contactId: params.contactId,
+    phoneNumber: params.phoneNumber,
+    preferredProvider: "evolution",
+    text: "Nao consegui entender esse audio como comando interno. Pode mandar em texto ou dizer: Mayus, relatorio do escritorio.",
+    humanizeDelivery: true,
+    metadata: {
+      source: "owner_audio_command_fallback",
+      reason: params.reason,
+      external_customer_reply: false,
+    },
+  });
 }
 
 async function sendImmediateMediaAck(params: {
@@ -314,6 +414,18 @@ export async function POST(req: Request) {
         return NextResponse.json({ success: true, updated: Boolean(messageId) });
       }
 
+      const aiFeatures = !fromMe && messageType === "audio"
+        ? await fetchTenantAiFeatures(tenantId)
+        : {};
+      const isOwnerAudioCommandCandidate = !fromMe
+        && messageType === "audio"
+        && isAuthorizedWhatsAppCommandSender({ senderPhone: remoteJid, aiFeatures });
+
+      if (!fromMe) {
+        await markEvolutionMessageAsRead({ tenantId, remoteJid, messageId });
+        await sendEvolutionPresence({ tenantId, remoteJid, presence: "available" });
+      }
+
       if (messageId) {
         const { data: existingMessage } = await supabase
           .from("whatsapp_messages")
@@ -377,6 +489,10 @@ export async function POST(req: Request) {
         evolution_instance: instanceName,
         evolution_message_envelope: messageEnvelope,
         evolution_message_payload: messagePayload,
+        ...(isOwnerAudioCommandCandidate ? {
+          owner_audio_command_attempted: true,
+          media_reply_suppressed: "owner_audio",
+        } : {}),
       } : { reply_trigger: "evolution_webhook" };
 
       // 3. Salvar a Mensagem
@@ -413,7 +529,83 @@ export async function POST(req: Request) {
 
       if (!fromMe) {
         if (shouldQueueMedia) {
+          let mediaAlreadyProcessed = false;
+
           if (savedMessage?.id) {
+            if (messageType === "audio") {
+              try {
+                await processImmediateMedia({
+                  messageId: savedMessage.id,
+                  timeoutMs: IMMEDIATE_AUDIO_COMMAND_TIMEOUT_MS,
+                });
+                mediaAlreadyProcessed = true;
+              } catch (mediaError) {
+                console.error("[Evolution Webhook] Erro ao processar audio imediato:", mediaError);
+              }
+
+              try {
+                const processedAudio = await readProcessedAudioTranscript(savedMessage.id);
+                if (processedAudio.transcript) {
+                  const internalCommand = await handleWhatsAppInternalCommand({
+                    supabase,
+                    tenantId,
+                    senderPhone: remoteJid,
+                    content: processedAudio.transcript,
+                    contactId,
+                    source: "evolution_webhook",
+                  });
+
+                  if (internalCommand.handled) {
+                    await markAudioInternalCommandHandled({
+                      messageId: savedMessage.id,
+                      metadata: processedAudio.metadata || messageMetadata,
+                      transcript: processedAudio.transcript,
+                    });
+                    console.log("[Evolution Webhook] Audio roteado como comando interno MAYUS:", {
+                      tenantId,
+                      intent: internalCommand.intent,
+                      sent: internalCommand.sent,
+                    });
+                    return NextResponse.json({ success: true, internal_command: true, audio_transcribed: true });
+                  }
+                }
+
+                if (isOwnerAudioCommandCandidate) {
+                  const reason = processedAudio.transcript ? "unknown_internal_command_intent" : "audio_transcription_unavailable";
+                  await markOwnerAudioCommandSuppressed({
+                    messageId: savedMessage.id,
+                    metadata: processedAudio.metadata || messageMetadata,
+                    transcript: processedAudio.transcript,
+                    reason,
+                  });
+                  await sendOwnerAudioFallback({
+                    tenantId,
+                    contactId,
+                    phoneNumber: remoteJid,
+                    reason,
+                  });
+                  return NextResponse.json({ success: true, owner_audio_command: true, handled: false, reason });
+                }
+              } catch (commandError) {
+                console.error("[Evolution Webhook] Erro ao processar audio como comando interno MAYUS:", commandError);
+                if (isOwnerAudioCommandCandidate) {
+                  const reason = "owner_audio_command_error";
+                  await markOwnerAudioCommandSuppressed({
+                    messageId: savedMessage.id,
+                    metadata: messageMetadata,
+                    reason,
+                  });
+                  await sendOwnerAudioFallback({
+                    tenantId,
+                    contactId,
+                    phoneNumber: remoteJid,
+                    reason,
+                  });
+                  return NextResponse.json({ success: true, owner_audio_command: true, handled: false, reason });
+                }
+              }
+            }
+
             try {
               await sendImmediateMediaAck({
                 tenantId,
@@ -429,10 +621,12 @@ export async function POST(req: Request) {
               console.error("[Evolution Webhook] Erro ao enviar confirmacao imediata de midia:", ackError);
             }
 
-            try {
-              await processImmediateMedia({ messageId: savedMessage.id });
-            } catch (mediaError) {
-              console.error("[Evolution Webhook] Erro ao processar midia imediata:", mediaError);
+            if (!mediaAlreadyProcessed) {
+              try {
+                await processImmediateMedia({ messageId: savedMessage.id });
+              } catch (mediaError) {
+                console.error("[Evolution Webhook] Erro ao processar midia imediata:", mediaError);
+              }
             }
           }
 
@@ -478,9 +672,12 @@ export async function POST(req: Request) {
           });
 
           try {
-            await processImmediateReply({ messageId: savedMessage.id });
+            await sendEvolutionPresence({ tenantId, remoteJid, presence: "composing", delayMs: 8000 });
+            await processQueuedReply({ messageId: savedMessage.id });
           } catch (replyError) {
-            console.error("[Evolution Webhook] Erro ao processar resposta imediata:", replyError);
+            console.error("[Evolution Webhook] Erro ao processar resposta agentica enfileirada:", replyError);
+          } finally {
+            await sendEvolutionPresence({ tenantId, remoteJid, presence: "paused" });
           }
         }
       }

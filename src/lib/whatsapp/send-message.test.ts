@@ -1,11 +1,16 @@
 import { beforeEach, describe, expect, it, vi } from "vitest";
 
-const { listTenantIntegrationsResolvedMock } = vi.hoisted(() => ({
+const { listTenantIntegrationsResolvedMock, sendEvolutionPresenceMock } = vi.hoisted(() => ({
   listTenantIntegrationsResolvedMock: vi.fn(),
+  sendEvolutionPresenceMock: vi.fn(),
 }));
 
 vi.mock("@/lib/integrations/server", () => ({
   listTenantIntegrationsResolved: listTenantIntegrationsResolvedMock,
+}));
+
+vi.mock("@/lib/whatsapp/evolution-presence", () => ({
+  sendEvolutionPresence: sendEvolutionPresenceMock,
 }));
 
 import { sendWhatsAppMessage } from "./send-message";
@@ -27,6 +32,8 @@ function makeSupabase() {
 describe("sendWhatsAppMessage", () => {
   beforeEach(() => {
     listTenantIntegrationsResolvedMock.mockReset();
+    sendEvolutionPresenceMock.mockReset();
+    sendEvolutionPresenceMock.mockResolvedValue({ ok: true });
   });
 
   it("envia por Evolution, salva historico e preserva metadados", async () => {
@@ -187,6 +194,50 @@ describe("sendWhatsAppMessage", () => {
       message_id_from_evolution: null,
       content: "Oi pela Meta",
     }));
+  });
+
+  it("sinaliza digitando e pausado quando envio Evolution e humanizado", async () => {
+    const { supabase } = makeSupabase();
+    const fetcher = vi.fn(async () => new Response(JSON.stringify({ key: { id: "msg-humanized-1" } }), { status: 200 }));
+    listTenantIntegrationsResolvedMock.mockResolvedValueOnce([
+      {
+        id: "evo-1",
+        tenant_id: "tenant-1",
+        provider: "evolution",
+        api_key: "evo-key",
+        webhook_secret: null,
+        webhook_url: null,
+        instance_name: "https://evolution.example.com|mayus",
+        status: "active",
+        metadata: null,
+        display_name: "Evolution",
+      },
+    ]);
+
+    await sendWhatsAppMessage({
+      supabase,
+      tenantId: "tenant-1",
+      contactId: "contact-1",
+      phoneNumber: "5511999999999@s.whatsapp.net",
+      text: "Resposta humana do MAYUS",
+      humanizeDelivery: true,
+      fetcher: fetcher as any,
+    });
+
+    expect(sendEvolutionPresenceMock).toHaveBeenCalledWith(expect.objectContaining({
+      tenantId: "tenant-1",
+      remoteJid: "5511999999999@s.whatsapp.net",
+      presence: "composing",
+    }));
+    expect(sendEvolutionPresenceMock).toHaveBeenCalledWith(expect.objectContaining({
+      tenantId: "tenant-1",
+      remoteJid: "5511999999999@s.whatsapp.net",
+      presence: "paused",
+    }));
+    expect(fetcher).toHaveBeenCalledWith(
+      "https://evolution.example.com/message/sendText/mayus",
+      expect.objectContaining({ method: "POST" }),
+    );
   });
 
   it("falha sem fallback quando provider preferido nao existe", async () => {

@@ -129,9 +129,12 @@ describe("tenant doctor", () => {
     const commercial = report.checks.find((item) => item.id === "commercial:sales_profile");
     expect(commercial?.status).toBe("warning");
     expect(commercial?.nextAction).toContain("cliente ideal");
+    const playbook = report.checks.find((item) => item.id === "commercial:office_playbook_profile");
+    expect(playbook?.status).toBe("warning");
+    expect(playbook?.nextAction).toContain("Perguntar ao dono");
     const testbench = report.checks.find((item) => item.id === "commercial:sales_llm_testbench");
     expect(testbench?.status).toBe("warning");
-    expect(testbench?.nextAction).toContain("DeepSeek V4 Pro");
+    expect(testbench?.nextAction).toContain("GPT-5.4 nano");
     const operatingPartner = report.checks.find((item) => item.id === "agent:mayus_operating_partner");
     expect(operatingPartner?.status).toBe("warning");
     expect(operatingPartner?.nextAction).toContain("socio virtual");
@@ -140,7 +143,7 @@ describe("tenant doctor", () => {
     expect(officeProfile?.nextAction).toContain("Auto Setup Doctor");
   });
 
-  it("auto-configures the sales LLM testbench with DeepSeek V4 Pro", async () => {
+  it("auto-configures the sales LLM testbench and owner playbook questions", async () => {
     const upserts: any[] = [];
     const supabase = {
       from(table: string) {
@@ -197,13 +200,27 @@ describe("tenant doctor", () => {
       ai_features: expect.objectContaining({
         sales_llm_testbench: expect.objectContaining({
           enabled: true,
-          default_model: "deepseek/deepseek-v4-pro",
+          default_model: "openai/gpt-5.4-nano",
           candidate_models: expect.arrayContaining([
+            "openai/gpt-5.4-nano",
             "minimax/minimax-m2.7",
+            "deepseek/deepseek-v4-pro",
             "xiaomi/mimo-v2.5",
             "qwen/qwen3.6-plus",
             "moonshotai/kimi-k2.6",
           ]),
+        }),
+      }),
+    })]));
+    const playbook = report.checks.find((item) => item.id === "commercial:office_playbook_profile");
+    expect(playbook?.status).toBe("fixed");
+    expect(upserts).toEqual(expect.arrayContaining([expect.objectContaining({
+      tenant_id: "tenant-1",
+      ai_features: expect.objectContaining({
+        office_playbook_profile: expect.objectContaining({
+          status: "needs_owner_input",
+          owner_questions: expect.arrayContaining([expect.stringContaining("tese")]),
+          forbidden_claims: expect.arrayContaining(["causa ganha"]),
         }),
       }),
     })]));

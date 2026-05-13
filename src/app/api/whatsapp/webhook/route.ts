@@ -3,6 +3,8 @@ import { createClient } from "@supabase/supabase-js";
 import { handleWhatsAppInternalCommand } from "@/lib/mayus/whatsapp-command-runtime";
 import { enqueueWhatsAppReply, processPendingWhatsAppRepliesBatch } from "@/lib/whatsapp/reply-processor";
 
+export const maxDuration = 60;
+
 // ==============================================================================
 // 🚀 MAYUS - WEBHOOK OFICIAL META CLOUD API (WhatsApp Business Platform)
 // ==============================================================================
@@ -16,9 +18,9 @@ const supabase = createClient(
   process.env.SUPABASE_SERVICE_ROLE_KEY!
 );
 
-const IMMEDIATE_REPLY_TIMEOUT_MS = 8000;
+const QUEUED_REPLY_TIMEOUT_MS = 58000;
 
-async function processImmediateReply(params: { messageId: string }) {
+async function processQueuedReply(params: { messageId: string }) {
   let timeout: ReturnType<typeof setTimeout> | null = null;
 
   try {
@@ -29,7 +31,7 @@ async function processImmediateReply(params: { messageId: string }) {
         limit: 1,
       }),
       new Promise((_, reject) => {
-        timeout = setTimeout(() => reject(new Error(`Timeout ao processar resposta imediata apos ${IMMEDIATE_REPLY_TIMEOUT_MS}ms.`)), IMMEDIATE_REPLY_TIMEOUT_MS);
+        timeout = setTimeout(() => reject(new Error(`Timeout ao processar resposta agentica apos ${QUEUED_REPLY_TIMEOUT_MS}ms.`)), QUEUED_REPLY_TIMEOUT_MS);
       }),
     ]);
   } finally {
@@ -373,9 +375,9 @@ export async function POST(req: NextRequest) {
           });
 
           try {
-            await processImmediateReply({ messageId: savedMessage.id });
+            await processQueuedReply({ messageId: savedMessage.id });
           } catch (replyError) {
-            console.error("[Meta Webhook] Erro ao processar resposta imediata:", replyError);
+            console.error("[Meta Webhook] Erro ao processar resposta agentica enfileirada:", replyError);
           }
         }
       }

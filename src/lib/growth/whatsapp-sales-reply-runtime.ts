@@ -26,9 +26,26 @@ import {
 } from "@/lib/agent/mayus-operating-partner-actions";
 import { sendWhatsAppMessage, type SendWhatsAppMessageResult } from "@/lib/whatsapp/send-message";
 import type { WhatsAppSendProvider } from "@/lib/whatsapp/send-message";
+import {
+  RMC_FORBIDDEN_CLAIMS,
+  RMC_OFFER_POSITIONING,
+  RMC_PLAYBOOK_CONTEXT,
+  RMC_QUALIFICATION_QUESTIONS,
+  RMC_SALES_DOCUMENT_SUMMARY,
+  RMC_SALES_RULES,
+} from "@/lib/growth/rmc-playbook";
+import { normalizeOfficePlaybookProfile, summarizeOfficePlaybookForPrompt } from "@/lib/growth/office-playbook-profile";
+import { fetchWhatsAppProcessStatusContext } from "@/lib/whatsapp/process-status-context";
+import { isAuthorizedWhatsAppCommandSender } from "@/lib/mayus/whatsapp-command-center";
 
 function getStringValue(value: unknown) {
   return typeof value === "string" && value.trim().length > 0 ? value.trim() : null;
+}
+
+function getOfficeNameValue(value: unknown) {
+  const text = getStringValue(value);
+  if (!text) return null;
+  return /^mayus$/i.test(text) ? null : text;
 }
 
 function getStringArray(value: unknown) {
@@ -42,6 +59,10 @@ function isExplicitlyEnabled(value: unknown) {
 
 function isExplicitlyDisabled(value: unknown) {
   return Boolean(value && typeof value === "object" && !Array.isArray(value) && (value as { enabled?: unknown }).enabled === false);
+}
+
+function shouldUseDefaultRmcPlaybook(features: Record<string, any>) {
+  return getStringValue(features.sales_playbook_template) === "rmc_dutra";
 }
 
 async function loadSalesRuntimeSettings(params: {
@@ -60,62 +81,91 @@ async function loadSalesRuntimeSettings(params: {
   const whatsappAgent = features.whatsapp_agent;
   const operatingPartner = features.mayus_operating_partner;
   const officeKnowledge = features.office_knowledge_profile;
+  const officePlaybook = normalizeOfficePlaybookProfile(features.office_playbook_profile);
+  const officePlaybookSummary = summarizeOfficePlaybookForPrompt(officePlaybook);
   const officeProfile = officeKnowledge && typeof officeKnowledge === "object" && !Array.isArray(officeKnowledge)
     ? officeKnowledge as Record<string, any>
     : null;
+  const assistantName = getStringValue(officeProfile?.assistant_name)
+    || getStringValue(officeProfile?.assistantName)
+    || getStringValue(whatsappAgent?.assistant_name)
+    || getStringValue(whatsappAgent?.assistantName);
+  const normalizedProfile = profile && typeof profile === "object" && !Array.isArray(profile)
+    ? profile as Record<string, any>
+    : null;
+  const useDefaultRmcPlaybook = shouldUseDefaultRmcPlaybook(features);
+  const salesRules = getStringArray(features.sales_rules).length
+    ? getStringArray(features.sales_rules)
+    : getStringArray(normalizedProfile?.sales_rules);
+  const qualificationQuestions = getStringArray(features.qualification_questions).length
+    ? getStringArray(features.qualification_questions)
+    : getStringArray(normalizedProfile?.qualification_questions);
+  const forbiddenClaims = getStringArray(features.forbidden_claims).length
+    ? getStringArray(features.forbidden_claims)
+    : getStringArray(normalizedProfile?.forbidden_claims);
 
   return {
-    salesProfile: profile && typeof profile === "object"
+    salesProfile: (normalizedProfile || officePlaybook || useDefaultRmcPlaybook)
       ? {
-        firmName: getStringValue(features.firm_name) || getStringValue(profile.firm_name),
-        idealClient: getStringValue(profile.ideal_client),
-        coreSolution: getStringValue(profile.core_solution),
-        uniqueValueProposition: getStringValue(profile.unique_value_proposition),
-        valuePillars: Array.isArray(profile.value_pillars)
-          ? getStringArray(profile.value_pillars)
+        firmName: getStringValue(features.firm_name) || getStringValue(normalizedProfile?.firm_name) || officePlaybook?.office_name,
+        idealClient: getStringValue(normalizedProfile?.ideal_client) || officePlaybook?.ideal_client,
+        coreSolution: getStringValue(normalizedProfile?.core_solution),
+        uniqueValueProposition: getStringValue(normalizedProfile?.unique_value_proposition),
+        valuePillars: Array.isArray(normalizedProfile?.value_pillars)
+          ? getStringArray(normalizedProfile?.value_pillars)
           : [],
-        positioningSummary: getStringValue(profile.positioning_summary),
+        positioningSummary: getStringValue(normalizedProfile?.positioning_summary),
         salesPlaybookContext: getStringValue(features.sales_playbook_context)
           || getStringValue(features.sales_document_context)
-          || getStringValue(profile.sales_playbook_context)
-          || getStringValue(profile.sales_document_context),
+          || getStringValue(normalizedProfile?.sales_playbook_context)
+          || getStringValue(normalizedProfile?.sales_document_context)
+          || officePlaybookSummary
+          || (useDefaultRmcPlaybook ? RMC_PLAYBOOK_CONTEXT : null),
         salesDocumentSummary: getStringValue(features.sales_document_summary)
-          || getStringValue(profile.sales_document_summary),
-        salesRules: getStringArray(features.sales_rules).length
-          ? getStringArray(features.sales_rules)
-          : getStringArray(profile.sales_rules),
-        qualificationQuestions: getStringArray(features.qualification_questions).length
-          ? getStringArray(features.qualification_questions)
-          : getStringArray(profile.qualification_questions),
+          || getStringValue(normalizedProfile?.sales_document_summary)
+          || (useDefaultRmcPlaybook ? RMC_SALES_DOCUMENT_SUMMARY : null),
+        salesRules: useDefaultRmcPlaybook
+          ? Array.from(new Set([...RMC_SALES_RULES, ...salesRules]))
+          : salesRules,
+        qualificationQuestions: useDefaultRmcPlaybook
+          ? Array.from(new Set([...RMC_QUALIFICATION_QUESTIONS, ...qualificationQuestions]))
+          : Array.from(new Set([...(officePlaybook?.qualification_questions || []), ...qualificationQuestions])),
         offerPositioning: getStringValue(features.offer_positioning)
-          || getStringValue(profile.offer_positioning),
-        forbiddenClaims: getStringArray(features.forbidden_claims).length
-          ? getStringArray(features.forbidden_claims)
-          : getStringArray(profile.forbidden_claims),
+          || getStringValue(normalizedProfile?.offer_positioning)
+          || officePlaybook?.offer_positioning
+          || (useDefaultRmcPlaybook ? RMC_OFFER_POSITIONING : null),
+        forbiddenClaims: useDefaultRmcPlaybook
+          ? Array.from(new Set([...RMC_FORBIDDEN_CLAIMS, ...forbiddenClaims]))
+          : Array.from(new Set([...(officePlaybook?.forbidden_claims || []), ...forbiddenClaims])),
       }
       : null,
-    officeKnowledgeProfile: officeProfile
+    officePlaybookProfile: officePlaybook,
+    officeKnowledgeProfile: officeProfile || assistantName
       ? {
-        officeName: getStringValue(officeProfile.office_name) || getStringValue(officeProfile.officeName) || getStringValue(features.firm_name),
-        practiceAreas: getStringArray(officeProfile.practice_areas).length
-          ? getStringArray(officeProfile.practice_areas)
-          : getStringArray(officeProfile.practiceAreas),
-        triageRules: getStringArray(officeProfile.triage_rules).length
-          ? getStringArray(officeProfile.triage_rules)
-          : getStringArray(officeProfile.triageRules),
-        humanHandoffRules: getStringArray(officeProfile.human_handoff_rules).length
-          ? getStringArray(officeProfile.human_handoff_rules)
-          : getStringArray(officeProfile.humanHandoffRules),
-        communicationTone: getStringValue(officeProfile.communication_tone) || getStringValue(officeProfile.communicationTone),
-        requiredDocumentsByCase: getStringArray(officeProfile.required_documents_by_case).length
-          ? getStringArray(officeProfile.required_documents_by_case)
-          : getStringArray(officeProfile.requiredDocumentsByCase),
-        forbiddenClaims: getStringArray(officeProfile.forbidden_claims).length
-          ? getStringArray(officeProfile.forbidden_claims)
-          : getStringArray(officeProfile.forbiddenClaims),
-        pricingPolicy: getStringValue(officeProfile.pricing_policy) || getStringValue(officeProfile.pricingPolicy),
-        responseSla: getStringValue(officeProfile.response_sla) || getStringValue(officeProfile.responseSla),
-        departments: getStringArray(officeProfile.departments),
+        assistantName,
+        officeName: getOfficeNameValue(officeProfile?.office_name)
+          || getOfficeNameValue(officeProfile?.officeName)
+          || getOfficeNameValue(features.firm_name)
+          || getOfficeNameValue(officePlaybook?.office_name),
+        practiceAreas: getStringArray(officeProfile?.practice_areas).length
+          ? getStringArray(officeProfile?.practice_areas)
+          : getStringArray(officeProfile?.practiceAreas),
+        triageRules: getStringArray(officeProfile?.triage_rules).length
+          ? getStringArray(officeProfile?.triage_rules)
+          : getStringArray(officeProfile?.triageRules),
+        humanHandoffRules: getStringArray(officeProfile?.human_handoff_rules).length
+          ? getStringArray(officeProfile?.human_handoff_rules)
+          : getStringArray(officeProfile?.humanHandoffRules),
+        communicationTone: getStringValue(officeProfile?.communication_tone) || getStringValue(officeProfile?.communicationTone),
+        requiredDocumentsByCase: getStringArray(officeProfile?.required_documents_by_case).length
+          ? getStringArray(officeProfile?.required_documents_by_case)
+          : getStringArray(officeProfile?.requiredDocumentsByCase),
+        forbiddenClaims: getStringArray(officeProfile?.forbidden_claims).length
+          ? getStringArray(officeProfile?.forbidden_claims)
+          : getStringArray(officeProfile?.forbiddenClaims),
+        pricingPolicy: getStringValue(officeProfile?.pricing_policy) || getStringValue(officeProfile?.pricingPolicy),
+        responseSla: getStringValue(officeProfile?.response_sla) || getStringValue(officeProfile?.responseSla),
+        departments: getStringArray(officeProfile?.departments),
       } satisfies MayusOfficeKnowledgeProfile
       : null,
     salesLlmTestbench: isExplicitlyEnabled(testbench)
@@ -129,6 +179,7 @@ async function loadSalesRuntimeSettings(params: {
     autonomyMode: whatsappAgent && typeof whatsappAgent === "object"
       ? getStringValue(whatsappAgent.autonomy_mode) || "auto_respond"
       : "auto_respond",
+    aiFeatures: features,
   };
 }
 
@@ -141,6 +192,55 @@ function sanitizeFallbackReason(error: unknown) {
   if (/network|fetch failed|econn|enotfound|dns/i.test(message)) return "provider_network_error";
   if (/json/i.test(message)) return "invalid_model_json";
   return "provider_call_failed";
+}
+
+function normalizeRiskFlagsForProcessStatus(flags: string[], processStatusContext: Awaited<ReturnType<typeof fetchWhatsAppProcessStatusContext>>) {
+  const unique = Array.from(new Set(flags));
+  if (processStatusContext?.verified !== true) return unique;
+  const cleaned = unique.filter((flag) => flag !== "case_status_unverified");
+  return cleaned.includes("case_status_verified") ? cleaned : [...cleaned, "case_status_verified"];
+}
+
+const OPERATING_PARTNER_TIMEOUT_MS = {
+  manual: 120000,
+  webhook: 52000,
+};
+
+const WHATSAPP_REPLY_BLOCK_LIMIT = 650;
+
+function splitWhatsAppReplyBlocks(text?: string | null) {
+  const value = String(text || "").replace(/\s+\n/g, "\n").trim();
+  if (!value) return [] as string[];
+  if (value.length <= WHATSAPP_REPLY_BLOCK_LIMIT) return [value];
+
+  const units = value
+    .split(/(?<=[.!?])\s+|\n{2,}/)
+    .map((part) => part.trim())
+    .filter(Boolean);
+  const blocks: string[] = [];
+  let current = "";
+
+  for (const unit of units.length ? units : [value]) {
+    if (unit.length > WHATSAPP_REPLY_BLOCK_LIMIT) {
+      if (current) blocks.push(current);
+      for (let index = 0; index < unit.length; index += WHATSAPP_REPLY_BLOCK_LIMIT) {
+        blocks.push(unit.slice(index, index + WHATSAPP_REPLY_BLOCK_LIMIT).trim());
+      }
+      current = "";
+      continue;
+    }
+
+    const next = current ? `${current} ${unit}` : unit;
+    if (next.length > WHATSAPP_REPLY_BLOCK_LIMIT) {
+      if (current) blocks.push(current);
+      current = unit;
+    } else {
+      current = next;
+    }
+  }
+
+  if (current) blocks.push(current);
+  return blocks.slice(0, 4);
 }
 
 async function withOperationalTimeout<T>(promise: Promise<T>, timeoutMs: number, label: string): Promise<T> {
@@ -325,6 +425,7 @@ function getAutoSendBlockedReason(params: {
   trigger: "manual" | "meta_webhook" | "evolution_webhook";
   assignedUserId?: string | null;
   canAutoRespondAssigned: boolean;
+  canAutoRespondAssignedSafely?: boolean;
   phoneNumber?: string | null;
 }) {
   if (!params.autoReply) return "no_auto_reply";
@@ -332,7 +433,7 @@ function getAutoSendBlockedReason(params: {
   if (params.metadata.may_auto_send !== true) return "metadata_disallows_auto_send";
   if (params.autoSendFirstResponse !== true) return "auto_send_disabled";
   if (params.trigger === "manual") return "manual_trigger";
-  if (params.assignedUserId && !params.canAutoRespondAssigned) return "assigned_contact_blocked";
+  if (params.assignedUserId && !params.canAutoRespondAssigned && !params.canAutoRespondAssignedSafely) return "assigned_contact_blocked";
   if (!params.phoneNumber) return "missing_phone_number";
   if (params.autoReply.source !== "mayus_operating_partner_auto_reply") {
     return params.autoReply.source === "deterministic_whatsapp_auto_reply"
@@ -359,6 +460,20 @@ type SalesAutoSendResult =
     attempted: false;
     status: "skipped";
   };
+
+function canAutoRespondAssignedSafely(params: {
+  decision: MayusOperatingPartnerDecision | null;
+  processStatusContext: Awaited<ReturnType<typeof fetchWhatsAppProcessStatusContext>>;
+}) {
+  const decision = params.decision;
+  if (!decision) return false;
+  if (decision.requires_approval || decision.risk_flags.length > 0 || decision.should_auto_send !== true) return false;
+  if (decision.intent === "process_status") return params.processStatusContext?.verified === true;
+  if (decision.intent === "client_support") {
+    return decision.actions_to_execute.some((action) => action.type === "create_task" || action.type === "answer_support");
+  }
+  return false;
+}
 
 export async function prepareWhatsAppSalesReplyForContact(params: {
   supabase: SupabaseClient;
@@ -393,7 +508,12 @@ export async function prepareWhatsAppSalesReplyForContact(params: {
     supabase: params.supabase,
     tenantId: params.tenantId,
   });
-  const [crmContext, previousMayusEvent] = await Promise.all([
+  const orderedMessages = (messages || []).reverse();
+  const senderPhoneAuthorized = isAuthorizedWhatsAppCommandSender({
+    senderPhone: contact.phone_number || "",
+    aiFeatures: runtimeSettings.aiFeatures,
+  });
+  const [crmContext, previousMayusEvent, processStatusContext] = await Promise.all([
     loadCrmContext({
       supabase: params.supabase,
       tenantId: params.tenantId,
@@ -404,9 +524,14 @@ export async function prepareWhatsAppSalesReplyForContact(params: {
       tenantId: params.tenantId,
       contactId: contact.id,
     }),
+    fetchWhatsAppProcessStatusContext({
+      supabase: params.supabase,
+      tenantId: params.tenantId,
+      contact,
+      messages: orderedMessages,
+      senderPhoneAuthorized,
+    }),
   ]);
-
-  const orderedMessages = (messages || []).reverse();
   const reply = buildWhatsAppSalesReply({
     contactName: contact.name,
     phoneNumber: contact.phone_number,
@@ -440,11 +565,17 @@ export async function prepareWhatsAppSalesReplyForContact(params: {
         messages: orderedMessages,
         salesProfile: runtimeSettings.salesProfile,
         officeKnowledgeProfile: runtimeSettings.officeKnowledgeProfile,
+        officePlaybookProfile: runtimeSettings.officePlaybookProfile,
         crmContext,
+        processStatusContext,
         previousMayusEvent,
         salesTestbench: runtimeSettings.salesLlmTestbench,
         operatingPartner: runtimeSettings.mayusOperatingPartner,
-      }), params.trigger === "manual" ? 12000 : 8000, "MAYUS Operating Partner");
+      }), params.trigger === "manual" ? OPERATING_PARTNER_TIMEOUT_MS.manual : OPERATING_PARTNER_TIMEOUT_MS.webhook, "MAYUS Operating Partner");
+      const normalizedRiskFlags = normalizeRiskFlagsForProcessStatus([
+        ...deterministicMetadata.risk_flags,
+        ...operatingPartnerDecision.risk_flags,
+      ], processStatusContext);
       metadata = {
         ...deterministicMetadata,
         reply_source: "operating_partner",
@@ -453,7 +584,7 @@ export async function prepareWhatsAppSalesReplyForContact(params: {
         mode: operatingPartnerDecision.should_auto_send ? "suggested_reply" : "human_review_required",
         suggested_reply: operatingPartnerDecision.reply,
         internal_note: `MAYUS socio virtual: ${operatingPartnerDecision.next_action}`,
-        risk_flags: Array.from(new Set([...deterministicMetadata.risk_flags, ...operatingPartnerDecision.risk_flags])),
+        risk_flags: normalizedRiskFlags,
         may_auto_send: operatingPartnerDecision.should_auto_send,
         requires_human_review: operatingPartnerDecision.requires_approval || !operatingPartnerDecision.should_auto_send || operatingPartnerDecision.risk_flags.length > 0,
         mayus_operating_partner: {
@@ -469,6 +600,7 @@ export async function prepareWhatsAppSalesReplyForContact(params: {
           conversation_state: operatingPartnerDecision.conversation_state,
           closing_readiness: operatingPartnerDecision.closing_readiness,
           support_summary: operatingPartnerDecision.support_summary,
+          process_status_context: processStatusContext,
           reasoning_summary_for_team: operatingPartnerDecision.reasoning_summary_for_team,
           expected_outcome: operatingPartnerDecision.expected_outcome,
         },
@@ -476,6 +608,7 @@ export async function prepareWhatsAppSalesReplyForContact(params: {
         closing_readiness: operatingPartnerDecision.closing_readiness,
         support_summary: operatingPartnerDecision.support_summary,
         reasoning_summary_for_team: operatingPartnerDecision.reasoning_summary_for_team,
+        process_status_context: processStatusContext,
       };
     } catch (error) {
       const reason = sanitizeFallbackReason(error);
@@ -560,6 +693,7 @@ export async function prepareWhatsAppSalesReplyForContact(params: {
     ? {
       shouldAutoSend: operatingPartnerDecision.should_auto_send,
       text: operatingPartnerDecision.reply,
+      replyBlocks: operatingPartnerDecision.reply_blocks,
       source: "mayus_operating_partner_auto_reply",
       modelUsed: operatingPartnerDecision.model_used,
       provider: operatingPartnerDecision.provider,
@@ -574,6 +708,7 @@ export async function prepareWhatsAppSalesReplyForContact(params: {
       ? {
         shouldAutoSend: llmReply.should_auto_send,
         text: llmReply.reply,
+        replyBlocks: undefined,
         source: "sales_llm_auto_reply",
         modelUsed: llmReply.model_used,
         provider: llmReply.provider,
@@ -588,6 +723,7 @@ export async function prepareWhatsAppSalesReplyForContact(params: {
         ? {
           shouldAutoSend: reply.mayAutoSend,
           text: reply.suggestedReply,
+          replyBlocks: undefined,
           source: "deterministic_whatsapp_auto_reply",
           modelUsed: "deterministic",
           provider: "mayus",
@@ -600,6 +736,7 @@ export async function prepareWhatsAppSalesReplyForContact(params: {
         }
         : null;
   const canAutoRespondAssigned = runtimeSettings.autonomyMode === "auto_respond_assigned";
+  const assignedSafeAutoReply = canAutoRespondAssignedSafely({ decision: operatingPartnerDecision, processStatusContext });
   const blockedReason = getAutoSendBlockedReason({
     autoReply,
     metadata,
@@ -607,6 +744,7 @@ export async function prepareWhatsAppSalesReplyForContact(params: {
     trigger: params.trigger,
     assignedUserId: contact.assigned_user_id,
     canAutoRespondAssigned,
+    canAutoRespondAssignedSafely: assignedSafeAutoReply,
     phoneNumber: contact.phone_number,
   });
   const canAutoSend = Boolean(
@@ -615,7 +753,7 @@ export async function prepareWhatsAppSalesReplyForContact(params: {
     && metadata.may_auto_send === true
     && params.autoSendFirstResponse === true
     && params.trigger !== "manual"
-    && (!contact.assigned_user_id || canAutoRespondAssigned)
+    && (!contact.assigned_user_id || canAutoRespondAssigned || assignedSafeAutoReply)
     && contact.phone_number
   );
   const firstResponsePolicy = {
@@ -623,6 +761,7 @@ export async function prepareWhatsAppSalesReplyForContact(params: {
     sla_minutes: reply.firstResponseSlaMinutes,
     can_auto_send: canAutoSend,
     assigned_contact_auto_send: canAutoRespondAssigned,
+    assigned_contact_safe_auto_send: assignedSafeAutoReply,
     blocked_reason: canAutoSend ? null : blockedReason,
   };
 
@@ -637,6 +776,7 @@ export async function prepareWhatsAppSalesReplyForContact(params: {
       contact_id: contact.id,
       trigger: params.trigger,
       crm_context: crmContext,
+      process_status_context: processStatusContext,
       ...metadata,
       first_response_policy: firstResponsePolicy,
     },
@@ -656,23 +796,32 @@ export async function prepareWhatsAppSalesReplyForContact(params: {
 
   if (autoReply && canAutoSend) {
     try {
-      const sendResult = await sendWhatsAppMessage({
-        supabase: params.supabase,
-        tenantId: params.tenantId,
-        contactId: contact.id,
-        phoneNumber: contact.phone_number || "",
-        preferredProvider: params.preferredProvider || null,
-        text: autoReply.text,
-        metadata: {
-          source: autoReply.source,
-          provider: autoReply.provider,
-          model_used: autoReply.modelUsed,
-          intent: autoReply.intent,
-          lead_stage: autoReply.leadStage,
-          confidence: autoReply.confidence,
-          expected_outcome: autoReply.expectedOutcome,
-        },
-      });
+      const blocks = autoReply.replyBlocks?.length ? autoReply.replyBlocks : splitWhatsAppReplyBlocks(autoReply.text);
+      let sendResult: Awaited<ReturnType<typeof sendWhatsAppMessage>> | null = null;
+      for (let index = 0; index < blocks.length; index += 1) {
+        const block = blocks[index];
+        sendResult = await sendWhatsAppMessage({
+          supabase: params.supabase,
+          tenantId: params.tenantId,
+          contactId: contact.id,
+          phoneNumber: contact.phone_number || "",
+          preferredProvider: params.preferredProvider || null,
+          text: block,
+          humanizeDelivery: true,
+          metadata: {
+            source: autoReply.source,
+            provider: autoReply.provider,
+            model_used: autoReply.modelUsed,
+            intent: autoReply.intent,
+            lead_stage: autoReply.leadStage,
+            confidence: autoReply.confidence,
+            expected_outcome: autoReply.expectedOutcome,
+            reply_block_index: index + 1,
+            reply_block_count: blocks.length,
+          },
+        });
+      }
+      if (!sendResult) throw new Error("Resposta automatica vazia");
       autoSendResult = {
         attempted: true,
         status: "sent",
@@ -693,6 +842,7 @@ export async function prepareWhatsAppSalesReplyForContact(params: {
           intent: autoReply.intent,
           confidence: autoReply.confidence,
           send_provider: sendResult.provider,
+          reply_block_count: blocks.length,
           first_response_sla_minutes: reply.firstResponseSlaMinutes,
           handoff_recommended: reply.handoffRecommended,
         },

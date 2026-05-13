@@ -205,4 +205,44 @@ describe("POST /api/ai/chat deterministic process mission routing", () => {
       handlerType: "lex_process_mission_plan",
     }));
   });
+
+  it("propaga aprovacao supervisionada criada pelo Lex execute_next", async () => {
+    dispatchCapabilityExecutionMock.mockResolvedValueOnce({
+      status: "awaiting_approval",
+      reply: "## Missao juridica supervisionada",
+      outputPayload: {
+        auditLogId: "approval-audit-draft-1",
+        process_task_id: "process-task-1",
+        process_mission_recommended_action: "generate_first_draft",
+        proposed_capability: "legal_first_draft_generate",
+        proposed_handler_type: "lex_first_draft_generate",
+        awaitingPayload: {
+          entities: { process_task_id: "process-task-1" },
+          skillName: "legal_first_draft_generate",
+          riskLevel: "high",
+          schemaVersion: "1.0.0",
+        },
+      },
+      data: { ok: true },
+    });
+
+    const response = await POST(buildRequest(
+      "Mayus, execute o proximo passo seguro da missao do processo 1234567-89.2024.8.26.0100."
+    ));
+    const json = await response.json();
+
+    expect(response.status).toBe(200);
+    expect(callLLMWithFallbackMock).not.toHaveBeenCalled();
+    expect(json.kernel).toEqual(expect.objectContaining({
+      status: "awaiting_approval",
+      auditLogId: "approval-audit-draft-1",
+      capabilityName: "legal_first_draft_generate",
+      handlerType: "lex_first_draft_generate",
+      awaitingPayload: expect.objectContaining({
+        skillName: "legal_first_draft_generate",
+        riskLevel: "high",
+        entities: { process_task_id: "process-task-1" },
+      }),
+    }));
+  });
 });

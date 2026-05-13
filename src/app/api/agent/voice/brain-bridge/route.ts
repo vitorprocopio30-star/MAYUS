@@ -1,6 +1,6 @@
 import { NextRequest, NextResponse } from "next/server";
 import { getBrainAuthContext } from "@/lib/brain/server";
-import { executeBrainTurn, normalizeChatHistory } from "@/lib/brain/turn";
+import { executeBrainTurn, normalizeBrainMissionKind, normalizeChatHistory } from "@/lib/brain/turn";
 
 export const dynamic = "force-dynamic";
 
@@ -9,6 +9,7 @@ type VoiceBridgeBody = {
   history?: Array<{ role?: string; content?: string }>;
   toolName?: string;
   toolPayload?: Record<string, unknown>;
+  missionKind?: string;
 };
 
 const EXECUTIVE_ROLES = new Set(["admin", "administrador", "socio", "sócio", "mayus_admin"]);
@@ -69,6 +70,8 @@ export async function POST(req: NextRequest) {
       ? body.toolPayload
       : {};
     const provider = cleanString(toolPayload.provider, "elevenlabs");
+    const source = provider === "openai_realtime" ? "openai_realtime_voice" : "elevenlabs_voice";
+    const missionKind = normalizeBrainMissionKind(toolPayload.missionKind || body.missionKind);
 
     const turn = await executeBrainTurn({
       authContext: auth.context,
@@ -85,8 +88,9 @@ export async function POST(req: NextRequest) {
         tool_payload: toolPayload,
       },
       taskContext: {
-        source: provider === "openai_realtime" ? "openai_realtime_voice" : "voice_shell",
+        source,
         provider,
+        missionKind,
         humanized_layer: true,
       },
       policySnapshot: {
@@ -102,6 +106,10 @@ export async function POST(req: NextRequest) {
 
     return NextResponse.json({
       reply: turn.reply,
+      voiceReply: turn.voiceReply,
+      missionKind: turn.missionKind,
+      approvalRequired: turn.approvalRequired,
+      approvalId: turn.approvalId,
       kernel: turn.kernel,
       taskId: turn.taskId,
       runId: turn.runId,
