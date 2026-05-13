@@ -73,6 +73,16 @@ describe("GET /api/financeiro/summary", () => {
           marketing: { amount: 100, count: 1 },
         },
       },
+      commercialForecast: {
+        source: "sales+crm_tasks",
+        available: false,
+        pipelineAmount: 0,
+        pendingContracts: { amount: 0, count: 0 },
+        closedContracts: { amount: 0, count: 0 },
+        lostAmount: 0,
+        byStage: [],
+        topOpportunities: [],
+      },
       collectionsFollowup: {
         source: "brain_artifacts",
         available: true,
