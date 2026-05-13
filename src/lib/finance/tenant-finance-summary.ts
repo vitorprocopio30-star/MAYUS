@@ -34,6 +34,7 @@ const OPEN_STATUS_TEXTS = new Set([
 
 export type TenantFinanceFinancialRow = {
   id?: string | null;
+  case_id?: string | null;
   external_id?: string | null;
   amount?: number | string | null;
   status?: string | null;
@@ -62,6 +63,20 @@ export type TenantFinanceBucket = {
   count: number;
 };
 
+export type TenantFinanceForecastBuckets = {
+  dueIn7Days: TenantFinanceBucket;
+  dueIn30Days: TenantFinanceBucket;
+  future: TenantFinanceBucket;
+  noDueDate: TenantFinanceBucket;
+};
+
+export type TenantFinanceOverdueAging = {
+  days1To7: TenantFinanceBucket;
+  days8To14: TenantFinanceBucket;
+  days15To30: TenantFinanceBucket;
+  days31Plus: TenantFinanceBucket;
+};
+
 export type TenantFinanceCollectionPlan = {
   id: string;
   title: string;
@@ -77,6 +92,22 @@ export type TenantFinanceCollectionPlan = {
   externalSideEffectsBlocked: boolean;
 };
 
+export type TenantFinanceRiskItem = {
+  key: string;
+  label: string;
+  clientName: string | null;
+  caseId: string | null;
+  openAmount: number;
+  overdueAmount: number;
+  forecastAmount: number;
+  openCount: number;
+  overdueCount: number;
+  maxDaysOverdue: number;
+  oldestDueDate: string | null;
+  riskLevel: "low" | "medium" | "high";
+  nextBestAction: string;
+};
+
 export type TenantFinanceSummary = {
   tenantId: string;
   generatedAt: string;
@@ -88,6 +119,9 @@ export type TenantFinanceSummary = {
       rate: number;
     };
     openCharges: TenantFinanceBucket;
+    forecastBuckets: TenantFinanceForecastBuckets;
+    overdueAging: TenantFinanceOverdueAging;
+    riskItems: TenantFinanceRiskItem[];
     expenses: {
       fixed: TenantFinanceBucket;
       marketing: TenantFinanceBucket;
@@ -159,6 +193,13 @@ function startOfLocalDay(date: Date) {
   return copy;
 }
 
+function daysBetween(from: Date, to: Date) {
+  const msPerDay = 24 * 60 * 60 * 1000;
+  const start = startOfLocalDay(from);
+  const end = startOfLocalDay(to);
+  return Math.max(0, Math.floor((end.getTime() - start.getTime()) / msPerDay));
+}
+
 function rowText(row: TenantFinanceFinancialRow) {
   return normalizeText(`${row.type || ""} ${row.description || ""} ${row.source || ""} ${JSON.stringify(row.metadata || {})}`);
 }
@@ -193,6 +234,178 @@ function bucketFromRows(rows: TenantFinanceFinancialRow[], amountMapper = (row: 
     amount: roundMoney(rows.reduce((sum, row) => sum + amountMapper(row), 0)),
     count: rows.length,
   };
+}
+
+function metadataFor(row: TenantFinanceFinancialRow) {
+  return row.metadata && typeof row.metadata === "object" ? row.metadata : {};
+}
+
+function metadataText(row: TenantFinanceFinancialRow, keys: string[]) {
+  const metadata = metadataFor(row);
+  for (const key of keys) {
+    const value = compactText(metadata[key], "");
+    if (value) return value;
+  }
+  return "";
+}
+
+function rowCaseId(row: TenantFinanceFinancialRow) {
+  return compactText(row.case_id, "") || metadataText(row, ["case_id", "caseId"]) || null;
+}
+
+function rowClientId(row: TenantFinanceFinancialRow) {
+  return metadataText(row, ["client_id", "clientId", "customer_id", "customerId"]) || null;
+}
+
+function rowClientName(row: TenantFinanceFinancialRow) {
+  return metadataText(row, ["client_name", "nome_cliente", "customer_name", "lead_name", "signer_name"]) ||
+    compactText(row.description, "") ||
+    null;
+}
+
+function rowRiskKey(row: TenantFinanceFinancialRow) {
+  return rowCaseId(row) ||
+    rowClientId(row) ||
+    rowClientName(row) ||
+    compactText(row.external_id, "") ||
+    compactText(row.id, "") ||
+    "risco-sem-identificador";
+}
+
+function buildForecastBuckets(rows: TenantFinanceFinancialRow[], today: Date): TenantFinanceForecastBuckets {
+  const dueIn7Days: TenantFinanceFinancialRow[] = [];
+  const dueIn30Days: TenantFinanceFinancialRow[] = [];
+  const future: TenantFinanceFinancialRow[] = [];
+  const noDueDate: TenantFinanceFinancialRow[] = [];
+
+  for (const row of rows) {
+    const dueDate = parseLocalDate(row.due_date);
+    if (!dueDate) {
+      noDueDate.push(row);
+      continue;
+    }
+
+    const daysUntilDue = daysBetween(today, dueDate);
+    if (daysUntilDue <= 7) {
+      dueIn7Days.push(row);
+    } else if (daysUntilDue <= 30) {
+      dueIn30Days.push(row);
+    } else {
+      future.push(row);
+    }
+  }
+
+  return {
+    dueIn7Days: bucketFromRows(dueIn7Days),
+    dueIn30Days: bucketFromRows(dueIn30Days),
+    future: bucketFromRows(future),
+    noDueDate: bucketFromRows(noDueDate),
+  };
+}
+
+function buildOverdueAging(rows: TenantFinanceFinancialRow[], today: Date): TenantFinanceOverdueAging {
+  const days1To7: TenantFinanceFinancialRow[] = [];
+  const days8To14: TenantFinanceFinancialRow[] = [];
+  const days15To30: TenantFinanceFinancialRow[] = [];
+  const days31Plus: TenantFinanceFinancialRow[] = [];
+
+  for (const row of rows) {
+    const dueDate = parseLocalDate(row.due_date);
+    if (!dueDate) continue;
+
+    const daysOverdue = daysBetween(dueDate, today);
+    if (daysOverdue <= 7) {
+      days1To7.push(row);
+    } else if (daysOverdue <= 14) {
+      days8To14.push(row);
+    } else if (daysOverdue <= 30) {
+      days15To30.push(row);
+    } else {
+      days31Plus.push(row);
+    }
+  }
+
+  return {
+    days1To7: bucketFromRows(days1To7),
+    days8To14: bucketFromRows(days8To14),
+    days15To30: bucketFromRows(days15To30),
+    days31Plus: bucketFromRows(days31Plus),
+  };
+}
+
+function resolveRiskLevel(params: { overdueAmount: number; openAmount: number; maxDaysOverdue: number }) {
+  if (params.maxDaysOverdue >= 15 || params.overdueAmount >= 5000) return "high";
+  if (params.maxDaysOverdue > 0 || params.overdueAmount > 0 || params.openAmount >= 2500) return "medium";
+  return "low";
+}
+
+function resolveRiskAction(item: Pick<TenantFinanceRiskItem, "overdueAmount" | "maxDaysOverdue" | "forecastAmount" | "riskLevel">) {
+  if (item.riskLevel === "high") return "Priorizar plano de cobranca supervisionado e revisar abertura/continuidade do caso.";
+  if (item.overdueAmount > 0) return "Confirmar pagamento ou preparar renegociacao antes de novo envio externo.";
+  if (item.forecastAmount > 0) return "Acompanhar vencimento e deixar follow-up pronto para aprovacao humana.";
+  return "Revisar cadastro financeiro antes de qualquer automacao.";
+}
+
+function buildRiskItems(rows: TenantFinanceFinancialRow[], today: Date): TenantFinanceRiskItem[] {
+  const groups = new Map<string, TenantFinanceFinancialRow[]>();
+
+  for (const row of rows) {
+    const key = rowRiskKey(row);
+    groups.set(key, [...(groups.get(key) || []), row]);
+  }
+
+  return Array.from(groups.entries())
+    .map(([key, groupRows]) => {
+      const dueDates = groupRows
+        .map((row) => parseLocalDate(row.due_date))
+        .filter((date): date is Date => Boolean(date));
+      const overdueRows = groupRows.filter((row) => {
+        const dueDate = parseLocalDate(row.due_date);
+        return Boolean(dueDate && dueDate < today);
+      });
+      const forecastRows = groupRows.filter((row) => !overdueRows.includes(row));
+      const overdueAmount = bucketFromRows(overdueRows).amount;
+      const forecastAmount = bucketFromRows(forecastRows).amount;
+      const openAmount = bucketFromRows(groupRows).amount;
+      const maxDaysOverdue = overdueRows.reduce((max, row) => {
+        const dueDate = parseLocalDate(row.due_date);
+        return dueDate ? Math.max(max, daysBetween(dueDate, today)) : max;
+      }, 0);
+      const oldestDueDate = dueDates.length > 0
+        ? new Date(Math.min(...dueDates.map((date) => date.getTime()))).toISOString().slice(0, 10)
+        : null;
+      const riskLevel = resolveRiskLevel({ overdueAmount, openAmount, maxDaysOverdue });
+      const clientName = groupRows.map(rowClientName).find(Boolean) || null;
+      const caseId = groupRows.map(rowCaseId).find(Boolean) || null;
+      const item: TenantFinanceRiskItem = {
+        key,
+        label: clientName || compactText(groupRows[0]?.description, "Risco financeiro"),
+        clientName,
+        caseId,
+        openAmount,
+        overdueAmount,
+        forecastAmount,
+        openCount: groupRows.length,
+        overdueCount: overdueRows.length,
+        maxDaysOverdue,
+        oldestDueDate,
+        riskLevel,
+        nextBestAction: "",
+      };
+      return {
+        ...item,
+        nextBestAction: resolveRiskAction(item),
+      };
+    })
+    .filter((item) => item.openAmount > 0)
+    .sort((a, b) => {
+      const priority = { high: 0, medium: 1, low: 2 };
+      return priority[a.riskLevel] - priority[b.riskLevel] ||
+        b.overdueAmount - a.overdueAmount ||
+        b.openAmount - a.openAmount ||
+        a.label.localeCompare(b.label);
+    })
+    .slice(0, 8);
 }
 
 function isCollectionsFollowupArtifact(row: TenantFinanceBrainArtifactRow) {
@@ -255,6 +468,9 @@ export function buildTenantFinanceSummaryFromRows(input: {
   const openCharges = bucketFromRows(openRows);
   const overdue = bucketFromRows(overdueRows);
   const delinquencyRate = openCharges.amount > 0 ? roundRate((overdue.amount / openCharges.amount) * 100) : 0;
+  const forecastBuckets = buildForecastBuckets(forecastRows, today);
+  const overdueAging = buildOverdueAging(overdueRows, today);
+  const riskItems = buildRiskItems(openRows, today);
 
   const collectionPlans = (input.brainArtifacts || [])
     .filter(isCollectionsFollowupArtifact)
@@ -300,6 +516,9 @@ export function buildTenantFinanceSummaryFromRows(input: {
         rate: delinquencyRate,
       },
       openCharges,
+      forecastBuckets,
+      overdueAging,
+      riskItems,
       expenses: {
         fixed: bucketFromRows(fixedExpenseRows, (row) => Math.abs(money(row.amount))),
         marketing: bucketFromRows(marketingExpenseRows, (row) => Math.abs(money(row.amount))),
@@ -324,7 +543,7 @@ export async function loadTenantFinanceSummary(input: LoadTenantFinanceSummaryIn
   const [financialResult, artifactsResult, processTasksResult] = await Promise.all([
     input.supabase
       .from("financials")
-      .select("id, amount, status, due_date, type, description, source, reference_date, external_id, metadata")
+      .select("id, case_id, amount, status, due_date, type, description, source, reference_date, external_id, metadata")
       .eq("tenant_id", input.tenantId),
     input.supabase
       .from("brain_artifacts")

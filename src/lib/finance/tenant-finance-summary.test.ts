@@ -18,17 +18,43 @@ describe("tenant finance summary", () => {
         },
         {
           id: "fin-overdue",
+          case_id: "case-maria",
           amount: 1000,
           status: "Pendente",
           type: "receita",
           due_date: "2026-05-01",
+          metadata: {
+            client_name: "Maria",
+          },
         },
         {
           id: "fin-open",
+          case_id: "case-maria",
           amount: 2000,
           status: "Pendente",
           type: "receita",
           due_date: "2026-05-20",
+          metadata: {
+            client_name: "Maria",
+          },
+        },
+        {
+          id: "fin-overdue-old",
+          amount: 4000,
+          status: "Pendente",
+          type: "receita",
+          due_date: "2026-04-01",
+          metadata: {
+            client_id: "client-joao",
+            nome_cliente: "Joao",
+          },
+        },
+        {
+          id: "fin-no-due",
+          amount: 600,
+          status: "Pendente",
+          type: "receita",
+          description: "Honorarios sem vencimento definido",
         },
         {
           id: "fin-marketing",
@@ -92,9 +118,37 @@ describe("tenant finance summary", () => {
     });
 
     expect(summary.financials.received).toEqual({ amount: 2500, count: 1 });
-    expect(summary.financials.openCharges).toEqual({ amount: 3000, count: 2 });
-    expect(summary.financials.overdue).toEqual({ amount: 1000, count: 1 });
-    expect(summary.financials.forecast).toEqual({ amount: 2000, count: 1 });
+    expect(summary.financials.openCharges).toEqual({ amount: 7600, count: 4 });
+    expect(summary.financials.overdue).toEqual({ amount: 5000, count: 2 });
+    expect(summary.financials.forecast).toEqual({ amount: 2600, count: 2 });
+    expect(summary.financials.delinquency.rate).toBe(65.8);
+    expect(summary.financials.forecastBuckets).toEqual({
+      dueIn7Days: { amount: 2000, count: 1 },
+      dueIn30Days: { amount: 0, count: 0 },
+      future: { amount: 0, count: 0 },
+      noDueDate: { amount: 600, count: 1 },
+    });
+    expect(summary.financials.overdueAging).toEqual({
+      days1To7: { amount: 0, count: 0 },
+      days8To14: { amount: 1000, count: 1 },
+      days15To30: { amount: 0, count: 0 },
+      days31Plus: { amount: 4000, count: 1 },
+    });
+    expect(summary.financials.riskItems[0]).toEqual(expect.objectContaining({
+      clientName: "Joao",
+      openAmount: 4000,
+      overdueAmount: 4000,
+      riskLevel: "high",
+      maxDaysOverdue: 42,
+    }));
+    expect(summary.financials.riskItems[1]).toEqual(expect.objectContaining({
+      clientName: "Maria",
+      caseId: "case-maria",
+      openAmount: 3000,
+      overdueAmount: 1000,
+      forecastAmount: 2000,
+      riskLevel: "medium",
+    }));
     expect(summary.financials.expenses.marketing).toEqual({ amount: 300, count: 1 });
     expect(summary.collectionsFollowup.totalPlans).toBe(1);
     expect(summary.collectionsFollowup.highPriorityPlans).toBe(1);

@@ -39,16 +39,17 @@ Evidencia 2026-05-13: `src/lib/finance/collections-followup.ts`, router, registr
 
 ## Forecast e Unidade Economica
 
-- [ ] Criar forecast por funil, proposta, contrato e cobranca.
+- [~] Criar forecast por funil, proposta, contrato e cobranca.
+Evidencia 2026-05-13: `GET /api/financeiro/summary` agora separa forecast de cobrancas em 7 dias, 30 dias, futuro e sem vencimento, alem de aging de vencidos; ainda falta forecast completo por funil/proposta/contrato e smoke visual autenticado.
 - [ ] Criar margem estimada por caso.
 - [ ] Criar receita por area juridica.
 - [ ] Criar comissao por origem/responsavel.
 - [~] Mostrar risco financeiro por tenant.
-Evidencia 2026-05-13: o painel superadmin financeiro mostra risco por escritorio/tenant e separa receita SaaS do MAYUS em `platform_billing_events`; ainda falta granularidade por cliente/caso e smoke visual autenticado.
+Evidencia 2026-05-13: o painel superadmin financeiro mostra risco por escritorio/tenant e separa receita SaaS do MAYUS em `platform_billing_events`; o summary financeiro do tenant agora lista riscos por cliente/caso agrupados a partir de `financials`; ainda falta smoke visual autenticado com dados reais/controlados.
 
 ## Criterios de aceite
 
 - [~] Comando "Mayus, cobre a entrada do cliente X" encontra contexto, monta cobranca, pede aprovacao e registra artifact.
 - [x] Nenhuma cobranca externa e enviada sem aprovacao.
 - [~] O sistema mostra dinheiro previsto, dinheiro recebido e casos abertos por receita.
-Evidencia 2026-05-13: Chat/Brain MAYUS ganhou labels de artifact para `asaas_billing`, `collections_followup_plan` e revenue-to-case, e a reconciliacao leve calcula receita recebida vs caso aberto em codigo/teste; painel superadmin e summary financeiro do tenant foram implementados em codigo/teste, faltando smoke visual/autenticado e dados reais.
+Evidencia 2026-05-13: Chat/Brain MAYUS ganhou labels de artifact para `asaas_billing`, `collections_followup_plan` e revenue-to-case, e a reconciliacao leve calcula receita recebida vs caso aberto em codigo/teste; painel superadmin e summary financeiro do tenant foram implementados com forecast, aging de vencidos e riscos por cliente/caso em codigo/teste, faltando smoke visual/autenticado e dados reais.
