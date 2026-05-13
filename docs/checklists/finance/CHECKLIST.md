@@ -45,7 +45,7 @@ Evidencia 2026-05-13: `GET /api/financeiro/summary` agora separa forecast de cob
 - [ ] Criar receita por area juridica.
 - [ ] Criar comissao por origem/responsavel.
 - [~] Mostrar risco financeiro por tenant.
-Evidencia 2026-05-13: o painel superadmin financeiro mostra risco por escritorio/tenant e separa receita SaaS do MAYUS em `platform_billing_events`; o summary financeiro do tenant lista riscos por cliente/caso agrupados a partir de `financials` e passou smoke autenticado no dashboard com fixture controlada. O smoke do `/admin` segue pendente porque a migration remota de billing SaaS ainda nao esta aplicada (`tenants.last_payment_at` ausente no schema cache) e o usuario E2E nao e superadmin.
+Evidencia 2026-05-13: o painel superadmin financeiro mostra risco por escritorio/tenant e separa receita SaaS do MAYUS em `platform_billing_events`; o summary financeiro do tenant lista riscos por cliente/caso agrupados a partir de `financials` e passou smoke autenticado no dashboard com fixture controlada. O smoke do `/admin` segue pendente porque a migration remota de billing SaaS ainda nao esta aplicada (`tenants.last_payment_at` ausente no schema cache) e o usuario E2E nao e superadmin. O dry-run remoto do Supabase CLI foi tentado, mas a sessao nao tem `SUPABASE_ACCESS_TOKEN`.
 
 ## Criterios de aceite
 

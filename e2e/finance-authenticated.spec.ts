@@ -1,5 +1,5 @@
 import { expect, test, type Page } from "@playwright/test";
-import { getPlaywrightCredentials, loginThroughUi } from "./helpers/auth";
+import { getPlaywrightCredentials, getPlaywrightSuperadminCredentials, loginThroughUi } from "./helpers/auth";
 import {
   ensurePlaywrightFinanceFixture,
   PLAYWRIGHT_FINANCE_FIXTURE_LABELS,
@@ -59,10 +59,11 @@ test.describe("Financeiro authenticated", () => {
   test("mostra painel superadmin SaaS com MRR e inadimplencia por escritorio", async ({ page }) => {
     test.setTimeout(240_000);
     const fixture = await ensurePlaywrightFinanceFixture();
+    const superadminCredentials = getPlaywrightSuperadminCredentials();
     test.skip(!fixture.admin.platformReady, `Schema billing SaaS indisponivel para /admin: ${fixture.admin.platformBlocker}`);
-    test.skip(!fixture.userIsSuperadmin, "PLAYWRIGHT_EMAIL precisa ter profiles.is_superadmin=true para validar /admin.");
+    test.skip(!superadminCredentials.available, "Configure PLAYWRIGHT_SUPERADMIN_EMAIL e PLAYWRIGHT_SUPERADMIN_PASSWORD para validar /admin.");
 
-    await loginThroughUi(page);
+    await loginThroughUi(page, { credentials: superadminCredentials });
     await page.goto("/admin", { waitUntil: "domcontentloaded" });
 
     await expect(page).toHaveURL(/\/admin(?:\/)?$/);
