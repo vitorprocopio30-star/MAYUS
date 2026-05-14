@@ -116,6 +116,55 @@ describe("tenant finance summary", () => {
           tags: ["revenue_to_case"],
         },
       ],
+      salesRows: [
+        {
+          id: "sale-pending",
+          client_name: "Ana Contrato",
+          ticket_total: 3000,
+          status: "Pendente",
+          contract_date: "2026-05-25",
+        },
+        {
+          id: "sale-closed",
+          client_name: "Bruno Fechado",
+          ticket_total: 8000,
+          status: "Fechado",
+          contract_date: "2026-05-05",
+        },
+        {
+          id: "sale-lost",
+          client_name: "Carla Perdida",
+          ticket_total: 1200,
+          status: "Perdido",
+        },
+      ],
+      crmStages: [
+        { id: "stage-proposal", name: "Proposta enviada", is_win: false, is_loss: false },
+        { id: "stage-won", name: "Fechado", is_win: true, is_loss: false },
+        { id: "stage-lost", name: "Perdido", is_win: false, is_loss: true },
+      ],
+      crmTasks: [
+        {
+          id: "crm-proposal",
+          title: "Dora proposta previdenciaria",
+          value: 7000,
+          source: "indicacao",
+          stage_id: "stage-proposal",
+          data_ultima_movimentacao: "2026-05-12",
+        },
+        {
+          id: "crm-won",
+          title: "Eva contrato fechado",
+          value: 5000,
+          stage_id: "stage-won",
+        },
+        {
+          id: "crm-lost",
+          title: "Felipe oportunidade perdida",
+          value: 900,
+          stage_id: "stage-lost",
+        },
+      ],
     });
 
     expect(summary.financials.received).toEqual({ amount: 2500, count: 1 });
@@ -151,6 +200,30 @@ describe("tenant finance summary", () => {
       riskLevel: "medium",
     }));
     expect(summary.financials.expenses.marketing).toEqual({ amount: 300, count: 1 });
+    expect(summary.commercialForecast.source).toBe("sales+crm_tasks");
+    expect(summary.commercialForecast.available).toBe(true);
+    expect(summary.commercialForecast.pipelineAmount).toBe(10000);
+    expect(summary.commercialForecast.pendingContracts).toEqual({ amount: 3000, count: 1 });
+    expect(summary.commercialForecast.closedContracts).toEqual({ amount: 13000, count: 2 });
+    expect(summary.commercialForecast.lostAmount).toBe(2100);
+    expect(summary.commercialForecast.byStage).toEqual([
+      expect.objectContaining({ stageId: "stage-proposal", stageName: "Proposta enviada", amount: 7000, count: 1, isWin: false, isLoss: false }),
+      expect.objectContaining({ stageId: "stage-won", stageName: "Fechado", amount: 5000, count: 1, isWin: true, isLoss: false }),
+      expect.objectContaining({ stageId: "stage-lost", stageName: "Perdido", amount: 900, count: 1, isWin: false, isLoss: true }),
+    ]);
+    expect(summary.commercialForecast.topOpportunities[0]).toEqual(expect.objectContaining({
+      kind: "crm",
+      label: "Dora proposta previdenciaria",
+      amount: 7000,
+      stage: "Proposta enviada",
+      nextBestAction: "Priorizar follow-up humano e confirmar proximo compromisso.",
+    }));
+    expect(summary.commercialForecast.topOpportunities[1]).toEqual(expect.objectContaining({
+      kind: "sale",
+      label: "Ana Contrato",
+      amount: 3000,
+      stage: "Pendente",
+    }));
     expect(summary.collectionsFollowup.totalPlans).toBe(1);
     expect(summary.collectionsFollowup.highPriorityPlans).toBe(1);
     expect(summary.collectionsFollowup.recentPlans[0]).toEqual(expect.objectContaining({

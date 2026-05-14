@@ -40,6 +40,7 @@ export async function GET() {
         source: "financials",
         tenantScoped: true,
         collectionsFollowupSource: "brain_artifacts",
+        commercialForecastSource: "sales+crm_tasks",
       },
     });
   } catch (error: any) {

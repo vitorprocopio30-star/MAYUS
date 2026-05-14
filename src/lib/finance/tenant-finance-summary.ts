@@ -490,6 +490,12 @@ function commercialOpportunityAction(params: { kind: "sale" | "crm"; stage: stri
   return "Qualificar valor, etapa e probabilidade antes de entrar no forecast firme.";
 }
 
+function commercialStagePriority(stage: Pick<TenantFinanceCommercialStage, "isWin" | "isLoss">) {
+  if (stage.isLoss) return 2;
+  if (stage.isWin) return 1;
+  return 0;
+}
+
 function buildCommercialForecast(input: {
   salesRows?: TenantFinanceSalesRow[] | null;
   crmTasks?: TenantFinanceCrmTaskRow[] | null;
@@ -583,7 +589,7 @@ function buildCommercialForecast(input: {
     },
     lostAmount: roundMoney(lostSalesAmount + lostCrmAmount),
     byStage: Array.from(stageGroups.values())
-      .sort((a, b) => Number(a.isLoss) - Number(b.isLoss) || Number(b.isWin) - Number(a.isWin) || b.amount - a.amount)
+      .sort((a, b) => commercialStagePriority(a) - commercialStagePriority(b) || b.amount - a.amount)
       .slice(0, 8),
     topOpportunities,
   };
@@ -626,8 +632,13 @@ export function buildTenantFinanceSummaryFromRows(input: {
   financialRows?: TenantFinanceFinancialRow[] | null;
   brainArtifacts?: TenantFinanceBrainArtifactRow[] | null;
   processTasks?: RevenueProcessTaskRow[] | null;
+  salesRows?: TenantFinanceSalesRow[] | null;
+  crmTasks?: TenantFinanceCrmTaskRow[] | null;
+  crmStages?: TenantFinanceCrmStageRow[] | null;
   brainArtifactsAvailable?: boolean;
   processTasksAvailable?: boolean;
+  salesAvailable?: boolean;
+  crmAvailable?: boolean;
   now?: Date;
 }): TenantFinanceSummary {
   const now = input.now || new Date();
@@ -652,6 +663,13 @@ export function buildTenantFinanceSummaryFromRows(input: {
   const forecastBuckets = buildForecastBuckets(forecastRows, today);
   const overdueAging = buildOverdueAging(overdueRows, today);
   const riskItems = buildRiskItems(openRows, today);
+  const commercialForecast = buildCommercialForecast({
+    salesRows: input.salesRows,
+    crmTasks: input.crmTasks,
+    crmStages: input.crmStages,
+    salesAvailable: input.salesAvailable,
+    crmAvailable: input.crmAvailable,
+  });
 
   const collectionPlans = (input.brainArtifacts || [])
     .filter(isCollectionsFollowupArtifact)
@@ -705,10 +723,7 @@ export function buildTenantFinanceSummaryFromRows(input: {
         marketing: bucketFromRows(marketingExpenseRows, (row) => Math.abs(money(row.amount))),
       },
     },
-    commercialForecast: buildCommercialForecast({
-      salesAvailable: false,
-      crmAvailable: false,
-    }),
+    commercialForecast,
     collectionsFollowup: {
       source: "brain_artifacts",
       available: input.brainArtifactsAvailable !== false,
@@ -725,7 +740,7 @@ export function buildTenantFinanceSummaryFromRows(input: {
 }
 
 export async function loadTenantFinanceSummary(input: LoadTenantFinanceSummaryInput) {
-  const [financialResult, artifactsResult, processTasksResult] = await Promise.all([
+  const [financialResult, artifactsResult, processTasksResult, salesResult, crmTasksResult, crmPipelinesResult] = await Promise.all([
     input.supabase
       .from("financials")
       .select("id, case_id, amount, status, due_date, type, description, source, reference_date, external_id, metadata")
@@ -743,19 +758,53 @@ export async function loadTenantFinanceSummary(input: LoadTenantFinanceSummaryIn
       .or("source.eq.revenue_to_case,tags.cs.{revenue_to_case}")
       .order("created_at", { ascending: false })
       .limit(50),
+    input.supabase
+      .from("sales")
+      .select("id, client_name, ticket_total, installments, contract_date, status, professional_name, created_at")
+      .eq("tenant_id", input.tenantId)
+      .order("contract_date", { ascending: false })
+      .limit(100),
+    input.supabase
+      .from("crm_tasks")
+      .select("id, title, value, source, stage_id, created_at, data_ultima_movimentacao")
+      .eq("tenant_id", input.tenantId)
+      .order("data_ultima_movimentacao", { ascending: false })
+      .limit(100),
+    input.supabase
+      .from("crm_pipelines")
+      .select("id")
+      .eq("tenant_id", input.tenantId),
   ]);
 
   if (financialResult.error) {
     throw financialResult.error;
   }
 
+  const pipelineIds = !crmPipelinesResult.error && Array.isArray(crmPipelinesResult.data)
+    ? crmPipelinesResult.data
+      .map((pipeline: { id?: unknown }) => compactText(pipeline.id, ""))
+      .filter(Boolean)
+    : [];
+  const crmStagesResult = pipelineIds.length > 0
+    ? await input.supabase
+      .from("crm_stages")
+      .select("id, name, is_win, is_loss")
+      .in("pipeline_id", pipelineIds)
+    : { data: [], error: null };
+  const crmAvailable = !crmTasksResult.error && !crmPipelinesResult.error && !crmStagesResult.error;
+
   return buildTenantFinanceSummaryFromRows({
     tenantId: input.tenantId,
     financialRows: financialResult.data as TenantFinanceFinancialRow[] | null,
     brainArtifacts: artifactsResult.error ? [] : artifactsResult.data as TenantFinanceBrainArtifactRow[] | null,
     processTasks: processTasksResult.error ? [] : processTasksResult.data as RevenueProcessTaskRow[] | null,
+    salesRows: salesResult.error ? [] : salesResult.data as TenantFinanceSalesRow[] | null,
+    crmTasks: crmTasksResult.error ? [] : crmTasksResult.data as TenantFinanceCrmTaskRow[] | null,
+    crmStages: crmStagesResult.error ? [] : crmStagesResult.data as TenantFinanceCrmStageRow[] | null,
     brainArtifactsAvailable: !artifactsResult.error,
     processTasksAvailable: !processTasksResult.error,
+    salesAvailable: !salesResult.error,
+    crmAvailable,
     now: input.now,
   });
 }

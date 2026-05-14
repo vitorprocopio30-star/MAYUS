@@ -40,7 +40,7 @@ Evidencia 2026-05-13: `src/lib/finance/collections-followup.ts`, router, registr
 ## Forecast e Unidade Economica
 
 - [~] Criar forecast por funil, proposta, contrato e cobranca.
-Evidencia 2026-05-13: `GET /api/financeiro/summary` agora separa forecast de cobrancas em 7 dias, 30 dias, futuro e sem vencimento, alem de aging de vencidos; a aba Financeiro passou smoke autenticado com fixture controlada. Ainda falta forecast completo por funil/proposta/contrato.
+Evidencia 2026-05-14: `GET /api/financeiro/summary` separa forecast de cobrancas em 7 dias, 30 dias, futuro e sem vencimento, alem de aging de vencidos, e agora adiciona `commercialForecast` separado de caixa recebido usando `sales`, `crm_tasks` e `crm_stages` para funil/proposta/contrato. Validado em codigo/teste local; ainda falta smoke visual/autenticado com dados controlados.
 - [ ] Criar margem estimada por caso.
 - [ ] Criar receita por area juridica.
 - [ ] Criar comissao por origem/responsavel.

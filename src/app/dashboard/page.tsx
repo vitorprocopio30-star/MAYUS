@@ -81,6 +81,37 @@ type FinanceCollectionPlanPreview = {
   externalSideEffectsBlocked: boolean;
 };
 
+type CommercialForecastStagePreview = {
+  stageId: string;
+  stageName: string;
+  amount: number;
+  count: number;
+  isWin: boolean;
+  isLoss: boolean;
+};
+
+type CommercialForecastOpportunityPreview = {
+  id: string;
+  kind: "sale" | "crm";
+  label: string;
+  amount: number;
+  stage: string;
+  source: string | null;
+  expectedDate: string | null;
+  nextBestAction: string;
+};
+
+type CommercialForecastPreview = {
+  source: "sales+crm_tasks";
+  available: boolean;
+  pipelineAmount: number;
+  pendingContracts: FinanceBucketPreview;
+  closedContracts: FinanceBucketPreview;
+  lostAmount: number;
+  byStage: CommercialForecastStagePreview[];
+  topOpportunities: CommercialForecastOpportunityPreview[];
+};
+
 type FinanceSummaryPayload = {
   financials?: {
     received?: { amount?: number; count?: number };
@@ -101,6 +132,7 @@ type FinanceSummaryPayload = {
     highPriorityPlans?: number;
     recentPlans?: FinanceCollectionPlanPreview[];
   };
+  commercialForecast?: Partial<CommercialForecastPreview>;
   revenueReconciliation?: {
     available?: boolean;
     report?: {
@@ -160,6 +192,15 @@ type DashboardMetrics = {
   financeForecastBuckets: FinanceForecastBucketsPreview;
   financeOverdueAging: FinanceOverdueAgingPreview;
   financeRiskItems: FinanceRiskItemPreview[];
+  commercialForecastAvailable: boolean;
+  commercialForecastPipelineAmount: number;
+  commercialForecastPendingContractsAmount: number;
+  commercialForecastPendingContractsCount: number;
+  commercialForecastClosedContractsAmount: number;
+  commercialForecastClosedContractsCount: number;
+  commercialForecastLostAmount: number;
+  commercialForecastStages: CommercialForecastStagePreview[];
+  commercialForecastTopOpportunities: CommercialForecastOpportunityPreview[];
   revenueReconciliationMatched: number;
   revenueReconciliationPartial: number;
   revenueReconciliationBlocked: number;
@@ -314,6 +355,45 @@ const sanitizeCollectionPlans = (plans: unknown): FinanceCollectionPlanPreview[]
   });
 };
 
+const sanitizeCommercialForecast = (forecast: unknown): CommercialForecastPreview => {
+  const item = forecast && typeof forecast === "object" ? forecast as Partial<CommercialForecastPreview> : {};
+  const pendingContracts = sanitizeFinanceBucket(item.pendingContracts);
+  const closedContracts = sanitizeFinanceBucket(item.closedContracts);
+  const byStage = Array.isArray(item.byStage)
+    ? item.byStage.slice(0, 8).map((stage) => ({
+      stageId: String(stage?.stageId || stage?.stageName || "stage"),
+      stageName: String(stage?.stageName || "Sem etapa"),
+      amount: finiteNumber(stage?.amount, 0),
+      count: finiteNumber(stage?.count, 0),
+      isWin: stage?.isWin === true,
+      isLoss: stage?.isLoss === true,
+    }))
+    : [];
+  const topOpportunities = Array.isArray(item.topOpportunities)
+    ? item.topOpportunities.slice(0, 8).map((opportunity) => ({
+      id: String(opportunity?.id || opportunity?.label || "opportunity"),
+      kind: opportunity?.kind === "sale" ? "sale" as const : "crm" as const,
+      label: String(opportunity?.label || "Oportunidade comercial"),
+      amount: finiteNumber(opportunity?.amount, 0),
+      stage: String(opportunity?.stage || "Sem etapa"),
+      source: typeof opportunity?.source === "string" ? opportunity.source : null,
+      expectedDate: typeof opportunity?.expectedDate === "string" ? opportunity.expectedDate : null,
+      nextBestAction: String(opportunity?.nextBestAction || "Revisar oportunidade antes de projetar receita."),
+    }))
+    : [];
+
+  return {
+    source: "sales+crm_tasks",
+    available: item.available === true,
+    pipelineAmount: finiteNumber(item.pipelineAmount, 0),
+    pendingContracts,
+    closedContracts,
+    lostAmount: finiteNumber(item.lostAmount, 0),
+    byStage,
+    topOpportunities,
+  };
+};
+
 const fetchTenantFinanceSummary = async (): Promise<FinanceSummaryPayload | null> => {
   try {
     const response = await fetch("/api/financeiro/summary", { cache: "no-store" });
@@ -419,6 +499,15 @@ const INITIAL_DASHBOARD_METRICS: DashboardMetrics = {
     days31Plus: emptyFinanceBucket(),
   },
   financeRiskItems: [],
+  commercialForecastAvailable: false,
+  commercialForecastPipelineAmount: 0,
+  commercialForecastPendingContractsAmount: 0,
+  commercialForecastPendingContractsCount: 0,
+  commercialForecastClosedContractsAmount: 0,
+  commercialForecastClosedContractsCount: 0,
+  commercialForecastLostAmount: 0,
+  commercialForecastStages: [],
+  commercialForecastTopOpportunities: [],
   revenueReconciliationMatched: 0,
   revenueReconciliationPartial: 0,
   revenueReconciliationBlocked: 0,
@@ -1002,6 +1091,8 @@ const FinanceiroView = ({ metrics }: { metrics: DashboardMetrics }) => {
     { label: "31d+", bucket: metrics.financeOverdueAging.days31Plus },
   ];
   const riskItems = metrics.financeRiskItems.slice(0, 3);
+  const commercialOpportunities = metrics.commercialForecastTopOpportunities.slice(0, 3);
+  const commercialStages = metrics.commercialForecastStages.slice(0, 4);
   const riskBadgeClass = (risk: FinanceRiskItemPreview["riskLevel"]) =>
     risk === "high"
       ? "border-[#f87171]/40 bg-[#f87171]/10 text-[#f87171]"
@@ -1041,6 +1132,83 @@ const FinanceiroView = ({ metrics }: { metrics: DashboardMetrics }) => {
         <p className="text-[10px] text-[#f87171] mt-2">{metrics.delinquencyCount} vencidas / {metrics.delinquencyRate}% das abertas</p>
       </GlassCard>
     </div>
+
+    {(metrics.commercialForecastAvailable || metrics.commercialForecastPipelineAmount > 0 || commercialOpportunities.length > 0) && (
+      <GlassCard className="border border-[#22d3ee]/15" noHover>
+        <div data-testid="finance-commercial-forecast" className="space-y-4">
+          <div className="flex flex-col lg:flex-row lg:items-center lg:justify-between gap-4">
+            <div>
+              <p className="text-[10px] text-gray-500 uppercase tracking-widest font-bold">Forecast Comercial</p>
+              <h4 className="mt-1 text-xl font-bold text-white">
+                R$ {metrics.commercialForecastPipelineAmount.toLocaleString('pt-BR')}
+              </h4>
+              <p className="mt-1 text-[10px] text-gray-500">Funil/propostas separado do caixa recebido</p>
+            </div>
+            <div className="grid grid-cols-3 gap-3 text-center">
+              <div className="rounded-xl border border-white/5 bg-black/20 px-3 py-2">
+                <p className="text-[9px] text-gray-500 uppercase tracking-widest">Pendentes</p>
+                <p data-testid="finance-commercial-pending" className="text-sm font-bold text-[#22d3ee]">
+                  R$ {metrics.commercialForecastPendingContractsAmount.toLocaleString('pt-BR')}
+                </p>
+                <p className="text-[10px] text-gray-600">{metrics.commercialForecastPendingContractsCount} contrato(s)</p>
+              </div>
+              <div className="rounded-xl border border-white/5 bg-black/20 px-3 py-2">
+                <p className="text-[9px] text-gray-500 uppercase tracking-widest">Fechados</p>
+                <p className="text-sm font-bold text-[#4ade80]">
+                  R$ {metrics.commercialForecastClosedContractsAmount.toLocaleString('pt-BR')}
+                </p>
+                <p className="text-[10px] text-gray-600">{metrics.commercialForecastClosedContractsCount} ganho(s)</p>
+              </div>
+              <div className="rounded-xl border border-white/5 bg-black/20 px-3 py-2">
+                <p className="text-[9px] text-gray-500 uppercase tracking-widest">Perdido</p>
+                <p className="text-sm font-bold text-[#f87171]">
+                  R$ {metrics.commercialForecastLostAmount.toLocaleString('pt-BR')}
+                </p>
+                <p className="text-[10px] text-gray-600">fora da projecao</p>
+              </div>
+            </div>
+          </div>
+
+          <div className="grid grid-cols-1 lg:grid-cols-2 gap-4 border-t border-white/5 pt-4">
+            <div className="space-y-2">
+              <p className="text-[9px] text-gray-500 uppercase tracking-widest font-bold">Etapas do funil</p>
+              {commercialStages.length > 0 ? commercialStages.map((stage) => (
+                <div key={stage.stageId} data-testid="finance-commercial-stage" className="flex items-center justify-between gap-3 text-[11px]">
+                  <span className="truncate text-gray-300">
+                    {stage.stageName}
+                    <span className="ml-2 text-gray-600">({stage.count})</span>
+                  </span>
+                  <span className={stage.isLoss ? "text-[#f87171]" : stage.isWin ? "text-[#4ade80]" : "text-[#22d3ee]"}>
+                    R$ {stage.amount.toLocaleString('pt-BR')}
+                  </span>
+                </div>
+              )) : (
+                <p className="text-[11px] text-gray-500">Sem oportunidades com valor cadastrado.</p>
+              )}
+            </div>
+            <div className="space-y-2">
+              <p className="text-[9px] text-gray-500 uppercase tracking-widest font-bold">Oportunidades principais</p>
+              {commercialOpportunities.length > 0 ? commercialOpportunities.map((opportunity) => (
+                <div key={opportunity.id} data-testid="finance-commercial-opportunity" className="rounded-xl border border-white/5 bg-black/20 px-3 py-2">
+                  <div className="flex items-start justify-between gap-3">
+                    <div className="min-w-0">
+                      <p className="truncate text-[11px] font-bold text-gray-200">{opportunity.label}</p>
+                      <p className="mt-0.5 text-[10px] text-gray-500">{opportunity.stage}</p>
+                    </div>
+                    <span className="shrink-0 text-[11px] font-bold text-[#CCA761]">
+                      R$ {opportunity.amount.toLocaleString('pt-BR')}
+                    </span>
+                  </div>
+                  <p className="mt-2 line-clamp-2 text-[10px] text-gray-500">{opportunity.nextBestAction}</p>
+                </div>
+              )) : (
+                <p className="text-[11px] text-gray-500">Nenhuma oportunidade priorizada no momento.</p>
+              )}
+            </div>
+          </div>
+        </div>
+      </GlassCard>
+    )}
 
     <div className="grid grid-cols-1 lg:grid-cols-2 gap-4">
       <GlassCard className="border border-[#1a1a1a]">
@@ -1762,6 +1930,7 @@ export default function DashboardHomePage() {
       const overdueAging = sanitizeOverdueAging(financeSummary?.financials?.overdueAging);
       const riskItems = sanitizeRiskItems(financeSummary?.financials?.riskItems);
       const collectionPlans = sanitizeCollectionPlans(financeSummary?.collectionsFollowup?.recentPlans);
+      const commercialForecast = sanitizeCommercialForecast(financeSummary?.commercialForecast);
       const reconciliationTotals = financeSummary?.revenueReconciliation?.report?.totals;
 
       nextMetrics.clientCount = normalizedClientCount;
@@ -1793,6 +1962,15 @@ export default function DashboardHomePage() {
       nextMetrics.financeForecastBuckets = forecastBuckets;
       nextMetrics.financeOverdueAging = overdueAging;
       nextMetrics.financeRiskItems = riskItems;
+      nextMetrics.commercialForecastAvailable = commercialForecast.available;
+      nextMetrics.commercialForecastPipelineAmount = commercialForecast.pipelineAmount;
+      nextMetrics.commercialForecastPendingContractsAmount = commercialForecast.pendingContracts.amount;
+      nextMetrics.commercialForecastPendingContractsCount = commercialForecast.pendingContracts.count;
+      nextMetrics.commercialForecastClosedContractsAmount = commercialForecast.closedContracts.amount;
+      nextMetrics.commercialForecastClosedContractsCount = commercialForecast.closedContracts.count;
+      nextMetrics.commercialForecastLostAmount = commercialForecast.lostAmount;
+      nextMetrics.commercialForecastStages = commercialForecast.byStage;
+      nextMetrics.commercialForecastTopOpportunities = commercialForecast.topOpportunities;
       nextMetrics.revenueReconciliationMatched = finiteNumber(reconciliationTotals?.matched, 0);
       nextMetrics.revenueReconciliationPartial = finiteNumber(reconciliationTotals?.partial, 0);
       nextMetrics.revenueReconciliationBlocked = finiteNumber(reconciliationTotals?.blocked, 0);

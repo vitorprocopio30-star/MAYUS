@@ -75,13 +75,33 @@ describe("GET /api/financeiro/summary", () => {
       },
       commercialForecast: {
         source: "sales+crm_tasks",
-        available: false,
-        pipelineAmount: 0,
-        pendingContracts: { amount: 0, count: 0 },
-        closedContracts: { amount: 0, count: 0 },
-        lostAmount: 0,
-        byStage: [],
-        topOpportunities: [],
+        available: true,
+        pipelineAmount: 5000,
+        pendingContracts: { amount: 3000, count: 1 },
+        closedContracts: { amount: 12000, count: 2 },
+        lostAmount: 1000,
+        byStage: [
+          {
+            stageId: "stage-1",
+            stageName: "Proposta",
+            amount: 2000,
+            count: 1,
+            isWin: false,
+            isLoss: false,
+          },
+        ],
+        topOpportunities: [
+          {
+            id: "crm:1",
+            kind: "crm",
+            label: "Oportunidade Maria",
+            amount: 2000,
+            stage: "Proposta",
+            source: "indicacao",
+            expectedDate: "2026-05-13",
+            nextBestAction: "Priorizar follow-up humano e confirmar proximo compromisso.",
+          },
+        ],
       },
       collectionsFollowup: {
         source: "brain_artifacts",
@@ -121,6 +141,7 @@ describe("GET /api/financeiro/summary", () => {
     expect(response.status).toBe(200);
     expect(json.ok).toBe(true);
     expect(json.summary.financials.received.amount).toBe(1000);
+    expect(json.summary.commercialForecast.pipelineAmount).toBe(5000);
     expect(loadTenantFinanceSummaryMock).toHaveBeenCalledWith({
       supabase: supabaseAdmin,
       tenantId: "tenant-1",
