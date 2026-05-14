@@ -1,4 +1,4 @@
-import { expect, test, type Page } from "@playwright/test";
+import { expect, test, type Locator, type Page } from "@playwright/test";
 import { getPlaywrightCredentials, getPlaywrightSuperadminCredentials, loginThroughUi } from "./helpers/auth";
 import {
   ensurePlaywrightFinanceFixture,
@@ -7,6 +7,19 @@ import {
 
 function formatIntegerBR(value: number) {
   return Math.floor(value).toLocaleString("pt-BR");
+}
+
+function moneyAfterLabel(text: string, label: string) {
+  const escapedLabel = label.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
+  const match = text.match(new RegExp(`${escapedLabel}\\s*R\\$\\s*([\\d.]+)`, "i"));
+  return match ? Number(match[1].replace(/\./g, "")) : null;
+}
+
+async function expectMoneyAtLeast(locator: Locator, label: string, expectedMinimum: number) {
+  const text = (await locator.textContent()) || "";
+  const actual = moneyAfterLabel(text, label);
+  expect(actual, `valor monetario depois de "${label}"`).not.toBeNull();
+  expect(actual || 0).toBeGreaterThanOrEqual(expectedMinimum);
 }
 
 async function openFinanceDashboard(page: Page) {
@@ -54,6 +67,19 @@ test.describe("Financeiro authenticated", () => {
     await expect(page.getByTestId("finance-collection-plan").first()).toContainText(PLAYWRIGHT_FINANCE_FIXTURE_LABELS.highRiskClient);
     await expect(page.getByTestId("finance-risk-item").first()).toContainText(fixture.dashboard.highRiskClient);
     await expect(page.getByTestId("finance-risk-item").first()).toContainText(/high/i);
+
+    const commercialForecast = page.getByTestId("finance-commercial-forecast");
+    await expect(commercialForecast).toBeVisible({ timeout: 60_000 });
+    await expectMoneyAtLeast(commercialForecast, "Forecast Comercial", fixture.dashboard.commercialPipeline);
+    await expect(page.getByTestId("finance-commercial-pending")).toContainText(formatIntegerBR(fixture.dashboard.commercialPendingContracts));
+    await expectMoneyAtLeast(commercialForecast, "Fechados", fixture.dashboard.commercialClosedContracts);
+    await expectMoneyAtLeast(commercialForecast, "Perdido", fixture.dashboard.commercialLostAmount);
+
+    const proposalStage = page.getByTestId("finance-commercial-stage").filter({ hasText: fixture.dashboard.commercialProposalStage });
+    await expect(proposalStage).toContainText("7.000");
+    const topOpportunity = page.getByTestId("finance-commercial-opportunity").filter({ hasText: fixture.dashboard.commercialTopOpportunity });
+    await expect(topOpportunity).toContainText("7.000");
+    await expect(topOpportunity).toContainText(/follow-up humano/i);
   });
 
   test("mostra painel superadmin SaaS com MRR e inadimplencia por escritorio", async ({ page }) => {

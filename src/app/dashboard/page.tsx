@@ -415,6 +415,23 @@ const classifyLeadSource = (source?: string | null): keyof LeadSourceMetrics | n
   return null;
 };
 
+async function resolveDashboardTenantId(supabase: ReturnType<typeof createClient>, user: any) {
+  const metadataTenant = user?.user_metadata?.tenant_id || user?.app_metadata?.tenant_id;
+  if (metadataTenant) return String(metadataTenant);
+
+  const { data, error } = await supabase
+    .from("profiles")
+    .select("tenant_id")
+    .eq("id", user.id)
+    .maybeSingle();
+
+  if (error) {
+    console.warn("MAYUS BI: tenant_id indisponivel no profile", error.message);
+  }
+
+  return data?.tenant_id ? String(data.tenant_id) : "";
+}
+
 const processText = (task: ProcessTaskRow) =>
   normalizeMetricText(`${task.title || ""} ${task.description || ""} ${task.demanda || ""} ${task.sector || ""} ${(task.tags || []).join(" ")} ${task.sentenca || ""} ${task.andamento_1grau || ""} ${task.andamento_2grau || ""}`);
 
@@ -1533,7 +1550,7 @@ const AgendaView = () => {
   const fetchTasks = useCallback(async () => {
     const { data: { user } } = await supabase.auth.getUser();
     if (!user) return;
-    const tenantId = user.user_metadata?.tenant_id || user.app_metadata?.tenant_id;
+    const tenantId = await resolveDashboardTenantId(supabase, user);
 
     if (tenantId) {
       const { data: userTasks } = await supabase
@@ -1756,7 +1773,7 @@ export default function DashboardHomePage() {
         return;
       }
 
-      const tenantId = user.user_metadata?.tenant_id || user.app_metadata?.tenant_id;
+      const tenantId = await resolveDashboardTenantId(supabase, user);
       if (!tenantId) {
         setLoading(false);
         return;

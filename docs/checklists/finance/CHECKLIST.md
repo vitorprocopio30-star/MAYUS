@@ -40,7 +40,7 @@ Evidencia 2026-05-13: `src/lib/finance/collections-followup.ts`, router, registr
 ## Forecast e Unidade Economica
 
 - [~] Criar forecast por funil, proposta, contrato e cobranca.
-Evidencia 2026-05-14: `GET /api/financeiro/summary` separa forecast de cobrancas em 7 dias, 30 dias, futuro e sem vencimento, alem de aging de vencidos, e agora adiciona `commercialForecast` separado de caixa recebido usando `sales`, `crm_tasks` e `crm_stages` para funil/proposta/contrato. Validado em codigo/teste local; ainda falta smoke visual/autenticado com dados controlados.
+Evidencia 2026-05-14: `GET /api/financeiro/summary` separa forecast de cobrancas em 7 dias, 30 dias, futuro e sem vencimento, alem de aging de vencidos, e agora adiciona `commercialForecast` separado de caixa recebido usando `sales`, `crm_tasks` e `crm_stages` para funil/proposta/contrato. Validado em codigo/teste local e em smoke autenticado no dashboard com fixture controlada cobrindo pipeline, contratos pendentes, etapas e oportunidades principais. Ainda falta smoke real Asaas e superadmin SaaS autenticado.
 - [ ] Criar margem estimada por caso.
 - [ ] Criar receita por area juridica.
 - [ ] Criar comissao por origem/responsavel.
@@ -52,4 +52,4 @@ Evidencia 2026-05-13: o painel superadmin financeiro mostra risco por escritorio
 - [~] Comando "Mayus, cobre a entrada do cliente X" encontra contexto, monta cobranca, pede aprovacao e registra artifact.
 - [x] Nenhuma cobranca externa e enviada sem aprovacao.
 - [~] O sistema mostra dinheiro previsto, dinheiro recebido e casos abertos por receita.
-Evidencia 2026-05-13: Chat/Brain MAYUS ganhou labels de artifact para `asaas_billing`, `collections_followup_plan` e revenue-to-case, e a reconciliacao leve calcula receita recebida vs caso aberto. O summary financeiro do tenant passou smoke autenticado com fixture controlada cobrindo forecast, aging, cobrancas abertas, collections, reconciliacao e riscos por cliente/caso. O painel superadmin segue pendente de migration remota de billing SaaS e usuario E2E superadmin.
+Evidencia 2026-05-14: Chat/Brain MAYUS ganhou labels de artifact para `asaas_billing`, `collections_followup_plan` e revenue-to-case, e a reconciliacao leve calcula receita recebida vs caso aberto. O summary financeiro do tenant passou smoke autenticado com fixture controlada cobrindo forecast, aging, cobrancas abertas, collections, reconciliacao, riscos por cliente/caso e forecast comercial por funil/proposta/contrato. O painel superadmin segue pendente de migration remota de billing SaaS e usuario E2E superadmin.

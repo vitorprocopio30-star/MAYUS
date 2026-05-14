@@ -11,6 +11,12 @@ export type PlaywrightFinanceFixtureInfo = {
     overdueRevenue: number;
     openCharges: number;
     highRiskClient: string;
+    commercialPipeline: number;
+    commercialPendingContracts: number;
+    commercialClosedContracts: number;
+    commercialLostAmount: number;
+    commercialProposalStage: string;
+    commercialTopOpportunity: string;
   };
   admin: {
     platformReady: boolean;
@@ -51,6 +57,16 @@ const FIXTURE_IDS = {
   asaasBlockedArtifact: "22222222-2222-4222-8222-222222222504",
   asaasPartialArtifact: "22222222-2222-4222-8222-222222222505",
   revenuePlanPartialArtifact: "22222222-2222-4222-8222-222222222506",
+  crmPipelineCommercial: "22222222-2222-4222-8222-222222222801",
+  crmStageProposal: "22222222-2222-4222-8222-222222222802",
+  crmStageWon: "22222222-2222-4222-8222-222222222803",
+  crmStageLost: "22222222-2222-4222-8222-222222222804",
+  crmTaskProposal: "22222222-2222-4222-8222-222222222805",
+  crmTaskWon: "22222222-2222-4222-8222-222222222806",
+  crmTaskLost: "22222222-2222-4222-8222-222222222807",
+  salePending: "22222222-2222-4222-8222-222222222901",
+  saleClosed: "22222222-2222-4222-8222-222222222902",
+  saleLost: "22222222-2222-4222-8222-222222222903",
   platformActiveTenant: "22222222-2222-4222-8222-222222222601",
   platformAnnualTenant: "22222222-2222-4222-8222-222222222602",
   platformTrialTenant: "22222222-2222-4222-8222-222222222603",
@@ -67,6 +83,11 @@ export const PLAYWRIGHT_FINANCE_FIXTURE_LABELS = {
   forecastClient: "Cliente Financeiro E2E Beta",
   highRiskClient: "Cliente Financeiro E2E Delta",
   partialClient: "Cliente Financeiro E2E Parcial",
+  commercialPendingClient: "Cliente Financeiro E2E Contrato",
+  commercialProposalClient: "Cliente Financeiro E2E Proposta",
+  commercialClosedClient: "Cliente Financeiro E2E Fechado",
+  commercialLostClient: "Cliente Financeiro E2E Perdido",
+  commercialProposalStage: "Proposta enviada E2E",
   activeTenantName: "Escritorio Financeiro E2E Ativo",
   annualTenantName: "Escritorio Financeiro E2E Anual",
   trialTenantName: "Escritorio Financeiro E2E Trial",
@@ -79,6 +100,10 @@ const FINANCE_EXPECTATIONS = {
   forecastRevenue: 8000,
   overdueRevenue: 17500,
   openCharges: 25500,
+  commercialPipeline: 10000,
+  commercialPendingContracts: 3000,
+  commercialClosedContracts: 13000,
+  commercialLostAmount: 2100,
   monthlyMrr: 1144,
   delinquentDaysOverdue: 12,
 };
@@ -145,12 +170,35 @@ async function resolveFixtureTenantId(supabase: any, env: Record<string, string>
 async function resolveProfile(supabase: any, userId: string) {
   const { data, error } = await supabase
     .from("profiles")
-    .select("id, tenant_id, is_superadmin")
+    .select("id, tenant_id, full_name, role, is_superadmin")
     .eq("id", userId)
     .maybeSingle();
 
   if (error) throw error;
   return data || null;
+}
+
+async function ensureUserTenantMetadata(supabase: any, user: any, tenantId: string, profile: any) {
+  const appMetadata = {
+    ...(user.app_metadata || {}),
+    tenant_id: tenantId,
+    role: profile?.role || user.app_metadata?.role || "Administrador",
+  };
+  const userMetadata = {
+    ...(user.user_metadata || {}),
+    tenant_id: tenantId,
+    tenantId,
+    full_name: profile?.full_name || user.user_metadata?.full_name || "Playwright E2E",
+  };
+
+  const { error } = await supabase.auth.admin.updateUserById(user.id, {
+    app_metadata: appMetadata,
+    user_metadata: userMetadata,
+  });
+
+  if (error) {
+    throw new Error(`Falha ao alinhar metadata do usuario E2E financeiro: ${error.message}`);
+  }
 }
 
 function buildFinancialRows(tenantId: string, now: Date) {
@@ -439,6 +487,137 @@ function buildPlatformTenants(now: Date) {
   ];
 }
 
+function buildSalesRows(tenantId: string, now: Date) {
+  return [
+    {
+      id: FIXTURE_IDS.salePending,
+      tenant_id: tenantId,
+      client_name: PLAYWRIGHT_FINANCE_FIXTURE_LABELS.commercialPendingClient,
+      professional_name: "Closer E2E",
+      ticket_total: FINANCE_EXPECTATIONS.commercialPendingContracts,
+      installments: 3,
+      contract_date: dateOnly(addDays(now, 8)),
+      status: "Pendente",
+      commission_value: 0,
+      fixed_salary: 0,
+      estimated_earnings: 0,
+      sale_number_month: 1,
+    },
+    {
+      id: FIXTURE_IDS.saleClosed,
+      tenant_id: tenantId,
+      client_name: PLAYWRIGHT_FINANCE_FIXTURE_LABELS.commercialClosedClient,
+      professional_name: "Closer E2E",
+      ticket_total: 8000,
+      installments: 4,
+      contract_date: dateOnly(addDays(now, -6)),
+      status: "Fechado",
+      commission_value: 500,
+      fixed_salary: 0,
+      estimated_earnings: 8000,
+      sale_number_month: 2,
+    },
+    {
+      id: FIXTURE_IDS.saleLost,
+      tenant_id: tenantId,
+      client_name: PLAYWRIGHT_FINANCE_FIXTURE_LABELS.commercialLostClient,
+      professional_name: "Closer E2E",
+      ticket_total: 1200,
+      installments: 1,
+      contract_date: dateOnly(addDays(now, -4)),
+      status: "Perdido",
+      commission_value: 0,
+      fixed_salary: 0,
+      estimated_earnings: 0,
+      sale_number_month: 3,
+    },
+  ];
+}
+
+function buildCrmCommercialRows(tenantId: string, now: Date) {
+  return {
+    pipeline: {
+      id: FIXTURE_IDS.crmPipelineCommercial,
+      tenant_id: tenantId,
+      name: "Comercial Financeiro E2E",
+      description: "Fixture forecast comercial financeiro",
+      tags: ["finance-e2e"],
+      sectors: ["Financeiro"],
+    },
+    stages: [
+      {
+        id: FIXTURE_IDS.crmStageProposal,
+        pipeline_id: FIXTURE_IDS.crmPipelineCommercial,
+        name: PLAYWRIGHT_FINANCE_FIXTURE_LABELS.commercialProposalStage,
+        color: "#22d3ee",
+        order_index: 1,
+        is_win: false,
+        is_loss: false,
+      },
+      {
+        id: FIXTURE_IDS.crmStageWon,
+        pipeline_id: FIXTURE_IDS.crmPipelineCommercial,
+        name: "Fechado E2E",
+        color: "#4ade80",
+        order_index: 2,
+        is_win: true,
+        is_loss: false,
+      },
+      {
+        id: FIXTURE_IDS.crmStageLost,
+        pipeline_id: FIXTURE_IDS.crmPipelineCommercial,
+        name: "Perdido E2E",
+        color: "#f87171",
+        order_index: 3,
+        is_win: false,
+        is_loss: true,
+      },
+    ],
+    tasks: [
+      {
+        id: FIXTURE_IDS.crmTaskProposal,
+        tenant_id: tenantId,
+        pipeline_id: FIXTURE_IDS.crmPipelineCommercial,
+        stage_id: FIXTURE_IDS.crmStageProposal,
+        title: PLAYWRIGHT_FINANCE_FIXTURE_LABELS.commercialProposalClient,
+        description: "Oportunidade aberta para validar forecast comercial financeiro.",
+        position_index: 1,
+        value: 7000,
+        tags: ["finance-e2e", "proposta"],
+        source: "indicacao",
+        data_ultima_movimentacao: iso(addDays(now, -1)),
+      },
+      {
+        id: FIXTURE_IDS.crmTaskWon,
+        tenant_id: tenantId,
+        pipeline_id: FIXTURE_IDS.crmPipelineCommercial,
+        stage_id: FIXTURE_IDS.crmStageWon,
+        title: PLAYWRIGHT_FINANCE_FIXTURE_LABELS.commercialClosedClient,
+        description: "Oportunidade ganha para validar contratos fechados.",
+        position_index: 2,
+        value: 5000,
+        tags: ["finance-e2e", "fechado"],
+        source: "google",
+        data_ultima_movimentacao: iso(addDays(now, -2)),
+      },
+      {
+        id: FIXTURE_IDS.crmTaskLost,
+        tenant_id: tenantId,
+        pipeline_id: FIXTURE_IDS.crmPipelineCommercial,
+        stage_id: FIXTURE_IDS.crmStageLost,
+        title: PLAYWRIGHT_FINANCE_FIXTURE_LABELS.commercialLostClient,
+        description: "Oportunidade perdida para validar exclusao da projecao.",
+        position_index: 3,
+        value: 900,
+        tags: ["finance-e2e", "perdido"],
+        source: "instagram",
+        motivo_perda: "Fixture E2E",
+        data_ultima_movimentacao: iso(addDays(now, -3)),
+      },
+    ],
+  };
+}
+
 function buildPlatformEvents(now: Date) {
   return [
     {
@@ -557,6 +736,7 @@ export async function ensurePlaywrightFinanceFixture(params: { now?: Date } = {}
 
   const tenantId = await resolveFixtureTenantId(supabase, env, user);
   const profile = await resolveProfile(supabase, user.id);
+  await ensureUserTenantMetadata(supabase, user, tenantId, profile);
 
   await deleteFixtureRowsByMetadata(supabase, "brain_artifacts", tenantId);
   await deleteFixtureRowsByMetadata(supabase, "financials", tenantId);
@@ -569,6 +749,11 @@ export async function ensurePlaywrightFinanceFixture(params: { now?: Date } = {}
   ]);
 
   await upsertOrThrow(supabase, "financials", buildFinancialRows(tenantId, now));
+  await upsertOrThrow(supabase, "sales", buildSalesRows(tenantId, now));
+  const commercialCrm = buildCrmCommercialRows(tenantId, now);
+  await upsertOrThrow(supabase, "crm_pipelines", commercialCrm.pipeline);
+  await upsertOrThrow(supabase, "crm_stages", commercialCrm.stages);
+  await upsertOrThrow(supabase, "crm_tasks", commercialCrm.tasks);
   await upsertOrThrow(supabase, "process_pipelines", {
     id: FIXTURE_IDS.pipelineId,
     tenant_id: tenantId,
@@ -785,6 +970,12 @@ export async function ensurePlaywrightFinanceFixture(params: { now?: Date } = {}
       overdueRevenue: FINANCE_EXPECTATIONS.overdueRevenue,
       openCharges: FINANCE_EXPECTATIONS.openCharges,
       highRiskClient: PLAYWRIGHT_FINANCE_FIXTURE_LABELS.highRiskClient,
+      commercialPipeline: FINANCE_EXPECTATIONS.commercialPipeline,
+      commercialPendingContracts: FINANCE_EXPECTATIONS.commercialPendingContracts,
+      commercialClosedContracts: FINANCE_EXPECTATIONS.commercialClosedContracts,
+      commercialLostAmount: FINANCE_EXPECTATIONS.commercialLostAmount,
+      commercialProposalStage: PLAYWRIGHT_FINANCE_FIXTURE_LABELS.commercialProposalStage,
+      commercialTopOpportunity: PLAYWRIGHT_FINANCE_FIXTURE_LABELS.commercialProposalClient,
     },
     admin: {
       platformReady,
