@@ -54,6 +54,7 @@ const DETERMINISTIC_ROUTER_INTENTS = new Set([
   "collections_followup",
   "legal_process_mission_plan",
   "legal_process_mission_execute_next",
+  "legal_case_brain_insights",
 ]);
 
 // ─── Clients Supabase ─────────────────────────────────────────────────────────
@@ -112,6 +113,7 @@ REGRAS DE EXECUÇÃO DE SKILLS:
 - Para responder cliente sobre status do caso em linguagem curta, segura e com handoff humano quando faltar base suficiente, use a skill support_case_status.
 - Para montar uma missão agentica supervisionada de processo com proxima acao recomendada, confianca, fontes e lacunas sem executar side effects, use a skill legal_process_mission_plan.
 - Para executar o proximo passo seguro de uma missao agentica de processo, use legal_process_mission_execute_next; nesta fase, somente atualizacao de memoria documental pode ser executada automaticamente.
+- Para gerar Case Brain 2.0 com cronologia, riscos, contradicoes, fatos documentados/inferencias e proximos atos provaveis, use a skill legal_case_brain_insights.
 - Para consultar contexto juridico de um processo, status de minuta, pendencias documentais ou peca sugerida, use a skill legal_case_context.
 - Para sincronizar o repositorio documental do processo e atualizar a memoria documental, use a skill legal_document_memory_refresh.
 - Para gerar ou atualizar a primeira minuta juridica sugerida pelo Case Brain, use a skill legal_first_draft_generate.

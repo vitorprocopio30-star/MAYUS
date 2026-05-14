@@ -114,6 +114,8 @@ Evidencia 2026-04-30: a home de Marketing agora mostra contadores/listas de cont
 Evidencia 2026-04-30: `buildMarketingFinalDraft` prepara texto final, CTA e checklist etico para blog, LinkedIn, Instagram, e-mail ou WhatsApp; `/dashboard/marketing/aprovados` exibe o rascunho no card, persiste/recupera o bloco nas notas, permite copiar texto, marcar revisao e separa conteudos prontos para publicar dos pendentes, mantendo publicacao/envio como acao manual supervisionada.
 - [x] Skill de copy juridica responsavel para Marketing.
 Evidencia 2026-04-30: criada `marketing_copywriter` com motor puro `buildMarketingCopywriterDraft`, variacoes de headline/hook/CTA, sugestao de campanha/atribuicao, checklist OAB/etico, flags de risco e artifact `marketing_copywriter_draft`; `content-draft` passou a usar essa camada e o calendario agora passa referencias salvas para gerar pautas com sinais reais, sem copiar conteudo e sem publicacao automatica.
+- [x] Maquina de narrativa AI-native para Instagram do MAYUS.
+Evidencia 2026-05-14: `src/lib/marketing/ai-native-narrative.ts` cria estrategia, pilares, banco de 6 colunas, modelagem anti-copia, lote por dor e semana 1 de Instagram em calendario editavel; `/dashboard/marketing` exibe o painel de narrativa e `/dashboard/marketing/calendario` gera a Semana 1 MAYUS Instagram sem side effects externos.
 - [~] Analise de Meta Ads por upload de CSV, XLSX ou PDF.
 Evidencia parcial 2026-04-28: MVP local em `/dashboard/marketing/meta-ads` aceita CSV colado/exportado ou arquivo `.csv` client-side e analisa com `analyzeMetaAdsCsv`; XLSX/PDF ainda pendentes.
 - [x] Diagnostico de campanhas, CPL, CTR, CPC, CPM, criativos, publicos, verba desperdicada e oportunidades.

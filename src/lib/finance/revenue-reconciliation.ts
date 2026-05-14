@@ -32,6 +32,9 @@ export type RevenueProcessTaskRow = {
   source?: string | null;
   client_id?: string | null;
   case_id?: string | null;
+  demanda?: string | null;
+  sector?: string | null;
+  assigned_to?: string | null;
   task_context?: Record<string, unknown> | null;
   metadata?: Record<string, unknown> | null;
   created_at?: string | null;
@@ -56,6 +59,7 @@ export type RevenueReconciliationItem = {
   billingArtifactId: string | null;
   revenueArtifactId: string | null;
   revenuePlanArtifactId: string | null;
+  revenueReviewArtifactId: string | null;
   processTaskId: string | null;
   caseId: string | null;
   evidence: string[];
@@ -87,12 +91,14 @@ type ReconciliationBucket = {
   billingArtifacts: RevenueArtifactRow[];
   revenueArtifacts: RevenueArtifactRow[];
   revenuePlanArtifacts: RevenueArtifactRow[];
+  revenueReviewArtifacts: RevenueArtifactRow[];
   processTasks: RevenueProcessTaskRow[];
 };
 
 const PAID_STATUS_PATTERN = /paid|pago|recebido|received|confirmed|confirmado|settled/i;
 const REVENUE_ARTIFACT_TYPES = new Set(["revenue_case_opening"]);
 const REVENUE_PLAN_ARTIFACT_TYPES = new Set(["revenue_flow_plan", "revenue_to_case_plan"]);
+const REVENUE_REVIEW_ARTIFACT_TYPES = new Set(["revenue_case_opening_review"]);
 
 function cleanText(value: unknown) {
   if (typeof value !== "string" && typeof value !== "number") return null;
@@ -280,6 +286,7 @@ function ensureBucket(buckets: Map<string, ReconciliationBucket>, key: string) {
     billingArtifacts: [],
     revenueArtifacts: [],
     revenuePlanArtifacts: [],
+    revenueReviewArtifacts: [],
     processTasks: [],
   };
   buckets.set(key, bucket);
@@ -300,6 +307,7 @@ function mergeBuckets(
   target.billingArtifacts.push(...source.billingArtifacts);
   target.revenueArtifacts.push(...source.revenueArtifacts);
   target.revenuePlanArtifacts.push(...source.revenuePlanArtifacts);
+  target.revenueReviewArtifacts.push(...source.revenueReviewArtifacts);
   target.processTasks.push(...source.processTasks);
   buckets.delete(sourceKey);
 
@@ -357,9 +365,10 @@ function summarizeBucket(bucket: ReconciliationBucket): RevenueReconciliationIte
   const billingArtifact = bucket.billingArtifacts[0] || null;
   const revenueArtifact = bucket.revenueArtifacts[0] || null;
   const revenuePlanArtifact = bucket.revenuePlanArtifacts[0] || null;
+  const revenueReviewArtifact = bucket.revenueReviewArtifacts[0] || null;
   const processTask = bucket.processTasks[0] || null;
   const paymentId = firstValue(bucket.financials, getFinancialPaymentId) ||
-    firstValue([...bucket.billingArtifacts, ...bucket.revenueArtifacts], getArtifactPaymentId);
+    firstValue([...bucket.billingArtifacts, ...bucket.revenueArtifacts, ...bucket.revenueReviewArtifacts], getArtifactPaymentId);
   const crmTaskId = firstValue(bucket.billingArtifacts, (row) => getCrmTaskId(row.metadata)) ||
     firstValue(bucket.revenuePlanArtifacts, (row) => getCrmTaskId(row.metadata)) ||
     firstValue(bucket.financials, (row) => getCrmTaskId(row.metadata)) ||
@@ -367,6 +376,7 @@ function summarizeBucket(bucket: ReconciliationBucket): RevenueReconciliationIte
   const clientName = firstValue(bucket.billingArtifacts, (row) => getClientNameFromMetadata(row.metadata)) ||
     firstValue(bucket.revenuePlanArtifacts, (row) => getClientNameFromMetadata(row.metadata)) ||
     firstValue(bucket.revenueArtifacts, (row) => getClientNameFromMetadata(row.metadata)) ||
+    firstValue(bucket.revenueReviewArtifacts, (row) => getClientNameFromMetadata(row.metadata)) ||
     firstValue(bucket.financials, (row) => getClientNameFromMetadata(row.metadata)) ||
     cleanText(processTask?.client_name) ||
     cleanText(processTask?.title) ||
@@ -379,6 +389,7 @@ function summarizeBucket(bucket: ReconciliationBucket): RevenueReconciliationIte
   const hasConfirmedRevenue = bucket.financials.some(isPaidFinancial);
   const hasBilling = bucket.billingArtifacts.length > 0;
   const hasCaseLink = bucket.revenueArtifacts.length > 0 || bucket.processTasks.length > 0;
+  const hasReview = bucket.revenueReviewArtifacts.length > 0;
 
   const evidence = uniqueStrings([
     financial ? "financials" : null,
@@ -386,12 +397,14 @@ function summarizeBucket(bucket: ReconciliationBucket): RevenueReconciliationIte
     billingArtifact ? "brain_artifacts:asaas_billing" : null,
     revenuePlanArtifact ? "brain_artifacts:revenue_flow_plan" : null,
     revenueArtifact ? "brain_artifacts:revenue_case_opening" : null,
+    revenueReviewArtifact ? "brain_artifacts:revenue_case_opening_review" : null,
     processTask ? "process_tasks" : null,
   ]);
 
   const warnings = uniqueStrings([
     hasConfirmedRevenue && !hasBilling ? "Pagamento confirmado sem artifact asaas_billing relacionado." : null,
     hasConfirmedRevenue && hasBilling && !hasCaseLink ? "Pagamento confirmado sem process_task/caso vinculado." : null,
+    hasReview ? "Abertura automatica do caso esta em revisao/recuperacao supervisionada." : null,
     hasBilling && !financial ? "Artifact de cobranca sem lancamento financials correspondente nesta amostra." : null,
     hasBilling && financial && !hasConfirmedRevenue ? "Lancamento financeiro ainda nao esta marcado como recebido/confirmado." : null,
   ]);
@@ -425,6 +438,7 @@ function summarizeBucket(bucket: ReconciliationBucket): RevenueReconciliationIte
     billingArtifactId: billingArtifact?.id || null,
     revenueArtifactId: revenueArtifact?.id || null,
     revenuePlanArtifactId: revenuePlanArtifact?.id || null,
+    revenueReviewArtifactId: revenueReviewArtifact?.id || null,
     processTaskId: getProcessTaskId(revenueArtifact?.metadata) || processTask?.id || null,
     caseId,
     evidence,
@@ -459,6 +473,10 @@ export function buildRevenueReconciliationReport(input: RevenueReconciliationInp
       addToBucket(buckets, aliases, getArtifactKeys(artifact), (bucket) => {
         bucket.revenuePlanArtifacts.push(artifact);
       });
+    } else if (REVENUE_REVIEW_ARTIFACT_TYPES.has(artifact.artifact_type)) {
+      addToBucket(buckets, aliases, getArtifactKeys(artifact), (bucket) => {
+        bucket.revenueReviewArtifacts.push(artifact);
+      });
     }
   }
 
@@ -483,7 +501,7 @@ export function buildRevenueReconciliationReport(input: RevenueReconciliationInp
   const totals = {
     financialCount: financials.length,
     billingArtifactCount: artifacts.filter((artifact) => artifact.artifact_type === "asaas_billing").length,
-    revenueArtifactCount: artifacts.filter((artifact) => REVENUE_ARTIFACT_TYPES.has(artifact.artifact_type)).length,
+    revenueArtifactCount: artifacts.filter((artifact) => REVENUE_ARTIFACT_TYPES.has(artifact.artifact_type) || REVENUE_REVIEW_ARTIFACT_TYPES.has(artifact.artifact_type)).length,
     processTaskCount: processTasks.length,
     matched: items.filter((item) => item.status === "matched").length,
     partial: items.filter((item) => item.status === "partial").length,
@@ -521,6 +539,7 @@ export function buildRevenueReconciliationArtifactMetadata(report: RevenueReconc
         payment_id: item.paymentId,
         financial_id: item.financialId,
         billing_artifact_id: item.billingArtifactId,
+        revenue_review_artifact_id: item.revenueReviewArtifactId,
         next_best_action: item.nextBestAction,
         warnings: item.warnings,
       })),

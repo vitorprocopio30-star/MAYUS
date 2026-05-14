@@ -42,7 +42,7 @@ export function SalesHero() {
           <div className="inline-flex items-center gap-2 px-4 py-2 rounded-full bg-[#CCA761]/10 border border-[#CCA761]/30 backdrop-blur-md">
             <Sparkles size={14} className="text-[#CCA761]" />
             <span className="text-[10px] font-black uppercase tracking-[0.3em] text-[#CCA761]">
-              A Revolução do Direito Agêntico
+              Laboratório da advocacia AI-native
             </span>
           </div>
 
@@ -60,16 +60,16 @@ export function SalesHero() {
 
           {/* Buttons */}
           <div className="flex flex-col md:flex-row items-center justify-center gap-6 pt-4">
-            <button className="group relative px-10 py-5 bg-[#CCA761] text-black font-bold uppercase tracking-[0.2em] text-xs overflow-hidden transition-all hover:scale-105 active:scale-95">
+            <a href="#acesso-beta" className="group relative px-10 py-5 bg-[#CCA761] text-black font-bold uppercase tracking-[0.2em] text-xs overflow-hidden transition-all hover:scale-105 active:scale-95">
               <span className="relative z-10 flex items-center gap-2">
-                Garantir Acesso Founder <ChevronRight size={16} />
+                Solicitar acesso beta <ChevronRight size={16} />
               </span>
               <div className="absolute inset-0 bg-white opacity-0 group-hover:opacity-20 transition-opacity" />
-            </button>
+            </a>
 
-            <button className="px-10 py-5 border border-gray-200 dark:border-white/10 hover:border-white/30 text-gray-900 dark:text-white font-bold uppercase tracking-[0.2em] text-xs transition-all backdrop-blur-sm">
-              Ver Demonstração
-            </button>
+            <a href="#recursos" className="px-10 py-5 border border-gray-200 dark:border-white/10 hover:border-white/30 text-gray-900 dark:text-white font-bold uppercase tracking-[0.2em] text-xs transition-all backdrop-blur-sm">
+              Ver recursos
+            </a>
           </div>
 
           {/* Trust Indicators */}

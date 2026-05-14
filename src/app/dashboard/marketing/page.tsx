@@ -8,6 +8,11 @@ import { useEffect, useMemo, useState } from "react";
 
 import { buildMarketingReadiness } from "@/lib/marketing/marketing-readiness";
 import {
+  buildDefaultMayusNarrativeBank,
+  buildMayusInstagramNarrativeStrategy,
+  expandPainIntoNarrativeBatch,
+} from "@/lib/marketing/ai-native-narrative";
+import {
   loadLocalMarketingState,
   loadRemoteMarketingState,
   saveLocalMarketingState,
@@ -93,6 +98,9 @@ export default function MarketingPage() {
   }, []);
 
   const readiness = useMemo(() => buildMarketingReadiness(state), [state]);
+  const narrativeStrategy = useMemo(() => buildMayusInstagramNarrativeStrategy(), []);
+  const narrativeBank = useMemo(() => buildDefaultMayusNarrativeBank(), []);
+  const narrativeBatch = useMemo(() => expandPainIntoNarrativeBatch(narrativeBank[0]), [narrativeBank]);
 
   return (
     <main className={`min-h-screen bg-[#050505] px-6 py-8 text-foreground lg:px-10 ${montserrat.className}`}>
@@ -186,6 +194,79 @@ export default function MarketingPage() {
                 <ArrowRight size={16} className="text-gray-600 group-hover:text-[#CCA761] group-hover:translate-x-1 transition-all" />
               </Link>
             ))}
+          </div>
+        </div>
+      </section>
+
+      {/* MAQUINA DE NARRATIVA AI-NATIVE */}
+      <section className="mb-12 grid gap-6 xl:grid-cols-[1.15fr_0.85fr]">
+        <div className="rounded-3xl border border-[#CCA761]/15 bg-[#0a0a0a] p-8 relative overflow-hidden">
+          <div className="absolute inset-0 bg-[radial-gradient(circle_at_top_left,rgba(204,167,97,0.08),transparent_40%)] pointer-events-none" />
+          <div className="relative z-10">
+            <div className="mb-8 flex items-start justify-between gap-6">
+              <div>
+                <p className="text-[10px] font-black uppercase tracking-[0.25em] text-[#CCA761]/70">Narrativa AI-Native</p>
+                <h2 className="mt-2 text-2xl font-black text-white">Maquina de autoridade do MAYUS</h2>
+                <p className="mt-3 max-w-2xl text-sm leading-relaxed text-gray-500">
+                  {narrativeStrategy.categoryThesis}
+                </p>
+              </div>
+              <Link
+                href="/dashboard/marketing/calendario"
+                className="hidden shrink-0 items-center gap-2 rounded-xl border border-[#CCA761]/30 bg-[#CCA761]/10 px-4 py-3 text-[10px] font-black uppercase tracking-[0.16em] text-[#CCA761] transition-all hover:bg-[#CCA761] hover:text-black lg:inline-flex"
+              >
+                Gerar Semana 1
+                <ArrowRight size={14} />
+              </Link>
+            </div>
+
+            <div className="grid gap-4 md:grid-cols-2 xl:grid-cols-4">
+              {narrativeStrategy.desiredSensations.map((sensation) => (
+                <div key={sensation} className="rounded-2xl border border-white/5 bg-white/[0.02] p-4">
+                  <p className="text-[10px] font-black uppercase tracking-[0.18em] text-gray-600">Sensacao</p>
+                  <p className="mt-2 text-sm font-bold text-white">{sensation}</p>
+                </div>
+              ))}
+            </div>
+
+            <div className="mt-6 grid gap-3 md:grid-cols-5">
+              {narrativeStrategy.pillars.map((pillar) => (
+                <div key={pillar.id} className="rounded-2xl border border-white/5 bg-black/20 p-4">
+                  <p className="text-[10px] font-black uppercase tracking-[0.18em] text-[#CCA761]/60">{pillar.label}</p>
+                  <p className="mt-2 line-clamp-2 text-xs leading-relaxed text-gray-500">{pillar.objective}</p>
+                </div>
+              ))}
+            </div>
+          </div>
+        </div>
+
+        <div className="rounded-3xl border border-white/5 bg-[#0a0a0a] p-8">
+          <div className="mb-6 flex items-center justify-between">
+            <div>
+              <p className="text-[10px] font-black uppercase tracking-[0.25em] text-[#CCA761]/70">Banco 6 Colunas</p>
+              <h2 className="mt-2 text-xl font-black text-white">Dor vira lote</h2>
+            </div>
+            <Sparkles size={18} className="text-[#CCA761]" />
+          </div>
+
+          <div className="space-y-4">
+            {narrativeBank.slice(0, 3).map((row) => (
+              <div key={row.id} className="rounded-2xl border border-white/5 bg-white/[0.02] p-4">
+                <p className="text-sm font-bold text-white">{row.pain}</p>
+                <p className="mt-2 text-xs leading-relaxed text-gray-500">{row.insight}</p>
+                <div className="mt-3 flex flex-wrap gap-2">
+                  <span className="rounded-full border border-[#CCA761]/20 bg-[#CCA761]/10 px-2 py-1 text-[9px] font-black uppercase tracking-widest text-[#CCA761]">{row.primaryMetric}</span>
+                  <span className="rounded-full border border-white/5 bg-black/30 px-2 py-1 text-[9px] font-black uppercase tracking-widest text-gray-500">{row.deliveredAsset}</span>
+                </div>
+              </div>
+            ))}
+          </div>
+
+          <div className="mt-6 rounded-2xl border border-dashed border-[#CCA761]/20 p-4">
+            <p className="text-[10px] font-black uppercase tracking-[0.2em] text-[#CCA761]/60">1 dor gera</p>
+            <p className="mt-2 text-sm font-bold text-white">
+              {narrativeBatch.map((item) => item.format).join(" + ")}
+            </p>
           </div>
         </div>
       </section>

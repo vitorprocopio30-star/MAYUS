@@ -218,6 +218,18 @@ function makeMaybeSingleQuery(result: { data: any; error: any }) {
   return query;
 }
 
+function makeListQuery(result: { data: any[]; error: any }) {
+  const query: any = {
+    select: vi.fn(() => query),
+    eq: vi.fn(() => query),
+    order: vi.fn(() => query),
+    limit: vi.fn(async () => result),
+    in: vi.fn(async () => result),
+  };
+
+  return query;
+}
+
 function makeGrowthQuery(table: string, inserts: Array<{ table: string; payload: any }>) {
   const query: any = {
     select: vi.fn(() => query),
@@ -1550,6 +1562,97 @@ describe("dispatchCapabilityExecution - juridico", () => {
     expect(syncProcessDocumentsMock).not.toHaveBeenCalled();
   });
 
+  it("bloqueia execucao da missao processual quando o Case Brain aponta contradicao critica", async () => {
+    getLegalCaseContextSnapshotMock.mockResolvedValue(makeSnapshot({
+      firstDraft: {
+        ...makeSnapshot().firstDraft,
+        status: "completed",
+        artifactId: "draft-artifact-1",
+        caseBrainTaskId: "case-brain-antigo",
+        generatedAt: "2026-04-19T10:00:00.000Z",
+      },
+    }));
+
+    const result = await dispatchCapabilityExecution({
+      handlerType: "lex_process_mission_execute_next",
+      capabilityName: "legal_process_mission_execute_next",
+      tenantId: "tenant-1",
+      userId: "user-1",
+      entities: { process_number: "E2E-2026-0001" },
+      auditLogId: "audit-process-exec-case-brain-contradiction",
+      brainContext: {
+        taskId: "brain-task-case-brain-contradiction",
+        runId: "brain-run-case-brain-contradiction",
+        stepId: "brain-step-case-brain-contradiction",
+        sourceModule: "mayus",
+      },
+    });
+
+    expect(result.status).toBe("blocked");
+    expect(result.reply).toContain("bloqueada para supervisao");
+    expect(result.reply).toContain("contradicao critica");
+    expect(result.outputPayload).toEqual(expect.objectContaining({
+      blocked_reason: "case_brain_high_contradiction",
+      case_brain_contradiction_count: expect.any(Number),
+      external_side_effects_blocked: true,
+    }));
+    expect(syncProcessDocumentsMock).not.toHaveBeenCalled();
+    expect(executeDraftFactoryForProcessTaskMock).not.toHaveBeenCalled();
+  });
+
+  it("bloqueia execucao automatica quando movimentacao recente exige acao", async () => {
+    getLegalCaseContextSnapshotMock.mockResolvedValue(makeSnapshot({
+      documentMemory: {
+        ...makeSnapshot().documentMemory,
+        freshness: "stale",
+        lastSyncedAt: "2026-04-01T00:00:00.000Z",
+      },
+    }));
+    fromMock.mockImplementation((table: string) => {
+      if (table === "process_documents") return makeListQuery({ data: [], error: null });
+      if (table === "process_movimentacoes") return makeListQuery({
+        data: [{
+          data: "2026-05-10T00:00:00.000Z",
+          conteudo: "Intimacao publicada para manifestacao em prazo curto.",
+          fonte: "escavador",
+          tipo_evento: "intimacao",
+          requer_acao: true,
+          acao_sugerida: "Conferir prazo e providencia com advogado responsavel.",
+          confianca_analise: "high",
+          created_at: null,
+        }],
+        error: null,
+      });
+      if (table === "process_movimentacoes_inbox") return makeMaybeSingleQuery({ data: null, error: null });
+      return { insert: insertMock };
+    });
+
+    const result = await dispatchCapabilityExecution({
+      handlerType: "lex_process_mission_execute_next",
+      capabilityName: "legal_process_mission_execute_next",
+      tenantId: "tenant-1",
+      userId: "user-1",
+      entities: { process_number: "E2E-2026-0001" },
+      auditLogId: "audit-process-exec-action-movement",
+      brainContext: {
+        taskId: "brain-task-action-movement",
+        runId: "brain-run-action-movement",
+        stepId: "brain-step-action-movement",
+        sourceModule: "mayus",
+      },
+    });
+
+    expect(result.status).toBe("blocked");
+    expect(result.reply).toContain("movimentacao recente que exige acao");
+    expect(result.outputPayload).toEqual(expect.objectContaining({
+      process_mission_recommended_action: "refresh_document_memory",
+      blocked_reason: "case_brain_action_movement",
+      case_brain_risk_count: expect.any(Number),
+      external_side_effects_blocked: true,
+    }));
+    expect(syncProcessDocumentsMock).not.toHaveBeenCalled();
+  });
+
   it("abre aprovacao supervisionada quando a missao recomenda primeira minuta", async () => {
     getLegalCaseContextSnapshotMock.mockResolvedValue(makeSnapshot({
       documentMemory: {
@@ -1589,6 +1692,8 @@ describe("dispatchCapabilityExecution - juridico", () => {
     expect(result.outputPayload).toEqual(expect.objectContaining({
       auditLogId: "approval-audit-draft-1",
       process_mission_recommended_action: "generate_first_draft",
+      case_brain_risk_count: 0,
+      case_brain_high_contradiction_count: 0,
       proposed_capability: "legal_first_draft_generate",
       proposed_handler_type: "lex_first_draft_generate",
       approval_required: true,
@@ -1610,6 +1715,12 @@ describe("dispatchCapabilityExecution - juridico", () => {
       skillInvoked: "legal_first_draft_generate",
       status: "awaiting_approval",
       approvalStatus: "pending",
+      approvalContext: expect.objectContaining({
+        case_brain_risk_count: 0,
+        case_brain_high_risk_count: 0,
+        case_brain_contradiction_count: 0,
+        case_brain_high_contradiction_count: 0,
+      }),
       pendingExecutionPayload: expect.objectContaining({
         skillName: "legal_first_draft_generate",
         entities: expect.objectContaining({ process_task_id: "process-task-1" }),
@@ -2252,6 +2363,145 @@ describe("dispatchCapabilityExecution - juridico", () => {
         weak_section_count: 3,
         missing_section_count: 1,
         recommended_action: "apply_revision_plan",
+      }),
+    }));
+  });
+
+  it("gera Case Brain 2.0 com cronologia, riscos e contradicoes", async () => {
+    const snapshot = makeSnapshot({
+      processTask: {
+        ...makeSnapshot().processTask,
+        stageName: "Inicial",
+      },
+      caseBrain: {
+        ...makeSnapshot().caseBrain,
+        taskId: "case-brain-atual",
+        currentPhase: "Contestação",
+        missingDocuments: ["contracheque atualizado"],
+        readyForCaseLawCitations: false,
+      },
+      documentMemory: {
+        ...makeSnapshot().documentMemory,
+        freshness: "stale",
+        currentPhase: "Contestação",
+        missingDocuments: ["extrato bancario"],
+      },
+      firstDraft: {
+        ...makeSnapshot().firstDraft,
+        status: "completed",
+        artifactId: "draft-artifact-1",
+        caseBrainTaskId: "case-brain-antigo",
+        isStale: true,
+      },
+    });
+
+    getLegalCaseContextSnapshotMock.mockResolvedValue(snapshot);
+    fromMock.mockImplementation((table: string) => {
+      if (table === "process_documents") {
+        return makeListQuery({
+          data: [
+            {
+              id: "doc-1",
+              name: "contestacao.pdf",
+              document_type: "contestacao",
+              extraction_status: "extracted",
+              folder_label: "03-Contestacao",
+              modified_at: "2026-05-07T00:00:00.000Z",
+            },
+            {
+              id: "doc-2",
+              name: "audio-cliente.mp3",
+              document_type: null,
+              extraction_status: "skipped",
+              folder_label: "Raiz do Processo",
+              modified_at: "2026-05-06T00:00:00.000Z",
+            },
+          ],
+          error: null,
+        });
+      }
+      if (table === "process_document_contents") {
+        return makeListQuery({
+          data: [
+            {
+              process_document_id: "doc-1",
+              excerpt: "Banco afirma regularidade da contratacao.",
+              extraction_status: "extracted",
+            },
+          ],
+          error: null,
+        });
+      }
+      if (table === "process_movimentacoes") {
+        return makeListQuery({
+          data: [
+            {
+              data: "2026-05-10",
+              conteudo: "Intimada a parte autora para manifestacao sobre contestacao no prazo legal.",
+              fonte: "diario_oficial",
+              tipo_evento: "contestacao_protocolada",
+              requer_acao: true,
+              acao_sugerida: "Preparar replica e conferir prazo fatal.",
+              confianca_analise: "high",
+              created_at: "2026-05-10T00:00:00.000Z",
+            },
+          ],
+          error: null,
+        });
+      }
+      if (table === "process_movimentacoes_inbox") {
+        return makeMaybeSingleQuery({ data: null, error: null });
+      }
+      return { insert: insertMock };
+    });
+
+    const result = await dispatchCapabilityExecution({
+      handlerType: "lex_case_brain_insights",
+      capabilityName: "legal_case_brain_insights",
+      tenantId: "tenant-1",
+      userId: "user-1",
+      entities: {
+        process_number: "E2E-2026-0001",
+      },
+      auditLogId: "audit-case-brain-2",
+      brainContext: {
+        taskId: "brain-task-case-brain-2",
+        runId: "brain-run-case-brain-2",
+        stepId: "brain-step-case-brain-2",
+        sourceModule: "mayus",
+      },
+    });
+
+    expect(result.status).toBe("executed");
+    expect(result.reply).toContain("## Case Brain 2.0");
+    expect(result.outputPayload).toEqual(expect.objectContaining({
+      case_brain_insights_confidence: "medium",
+      risk_count: expect.any(Number),
+      contradiction_count: expect.any(Number),
+      evidence_document_count: 2,
+      evidence_movement_count: 1,
+      external_side_effects_blocked: true,
+    }));
+    expect(createBrainArtifactMock).toHaveBeenCalledWith(expect.objectContaining({
+      tenantId: "tenant-1",
+      taskId: "brain-task-case-brain-2",
+      artifactType: "legal_case_brain_insights",
+      metadata: expect.objectContaining({
+        process_task_id: "process-task-1",
+        risk_count: expect.any(Number),
+        contradiction_count: expect.any(Number),
+        evidence_document_count: 2,
+        evidence_movement_count: 1,
+        external_side_effects_blocked: true,
+      }),
+    }));
+    expect(insertMock).toHaveBeenCalledWith(expect.objectContaining({
+      event_type: "legal_case_brain_insights_created",
+      task_id: "brain-task-case-brain-2",
+      payload: expect.objectContaining({
+        process_task_id: "process-task-1",
+        risk_count: expect.any(Number),
+        contradiction_count: expect.any(Number),
       }),
     }));
   });

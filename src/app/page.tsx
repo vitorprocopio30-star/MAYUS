@@ -205,16 +205,16 @@ const comparisonRows = [
 ];
 
 const plans = [
-  { name: "Mensal", badge: "Plano padrão", desc: "Acesso completo sem fidelidade.", price: "647", note: "/ mês · sem fidelidade", featured: false, feats: ["Usuários ilimitados no escritório", "100 processos monitorados", "Todos os módulos ativos", "Agente WhatsApp + MAYUSOrb", "Suporte por WhatsApp"] },
-  { name: "Fundador", badge: "Círculo fundador", desc: "Preço congelado para sempre. Acesso antecipado a tudo.", price: "397", note: "/ mês · cobrado anualmente", featured: true, feats: ["Tudo do plano mensal", "Preço congelado enquanto ativo", "Acesso antecipado a novos módulos", "Voto em prioridade de desenvolvimento", "Canal direto com o fundador"] },
-  { name: "Anual", badge: "Plano anual", desc: "Melhor custo-benefício fora do Círculo Fundador.", price: "497", note: "/ mês · cobrado anualmente", featured: false, feats: ["Usuários ilimitados no escritório", "100 processos monitorados", "Todos os módulos ativos", "Agente WhatsApp + MAYUSOrb", "Suporte por WhatsApp"] },
+  { name: "Entrada", badge: "Diagnóstico", desc: "Primeira leitura da operação e da dor mais urgente do escritório.", label: "Acesso sob convite", featured: false, feats: ["Mapeamento de gargalo operacional", "Demonstração supervisionada", "Indicação do primeiro fluxo", "Critérios de segurança e governança", "Próximo passo claro"] },
+  { name: "Beta", badge: "Supervisionado", desc: "Acompanhamento próximo para validar MAYUS em operação real.", label: "Lista beta", featured: true, feats: ["Produto real em uso acompanhado", "Acesso antecipado a módulos em evolução", "Feedback direto no roadmap", "Decisão humana preservada", "Canal direto com o fundador"] },
+  { name: "Operação", badge: "Expansão", desc: "Desenho gradual para escritórios com múltiplos canais e equipes.", label: "Implantação controlada", featured: false, feats: ["Usuários do escritório mapeados", "Monitoramento e WhatsApp por etapas", "Playbooks por rotina", "Governança de agentes", "Suporte de evolução"] },
 ];
 
 const faqs = [
   { q: "Qual a diferença entre agente e sistema agêntico?", a: "Um agente responde quando chamado. Um sistema agêntico observa, planeja, executa e replaneja em loop contínuo, sem precisar ser chamado. O MAYUS é agêntico: ele age antes de você perceber que precisava." },
   { q: "Preciso trocar meu sistema atual para usar o MAYUS?", a: "Não necessariamente. O MAYUS pode operar em paralelo com sistemas existentes. Você começa pelo monitoramento, importa os processos via OAB e expande conforme a equipe se adapta." },
   { q: "O que é BYOK e por que isso importa?", a: "BYOK significa Bring Your Own Key: você usa sua própria chave de IA. Seus dados ficam sob sua política, e você controla os custos de uso diretamente." },
-  { q: "O preço fundador realmente trava para sempre?", a: "Sim. Enquanto sua assinatura estiver ativa e você renovar anualmente, o preço fundador permanece travado." },
+  { q: "Por que a condição comercial não está aberta?", a: "Porque o MAYUS está em beta supervisionado. Primeiro avaliamos a operação, os limites de uso e a dor que precisa ser resolvida com acompanhamento humano." },
   { q: "Em quanto tempo meu escritório está operando?", a: "O onboarding foi desenhado para começar em menos de uma hora: OAB, importação, pipelines e monitoramento inicial." },
   { q: "O agente WhatsApp consulta processos em tempo real?", a: "Sim. Ele usa o monitoramento do MAYUS para responder com informação atualizada e escalar para humano quando precisar de critério jurídico." },
   { q: "Se eu quiser sair, levo meus dados?", a: "Sempre. Processos, tarefas, histórico de movimentações e memória institucional devem permanecer exportáveis pelo escritório." },
@@ -834,8 +834,8 @@ export default function LandingPage() {
                   <p className="font-mono text-[9px] uppercase tracking-[0.2em] text-[#C4A35A]">{plan.badge}</p>
                   <h3 className={`font-display mt-3 text-5xl font-semibold ${plan.featured ? "text-[#E2C97E]" : ""}`}>{plan.name}</h3>
                   <p className="mt-2 text-sm text-[#F5F0E8]/60">{plan.desc}</p>
-                  <p className={`mt-6 font-mono text-4xl ${plan.featured ? "text-[#E2C97E]" : "text-[#F5F0E8]"}`}>
-                    R$ {plan.price}<span className="text-xs text-[#F5F0E8]/45"> {plan.note}</span>
+                  <p className={`mt-6 font-mono text-sm uppercase tracking-[0.22em] ${plan.featured ? "text-[#E2C97E]" : "text-[#F5F0E8]"}`}>
+                    {plan.label}
                   </p>
                   <ul className="mt-6 space-y-3">
                     {plan.feats.map((feat) => (
@@ -845,7 +845,7 @@ export default function LandingPage() {
                       </li>
                     ))}
                   </ul>
-                  <a href="#cta" className={`mt-7 inline-flex rounded-full px-5 py-3 font-mono text-[10px] font-bold uppercase tracking-[0.18em] transition ${plan.featured ? "bg-gradient-to-r from-[#E2C97E] to-[#C4A35A] text-black hover:brightness-110" : "border border-[#C4A35A]/35 text-[#F5F0E8]/70 hover:bg-[#C4A35A]/10 hover:text-[#E2C97E]"}`}>
+                  <a href="/vendas#acesso-beta" className={`mt-7 inline-flex rounded-full px-5 py-3 font-mono text-[10px] font-bold uppercase tracking-[0.18em] transition ${plan.featured ? "bg-gradient-to-r from-[#E2C97E] to-[#C4A35A] text-black hover:brightness-110" : "border border-[#C4A35A]/35 text-[#F5F0E8]/70 hover:bg-[#C4A35A]/10 hover:text-[#E2C97E]"}`}>
                     {plan.featured ? "Entrar como fundador" : "Solicitar convite"}
                   </a>
                 </article>
@@ -915,13 +915,13 @@ export default function LandingPage() {
         </Reveal>
         <Reveal delay={0.1}>
           <p className="mx-auto mt-5 max-w-2xl text-sm leading-7 text-[#F5F0E8]/62">
-            Os primeiros 100 escritórios entram pelo preço fundador e travam para sempre. O convite é limitado. A inteligência, não.
+            Os primeiros escritórios entram por acesso controlado, com beta supervisionado e limites claros. O convite é limitado porque a implantação precisa ser acompanhada de perto.
           </p>
         </Reveal>
         <Reveal delay={0.2}>
           <div className="mt-9 flex flex-wrap justify-center gap-4">
-            <a href="#" className="rounded-full bg-gradient-to-r from-[#E2C97E] via-[#C4A35A] to-[#8B6E35] px-7 py-4 font-mono text-[10px] font-bold uppercase tracking-[0.2em] text-black transition hover:brightness-110">Entrar como fundador - R$397/mês</a>
-            <a href="#" className="rounded-full border border-[#C4A35A]/45 px-7 py-4 font-mono text-[10px] uppercase tracking-[0.2em] text-[#F5F0E8]/80 transition hover:bg-[#C4A35A]/10 hover:text-[#E2C97E]">Ver a plataforma</a>
+            <a href="/vendas#acesso-beta" className="rounded-full bg-gradient-to-r from-[#E2C97E] via-[#C4A35A] to-[#8B6E35] px-7 py-4 font-mono text-[10px] font-bold uppercase tracking-[0.2em] text-black transition hover:brightness-110">Solicitar acesso beta</a>
+            <a href="#circulo-fundador" className="rounded-full border border-[#C4A35A]/45 px-7 py-4 font-mono text-[10px] uppercase tracking-[0.2em] text-[#F5F0E8]/80 transition hover:bg-[#C4A35A]/10 hover:text-[#E2C97E]">Ver perfis de acesso</a>
           </div>
           <p className="mt-7 font-mono text-[9px] uppercase tracking-[0.2em] text-[#F5F0E8]/35">
             Sem taxa de setup · cancelamento a qualquer momento · dados sempre seus · LGPD nativo

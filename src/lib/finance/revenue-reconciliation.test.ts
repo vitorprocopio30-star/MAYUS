@@ -117,6 +117,56 @@ describe("revenue reconciliation", () => {
     ]);
   });
 
+  it("mantem pagamento confirmado em bloqueio quando ha artifact de revisao revenue-to-case", () => {
+    const report = buildRevenueReconciliationReport({
+      financials: [
+        {
+          id: "fin-review",
+          external_id: "pay-review",
+          status: "paid",
+          type: "receita",
+          amount: 1800,
+        },
+      ],
+      artifacts: [
+        {
+          id: "billing-review",
+          artifact_type: "asaas_billing",
+          metadata: {
+            cobranca_id: "pay-review",
+            nome_cliente: "Rita Lima",
+            valor: 1800,
+          },
+        },
+        {
+          id: "review-1",
+          artifact_type: "revenue_case_opening_review",
+          metadata: {
+            payment_id: "pay-review",
+            client_name: "Rita Lima",
+            review_reason: "case_context_missing",
+            requires_human_action: true,
+          },
+        },
+      ],
+    });
+    const metadata = buildRevenueReconciliationArtifactMetadata(report);
+
+    expect(report.totals.blocked).toBe(1);
+    expect(report.totals.revenueArtifactCount).toBe(1);
+    expect(report.items[0]).toEqual(expect.objectContaining({
+      status: "blocked",
+      paymentId: "pay-review",
+      billingArtifactId: "billing-review",
+      revenueReviewArtifactId: "review-1",
+    }));
+    expect(report.items[0].evidence).toContain("brain_artifacts:revenue_case_opening_review");
+    expect(report.items[0].warnings).toContain("Abertura automatica do caso esta em revisao/recuperacao supervisionada.");
+    expect(metadata.blocked_items[0]).toEqual(expect.objectContaining({
+      revenue_review_artifact_id: "review-1",
+    }));
+  });
+
   it("keeps unpaid billing artifacts partial instead of pretending the case can be opened", () => {
     const report = buildRevenueReconciliationReport({
       financials: [

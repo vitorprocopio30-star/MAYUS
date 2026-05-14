@@ -229,7 +229,7 @@ export async function POST(req: NextRequest) {
         }
       }
     } catch (error: any) {
-      console.error('[ASAAS_WEBHOOK] Erro no revenue-to-case loop:', error)
+      console.error('[ASAAS_WEBHOOK] Erro no revenue-to-case loop:', error instanceof Error ? error.name : 'unknown')
 
       const { error: auditError } = await supabase.from('system_event_logs').insert({
         source: 'webhook',
@@ -240,7 +240,8 @@ export async function POST(req: NextRequest) {
           event,
           payment_id: paymentId,
           customer_id: customerId,
-          error: error?.message || 'Erro interno ao abrir caso automaticamente.',
+          error: 'Erro interno ao abrir caso automaticamente.',
+          error_type: error instanceof Error ? error.name : 'unknown',
         },
         created_at: new Date().toISOString(),
       })

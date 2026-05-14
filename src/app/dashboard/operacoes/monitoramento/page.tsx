@@ -351,7 +351,7 @@ function ProcessoCard({ p, onSelect, selecionado, onAction, onRemover, onArquiva
                  </span>
                  {d === 0 && (
                    <span className="px-2.5 py-1 rounded-full bg-yellow-500/10 border border-yellow-500/20 text-yellow-500 text-[8px] font-black uppercase tracking-widest flex items-center gap-1.5">
-                     <div className="w-1.5 h-1.5 rounded-full bg-yellow-500 animate-pulse shadow-[0_0_8px_rgba(234,179,8,1)]" /> ATENÇÃƒO
+                      <div className="w-1.5 h-1.5 rounded-full bg-yellow-500 animate-pulse shadow-[0_0_8px_rgba(234,179,8,1)]" /> ATENÇÃO
                    </span>
                  )}
                </div>
@@ -370,7 +370,7 @@ function ProcessoCard({ p, onSelect, selecionado, onAction, onRemover, onArquiva
              </div>
           </div>
 
-          {/* Ãrea de Resumo Preview */}
+          {/* Área de Resumo Preview */}
           {p.resumo_curto && (
             <div className="relative group/resumo cursor-pointer" onClick={() => onAbrirResumo(p.resumo_curto!)}>
               <div className="bg-white/5 border border-white/10 rounded-2xl p-4 transition-all group-hover/resumo:bg-white/10">
@@ -668,10 +668,10 @@ function MonitoramentoContent() {
       }
 
       setFeedback(
-        `${qtdArquivados > 0 ? `âš ï¸ ${qtdArquivados} arquivados ignorados. ` : ''}` +
+        `${qtdArquivados > 0 ? `⚠️ ${qtdArquivados} arquivados ignorados. ` : ''}` +
         `✅ ${Number(data.importados || 0)} monitorados. ` +
         `🧠 ${resumosSolicitados} resumo(s) solicitado(s).` +
-        `${falhasMonitoramento > 0 ? ` âŒ ${falhasMonitoramento} falha(s) de monitoramento.` : ''}`
+        `${falhasMonitoramento > 0 ? ` ❌ ${falhasMonitoramento} falha(s) de monitoramento.` : ''}`
       )
       if (monitoramentoIndividual && primeiraFalha?.motivo) setError(primeiraFalha.motivo)
     } catch (e: any) {
@@ -738,7 +738,7 @@ function MonitoramentoContent() {
       setFeedback(
         `✅ ${Number(data.importados || 0)} monitorados após confirmação de custo. ` +
         `🧠 ${resumosSolicitados} resumo(s) solicitado(s).` +
-        `${falhasMonitoramento > 0 ? ` âŒ ${falhasMonitoramento} falha(s) de monitoramento.` : ''}`
+        `${falhasMonitoramento > 0 ? ` ❌ ${falhasMonitoramento} falha(s) de monitoramento.` : ''}`
       )
       setSelecionados(new Set())
       setConfirmacao(null)
@@ -1226,7 +1226,7 @@ function MonitoramentoContent() {
             <div className="mt-4 space-y-4">
               <div className="bg-muted dark:bg-zinc-900 border border-border dark:border-zinc-800 rounded-2xl p-2 flex flex-col md:flex-row gap-2 shadow-lg dark:shadow-2xl">
                 <div className="flex bg-muted dark:bg-zinc-950 rounded-xl p-1 border border-border dark:border-zinc-800 shrink-0">
-                  {([['oab', 'OAB'], ['numero', 'NÂº CNJ'], ['cpf', 'DOCS']] as const).map(([k, l]) => (
+                  {([['oab', 'OAB'], ['numero', 'Nº CNJ'], ['cpf', 'DOCS']] as const).map(([k, l]) => (
                     <button key={k} onClick={() => setTab(k)} className={`px-5 py-2 rounded-lg text-xs font-black transition-all ${tab === k ? 'bg-yellow-500 text-black shadow-lg shadow-yellow-500/20' : 'text-muted-foreground dark:text-zinc-600 hover:text-foreground dark:hover:text-zinc-300'}`}>{l}</button>
                   ))}
                 </div>

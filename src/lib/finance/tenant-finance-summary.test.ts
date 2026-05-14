@@ -15,6 +15,10 @@ describe("tenant finance summary", () => {
           type: "receita",
           source: "asaas",
           reference_date: "2026-05-10",
+          metadata: {
+            client_name: "Maria",
+            case_id: "case-maria",
+          },
         },
         {
           id: "fin-overdue",
@@ -64,6 +68,18 @@ describe("tenant finance summary", () => {
           type: "despesa",
           description: "Meta Ads",
         },
+        {
+          id: "fin-direct-cost",
+          case_id: "case-maria",
+          amount: -150,
+          status: "Pago",
+          type: "custo",
+          description: "Custo direto do caso Maria",
+          metadata: {
+            client_name: "Maria",
+            legal_area: "Previdenciario",
+          },
+        },
       ],
       brainArtifacts: [
         {
@@ -112,8 +128,20 @@ describe("tenant finance summary", () => {
           client_name: "Maria",
           value: 2500,
           source: "revenue_to_case",
-          client_id: "case-1",
+          client_id: "case-maria",
           tags: ["revenue_to_case"],
+        },
+      ],
+      unitProcessTasks: [
+        {
+          id: "process-1",
+          title: "Maria - Novo caso",
+          client_name: "Maria",
+          value: 2500,
+          source: "revenue_to_case",
+          client_id: "case-maria",
+          tags: ["revenue_to_case"],
+          demanda: "Previdenciario",
         },
       ],
       salesRows: [
@@ -129,6 +157,8 @@ describe("tenant finance summary", () => {
           client_name: "Bruno Fechado",
           ticket_total: 8000,
           status: "Fechado",
+          professional_name: "Closer Senior",
+          commission_value: 500,
           contract_date: "2026-05-05",
         },
         {
@@ -154,8 +184,9 @@ describe("tenant finance summary", () => {
         },
         {
           id: "crm-won",
-          title: "Eva contrato fechado",
+          title: "Bruno Fechado",
           value: 5000,
+          source: "google",
           stage_id: "stage-won",
         },
         {
@@ -200,6 +231,55 @@ describe("tenant finance summary", () => {
       riskLevel: "medium",
     }));
     expect(summary.financials.expenses.marketing).toEqual({ amount: 300, count: 1 });
+    expect(summary.unitEconomics.grossRevenue).toBe(10500);
+    expect(summary.unitEconomics.directCosts).toBe(150);
+    expect(summary.unitEconomics.commissions).toBe(500);
+    expect(summary.unitEconomics.estimatedProfit).toBe(9850);
+    expect(summary.unitEconomics.byCase).toEqual([
+      expect.objectContaining({
+        label: "Bruno Fechado",
+        receivedRevenue: 8000,
+        commissionCost: 500,
+        confidence: "low",
+      }),
+      expect.objectContaining({
+        label: "Maria",
+        legalArea: "Previdenciario",
+        receivedRevenue: 2500,
+        directCosts: 150,
+        confidence: "high",
+      }),
+      expect.objectContaining({
+        label: "Honorarios sem vencimento definido",
+        openRevenue: 600,
+        confidence: "low",
+      }),
+      expect.objectContaining({
+        label: "Joao",
+        openRevenue: 4000,
+        confidence: "low",
+      }),
+    ]);
+    expect(summary.unitEconomics.byLegalArea[0]).toEqual(expect.objectContaining({
+      legalArea: "Sem area",
+      receivedRevenue: 8000,
+      commissionCost: 500,
+    }));
+    expect(summary.unitEconomics.byLegalArea[1]).toEqual(expect.objectContaining({
+      legalArea: "Previdenciario",
+      receivedRevenue: 2500,
+      directCosts: 150,
+    }));
+    expect(summary.unitEconomics.commissionsBreakdown.byOwner[0]).toEqual(expect.objectContaining({
+      label: "Closer Senior",
+      amount: 500,
+      revenue: 8000,
+      share: 100,
+    }));
+    expect(summary.unitEconomics.commissionsBreakdown.byOrigin[0]).toEqual(expect.objectContaining({
+      label: "google",
+      amount: 500,
+    }));
     expect(summary.commercialForecast.source).toBe("sales+crm_tasks");
     expect(summary.commercialForecast.available).toBe(true);
     expect(summary.commercialForecast.pipelineAmount).toBe(10000);

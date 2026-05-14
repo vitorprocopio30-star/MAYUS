@@ -21,6 +21,14 @@ import {
 } from "@/lib/lex/case-context";
 import { buildProcessMissionContext } from "@/lib/lex/process-mission-context";
 import {
+  buildCaseBrainInsights,
+  buildCaseBrainInsightsReply,
+  type CaseBrainInsights,
+  type CaseBrainDocumentEvidence,
+  type CaseBrainEvidence,
+  type CaseBrainMovementEvidence,
+} from "@/lib/lex/case-brain-insights";
+import {
   executeDraftFactoryForProcessTask,
   type DraftFactoryExecutionResult,
 } from "@/lib/lex/draft-factory";
@@ -203,6 +211,40 @@ type TenantLegalTemplateReviewRecord = {
   template_mode?: string | null;
   structure_markdown?: string | null;
   guidance_notes?: string | null;
+};
+
+type CaseBrainDocumentRow = {
+  id: string;
+  name: string;
+  document_type: string | null;
+  extraction_status: string | null;
+  folder_label: string | null;
+  modified_at: string | null;
+};
+
+type CaseBrainDocumentContentRow = {
+  process_document_id: string;
+  excerpt: string | null;
+  extraction_status: string | null;
+};
+
+type CaseBrainMovementInboxRow = {
+  latest_data: string | null;
+  latest_conteudo: string | null;
+  latest_fonte: string | null;
+  latest_created_at: string | null;
+  movimentacoes: unknown;
+};
+
+type CaseBrainMovementRow = {
+  data: string | null;
+  conteudo: string | null;
+  fonte: string | null;
+  tipo_evento: string | null;
+  requer_acao: boolean | null;
+  acao_sugerida: string | null;
+  confianca_analise: string | null;
+  created_at: string | null;
 };
 
 type MarketingOpsStateRecord = {
@@ -3187,6 +3229,230 @@ async function runLegalProcessMissionPlan(input: DispatchCapabilityInput): Promi
   };
 }
 
+function cleanEvidenceString(value: unknown) {
+  return typeof value === "string" && value.trim().length > 0 ? value.trim() : null;
+}
+
+function normalizeMovementEvidenceItem(value: unknown): CaseBrainMovementEvidence | null {
+  if (!value || typeof value !== "object" || Array.isArray(value)) return null;
+  const item = value as Record<string, unknown>;
+  const content = cleanEvidenceString(item.conteudo) || cleanEvidenceString(item.content) || cleanEvidenceString(item.texto);
+  if (!content) return null;
+
+  return {
+    date: cleanEvidenceString(item.data) || cleanEvidenceString(item.date) || cleanEvidenceString(item.created_at),
+    content,
+    source: cleanEvidenceString(item.fonte) || cleanEvidenceString(item.source),
+    eventType: cleanEvidenceString(item.tipo_evento) || cleanEvidenceString(item.event_type),
+    requiresAction: item.requer_acao === true || item.requires_action === true,
+    suggestedAction: cleanEvidenceString(item.acao_sugerida) || cleanEvidenceString(item.suggested_action),
+    confidence: cleanEvidenceString(item.confianca_analise) || cleanEvidenceString(item.confidence),
+  };
+}
+
+async function loadCaseBrainDocumentEvidence(params: { tenantId: string; processTaskId: string }): Promise<CaseBrainDocumentEvidence[]> {
+  try {
+    const { data: documents, error } = await serviceSupabase
+      .from("process_documents")
+      .select("id, name, document_type, extraction_status, folder_label, modified_at")
+      .eq("tenant_id", params.tenantId)
+      .eq("process_task_id", params.processTaskId)
+      .order("modified_at", { ascending: false })
+      .limit(12);
+
+    if (error || !documents?.length) return [];
+
+    const rows = documents as CaseBrainDocumentRow[];
+    const ids = rows.map((document) => document.id).filter(Boolean);
+    const contentsByDocumentId = new Map<string, CaseBrainDocumentContentRow>();
+
+    if (ids.length > 0) {
+      const { data: contents } = await serviceSupabase
+        .from("process_document_contents")
+        .select("process_document_id, excerpt, extraction_status")
+        .in("process_document_id", ids);
+
+      for (const content of (contents || []) as CaseBrainDocumentContentRow[]) {
+        contentsByDocumentId.set(content.process_document_id, content);
+      }
+    }
+
+    return rows.map((document) => {
+      const content = contentsByDocumentId.get(document.id);
+      return {
+        id: document.id,
+        name: document.name,
+        documentType: document.document_type,
+        folderLabel: document.folder_label,
+        modifiedAt: document.modified_at,
+        extractionStatus: content?.extraction_status || document.extraction_status,
+        excerpt: content?.excerpt || null,
+      };
+    });
+  } catch {
+    return [];
+  }
+}
+
+async function loadCaseBrainMovementEvidence(params: { tenantId: string; processNumber: string | null }): Promise<CaseBrainMovementEvidence[]> {
+  if (!params.processNumber) return [];
+  const movements: CaseBrainMovementEvidence[] = [];
+
+  try {
+    const { data } = await serviceSupabase
+      .from("process_movimentacoes")
+      .select("data, conteudo, fonte, tipo_evento, requer_acao, acao_sugerida, confianca_analise, created_at")
+      .eq("tenant_id", params.tenantId)
+      .eq("numero_cnj", params.processNumber)
+      .order("data", { ascending: false })
+      .limit(10);
+
+    for (const row of (data || []) as CaseBrainMovementRow[]) {
+      if (!row.conteudo) continue;
+      movements.push({
+        date: row.data || row.created_at,
+        content: row.conteudo,
+        source: row.fonte,
+        eventType: row.tipo_evento,
+        requiresAction: row.requer_acao === true,
+        suggestedAction: row.acao_sugerida,
+        confidence: row.confianca_analise,
+      });
+    }
+  } catch {
+    // Structured movement history is optional across tenants/migrations.
+  }
+
+  try {
+    const { data } = await serviceSupabase
+      .from("process_movimentacoes_inbox")
+      .select("latest_data, latest_conteudo, latest_fonte, latest_created_at, movimentacoes")
+      .eq("tenant_id", params.tenantId)
+      .eq("numero_cnj", params.processNumber)
+      .maybeSingle<CaseBrainMovementInboxRow>();
+
+    if (data?.latest_conteudo) {
+      movements.push({
+        date: data.latest_data || data.latest_created_at,
+        content: data.latest_conteudo,
+        source: data.latest_fonte || "process_movimentacoes_inbox",
+        eventType: null,
+        requiresAction: false,
+        suggestedAction: null,
+        confidence: "medium",
+      });
+    }
+
+    if (Array.isArray(data?.movimentacoes)) {
+      for (const item of data.movimentacoes.slice(0, 8)) {
+        const movement = normalizeMovementEvidenceItem(item);
+        if (movement) movements.push(movement);
+      }
+    }
+  } catch {
+    // Inbox is best-effort and should not block Case Brain generation.
+  }
+
+  const seen = new Set<string>();
+  return movements.filter((movement) => {
+    const key = `${movement.date || "sem-data"}:${movement.content}`;
+    if (seen.has(key)) return false;
+    seen.add(key);
+    return true;
+  }).slice(0, 12);
+}
+
+async function loadCaseBrainEvidence(params: { tenantId: string; snapshot: LegalCaseContextSnapshot }): Promise<CaseBrainEvidence> {
+  const [documents, movements] = await Promise.all([
+    loadCaseBrainDocumentEvidence({ tenantId: params.tenantId, processTaskId: params.snapshot.processTask.id }),
+    loadCaseBrainMovementEvidence({ tenantId: params.tenantId, processNumber: params.snapshot.processTask.processNumber }),
+  ]);
+
+  return { documents, movements };
+}
+
+async function runLegalCaseBrainInsights(input: DispatchCapabilityInput): Promise<DispatchCapabilityResult> {
+  const snapshot = await getLegalCaseContextSnapshot({
+    tenantId: input.tenantId,
+    entities: input.entities,
+  });
+  const evidence = await loadCaseBrainEvidence({ tenantId: input.tenantId, snapshot });
+  const insights = buildCaseBrainInsights(snapshot, evidence);
+  const reply = buildCaseBrainInsightsReply(insights);
+  const summary = `Case Brain 2.0 gerado para ${insights.processLabel}: ${insights.risks.length} risco(s), ${insights.contradictions.length} contradicao(oes), ${insights.timeline.length} marco(s).`;
+
+  await registerArtifact(input, {
+    artifactType: "legal_case_brain_insights",
+    title: `Case Brain 2.0 - ${snapshot.processTask.clientName || snapshot.processTask.title}`,
+    mimeType: "application/json",
+    dedupeKey: input.auditLogId
+      ? `legal-case-brain-insights:${input.auditLogId}`
+      : `legal-case-brain-insights:${snapshot.processTask.id}:${snapshot.caseBrain.taskId || "sem-case-brain"}:${snapshot.documentMemory.lastSyncedAt || "sem-sync"}:${snapshot.firstDraft.artifactId || "sem-minuta"}`,
+    metadata: {
+      reply,
+      summary,
+      process_task_id: snapshot.processTask.id,
+      process_number: snapshot.processTask.processNumber,
+      client_name: snapshot.processTask.clientName,
+      current_phase: insights.currentPhase,
+      confidence: insights.confidence,
+      recommended_action: insights.recommendedAction,
+      timeline_count: insights.timeline.length,
+      risk_count: insights.risks.length,
+      contradiction_count: insights.contradictions.length,
+      likely_next_act_count: insights.likelyNextActs.length,
+      grounding_gap_count: insights.groundingGaps.length,
+      evidence_document_count: insights.evidence.documentCount,
+      evidence_movement_count: insights.evidence.movementCount,
+      insights,
+      external_side_effects_blocked: true,
+    },
+  });
+
+  await registerLearningEvent(input, "legal_case_brain_insights_created", {
+    summary,
+    process_task_id: snapshot.processTask.id,
+    process_number: snapshot.processTask.processNumber,
+    client_name: snapshot.processTask.clientName,
+    case_brain_task_id: snapshot.caseBrain.taskId,
+    confidence: insights.confidence,
+    recommended_action: insights.recommendedAction,
+    timeline_count: insights.timeline.length,
+    risk_count: insights.risks.length,
+    contradiction_count: insights.contradictions.length,
+    evidence_document_count: insights.evidence.documentCount,
+    evidence_movement_count: insights.evidence.movementCount,
+    grounding_gaps: insights.groundingGaps,
+    external_side_effects_blocked: true,
+  });
+
+  return {
+    status: "executed",
+    reply,
+    outputPayload: {
+      auditLogId: input.auditLogId || null,
+      handler_type: input.handlerType,
+      process_task_id: snapshot.processTask.id,
+      process_number: snapshot.processTask.processNumber,
+      case_brain_task_id: snapshot.caseBrain.taskId,
+      case_brain_insights_confidence: insights.confidence,
+      case_brain_recommended_action: insights.recommendedAction,
+      timeline_count: insights.timeline.length,
+      risk_count: insights.risks.length,
+      contradiction_count: insights.contradictions.length,
+      likely_next_act_count: insights.likelyNextActs.length,
+      grounding_gap_count: insights.groundingGaps.length,
+      evidence_document_count: insights.evidence.documentCount,
+      evidence_movement_count: insights.evidence.movementCount,
+      external_side_effects_blocked: true,
+    },
+    data: {
+      snapshot,
+      insights,
+    },
+  };
+}
+
 function buildProcessMissionExecutionBlockedReply(params: {
   context: ReturnType<typeof buildProcessMissionContext>;
   reason: string;
@@ -3208,8 +3474,11 @@ function buildProcessMissionApprovalReply(params: {
   context: ReturnType<typeof buildProcessMissionContext>;
   proposedCapability: string;
   proposedActionLabel: string;
+  caseBrainInsights?: CaseBrainInsights | null;
 }) {
   const processLabel = params.context.process.processNumber || params.context.process.title;
+  const highRiskCount = params.caseBrainInsights?.risks.filter((risk) => risk.severity === "high").length || 0;
+  const highContradictionCount = params.caseBrainInsights?.contradictions.filter((item) => item.severity === "high").length || 0;
   return [
     "## Missao juridica supervisionada",
     `- Processo: ${processLabel}`,
@@ -3226,6 +3495,7 @@ function buildProcessMissionApprovalReply(params: {
     params.context.grounding.missingSignals.length > 0
       ? `- Lacunas/sinais faltantes: ${params.context.grounding.missingSignals.join("; ")}`
       : "- Lacunas/sinais faltantes: nenhuma lacuna critica registrada",
+    params.caseBrainInsights ? `- Case Brain 2.0: ${highRiskCount} risco(s) alto(s), ${highContradictionCount} contradicao(oes) alta(s), ${params.caseBrainInsights.groundingGaps.length} lacuna(s) de grounding` : null,
     "- Guardrail: nenhuma minuta foi gerada ainda. A Draft Factory juridica so sera chamada se um aprovador autorizar.",
   ].filter(Boolean).join("\n");
 }
@@ -3249,6 +3519,7 @@ async function requestProcessMissionDraftApproval(
   params: {
     snapshot: LegalCaseContextSnapshot;
     context: ReturnType<typeof buildProcessMissionContext>;
+    caseBrainInsights?: CaseBrainInsights | null;
   }
 ): Promise<DispatchCapabilityResult> {
   const proposedCapability = "legal_first_draft_generate";
@@ -3259,7 +3530,10 @@ async function requestProcessMissionDraftApproval(
     context: params.context,
     proposedCapability,
     proposedActionLabel,
+    caseBrainInsights: params.caseBrainInsights || null,
   });
+  const highRiskCount = params.caseBrainInsights?.risks.filter((risk) => risk.severity === "high").length || 0;
+  const highContradictionCount = params.caseBrainInsights?.contradictions.filter((item) => item.severity === "high").length || 0;
   const summary = `Missao processual de ${processLabel} pediu aprovacao para gerar primeira minuta.`;
   const pendingEntities: Record<string, string> = {
     process_task_id: params.snapshot.processTask.id,
@@ -3299,6 +3573,10 @@ async function requestProcessMissionDraftApproval(
         process_number: params.snapshot.processTask.processNumber,
         process_mission_confidence: params.context.confidence,
         process_mission_recommended_action: params.context.recommendedAction,
+        case_brain_risk_count: params.caseBrainInsights?.risks.length || 0,
+        case_brain_high_risk_count: highRiskCount,
+        case_brain_contradiction_count: params.caseBrainInsights?.contradictions.length || 0,
+        case_brain_high_contradiction_count: highContradictionCount,
         proposed_capability: proposedCapability,
         approval_error: errorMessage,
         external_side_effects_blocked: true,
@@ -3328,6 +3606,12 @@ async function requestProcessMissionDraftApproval(
       recommended_piece_label: params.snapshot.caseBrain.recommendedPieceLabel,
       mission_goal: params.context.missionGoal,
       confidence: params.context.confidence,
+      case_brain_insights_confidence: params.caseBrainInsights?.confidence || null,
+      case_brain_risk_count: params.caseBrainInsights?.risks.length || 0,
+      case_brain_high_risk_count: highRiskCount,
+      case_brain_contradiction_count: params.caseBrainInsights?.contradictions.length || 0,
+      case_brain_high_contradiction_count: highContradictionCount,
+      case_brain_grounding_gap_count: params.caseBrainInsights?.groundingGaps.length || 0,
       factual_sources: params.context.grounding.factualSources,
       missing_signals: params.context.grounding.missingSignals,
       requested_at: new Date().toISOString(),
@@ -3366,6 +3650,10 @@ async function requestProcessMissionDraftApproval(
         process_number: params.snapshot.processTask.processNumber,
         process_mission_confidence: params.context.confidence,
         process_mission_recommended_action: params.context.recommendedAction,
+        case_brain_risk_count: params.caseBrainInsights?.risks.length || 0,
+        case_brain_high_risk_count: highRiskCount,
+        case_brain_contradiction_count: params.caseBrainInsights?.contradictions.length || 0,
+        case_brain_high_contradiction_count: highContradictionCount,
         proposed_capability: proposedCapability,
         approval_error: errorMessage,
         external_side_effects_blocked: true,
@@ -3403,6 +3691,12 @@ async function requestProcessMissionDraftApproval(
       process_mission_confidence: params.context.confidence,
       process_mission_recommended_action: params.context.recommendedAction,
       process_mission_goal: params.context.missionGoal,
+      case_brain_insights_confidence: params.caseBrainInsights?.confidence || null,
+      case_brain_risk_count: params.caseBrainInsights?.risks.length || 0,
+      case_brain_high_risk_count: highRiskCount,
+      case_brain_contradiction_count: params.caseBrainInsights?.contradictions.length || 0,
+      case_brain_high_contradiction_count: highContradictionCount,
+      case_brain_grounding_gap_count: params.caseBrainInsights?.groundingGaps.length || 0,
       proposed_capability: proposedCapability,
       proposed_handler_type: proposedHandlerType,
       proposed_action_label: proposedActionLabel,
@@ -3485,12 +3779,48 @@ async function registerProcessMissionStepResult(
   });
 }
 
+function resolveCaseBrainMissionBlock(params: {
+  context: ReturnType<typeof buildProcessMissionContext>;
+  insights: CaseBrainInsights;
+}) {
+  const highContradiction = params.insights.contradictions.find((item) => item.severity === "high");
+  if (highContradiction) {
+    return {
+      blockedReason: "case_brain_high_contradiction",
+      reason: `o Case Brain 2.0 apontou contradicao critica: ${highContradiction.title}`,
+    };
+  }
+
+  const actionMovementRisk = params.insights.risks.find((risk) => risk.severity === "high" && risk.title === "Movimentacao recente exige acao");
+  if (actionMovementRisk) {
+    return {
+      blockedReason: "case_brain_action_movement",
+      reason: `o Case Brain 2.0 apontou movimentacao recente que exige acao: ${actionMovementRisk.recommendedAction}`,
+    };
+  }
+
+  const blockingHighRisk = params.insights.risks.find((risk) => {
+    if (risk.severity !== "high") return false;
+    return !(params.context.recommendedAction === "refresh_document_memory" && risk.title === "Memoria documental nao esta fresca");
+  });
+  if (blockingHighRisk) {
+    return {
+      blockedReason: "case_brain_high_risk",
+      reason: `o Case Brain 2.0 apontou risco alto: ${blockingHighRisk.title}`,
+    };
+  }
+
+  return null;
+}
+
 async function runLegalProcessMissionExecuteNext(input: DispatchCapabilityInput): Promise<DispatchCapabilityResult> {
   const snapshot = await getLegalCaseContextSnapshot({
     tenantId: input.tenantId,
     entities: input.entities,
   });
   const processMissionContext = buildProcessMissionContext(snapshot);
+  const caseBrainEvidence = await loadCaseBrainEvidence({ tenantId: input.tenantId, snapshot });
+  const caseBrainInsights = buildCaseBrainInsights(snapshot, caseBrainEvidence);
   const processLabel = snapshot.processTask.processNumber || snapshot.processTask.title;
 
   if (processMissionContext.confidence === "low") {
@@ -3515,10 +3845,54 @@ async function runLegalProcessMissionExecuteNext(input: DispatchCapabilityInput)
         process_number: snapshot.processTask.processNumber,
         process_mission_confidence: processMissionContext.confidence,
         process_mission_recommended_action: processMissionContext.recommendedAction,
+        case_brain_risk_count: caseBrainInsights.risks.length,
+        case_brain_contradiction_count: caseBrainInsights.contradictions.length,
+        case_brain_grounding_gap_count: caseBrainInsights.groundingGaps.length,
         blocked_reason: "low_confidence_process_mission",
         external_side_effects_blocked: true,
       },
-      data: { snapshot, processMissionContext },
+      data: { snapshot, processMissionContext, caseBrainInsights },
+    };
+  }
+
+  const caseBrainBlock = resolveCaseBrainMissionBlock({ context: processMissionContext, insights: caseBrainInsights });
+  if (caseBrainBlock) {
+    const reply = buildProcessMissionExecutionBlockedReply({ context: processMissionContext, reason: caseBrainBlock.reason });
+    const summary = `Missao processual de ${processLabel} bloqueada pelo Case Brain 2.0.`;
+    await registerProcessMissionStepResult(input, {
+      context: processMissionContext,
+      status: "blocked",
+      reply,
+      summary,
+      errorMessage: caseBrainBlock.reason,
+      stepOutputPayload: {
+        case_brain_blocked_reason: caseBrainBlock.blockedReason,
+        case_brain_recommended_action: caseBrainInsights.recommendedAction,
+        case_brain_risk_count: caseBrainInsights.risks.length,
+        case_brain_contradiction_count: caseBrainInsights.contradictions.length,
+        external_side_effects_blocked: true,
+      },
+    });
+
+    return {
+      status: "blocked",
+      reply,
+      outputPayload: {
+        auditLogId: input.auditLogId || null,
+        handler_type: input.handlerType,
+        process_task_id: snapshot.processTask.id,
+        process_number: snapshot.processTask.processNumber,
+        process_mission_confidence: processMissionContext.confidence,
+        process_mission_recommended_action: processMissionContext.recommendedAction,
+        case_brain_insights_confidence: caseBrainInsights.confidence,
+        case_brain_recommended_action: caseBrainInsights.recommendedAction,
+        case_brain_risk_count: caseBrainInsights.risks.length,
+        case_brain_contradiction_count: caseBrainInsights.contradictions.length,
+        case_brain_grounding_gap_count: caseBrainInsights.groundingGaps.length,
+        blocked_reason: caseBrainBlock.blockedReason,
+        external_side_effects_blocked: true,
+      },
+      data: { snapshot, processMissionContext, caseBrainInsights },
     };
   }
 
@@ -3526,6 +3900,7 @@ async function runLegalProcessMissionExecuteNext(input: DispatchCapabilityInput)
     return requestProcessMissionDraftApproval(input, {
       snapshot,
       context: processMissionContext,
+      caseBrainInsights,
     });
   }
 
@@ -3551,10 +3926,13 @@ async function runLegalProcessMissionExecuteNext(input: DispatchCapabilityInput)
         process_number: snapshot.processTask.processNumber,
         process_mission_confidence: processMissionContext.confidence,
         process_mission_recommended_action: processMissionContext.recommendedAction,
+        case_brain_risk_count: caseBrainInsights.risks.length,
+        case_brain_contradiction_count: caseBrainInsights.contradictions.length,
+        case_brain_grounding_gap_count: caseBrainInsights.groundingGaps.length,
         blocked_reason: "recommended_action_requires_supervision",
         external_side_effects_blocked: true,
       },
-      data: { snapshot, processMissionContext },
+      data: { snapshot, processMissionContext, caseBrainInsights },
     };
   }
 
@@ -3596,6 +3974,9 @@ async function runLegalProcessMissionExecuteNext(input: DispatchCapabilityInput)
       process_number: snapshot.processTask.processNumber,
       process_mission_confidence: processMissionContext.confidence,
       process_mission_recommended_action: processMissionContext.recommendedAction,
+      case_brain_risk_count: caseBrainInsights.risks.length,
+      case_brain_contradiction_count: caseBrainInsights.contradictions.length,
+      case_brain_grounding_gap_count: caseBrainInsights.groundingGaps.length,
       executed_capability: "legal_document_memory_refresh",
       executed_handler_type: "lex_document_memory_refresh",
       step_status: refreshResult.status,
@@ -3604,6 +3985,7 @@ async function runLegalProcessMissionExecuteNext(input: DispatchCapabilityInput)
     data: {
       snapshot,
       processMissionContext,
+      caseBrainInsights,
       refreshResult,
     },
   };
@@ -5556,6 +5938,8 @@ export async function dispatchCapabilityExecution(input: DispatchCapabilityInput
       return runLegalProcessMissionPlan(input);
     case "lex_process_mission_execute_next":
       return runLegalProcessMissionExecuteNext(input);
+    case "lex_case_brain_insights":
+      return runLegalCaseBrainInsights(input);
     case "lex_case_context":
       return runLegalCaseContext(input);
     case "lex_support_case_status":

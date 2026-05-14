@@ -17,6 +17,7 @@ import {
   type ReferenceInput,
   type MarketingTone,
 } from "@/lib/marketing/editorial-calendar";
+import { buildMayusInstagramWeekOneCalendar } from "@/lib/marketing/ai-native-narrative";
 import {
   loadLocalMarketingState,
   loadRemoteMarketingState,
@@ -174,6 +175,25 @@ export default function CalendarioMarketingPage() {
     }
   }
 
+  function generateMayusInstagramWeekOne() {
+    try {
+      const weekOne = buildMayusInstagramWeekOneCalendar(form.startDate);
+      setCalendar(weekOne);
+      setForm((current) => ({
+        ...current,
+        channels: ["instagram"],
+        legalAreas: "Operacao juridica",
+        objectives: ["authority", "awareness", "lead_generation"],
+        tones: ["premium", "direct", "educational", "conversational"],
+        audiences: "Escritorios de advocacia com 3 a 20 pessoas",
+        periods: "7",
+      }));
+      setError(null);
+    } catch (err) {
+      setError(err instanceof Error ? err.message : "Nao foi possivel gerar a semana narrativa do MAYUS.");
+    }
+  }
+
   async function createAgendaTaskFromItem(item: EditorialCalendarItem) {
     if (!tenantId || !currentUserId) {
       setAgendaMessage("Entre novamente para criar tarefas internas na agenda.");
@@ -326,6 +346,13 @@ export default function CalendarioMarketingPage() {
                 >
                   <Wand2 size={18} />
                   Gerar Calendário
+                </button>
+                <button
+                  onClick={generateMayusInstagramWeekOne}
+                  className="w-full flex items-center justify-center gap-3 rounded-xl border border-[#CCA761]/30 bg-[#CCA761]/10 py-3.5 text-[10px] font-black uppercase tracking-[0.2em] text-[#CCA761] hover:bg-[#CCA761] hover:text-black transition-all active:scale-95"
+                >
+                  <Sparkles size={16} />
+                  Gerar Semana 1 MAYUS Instagram
                 </button>
               </div>
             </div>

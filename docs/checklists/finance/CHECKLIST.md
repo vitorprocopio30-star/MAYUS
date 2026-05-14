@@ -21,12 +21,14 @@ Evidencia 2026-05-12: `src/lib/agent/capabilities/billing-normalization.ts`, `sr
 ## Revenue-to-Case
 
 - [x] Roadmap indica pagamento -> abertura do caso.
-- [ ] Criar regra clara: qual pagamento abre caso, qual apenas registra receita.
+- [x] Criar regra clara: qual pagamento abre caso, qual apenas registra receita.
 - [~] Criar reconciliacao entre financials, billing artifact e process task.
 Evidencia 2026-05-12: webhook Asaas preservado usando `asaas_billing` para `revenue-to-case` e teste focado de pagamento confirmado passando; ainda falta reconciliacao completa com `financials` e smoke real.
 Evidencia 2026-05-13: `src/lib/finance/revenue-reconciliation.ts` adiciona reconciliacao leve e testada entre `financials`, artifacts `asaas_billing`/`revenue_case_opening`/`revenue_flow_plan` e `process_tasks`, classificando ciclos como `matched`, `partial`, `blocked` ou `unmatched`; ja esta plugada no resumo financeiro do tenant e passou smoke autenticado na aba Financeiro com fixture controlada.
-- [ ] Criar rollback operacional se abertura de caso falhar apos pagamento.
-- [ ] Notificar responsavel juridico quando caso abrir por receita.
+Evidencia 2026-05-14: `src/lib/agent/capabilities/revenue-to-case.ts` ganhou politica explicita: receita SaaS/plataforma nao abre caso; pagamento juridico so abre caso com CRM, area juridica ou intencao explicita; pagamento ambiguo vira revisao supervisionada. A reconciliacao passou a reconhecer `revenue_case_opening_review` como bloqueio recuperavel.
+- [x] Criar rollback operacional se abertura de caso falhar apos pagamento.
+- [x] Notificar responsavel juridico quando caso abrir por receita.
+Evidencia 2026-05-14: falha na abertura cria trilha `revenue_case_opening_review`, `system_event_logs`, learning event quando houver Brain task, acoes de recuperacao e notificacao ao responsavel/tenant sem vazar erro bruto no webhook. Validado com `npm.cmd test -- src/lib/agent/capabilities/revenue-to-case.test.ts src/lib/finance/revenue-reconciliation.test.ts src/app/api/webhooks/asaas/route.test.ts` (3 arquivos, 16 testes).
 
 ## Collections
 
@@ -36,14 +38,16 @@ Evidencia 2026-05-13: `src/lib/finance/revenue-reconciliation.ts` adiciona recon
 - [x] Exigir aprovacao para mensagem externa.
 - [x] Registrar promessa de pagamento e proximo contato.
 Evidencia 2026-05-13: `src/lib/finance/collections-followup.ts`, router, registry e dispatcher implementam `collections_followup` pelo Chat MAYUS. A skill cria artifact `collections_followup_plan`, learning event, classifica `light_overdue`/`delinquency`/`renegotiation`, monta mensagem por tom/canal, registra promessa/proximo contato e bloqueia side effects externos ate revisao humana. Validado com Vitest focado; ainda falta smoke real com operador financeiro.
+Evidencia 2026-05-14: a aba Financeiro ganhou acao operacional para transformar `riskItems` em plano supervisionado. `POST /api/financeiro/collections-followup` recebe apenas `riskKey`, revalida o risco no summary do tenant da sessao, cria `collections_followup_plan` em `brain_artifacts` com dedupe e mantem `external_side_effects_blocked = true`. Validado com teste de rota, suite financeira focada e smoke autenticado no dashboard; ainda falta operador real enviar/revisar a cobranca em ambiente controlado.
 
 ## Forecast e Unidade Economica
 
 - [~] Criar forecast por funil, proposta, contrato e cobranca.
 Evidencia 2026-05-14: `GET /api/financeiro/summary` separa forecast de cobrancas em 7 dias, 30 dias, futuro e sem vencimento, alem de aging de vencidos, e agora adiciona `commercialForecast` separado de caixa recebido usando `sales`, `crm_tasks` e `crm_stages` para funil/proposta/contrato. Validado em codigo/teste local e em smoke autenticado no dashboard com fixture controlada cobrindo pipeline, contratos pendentes, etapas e oportunidades principais. Ainda falta smoke real Asaas e superadmin SaaS autenticado.
-- [ ] Criar margem estimada por caso.
-- [ ] Criar receita por area juridica.
-- [ ] Criar comissao por origem/responsavel.
+- [~] Criar margem estimada por caso.
+- [~] Criar receita por area juridica.
+- [~] Criar comissao por origem/responsavel.
+Evidencia 2026-05-14: `GET /api/financeiro/summary` expande `unitEconomics` com margem estimada, receita por area juridica, casos mais rentaveis e comissoes por origem/responsavel; a aba Financeiro mostra faixa compacta sem redesign. Quando faltam custos diretos por caso, a confianca permanece baixa/estimada. Validado em suite financeira focada e smoke autenticado com fixture; falta validacao operacional com dados reais de custo/comissao.
 - [~] Mostrar risco financeiro por tenant.
 Evidencia 2026-05-13: o painel superadmin financeiro mostra risco por escritorio/tenant e separa receita SaaS do MAYUS em `platform_billing_events`; o summary financeiro do tenant lista riscos por cliente/caso agrupados a partir de `financials` e passou smoke autenticado no dashboard com fixture controlada. O smoke do `/admin` segue pendente porque a migration remota de billing SaaS ainda nao esta aplicada (`tenants.last_payment_at` ausente no schema cache) e o usuario E2E nao e superadmin. O dry-run remoto do Supabase CLI foi tentado, mas a sessao nao tem `SUPABASE_ACCESS_TOKEN`.
 
@@ -52,4 +56,4 @@ Evidencia 2026-05-13: o painel superadmin financeiro mostra risco por escritorio
 - [~] Comando "Mayus, cobre a entrada do cliente X" encontra contexto, monta cobranca, pede aprovacao e registra artifact.
 - [x] Nenhuma cobranca externa e enviada sem aprovacao.
 - [~] O sistema mostra dinheiro previsto, dinheiro recebido e casos abertos por receita.
-Evidencia 2026-05-14: Chat/Brain MAYUS ganhou labels de artifact para `asaas_billing`, `collections_followup_plan` e revenue-to-case, e a reconciliacao leve calcula receita recebida vs caso aberto. O summary financeiro do tenant passou smoke autenticado com fixture controlada cobrindo forecast, aging, cobrancas abertas, collections, reconciliacao, riscos por cliente/caso e forecast comercial por funil/proposta/contrato. O painel superadmin segue pendente de migration remota de billing SaaS e usuario E2E superadmin.
+Evidencia 2026-05-14: Chat/Brain MAYUS ganhou labels de artifact para `asaas_billing`, `collections_followup_plan` e revenue-to-case, e a reconciliacao leve calcula receita recebida vs caso aberto. O summary financeiro do tenant passou smoke autenticado com fixture controlada cobrindo forecast, aging, cobrancas abertas, collections, reconciliacao, riscos por cliente/caso, forecast comercial por funil/proposta/contrato e geracao de plano supervisionado a partir de risco. O painel superadmin segue pendente de migration remota de billing SaaS e usuario E2E superadmin.

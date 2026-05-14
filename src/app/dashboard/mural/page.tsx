@@ -286,7 +286,7 @@ export default function MuralFeedbacksPage() {
                 {showEmojiPicker && (
                   <div className="absolute top-12 left-0 z-50 bg-card/95 backdrop-blur-xl border border-border rounded-2xl p-4 shadow-2xl w-[280px]">
                     <div className="grid grid-cols-6 gap-3">
-                      {["ðŸ”¥","🚀","ðŸ’¡","ðŸ‘","🎯","ðŸ¤","ðŸ¤","âš ï¸","🤖","â­","🎉","ðŸ†","ðŸ’¯","ðŸ’Ž","🤯","👀","â¤ï¸","✅","🚨","💼","📌","📈","💪","ðŸ˜Ž"].map((emoji) => (
+                      {["🔥","🚀","💡","👏","🎯","🤝","🤐","⚠️","🤖","⭐","🎉","🏆","💯","💎","🤯","👀","❤️","✅","🚨","💼","📌","📈","💪","😎"].map((emoji) => (
                         <button
                           key={emoji}
                           type="button"

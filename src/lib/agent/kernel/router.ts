@@ -157,7 +157,7 @@ const INTENT_PATTERNS: IntentDefinition[] = [
       /posicionamento\s+comercial/i,
       /bate[-\s]?papo\s+(de\s+)?(vendas|comercial|consultivo)/i,
       /roteiro\s+(de\s+)?(vendas|atendimento\s+comercial)/i,
-      /atendimento\s+de\s+excel[eÃª]ncia/i,
+      /atendimento\s+de\s+excel[eê]ncia/i,
       /trein(ar|e|amento)\s+(de\s+)?(atendimento|vendas|closer|sdr)/i,
       /sparring\s+(comercial|de\s+atendimento|de\s+vendas)/i,
       /metodo\s+def/i,
@@ -227,7 +227,7 @@ const INTENT_PATTERNS: IntentDefinition[] = [
       /relatorio\s+diario.*menu.*playbook/i,
       /mayus.*(sdr|closer|head|vendedor).*(escritorio|comercial)/i,
       /primeiro\s+atendimento.*mayus/i,
-      /skills?\s+para\s+(escritorios|escrit[oÃ³]rios).*(atendimento|vendas|comercial)/i,
+      /skills?\s+para\s+(escritorios|escrit[oó]rios).*(atendimento|vendas|comercial)/i,
       /playbook\s+def\s+(para|do)\s+escritorio/i,
     ],
     entityExtractors: [
@@ -798,6 +798,32 @@ const INTENT_PATTERNS: IntentDefinition[] = [
       },
     ],
     baseConfidence: 0.86,
+  },
+  {
+    intent: 'legal_case_brain_insights',
+    patterns: [
+      /case\s+brain\s*(2\.0|dois|insights|diagn[oó]stico)/i,
+      /cronologia\s+(estruturada\s+)?(do\s+)?(caso|processo)/i,
+      /mapa\s+de\s+riscos\s+(do\s+)?(caso|processo)/i,
+      /(contradi[cç][oõ]es|diverg[eê]ncias)\s+(documentais|do\s+caso|do\s+processo)/i,
+      /fatos\s+documentados.*(infer[eê]ncias|hip[oó]teses)/i,
+      /pr[oó]ximos\s+atos\s+prov[aá]veis/i,
+    ],
+    entityExtractors: [
+      {
+        key: 'process_number',
+        pattern: /(\d{7}-\d{2}\.\d{4}\.\d\.\d{2}\.\d{4})/i,
+      },
+      {
+        key: 'client_name',
+        pattern: /(?:cliente|caso\s+d[aoe]|processo\s+d[aoe]\s+cliente)\s*[:\-]?\s*([A-ZÀ-Ú][A-Za-zÀ-ú]+(?:\s+(?:d[aeo]s?|[A-ZÀ-Ú][A-Za-zÀ-ú]+)){1,5})(?=\s*(?:[,.!?]|$))/i,
+      },
+      {
+        key: 'process_reference',
+        pattern: /(?:processo|caso|case\s+brain)\s+(?:do|da|de)\s+(?!processo\b|caso\b|\d{7}-)([^,.;!?]{3,90})/i,
+      },
+    ],
+    baseConfidence: 0.9,
   },
   {
     intent: 'legal_case_context',

@@ -131,6 +131,43 @@ describe("GET /api/financeiro/summary", () => {
           nextBestActions: [],
         },
       },
+      unitEconomics: {
+        grossRevenue: 1000,
+        directCosts: 100,
+        commissions: 50,
+        estimatedProfit: 850,
+        estimatedMarginRate: 85,
+        byCase: [
+          {
+            caseId: "case-1",
+            label: "Maria",
+            legalArea: "Previdenciario",
+            receivedRevenue: 1000,
+            openRevenue: 500,
+            directCosts: 100,
+            commissionCost: 50,
+            estimatedProfit: 850,
+            marginRate: 85,
+            confidence: "high",
+          },
+        ],
+        byLegalArea: [
+          {
+            legalArea: "Previdenciario",
+            caseCount: 1,
+            receivedRevenue: 1000,
+            openRevenue: 500,
+            directCosts: 100,
+            commissionCost: 50,
+            estimatedProfit: 850,
+            marginRate: 85,
+          },
+        ],
+        commissionsBreakdown: {
+          byOwner: [{ label: "Closer", amount: 50, revenue: 1000, count: 1, share: 100 }],
+          byOrigin: [{ label: "google", amount: 50, revenue: 1000, count: 1, share: 100 }],
+        },
+      },
     });
   });
 
@@ -142,6 +179,7 @@ describe("GET /api/financeiro/summary", () => {
     expect(json.ok).toBe(true);
     expect(json.summary.financials.received.amount).toBe(1000);
     expect(json.summary.commercialForecast.pipelineAmount).toBe(5000);
+    expect(json.summary.unitEconomics.estimatedProfit).toBe(850);
     expect(loadTenantFinanceSummaryMock).toHaveBeenCalledWith({
       supabase: supabaseAdmin,
       tenantId: "tenant-1",

@@ -100,6 +100,12 @@ const missionSkills = [
     input_schema: { type: "object", properties: {} },
     handler_type: "lex_process_mission_execute_next",
   },
+  {
+    name: "legal_case_brain_insights",
+    description: "Gera Case Brain 2.0.",
+    input_schema: { type: "object", properties: {} },
+    handler_type: "lex_case_brain_insights",
+  },
 ];
 
 describe("POST /api/ai/chat deterministic process mission routing", () => {
@@ -203,6 +209,32 @@ describe("POST /api/ai/chat deterministic process mission routing", () => {
       status: "executed",
       capabilityName: "legal_process_mission_plan",
       handlerType: "lex_process_mission_plan",
+    }));
+  });
+
+  it("executa Case Brain 2.0 pelo router local sem chamar LLM", async () => {
+    dispatchCapabilityExecutionMock.mockResolvedValueOnce({
+      status: "executed",
+      reply: "## Case Brain 2.0",
+      outputPayload: { risk_count: 2, contradiction_count: 1 },
+      data: { ok: true },
+    });
+
+    const response = await POST(buildRequest(
+      "Mayus, gere o Case Brain 2.0 com cronologia estruturada e mapa de riscos do processo 1234567-89.2024.8.26.0100."
+    ));
+    const json = await response.json();
+
+    expect(response.status).toBe(200);
+    expect(callLLMWithFallbackMock).not.toHaveBeenCalled();
+    expect(dispatchCapabilityExecutionMock).toHaveBeenCalledWith(expect.objectContaining({
+      handlerType: "lex_case_brain_insights",
+      capabilityName: "legal_case_brain_insights",
+    }));
+    expect(json.kernel).toEqual(expect.objectContaining({
+      status: "executed",
+      capabilityName: "legal_case_brain_insights",
+      handlerType: "lex_case_brain_insights",
     }));
   });
 

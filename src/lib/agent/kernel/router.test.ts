@@ -5,7 +5,7 @@ const baseContext = {
   userId: "user-1",
   tenantId: "tenant-1",
   channel: "chat" as const,
-  availableSkills: ["marketing_copywriter", "marketing_ops_assistant", "sales_profile_setup", "sales_consultation", "commercial_playbook_setup", "billing_create", "collections_followup", "lead_reactivation", "client_acceptance_record", "external_action_preview", "revenue_flow_plan", "lead_schedule", "lead_followup", "lead_qualify", "lead_intake", "support_case_status", "legal_process_mission_plan", "legal_process_mission_execute_next", "legal_case_context", "legal_document_memory_refresh", "legal_first_draft_generate", "legal_draft_workflow", "legal_draft_review_guidance", "legal_draft_revision_loop", "legal_artifact_publish_premium", "query_process_status"],
+  availableSkills: ["marketing_copywriter", "marketing_ops_assistant", "sales_profile_setup", "sales_consultation", "commercial_playbook_setup", "billing_create", "collections_followup", "lead_reactivation", "client_acceptance_record", "external_action_preview", "revenue_flow_plan", "lead_schedule", "lead_followup", "lead_qualify", "lead_intake", "support_case_status", "legal_process_mission_plan", "legal_process_mission_execute_next", "legal_case_brain_insights", "legal_case_context", "legal_document_memory_refresh", "legal_first_draft_generate", "legal_draft_workflow", "legal_draft_review_guidance", "legal_draft_revision_loop", "legal_artifact_publish_premium", "query_process_status"],
 };
 
 describe("route - juridico MAYUS", () => {
@@ -354,6 +354,18 @@ describe("route - juridico MAYUS", () => {
     expect(result.intent).toBe("legal_case_context");
     expect(result.entities).toEqual({ process_number: "1234567-89.2024.8.26.0100" });
     expect(result.confidence).toBeGreaterThanOrEqual(0.85);
+    expect(result.ambiguous).toBe(false);
+  });
+
+  it("detecta pedido de Case Brain 2.0 com cronologia e riscos", () => {
+    const result = route(
+      "Mayus, gere o Case Brain 2.0 com cronologia estruturada e mapa de riscos do processo 1234567-89.2024.8.26.0100.",
+      baseContext
+    );
+
+    expect(result.intent).toBe("legal_case_brain_insights");
+    expect(result.entities).toEqual({ process_number: "1234567-89.2024.8.26.0100" });
+    expect(result.confidence).toBeGreaterThanOrEqual(0.9);
     expect(result.ambiguous).toBe(false);
   });
 

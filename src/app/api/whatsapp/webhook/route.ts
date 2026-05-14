@@ -1,5 +1,6 @@
 import { NextRequest, NextResponse } from "next/server";
 import { createClient } from "@supabase/supabase-js";
+import crypto from "crypto";
 import { handleWhatsAppInternalCommand } from "@/lib/mayus/whatsapp-command-runtime";
 import { enqueueWhatsAppReply, processPendingWhatsAppRepliesBatch } from "@/lib/whatsapp/reply-processor";
 
@@ -19,6 +20,25 @@ const supabase = createClient(
 );
 
 const QUEUED_REPLY_TIMEOUT_MS = 58000;
+const MAX_META_WEBHOOK_BODY_BYTES = 1024 * 1024;
+
+function verifyMetaSignature(rawBody: string, signatureHeader: string | null) {
+  const appSecret = process.env.META_APP_SECRET || process.env.WHATSAPP_APP_SECRET;
+  if (!appSecret) {
+    return process.env.NODE_ENV !== "production";
+  }
+
+  if (!signatureHeader?.startsWith("sha256=")) {
+    return false;
+  }
+
+  const expected = `sha256=${crypto.createHmac("sha256", appSecret).update(rawBody).digest("hex")}`;
+  if (signatureHeader.length !== expected.length) {
+    return false;
+  }
+
+  return crypto.timingSafeEqual(Buffer.from(signatureHeader), Buffer.from(expected));
+}
 
 async function processQueuedReply(params: { messageId: string }) {
   let timeout: ReturnType<typeof setTimeout> | null = null;
@@ -71,7 +91,26 @@ export async function GET(req: NextRequest) {
 // ==============================================================================
 export async function POST(req: NextRequest) {
   try {
-    const body = await req.json();
+    const contentLength = Number(req.headers.get("content-length") || "0");
+    if (Number.isFinite(contentLength) && contentLength > MAX_META_WEBHOOK_BODY_BYTES) {
+      return NextResponse.json({ success: false, error: "payload_too_large" }, { status: 413 });
+    }
+
+    const rawBody = await req.text();
+    if (Buffer.byteLength(rawBody, "utf8") > MAX_META_WEBHOOK_BODY_BYTES) {
+      return NextResponse.json({ success: false, error: "payload_too_large" }, { status: 413 });
+    }
+
+    if (!verifyMetaSignature(rawBody, req.headers.get("x-hub-signature-256"))) {
+      return NextResponse.json({ success: false, error: "invalid_signature" }, { status: 401 });
+    }
+
+    let body: any;
+    try {
+      body = JSON.parse(rawBody || "{}");
+    } catch {
+      return NextResponse.json({ success: false, error: "invalid_json" }, { status: 400 });
+    }
 
     // A Meta envia objetos do tipo "whatsapp_business_account"
     const entry = body?.entry?.[0];

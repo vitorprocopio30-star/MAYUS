@@ -142,6 +142,43 @@ describe("/api/webhooks/asaas", () => {
     expect(response.status).toBe(200);
   });
 
+  it("registra falha revenue-to-case sem vazar erro bruto", async () => {
+    openCaseFromConfirmedBillingMock.mockRejectedValueOnce(new Error("service_role_key sk_test segredo bruto"));
+    const logsQuery = makeInsertQuery();
+    const platformEventsQuery = makeUpsertQuery();
+    const tenantSelect = makeTenantSelectQuery({ id: "tenant-1", status: "trial", billing_cycle: "mensal" });
+    const tenantUpdate = makeTenantUpdateQuery();
+    let tenantsCalls = 0;
+    fromMock.mockImplementation((table: string) => {
+      if (table === "system_event_logs") return logsQuery;
+      if (table === "platform_billing_events") return platformEventsQuery;
+      if (table === "tenants") {
+        tenantsCalls++;
+        return tenantsCalls === 1 ? tenantSelect : tenantUpdate;
+      }
+      throw new Error(`unexpected table ${table}`);
+    });
+
+    const response = await POST(buildRequest({
+      event: "PAYMENT_CONFIRMED",
+      payment: { id: "pay-secret", customer: "cus-1", value: 397 },
+    }));
+
+    const insertCalls = logsQuery.insert.mock.calls as unknown as Array<[any]>;
+    const errorLogPayload = insertCalls.find(([payload]) => payload.event_name === "asaas_revenue_to_case_error")?.[0];
+    expect(errorLogPayload).toEqual(expect.objectContaining({
+      status: "error",
+      payload: expect.objectContaining({
+        payment_id: "pay-secret",
+        error: "Erro interno ao abrir caso automaticamente.",
+        error_type: "Error",
+      }),
+    }));
+    expect(JSON.stringify(errorLogPayload)).not.toMatch(/service_role_key|sk_test|segredo bruto/i);
+    expect(response.status).toBe(200);
+    await expect(response.json()).resolves.toEqual({ ok: true });
+  });
+
   it("registra evento SaaS pendente sem mudar status do tenant", async () => {
     const logsQuery = makeInsertQuery();
     const platformEventsQuery = makeUpsertQuery();

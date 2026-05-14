@@ -77,7 +77,7 @@ export default function ConfigComercialPage() {
     const newId = Math.random().toString(36).substr(2, 9);
     setPlans([...plans, {
       id: newId,
-      name: `NOVO NÃVEL`,
+      name: `NOVO NÍVEL`,
       type: finalType,
       unit: "R$",
       metricType: "currency",

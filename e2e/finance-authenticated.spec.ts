@@ -63,10 +63,20 @@ test.describe("Financeiro authenticated", () => {
     await expect(page.getByTestId("finance-reconciliation-matched")).toContainText("1");
     await expect(page.getByTestId("finance-reconciliation-partial")).toContainText("1");
     await expect(page.getByTestId("finance-reconciliation-blocked")).toContainText("1");
+    await expect(page.getByTestId("finance-unit-economics")).toBeVisible({ timeout: 60_000 });
+    await expect(page.getByTestId("finance-unit-margin")).toContainText("R$");
+    await expect(page.getByTestId("finance-unit-legal-area").first()).toContainText(/Revenue-to-case|Sem area/i);
+    await expect(page.getByTestId("finance-unit-case").first()).toContainText(/R\$/);
+    await expect(page.getByTestId("finance-unit-commission-owner").first()).toContainText(/R\$/);
+    await expect(page.getByTestId("finance-unit-commission-origin").first()).toContainText(/%/);
 
     await expect(page.getByTestId("finance-collection-plan").first()).toContainText(PLAYWRIGHT_FINANCE_FIXTURE_LABELS.highRiskClient);
-    await expect(page.getByTestId("finance-risk-item").first()).toContainText(fixture.dashboard.highRiskClient);
-    await expect(page.getByTestId("finance-risk-item").first()).toContainText(/high/i);
+    const firstRiskItem = page.getByTestId("finance-risk-item").first();
+    await expect(firstRiskItem).toContainText(fixture.dashboard.highRiskClient);
+    await expect(firstRiskItem).toContainText(/high/i);
+    await firstRiskItem.getByTestId("finance-generate-collection-plan").click();
+    await expect(firstRiskItem.getByTestId("finance-collection-action-status")).toContainText(/Plano supervisionado (criado|pronto)/i, { timeout: 60_000 });
+    await expect(page.getByTestId("finance-collection-plan").first()).toContainText(fixture.dashboard.highRiskClient, { timeout: 60_000 });
 
     const commercialForecast = page.getByTestId("finance-commercial-forecast");
     await expect(commercialForecast).toBeVisible({ timeout: 60_000 });

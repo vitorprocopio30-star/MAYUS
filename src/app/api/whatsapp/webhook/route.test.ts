@@ -1,3 +1,4 @@
+import crypto from "crypto";
 import { beforeEach, describe, expect, it, vi } from "vitest";
 
 const createClientMock = vi.hoisted(() => vi.fn());
@@ -88,6 +89,10 @@ function buildSupabaseMock() {
   };
 }
 
+function signMetaBody(body: string, secret: string) {
+  return `sha256=${crypto.createHmac("sha256", secret).update(body).digest("hex")}`;
+}
+
 describe("/api/whatsapp/webhook", () => {
   let supabaseMock: ReturnType<typeof buildSupabaseMock>;
 
@@ -99,36 +104,41 @@ describe("/api/whatsapp/webhook", () => {
     handleWhatsAppInternalCommandMock.mockResolvedValue({ handled: false });
     enqueueWhatsAppReplyMock.mockResolvedValue(undefined);
     processPendingWhatsAppRepliesBatchMock.mockResolvedValue({ picked: 1, processed: 1, failed: 0, auto_sent: 1, results: [] });
+    delete process.env.META_APP_SECRET;
+    delete process.env.WHATSAPP_APP_SECRET;
   });
 
   it("enfileira e aciona resposta agentica de texto Meta preservando provider", async () => {
     const { POST } = await import("./route");
+    process.env.WHATSAPP_APP_SECRET = "whatsapp-secret";
+    const body = JSON.stringify({
+      entry: [{
+        changes: [{
+          field: "messages",
+          value: {
+            metadata: { phone_number_id: "phone-number-1" },
+            contacts: [{ profile: { name: "Cliente Teste" } }],
+            messages: [{
+              id: "wamid-1",
+              from: "5521999990000",
+              type: "text",
+              text: { body: "Posso mandar meu contracheque para analise?" },
+            }],
+          },
+        }],
+      }],
+    });
     const request = new Request("http://localhost/api/whatsapp/webhook", {
       method: "POST",
-      body: JSON.stringify({
-        entry: [{
-          changes: [{
-            field: "messages",
-            value: {
-              metadata: { phone_number_id: "phone-number-1" },
-              contacts: [{ profile: { name: "Cliente Teste" } }],
-              messages: [{
-                id: "wamid-1",
-                from: "5521999990000",
-                type: "text",
-                text: { body: "Posso mandar meu contracheque para analise?" },
-              }],
-            },
-          }],
-        }],
-      }),
+      headers: { "x-hub-signature-256": signMetaBody(body, "whatsapp-secret") },
+      body,
     });
 
     const response = await POST(request as any);
-    const body = await response.json();
+    const responseBody = await response.json();
 
     expect(response.status).toBe(200);
-    expect(body).toEqual({ success: true });
+    expect(responseBody).toEqual({ success: true });
     expect(supabaseMock.messageInserts).toEqual([
       expect.objectContaining({
         tenant_id: "tenant-1",
@@ -148,5 +158,19 @@ describe("/api/whatsapp/webhook", () => {
       messageId: "message-1",
       limit: 1,
     }));
+  });
+
+  it("rejeita POST Meta com assinatura invalida quando app secret esta configurado", async () => {
+    process.env.WHATSAPP_APP_SECRET = "whatsapp-secret";
+    const { POST } = await import("./route");
+    const response = await POST(new Request("http://localhost/api/whatsapp/webhook", {
+      method: "POST",
+      headers: { "x-hub-signature-256": "sha256=assinatura-invalida" },
+      body: JSON.stringify({ entry: [] }),
+    }) as any);
+
+    expect(response.status).toBe(401);
+    await expect(response.json()).resolves.toEqual({ success: false, error: "invalid_signature" });
+    expect(supabaseMock.from).not.toHaveBeenCalled();
   });
 });

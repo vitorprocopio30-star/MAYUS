@@ -95,13 +95,13 @@ export default function ClientesPage() {
             onClick={() => setFilterType("PF")}
             className={`px-4 py-2 text-xs font-semibold rounded-lg transition-all ${filterType === "PF" ? "bg-[#CCA761]/10 text-[#CCA761]" : "text-gray-500 hover:text-gray-300"}`}
           >
-            FÃSICA
+            FÍSICA
           </button>
           <button
             onClick={() => setFilterType("PJ")}
             className={`px-4 py-2 text-xs font-semibold rounded-lg transition-all ${filterType === "PJ" ? "bg-[#CCA761]/10 text-[#CCA761]" : "text-gray-500 hover:text-gray-300"}`}
           >
-            JURÃDICA
+            JURÍDICA
           </button>
         </div>
       </div>

@@ -140,6 +140,7 @@ const MISSION_KIND_LABELS: Record<string, string> = {
   case_status: "Status do caso",
   process_mission_plan: "Missao processual",
   process_execute_next: "Proximo passo seguro",
+  case_brain_insights: "Case Brain 2.0",
 };
 
 const KERNEL_STATUS_LABELS: Record<string, string> = {
@@ -253,6 +254,8 @@ function getKernelHighlight(kernel?: MessageKernel) {
         ? "process_mission_plan"
         : capability === "legal_process_mission_execute_next"
           ? "process_execute_next"
+          : capability === "legal_case_brain_insights"
+            ? "case_brain_insights"
           : ""
   );
   const financeLabel = FINANCE_ARTIFACT_TYPE_LABELS[inferFinanceArtifactType(kernel) || ""] || null;

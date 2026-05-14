@@ -119,7 +119,11 @@ export type TenantFinanceSalesRow = {
   installments?: number | string | null;
   contract_date?: string | null;
   status?: string | null;
+  professional_id?: string | null;
   professional_name?: string | null;
+  commission_value?: number | string | null;
+  fixed_salary?: number | string | null;
+  estimated_earnings?: number | string | null;
   created_at?: string | null;
 };
 
@@ -158,6 +162,61 @@ export type TenantFinanceCommercialOpportunity = {
   source: string | null;
   expectedDate: string | null;
   nextBestAction: string;
+};
+
+export type TenantFinanceProcessTaskRow = RevenueProcessTaskRow & {
+  valor_causa?: number | string | null;
+  demanda?: string | null;
+  sector?: string | null;
+  assigned_to?: string | null;
+};
+
+export type TenantFinanceUnitEconomicsConfidence = "high" | "medium" | "low";
+
+export type TenantFinanceUnitEconomicsCase = {
+  caseId: string;
+  label: string;
+  legalArea: string | null;
+  receivedRevenue: number;
+  openRevenue: number;
+  directCosts: number;
+  commissionCost: number;
+  estimatedProfit: number;
+  marginRate: number;
+  confidence: TenantFinanceUnitEconomicsConfidence;
+};
+
+export type TenantFinanceUnitEconomicsLegalArea = {
+  legalArea: string;
+  caseCount: number;
+  receivedRevenue: number;
+  openRevenue: number;
+  directCosts: number;
+  commissionCost: number;
+  estimatedProfit: number;
+  marginRate: number;
+};
+
+export type TenantFinanceCommissionGroup = {
+  label: string;
+  amount: number;
+  revenue: number;
+  count: number;
+  share: number;
+};
+
+export type TenantFinanceUnitEconomics = {
+  grossRevenue: number;
+  directCosts: number;
+  commissions: number;
+  estimatedProfit: number;
+  estimatedMarginRate: number;
+  byCase: TenantFinanceUnitEconomicsCase[];
+  byLegalArea: TenantFinanceUnitEconomicsLegalArea[];
+  commissionsBreakdown: {
+    byOwner: TenantFinanceCommissionGroup[];
+    byOrigin: TenantFinanceCommissionGroup[];
+  };
 };
 
 export type TenantFinanceSummary = {
@@ -201,6 +260,7 @@ export type TenantFinanceSummary = {
     available: boolean;
     report: RevenueReconciliationReport;
   };
+  unitEconomics: TenantFinanceUnitEconomics;
 };
 
 type LoadTenantFinanceSummaryInput = {
@@ -627,11 +687,337 @@ function normalizeCollectionPlan(row: TenantFinanceBrainArtifactRow): TenantFina
   };
 }
 
+type UnitEconomicsCaseBucket = {
+  key: string;
+  caseId: string | null;
+  label: string | null;
+  legalArea: string | null;
+  financialReceivedRevenue: number;
+  salesRevenue: number;
+  openRevenue: number;
+  directCosts: number;
+  commissionCost: number;
+  hasExactCaseId: boolean;
+};
+
+function unitMetadataValue(metadata: Record<string, unknown> | null | undefined, keys: string[]) {
+  for (const key of keys) {
+    const value = compactText(metadata?.[key], "");
+    if (value) return value;
+  }
+  return null;
+}
+
+function entityKey(prefix: string, value: unknown) {
+  const normalized = normalizeText(value);
+  return normalized ? `${prefix}:${normalized}` : null;
+}
+
+function uniqueKeys(values: Array<string | null | undefined>) {
+  return Array.from(new Set(values.filter((value): value is string => Boolean(value))));
+}
+
+function financialUnitKeys(row: TenantFinanceFinancialRow) {
+  const metadata = metadataFor(row);
+  const caseId = rowCaseId(row) || unitMetadataValue(metadata, ["process_task_id", "processTaskId"]);
+  const clientName = unitMetadataValue(metadata, ["client_name", "nome_cliente", "customer_name", "lead_name", "signer_name"]) ||
+    (isExpenseRow(row) ? null : rowClientName(row));
+  return uniqueKeys([
+    entityKey("case", caseId),
+    entityKey("client", clientName),
+    isExpenseRow(row) ? null : entityKey("external", row.external_id),
+  ]);
+}
+
+function processUnitKeys(row: TenantFinanceProcessTaskRow) {
+  return uniqueKeys([
+    entityKey("case", row.client_id || row.case_id),
+    entityKey("process", row.id),
+    entityKey("client", row.client_name),
+    entityKey("client", row.title),
+  ]);
+}
+
+function saleUnitKeys(row: TenantFinanceSalesRow) {
+  return uniqueKeys([
+    entityKey("sale", row.id),
+    entityKey("client", row.client_name),
+  ]);
+}
+
+function processLegalArea(row: TenantFinanceProcessTaskRow) {
+  return compactText(row.demanda, "") ||
+    compactText(row.sector, "") ||
+    compactText(row.tags?.[0], "") ||
+    null;
+}
+
+function financialLegalArea(row: TenantFinanceFinancialRow) {
+  const metadata = metadataFor(row);
+  return unitMetadataValue(metadata, ["legal_area", "legalArea", "area", "demanda", "sector"]) ||
+    null;
+}
+
+function mergeUnitCaseBuckets(
+  buckets: Map<string, UnitEconomicsCaseBucket>,
+  aliases: Map<string, string>,
+  targetKey: string,
+  sourceKey: string
+) {
+  if (targetKey === sourceKey) return;
+  const source = buckets.get(sourceKey);
+  if (!source) return;
+  const target = ensureUnitCaseBucket(buckets, targetKey);
+  target.caseId = target.caseId || source.caseId;
+  target.label = target.label || source.label;
+  target.legalArea = target.legalArea || source.legalArea;
+  target.financialReceivedRevenue = roundMoney(target.financialReceivedRevenue + source.financialReceivedRevenue);
+  target.salesRevenue = roundMoney(target.salesRevenue + source.salesRevenue);
+  target.openRevenue = roundMoney(target.openRevenue + source.openRevenue);
+  target.directCosts = roundMoney(target.directCosts + source.directCosts);
+  target.commissionCost = roundMoney(target.commissionCost + source.commissionCost);
+  target.hasExactCaseId = target.hasExactCaseId || source.hasExactCaseId;
+  buckets.delete(sourceKey);
+
+  for (const [alias, mappedKey] of Array.from(aliases.entries())) {
+    if (mappedKey === sourceKey) aliases.set(alias, targetKey);
+  }
+}
+
+function ensureUnitCaseBucket(buckets: Map<string, UnitEconomicsCaseBucket>, key: string) {
+  const existing = buckets.get(key);
+  if (existing) return existing;
+  const bucket: UnitEconomicsCaseBucket = {
+    key,
+    caseId: null,
+    label: null,
+    legalArea: null,
+    financialReceivedRevenue: 0,
+    salesRevenue: 0,
+    openRevenue: 0,
+    directCosts: 0,
+    commissionCost: 0,
+    hasExactCaseId: false,
+  };
+  buckets.set(key, bucket);
+  return bucket;
+}
+
+function applyUnitCaseUpdate(
+  buckets: Map<string, UnitEconomicsCaseBucket>,
+  aliases: Map<string, string>,
+  keys: string[],
+  apply: (bucket: UnitEconomicsCaseBucket) => void
+) {
+  const usableKeys = uniqueKeys(keys);
+  if (usableKeys.length === 0) return false;
+  const primaryKey = usableKeys.map((key) => aliases.get(key)).find(Boolean) || usableKeys[0];
+
+  for (const key of usableKeys) {
+    const mappedKey = aliases.get(key);
+    if (mappedKey && mappedKey !== primaryKey) {
+      mergeUnitCaseBuckets(buckets, aliases, primaryKey, mappedKey);
+    }
+  }
+
+  for (const key of usableKeys) {
+    aliases.set(key, primaryKey);
+  }
+
+  apply(ensureUnitCaseBucket(buckets, primaryKey));
+  return true;
+}
+
+function marginRateFor(params: { revenue: number; profit: number }) {
+  return params.revenue > 0 ? roundRate((params.profit / params.revenue) * 100) : 0;
+}
+
+function confidenceFor(bucket: UnitEconomicsCaseBucket): TenantFinanceUnitEconomicsConfidence {
+  if (bucket.directCosts <= 0) return "low";
+  return bucket.hasExactCaseId ? "high" : "medium";
+}
+
+function addCommissionGroup(
+  groups: Map<string, TenantFinanceCommissionGroup>,
+  label: string,
+  amount: number,
+  revenue: number
+) {
+  const safeLabel = compactText(label, "Sem origem");
+  const current = groups.get(safeLabel) || {
+    label: safeLabel,
+    amount: 0,
+    revenue: 0,
+    count: 0,
+    share: 0,
+  };
+  current.amount = roundMoney(current.amount + amount);
+  current.revenue = roundMoney(current.revenue + revenue);
+  current.count += 1;
+  groups.set(safeLabel, current);
+}
+
+function normalizeGroupShare(groups: Map<string, TenantFinanceCommissionGroup>, total: number) {
+  return Array.from(groups.values())
+    .map((group) => ({
+      ...group,
+      share: total > 0 ? roundRate((group.amount / total) * 100) : 0,
+    }))
+    .sort((a, b) => b.amount - a.amount || a.label.localeCompare(b.label))
+    .slice(0, 8);
+}
+
+function findSaleOrigin(sale: TenantFinanceSalesRow, crmTasks: TenantFinanceCrmTaskRow[]) {
+  const saleName = normalizeText(sale.client_name);
+  if (!saleName) return "Sem origem";
+
+  const match = crmTasks.find((task) => {
+    const title = normalizeText(task.title);
+    return Boolean(title && (title.includes(saleName) || saleName.includes(title)));
+  });
+
+  return compactText(match?.source, "Sem origem");
+}
+
+function buildUnitEconomics(input: {
+  financialRows: TenantFinanceFinancialRow[];
+  processTasks?: TenantFinanceProcessTaskRow[] | null;
+  salesRows?: TenantFinanceSalesRow[] | null;
+  crmTasks?: TenantFinanceCrmTaskRow[] | null;
+}): TenantFinanceUnitEconomics {
+  const buckets = new Map<string, UnitEconomicsCaseBucket>();
+  const aliases = new Map<string, string>();
+  const processTasks = Array.isArray(input.processTasks) ? input.processTasks : [];
+  const salesRows = Array.isArray(input.salesRows) ? input.salesRows : [];
+  const crmTasks = Array.isArray(input.crmTasks) ? input.crmTasks : [];
+  const ownerGroups = new Map<string, TenantFinanceCommissionGroup>();
+  const originGroups = new Map<string, TenantFinanceCommissionGroup>();
+
+  for (const task of processTasks) {
+    applyUnitCaseUpdate(buckets, aliases, processUnitKeys(task), (bucket) => {
+      bucket.caseId = bucket.caseId || compactText(task.client_id || task.case_id || task.id, "");
+      bucket.label = bucket.label || compactText(task.client_name, "") || compactText(task.title, "");
+      bucket.legalArea = bucket.legalArea || processLegalArea(task);
+      bucket.hasExactCaseId = bucket.hasExactCaseId || Boolean(compactText(task.client_id || task.case_id, ""));
+    });
+  }
+
+  for (const row of input.financialRows) {
+    const keys = financialUnitKeys(row);
+    const related = applyUnitCaseUpdate(buckets, aliases, keys, (bucket) => {
+      const metadata = metadataFor(row);
+      const caseId = rowCaseId(row) || unitMetadataValue(metadata, ["process_task_id", "processTaskId"]);
+      const clientName = rowClientName(row);
+      bucket.caseId = bucket.caseId || caseId || null;
+      bucket.label = bucket.label || clientName || compactText(row.description, "");
+      bucket.legalArea = bucket.legalArea || financialLegalArea(row);
+      bucket.hasExactCaseId = bucket.hasExactCaseId || Boolean(caseId);
+      if (isExpenseRow(row)) {
+        bucket.directCosts = roundMoney(bucket.directCosts + Math.abs(money(row.amount)));
+      } else if (isPaidRevenue(row)) {
+        bucket.financialReceivedRevenue = roundMoney(bucket.financialReceivedRevenue + money(row.amount));
+      } else {
+        bucket.openRevenue = roundMoney(bucket.openRevenue + money(row.amount));
+      }
+    });
+
+    if (!related && isPaidRevenue(row)) {
+      applyUnitCaseUpdate(buckets, aliases, [entityKey("financial", row.id) || ""], (bucket) => {
+        bucket.label = bucket.label || compactText(row.description, "Receita sem caso");
+        bucket.financialReceivedRevenue = roundMoney(bucket.financialReceivedRevenue + money(row.amount));
+      });
+    }
+  }
+
+  const closedSales = salesRows.filter((sale) => salesStatusKind(sale.status) === "closed");
+  for (const sale of closedSales) {
+    const revenue = money(sale.ticket_total);
+    const commission = money(sale.commission_value);
+    const owner = compactText(sale.professional_name, "Sem responsavel");
+    const origin = findSaleOrigin(sale, crmTasks);
+    addCommissionGroup(ownerGroups, owner, commission, revenue);
+    addCommissionGroup(originGroups, origin, commission, revenue);
+
+    applyUnitCaseUpdate(buckets, aliases, saleUnitKeys(sale), (bucket) => {
+      bucket.label = bucket.label || compactText(sale.client_name, "Venda sem cliente");
+      bucket.salesRevenue = roundMoney(bucket.salesRevenue + revenue);
+      bucket.commissionCost = roundMoney(bucket.commissionCost + commission);
+    });
+  }
+
+  const byCase = Array.from(buckets.values())
+    .map<TenantFinanceUnitEconomicsCase>((bucket) => {
+      const receivedRevenue = bucket.financialReceivedRevenue > 0 ? bucket.financialReceivedRevenue : bucket.salesRevenue;
+      const revenueBase = receivedRevenue > 0 ? receivedRevenue : roundMoney(receivedRevenue + bucket.openRevenue);
+      const estimatedProfit = roundMoney(receivedRevenue - bucket.directCosts - bucket.commissionCost);
+      return {
+        caseId: bucket.caseId || bucket.key,
+        label: bucket.label || "Caso sem identificacao",
+        legalArea: bucket.legalArea,
+        receivedRevenue,
+        openRevenue: bucket.openRevenue,
+        directCosts: bucket.directCosts,
+        commissionCost: bucket.commissionCost,
+        estimatedProfit,
+        marginRate: marginRateFor({ revenue: revenueBase, profit: estimatedProfit }),
+        confidence: confidenceFor(bucket),
+      };
+    })
+    .filter((item) => item.receivedRevenue > 0 || item.openRevenue > 0 || item.directCosts > 0 || item.commissionCost > 0)
+    .sort((a, b) => b.estimatedProfit - a.estimatedProfit || a.label.localeCompare(b.label))
+    .slice(0, 8);
+
+  const legalAreaGroups = new Map<string, TenantFinanceUnitEconomicsLegalArea>();
+  for (const item of byCase) {
+    const legalArea = compactText(item.legalArea, "Sem area");
+    const current = legalAreaGroups.get(legalArea) || {
+      legalArea,
+      caseCount: 0,
+      receivedRevenue: 0,
+      openRevenue: 0,
+      directCosts: 0,
+      commissionCost: 0,
+      estimatedProfit: 0,
+      marginRate: 0,
+    };
+    current.caseCount += 1;
+    current.receivedRevenue = roundMoney(current.receivedRevenue + item.receivedRevenue);
+    current.openRevenue = roundMoney(current.openRevenue + item.openRevenue);
+    current.directCosts = roundMoney(current.directCosts + item.directCosts);
+    current.commissionCost = roundMoney(current.commissionCost + item.commissionCost);
+    current.estimatedProfit = roundMoney(current.estimatedProfit + item.estimatedProfit);
+    current.marginRate = marginRateFor({ revenue: current.receivedRevenue, profit: current.estimatedProfit });
+    legalAreaGroups.set(legalArea, current);
+  }
+
+  const grossRevenue = roundMoney(byCase.reduce((sum, item) => sum + item.receivedRevenue, 0));
+  const directCosts = roundMoney(byCase.reduce((sum, item) => sum + item.directCosts, 0));
+  const commissions = roundMoney(byCase.reduce((sum, item) => sum + item.commissionCost, 0));
+  const estimatedProfit = roundMoney(grossRevenue - directCosts - commissions);
+
+  return {
+    grossRevenue,
+    directCosts,
+    commissions,
+    estimatedProfit,
+    estimatedMarginRate: marginRateFor({ revenue: grossRevenue, profit: estimatedProfit }),
+    byCase,
+    byLegalArea: Array.from(legalAreaGroups.values())
+      .sort((a, b) => b.receivedRevenue - a.receivedRevenue || a.legalArea.localeCompare(b.legalArea))
+      .slice(0, 8),
+    commissionsBreakdown: {
+      byOwner: normalizeGroupShare(ownerGroups, commissions),
+      byOrigin: normalizeGroupShare(originGroups, commissions),
+    },
+  };
+}
+
 export function buildTenantFinanceSummaryFromRows(input: {
   tenantId: string;
   financialRows?: TenantFinanceFinancialRow[] | null;
   brainArtifacts?: TenantFinanceBrainArtifactRow[] | null;
   processTasks?: RevenueProcessTaskRow[] | null;
+  unitProcessTasks?: TenantFinanceProcessTaskRow[] | null;
   salesRows?: TenantFinanceSalesRow[] | null;
   crmTasks?: TenantFinanceCrmTaskRow[] | null;
   crmStages?: TenantFinanceCrmStageRow[] | null;
@@ -669,6 +1055,12 @@ export function buildTenantFinanceSummaryFromRows(input: {
     crmStages: input.crmStages,
     salesAvailable: input.salesAvailable,
     crmAvailable: input.crmAvailable,
+  });
+  const unitEconomics = buildUnitEconomics({
+    financialRows,
+    processTasks: input.unitProcessTasks || input.processTasks as TenantFinanceProcessTaskRow[] | null | undefined,
+    salesRows: input.salesRows,
+    crmTasks: input.crmTasks,
   });
 
   const collectionPlans = (input.brainArtifacts || [])
@@ -736,11 +1128,12 @@ export function buildTenantFinanceSummaryFromRows(input: {
       available: input.brainArtifactsAvailable !== false && input.processTasksAvailable !== false,
       report: reconciliationReport,
     },
+    unitEconomics,
   };
 }
 
 export async function loadTenantFinanceSummary(input: LoadTenantFinanceSummaryInput) {
-  const [financialResult, artifactsResult, processTasksResult, salesResult, crmTasksResult, crmPipelinesResult] = await Promise.all([
+  const [financialResult, artifactsResult, processTasksResult, unitProcessTasksResult, salesResult, crmTasksResult, crmPipelinesResult] = await Promise.all([
     input.supabase
       .from("financials")
       .select("id, case_id, amount, status, due_date, type, description, source, reference_date, external_id, metadata")
@@ -759,8 +1152,14 @@ export async function loadTenantFinanceSummary(input: LoadTenantFinanceSummaryIn
       .order("created_at", { ascending: false })
       .limit(50),
     input.supabase
+      .from("process_tasks")
+      .select("id, title, client_name, value, valor_causa, tags, source, client_id, assigned_to, demanda, sector, created_at")
+      .eq("tenant_id", input.tenantId)
+      .order("created_at", { ascending: false })
+      .limit(200),
+    input.supabase
       .from("sales")
-      .select("id, client_name, ticket_total, installments, contract_date, status, professional_name, created_at")
+      .select("id, client_name, ticket_total, installments, contract_date, status, professional_id, professional_name, commission_value, fixed_salary, estimated_earnings, created_at")
       .eq("tenant_id", input.tenantId)
       .order("contract_date", { ascending: false })
       .limit(100),
@@ -798,6 +1197,7 @@ export async function loadTenantFinanceSummary(input: LoadTenantFinanceSummaryIn
     financialRows: financialResult.data as TenantFinanceFinancialRow[] | null,
     brainArtifacts: artifactsResult.error ? [] : artifactsResult.data as TenantFinanceBrainArtifactRow[] | null,
     processTasks: processTasksResult.error ? [] : processTasksResult.data as RevenueProcessTaskRow[] | null,
+    unitProcessTasks: unitProcessTasksResult.error ? [] : unitProcessTasksResult.data as TenantFinanceProcessTaskRow[] | null,
     salesRows: salesResult.error ? [] : salesResult.data as TenantFinanceSalesRow[] | null,
     crmTasks: crmTasksResult.error ? [] : crmTasksResult.data as TenantFinanceCrmTaskRow[] | null,
     crmStages: crmStagesResult.error ? [] : crmStagesResult.data as TenantFinanceCrmStageRow[] | null,

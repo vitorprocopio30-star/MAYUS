@@ -112,6 +112,52 @@ type CommercialForecastPreview = {
   topOpportunities: CommercialForecastOpportunityPreview[];
 };
 
+type UnitEconomicsCasePreview = {
+  caseId: string;
+  label: string;
+  legalArea: string | null;
+  receivedRevenue: number;
+  openRevenue: number;
+  directCosts: number;
+  commissionCost: number;
+  estimatedProfit: number;
+  marginRate: number;
+  confidence: "high" | "medium" | "low";
+};
+
+type UnitEconomicsLegalAreaPreview = {
+  legalArea: string;
+  caseCount: number;
+  receivedRevenue: number;
+  openRevenue: number;
+  directCosts: number;
+  commissionCost: number;
+  estimatedProfit: number;
+  marginRate: number;
+};
+
+type UnitEconomicsCommissionGroupPreview = {
+  label: string;
+  amount: number;
+  revenue: number;
+  count: number;
+  share: number;
+};
+
+type UnitEconomicsPreview = {
+  grossRevenue: number;
+  directCosts: number;
+  commissions: number;
+  estimatedProfit: number;
+  estimatedMarginRate: number;
+  byCase: UnitEconomicsCasePreview[];
+  byLegalArea: UnitEconomicsLegalAreaPreview[];
+  commissionsBreakdown: {
+    byOwner: UnitEconomicsCommissionGroupPreview[];
+    byOrigin: UnitEconomicsCommissionGroupPreview[];
+  };
+};
+
 type FinanceSummaryPayload = {
   financials?: {
     received?: { amount?: number; count?: number };
@@ -133,6 +179,7 @@ type FinanceSummaryPayload = {
     recentPlans?: FinanceCollectionPlanPreview[];
   };
   commercialForecast?: Partial<CommercialForecastPreview>;
+  unitEconomics?: Partial<UnitEconomicsPreview>;
   revenueReconciliation?: {
     available?: boolean;
     report?: {
@@ -205,6 +252,22 @@ type DashboardMetrics = {
   revenueReconciliationPartial: number;
   revenueReconciliationBlocked: number;
   revenueReconciliationOpenedCaseRevenue: number;
+  unitGrossRevenue: number;
+  unitDirectCosts: number;
+  unitCommissions: number;
+  unitEstimatedProfit: number;
+  unitEstimatedMarginRate: number;
+  unitEconomicsByCase: UnitEconomicsCasePreview[];
+  unitEconomicsByLegalArea: UnitEconomicsLegalAreaPreview[];
+  unitCommissionsByOwner: UnitEconomicsCommissionGroupPreview[];
+  unitCommissionsByOrigin: UnitEconomicsCommissionGroupPreview[];
+};
+
+type CollectionPlanActionState = {
+  pendingRiskKey: string | null;
+  feedbackRiskKey: string | null;
+  message: string | null;
+  error: string | null;
 };
 
 type OfficeGoal = {
@@ -394,6 +457,65 @@ const sanitizeCommercialForecast = (forecast: unknown): CommercialForecastPrevie
   };
 };
 
+const sanitizeUnitEconomics = (unitEconomics: unknown): UnitEconomicsPreview => {
+  const item = unitEconomics && typeof unitEconomics === "object" ? unitEconomics as Partial<UnitEconomicsPreview> : {};
+  const byCase = Array.isArray(item.byCase)
+    ? item.byCase.slice(0, 8).map((caseItem) => {
+      const confidence = caseItem?.confidence === "high" || caseItem?.confidence === "medium" || caseItem?.confidence === "low"
+        ? caseItem.confidence
+        : "low";
+      return {
+        caseId: String(caseItem?.caseId || caseItem?.label || "case"),
+        label: String(caseItem?.label || "Caso sem identificacao"),
+        legalArea: typeof caseItem?.legalArea === "string" ? caseItem.legalArea : null,
+        receivedRevenue: finiteNumber(caseItem?.receivedRevenue, 0),
+        openRevenue: finiteNumber(caseItem?.openRevenue, 0),
+        directCosts: finiteNumber(caseItem?.directCosts, 0),
+        commissionCost: finiteNumber(caseItem?.commissionCost, 0),
+        estimatedProfit: finiteNumber(caseItem?.estimatedProfit, 0),
+        marginRate: finiteNumber(caseItem?.marginRate, 0),
+        confidence,
+      };
+    })
+    : [];
+  const byLegalArea = Array.isArray(item.byLegalArea)
+    ? item.byLegalArea.slice(0, 8).map((area) => ({
+      legalArea: String(area?.legalArea || "Sem area"),
+      caseCount: finiteNumber(area?.caseCount, 0),
+      receivedRevenue: finiteNumber(area?.receivedRevenue, 0),
+      openRevenue: finiteNumber(area?.openRevenue, 0),
+      directCosts: finiteNumber(area?.directCosts, 0),
+      commissionCost: finiteNumber(area?.commissionCost, 0),
+      estimatedProfit: finiteNumber(area?.estimatedProfit, 0),
+      marginRate: finiteNumber(area?.marginRate, 0),
+    }))
+    : [];
+  const sanitizeCommissionGroups = (groups: unknown): UnitEconomicsCommissionGroupPreview[] =>
+    Array.isArray(groups)
+      ? groups.slice(0, 8).map((group) => ({
+        label: String(group?.label || "Sem origem"),
+        amount: finiteNumber(group?.amount, 0),
+        revenue: finiteNumber(group?.revenue, 0),
+        count: finiteNumber(group?.count, 0),
+        share: finiteNumber(group?.share, 0),
+      }))
+      : [];
+
+  return {
+    grossRevenue: finiteNumber(item.grossRevenue, 0),
+    directCosts: finiteNumber(item.directCosts, 0),
+    commissions: finiteNumber(item.commissions, 0),
+    estimatedProfit: finiteNumber(item.estimatedProfit, 0),
+    estimatedMarginRate: finiteNumber(item.estimatedMarginRate, 0),
+    byCase,
+    byLegalArea,
+    commissionsBreakdown: {
+      byOwner: sanitizeCommissionGroups(item.commissionsBreakdown?.byOwner),
+      byOrigin: sanitizeCommissionGroups(item.commissionsBreakdown?.byOrigin),
+    },
+  };
+};
+
 const fetchTenantFinanceSummary = async (): Promise<FinanceSummaryPayload | null> => {
   try {
     const response = await fetch("/api/financeiro/summary", { cache: "no-store" });
@@ -529,6 +651,22 @@ const INITIAL_DASHBOARD_METRICS: DashboardMetrics = {
   revenueReconciliationPartial: 0,
   revenueReconciliationBlocked: 0,
   revenueReconciliationOpenedCaseRevenue: 0,
+  unitGrossRevenue: 0,
+  unitDirectCosts: 0,
+  unitCommissions: 0,
+  unitEstimatedProfit: 0,
+  unitEstimatedMarginRate: 0,
+  unitEconomicsByCase: [],
+  unitEconomicsByLegalArea: [],
+  unitCommissionsByOwner: [],
+  unitCommissionsByOrigin: [],
+};
+
+const INITIAL_COLLECTION_PLAN_ACTION: CollectionPlanActionState = {
+  pendingRiskKey: null,
+  feedbackRiskKey: null,
+  message: null,
+  error: null,
 };
 
 /**
@@ -1090,7 +1228,15 @@ const ComercialView = ({ metrics, officeGoals = [] }: { metrics: DashboardMetric
   );
 };
 
-const FinanceiroView = ({ metrics }: { metrics: DashboardMetrics }) => {
+const FinanceiroView = ({
+  metrics,
+  onGenerateCollectionPlan,
+  collectionPlanAction,
+}: {
+  metrics: DashboardMetrics;
+  onGenerateCollectionPlan: (riskKey: string) => void;
+  collectionPlanAction: CollectionPlanActionState;
+}) => {
   const operationalProfit = metrics.revenueReceived - metrics.totalCommissions - metrics.fixedCosts - metrics.marketingSpend;
   const projectionMax = Math.max(metrics.revenueReceived, metrics.financeForecast, metrics.openChargesAmount, 1);
   const heightFor = (value: number) => `${Math.max(12, Math.min(100, Math.round((value / projectionMax) * 100)))}%`;
@@ -1110,12 +1256,23 @@ const FinanceiroView = ({ metrics }: { metrics: DashboardMetrics }) => {
   const riskItems = metrics.financeRiskItems.slice(0, 3);
   const commercialOpportunities = metrics.commercialForecastTopOpportunities.slice(0, 3);
   const commercialStages = metrics.commercialForecastStages.slice(0, 4);
+  const unitCases = metrics.unitEconomicsByCase.slice(0, 3);
+  const unitLegalAreas = metrics.unitEconomicsByLegalArea.slice(0, 3);
+  const unitOwnerCommissions = metrics.unitCommissionsByOwner.slice(0, 3);
+  const unitOriginCommissions = metrics.unitCommissionsByOrigin.slice(0, 3);
   const riskBadgeClass = (risk: FinanceRiskItemPreview["riskLevel"]) =>
     risk === "high"
       ? "border-[#f87171]/40 bg-[#f87171]/10 text-[#f87171]"
       : risk === "medium"
         ? "border-[#CCA761]/40 bg-[#CCA761]/10 text-[#CCA761]"
         : "border-[#22d3ee]/30 bg-[#22d3ee]/10 text-[#22d3ee]";
+  const confidenceBadgeClass = (confidence: UnitEconomicsCasePreview["confidence"]) =>
+    confidence === "high"
+      ? "border-[#4ade80]/40 bg-[#4ade80]/10 text-[#4ade80]"
+      : confidence === "medium"
+        ? "border-[#CCA761]/40 bg-[#CCA761]/10 text-[#CCA761]"
+        : "border-[#f87171]/35 bg-[#f87171]/10 text-[#f87171]";
+  const actionFeedbackText = collectionPlanAction.error || collectionPlanAction.message;
 
   return (
   <div data-testid="dashboard-finance-view" className="space-y-6 animate-fade-in-up">
@@ -1149,6 +1306,102 @@ const FinanceiroView = ({ metrics }: { metrics: DashboardMetrics }) => {
         <p className="text-[10px] text-[#f87171] mt-2">{metrics.delinquencyCount} vencidas / {metrics.delinquencyRate}% das abertas</p>
       </GlassCard>
     </div>
+
+    <GlassCard className="border border-[#4ade80]/15" noHover>
+      <div data-testid="finance-unit-economics" className="space-y-4">
+        <div className="flex flex-col lg:flex-row lg:items-center lg:justify-between gap-4">
+          <div>
+            <p className="text-[10px] text-gray-500 uppercase tracking-widest font-bold">Unidade Economica</p>
+            <h4 data-testid="finance-unit-margin" className={`mt-1 text-xl font-bold ${metrics.unitEstimatedProfit >= 0 ? "text-[#4ade80]" : "text-[#f87171]"}`}>
+              R$ {metrics.unitEstimatedProfit.toLocaleString('pt-BR')}
+              <span className="ml-2 text-xs text-gray-500">{metrics.unitEstimatedMarginRate.toLocaleString('pt-BR')}%</span>
+            </h4>
+            <p className="mt-1 text-[10px] text-gray-500">
+              Receita bruta R$ {metrics.unitGrossRevenue.toLocaleString('pt-BR')} / custos diretos R$ {metrics.unitDirectCosts.toLocaleString('pt-BR')} / comissoes R$ {metrics.unitCommissions.toLocaleString('pt-BR')}
+            </p>
+          </div>
+          <div className="grid grid-cols-3 gap-3 text-center">
+            <div className="rounded-xl border border-white/5 bg-black/20 px-3 py-2">
+              <p className="text-[9px] text-gray-500 uppercase tracking-widest">Casos</p>
+              <p className="text-sm font-bold text-[#4ade80]">{metrics.unitEconomicsByCase.length}</p>
+            </div>
+            <div className="rounded-xl border border-white/5 bg-black/20 px-3 py-2">
+              <p className="text-[9px] text-gray-500 uppercase tracking-widest">Areas</p>
+              <p className="text-sm font-bold text-[#22d3ee]">{metrics.unitEconomicsByLegalArea.length}</p>
+            </div>
+            <div className="rounded-xl border border-white/5 bg-black/20 px-3 py-2">
+              <p className="text-[9px] text-gray-500 uppercase tracking-widest">Comissao</p>
+              <p className="text-sm font-bold text-[#CCA761]">R$ {metrics.unitCommissions.toLocaleString('pt-BR')}</p>
+            </div>
+          </div>
+        </div>
+
+        <div className="grid grid-cols-1 lg:grid-cols-3 gap-4 border-t border-white/5 pt-4">
+          <div className="space-y-2">
+            <p className="text-[9px] text-gray-500 uppercase tracking-widest font-bold">Receita por area</p>
+            {unitLegalAreas.length > 0 ? unitLegalAreas.map((area) => (
+              <div key={area.legalArea} data-testid="finance-unit-legal-area" className="flex items-center justify-between gap-3 text-[11px]">
+                <span className="truncate text-gray-300">
+                  {area.legalArea}
+                  <span className="ml-2 text-gray-600">({area.caseCount})</span>
+                </span>
+                <span className="text-[#4ade80] whitespace-nowrap">R$ {area.receivedRevenue.toLocaleString('pt-BR')}</span>
+              </div>
+            )) : (
+              <p className="text-[11px] text-gray-500">Sem area juridica com receita consolidada.</p>
+            )}
+          </div>
+          <div className="space-y-2">
+            <p className="text-[9px] text-gray-500 uppercase tracking-widest font-bold">Casos mais rentaveis</p>
+            {unitCases.length > 0 ? unitCases.map((item) => (
+              <div key={item.caseId} data-testid="finance-unit-case" className="rounded-xl border border-white/5 bg-black/20 px-3 py-2">
+                <div className="flex items-start justify-between gap-3">
+                  <div className="min-w-0">
+                    <p className="truncate text-[11px] font-bold text-gray-200">{item.label}</p>
+                    <p className="mt-0.5 text-[10px] text-gray-500">{item.legalArea || "Sem area"} / {item.marginRate.toLocaleString('pt-BR')}%</p>
+                  </div>
+                  <span className={`shrink-0 rounded-full border px-2 py-0.5 text-[9px] font-bold uppercase tracking-widest ${confidenceBadgeClass(item.confidence)}`}>
+                    {item.confidence}
+                  </span>
+                </div>
+                <div className="mt-2 flex justify-between gap-3 text-[11px]">
+                  <span className="text-gray-500">Lucro est.</span>
+                  <span className={item.estimatedProfit >= 0 ? "font-bold text-[#4ade80]" : "font-bold text-[#f87171]"}>
+                    R$ {item.estimatedProfit.toLocaleString('pt-BR')}
+                  </span>
+                </div>
+              </div>
+            )) : (
+              <p className="text-[11px] text-gray-500">Sem casos com receita para margem estimada.</p>
+            )}
+          </div>
+          <div className="space-y-3">
+            <div className="space-y-2">
+              <p className="text-[9px] text-gray-500 uppercase tracking-widest font-bold">Comissoes por responsavel</p>
+              {unitOwnerCommissions.length > 0 ? unitOwnerCommissions.map((item) => (
+                <div key={item.label} data-testid="finance-unit-commission-owner" className="flex justify-between gap-3 text-[11px]">
+                  <span className="truncate text-gray-300">{item.label}</span>
+                  <span className="text-[#CCA761] whitespace-nowrap">R$ {item.amount.toLocaleString('pt-BR')}</span>
+                </div>
+              )) : (
+                <p className="text-[11px] text-gray-500">Sem comissoes cadastradas.</p>
+              )}
+            </div>
+            <div className="space-y-2 border-t border-white/5 pt-3">
+              <p className="text-[9px] text-gray-500 uppercase tracking-widest font-bold">Por origem</p>
+              {unitOriginCommissions.length > 0 ? unitOriginCommissions.map((item) => (
+                <div key={item.label} data-testid="finance-unit-commission-origin" className="flex justify-between gap-3 text-[11px]">
+                  <span className="truncate text-gray-300">{item.label}</span>
+                  <span className="text-[#22d3ee] whitespace-nowrap">{item.share.toLocaleString('pt-BR')}%</span>
+                </div>
+              )) : (
+                <p className="text-[11px] text-gray-500">Sem origem comercial ligada a comissao.</p>
+              )}
+            </div>
+          </div>
+        </div>
+      </div>
+    </GlassCard>
 
     {(metrics.commercialForecastAvailable || metrics.commercialForecastPipelineAmount > 0 || commercialOpportunities.length > 0) && (
       <GlassCard className="border border-[#22d3ee]/15" noHover>
@@ -1377,6 +1630,25 @@ const FinanceiroView = ({ metrics }: { metrics: DashboardMetrics }) => {
                   <div className="mt-2 flex justify-between gap-3 text-[11px]">
                     <span className="text-gray-500">Aberto</span>
                     <span className="font-bold text-[#CCA761]">R$ {item.openAmount.toLocaleString('pt-BR')}</span>
+                  </div>
+                  <div className="mt-3 flex flex-wrap items-center justify-between gap-2 border-t border-white/5 pt-2">
+                    <button
+                      type="button"
+                      data-testid="finance-generate-collection-plan"
+                      onClick={() => onGenerateCollectionPlan(item.key)}
+                      disabled={collectionPlanAction.pendingRiskKey === item.key}
+                      className="rounded-lg border border-[#CCA761]/30 px-2.5 py-1 text-[9px] font-bold uppercase tracking-widest text-[#CCA761] transition-colors hover:border-[#CCA761] hover:bg-[#CCA761]/10 disabled:cursor-wait disabled:opacity-60"
+                    >
+                      {collectionPlanAction.pendingRiskKey === item.key ? "Gerando..." : "Gerar plano"}
+                    </button>
+                    {collectionPlanAction.feedbackRiskKey === item.key && actionFeedbackText && (
+                      <span
+                        data-testid="finance-collection-action-status"
+                        className={`text-[10px] ${collectionPlanAction.error ? "text-[#f87171]" : "text-[#4ade80]"}`}
+                      >
+                        {actionFeedbackText}
+                      </span>
+                    )}
                   </div>
                 </div>
               ))}
@@ -1745,6 +2017,7 @@ export default function DashboardHomePage() {
   const [isDropdownOpen, setIsDropdownOpen] = useState(false);
 
   const [metrics, setMetrics] = useState<DashboardMetrics>(INITIAL_DASHBOARD_METRICS);
+  const [collectionPlanAction, setCollectionPlanAction] = useState<CollectionPlanActionState>(INITIAL_COLLECTION_PLAN_ACTION);
 
   const [officeGoals, setOfficeGoals] = useState<OfficeGoal[]>([]);
 
@@ -1761,6 +2034,55 @@ export default function DashboardHomePage() {
   ];
 
   const activeTabLabel = TABS.find(t => t.id === activeView)?.label || "Dashboard";
+
+  const handleGenerateCollectionPlan = useCallback(async (riskKey: string) => {
+    setCollectionPlanAction({
+      pendingRiskKey: riskKey,
+      feedbackRiskKey: riskKey,
+      message: null,
+      error: null,
+    });
+
+    try {
+      const response = await fetch("/api/financeiro/collections-followup", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ riskKey }),
+      });
+      const payload = await response.json().catch(() => null);
+      if (!response.ok) {
+        throw new Error(payload?.error || "Nao foi possivel gerar o plano.");
+      }
+
+      const financeSummary = await fetchTenantFinanceSummary();
+      const collectionPlans = sanitizeCollectionPlans(financeSummary?.collectionsFollowup?.recentPlans);
+      if (financeSummary?.collectionsFollowup) {
+        setMetrics((current) => ({
+          ...current,
+          collectionsFollowupPlansCount: finiteNumber(financeSummary.collectionsFollowup?.totalPlans, collectionPlans.length),
+          collectionsFollowupHighPriorityCount: finiteNumber(
+            financeSummary.collectionsFollowup?.highPriorityPlans,
+            collectionPlans.filter((plan) => normalizeMetricText(plan.priority) === "high").length
+          ),
+          collectionsFollowupPlans: collectionPlans,
+        }));
+      }
+
+      setCollectionPlanAction({
+        pendingRiskKey: null,
+        feedbackRiskKey: riskKey,
+        message: payload?.deduped ? "Plano supervisionado pronto." : "Plano supervisionado criado.",
+        error: null,
+      });
+    } catch (error: any) {
+      setCollectionPlanAction({
+        pendingRiskKey: null,
+        feedbackRiskKey: riskKey,
+        message: null,
+        error: error?.message || "Falha ao gerar plano.",
+      });
+    }
+  }, []);
 
   useEffect(() => {
     const fetchDashboardData = async () => {
@@ -1948,6 +2270,7 @@ export default function DashboardHomePage() {
       const riskItems = sanitizeRiskItems(financeSummary?.financials?.riskItems);
       const collectionPlans = sanitizeCollectionPlans(financeSummary?.collectionsFollowup?.recentPlans);
       const commercialForecast = sanitizeCommercialForecast(financeSummary?.commercialForecast);
+      const unitEconomics = sanitizeUnitEconomics(financeSummary?.unitEconomics);
       const reconciliationTotals = financeSummary?.revenueReconciliation?.report?.totals;
 
       nextMetrics.clientCount = normalizedClientCount;
@@ -1992,6 +2315,15 @@ export default function DashboardHomePage() {
       nextMetrics.revenueReconciliationPartial = finiteNumber(reconciliationTotals?.partial, 0);
       nextMetrics.revenueReconciliationBlocked = finiteNumber(reconciliationTotals?.blocked, 0);
       nextMetrics.revenueReconciliationOpenedCaseRevenue = finiteNumber(reconciliationTotals?.openedCaseRevenue, 0);
+      nextMetrics.unitGrossRevenue = unitEconomics.grossRevenue;
+      nextMetrics.unitDirectCosts = unitEconomics.directCosts;
+      nextMetrics.unitCommissions = unitEconomics.commissions;
+      nextMetrics.unitEstimatedProfit = unitEconomics.estimatedProfit;
+      nextMetrics.unitEstimatedMarginRate = unitEconomics.estimatedMarginRate;
+      nextMetrics.unitEconomicsByCase = unitEconomics.byCase;
+      nextMetrics.unitEconomicsByLegalArea = unitEconomics.byLegalArea;
+      nextMetrics.unitCommissionsByOwner = unitEconomics.commissionsBreakdown.byOwner;
+      nextMetrics.unitCommissionsByOrigin = unitEconomics.commissionsBreakdown.byOrigin;
 
       const { data: processTasks, error: processTasksError } = await supabase
         .from('process_tasks')
@@ -2115,7 +2447,13 @@ export default function DashboardHomePage() {
       {activeView === "comercial" && <ComercialView metrics={metrics} officeGoals={officeGoals} />}
       {activeView === "marketing" && <MarketingView metrics={metrics} />}
       {activeView === "processos" && <ProcessosView metrics={metrics} />}
-      {activeView === "financeiro" && <FinanceiroView metrics={metrics} />}
+      {activeView === "financeiro" && (
+        <FinanceiroView
+          metrics={metrics}
+          onGenerateCollectionPlan={handleGenerateCollectionPlan}
+          collectionPlanAction={collectionPlanAction}
+        />
+      )}
       {activeView === "agenda" && <AgendaView />}
 
       {["prazos", "equipe", "clientes"].includes(activeView) && (
