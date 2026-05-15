@@ -1510,6 +1510,82 @@ describe("dispatchCapabilityExecution - juridico", () => {
     }));
   });
 
+  it("registra erro auditavel quando refresh documental da missao falha", async () => {
+    const missionSnapshot = makeSnapshot({
+      documentMemory: {
+        ...makeSnapshot().documentMemory,
+        syncStatus: "structured",
+        lastSyncedAt: "2026-04-01T00:00:00.000Z",
+        summaryMaster: "Memória documental antiga.",
+        missingDocuments: [],
+        freshness: "stale",
+      },
+    });
+    const processTaskQuery = makeMaybeSingleQuery({
+      data: {
+        id: "process-task-1",
+        tenant_id: "tenant-1",
+        drive_link: "https://drive.google.com/drive/folders/e2e-historico-formal-mayus",
+        drive_folder_id: "e2e-historico-formal-mayus",
+      },
+      error: null,
+    });
+
+    getLegalCaseContextSnapshotMock
+      .mockResolvedValueOnce(missionSnapshot)
+      .mockResolvedValueOnce(missionSnapshot);
+    fromMock.mockImplementation((table: string) => {
+      if (table === "process_tasks") return processTaskQuery;
+      return { insert: insertMock };
+    });
+    getTenantGoogleDriveContextMock.mockRejectedValueOnce(new Error("GoogleDriveNotConfigured"));
+
+    const result = await dispatchCapabilityExecution({
+      handlerType: "lex_process_mission_execute_next",
+      capabilityName: "legal_process_mission_execute_next",
+      tenantId: "tenant-1",
+      userId: "user-1",
+      entities: { process_number: "E2E-2026-0001" },
+      auditLogId: "audit-process-exec-refresh-failed",
+      brainContext: {
+        taskId: "brain-task-process-refresh-failed",
+        runId: "brain-run-process-refresh-failed",
+        stepId: "brain-step-process-refresh-failed",
+        sourceModule: "mayus",
+      },
+    });
+
+    expect(result.status).toBe("failed");
+    expect(result.reply).toContain("GoogleDriveNotConfigured");
+    expect(result.outputPayload).toEqual(expect.objectContaining({
+      process_task_id: "process-task-1",
+      process_mission_recommended_action: "refresh_document_memory",
+      executed_capability: "legal_document_memory_refresh",
+      step_status: "failed",
+      step_output_payload: expect.objectContaining({
+        error_message: "GoogleDriveNotConfigured",
+      }),
+    }));
+    expect(createBrainArtifactMock).toHaveBeenCalledWith(expect.objectContaining({
+      artifactType: "process_mission_step_result",
+      metadata: expect.objectContaining({
+        process_task_id: "process-task-1",
+        result_status: "failed",
+        executed_capability: "legal_document_memory_refresh",
+        error_message: "GoogleDriveNotConfigured",
+      }),
+    }));
+    expect(insertMock).toHaveBeenCalledWith(expect.objectContaining({
+      event_type: "process_mission_step_executed",
+      payload: expect.objectContaining({
+        process_task_id: "process-task-1",
+        result_status: "failed",
+        executed_capability: "legal_document_memory_refresh",
+        error_message: "GoogleDriveNotConfigured",
+      }),
+    }));
+  });
+
   it("bloqueia execucao da missao processual quando a confianca e baixa", async () => {
     getLegalCaseContextSnapshotMock.mockResolvedValue(makeSnapshot({
       processTask: {

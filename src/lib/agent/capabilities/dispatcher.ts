@@ -3961,6 +3961,9 @@ async function runLegalProcessMissionExecuteNext(input: DispatchCapabilityInput)
     summary,
     executedCapability: "legal_document_memory_refresh",
     executedHandlerType: "lex_document_memory_refresh",
+    errorMessage: refreshResult.status === "failed"
+      ? getStringValue(refreshResult.outputPayload?.error_message) || refreshResult.reply
+      : null,
     stepOutputPayload: refreshResult.outputPayload || null,
   });
 
@@ -4223,6 +4226,7 @@ async function runLegalDocumentMemoryRefresh(input: DispatchCapabilityInput): Pr
           handler_type: input.handlerType,
           process_task_id: snapshotBefore.processTask.id,
           process_number: snapshotBefore.processTask.processNumber,
+          error_message: reply,
         },
       };
     }
@@ -4305,6 +4309,7 @@ async function runLegalDocumentMemoryRefresh(input: DispatchCapabilityInput): Pr
         handler_type: input.handlerType,
         process_task_id: snapshotBefore.processTask.id,
         process_number: snapshotBefore.processTask.processNumber,
+        error_message: errorMessage,
       },
     };
   }
