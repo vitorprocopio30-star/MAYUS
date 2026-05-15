@@ -369,6 +369,18 @@ describe("route - juridico MAYUS", () => {
     expect(result.ambiguous).toBe(false);
   });
 
+  it("detecta Case Brain com referencia operacional nao-CNJ", () => {
+    const result = route(
+      "Mayus, gere o Case Brain 2.0 com cronologia estruturada e mapa de riscos do processo E2E-2026-0001.",
+      baseContext
+    );
+
+    expect(result.intent).toBe("legal_case_brain_insights");
+    expect(result.entities).toEqual({ process_reference: "E2E-2026-0001" });
+    expect(result.confidence).toBeGreaterThanOrEqual(0.9);
+    expect(result.ambiguous).toBe(false);
+  });
+
   it("detecta pedido de plano de missao agentica processual", () => {
     const result = route(
       "Mayus, monte um plano agentico do processo 1234567-89.2024.8.26.0100 e diga a proxima acao segura.",
@@ -411,6 +423,18 @@ describe("route - juridico MAYUS", () => {
 
     expect(result.intent).toBe("legal_process_mission_execute_next");
     expect(result.entities).toEqual({ process_number: "1234567-89.2024.8.26.0100" });
+    expect(result.confidence).toBeGreaterThanOrEqual(0.85);
+    expect(result.ambiguous).toBe(false);
+  });
+
+  it("detecta execucao de missao com referencia operacional nao-CNJ", () => {
+    const result = route(
+      "Mayus, execute o proximo passo seguro da missao do processo E2E-2026-0001.",
+      baseContext
+    );
+
+    expect(result.intent).toBe("legal_process_mission_execute_next");
+    expect(result.entities).toEqual({ process_reference: "E2E-2026-0001" });
     expect(result.confidence).toBeGreaterThanOrEqual(0.85);
     expect(result.ambiguous).toBe(false);
   });

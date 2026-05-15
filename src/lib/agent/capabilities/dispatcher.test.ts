@@ -1498,6 +1498,7 @@ describe("dispatchCapabilityExecution - juridico", () => {
         process_task_id: "process-task-1",
         result_status: "executed",
         executed_capability: "legal_document_memory_refresh",
+        external_side_effects_blocked: true,
       }),
     }));
     expect(insertMock).toHaveBeenCalledWith(expect.objectContaining({
@@ -1506,6 +1507,7 @@ describe("dispatchCapabilityExecution - juridico", () => {
         process_task_id: "process-task-1",
         recommended_action: "refresh_document_memory",
         executed_capability: "legal_document_memory_refresh",
+        external_side_effects_blocked: true,
       }),
     }));
   });
@@ -1573,6 +1575,7 @@ describe("dispatchCapabilityExecution - juridico", () => {
         result_status: "failed",
         executed_capability: "legal_document_memory_refresh",
         error_message: "GoogleDriveNotConfigured",
+        external_side_effects_blocked: true,
       }),
     }));
     expect(insertMock).toHaveBeenCalledWith(expect.objectContaining({
@@ -1582,6 +1585,79 @@ describe("dispatchCapabilityExecution - juridico", () => {
         result_status: "failed",
         executed_capability: "legal_document_memory_refresh",
         error_message: "GoogleDriveNotConfigured",
+        external_side_effects_blocked: true,
+      }),
+    }));
+  });
+
+  it("normaliza Bad Request do refresh documental como falha auditavel de Drive", async () => {
+    const missionSnapshot = makeSnapshot({
+      documentMemory: {
+        ...makeSnapshot().documentMemory,
+        syncStatus: "structured",
+        lastSyncedAt: "2026-04-01T00:00:00.000Z",
+        summaryMaster: "Memória documental antiga.",
+        missingDocuments: [],
+        freshness: "stale",
+      },
+    });
+    const processTaskQuery = makeMaybeSingleQuery({
+      data: {
+        id: "process-task-1",
+        tenant_id: "tenant-1",
+        drive_link: "https://drive.google.com/drive/folders/e2e-historico-formal-mayus",
+        drive_folder_id: "e2e-historico-formal-mayus",
+      },
+      error: null,
+    });
+
+    getLegalCaseContextSnapshotMock
+      .mockResolvedValueOnce(missionSnapshot)
+      .mockResolvedValueOnce(missionSnapshot);
+    fromMock.mockImplementation((table: string) => {
+      if (table === "process_tasks") return processTaskQuery;
+      return { insert: insertMock };
+    });
+    syncProcessDocumentsMock.mockRejectedValueOnce(new Error("Bad Request"));
+
+    const result = await dispatchCapabilityExecution({
+      handlerType: "lex_process_mission_execute_next",
+      capabilityName: "legal_process_mission_execute_next",
+      tenantId: "tenant-1",
+      userId: "user-1",
+      entities: { process_number: "E2E-2026-0001" },
+      auditLogId: "audit-process-exec-refresh-bad-request",
+      brainContext: {
+        taskId: "brain-task-process-refresh-bad-request",
+        runId: "brain-run-process-refresh-bad-request",
+        stepId: "brain-step-process-refresh-bad-request",
+        sourceModule: "mayus",
+      },
+    });
+
+    expect(result.status).toBe("failed");
+    expect(result.reply).toContain("GoogleDriveSyncFailed: Bad Request");
+    expect(result.outputPayload).toEqual(expect.objectContaining({
+      executed_capability: "legal_document_memory_refresh",
+      step_status: "failed",
+      step_output_payload: expect.objectContaining({
+        error_message: "GoogleDriveSyncFailed: Bad Request",
+      }),
+    }));
+    expect(createBrainArtifactMock).toHaveBeenCalledWith(expect.objectContaining({
+      artifactType: "process_mission_step_result",
+      metadata: expect.objectContaining({
+        result_status: "failed",
+        error_message: "GoogleDriveSyncFailed: Bad Request",
+        external_side_effects_blocked: true,
+      }),
+    }));
+    expect(insertMock).toHaveBeenCalledWith(expect.objectContaining({
+      event_type: "process_mission_step_executed",
+      payload: expect.objectContaining({
+        result_status: "failed",
+        error_message: "GoogleDriveSyncFailed: Bad Request",
+        external_side_effects_blocked: true,
       }),
     }));
   });

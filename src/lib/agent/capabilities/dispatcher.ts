@@ -3761,6 +3761,7 @@ async function registerProcessMissionStepResult(
       executed_handler_type: params.executedHandlerType || null,
       step_output_payload: params.stepOutputPayload || null,
       error_message: params.errorMessage || null,
+      external_side_effects_blocked: true,
     },
   });
 
@@ -3776,7 +3777,27 @@ async function registerProcessMissionStepResult(
     executed_capability: params.executedCapability || null,
     executed_handler_type: params.executedHandlerType || null,
     error_message: params.errorMessage || null,
+    external_side_effects_blocked: true,
   });
+}
+
+function normalizeLegalDocumentMemoryErrorMessage(error: unknown) {
+  const raw = error instanceof Error
+    ? error.message
+    : typeof error === "string"
+      ? error
+      : "";
+  const message = raw.trim() || "Nao foi possivel atualizar a memoria documental do processo agora.";
+
+  if (message === "GoogleDriveNotConfigured" || message === "GoogleDriveDisconnected") {
+    return message;
+  }
+
+  if (/^bad request$/i.test(message)) {
+    return "GoogleDriveSyncFailed: Bad Request";
+  }
+
+  return message;
 }
 
 function resolveCaseBrainMissionBlock(params: {
@@ -4290,7 +4311,7 @@ async function runLegalDocumentMemoryRefresh(input: DispatchCapabilityInput): Pr
       },
     };
   } catch (error: any) {
-    const errorMessage = error?.message || "Nao foi possivel atualizar a memoria documental do processo agora.";
+    const errorMessage = normalizeLegalDocumentMemoryErrorMessage(error);
     await registerLegalDocumentMemoryRefreshArtifact(input, {
       snapshot: snapshotBefore,
       reply: errorMessage,

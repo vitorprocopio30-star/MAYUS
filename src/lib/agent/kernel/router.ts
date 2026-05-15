@@ -770,6 +770,10 @@ const INTENT_PATTERNS: IntentDefinition[] = [
         key: 'process_reference',
         pattern: /(?:processo|caso|miss[aã]o)\s+(?:do|da|de)\s+(?!processo\b|caso\b|miss[aã]o\b|\d{7}-)([^,.;!?]{3,90})/i,
       },
+      {
+        key: 'process_reference',
+        pattern: /(?:processo|caso|miss[aã]o)\s+(?!do\b|da\b|de\b|desse\b|deste\b|dessa\b|desta\b|processo\b|caso\b|miss[aã]o\b|\d{7}-)([A-Z0-9][A-Z0-9_.-]{2,}(?:\s+[A-Z0-9][A-Z0-9_.-]{1,}){0,5})(?=\s*(?:[,.;!?]|$))/i,
+      },
     ],
     baseConfidence: 0.88,
   },
@@ -821,6 +825,10 @@ const INTENT_PATTERNS: IntentDefinition[] = [
       {
         key: 'process_reference',
         pattern: /(?:processo|caso|case\s+brain)\s+(?:do|da|de)\s+(?!processo\b|caso\b|\d{7}-)([^,.;!?]{3,90})/i,
+      },
+      {
+        key: 'process_reference',
+        pattern: /(?:processo|caso|case\s+brain)\s+(?!do\b|da\b|de\b|desse\b|deste\b|dessa\b|desta\b|processo\b|caso\b|\d{7}-)([A-Z0-9][A-Z0-9_.-]{2,}(?:\s+[A-Z0-9][A-Z0-9_.-]{1,}){0,5})(?=\s*(?:[,.;!?]|$))/i,
       },
     ],
     baseConfidence: 0.9,
@@ -1032,7 +1040,7 @@ export function route(text: string, context: RouterContext): RouterIntent {
       if (def.entityExtractors) {
         for (const extractor of def.entityExtractors) {
           const match = text.match(extractor.pattern);
-          if (match?.[1]) entities[extractor.key] = match[1].trim();
+          if (match?.[1]) entities[extractor.key] = match[1].trim().replace(/[.,;!?]+$/, "").trim();
         }
       }
 
