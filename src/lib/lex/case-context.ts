@@ -233,6 +233,10 @@ function pickFirstString(entities: Record<string, string>, keys: string[]) {
   return null;
 }
 
+function looksLikeUuid(value: string) {
+  return /^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i.test(value.trim());
+}
+
 async function resolveProcessTaskById(tenantId: string, processTaskId: string) {
   const { data, error } = await supabaseAdmin
     .from("process_tasks")
@@ -297,18 +301,20 @@ async function resolveProcessTaskByReference(tenantId: string, reference: string
 
 export async function resolveLegalProcessTask(params: { tenantId: string; entities: Record<string, string> }) {
   const processTaskId = pickFirstString(params.entities, ["process_task_id", "task_id"]);
-  if (processTaskId) {
+  const processTaskIdFallback = processTaskId && !looksLikeUuid(processTaskId) ? processTaskId : null;
+
+  if (processTaskId && !processTaskIdFallback) {
     const byId = await resolveProcessTaskById(params.tenantId, processTaskId);
     if (byId) return byId;
   }
 
-  const processNumber = pickFirstString(params.entities, ["process_number", "numero_processo", "numero_cnj"]);
+  const processNumber = pickFirstString(params.entities, ["process_number", "numero_processo", "numero_cnj"]) || processTaskIdFallback;
   if (processNumber) {
     const byNumber = await resolveProcessTaskByProcessNumber(params.tenantId, processNumber);
     if (byNumber) return byNumber;
   }
 
-  const reference = pickFirstString(params.entities, ["process_reference", "client_name", "process_title", "title", "case_reference"]);
+  const reference = pickFirstString(params.entities, ["process_reference", "client_name", "process_title", "title", "case_reference"]) || processTaskIdFallback;
   if (reference) {
     const byReference = await resolveProcessTaskByReference(params.tenantId, reference);
     if (byReference) return byReference;

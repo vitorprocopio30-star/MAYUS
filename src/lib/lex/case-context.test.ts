@@ -44,6 +44,19 @@ function makeReferenceQuery(rows: Array<Record<string, unknown>>) {
   return query;
 }
 
+function makeMaybeSingleQuery(row: Record<string, unknown> | null) {
+  const query: any = {
+    select: vi.fn(() => query),
+    eq: vi.fn(() => query),
+    ilike: vi.fn(() => query),
+    order: vi.fn(() => query),
+    limit: vi.fn(() => query),
+    maybeSingle: vi.fn(async () => ({ data: row, error: null })),
+  };
+
+  return query;
+}
+
 function makeSnapshot(overrides?: Partial<LegalCaseContextSnapshot>): LegalCaseContextSnapshot {
   return {
     processTask: {
@@ -122,6 +135,36 @@ describe("resolveLegalProcessTask", () => {
 
     expect(result.id).toBe("process-task-1");
     expect(supabaseFromMock).toHaveBeenCalledWith("process_tasks");
+  });
+
+  it("resolve ID interno valido por process_task_id", async () => {
+    const byIdQuery = makeMaybeSingleQuery(makeProcessRow({ id: "11111111-1111-4111-8111-111111111111" }));
+    supabaseFromMock.mockReturnValue(byIdQuery);
+
+    const result = await resolveLegalProcessTask({
+      tenantId: "tenant-1",
+      entities: { process_task_id: "11111111-1111-4111-8111-111111111111" },
+    });
+
+    expect(result.id).toBe("11111111-1111-4111-8111-111111111111");
+    expect(byIdQuery.eq).toHaveBeenCalledWith("id", "11111111-1111-4111-8111-111111111111");
+  });
+
+  it("trata process_task_id nao-UUID como numero ou referencia operacional", async () => {
+    const byNumberQuery = makeMaybeSingleQuery(makeProcessRow({
+      id: "process-task-e2e",
+      process_number: "E2E-2026-0001",
+    }));
+    supabaseFromMock.mockReturnValue(byNumberQuery);
+
+    const result = await resolveLegalProcessTask({
+      tenantId: "tenant-1",
+      entities: { process_task_id: "E2E-2026-0001" },
+    });
+
+    expect(result.id).toBe("process-task-e2e");
+    expect(byNumberQuery.eq).not.toHaveBeenCalledWith("id", "E2E-2026-0001");
+    expect(byNumberQuery.eq).toHaveBeenCalledWith("process_number", "E2E-2026-0001");
   });
 
   it("bloqueia referencia textual ambigua sem escolher o processo mais recente", async () => {
