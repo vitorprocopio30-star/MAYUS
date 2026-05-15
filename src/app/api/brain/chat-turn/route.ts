@@ -16,6 +16,34 @@ function normalizeString(value: unknown) {
   return typeof value === "string" ? value.trim() : "";
 }
 
+const MAYUS_SIMPLE_GREETING_REPLY = "Olá, Doutor. Estou pronto. Como posso ajudar?";
+const SIMPLE_MAYUS_GREETINGS = new Set([
+  "ola",
+  "ola mayus",
+  "oi",
+  "oi mayus",
+  "bom dia",
+  "bom dia mayus",
+  "boa tarde",
+  "boa tarde mayus",
+  "boa noite",
+  "boa noite mayus",
+]);
+
+function normalizeGreetingText(value: string) {
+  return value
+    .normalize("NFD")
+    .replace(/[\u0300-\u036f]/g, "")
+    .toLowerCase()
+    .replace(/[^a-z0-9\s]/g, " ")
+    .replace(/\s+/g, " ")
+    .trim();
+}
+
+function isSimpleMayusGreeting(message: string) {
+  return SIMPLE_MAYUS_GREETINGS.has(normalizeGreetingText(message));
+}
+
 export async function POST(req: NextRequest) {
   try {
     const auth = await getBrainAuthContext();
@@ -28,6 +56,21 @@ export async function POST(req: NextRequest) {
 
     if (!message) {
       return NextResponse.json({ error: "message e obrigatoria." }, { status: 400 });
+    }
+
+    if (isSimpleMayusGreeting(message)) {
+      return NextResponse.json({
+        reply: MAYUS_SIMPLE_GREETING_REPLY,
+        voiceReply: MAYUS_SIMPLE_GREETING_REPLY,
+        missionKind: "general_brain",
+        approvalRequired: false,
+        approvalId: null,
+        kernel: {
+          status: "success",
+          fastPath: "simple_greeting",
+        },
+        orb: null,
+      });
     }
 
     const history = normalizeChatHistory(body.history);
@@ -51,6 +94,7 @@ export async function POST(req: NextRequest) {
       },
       taskContext: {
         source: "dashboard_mayus",
+        provider: preferredProvider,
         conversation_id: conversationId,
       },
       policySnapshot: {
@@ -67,10 +111,15 @@ export async function POST(req: NextRequest) {
 
     return NextResponse.json({
       reply: turn.reply,
+      voiceReply: turn.voiceReply,
+      missionKind: turn.missionKind,
+      approvalRequired: turn.approvalRequired,
+      approvalId: turn.approvalId,
       kernel: turn.kernel,
       taskId: turn.taskId,
       runId: turn.runId,
       stepId: turn.stepId,
+      orb: turn.orb,
     }, { status: turn.responseStatus });
   } catch (error: any) {
     console.error("[brain/chat-turn] fatal", error);

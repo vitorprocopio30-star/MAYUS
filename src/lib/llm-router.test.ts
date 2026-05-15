@@ -142,7 +142,7 @@ describe("llm-router", () => {
     ]);
   });
 
-  it("usa DeepSeek V4 Pro como padrao de SDR WhatsApp no OpenRouter", async () => {
+  it("usa GPT-5.4 nano como padrao de SDR WhatsApp no OpenRouter", async () => {
     listTenantIntegrationsResolvedMock.mockResolvedValueOnce([
       { provider: "openrouter", api_key: "openrouter-key", status: "connected" },
     ]);
@@ -150,7 +150,7 @@ describe("llm-router", () => {
     const client = await getLLMClient({} as any, "tenant-1", "sdr_whatsapp");
 
     expect(client.provider).toBe("openrouter");
-    expect(client.model).toBe("deepseek/deepseek-v4-pro");
+    expect(client.model).toBe("openai/gpt-5.4-nano");
   });
 
   it("permite override de modelo somente para SDR WhatsApp", async () => {

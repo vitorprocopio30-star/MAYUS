@@ -1,7 +1,5 @@
-/* eslint-disable react/no-unescaped-entities */
 "use client";
 
-import { useState } from "react";
 import { Check, Zap, Shield, Crown, ArrowRight, Sparkles } from "lucide-react";
 import Link from "next/link";
 import Image from "next/image";
@@ -12,7 +10,7 @@ const plans = [
     icon: Zap,
     name: "Essencial",
     tagline: "O ponto de partida inteligente",
-    price: 297,
+    access: "Entrada assistida para validar operação, CRM e primeiras rotinas.",
     highlight: false,
     features: [
       "Até 3 usuários",
@@ -33,7 +31,7 @@ const plans = [
     icon: Shield,
     name: "Profissional",
     tagline: "O sistema que trabalha por você",
-    price: 697,
+    access: "Beta supervisionado para escritórios com operação ativa e gargalos recorrentes.",
     highlight: true,
     features: [
       "Até 15 usuários",
@@ -56,7 +54,7 @@ const plans = [
     icon: Crown,
     name: "Elite",
     tagline: "Poder irrestrito. Presença total.",
-    price: 1497,
+    access: "Acompanhamento próximo para bancas com canais, automações e governança mais complexos.",
     highlight: false,
     features: [
       "Usuários ilimitados",
@@ -78,12 +76,6 @@ const plans = [
 ];
 
 export default function PrecosPage() {
-  const [billing, setBilling] = useState<"monthly" | "annual">("monthly");
-  const discount = 0.2;
-
-  const getPrice = (base: number) =>
-    billing === "annual" ? Math.floor(base * (1 - discount)) : base;
-
   return (
     <div
       className={`relative min-h-screen bg-[#030303] text-white overflow-hidden font-sans`}
@@ -120,7 +112,7 @@ export default function PrecosPage() {
         </Link>
         <div className={`hidden md:flex items-center gap-8 text-sm text-white/50 font-sans`}>
           <Link href="/dashboard" className="hover:text-[#CCA761] transition-colors">Dashboard</Link>
-          <Link href="#planos" className="hover:text-[#CCA761] transition-colors">Planos</Link>
+          <Link href="#planos" className="hover:text-[#CCA761] transition-colors">Perfis</Link>
           <Link href="#faq" className="hover:text-[#CCA761] transition-colors">FAQ</Link>
         </div>
         <Link
@@ -135,47 +127,20 @@ export default function PrecosPage() {
       <section className="relative z-10 text-center pt-24 pb-20 px-6">
         <div className="inline-flex items-center gap-2 px-4 py-2 rounded-full border border-[#CCA761]/20 bg-[#CCA761]/5 text-[#CCA761] text-xs font-semibold tracking-widest uppercase mb-8">
           <Sparkles size={12} />
-          Planos & Preços
+          Acesso controlado
         </div>
 
         <h1
           className={`text-5xl md:text-7xl font-light leading-[1.05] tracking-tight mb-6 font-serif`}
         >
-          Escolha o plano que
+          Solicite o acesso que
           <br />
-          <span className="italic text-[#CCA761]">transforma</span> seu escritório
+          <span className="italic text-[#CCA761]">encaixa</span> no seu escritório
         </h1>
 
         <p className="text-white/40 text-lg max-w-xl mx-auto mb-12 leading-relaxed">
-          Do CRM à Inteligência Artificial. Do WhatsApp ao Tribunal. Uma plataforma que opera enquanto você dorme.
+          O MAYUS está em beta supervisionado. Antes de abrir condição comercial pública, avaliamos a operação, o momento do escritório e a dor que precisa ser resolvida primeiro.
         </p>
-
-        {/* Billing toggle */}
-        <div className="inline-flex items-center gap-4 p-1.5 rounded-full border border-white/10 bg-white/5 backdrop-blur-md">
-          <button
-            onClick={() => setBilling("monthly")}
-            className={`px-5 py-2 rounded-full text-sm font-medium transition-all duration-300 ${
-              billing === "monthly"
-                ? "bg-[#CCA761] text-[#030303] shadow-[0_0_20px_rgba(204,167,97,0.4)]"
-                : "text-white/40 hover:text-white"
-            }`}
-          >
-            Mensal
-          </button>
-          <button
-            onClick={() => setBilling("annual")}
-            className={`px-5 py-2 rounded-full text-sm font-medium transition-all duration-300 flex items-center gap-2 ${
-              billing === "annual"
-                ? "bg-[#CCA761] text-[#030303] shadow-[0_0_20px_rgba(204,167,97,0.4)]"
-                : "text-white/40 hover:text-white"
-            }`}
-          >
-            Anual
-            <span className={`text-[10px] font-bold px-1.5 py-0.5 rounded-full ${billing === "annual" ? "bg-[#030303]/20 text-[#030303]" : "bg-green-500/20 text-green-400"}`}>
-              -20%
-            </span>
-          </button>
-        </div>
       </section>
 
       {/* ── PLANS ───────────────────────────────────────── */}
@@ -183,7 +148,6 @@ export default function PrecosPage() {
         <div className="max-w-6xl mx-auto grid grid-cols-1 md:grid-cols-3 gap-6 items-stretch">
           {plans.map((plan) => {
             const Icon = plan.icon;
-            const price = getPrice(plan.price);
             return (
               <div
                 key={plan.id}
@@ -215,19 +179,15 @@ export default function PrecosPage() {
                   {plan.tagline}
                 </h2>
 
-                {/* Price */}
-                <div className="mt-6 mb-8 flex items-end gap-1">
-                  <span className="text-white/30 text-lg">R$</span>
-                  <span className={`text-5xl font-bold tracking-tight ${plan.highlight ? "text-[#CCA761]" : "text-white"}`}>
-                    {price.toLocaleString("pt-BR")}
-                  </span>
-                  <span className="text-white/30 text-sm mb-1">/mês</span>
-                </div>
-                {billing === "annual" && (
-                  <p className="text-green-400 text-xs font-medium -mt-6 mb-6">
-                    Economia de R$ {(plan.price * discount * 12).toLocaleString("pt-BR")}/ano
+                {/* Access */}
+                <div className={`mt-6 mb-8 rounded-xl border p-4 ${plan.highlight ? "border-[#CCA761]/30 bg-[#CCA761]/10" : "border-white/10 bg-white/[0.03]"}`}>
+                  <p className="text-[10px] font-black uppercase tracking-[0.22em] text-white/35">
+                    Acesso sob convite
                   </p>
-                )}
+                  <p className={`mt-2 text-sm leading-relaxed ${plan.highlight ? "text-[#CCA761]" : "text-white/60"}`}>
+                    {plan.access}
+                  </p>
+                </div>
 
                 {/* Divider */}
                 <div className={`h-px mb-8 ${plan.highlight ? "bg-gradient-to-r from-transparent via-[#CCA761]/40 to-transparent" : "bg-white/5"}`} />
@@ -246,7 +206,7 @@ export default function PrecosPage() {
 
                 {/* CTA */}
                 <Link
-                  href="/dashboard"
+                  href="/vendas#acesso-beta"
                   className={`
                     mt-8 w-full flex items-center justify-center gap-2 py-3.5 rounded-xl font-semibold text-sm transition-all duration-300
                     ${plan.highlight
@@ -266,9 +226,9 @@ export default function PrecosPage() {
         {/* Enterprise note */}
         <p className="text-center text-white/20 text-sm mt-12">
           Precisa de algo personalizado?{" "}
-          <a href="https://wa.me/5511999999999" className="text-[#CCA761]/60 hover:text-[#CCA761] transition-colors underline underline-offset-4">
-            Fale com nosso time
-          </a>
+          <Link href="/vendas#acesso-beta" className="text-[#CCA761]/60 hover:text-[#CCA761] transition-colors underline underline-offset-4">
+            Solicite uma conversa de beta
+          </Link>
         </p>
       </section>
 
@@ -278,8 +238,8 @@ export default function PrecosPage() {
           <div className="inline-flex items-center gap-3 px-6 py-4 rounded-2xl border border-white/5 bg-white/[0.02] backdrop-blur-md">
             <Shield size={18} className="text-[#CCA761]" />
             <p className="text-white/40 text-sm">
-              <span className="text-white/70 font-medium">Garantia de 7 dias.</span>{" "}
-              Se não ficar satisfeito, devolvemos 100% do valor. Sem perguntas.
+              <span className="text-white/70 font-medium">Beta supervisionado.</span>{" "}
+              Acesso controlado, limites claros e decisão humana preservada em toda operação.
             </p>
           </div>
         </div>
@@ -294,16 +254,16 @@ export default function PrecosPage() {
           <div className="space-y-px">
             {[
               {
-                q: "Posso mudar de plano depois?",
-                a: "Sim. Você pode fazer upgrade ou downgrade a qualquer momento. Ajustamos o valor proporcional ao período restante.",
+                q: "Por que a condição comercial não está aberta?",
+                a: "Porque o MAYUS está em beta supervisionado. Primeiro entendemos o tamanho da operação, os canais e a dor principal para indicar o encaixe correto.",
               },
               {
                 q: "O WhatsApp Oficial Meta tem custo adicional?",
-                a: "O acesso à integração está incluso no plano Elite. As conversas cobradas pela Meta (acima da cota gratuita) são de responsabilidade do cliente.",
+                a: "A integração depende do cenário de cada escritório e das cobranças da Meta. Isso é explicado na etapa de diagnóstico, sem promessa comercial genérica.",
               },
               {
                 q: "Quantos agentes de IA posso criar?",
-                a: "No Profissional você cria até 5 agentes. No Elite, ilimitados — cada um com personalidade, base de conhecimento e canal próprio.",
+                a: "A quantidade depende do desenho operacional aprovado no beta. O foco inicial é resolver uma dor real com supervisão antes de expandir automações.",
               },
               {
                 q: "Os dados ficam seguros?",

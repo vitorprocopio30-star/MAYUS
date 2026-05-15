@@ -12,6 +12,9 @@ vi.mock("@/lib/integrations/server", () => ({
 
 function createSupabaseMock() {
   const inserts: Array<{ table: string; payload: any }> = [];
+  const upserts: Array<{ table: string; payload: any }> = [];
+  const updates: Array<{ table: string; payload: any }> = [];
+  const uploads: Array<{ bucket: string; path: string; body: any; options: any }> = [];
   const ids: Record<string, string> = {
     brain_tasks: "brain-task-1",
     brain_runs: "brain-run-1",
@@ -77,12 +80,36 @@ function createSupabaseMock() {
 
       return Promise.resolve({ data: null, error: null });
     },
+    upsert: (payload: any) => {
+      upserts.push({ table, payload });
+      return Promise.resolve({ error: null });
+    },
+    update: (payload: any) => {
+      updates.push({ table, payload });
+      return { eq: async () => ({ error: null }) };
+    },
   });
 
   return {
     inserts,
+    upserts,
+    updates,
+    uploads,
     supabase: {
       from: (table: string) => makeQuery(table),
+      storage: {
+        getBucket: async () => ({ data: { name: "brain-artifacts" }, error: null }),
+        from: (bucket: string) => ({
+          upload: async (path: string, body: any, options: any) => {
+            uploads.push({ bucket, path, body, options });
+            return { data: { path }, error: null };
+          },
+          createSignedUrl: async (path: string) => ({
+            data: { signedUrl: `https://storage.example.com/${path}?token=signed` },
+            error: null,
+          }),
+        }),
+      },
     },
   };
 }
@@ -91,10 +118,7 @@ describe("whatsapp command runtime", () => {
   beforeEach(() => {
     vi.restoreAllMocks();
     integrationMock.listTenantIntegrationsResolved.mockReset();
-    global.fetch = vi.fn(async () => ({
-      ok: true,
-      json: async () => ({ sent: true }),
-    })) as any;
+    global.fetch = vi.fn(async () => new Response(JSON.stringify({ sent: true, key: { id: "msg-1" } }), { status: 200 })) as any;
   });
 
   it("bloqueia comando interno de telefone nao autorizado sem enviar resposta", async () => {
@@ -121,7 +145,7 @@ describe("whatsapp command runtime", () => {
   });
 
   it("gera artifact e envia resposta para comando autorizado", async () => {
-    const { supabase, inserts } = createSupabaseMock();
+    const { supabase, inserts, updates, uploads } = createSupabaseMock();
     integrationMock.listTenantIntegrationsResolved.mockResolvedValue([
       {
         provider: "evolution",
@@ -146,14 +170,75 @@ describe("whatsapp command runtime", () => {
       provider: "evolution",
     });
     expect(global.fetch).toHaveBeenCalledWith(
-      "https://api.evolution.example/message/sendText/dutra",
+      "https://api.evolution.example/message/sendMedia/dutra",
       expect.objectContaining({
         method: "POST",
+        body: expect.stringContaining("mayus-playbook-premium.html"),
       }),
     );
     expect(inserts.some((item) => item.table === "brain_artifacts" && item.payload.artifact_type === "daily_playbook")).toBe(true);
     expect(inserts.some((item) => item.table === "system_event_logs" && item.payload.event_type === "whatsapp_internal_command_processed")).toBe(true);
     expect(inserts.some((item) => item.table === "whatsapp_messages" && item.payload?.[0]?.direction === "outbound")).toBe(true);
+    const outbound = inserts.find((item) => item.table === "whatsapp_messages" && item.payload?.[0]?.direction === "outbound")?.payload?.[0];
+    expect(outbound.content).toContain("Playbook Premium gerado");
+    expect(outbound.content).toContain("arquivo HTML em anexo");
+    expect(outbound.message_type).toBe("document");
+    expect(outbound.media_filename).toBe("mayus-playbook-premium.html");
+    expect(outbound.media_mime_type).toBe("text/html");
+    expect(outbound.media_url).toContain("https://storage.example.com/tenant-1/daily_playbook/brain-artifact-1.html");
+    expect(outbound.content).not.toMatch(/\/playbook\/pb_[A-Za-z0-9_-]+/);
+    expect(outbound.content).not.toContain("/dashboard/mayus/playbooks/");
+    expect(outbound.content).not.toContain("Acoes prioritarias:\n1.");
+    const artifactInsert = inserts.find((item) => item.table === "brain_artifacts" && item.payload.artifact_type === "daily_playbook");
+    expect(artifactInsert?.payload.metadata.public_share_enabled).toBe(true);
+    expect(artifactInsert?.payload.metadata.public_share_token).toMatch(/^pb_[A-Za-z0-9_-]+$/);
+    expect(updates.some((item) => item.table === "brain_artifacts" && item.payload.metadata.html_file_available === true)).toBe(true);
+    expect(uploads.some((item) => item.bucket === "brain-artifacts" && item.path === "tenant-1/daily_playbook/brain-artifact-1.html")).toBe(true);
     expect(JSON.stringify(inserts)).not.toContain("21999990000");
+  });
+
+  it("processa setup comercial autorizado e persiste office_playbook_profile", async () => {
+    const { supabase, inserts, upserts } = createSupabaseMock();
+    integrationMock.listTenantIntegrationsResolved.mockResolvedValue([
+      {
+        provider: "evolution",
+        api_key: "evo-key",
+        instance_name: "https://api.evolution.example|dutra",
+      },
+    ]);
+
+    const result = await handleWhatsAppInternalCommand({
+      supabase,
+      tenantId: "tenant-1",
+      senderPhone: "5521999990000@s.whatsapp.net",
+      content: "Mayus, configurar vendas do escritorio",
+      contactId: "contact-1",
+      source: "evolution_webhook",
+    });
+
+    expect(result).toMatchObject({
+      handled: true,
+      sent: true,
+      intent: "office_playbook_setup",
+      provider: "evolution",
+    });
+    expect(upserts).toContainEqual(expect.objectContaining({
+      table: "tenant_settings",
+      payload: expect.objectContaining({
+        tenant_id: "tenant-1",
+        ai_features: expect.objectContaining({
+          office_playbook_profile: expect.objectContaining({
+            status: "needs_owner_input",
+            setup_session: expect.objectContaining({
+              active: true,
+              current_step: "main_legal_areas",
+            }),
+          }),
+        }),
+      }),
+    }));
+    expect(inserts.some((item) => item.table === "brain_artifacts" && item.payload.artifact_type === "daily_playbook")).toBe(false);
+    expect(inserts.some((item) => item.table === "system_event_logs" && item.payload.event_type === "whatsapp_internal_command_processed")).toBe(true);
+    expect(inserts.some((item) => item.table === "whatsapp_messages" && item.payload?.[0]?.content?.includes("Primeira pergunta"))).toBe(true);
   });
 });

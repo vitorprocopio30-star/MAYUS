@@ -15,6 +15,7 @@ const {
   getTenantGoogleDriveContextMock,
   syncProcessDocumentsMock,
   publishLegalPiecePremiumMock,
+  createAgentAuditLogMock,
 } = vi.hoisted(() => ({
   ...(() => {
     const localFromMock = vi.fn();
@@ -33,6 +34,7 @@ const {
       getTenantGoogleDriveContextMock: vi.fn(),
       syncProcessDocumentsMock: vi.fn(),
       publishLegalPiecePremiumMock: vi.fn(),
+      createAgentAuditLogMock: vi.fn(),
     };
   })(),
 }));
@@ -74,6 +76,10 @@ vi.mock("@/lib/juridico/publish-piece-premium", () => ({
   publishLegalPiecePremium: publishLegalPiecePremiumMock,
 }));
 
+vi.mock("@/lib/agent/audit", () => ({
+  createAgentAuditLog: createAgentAuditLogMock,
+}));
+
 vi.mock("@/lib/services/zapsign", () => ({
   ZapSignService: {},
 }));
@@ -100,6 +106,7 @@ vi.mock("@/lib/skills/consulta-processo-whatsapp", () => ({
 }));
 
 import { dispatchCapabilityExecution } from "./dispatcher";
+import { executarCobranca } from "@/lib/agent/skills/asaas-cobrar";
 
 function makeSnapshot(overrides?: Record<string, any>) {
   return {
@@ -211,6 +218,18 @@ function makeMaybeSingleQuery(result: { data: any; error: any }) {
   return query;
 }
 
+function makeListQuery(result: { data: any[]; error: any }) {
+  const query: any = {
+    select: vi.fn(() => query),
+    eq: vi.fn(() => query),
+    order: vi.fn(() => query),
+    limit: vi.fn(async () => result),
+    in: vi.fn(async () => result),
+  };
+
+  return query;
+}
+
 function makeGrowthQuery(table: string, inserts: Array<{ table: string; payload: any }>) {
   const query: any = {
     select: vi.fn(() => query),
@@ -260,11 +279,24 @@ describe("dispatchCapabilityExecution - juridico", () => {
     getTenantGoogleDriveContextMock.mockReset();
     syncProcessDocumentsMock.mockReset();
     publishLegalPiecePremiumMock.mockReset();
+    createAgentAuditLogMock.mockReset();
+    vi.mocked(executarCobranca).mockReset();
 
     insertMock.mockResolvedValue({ error: null });
     fromMock.mockReturnValue({ insert: insertMock });
     createClientMock.mockReturnValue({ from: fromMock });
     createBrainArtifactMock.mockResolvedValue({ id: "artifact-chat-1" });
+    createAgentAuditLogMock.mockResolvedValue({ id: "approval-audit-draft-1" });
+    vi.mocked(executarCobranca).mockResolvedValue({
+      success: true,
+      cobrancaId: "pay-1",
+      invoiceUrl: "https://asaas.test/i/pay-1",
+      bankSlipUrl: "https://asaas.test/b/pay-1",
+      paymentLink: "https://asaas.test/p/pay-1",
+      clientId: "client-1",
+      asaasCustomerId: "cus-1",
+      clientName: "Maria Silva",
+    });
     listProcessDraftVersionsMock.mockResolvedValue([]);
     getTenantGoogleDriveContextMock.mockResolvedValue({
       integrationId: "drive-integration-1",
@@ -591,6 +623,169 @@ describe("dispatchCapabilityExecution - juridico", () => {
     expect(JSON.stringify(createBrainArtifactMock.mock.calls[0][0].metadata)).not.toMatch(/api_key|webhook_secret|sk_live|sk_test|sk-or-v1/i);
   });
 
+  it("executa billing_create aprovado, cria artifact asaas_billing e learning event", async () => {
+    const inserts: Array<{ table: string; payload: any }> = [];
+    fromMock.mockImplementation((table: string) => makeGrowthQuery(table, inserts));
+
+    const result = await dispatchCapabilityExecution({
+      handlerType: "asaas_cobrar",
+      capabilityName: "billing_create",
+      tenantId: "tenant-1",
+      userId: "approver-1",
+      entities: {
+        nome_cliente: "Maria Silva",
+        valor: "1500",
+        vencimento: "2026-05-20",
+        billing_type: "PIX",
+        descricao: "Entrada contrato previdenciario",
+      },
+      auditLogId: "approval-billing-1",
+      brainContext: {
+        taskId: "brain-task-billing-1",
+        runId: "brain-run-billing-1",
+        stepId: "brain-step-billing-1",
+        sourceModule: "mayus",
+      },
+    });
+
+    expect(result.status).toBe("executed");
+    expect(executarCobranca).toHaveBeenCalledWith(expect.objectContaining({
+      tenantId: "tenant-1",
+      nome_cliente: "Maria Silva",
+      valor: 1500,
+      vencimento: "2026-05-20",
+      billing_type: "PIX",
+    }));
+    expect(createBrainArtifactMock).toHaveBeenCalledWith(expect.objectContaining({
+      tenantId: "tenant-1",
+      taskId: "brain-task-billing-1",
+      artifactType: "asaas_billing",
+      dedupeKey: "asaas_billing:tenant-1:maria silva:1500.00:2026-05-20:brain-task-billing-1",
+      metadata: expect.objectContaining({
+        billing_idempotency_key: "asaas_billing:tenant-1:maria silva:1500.00:2026-05-20:brain-task-billing-1",
+        billing_status: "created",
+        cobranca_id: "pay-1",
+        invoice_url: "https://asaas.test/i/pay-1",
+        payment_link: "https://asaas.test/p/pay-1",
+        nome_cliente: "Maria Silva",
+        asaas_customer_id: "cus-1",
+        valor: 1500,
+        vencimento: "2026-05-20",
+        billing_type: "PIX",
+      }),
+    }));
+    expect(inserts.some((item) => item.table === "learning_events" && item.payload.event_type === "billing_created")).toBe(true);
+    expect(JSON.stringify(createBrainArtifactMock.mock.calls[0][0].metadata)).not.toMatch(/api_key|webhook_secret|sk_live|sk_test|sk-or-v1/i);
+  });
+
+  it("bloqueia billing_create duplicado antes de chamar Asaas", async () => {
+    const inserts: Array<{ table: string; payload: any }> = [];
+    fromMock.mockImplementation((table: string) => {
+      if (table === "brain_artifacts") {
+        const query: any = {
+          select: vi.fn(() => query),
+          eq: vi.fn(() => query),
+          order: vi.fn(() => query),
+          limit: vi.fn(() => query),
+          maybeSingle: vi.fn(async () => ({
+            data: {
+              id: "billing-artifact-existing",
+              title: "Cobranca Maria Silva",
+              storage_url: "https://asaas.test/p/pay-existing",
+              created_at: "2026-05-12T12:00:00.000Z",
+              metadata: {
+                billing_idempotency_key: "asaas_billing:tenant-1:maria silva:1500.00:approval-billing-duplicate",
+              },
+            },
+            error: null,
+          })),
+        };
+        return query;
+      }
+      return makeGrowthQuery(table, inserts);
+    });
+
+    const result = await dispatchCapabilityExecution({
+      handlerType: "asaas_cobrar",
+      capabilityName: "billing_create",
+      tenantId: "tenant-1",
+      userId: "approver-1",
+      entities: {
+        nome_cliente: "Maria Silva",
+        valor: "1500",
+        vencimento: "2026-05-20",
+      },
+      auditLogId: "approval-billing-duplicate",
+    });
+
+    expect(result.status).toBe("blocked");
+    expect(result.outputPayload).toEqual(expect.objectContaining({
+      billing_duplicate: true,
+      billing_artifact_id: "billing-artifact-existing",
+    }));
+    expect(executarCobranca).not.toHaveBeenCalled();
+    expect(createBrainArtifactMock).not.toHaveBeenCalled();
+  });
+
+  it("executa collections_followup pelo chat e registra plano financeiro supervisionado", async () => {
+    const inserts: Array<{ table: string; payload: any }> = [];
+    fromMock.mockImplementation((table: string) => makeGrowthQuery(table, inserts));
+
+    const result = await dispatchCapabilityExecution({
+      handlerType: "finance_collections_followup",
+      capabilityName: "collections_followup",
+      tenantId: "tenant-1",
+      userId: "finance-1",
+      entities: {
+        client_name: "Maria Silva",
+        legal_area: "Previdenciario",
+        amount: "1500",
+        days_overdue: "12",
+        collection_stage: "inadimplencia",
+        tone: "firme",
+        channel: "WhatsApp",
+        payment_promise_at: "2026-05-20",
+        next_contact_at: "2026-05-18T13:00:00.000Z",
+      },
+      auditLogId: "audit-collections-1",
+      brainContext: {
+        taskId: "brain-task-collections-1",
+        runId: "brain-run-collections-1",
+        stepId: "brain-step-collections-1",
+        sourceModule: "mayus",
+      },
+    });
+
+    expect(result.status).toBe("executed");
+    expect(result.reply).toContain("Plano de cobranca supervisionada");
+    expect(result.outputPayload).toEqual(expect.objectContaining({
+      collection_stage: "renegotiation",
+      collection_priority: "medium",
+      external_side_effects_blocked: true,
+      requires_human_approval: true,
+      payment_promise_at: "2026-05-20",
+      next_contact_at: "2026-05-18T13:00:00.000Z",
+    }));
+    expect(createBrainArtifactMock).toHaveBeenCalledWith(expect.objectContaining({
+      tenantId: "tenant-1",
+      taskId: "brain-task-collections-1",
+      artifactType: "collections_followup_plan",
+      metadata: expect.objectContaining({
+        client_name: "Maria Silva",
+        legal_area: "Previdenciario",
+        amount: 1500,
+        days_overdue: 12,
+        collection_stage: "renegotiation",
+        suggested_first_message: expect.stringContaining("Maria"),
+        external_side_effects_blocked: true,
+        requires_human_approval: true,
+      }),
+    }));
+    expect(inserts.some((item) => item.table === "learning_events" && item.payload.event_type === "collections_followup_plan_created")).toBe(true);
+    expect(executarCobranca).not.toHaveBeenCalled();
+    expect(JSON.stringify(createBrainArtifactMock.mock.calls[0][0].metadata)).not.toMatch(/api_key|webhook_secret|sk_live|sk_test|sk-or-v1/i);
+  });
+
   it("executa external_action_preview pelo chat sem executar integracao externa", async () => {
     const inserts: Array<{ table: string; payload: any }> = [];
     fromMock.mockImplementation((table: string) => makeGrowthQuery(table, inserts));
@@ -787,6 +982,7 @@ describe("dispatchCapabilityExecution - juridico", () => {
 
   it("executa marketing_ops_assistant pelo chat sem side effects externos", async () => {
     const inserts: Array<{ table: string; payload: any }> = [];
+    const nextMarketingDate = new Date(Date.now() + 24 * 60 * 60 * 1000).toISOString().slice(0, 10);
     fromMock.mockImplementation((table: string) => {
       if (table === "tenant_settings") {
         const query: any = {
@@ -820,7 +1016,7 @@ describe("dispatchCapabilityExecution - juridico", () => {
                       angle: "guia educativo",
                       guardrails: [],
                       sourcePatternIds: [],
-                      date: "2026-04-30",
+                      date: nextMarketingDate,
                       status: "approved",
                       notes: "",
                     },
@@ -1154,6 +1350,471 @@ describe("dispatchCapabilityExecution - juridico", () => {
         first_draft_status: "completed",
       }),
     }));
+  });
+
+  it("monta plano de missao agentica processual sem executar side effects", async () => {
+    getLegalCaseContextSnapshotMock.mockResolvedValue(makeSnapshot({
+      documentMemory: {
+        documentCount: 3,
+        syncStatus: "synced",
+        lastSyncedAt: "2026-05-08T00:00:00.000Z",
+        summaryMaster: "Acervo sincronizado com contestacao e documentos do cliente.",
+        currentPhase: "Contestação",
+        missingDocuments: [],
+        freshness: "fresh",
+      },
+      firstDraft: {
+        ...makeSnapshot().firstDraft,
+        status: "idle",
+        recommendedPieceInput: "Contestação",
+        recommendedPieceLabel: "Contestação Previdenciária",
+      },
+    }));
+
+    const result = await dispatchCapabilityExecution({
+      handlerType: "lex_process_mission_plan",
+      capabilityName: "legal_process_mission_plan",
+      tenantId: "tenant-1",
+      userId: "user-1",
+      entities: { process_number: "E2E-2026-0001" },
+      auditLogId: "audit-process-mission-1",
+      brainContext: {
+        taskId: "brain-task-mission-1",
+        runId: "brain-run-mission-1",
+        stepId: "brain-step-mission-1",
+        sourceModule: "mayus",
+      },
+    });
+
+    expect(result.status).toBe("executed");
+    expect(result.reply).toContain("## Missao agentica do processo");
+    expect(result.reply).toContain("Execucao: plano registrado sem side effects externos");
+    expect(result.outputPayload).toEqual(expect.objectContaining({
+      process_task_id: "process-task-1",
+      process_mission_confidence: "high",
+      process_mission_recommended_action: "generate_first_draft",
+      external_side_effects_blocked: true,
+    }));
+    expect(createBrainArtifactMock).toHaveBeenCalledWith(expect.objectContaining({
+      tenantId: "tenant-1",
+      taskId: "brain-task-mission-1",
+      artifactType: "process_mission_plan",
+      sourceModule: "mayus",
+      metadata: expect.objectContaining({
+        process_task_id: "process-task-1",
+        process_mission_recommended_action: "generate_first_draft",
+        external_side_effects_blocked: true,
+      }),
+    }));
+    expect(fromMock).toHaveBeenCalledWith("learning_events");
+    expect(insertMock).toHaveBeenCalledWith(expect.objectContaining({
+      event_type: "process_mission_plan_created",
+      task_id: "brain-task-mission-1",
+      payload: expect.objectContaining({
+        process_task_id: "process-task-1",
+        recommended_action: "generate_first_draft",
+        external_side_effects_blocked: true,
+      }),
+    }));
+  });
+
+  it("executa refresh documental quando a missao processual recomenda memoria desatualizada", async () => {
+    const missionSnapshot = makeSnapshot({
+      documentMemory: {
+        ...makeSnapshot().documentMemory,
+        syncStatus: "structured",
+        lastSyncedAt: "2026-04-01T00:00:00.000Z",
+        summaryMaster: "Memória documental antiga.",
+        missingDocuments: [],
+        freshness: "stale",
+      },
+    });
+    const snapshotAfter = makeSnapshot({
+      documentMemory: {
+        ...makeSnapshot().documentMemory,
+        syncStatus: "synced",
+        lastSyncedAt: "2026-05-08T00:00:00.000Z",
+        summaryMaster: "Memória documental atualizada.",
+        missingDocuments: [],
+        freshness: "fresh",
+      },
+    });
+    const processTaskQuery = makeMaybeSingleQuery({
+      data: {
+        id: "process-task-1",
+        tenant_id: "tenant-1",
+        stage_id: "stage-1",
+        title: "E2E HISTORICO FORMAL MAYUS",
+        client_name: "Cliente Playwright E2E",
+        process_number: "E2E-2026-0001",
+        drive_link: "https://drive.google.com/drive/folders/e2e-historico-formal-mayus",
+        drive_folder_id: "e2e-historico-formal-mayus",
+      },
+      error: null,
+    });
+
+    getLegalCaseContextSnapshotMock
+      .mockResolvedValueOnce(missionSnapshot)
+      .mockResolvedValueOnce(missionSnapshot)
+      .mockResolvedValueOnce(snapshotAfter);
+    fromMock.mockImplementation((table: string) => {
+      if (table === "process_tasks") return processTaskQuery;
+      return { insert: insertMock };
+    });
+    syncProcessDocumentsMock.mockResolvedValue({
+      memory: {},
+      structure: {},
+      documents: [{ driveFileId: "doc-1", name: "inicial.pdf" }],
+      warnings: [],
+    });
+
+    const result = await dispatchCapabilityExecution({
+      handlerType: "lex_process_mission_execute_next",
+      capabilityName: "legal_process_mission_execute_next",
+      tenantId: "tenant-1",
+      userId: "user-1",
+      entities: { process_number: "E2E-2026-0001" },
+      auditLogId: "audit-process-exec-1",
+      brainContext: {
+        taskId: "brain-task-process-exec-1",
+        runId: "brain-run-process-exec-1",
+        stepId: "brain-step-process-exec-1",
+        sourceModule: "mayus",
+      },
+    });
+
+    expect(result.status).toBe("executed");
+    expect(result.reply).toContain("## Execucao da missao processual");
+    expect(result.outputPayload).toEqual(expect.objectContaining({
+      process_task_id: "process-task-1",
+      process_mission_recommended_action: "refresh_document_memory",
+      executed_capability: "legal_document_memory_refresh",
+      step_status: "executed",
+    }));
+    expect(syncProcessDocumentsMock).toHaveBeenCalledTimes(1);
+    expect(createBrainArtifactMock).toHaveBeenCalledWith(expect.objectContaining({
+      artifactType: "process_mission_step_result",
+      metadata: expect.objectContaining({
+        process_task_id: "process-task-1",
+        result_status: "executed",
+        executed_capability: "legal_document_memory_refresh",
+      }),
+    }));
+    expect(insertMock).toHaveBeenCalledWith(expect.objectContaining({
+      event_type: "process_mission_step_executed",
+      payload: expect.objectContaining({
+        process_task_id: "process-task-1",
+        recommended_action: "refresh_document_memory",
+        executed_capability: "legal_document_memory_refresh",
+      }),
+    }));
+  });
+
+  it("registra erro auditavel quando refresh documental da missao falha", async () => {
+    const missionSnapshot = makeSnapshot({
+      documentMemory: {
+        ...makeSnapshot().documentMemory,
+        syncStatus: "structured",
+        lastSyncedAt: "2026-04-01T00:00:00.000Z",
+        summaryMaster: "Memória documental antiga.",
+        missingDocuments: [],
+        freshness: "stale",
+      },
+    });
+    const processTaskQuery = makeMaybeSingleQuery({
+      data: {
+        id: "process-task-1",
+        tenant_id: "tenant-1",
+        drive_link: "https://drive.google.com/drive/folders/e2e-historico-formal-mayus",
+        drive_folder_id: "e2e-historico-formal-mayus",
+      },
+      error: null,
+    });
+
+    getLegalCaseContextSnapshotMock
+      .mockResolvedValueOnce(missionSnapshot)
+      .mockResolvedValueOnce(missionSnapshot);
+    fromMock.mockImplementation((table: string) => {
+      if (table === "process_tasks") return processTaskQuery;
+      return { insert: insertMock };
+    });
+    getTenantGoogleDriveContextMock.mockRejectedValueOnce(new Error("GoogleDriveNotConfigured"));
+
+    const result = await dispatchCapabilityExecution({
+      handlerType: "lex_process_mission_execute_next",
+      capabilityName: "legal_process_mission_execute_next",
+      tenantId: "tenant-1",
+      userId: "user-1",
+      entities: { process_number: "E2E-2026-0001" },
+      auditLogId: "audit-process-exec-refresh-failed",
+      brainContext: {
+        taskId: "brain-task-process-refresh-failed",
+        runId: "brain-run-process-refresh-failed",
+        stepId: "brain-step-process-refresh-failed",
+        sourceModule: "mayus",
+      },
+    });
+
+    expect(result.status).toBe("failed");
+    expect(result.reply).toContain("GoogleDriveNotConfigured");
+    expect(result.outputPayload).toEqual(expect.objectContaining({
+      process_task_id: "process-task-1",
+      process_mission_recommended_action: "refresh_document_memory",
+      executed_capability: "legal_document_memory_refresh",
+      step_status: "failed",
+      step_output_payload: expect.objectContaining({
+        error_message: "GoogleDriveNotConfigured",
+      }),
+    }));
+    expect(createBrainArtifactMock).toHaveBeenCalledWith(expect.objectContaining({
+      artifactType: "process_mission_step_result",
+      metadata: expect.objectContaining({
+        process_task_id: "process-task-1",
+        result_status: "failed",
+        executed_capability: "legal_document_memory_refresh",
+        error_message: "GoogleDriveNotConfigured",
+      }),
+    }));
+    expect(insertMock).toHaveBeenCalledWith(expect.objectContaining({
+      event_type: "process_mission_step_executed",
+      payload: expect.objectContaining({
+        process_task_id: "process-task-1",
+        result_status: "failed",
+        executed_capability: "legal_document_memory_refresh",
+        error_message: "GoogleDriveNotConfigured",
+      }),
+    }));
+  });
+
+  it("bloqueia execucao da missao processual quando a confianca e baixa", async () => {
+    getLegalCaseContextSnapshotMock.mockResolvedValue(makeSnapshot({
+      processTask: {
+        ...makeSnapshot().processTask,
+        description: null,
+        stageName: null,
+      },
+      caseBrain: {
+        ...makeSnapshot().caseBrain,
+        taskId: null,
+        summaryMaster: null,
+        currentPhase: null,
+        firstActions: [],
+        missingDocuments: [],
+      },
+      documentMemory: {
+        ...makeSnapshot().documentMemory,
+        documentCount: 0,
+        syncStatus: null,
+        lastSyncedAt: null,
+        summaryMaster: null,
+        currentPhase: null,
+        missingDocuments: [],
+        freshness: "missing",
+      },
+    }));
+
+    const result = await dispatchCapabilityExecution({
+      handlerType: "lex_process_mission_execute_next",
+      capabilityName: "legal_process_mission_execute_next",
+      tenantId: "tenant-1",
+      userId: "user-1",
+      entities: { process_number: "E2E-2026-0001" },
+      auditLogId: "audit-process-exec-low",
+      brainContext: {
+        taskId: "brain-task-process-exec-low",
+        runId: "brain-run-process-exec-low",
+        stepId: "brain-step-process-exec-low",
+        sourceModule: "mayus",
+      },
+    });
+
+    expect(result.status).toBe("blocked");
+    expect(result.reply).toContain("bloqueada para supervisao");
+    expect(result.outputPayload).toEqual(expect.objectContaining({
+      process_mission_confidence: "low",
+      blocked_reason: "low_confidence_process_mission",
+      external_side_effects_blocked: true,
+    }));
+    expect(syncProcessDocumentsMock).not.toHaveBeenCalled();
+  });
+
+  it("bloqueia execucao da missao processual quando o Case Brain aponta contradicao critica", async () => {
+    getLegalCaseContextSnapshotMock.mockResolvedValue(makeSnapshot({
+      firstDraft: {
+        ...makeSnapshot().firstDraft,
+        status: "completed",
+        artifactId: "draft-artifact-1",
+        caseBrainTaskId: "case-brain-antigo",
+        generatedAt: "2026-04-19T10:00:00.000Z",
+      },
+    }));
+
+    const result = await dispatchCapabilityExecution({
+      handlerType: "lex_process_mission_execute_next",
+      capabilityName: "legal_process_mission_execute_next",
+      tenantId: "tenant-1",
+      userId: "user-1",
+      entities: { process_number: "E2E-2026-0001" },
+      auditLogId: "audit-process-exec-case-brain-contradiction",
+      brainContext: {
+        taskId: "brain-task-case-brain-contradiction",
+        runId: "brain-run-case-brain-contradiction",
+        stepId: "brain-step-case-brain-contradiction",
+        sourceModule: "mayus",
+      },
+    });
+
+    expect(result.status).toBe("blocked");
+    expect(result.reply).toContain("bloqueada para supervisao");
+    expect(result.reply).toContain("contradicao critica");
+    expect(result.outputPayload).toEqual(expect.objectContaining({
+      blocked_reason: "case_brain_high_contradiction",
+      case_brain_contradiction_count: expect.any(Number),
+      external_side_effects_blocked: true,
+    }));
+    expect(syncProcessDocumentsMock).not.toHaveBeenCalled();
+    expect(executeDraftFactoryForProcessTaskMock).not.toHaveBeenCalled();
+  });
+
+  it("bloqueia execucao automatica quando movimentacao recente exige acao", async () => {
+    getLegalCaseContextSnapshotMock.mockResolvedValue(makeSnapshot({
+      documentMemory: {
+        ...makeSnapshot().documentMemory,
+        freshness: "stale",
+        lastSyncedAt: "2026-04-01T00:00:00.000Z",
+      },
+    }));
+    fromMock.mockImplementation((table: string) => {
+      if (table === "process_documents") return makeListQuery({ data: [], error: null });
+      if (table === "process_movimentacoes") return makeListQuery({
+        data: [{
+          data: "2026-05-10T00:00:00.000Z",
+          conteudo: "Intimacao publicada para manifestacao em prazo curto.",
+          fonte: "escavador",
+          tipo_evento: "intimacao",
+          requer_acao: true,
+          acao_sugerida: "Conferir prazo e providencia com advogado responsavel.",
+          confianca_analise: "high",
+          created_at: null,
+        }],
+        error: null,
+      });
+      if (table === "process_movimentacoes_inbox") return makeMaybeSingleQuery({ data: null, error: null });
+      return { insert: insertMock };
+    });
+
+    const result = await dispatchCapabilityExecution({
+      handlerType: "lex_process_mission_execute_next",
+      capabilityName: "legal_process_mission_execute_next",
+      tenantId: "tenant-1",
+      userId: "user-1",
+      entities: { process_number: "E2E-2026-0001" },
+      auditLogId: "audit-process-exec-action-movement",
+      brainContext: {
+        taskId: "brain-task-action-movement",
+        runId: "brain-run-action-movement",
+        stepId: "brain-step-action-movement",
+        sourceModule: "mayus",
+      },
+    });
+
+    expect(result.status).toBe("blocked");
+    expect(result.reply).toContain("movimentacao recente que exige acao");
+    expect(result.outputPayload).toEqual(expect.objectContaining({
+      process_mission_recommended_action: "refresh_document_memory",
+      blocked_reason: "case_brain_action_movement",
+      case_brain_risk_count: expect.any(Number),
+      external_side_effects_blocked: true,
+    }));
+    expect(syncProcessDocumentsMock).not.toHaveBeenCalled();
+  });
+
+  it("abre aprovacao supervisionada quando a missao recomenda primeira minuta", async () => {
+    getLegalCaseContextSnapshotMock.mockResolvedValue(makeSnapshot({
+      documentMemory: {
+        ...makeSnapshot().documentMemory,
+        syncStatus: "synced",
+        lastSyncedAt: "2026-05-08T00:00:00.000Z",
+        summaryMaster: "Memória documental atualizada.",
+        missingDocuments: [],
+        freshness: "fresh",
+      },
+      firstDraft: {
+        ...makeSnapshot().firstDraft,
+        status: "idle",
+        recommendedPieceInput: "Contestação",
+        recommendedPieceLabel: "Contestação Previdenciária",
+      },
+    }));
+
+    const result = await dispatchCapabilityExecution({
+      handlerType: "lex_process_mission_execute_next",
+      capabilityName: "legal_process_mission_execute_next",
+      tenantId: "tenant-1",
+      userId: "user-1",
+      entities: { process_number: "E2E-2026-0001" },
+      auditLogId: "audit-process-exec-blocked",
+      brainContext: {
+        taskId: "brain-task-draft-approval",
+        runId: "brain-run-draft-approval",
+        stepId: "brain-step-draft-approval",
+        sourceModule: "mayus",
+      },
+    });
+
+    expect(result.status).toBe("awaiting_approval");
+    expect(result.reply).toContain("Missao juridica supervisionada");
+    expect(result.reply).toContain("aguardando aprovacao humana");
+    expect(result.outputPayload).toEqual(expect.objectContaining({
+      auditLogId: "approval-audit-draft-1",
+      process_mission_recommended_action: "generate_first_draft",
+      case_brain_risk_count: 0,
+      case_brain_high_contradiction_count: 0,
+      proposed_capability: "legal_first_draft_generate",
+      proposed_handler_type: "lex_first_draft_generate",
+      approval_required: true,
+      external_side_effects_blocked: true,
+      awaitingPayload: expect.objectContaining({
+        skillName: "legal_first_draft_generate",
+        riskLevel: "high",
+        entities: expect.objectContaining({
+          process_task_id: "process-task-1",
+          process_number: "E2E-2026-0001",
+          recommended_piece_input: "Contestação",
+          recommended_piece_label: "Contestação Previdenciária",
+        }),
+      }),
+    }));
+    expect(createAgentAuditLogMock).toHaveBeenCalledWith(expect.objectContaining({
+      tenantId: "tenant-1",
+      userId: "user-1",
+      skillInvoked: "legal_first_draft_generate",
+      status: "awaiting_approval",
+      approvalStatus: "pending",
+      approvalContext: expect.objectContaining({
+        case_brain_risk_count: 0,
+        case_brain_high_risk_count: 0,
+        case_brain_contradiction_count: 0,
+        case_brain_high_contradiction_count: 0,
+      }),
+      pendingExecutionPayload: expect.objectContaining({
+        skillName: "legal_first_draft_generate",
+        entities: expect.objectContaining({ process_task_id: "process-task-1" }),
+      }),
+    }));
+    expect(createBrainArtifactMock).toHaveBeenCalledWith(expect.objectContaining({
+      artifactType: "process_mission_step_result",
+      metadata: expect.objectContaining({
+        result_status: "blocked",
+        executed_capability: "legal_first_draft_generate",
+        step_output_payload: expect.objectContaining({
+          approval_audit_log_id: "approval-audit-draft-1",
+          proposed_capability: "legal_first_draft_generate",
+        }),
+      }),
+    }));
+    expect(syncProcessDocumentsMock).not.toHaveBeenCalled();
+    expect(executeDraftFactoryForProcessTaskMock).not.toHaveBeenCalled();
   });
 
   it("monta o contrato minimo de suporte para status do caso", async () => {
@@ -1778,6 +2439,145 @@ describe("dispatchCapabilityExecution - juridico", () => {
         weak_section_count: 3,
         missing_section_count: 1,
         recommended_action: "apply_revision_plan",
+      }),
+    }));
+  });
+
+  it("gera Case Brain 2.0 com cronologia, riscos e contradicoes", async () => {
+    const snapshot = makeSnapshot({
+      processTask: {
+        ...makeSnapshot().processTask,
+        stageName: "Inicial",
+      },
+      caseBrain: {
+        ...makeSnapshot().caseBrain,
+        taskId: "case-brain-atual",
+        currentPhase: "Contestação",
+        missingDocuments: ["contracheque atualizado"],
+        readyForCaseLawCitations: false,
+      },
+      documentMemory: {
+        ...makeSnapshot().documentMemory,
+        freshness: "stale",
+        currentPhase: "Contestação",
+        missingDocuments: ["extrato bancario"],
+      },
+      firstDraft: {
+        ...makeSnapshot().firstDraft,
+        status: "completed",
+        artifactId: "draft-artifact-1",
+        caseBrainTaskId: "case-brain-antigo",
+        isStale: true,
+      },
+    });
+
+    getLegalCaseContextSnapshotMock.mockResolvedValue(snapshot);
+    fromMock.mockImplementation((table: string) => {
+      if (table === "process_documents") {
+        return makeListQuery({
+          data: [
+            {
+              id: "doc-1",
+              name: "contestacao.pdf",
+              document_type: "contestacao",
+              extraction_status: "extracted",
+              folder_label: "03-Contestacao",
+              modified_at: "2026-05-07T00:00:00.000Z",
+            },
+            {
+              id: "doc-2",
+              name: "audio-cliente.mp3",
+              document_type: null,
+              extraction_status: "skipped",
+              folder_label: "Raiz do Processo",
+              modified_at: "2026-05-06T00:00:00.000Z",
+            },
+          ],
+          error: null,
+        });
+      }
+      if (table === "process_document_contents") {
+        return makeListQuery({
+          data: [
+            {
+              process_document_id: "doc-1",
+              excerpt: "Banco afirma regularidade da contratacao.",
+              extraction_status: "extracted",
+            },
+          ],
+          error: null,
+        });
+      }
+      if (table === "process_movimentacoes") {
+        return makeListQuery({
+          data: [
+            {
+              data: "2026-05-10",
+              conteudo: "Intimada a parte autora para manifestacao sobre contestacao no prazo legal.",
+              fonte: "diario_oficial",
+              tipo_evento: "contestacao_protocolada",
+              requer_acao: true,
+              acao_sugerida: "Preparar replica e conferir prazo fatal.",
+              confianca_analise: "high",
+              created_at: "2026-05-10T00:00:00.000Z",
+            },
+          ],
+          error: null,
+        });
+      }
+      if (table === "process_movimentacoes_inbox") {
+        return makeMaybeSingleQuery({ data: null, error: null });
+      }
+      return { insert: insertMock };
+    });
+
+    const result = await dispatchCapabilityExecution({
+      handlerType: "lex_case_brain_insights",
+      capabilityName: "legal_case_brain_insights",
+      tenantId: "tenant-1",
+      userId: "user-1",
+      entities: {
+        process_number: "E2E-2026-0001",
+      },
+      auditLogId: "audit-case-brain-2",
+      brainContext: {
+        taskId: "brain-task-case-brain-2",
+        runId: "brain-run-case-brain-2",
+        stepId: "brain-step-case-brain-2",
+        sourceModule: "mayus",
+      },
+    });
+
+    expect(result.status).toBe("executed");
+    expect(result.reply).toContain("## Case Brain 2.0");
+    expect(result.outputPayload).toEqual(expect.objectContaining({
+      case_brain_insights_confidence: "medium",
+      risk_count: expect.any(Number),
+      contradiction_count: expect.any(Number),
+      evidence_document_count: 2,
+      evidence_movement_count: 1,
+      external_side_effects_blocked: true,
+    }));
+    expect(createBrainArtifactMock).toHaveBeenCalledWith(expect.objectContaining({
+      tenantId: "tenant-1",
+      taskId: "brain-task-case-brain-2",
+      artifactType: "legal_case_brain_insights",
+      metadata: expect.objectContaining({
+        process_task_id: "process-task-1",
+        risk_count: expect.any(Number),
+        contradiction_count: expect.any(Number),
+        evidence_document_count: 2,
+        evidence_movement_count: 1,
+        external_side_effects_blocked: true,
+      }),
+    }));
+    expect(insertMock).toHaveBeenCalledWith(expect.objectContaining({
+      event_type: "legal_case_brain_insights_created",
+      task_id: "brain-task-case-brain-2",
+      payload: expect.objectContaining({
+        process_task_id: "process-task-1",
+        risk_count: expect.any(Number),
+        contradiction_count: expect.any(Number),
       }),
     }));
   });

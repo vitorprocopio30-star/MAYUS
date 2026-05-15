@@ -60,7 +60,7 @@ export default function ClientesPage() {
           <h1 className={`text-3xl md:text-4xl text-white ${cormorant.className} italic font-bold`}>
             <span className="text-[#CCA761]">Clientes</span>
           </h1>
-          <p className="text-gray-500 text-sm mt-1">Gerencie a carteira de clientes, documentos e histÃ³rico de atendimento.</p>
+          <p className="text-gray-500 text-sm mt-1">Gerencie a carteira de clientes, documentos e histórico de atendimento.</p>
         </div>
         <Link
           href="/dashboard/clientes/novo"
@@ -95,13 +95,13 @@ export default function ClientesPage() {
             onClick={() => setFilterType("PF")}
             className={`px-4 py-2 text-xs font-semibold rounded-lg transition-all ${filterType === "PF" ? "bg-[#CCA761]/10 text-[#CCA761]" : "text-gray-500 hover:text-gray-300"}`}
           >
-            FÃSICA
+            FÍSICA
           </button>
           <button
             onClick={() => setFilterType("PJ")}
             className={`px-4 py-2 text-xs font-semibold rounded-lg transition-all ${filterType === "PJ" ? "bg-[#CCA761]/10 text-[#CCA761]" : "text-gray-500 hover:text-gray-300"}`}
           >
-            JURÃDICA
+            JURÍDICA
           </button>
         </div>
       </div>
@@ -113,7 +113,7 @@ export default function ClientesPage() {
           <div className="col-span-2">Documento</div>
           <div className="col-span-3">Contato</div>
           <div className="col-span-2">Status</div>
-          <div className="col-span-1 text-right">AÃ§Ãµes</div>
+          <div className="col-span-1 text-right">Ações</div>
         </div>
 
         {profileLoading || isLoading ? (
@@ -132,7 +132,7 @@ export default function ClientesPage() {
                 </div>
                 <div>
                   <p className="text-white font-medium text-sm">{client.name}</p>
-                  <span className="text-gray-500 text-[10px] uppercase tracking-wider">{client.type === 'PF' ? 'Pessoa FÃ­sica' : 'Pessoa JurÃ­dica'}</span>
+                  <span className="text-gray-500 text-[10px] uppercase tracking-wider">{client.type === 'PF' ? 'Pessoa Física' : 'Pessoa Jurídica'}</span>
                 </div>
               </div>
 
@@ -141,14 +141,14 @@ export default function ClientesPage() {
               </div>
 
               <div className="col-span-3">
-                <p className="text-gray-300 text-xs mb-1 truncate">{client.email || 'â€”'}</p>
-                <p className="text-gray-500 text-xs">{client.phone || 'â€”'}</p>
+                <p className="text-gray-300 text-xs mb-1 truncate">{client.email || '—'}</p>
+                <p className="text-gray-500 text-xs">{client.phone || '—'}</p>
               </div>
 
               <div className="col-span-2">
                 <span className={`text-[10px] px-3 py-1 rounded-full border uppercase tracking-widest ${
                   client.status === 'Cliente' ? 'text-green-400 border-green-400/20 bg-green-400/10' :
-                  client.status === 'ProspecÃ§Ã£o' ? 'text-blue-400 border-blue-400/20 bg-blue-400/10' :
+                  client.status === 'Prospecção' ? 'text-blue-400 border-blue-400/20 bg-blue-400/10' :
                   client.status === 'Qualificado' ? 'text-[#CCA761] border-[#CCA761]/20 bg-[#CCA761]/10' :
                   'text-red-400 border-red-400/20 bg-red-400/10'
                 }`}>

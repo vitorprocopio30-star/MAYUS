@@ -31,6 +31,170 @@ type ProcessTypeMetric = {
   percentage: number;
 };
 
+type FinanceBucketPreview = {
+  amount: number;
+  count: number;
+};
+
+type FinanceForecastBucketsPreview = {
+  dueIn7Days: FinanceBucketPreview;
+  dueIn30Days: FinanceBucketPreview;
+  future: FinanceBucketPreview;
+  noDueDate: FinanceBucketPreview;
+};
+
+type FinanceOverdueAgingPreview = {
+  days1To7: FinanceBucketPreview;
+  days8To14: FinanceBucketPreview;
+  days15To30: FinanceBucketPreview;
+  days31Plus: FinanceBucketPreview;
+};
+
+type FinanceRiskItemPreview = {
+  key: string;
+  label: string;
+  clientName: string | null;
+  caseId: string | null;
+  openAmount: number;
+  overdueAmount: number;
+  forecastAmount: number;
+  openCount: number;
+  overdueCount: number;
+  maxDaysOverdue: number;
+  oldestDueDate: string | null;
+  riskLevel: "low" | "medium" | "high";
+  nextBestAction: string;
+};
+
+type FinanceCollectionPlanPreview = {
+  id: string;
+  title: string;
+  createdAt: string | null;
+  clientName: string | null;
+  amount: number | null;
+  daysOverdue: number | null;
+  dueDate: string | null;
+  stage: string | null;
+  priority: string | null;
+  nextBestAction: string | null;
+  requiresHumanApproval: boolean;
+  externalSideEffectsBlocked: boolean;
+};
+
+type CommercialForecastStagePreview = {
+  stageId: string;
+  stageName: string;
+  amount: number;
+  count: number;
+  isWin: boolean;
+  isLoss: boolean;
+};
+
+type CommercialForecastOpportunityPreview = {
+  id: string;
+  kind: "sale" | "crm";
+  label: string;
+  amount: number;
+  stage: string;
+  source: string | null;
+  expectedDate: string | null;
+  nextBestAction: string;
+};
+
+type CommercialForecastPreview = {
+  source: "sales+crm_tasks";
+  available: boolean;
+  pipelineAmount: number;
+  pendingContracts: FinanceBucketPreview;
+  closedContracts: FinanceBucketPreview;
+  lostAmount: number;
+  byStage: CommercialForecastStagePreview[];
+  topOpportunities: CommercialForecastOpportunityPreview[];
+};
+
+type UnitEconomicsCasePreview = {
+  caseId: string;
+  label: string;
+  legalArea: string | null;
+  receivedRevenue: number;
+  openRevenue: number;
+  directCosts: number;
+  commissionCost: number;
+  estimatedProfit: number;
+  marginRate: number;
+  confidence: "high" | "medium" | "low";
+};
+
+type UnitEconomicsLegalAreaPreview = {
+  legalArea: string;
+  caseCount: number;
+  receivedRevenue: number;
+  openRevenue: number;
+  directCosts: number;
+  commissionCost: number;
+  estimatedProfit: number;
+  marginRate: number;
+};
+
+type UnitEconomicsCommissionGroupPreview = {
+  label: string;
+  amount: number;
+  revenue: number;
+  count: number;
+  share: number;
+};
+
+type UnitEconomicsPreview = {
+  grossRevenue: number;
+  directCosts: number;
+  commissions: number;
+  estimatedProfit: number;
+  estimatedMarginRate: number;
+  byCase: UnitEconomicsCasePreview[];
+  byLegalArea: UnitEconomicsLegalAreaPreview[];
+  commissionsBreakdown: {
+    byOwner: UnitEconomicsCommissionGroupPreview[];
+    byOrigin: UnitEconomicsCommissionGroupPreview[];
+  };
+};
+
+type FinanceSummaryPayload = {
+  financials?: {
+    received?: { amount?: number; count?: number };
+    forecast?: { amount?: number; count?: number };
+    overdue?: { amount?: number; count?: number };
+    delinquency?: { amount?: number; count?: number; rate?: number };
+    openCharges?: { amount?: number; count?: number };
+    forecastBuckets?: Partial<Record<keyof FinanceForecastBucketsPreview, Partial<FinanceBucketPreview>>>;
+    overdueAging?: Partial<Record<keyof FinanceOverdueAgingPreview, Partial<FinanceBucketPreview>>>;
+    riskItems?: FinanceRiskItemPreview[];
+    expenses?: {
+      fixed?: { amount?: number; count?: number };
+      marketing?: { amount?: number; count?: number };
+    };
+  };
+  collectionsFollowup?: {
+    totalPlans?: number;
+    highPriorityPlans?: number;
+    recentPlans?: FinanceCollectionPlanPreview[];
+  };
+  commercialForecast?: Partial<CommercialForecastPreview>;
+  unitEconomics?: Partial<UnitEconomicsPreview>;
+  revenueReconciliation?: {
+    available?: boolean;
+    report?: {
+      totals?: {
+        matched?: number;
+        partial?: number;
+        blocked?: number;
+        unmatched?: number;
+        receivedRevenue?: number;
+        openedCaseRevenue?: number;
+      };
+    };
+  };
+};
+
 type DashboardMetrics = {
   totalRevenue: number;
   activeContracts: number;
@@ -43,6 +207,11 @@ type DashboardMetrics = {
   estimatedLtv: number;
   delinquencyAmount: number;
   delinquencyCount: number;
+  delinquencyRate: number;
+  financeForecast: number;
+  financeForecastCount: number;
+  openChargesAmount: number;
+  openChargesCount: number;
   fixedCosts: number;
   marketingSpend: number;
   leadCount: number;
@@ -64,6 +233,41 @@ type DashboardMetrics = {
   salesByProfessional: SalesProfessionalMetrics[];
   leadSources: LeadSourceMetrics;
   processTypeDistribution: ProcessTypeMetric[];
+  collectionsFollowupPlansCount: number;
+  collectionsFollowupHighPriorityCount: number;
+  collectionsFollowupPlans: FinanceCollectionPlanPreview[];
+  financeForecastBuckets: FinanceForecastBucketsPreview;
+  financeOverdueAging: FinanceOverdueAgingPreview;
+  financeRiskItems: FinanceRiskItemPreview[];
+  commercialForecastAvailable: boolean;
+  commercialForecastPipelineAmount: number;
+  commercialForecastPendingContractsAmount: number;
+  commercialForecastPendingContractsCount: number;
+  commercialForecastClosedContractsAmount: number;
+  commercialForecastClosedContractsCount: number;
+  commercialForecastLostAmount: number;
+  commercialForecastStages: CommercialForecastStagePreview[];
+  commercialForecastTopOpportunities: CommercialForecastOpportunityPreview[];
+  revenueReconciliationMatched: number;
+  revenueReconciliationPartial: number;
+  revenueReconciliationBlocked: number;
+  revenueReconciliationOpenedCaseRevenue: number;
+  unitGrossRevenue: number;
+  unitDirectCosts: number;
+  unitCommissions: number;
+  unitEstimatedProfit: number;
+  unitEstimatedMarginRate: number;
+  unitEconomicsByCase: UnitEconomicsCasePreview[];
+  unitEconomicsByLegalArea: UnitEconomicsLegalAreaPreview[];
+  unitCommissionsByOwner: UnitEconomicsCommissionGroupPreview[];
+  unitCommissionsByOrigin: UnitEconomicsCommissionGroupPreview[];
+};
+
+type CollectionPlanActionState = {
+  pendingRiskKey: string | null;
+  feedbackRiskKey: string | null;
+  message: string | null;
+  error: string | null;
 };
 
 type OfficeGoal = {
@@ -132,6 +336,198 @@ const isReceivedRevenue = (row: FinancialRow) => {
   return type.includes("receita") && Boolean(row.reference_date || source.includes("asaas"));
 };
 
+const finiteNumber = (value: unknown, fallback = 0) =>
+  typeof value === "number" && Number.isFinite(value) ? value : fallback;
+
+const emptyFinanceBucket = (): FinanceBucketPreview => ({ amount: 0, count: 0 });
+
+const sanitizeFinanceBucket = (bucket: unknown): FinanceBucketPreview => {
+  const item = bucket && typeof bucket === "object" ? bucket as Partial<FinanceBucketPreview> : {};
+  return {
+    amount: finiteNumber(item.amount, 0),
+    count: finiteNumber(item.count, 0),
+  };
+};
+
+const sanitizeForecastBuckets = (buckets: unknown): FinanceForecastBucketsPreview => {
+  const item = buckets && typeof buckets === "object" ? buckets as Partial<FinanceForecastBucketsPreview> : {};
+  return {
+    dueIn7Days: sanitizeFinanceBucket(item.dueIn7Days),
+    dueIn30Days: sanitizeFinanceBucket(item.dueIn30Days),
+    future: sanitizeFinanceBucket(item.future),
+    noDueDate: sanitizeFinanceBucket(item.noDueDate),
+  };
+};
+
+const sanitizeOverdueAging = (buckets: unknown): FinanceOverdueAgingPreview => {
+  const item = buckets && typeof buckets === "object" ? buckets as Partial<FinanceOverdueAgingPreview> : {};
+  return {
+    days1To7: sanitizeFinanceBucket(item.days1To7),
+    days8To14: sanitizeFinanceBucket(item.days8To14),
+    days15To30: sanitizeFinanceBucket(item.days15To30),
+    days31Plus: sanitizeFinanceBucket(item.days31Plus),
+  };
+};
+
+const sanitizeRiskItems = (items: unknown): FinanceRiskItemPreview[] => {
+  if (!Array.isArray(items)) return [];
+
+  return items.slice(0, 8).map((item) => {
+    const risk = item && typeof item === "object" ? item as Partial<FinanceRiskItemPreview> : {};
+    const riskLevel = risk.riskLevel === "high" || risk.riskLevel === "medium" || risk.riskLevel === "low"
+      ? risk.riskLevel
+      : "low";
+
+    return {
+      key: String(risk.key || risk.caseId || risk.clientName || risk.label || "risco"),
+      label: String(risk.label || risk.clientName || "Risco financeiro"),
+      clientName: typeof risk.clientName === "string" ? risk.clientName : null,
+      caseId: typeof risk.caseId === "string" ? risk.caseId : null,
+      openAmount: finiteNumber(risk.openAmount, 0),
+      overdueAmount: finiteNumber(risk.overdueAmount, 0),
+      forecastAmount: finiteNumber(risk.forecastAmount, 0),
+      openCount: finiteNumber(risk.openCount, 0),
+      overdueCount: finiteNumber(risk.overdueCount, 0),
+      maxDaysOverdue: finiteNumber(risk.maxDaysOverdue, 0),
+      oldestDueDate: typeof risk.oldestDueDate === "string" ? risk.oldestDueDate : null,
+      riskLevel,
+      nextBestAction: String(risk.nextBestAction || "Revisar risco financeiro."),
+    };
+  });
+};
+
+const sanitizeCollectionPlans = (plans: unknown): FinanceCollectionPlanPreview[] => {
+  if (!Array.isArray(plans)) return [];
+
+  return plans.slice(0, 5).map((plan) => {
+    const item = plan && typeof plan === "object" ? plan as Partial<FinanceCollectionPlanPreview> : {};
+    return {
+      id: String(item.id || ""),
+      title: String(item.title || "Plano de cobranca"),
+      createdAt: typeof item.createdAt === "string" ? item.createdAt : null,
+      clientName: typeof item.clientName === "string" ? item.clientName : null,
+      amount: typeof item.amount === "number" && Number.isFinite(item.amount) ? item.amount : null,
+      daysOverdue: typeof item.daysOverdue === "number" && Number.isFinite(item.daysOverdue) ? item.daysOverdue : null,
+      dueDate: typeof item.dueDate === "string" ? item.dueDate : null,
+      stage: typeof item.stage === "string" ? item.stage : null,
+      priority: typeof item.priority === "string" ? item.priority : null,
+      nextBestAction: typeof item.nextBestAction === "string" ? item.nextBestAction : null,
+      requiresHumanApproval: item.requiresHumanApproval === true,
+      externalSideEffectsBlocked: item.externalSideEffectsBlocked !== false,
+    };
+  });
+};
+
+const sanitizeCommercialForecast = (forecast: unknown): CommercialForecastPreview => {
+  const item = forecast && typeof forecast === "object" ? forecast as Partial<CommercialForecastPreview> : {};
+  const pendingContracts = sanitizeFinanceBucket(item.pendingContracts);
+  const closedContracts = sanitizeFinanceBucket(item.closedContracts);
+  const byStage = Array.isArray(item.byStage)
+    ? item.byStage.slice(0, 8).map((stage) => ({
+      stageId: String(stage?.stageId || stage?.stageName || "stage"),
+      stageName: String(stage?.stageName || "Sem etapa"),
+      amount: finiteNumber(stage?.amount, 0),
+      count: finiteNumber(stage?.count, 0),
+      isWin: stage?.isWin === true,
+      isLoss: stage?.isLoss === true,
+    }))
+    : [];
+  const topOpportunities = Array.isArray(item.topOpportunities)
+    ? item.topOpportunities.slice(0, 8).map((opportunity) => ({
+      id: String(opportunity?.id || opportunity?.label || "opportunity"),
+      kind: opportunity?.kind === "sale" ? "sale" as const : "crm" as const,
+      label: String(opportunity?.label || "Oportunidade comercial"),
+      amount: finiteNumber(opportunity?.amount, 0),
+      stage: String(opportunity?.stage || "Sem etapa"),
+      source: typeof opportunity?.source === "string" ? opportunity.source : null,
+      expectedDate: typeof opportunity?.expectedDate === "string" ? opportunity.expectedDate : null,
+      nextBestAction: String(opportunity?.nextBestAction || "Revisar oportunidade antes de projetar receita."),
+    }))
+    : [];
+
+  return {
+    source: "sales+crm_tasks",
+    available: item.available === true,
+    pipelineAmount: finiteNumber(item.pipelineAmount, 0),
+    pendingContracts,
+    closedContracts,
+    lostAmount: finiteNumber(item.lostAmount, 0),
+    byStage,
+    topOpportunities,
+  };
+};
+
+const sanitizeUnitEconomics = (unitEconomics: unknown): UnitEconomicsPreview => {
+  const item = unitEconomics && typeof unitEconomics === "object" ? unitEconomics as Partial<UnitEconomicsPreview> : {};
+  const byCase = Array.isArray(item.byCase)
+    ? item.byCase.slice(0, 8).map((caseItem) => {
+      const confidence = caseItem?.confidence === "high" || caseItem?.confidence === "medium" || caseItem?.confidence === "low"
+        ? caseItem.confidence
+        : "low";
+      return {
+        caseId: String(caseItem?.caseId || caseItem?.label || "case"),
+        label: String(caseItem?.label || "Caso sem identificacao"),
+        legalArea: typeof caseItem?.legalArea === "string" ? caseItem.legalArea : null,
+        receivedRevenue: finiteNumber(caseItem?.receivedRevenue, 0),
+        openRevenue: finiteNumber(caseItem?.openRevenue, 0),
+        directCosts: finiteNumber(caseItem?.directCosts, 0),
+        commissionCost: finiteNumber(caseItem?.commissionCost, 0),
+        estimatedProfit: finiteNumber(caseItem?.estimatedProfit, 0),
+        marginRate: finiteNumber(caseItem?.marginRate, 0),
+        confidence,
+      };
+    })
+    : [];
+  const byLegalArea = Array.isArray(item.byLegalArea)
+    ? item.byLegalArea.slice(0, 8).map((area) => ({
+      legalArea: String(area?.legalArea || "Sem area"),
+      caseCount: finiteNumber(area?.caseCount, 0),
+      receivedRevenue: finiteNumber(area?.receivedRevenue, 0),
+      openRevenue: finiteNumber(area?.openRevenue, 0),
+      directCosts: finiteNumber(area?.directCosts, 0),
+      commissionCost: finiteNumber(area?.commissionCost, 0),
+      estimatedProfit: finiteNumber(area?.estimatedProfit, 0),
+      marginRate: finiteNumber(area?.marginRate, 0),
+    }))
+    : [];
+  const sanitizeCommissionGroups = (groups: unknown): UnitEconomicsCommissionGroupPreview[] =>
+    Array.isArray(groups)
+      ? groups.slice(0, 8).map((group) => ({
+        label: String(group?.label || "Sem origem"),
+        amount: finiteNumber(group?.amount, 0),
+        revenue: finiteNumber(group?.revenue, 0),
+        count: finiteNumber(group?.count, 0),
+        share: finiteNumber(group?.share, 0),
+      }))
+      : [];
+
+  return {
+    grossRevenue: finiteNumber(item.grossRevenue, 0),
+    directCosts: finiteNumber(item.directCosts, 0),
+    commissions: finiteNumber(item.commissions, 0),
+    estimatedProfit: finiteNumber(item.estimatedProfit, 0),
+    estimatedMarginRate: finiteNumber(item.estimatedMarginRate, 0),
+    byCase,
+    byLegalArea,
+    commissionsBreakdown: {
+      byOwner: sanitizeCommissionGroups(item.commissionsBreakdown?.byOwner),
+      byOrigin: sanitizeCommissionGroups(item.commissionsBreakdown?.byOrigin),
+    },
+  };
+};
+
+const fetchTenantFinanceSummary = async (): Promise<FinanceSummaryPayload | null> => {
+  try {
+    const response = await fetch("/api/financeiro/summary", { cache: "no-store" });
+    if (!response.ok) return null;
+    const payload = await response.json();
+    return payload?.summary && typeof payload.summary === "object" ? payload.summary as FinanceSummaryPayload : null;
+  } catch (error) {
+    console.warn("MAYUS BI: resumo financeiro indisponivel", error);
+    return null;
+  }
+};
+
 const classifyLeadSource = (source?: string | null): keyof LeadSourceMetrics | null => {
   const value = normalizeMetricText(source);
   if (!value) return null;
@@ -140,6 +536,23 @@ const classifyLeadSource = (source?: string | null): keyof LeadSourceMetrics | n
   if (/(indicacao|referral|recomendacao|parceiro)/.test(value)) return "referral";
   return null;
 };
+
+async function resolveDashboardTenantId(supabase: ReturnType<typeof createClient>, user: any) {
+  const metadataTenant = user?.user_metadata?.tenant_id || user?.app_metadata?.tenant_id;
+  if (metadataTenant) return String(metadataTenant);
+
+  const { data, error } = await supabase
+    .from("profiles")
+    .select("tenant_id")
+    .eq("id", user.id)
+    .maybeSingle();
+
+  if (error) {
+    console.warn("MAYUS BI: tenant_id indisponivel no profile", error.message);
+  }
+
+  return data?.tenant_id ? String(data.tenant_id) : "";
+}
 
 const processText = (task: ProcessTaskRow) =>
   normalizeMetricText(`${task.title || ""} ${task.description || ""} ${task.demanda || ""} ${task.sector || ""} ${(task.tags || []).join(" ")} ${task.sentenca || ""} ${task.andamento_1grau || ""} ${task.andamento_2grau || ""}`);
@@ -179,6 +592,11 @@ const INITIAL_DASHBOARD_METRICS: DashboardMetrics = {
   estimatedLtv: 0,
   delinquencyAmount: 0,
   delinquencyCount: 0,
+  delinquencyRate: 0,
+  financeForecast: 0,
+  financeForecastCount: 0,
+  openChargesAmount: 0,
+  openChargesCount: 0,
   fixedCosts: 0,
   marketingSpend: 0,
   leadCount: 0,
@@ -204,6 +622,51 @@ const INITIAL_DASHBOARD_METRICS: DashboardMetrics = {
     referral: 0,
   },
   processTypeDistribution: [],
+  collectionsFollowupPlansCount: 0,
+  collectionsFollowupHighPriorityCount: 0,
+  collectionsFollowupPlans: [],
+  financeForecastBuckets: {
+    dueIn7Days: emptyFinanceBucket(),
+    dueIn30Days: emptyFinanceBucket(),
+    future: emptyFinanceBucket(),
+    noDueDate: emptyFinanceBucket(),
+  },
+  financeOverdueAging: {
+    days1To7: emptyFinanceBucket(),
+    days8To14: emptyFinanceBucket(),
+    days15To30: emptyFinanceBucket(),
+    days31Plus: emptyFinanceBucket(),
+  },
+  financeRiskItems: [],
+  commercialForecastAvailable: false,
+  commercialForecastPipelineAmount: 0,
+  commercialForecastPendingContractsAmount: 0,
+  commercialForecastPendingContractsCount: 0,
+  commercialForecastClosedContractsAmount: 0,
+  commercialForecastClosedContractsCount: 0,
+  commercialForecastLostAmount: 0,
+  commercialForecastStages: [],
+  commercialForecastTopOpportunities: [],
+  revenueReconciliationMatched: 0,
+  revenueReconciliationPartial: 0,
+  revenueReconciliationBlocked: 0,
+  revenueReconciliationOpenedCaseRevenue: 0,
+  unitGrossRevenue: 0,
+  unitDirectCosts: 0,
+  unitCommissions: 0,
+  unitEstimatedProfit: 0,
+  unitEstimatedMarginRate: 0,
+  unitEconomicsByCase: [],
+  unitEconomicsByLegalArea: [],
+  unitCommissionsByOwner: [],
+  unitCommissionsByOrigin: [],
+};
+
+const INITIAL_COLLECTION_PLAN_ACTION: CollectionPlanActionState = {
+  pendingRiskKey: null,
+  feedbackRiskKey: null,
+  message: null,
+  error: null,
 };
 
 /**
@@ -765,58 +1228,287 @@ const ComercialView = ({ metrics, officeGoals = [] }: { metrics: DashboardMetric
   );
 };
 
-const FinanceiroView = ({ metrics }: { metrics: DashboardMetrics }) => (
-  <div className="space-y-6 animate-fade-in-up">
+const FinanceiroView = ({
+  metrics,
+  onGenerateCollectionPlan,
+  collectionPlanAction,
+}: {
+  metrics: DashboardMetrics;
+  onGenerateCollectionPlan: (riskKey: string) => void;
+  collectionPlanAction: CollectionPlanActionState;
+}) => {
+  const operationalProfit = metrics.revenueReceived - metrics.totalCommissions - metrics.fixedCosts - metrics.marketingSpend;
+  const projectionMax = Math.max(metrics.revenueReceived, metrics.financeForecast, metrics.openChargesAmount, 1);
+  const heightFor = (value: number) => `${Math.max(12, Math.min(100, Math.round((value / projectionMax) * 100)))}%`;
+  const collectionPlans = metrics.collectionsFollowupPlans.slice(0, 3);
+  const forecastBuckets = [
+    { label: "7 dias", bucket: metrics.financeForecastBuckets.dueIn7Days },
+    { label: "30 dias", bucket: metrics.financeForecastBuckets.dueIn30Days },
+    { label: "Futuro", bucket: metrics.financeForecastBuckets.future },
+    { label: "Sem data", bucket: metrics.financeForecastBuckets.noDueDate },
+  ];
+  const overdueBuckets = [
+    { label: "1-7d", bucket: metrics.financeOverdueAging.days1To7 },
+    { label: "8-14d", bucket: metrics.financeOverdueAging.days8To14 },
+    { label: "15-30d", bucket: metrics.financeOverdueAging.days15To30 },
+    { label: "31d+", bucket: metrics.financeOverdueAging.days31Plus },
+  ];
+  const riskItems = metrics.financeRiskItems.slice(0, 3);
+  const commercialOpportunities = metrics.commercialForecastTopOpportunities.slice(0, 3);
+  const commercialStages = metrics.commercialForecastStages.slice(0, 4);
+  const unitCases = metrics.unitEconomicsByCase.slice(0, 3);
+  const unitLegalAreas = metrics.unitEconomicsByLegalArea.slice(0, 3);
+  const unitOwnerCommissions = metrics.unitCommissionsByOwner.slice(0, 3);
+  const unitOriginCommissions = metrics.unitCommissionsByOrigin.slice(0, 3);
+  const riskBadgeClass = (risk: FinanceRiskItemPreview["riskLevel"]) =>
+    risk === "high"
+      ? "border-[#f87171]/40 bg-[#f87171]/10 text-[#f87171]"
+      : risk === "medium"
+        ? "border-[#CCA761]/40 bg-[#CCA761]/10 text-[#CCA761]"
+        : "border-[#22d3ee]/30 bg-[#22d3ee]/10 text-[#22d3ee]";
+  const confidenceBadgeClass = (confidence: UnitEconomicsCasePreview["confidence"]) =>
+    confidence === "high"
+      ? "border-[#4ade80]/40 bg-[#4ade80]/10 text-[#4ade80]"
+      : confidence === "medium"
+        ? "border-[#CCA761]/40 bg-[#CCA761]/10 text-[#CCA761]"
+        : "border-[#f87171]/35 bg-[#f87171]/10 text-[#f87171]";
+  const actionFeedbackText = collectionPlanAction.error || collectionPlanAction.message;
+
+  return (
+  <div data-testid="dashboard-finance-view" className="space-y-6 animate-fade-in-up">
     <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-4">
       <GlassCard>
-        <p className="text-[10px] text-gray-500 uppercase tracking-widest font-bold mb-1">Receita Total Mês</p>
-        <h3 className="text-3xl font-bold text-[#4ade80] tracking-wide mt-2">
+        <p className="text-[10px] text-gray-500 uppercase tracking-widest font-bold mb-1">Recebido</p>
+        <h3 data-testid="finance-received-value" className="text-3xl font-bold text-[#4ade80] tracking-wide mt-2">
           R$ <AnimatedNumber value={metrics.revenueReceived} />
         </h3>
-        <p className="text-[10px] text-gray-400 mt-2">Honorários + Êxito</p>
+        <p className="text-[10px] text-gray-400 mt-2">Honorarios e exito registrados</p>
       </GlassCard>
       <GlassCard>
-        <p className="text-[10px] text-gray-500 uppercase tracking-widest font-bold mb-1">Custo Comissões</p>
-        <h3 className="text-3xl font-bold text-[#CCA761] tracking-wide mt-2">
-          R$ <AnimatedNumber value={metrics.totalCommissions} />
+        <p className="text-[10px] text-gray-500 uppercase tracking-widest font-bold mb-1">Previsto</p>
+        <h3 data-testid="finance-forecast-value" className="text-3xl font-bold text-[#22d3ee] tracking-wide mt-2">
+          R$ <AnimatedNumber value={metrics.financeForecast} />
         </h3>
-        <p className="text-[10px] text-gray-400 mt-2">SDR / Closer</p>
+        <p className="text-[10px] text-gray-400 mt-2">{metrics.financeForecastCount} cobrancas a vencer</p>
       </GlassCard>
       <GlassCard>
-        <p className="text-[10px] text-gray-500 uppercase tracking-widest font-bold mb-1">LTV Estimado (Por Cliente)</p>
-        <h3 className="text-3xl font-bold text-[#22d3ee] tracking-wide mt-2">
-          R$ <AnimatedNumber value={metrics.estimatedLtv} />
+        <p className="text-[10px] text-gray-500 uppercase tracking-widest font-bold mb-1">Cobrancas Abertas</p>
+        <h3 data-testid="finance-open-charges-value" className="text-3xl font-bold text-[#CCA761] tracking-wide mt-2">
+          R$ <AnimatedNumber value={metrics.openChargesAmount} />
         </h3>
-        <p className="text-[10px] text-gray-400 mt-2">{metrics.clientCount} clientes na carteira</p>
+        <p className="text-[10px] text-gray-400 mt-2">{metrics.openChargesCount} cobrancas em aberto</p>
       </GlassCard>
       <GlassCard>
-        <p className="text-[10px] text-gray-500 uppercase tracking-widest font-bold mb-1">Inadimplência</p>
-        <h3 className="text-3xl font-bold text-[#f87171] tracking-wide mt-2">
+        <p className="text-[10px] text-gray-500 uppercase tracking-widest font-bold mb-1">Inadimplencia</p>
+        <h3 data-testid="finance-overdue-value" className="text-3xl font-bold text-[#f87171] tracking-wide mt-2">
           R$ <AnimatedNumber value={metrics.delinquencyAmount} />
         </h3>
-        <p className="text-[10px] text-[#f87171] mt-2">{metrics.delinquencyCount} parcelas vencidas</p>
+        <p className="text-[10px] text-[#f87171] mt-2">{metrics.delinquencyCount} vencidas / {metrics.delinquencyRate}% das abertas</p>
       </GlassCard>
     </div>
+
+    <GlassCard className="border border-[#4ade80]/15" noHover>
+      <div data-testid="finance-unit-economics" className="space-y-4">
+        <div className="flex flex-col lg:flex-row lg:items-center lg:justify-between gap-4">
+          <div>
+            <p className="text-[10px] text-gray-500 uppercase tracking-widest font-bold">Unidade Economica</p>
+            <h4 data-testid="finance-unit-margin" className={`mt-1 text-xl font-bold ${metrics.unitEstimatedProfit >= 0 ? "text-[#4ade80]" : "text-[#f87171]"}`}>
+              R$ {metrics.unitEstimatedProfit.toLocaleString('pt-BR')}
+              <span className="ml-2 text-xs text-gray-500">{metrics.unitEstimatedMarginRate.toLocaleString('pt-BR')}%</span>
+            </h4>
+            <p className="mt-1 text-[10px] text-gray-500">
+              Receita bruta R$ {metrics.unitGrossRevenue.toLocaleString('pt-BR')} / custos diretos R$ {metrics.unitDirectCosts.toLocaleString('pt-BR')} / comissoes R$ {metrics.unitCommissions.toLocaleString('pt-BR')}
+            </p>
+          </div>
+          <div className="grid grid-cols-3 gap-3 text-center">
+            <div className="rounded-xl border border-white/5 bg-black/20 px-3 py-2">
+              <p className="text-[9px] text-gray-500 uppercase tracking-widest">Casos</p>
+              <p className="text-sm font-bold text-[#4ade80]">{metrics.unitEconomicsByCase.length}</p>
+            </div>
+            <div className="rounded-xl border border-white/5 bg-black/20 px-3 py-2">
+              <p className="text-[9px] text-gray-500 uppercase tracking-widest">Areas</p>
+              <p className="text-sm font-bold text-[#22d3ee]">{metrics.unitEconomicsByLegalArea.length}</p>
+            </div>
+            <div className="rounded-xl border border-white/5 bg-black/20 px-3 py-2">
+              <p className="text-[9px] text-gray-500 uppercase tracking-widest">Comissao</p>
+              <p className="text-sm font-bold text-[#CCA761]">R$ {metrics.unitCommissions.toLocaleString('pt-BR')}</p>
+            </div>
+          </div>
+        </div>
+
+        <div className="grid grid-cols-1 lg:grid-cols-3 gap-4 border-t border-white/5 pt-4">
+          <div className="space-y-2">
+            <p className="text-[9px] text-gray-500 uppercase tracking-widest font-bold">Receita por area</p>
+            {unitLegalAreas.length > 0 ? unitLegalAreas.map((area) => (
+              <div key={area.legalArea} data-testid="finance-unit-legal-area" className="flex items-center justify-between gap-3 text-[11px]">
+                <span className="truncate text-gray-300">
+                  {area.legalArea}
+                  <span className="ml-2 text-gray-600">({area.caseCount})</span>
+                </span>
+                <span className="text-[#4ade80] whitespace-nowrap">R$ {area.receivedRevenue.toLocaleString('pt-BR')}</span>
+              </div>
+            )) : (
+              <p className="text-[11px] text-gray-500">Sem area juridica com receita consolidada.</p>
+            )}
+          </div>
+          <div className="space-y-2">
+            <p className="text-[9px] text-gray-500 uppercase tracking-widest font-bold">Casos mais rentaveis</p>
+            {unitCases.length > 0 ? unitCases.map((item) => (
+              <div key={item.caseId} data-testid="finance-unit-case" className="rounded-xl border border-white/5 bg-black/20 px-3 py-2">
+                <div className="flex items-start justify-between gap-3">
+                  <div className="min-w-0">
+                    <p className="truncate text-[11px] font-bold text-gray-200">{item.label}</p>
+                    <p className="mt-0.5 text-[10px] text-gray-500">{item.legalArea || "Sem area"} / {item.marginRate.toLocaleString('pt-BR')}%</p>
+                  </div>
+                  <span className={`shrink-0 rounded-full border px-2 py-0.5 text-[9px] font-bold uppercase tracking-widest ${confidenceBadgeClass(item.confidence)}`}>
+                    {item.confidence}
+                  </span>
+                </div>
+                <div className="mt-2 flex justify-between gap-3 text-[11px]">
+                  <span className="text-gray-500">Lucro est.</span>
+                  <span className={item.estimatedProfit >= 0 ? "font-bold text-[#4ade80]" : "font-bold text-[#f87171]"}>
+                    R$ {item.estimatedProfit.toLocaleString('pt-BR')}
+                  </span>
+                </div>
+              </div>
+            )) : (
+              <p className="text-[11px] text-gray-500">Sem casos com receita para margem estimada.</p>
+            )}
+          </div>
+          <div className="space-y-3">
+            <div className="space-y-2">
+              <p className="text-[9px] text-gray-500 uppercase tracking-widest font-bold">Comissoes por responsavel</p>
+              {unitOwnerCommissions.length > 0 ? unitOwnerCommissions.map((item) => (
+                <div key={item.label} data-testid="finance-unit-commission-owner" className="flex justify-between gap-3 text-[11px]">
+                  <span className="truncate text-gray-300">{item.label}</span>
+                  <span className="text-[#CCA761] whitespace-nowrap">R$ {item.amount.toLocaleString('pt-BR')}</span>
+                </div>
+              )) : (
+                <p className="text-[11px] text-gray-500">Sem comissoes cadastradas.</p>
+              )}
+            </div>
+            <div className="space-y-2 border-t border-white/5 pt-3">
+              <p className="text-[9px] text-gray-500 uppercase tracking-widest font-bold">Por origem</p>
+              {unitOriginCommissions.length > 0 ? unitOriginCommissions.map((item) => (
+                <div key={item.label} data-testid="finance-unit-commission-origin" className="flex justify-between gap-3 text-[11px]">
+                  <span className="truncate text-gray-300">{item.label}</span>
+                  <span className="text-[#22d3ee] whitespace-nowrap">{item.share.toLocaleString('pt-BR')}%</span>
+                </div>
+              )) : (
+                <p className="text-[11px] text-gray-500">Sem origem comercial ligada a comissao.</p>
+              )}
+            </div>
+          </div>
+        </div>
+      </div>
+    </GlassCard>
+
+    {(metrics.commercialForecastAvailable || metrics.commercialForecastPipelineAmount > 0 || commercialOpportunities.length > 0) && (
+      <GlassCard className="border border-[#22d3ee]/15" noHover>
+        <div data-testid="finance-commercial-forecast" className="space-y-4">
+          <div className="flex flex-col lg:flex-row lg:items-center lg:justify-between gap-4">
+            <div>
+              <p className="text-[10px] text-gray-500 uppercase tracking-widest font-bold">Forecast Comercial</p>
+              <h4 className="mt-1 text-xl font-bold text-white">
+                R$ {metrics.commercialForecastPipelineAmount.toLocaleString('pt-BR')}
+              </h4>
+              <p className="mt-1 text-[10px] text-gray-500">Funil/propostas separado do caixa recebido</p>
+            </div>
+            <div className="grid grid-cols-3 gap-3 text-center">
+              <div className="rounded-xl border border-white/5 bg-black/20 px-3 py-2">
+                <p className="text-[9px] text-gray-500 uppercase tracking-widest">Pendentes</p>
+                <p data-testid="finance-commercial-pending" className="text-sm font-bold text-[#22d3ee]">
+                  R$ {metrics.commercialForecastPendingContractsAmount.toLocaleString('pt-BR')}
+                </p>
+                <p className="text-[10px] text-gray-600">{metrics.commercialForecastPendingContractsCount} contrato(s)</p>
+              </div>
+              <div className="rounded-xl border border-white/5 bg-black/20 px-3 py-2">
+                <p className="text-[9px] text-gray-500 uppercase tracking-widest">Fechados</p>
+                <p className="text-sm font-bold text-[#4ade80]">
+                  R$ {metrics.commercialForecastClosedContractsAmount.toLocaleString('pt-BR')}
+                </p>
+                <p className="text-[10px] text-gray-600">{metrics.commercialForecastClosedContractsCount} ganho(s)</p>
+              </div>
+              <div className="rounded-xl border border-white/5 bg-black/20 px-3 py-2">
+                <p className="text-[9px] text-gray-500 uppercase tracking-widest">Perdido</p>
+                <p className="text-sm font-bold text-[#f87171]">
+                  R$ {metrics.commercialForecastLostAmount.toLocaleString('pt-BR')}
+                </p>
+                <p className="text-[10px] text-gray-600">fora da projecao</p>
+              </div>
+            </div>
+          </div>
+
+          <div className="grid grid-cols-1 lg:grid-cols-2 gap-4 border-t border-white/5 pt-4">
+            <div className="space-y-2">
+              <p className="text-[9px] text-gray-500 uppercase tracking-widest font-bold">Etapas do funil</p>
+              {commercialStages.length > 0 ? commercialStages.map((stage) => (
+                <div key={stage.stageId} data-testid="finance-commercial-stage" className="flex items-center justify-between gap-3 text-[11px]">
+                  <span className="truncate text-gray-300">
+                    {stage.stageName}
+                    <span className="ml-2 text-gray-600">({stage.count})</span>
+                  </span>
+                  <span className={stage.isLoss ? "text-[#f87171]" : stage.isWin ? "text-[#4ade80]" : "text-[#22d3ee]"}>
+                    R$ {stage.amount.toLocaleString('pt-BR')}
+                  </span>
+                </div>
+              )) : (
+                <p className="text-[11px] text-gray-500">Sem oportunidades com valor cadastrado.</p>
+              )}
+            </div>
+            <div className="space-y-2">
+              <p className="text-[9px] text-gray-500 uppercase tracking-widest font-bold">Oportunidades principais</p>
+              {commercialOpportunities.length > 0 ? commercialOpportunities.map((opportunity) => (
+                <div key={opportunity.id} data-testid="finance-commercial-opportunity" className="rounded-xl border border-white/5 bg-black/20 px-3 py-2">
+                  <div className="flex items-start justify-between gap-3">
+                    <div className="min-w-0">
+                      <p className="truncate text-[11px] font-bold text-gray-200">{opportunity.label}</p>
+                      <p className="mt-0.5 text-[10px] text-gray-500">{opportunity.stage}</p>
+                    </div>
+                    <span className="shrink-0 text-[11px] font-bold text-[#CCA761]">
+                      R$ {opportunity.amount.toLocaleString('pt-BR')}
+                    </span>
+                  </div>
+                  <p className="mt-2 line-clamp-2 text-[10px] text-gray-500">{opportunity.nextBestAction}</p>
+                </div>
+              )) : (
+                <p className="text-[11px] text-gray-500">Nenhuma oportunidade priorizada no momento.</p>
+              )}
+            </div>
+          </div>
+        </div>
+      </GlassCard>
+    )}
 
     <div className="grid grid-cols-1 lg:grid-cols-2 gap-4">
       <GlassCard className="border border-[#1a1a1a]">
         <div className="space-y-6">
           <div>
             <p className="text-[10px] text-gray-500 uppercase tracking-widest mb-3 font-bold">Resumo de Caixa</p>
-            <div className="flex justify-between items-center text-sm font-medium mb-2">
-              <span className="text-gray-300">Entradas (Parcelas Recebidas)</span>
-              <span className="text-[#4ade80]">R$ {metrics.revenueReceived.toLocaleString('pt-BR')}</span>
+            <div className="space-y-2 text-sm font-medium">
+              <div className="flex justify-between items-center">
+                <span className="text-gray-300">Entradas recebidas</span>
+                <span className="text-[#4ade80]">R$ {metrics.revenueReceived.toLocaleString('pt-BR')}</span>
+              </div>
+              <div className="flex justify-between items-center">
+                <span className="text-gray-300">Previsto em aberto</span>
+                <span className="text-[#22d3ee]">R$ {metrics.financeForecast.toLocaleString('pt-BR')}</span>
+              </div>
+              <div className="flex justify-between items-center">
+                <span className="text-gray-300">Vencido</span>
+                <span className="text-[#f87171]">R$ {metrics.delinquencyAmount.toLocaleString('pt-BR')}</span>
+              </div>
             </div>
           </div>
           <div>
-            <p className="text-[10px] text-gray-500 uppercase tracking-widest mb-3 font-bold">Saídas (Operacional)</p>
+            <p className="text-[10px] text-gray-500 uppercase tracking-widest mb-3 font-bold">Saidas (Operacional)</p>
             <div className="space-y-2 text-sm">
               <div className="flex justify-between items-center">
                 <span className="text-gray-400">Custos Fixos Cadastrados</span>
                 <span className="text-[#f87171]">- R$ {metrics.fixedCosts.toLocaleString('pt-BR')}</span>
               </div>
               <div className="flex justify-between items-center">
-                <span className="text-gray-400">Comissões Pagas</span>
+                <span className="text-gray-400">Comissoes Pagas</span>
                 <span className="text-[#f87171]">- R$ {metrics.totalCommissions.toLocaleString('pt-BR')}</span>
               </div>
               <div className="flex justify-between items-center">
@@ -827,37 +1519,147 @@ const FinanceiroView = ({ metrics }: { metrics: DashboardMetrics }) => (
           </div>
           <div className="pt-4 border-t border-white/5 flex justify-between items-center font-bold">
             <span className="text-gray-300">Lucro Operacional Estimado</span>
-            <span className="text-[#4ade80]">R$ {(metrics.revenueReceived - metrics.totalCommissions - metrics.fixedCosts - metrics.marketingSpend).toLocaleString('pt-BR')}</span>
+            <span className={operationalProfit >= 0 ? "text-[#4ade80]" : "text-[#f87171]"}>
+              R$ {operationalProfit.toLocaleString('pt-BR')}
+            </span>
           </div>
         </div>
       </GlassCard>
 
-      <div className="bg-card border border-primary/20 rounded-2xl flex flex-col justify-center p-8 relative overflow-hidden group hover:border-primary/40 transition-colors">
+      <div data-testid="finance-projection-followup" className="bg-card border border-primary/20 rounded-2xl flex flex-col justify-center p-8 relative overflow-hidden group hover:border-primary/40 transition-colors">
         <div className="absolute inset-x-0 h-px top-1/2 bg-gradient-to-r from-transparent via-[#CCA761]/20 to-transparent" />
         <h4 className="text-[10px] text-gray-400 font-bold uppercase tracking-widest mb-6 relative z-10 flex items-center gap-2">
-          <Calendar size={14} className="text-[#CCA761]" /> Projeção de Caixa
+          <Calendar size={14} className="text-[#CCA761]" /> Projecao e Follow-up
         </h4>
         <div className="flex items-end gap-2 h-32 relative z-10">
-          <div className="flex-1 bg-[#1a1a1a] rounded-t-md relative group-hover:bg-[#22d3ee]/10 transition-colors h-[40%]" title="Mês Atual">
-            <span className="absolute -top-6 left-1/2 -translate-x-1/2 text-[10px] text-gray-500">Hoje</span>
+          <div className="flex-1 bg-[#1a1a1a] rounded-t-md relative group-hover:bg-[#4ade80]/10 transition-colors" style={{ height: heightFor(metrics.revenueReceived) }} title="Recebido">
+            <span className="absolute -top-6 left-1/2 -translate-x-1/2 text-[10px] text-gray-500">Recebido</span>
           </div>
-          <div className="flex-1 bg-[#1a1a1a] rounded-t-md relative group-hover:bg-[#22d3ee]/20 transition-colors h-[60%]" title="Mês +1">
-            <span className="absolute -top-6 left-1/2 -translate-x-1/2 text-[10px] text-gray-500">+30d</span>
+          <div className="flex-1 bg-[#1a1a1a] rounded-t-md relative group-hover:bg-[#22d3ee]/20 transition-colors" style={{ height: heightFor(metrics.financeForecast) }} title="Previsto">
+            <span className="absolute -top-6 left-1/2 -translate-x-1/2 text-[10px] text-gray-500">Previsto</span>
           </div>
-          <div className="flex-1 bg-[#1a1a1a] rounded-t-md relative group-hover:bg-[#22d3ee]/30 transition-colors h-[75%]" title="Mês +2">
-            <span className="absolute -top-6 left-1/2 -translate-x-1/2 text-[10px] text-gray-500">+60d</span>
+          <div className="flex-1 bg-[#1a1a1a] rounded-t-md relative group-hover:bg-[#f87171]/20 transition-colors" style={{ height: heightFor(metrics.delinquencyAmount) }} title="Vencido">
+            <span className="absolute -top-6 left-1/2 -translate-x-1/2 text-[10px] text-gray-500">Vencido</span>
           </div>
-          <div className="flex-1 bg-gradient-to-t from-[#CCA761]/20 to-[#CCA761]/80 rounded-t-md relative shadow-[0_0_20px_rgba(204,167,97,0.2)] h-[100%]" title="Mês +3">
-            <span className="absolute -top-6 left-1/2 -translate-x-1/2 text-[12px] font-bold text-[#CCA761]">+90d</span>
+          <div className="flex-1 bg-gradient-to-t from-[#CCA761]/20 to-[#CCA761]/80 rounded-t-md relative shadow-[0_0_20px_rgba(204,167,97,0.2)]" style={{ height: heightFor(metrics.openChargesAmount) }} title="Aberto">
+            <span className="absolute -top-6 left-1/2 -translate-x-1/2 text-[10px] font-bold text-[#CCA761]">Aberto</span>
           </div>
         </div>
-        <div className="mt-8 text-center relative z-10">
-          <p className="text-xs text-gray-400">Projeção considerando parcelas Asaas e acordos caindo nos próximos 90 dias.</p>
+        <div className="mt-8 relative z-10 space-y-3">
+          <div className="flex justify-between items-center text-xs">
+            <span className="text-gray-400">Planos supervisionados</span>
+            <span className="text-[#CCA761] font-bold">{metrics.collectionsFollowupPlansCount}</span>
+          </div>
+          <div className="flex justify-between items-center text-xs">
+            <span className="text-gray-400">Alta prioridade</span>
+            <span className="text-[#f87171] font-bold">{metrics.collectionsFollowupHighPriorityCount}</span>
+          </div>
+          <div className="grid grid-cols-1 sm:grid-cols-2 gap-3 pt-3 border-t border-white/5">
+            <div className="space-y-2">
+              <p className="text-[9px] text-gray-500 uppercase tracking-widest font-bold">Forecast</p>
+              {forecastBuckets.map((item) => (
+                <div key={item.label} data-testid={`finance-forecast-bucket-${item.label}`} className="flex justify-between gap-3 text-[11px]">
+                  <span className="text-gray-400">{item.label}</span>
+                  <span className="text-[#22d3ee] whitespace-nowrap">
+                    R$ {item.bucket.amount.toLocaleString('pt-BR')}
+                    <span className="ml-1 text-gray-600">({item.bucket.count})</span>
+                  </span>
+                </div>
+              ))}
+            </div>
+            <div className="space-y-2">
+              <p className="text-[9px] text-gray-500 uppercase tracking-widest font-bold">Vencidos</p>
+              {overdueBuckets.map((item) => (
+                <div key={item.label} data-testid={`finance-overdue-bucket-${item.label}`} className="flex justify-between gap-3 text-[11px]">
+                  <span className="text-gray-400">{item.label}</span>
+                  <span className="text-[#f87171] whitespace-nowrap">
+                    R$ {item.bucket.amount.toLocaleString('pt-BR')}
+                    <span className="ml-1 text-gray-600">({item.bucket.count})</span>
+                  </span>
+                </div>
+              ))}
+            </div>
+          </div>
+          <div className="grid grid-cols-3 gap-2 pt-2 border-t border-white/5 text-center">
+            <div data-testid="finance-reconciliation-matched">
+              <p className="text-[9px] text-gray-500 uppercase tracking-widest">Casados</p>
+              <p className="text-sm font-bold text-[#4ade80]">{metrics.revenueReconciliationMatched}</p>
+            </div>
+            <div data-testid="finance-reconciliation-partial">
+              <p className="text-[9px] text-gray-500 uppercase tracking-widest">Parciais</p>
+              <p className="text-sm font-bold text-[#CCA761]">{metrics.revenueReconciliationPartial}</p>
+            </div>
+            <div data-testid="finance-reconciliation-blocked">
+              <p className="text-[9px] text-gray-500 uppercase tracking-widest">Bloqueios</p>
+              <p className="text-sm font-bold text-[#f87171]">{metrics.revenueReconciliationBlocked}</p>
+            </div>
+          </div>
+          <div className="flex justify-between items-center text-xs">
+            <span className="text-gray-400">Receita ja virou caso</span>
+            <span className="text-[#4ade80] font-bold">R$ {metrics.revenueReconciliationOpenedCaseRevenue.toLocaleString('pt-BR')}</span>
+          </div>
+          {collectionPlans.length > 0 && (
+            <div className="space-y-2 pt-2 border-t border-white/5">
+              {collectionPlans.map((plan) => (
+                <div key={plan.id || `${plan.clientName}-${plan.createdAt}`} data-testid="finance-collection-plan" className="flex justify-between gap-4 text-[11px]">
+                  <span className="text-gray-300 truncate">{plan.clientName || plan.title}</span>
+                  <span className="text-gray-500 whitespace-nowrap">
+                    {plan.amount !== null ? `R$ ${plan.amount.toLocaleString('pt-BR')}` : plan.priority || "revisao"}
+                  </span>
+                </div>
+              ))}
+            </div>
+          )}
+          {riskItems.length > 0 && (
+            <div className="space-y-2 pt-2 border-t border-white/5">
+              <p className="text-[9px] text-gray-500 uppercase tracking-widest font-bold">Maiores riscos</p>
+              {riskItems.map((item) => (
+                <div key={item.key} data-testid="finance-risk-item" className="rounded-xl border border-white/5 bg-black/20 px-3 py-2">
+                  <div className="flex items-start justify-between gap-3">
+                    <div className="min-w-0">
+                      <p className="truncate text-[11px] font-bold text-gray-200">{item.clientName || item.label}</p>
+                      <p className="mt-0.5 text-[10px] text-gray-500">
+                        {item.overdueCount > 0 ? `${item.overdueCount} vencida(s)` : `${item.openCount} em aberto`}
+                        {item.maxDaysOverdue > 0 ? ` / ${item.maxDaysOverdue}d` : ""}
+                      </p>
+                    </div>
+                    <span className={`shrink-0 rounded-full border px-2 py-0.5 text-[9px] font-bold uppercase tracking-widest ${riskBadgeClass(item.riskLevel)}`}>
+                      {item.riskLevel}
+                    </span>
+                  </div>
+                  <div className="mt-2 flex justify-between gap-3 text-[11px]">
+                    <span className="text-gray-500">Aberto</span>
+                    <span className="font-bold text-[#CCA761]">R$ {item.openAmount.toLocaleString('pt-BR')}</span>
+                  </div>
+                  <div className="mt-3 flex flex-wrap items-center justify-between gap-2 border-t border-white/5 pt-2">
+                    <button
+                      type="button"
+                      data-testid="finance-generate-collection-plan"
+                      onClick={() => onGenerateCollectionPlan(item.key)}
+                      disabled={collectionPlanAction.pendingRiskKey === item.key}
+                      className="rounded-lg border border-[#CCA761]/30 px-2.5 py-1 text-[9px] font-bold uppercase tracking-widest text-[#CCA761] transition-colors hover:border-[#CCA761] hover:bg-[#CCA761]/10 disabled:cursor-wait disabled:opacity-60"
+                    >
+                      {collectionPlanAction.pendingRiskKey === item.key ? "Gerando..." : "Gerar plano"}
+                    </button>
+                    {collectionPlanAction.feedbackRiskKey === item.key && actionFeedbackText && (
+                      <span
+                        data-testid="finance-collection-action-status"
+                        className={`text-[10px] ${collectionPlanAction.error ? "text-[#f87171]" : "text-[#4ade80]"}`}
+                      >
+                        {actionFeedbackText}
+                      </span>
+                    )}
+                  </div>
+                </div>
+              ))}
+            </div>
+          )}
         </div>
       </div>
     </div>
   </div>
-);
+  );
+};
 
 const MarketingView = ({ metrics }: { metrics: DashboardMetrics }) => (
   <div className="space-y-6 animate-fade-in-up">
@@ -1020,7 +1822,7 @@ const AgendaView = () => {
   const fetchTasks = useCallback(async () => {
     const { data: { user } } = await supabase.auth.getUser();
     if (!user) return;
-    const tenantId = user.user_metadata?.tenant_id || user.app_metadata?.tenant_id;
+    const tenantId = await resolveDashboardTenantId(supabase, user);
 
     if (tenantId) {
       const { data: userTasks } = await supabase
@@ -1215,6 +2017,7 @@ export default function DashboardHomePage() {
   const [isDropdownOpen, setIsDropdownOpen] = useState(false);
 
   const [metrics, setMetrics] = useState<DashboardMetrics>(INITIAL_DASHBOARD_METRICS);
+  const [collectionPlanAction, setCollectionPlanAction] = useState<CollectionPlanActionState>(INITIAL_COLLECTION_PLAN_ACTION);
 
   const [officeGoals, setOfficeGoals] = useState<OfficeGoal[]>([]);
 
@@ -1232,6 +2035,55 @@ export default function DashboardHomePage() {
 
   const activeTabLabel = TABS.find(t => t.id === activeView)?.label || "Dashboard";
 
+  const handleGenerateCollectionPlan = useCallback(async (riskKey: string) => {
+    setCollectionPlanAction({
+      pendingRiskKey: riskKey,
+      feedbackRiskKey: riskKey,
+      message: null,
+      error: null,
+    });
+
+    try {
+      const response = await fetch("/api/financeiro/collections-followup", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ riskKey }),
+      });
+      const payload = await response.json().catch(() => null);
+      if (!response.ok) {
+        throw new Error(payload?.error || "Nao foi possivel gerar o plano.");
+      }
+
+      const financeSummary = await fetchTenantFinanceSummary();
+      const collectionPlans = sanitizeCollectionPlans(financeSummary?.collectionsFollowup?.recentPlans);
+      if (financeSummary?.collectionsFollowup) {
+        setMetrics((current) => ({
+          ...current,
+          collectionsFollowupPlansCount: finiteNumber(financeSummary.collectionsFollowup?.totalPlans, collectionPlans.length),
+          collectionsFollowupHighPriorityCount: finiteNumber(
+            financeSummary.collectionsFollowup?.highPriorityPlans,
+            collectionPlans.filter((plan) => normalizeMetricText(plan.priority) === "high").length
+          ),
+          collectionsFollowupPlans: collectionPlans,
+        }));
+      }
+
+      setCollectionPlanAction({
+        pendingRiskKey: null,
+        feedbackRiskKey: riskKey,
+        message: payload?.deduped ? "Plano supervisionado pronto." : "Plano supervisionado criado.",
+        error: null,
+      });
+    } catch (error: any) {
+      setCollectionPlanAction({
+        pendingRiskKey: null,
+        feedbackRiskKey: riskKey,
+        message: null,
+        error: error?.message || "Falha ao gerar plano.",
+      });
+    }
+  }, []);
+
   useEffect(() => {
     const fetchDashboardData = async () => {
       setLoading(true);
@@ -1243,7 +2095,7 @@ export default function DashboardHomePage() {
         return;
       }
 
-      const tenantId = user.user_metadata?.tenant_id || user.app_metadata?.tenant_id;
+      const tenantId = await resolveDashboardTenantId(supabase, user);
       if (!tenantId) {
         setLoading(false);
         return;
@@ -1320,12 +2172,14 @@ export default function DashboardHomePage() {
         nextMetrics.revenueReceived = totalRev;
       }
 
+      const financeSummaryPromise = fetchTenantFinanceSummary();
       const [
         { count: clientCount },
         { count: leadCount },
         { data: financialRows },
         { data: commercialTasks },
         { data: crmTasks },
+        financeSummary,
       ] = await Promise.all([
         supabase
           .from('clients')
@@ -1347,6 +2201,7 @@ export default function DashboardHomePage() {
           .from('crm_tasks')
           .select('source')
           .eq('tenant_id', tenantId),
+        financeSummaryPromise,
       ]);
 
       const normalizedClientCount = clientCount || 0;
@@ -1358,12 +2213,20 @@ export default function DashboardHomePage() {
       const receivedRevenue = financials
         .filter(isReceivedRevenue)
         .reduce((acc, row) => acc + (Number(row.amount) || 0), 0);
-      const overdueRows = financials.filter((row) => {
-        if (!row.due_date || isReceivedRevenue(row) || isExpenseRow(row)) return false;
+      const openRevenueRows = financials.filter((row) => !isReceivedRevenue(row) && !isExpenseRow(row));
+      const overdueRows = openRevenueRows.filter((row) => {
+        if (!row.due_date) return false;
         const dueDate = new Date(`${row.due_date}T00:00:00`);
         return !Number.isNaN(dueDate.getTime()) && dueDate < today;
       });
+      const forecastRows = openRevenueRows.filter((row) => {
+        if (!row.due_date) return true;
+        const dueDate = new Date(`${row.due_date}T00:00:00`);
+        return Number.isNaN(dueDate.getTime()) || dueDate >= today;
+      });
       const delinquencyAmount = overdueRows.reduce((acc, row) => acc + (Number(row.amount) || 0), 0);
+      const financeForecast = forecastRows.reduce((acc, row) => acc + (Number(row.amount) || 0), 0);
+      const openChargesAmount = openRevenueRows.reduce((acc, row) => acc + (Number(row.amount) || 0), 0);
       const marketingSpend = financials
         .filter(isMarketingExpense)
         .reduce((acc, row) => acc + Math.abs(Number(row.amount) || 0), 0);
@@ -1384,29 +2247,83 @@ export default function DashboardHomePage() {
       const commercialScheduled = commercialTaskRows.length;
       const commercialCompleted = commercialTaskRows.filter((task) => task.status === 'Concluído').length;
 
-      const revenueBase = receivedRevenue > 0 ? receivedRevenue : nextMetrics.revenueReceived;
       const leadToScheduleRate = normalizedLeadCount > 0 ? Math.round((commercialScheduled / normalizedLeadCount) * 100) : 0;
       const scheduleCompletionRate = commercialScheduled > 0 ? Math.round((commercialCompleted / commercialScheduled) * 100) : 0;
       const noShowRate = commercialScheduled > 0 ? Math.max(0, 100 - scheduleCompletionRate) : 0;
+      const hasFinanceSummary = Boolean(financeSummary?.financials);
+      const financeReceivedFallback = receivedRevenue > 0 ? receivedRevenue : nextMetrics.revenueReceived;
+      const financeReceived = finiteNumber(financeSummary?.financials?.received?.amount, financeReceivedFallback);
+      const financeOverdueAmount = finiteNumber(financeSummary?.financials?.overdue?.amount, delinquencyAmount);
+      const financeOverdueCount = finiteNumber(financeSummary?.financials?.overdue?.count, overdueRows.length);
+      const financeForecastAmount = finiteNumber(financeSummary?.financials?.forecast?.amount, financeForecast);
+      const financeForecastCount = finiteNumber(financeSummary?.financials?.forecast?.count, forecastRows.length);
+      const financeOpenChargesAmount = finiteNumber(financeSummary?.financials?.openCharges?.amount, openChargesAmount);
+      const financeOpenChargesCount = finiteNumber(financeSummary?.financials?.openCharges?.count, openRevenueRows.length);
+      const financeDelinquencyRate = finiteNumber(
+        financeSummary?.financials?.delinquency?.rate,
+        financeOpenChargesAmount > 0 ? Math.round((financeOverdueAmount / financeOpenChargesAmount) * 1000) / 10 : 0
+      );
+      const financeMarketingSpend = finiteNumber(financeSummary?.financials?.expenses?.marketing?.amount, marketingSpend);
+      const financeFixedCosts = finiteNumber(financeSummary?.financials?.expenses?.fixed?.amount, fixedCosts);
+      const forecastBuckets = sanitizeForecastBuckets(financeSummary?.financials?.forecastBuckets);
+      const overdueAging = sanitizeOverdueAging(financeSummary?.financials?.overdueAging);
+      const riskItems = sanitizeRiskItems(financeSummary?.financials?.riskItems);
+      const collectionPlans = sanitizeCollectionPlans(financeSummary?.collectionsFollowup?.recentPlans);
+      const commercialForecast = sanitizeCommercialForecast(financeSummary?.commercialForecast);
+      const unitEconomics = sanitizeUnitEconomics(financeSummary?.unitEconomics);
+      const reconciliationTotals = financeSummary?.revenueReconciliation?.report?.totals;
 
       nextMetrics.clientCount = normalizedClientCount;
-      nextMetrics.estimatedLtv = normalizedClientCount > 0 ? revenueBase / normalizedClientCount : 0;
-      nextMetrics.delinquencyAmount = delinquencyAmount;
-      nextMetrics.delinquencyCount = overdueRows.length;
-      nextMetrics.fixedCosts = fixedCosts;
-      nextMetrics.marketingSpend = marketingSpend;
+      nextMetrics.estimatedLtv = normalizedClientCount > 0 ? financeReceived / normalizedClientCount : 0;
+      nextMetrics.delinquencyAmount = financeOverdueAmount;
+      nextMetrics.delinquencyCount = financeOverdueCount;
+      nextMetrics.delinquencyRate = financeDelinquencyRate;
+      nextMetrics.financeForecast = financeForecastAmount;
+      nextMetrics.financeForecastCount = financeForecastCount;
+      nextMetrics.openChargesAmount = financeOpenChargesAmount;
+      nextMetrics.openChargesCount = financeOpenChargesCount;
+      nextMetrics.fixedCosts = financeFixedCosts;
+      nextMetrics.marketingSpend = financeMarketingSpend;
       nextMetrics.leadCount = normalizedLeadCount;
       nextMetrics.costPerLead = normalizedLeadCount > 0 ? nextMetrics.marketingSpend / normalizedLeadCount : 0;
       nextMetrics.leadConversionRate = normalizedLeadCount > 0 ? Math.round((nextMetrics.activeContracts / normalizedLeadCount) * 1000) / 10 : 0;
-      nextMetrics.marketingRoas = nextMetrics.marketingSpend > 0 ? revenueBase / nextMetrics.marketingSpend : 0;
+      nextMetrics.marketingRoas = nextMetrics.marketingSpend > 0 ? financeReceived / nextMetrics.marketingSpend : 0;
       nextMetrics.commercialScheduled = commercialScheduled;
       nextMetrics.commercialCompleted = commercialCompleted;
       nextMetrics.leadToScheduleRate = leadToScheduleRate;
       nextMetrics.scheduleCompletionRate = scheduleCompletionRate;
       nextMetrics.noShowRate = noShowRate;
       nextMetrics.operationRate = Math.max(0, 100 - noShowRate);
-      nextMetrics.revenueReceived = receivedRevenue > 0 ? receivedRevenue : nextMetrics.revenueReceived;
+      nextMetrics.revenueReceived = hasFinanceSummary ? financeReceived : financeReceivedFallback;
       nextMetrics.leadSources = leadSources;
+      nextMetrics.collectionsFollowupPlansCount = finiteNumber(financeSummary?.collectionsFollowup?.totalPlans, collectionPlans.length);
+      nextMetrics.collectionsFollowupHighPriorityCount = finiteNumber(financeSummary?.collectionsFollowup?.highPriorityPlans, collectionPlans.filter((plan) => normalizeMetricText(plan.priority) === "high").length);
+      nextMetrics.collectionsFollowupPlans = collectionPlans;
+      nextMetrics.financeForecastBuckets = forecastBuckets;
+      nextMetrics.financeOverdueAging = overdueAging;
+      nextMetrics.financeRiskItems = riskItems;
+      nextMetrics.commercialForecastAvailable = commercialForecast.available;
+      nextMetrics.commercialForecastPipelineAmount = commercialForecast.pipelineAmount;
+      nextMetrics.commercialForecastPendingContractsAmount = commercialForecast.pendingContracts.amount;
+      nextMetrics.commercialForecastPendingContractsCount = commercialForecast.pendingContracts.count;
+      nextMetrics.commercialForecastClosedContractsAmount = commercialForecast.closedContracts.amount;
+      nextMetrics.commercialForecastClosedContractsCount = commercialForecast.closedContracts.count;
+      nextMetrics.commercialForecastLostAmount = commercialForecast.lostAmount;
+      nextMetrics.commercialForecastStages = commercialForecast.byStage;
+      nextMetrics.commercialForecastTopOpportunities = commercialForecast.topOpportunities;
+      nextMetrics.revenueReconciliationMatched = finiteNumber(reconciliationTotals?.matched, 0);
+      nextMetrics.revenueReconciliationPartial = finiteNumber(reconciliationTotals?.partial, 0);
+      nextMetrics.revenueReconciliationBlocked = finiteNumber(reconciliationTotals?.blocked, 0);
+      nextMetrics.revenueReconciliationOpenedCaseRevenue = finiteNumber(reconciliationTotals?.openedCaseRevenue, 0);
+      nextMetrics.unitGrossRevenue = unitEconomics.grossRevenue;
+      nextMetrics.unitDirectCosts = unitEconomics.directCosts;
+      nextMetrics.unitCommissions = unitEconomics.commissions;
+      nextMetrics.unitEstimatedProfit = unitEconomics.estimatedProfit;
+      nextMetrics.unitEstimatedMarginRate = unitEconomics.estimatedMarginRate;
+      nextMetrics.unitEconomicsByCase = unitEconomics.byCase;
+      nextMetrics.unitEconomicsByLegalArea = unitEconomics.byLegalArea;
+      nextMetrics.unitCommissionsByOwner = unitEconomics.commissionsBreakdown.byOwner;
+      nextMetrics.unitCommissionsByOrigin = unitEconomics.commissionsBreakdown.byOrigin;
 
       const { data: processTasks, error: processTasksError } = await supabase
         .from('process_tasks')
@@ -1487,6 +2404,7 @@ export default function DashboardHomePage() {
           {/* Dropdown Personalizado do Módulo */}
           <div className="relative">
             <button
+              data-testid="dashboard-module-switcher"
               onClick={() => setIsDropdownOpen(!isDropdownOpen)}
               className="flex items-center justify-between gap-4 bg-[#0a0a0a] border border-[#CCA761]/40 hover:border-[#CCA761] text-white px-5 py-2.5 rounded-xl transition-all shadow-[0_0_20px_rgba(204,167,97,0.15)] group min-w-[240px]"
             >
@@ -1502,6 +2420,7 @@ export default function DashboardHomePage() {
                 {TABS.map((tab) => (
                   <button
                     key={tab.id}
+                    data-testid={`dashboard-module-option-${tab.id}`}
                     onClick={() => { setActiveView(tab.id); setIsDropdownOpen(false); }}
                     className={`text-right px-6 py-3.5 text-[11px] font-bold uppercase tracking-widest transition-all hover:bg-white/5 border-l-2 ${activeView === tab.id ? "text-[#0a0a0a] bg-[#CCA761] hover:bg-[#b58e46] border-transparent" : "text-gray-400 hover:text-[#CCA761] border-transparent"
                       }`}
@@ -1528,7 +2447,13 @@ export default function DashboardHomePage() {
       {activeView === "comercial" && <ComercialView metrics={metrics} officeGoals={officeGoals} />}
       {activeView === "marketing" && <MarketingView metrics={metrics} />}
       {activeView === "processos" && <ProcessosView metrics={metrics} />}
-      {activeView === "financeiro" && <FinanceiroView metrics={metrics} />}
+      {activeView === "financeiro" && (
+        <FinanceiroView
+          metrics={metrics}
+          onGenerateCollectionPlan={handleGenerateCollectionPlan}
+          collectionPlanAction={collectionPlanAction}
+        />
+      )}
       {activeView === "agenda" && <AgendaView />}
 
       {["prazos", "equipe", "clientes"].includes(activeView) && (

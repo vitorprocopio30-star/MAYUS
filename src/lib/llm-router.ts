@@ -84,7 +84,7 @@ const MODELS: Record<LLMProvider, Record<LLMUseCase, string>> = {
     organizar_processo:       'qwen/qwen3.6-plus',
     gerar_peca:               'anthropic/claude-sonnet-4.6',
     task_manager:             'qwen/qwen3.6-plus',
-    sdr_whatsapp:             'deepseek/deepseek-v4-pro',
+    sdr_whatsapp:             'openai/gpt-5.4-nano',
   },
   anthropic: {
     chat_geral:               'claude-haiku-4-5-20251001',

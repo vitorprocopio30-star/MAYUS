@@ -1,5 +1,11 @@
 import { createClient } from "@supabase/supabase-js";
+import crypto from "node:crypto";
 import { createBrainArtifact } from "@/lib/brain/artifacts";
+import { createAgentAuditLog } from "@/lib/agent/audit";
+import {
+  buildBillingIdempotencyKey,
+  normalizeBillingEntities,
+} from "@/lib/agent/capabilities/billing-normalization";
 import { ZapSignService } from "@/lib/services/zapsign";
 import { EscavadorService } from "@/lib/services/escavador";
 import { executarCobranca } from "@/lib/agent/skills/asaas-cobrar";
@@ -13,6 +19,15 @@ import {
   getLegalCaseContextSnapshot,
   type LegalCaseContextSnapshot,
 } from "@/lib/lex/case-context";
+import { buildProcessMissionContext } from "@/lib/lex/process-mission-context";
+import {
+  buildCaseBrainInsights,
+  buildCaseBrainInsightsReply,
+  type CaseBrainInsights,
+  type CaseBrainDocumentEvidence,
+  type CaseBrainEvidence,
+  type CaseBrainMovementEvidence,
+} from "@/lib/lex/case-brain-insights";
 import {
   executeDraftFactoryForProcessTask,
   type DraftFactoryExecutionResult,
@@ -103,6 +118,11 @@ import {
   type MarketingOpsAssistantInput,
 } from "@/lib/growth/marketing-ops-assistant";
 import {
+  buildCollectionsFollowupArtifactMetadata,
+  buildCollectionsFollowupPlan,
+  type CollectionsFollowupInput,
+} from "@/lib/finance/collections-followup";
+import {
   buildMarketingCopywriterArtifactMetadata,
   buildMarketingCopywriterDraft,
 } from "@/lib/marketing/marketing-copywriter";
@@ -135,7 +155,7 @@ export interface DispatchCapabilityInput {
 }
 
 export interface DispatchCapabilityResult {
-  status: "executed" | "blocked" | "failed" | "unsupported";
+  status: "executed" | "blocked" | "failed" | "unsupported" | "awaiting_approval";
   reply: string;
   data?: unknown;
   outputPayload?: Record<string, unknown>;
@@ -191,6 +211,40 @@ type TenantLegalTemplateReviewRecord = {
   template_mode?: string | null;
   structure_markdown?: string | null;
   guidance_notes?: string | null;
+};
+
+type CaseBrainDocumentRow = {
+  id: string;
+  name: string;
+  document_type: string | null;
+  extraction_status: string | null;
+  folder_label: string | null;
+  modified_at: string | null;
+};
+
+type CaseBrainDocumentContentRow = {
+  process_document_id: string;
+  excerpt: string | null;
+  extraction_status: string | null;
+};
+
+type CaseBrainMovementInboxRow = {
+  latest_data: string | null;
+  latest_conteudo: string | null;
+  latest_fonte: string | null;
+  latest_created_at: string | null;
+  movimentacoes: unknown;
+};
+
+type CaseBrainMovementRow = {
+  data: string | null;
+  conteudo: string | null;
+  fonte: string | null;
+  tipo_evento: string | null;
+  requer_acao: boolean | null;
+  acao_sugerida: string | null;
+  confianca_analise: string | null;
+  created_at: string | null;
 };
 
 type MarketingOpsStateRecord = {
@@ -910,29 +964,126 @@ async function runProposalGenerate(input: DispatchCapabilityInput): Promise<Disp
   };
 }
 
+async function findExistingBillingByIdempotencyKey(tenantId: string, billingIdempotencyKey: string) {
+  const { data } = await serviceSupabase
+    .from("brain_artifacts")
+    .select("id, title, storage_url, metadata, created_at")
+    .eq("tenant_id", tenantId)
+    .eq("artifact_type", "asaas_billing")
+    .eq("metadata->>billing_idempotency_key", billingIdempotencyKey)
+    .order("created_at", { ascending: false })
+    .limit(1)
+    .maybeSingle<{
+      id: string;
+      title: string | null;
+      storage_url: string | null;
+      metadata: Record<string, unknown> | null;
+      created_at: string;
+    }>();
+
+  return data || null;
+}
+
 async function runAsaasBilling(input: DispatchCapabilityInput): Promise<DispatchCapabilityResult> {
-  const commercialContext = await resolveCommercialContext(input);
-  const valor = Number.isFinite(parseNumber(input.entities.valor))
-    ? parseNumber(input.entities.valor)
+  const normalizedBilling = normalizeBillingEntities(input.entities);
+  if (normalizedBilling.errors.length > 0) {
+    return {
+      status: "failed",
+      reply: normalizedBilling.errors[0],
+      outputPayload: {
+        auditLogId: input.auditLogId || null,
+        handler_type: input.handlerType,
+        billing_validation_error: normalizedBilling.errors[0],
+      },
+    };
+  }
+
+  const normalizedInput = {
+    ...input,
+    entities: normalizedBilling.entities,
+  };
+  const commercialContext = await resolveCommercialContext(normalizedInput);
+  const valor = Number.isFinite(parseNumber(normalizedInput.entities.valor))
+    ? parseNumber(normalizedInput.entities.valor)
     : commercialContext.amount ?? NaN;
   const nomeResolvido =
-    getStringValue(input.entities.nome_cliente) ||
+    getStringValue(normalizedInput.entities.nome_cliente) ||
     extractBillingNameFromHistory(input.history) ||
     commercialContext.clientName ||
     undefined;
+
+  if (!Number.isFinite(valor) || valor <= 0) {
+    return {
+      status: "failed",
+      reply: "Valor da cobranca precisa ser positivo.",
+      outputPayload: {
+        auditLogId: input.auditLogId || null,
+        handler_type: input.handlerType,
+        billing_validation_error: "invalid_amount",
+      },
+    };
+  }
+
+  const clientKey =
+    commercialContext.client?.id ||
+    commercialContext.customerId ||
+    getStringValue(normalizedInput.entities.customer_id) ||
+    nomeResolvido ||
+    null;
+
+  if (!clientKey) {
+    return {
+      status: "failed",
+      reply: "Nao foi possivel identificar o cliente da cobranca.",
+      outputPayload: {
+        auditLogId: input.auditLogId || null,
+        handler_type: input.handlerType,
+        billing_validation_error: "missing_client",
+      },
+    };
+  }
+
+  const originKey =
+    commercialContext.crmTask?.id ||
+    normalizedInput.brainContext?.taskId ||
+    normalizedInput.auditLogId ||
+    normalizedInput.capabilityName;
+  const billingIdempotencyKey = buildBillingIdempotencyKey({
+    tenantId: input.tenantId,
+    clientKey,
+    amount: valor,
+    dueDate: normalizedInput.entities.vencimento,
+    originKey,
+  });
+  const existingBilling = await findExistingBillingByIdempotencyKey(input.tenantId, billingIdempotencyKey);
+  if (existingBilling) {
+    return {
+      status: "blocked",
+      reply: "Cobranca duplicada bloqueada: ja existe uma cobranca com mesmo cliente, valor, vencimento e origem.",
+      outputPayload: {
+        auditLogId: input.auditLogId || null,
+        handler_type: input.handlerType,
+        billing_duplicate: true,
+        billing_artifact_id: existingBilling.id,
+        billing_idempotency_key: billingIdempotencyKey,
+      },
+      data: existingBilling,
+    };
+  }
+
   const result = await executarCobranca({
     tenantId: input.tenantId,
-    customer_id: input.entities.customer_id || commercialContext.customerId || undefined,
+    customer_id: normalizedInput.entities.customer_id || commercialContext.customerId || undefined,
     nome_cliente: nomeResolvido,
-    cpf_cnpj: input.entities.cpf_cnpj || commercialContext.document || undefined,
-    email: input.entities.email || commercialContext.email || undefined,
+    cpf_cnpj: normalizedInput.entities.cpf_cnpj || commercialContext.document || undefined,
+    email: normalizedInput.entities.email || commercialContext.email || undefined,
     valor,
-    vencimento: input.entities.vencimento,
-    descricao: input.entities.descricao,
-    billing_type: input.entities.billing_type as "BOLETO" | "PIX" | "UNDEFINED" | undefined,
-    parcelas: input.entities.parcelas ? Number(input.entities.parcelas) : undefined,
-    recorrente: input.entities.recorrente === "true",
-    ciclo: input.entities.ciclo as "WEEKLY" | "BIWEEKLY" | "MONTHLY" | "QUARTERLY" | "SEMIANNUALLY" | "YEARLY" | undefined,
+    vencimento: normalizedInput.entities.vencimento,
+    descricao: normalizedInput.entities.descricao,
+    billing_type: normalizedInput.entities.billing_type as "BOLETO" | "CREDIT_CARD" | "PIX" | "UNDEFINED" | undefined,
+    parcelas: normalizedInput.entities.parcelas ? Number(normalizedInput.entities.parcelas) : undefined,
+    recorrente: normalizedInput.entities.recorrente === "true",
+    ciclo: normalizedInput.entities.ciclo as "WEEKLY" | "BIWEEKLY" | "MONTHLY" | "QUARTERLY" | "SEMIANNUALLY" | "YEARLY" | undefined,
   });
 
   if (!result.success) {
@@ -941,42 +1092,47 @@ async function runAsaasBilling(input: DispatchCapabilityInput): Promise<Dispatch
 
   const paymentUrl = result.invoiceUrl ?? result.bankSlipUrl ?? result.paymentLink ?? null;
 
-  await registerArtifact(input, {
+  await registerArtifact(normalizedInput, {
     artifactType: "asaas_billing",
-    title: `Cobranca ${nomeResolvido || input.entities.customer_id || result.cobrancaId || "cliente"}`,
+    title: `Cobranca ${nomeResolvido || normalizedInput.entities.customer_id || result.cobrancaId || "cliente"}`,
     storageUrl: paymentUrl,
     mimeType: "text/uri-list",
-    dedupeKey: input.auditLogId ? `asaas:${input.auditLogId}` : `asaas:${result.cobrancaId || paymentUrl || input.capabilityName}`,
+    dedupeKey: billingIdempotencyKey,
     metadata: {
-      customer_id: result.asaasCustomerId || input.entities.customer_id || null,
+      billing_idempotency_key: billingIdempotencyKey,
+      billing_status: "created",
+      status_inicial: "created",
+      customer_id: result.asaasCustomerId || normalizedInput.entities.customer_id || null,
       nome_cliente: result.clientName || nomeResolvido || null,
       cobranca_id: result.cobrancaId || null,
       invoice_url: result.invoiceUrl || null,
       bank_slip_url: result.bankSlipUrl || null,
       payment_link: result.paymentLink || null,
       client_id: result.clientId || null,
-      asaas_customer_id: result.asaasCustomerId || input.entities.customer_id || null,
+      asaas_customer_id: result.asaasCustomerId || normalizedInput.entities.customer_id || null,
       crm_task_id: commercialContext.crmTask?.id || null,
       crm_pipeline_id: commercialContext.crmTask?.pipeline_id || null,
       crm_stage_id: commercialContext.crmTask?.stage_id || null,
       assigned_to: commercialContext.crmTask?.assigned_to || null,
       phone: commercialContext.phone,
-      sector: commercialContext.crmTask?.sector || input.entities.sector || null,
-      legal_area: input.entities.legal_area || input.entities.area || input.entities.segmento || null,
+      sector: commercialContext.crmTask?.sector || normalizedInput.entities.sector || null,
+      legal_area: normalizedInput.entities.legal_area || normalizedInput.entities.area || normalizedInput.entities.segmento || null,
       proposal_source: commercialContext.crmTask ? "crm_task" : input.brainContext?.taskId ? "brain_task" : null,
       valor: Number.isFinite(valor) ? valor : null,
-      parcelas: input.entities.parcelas ? Number(input.entities.parcelas) : 1,
-      billing_type: input.entities.billing_type || null,
-      vencimento: input.entities.vencimento || null,
+      parcelas: normalizedInput.entities.parcelas ? Number(normalizedInput.entities.parcelas) : 1,
+      billing_type: normalizedInput.entities.billing_type || null,
+      vencimento: normalizedInput.entities.vencimento || null,
+      defaulted_fields: normalizedBilling.defaultedFields,
     },
   });
 
-  await registerLearningEvent(input, "billing_created", {
+  await registerLearningEvent(normalizedInput, "billing_created", {
     cobranca_id: result.cobrancaId || null,
-    asaas_customer_id: result.asaasCustomerId || input.entities.customer_id || null,
+    asaas_customer_id: result.asaasCustomerId || normalizedInput.entities.customer_id || null,
     client_id: result.clientId || null,
     crm_task_id: commercialContext.crmTask?.id || null,
     value: Number.isFinite(valor) ? valor : null,
+    billing_idempotency_key: billingIdempotencyKey,
   });
 
   return {
@@ -992,10 +1148,100 @@ async function runAsaasBilling(input: DispatchCapabilityInput): Promise<Dispatch
       bank_slip_url: result.bankSlipUrl || null,
       payment_link: result.paymentLink || null,
       client_id: result.clientId || null,
-      asaas_customer_id: result.asaasCustomerId || input.entities.customer_id || null,
+      asaas_customer_id: result.asaasCustomerId || normalizedInput.entities.customer_id || null,
       crm_task_id: commercialContext.crmTask?.id || null,
+      billing_idempotency_key: billingIdempotencyKey,
+      billing_status: "created",
     },
     data: result,
+  };
+}
+
+async function runFinanceCollectionsFollowup(input: DispatchCapabilityInput): Promise<DispatchCapabilityResult> {
+  const commercialContext = await resolveCommercialContext(input);
+  const amount =
+    toNullableNumber(input.entities.amount) ??
+    toNullableNumber(input.entities.valor) ??
+    toNullableNumber(input.entities.value) ??
+    commercialContext.amount;
+  const clientName =
+    getStringValue(input.entities.client_name) ||
+    getStringValue(input.entities.nome_cliente) ||
+    getStringValue(input.entities.lead_name) ||
+    commercialContext.clientName;
+  const crmTaskId = commercialContext.crmTask?.id || getStringValue(input.entities.crm_task_id);
+  const billingArtifactId =
+    commercialContext.billingArtifact?.id ||
+    getStringValue(input.entities.billing_artifact_id) ||
+    getStringValue(input.entities.asaas_billing_id);
+  const plan = buildCollectionsFollowupPlan({
+    clientName,
+    legalArea: getStringValue(input.entities.legal_area) || commercialContext.crmTask?.sector || null,
+    amount,
+    daysOverdue: input.entities.days_overdue || input.entities.dias_atraso || input.entities.delay_days,
+    dueDate: input.entities.due_date || input.entities.vencimento,
+    stage: input.entities.collection_stage || input.entities.stage || input.entities.status,
+    tone: input.entities.tone || input.entities.tom,
+    channel: input.entities.channel || input.entities.canal,
+    notes: input.entities.notes || input.entities.observacao || input.entities.context,
+    paymentPromiseAt: input.entities.payment_promise_at || input.entities.promessa_pagamento,
+    nextContactAt: input.entities.next_contact_at || input.entities.proximo_contato,
+  } satisfies CollectionsFollowupInput);
+  const metadata = buildCollectionsFollowupArtifactMetadata({
+    crmTaskId,
+    billingArtifactId,
+    financialId: getStringValue(input.entities.financial_id),
+    plan,
+  });
+
+  await registerArtifact(input, {
+    artifactType: "collections_followup_plan",
+    title: `Cobranca supervisionada - ${plan.clientName}`,
+    mimeType: "application/json",
+    dedupeKey: input.auditLogId
+      ? `collections-followup:${input.auditLogId}`
+      : crmTaskId
+        ? `collections-followup:${crmTaskId}:${plan.stage}:${plan.dueDate || "sem-vencimento"}`
+        : null,
+    metadata,
+  });
+
+  await registerLearningEvent(input, "collections_followup_plan_created", {
+    crm_task_id: crmTaskId || null,
+    billing_artifact_id: billingArtifactId || null,
+    financial_id: metadata.financial_id,
+    client_name: plan.clientName,
+    collection_stage: plan.stage,
+    collection_priority: plan.priority,
+    amount: plan.amount,
+    days_overdue: plan.daysOverdue,
+    payment_promise_at: plan.promiseTracking.paymentPromiseAt,
+    next_contact_at: plan.promiseTracking.nextContactAt,
+    external_side_effects_blocked: true,
+  });
+
+  return {
+    status: "executed",
+    reply: [
+      `Plano de cobranca supervisionada criado para ${plan.clientName}.`,
+      `Estagio: ${plan.stage}. Prioridade: ${plan.priority}.`,
+      `Mensagem sugerida: ${plan.suggestedFirstMessage}`,
+      "Nenhum envio externo foi feito; a mensagem precisa de revisao/aprovacao humana.",
+    ].join("\n"),
+    outputPayload: {
+      auditLogId: input.auditLogId || null,
+      handler_type: input.handlerType,
+      crm_task_id: crmTaskId || null,
+      billing_artifact_id: billingArtifactId || null,
+      collection_stage: plan.stage,
+      collection_priority: plan.priority,
+      days_overdue: plan.daysOverdue,
+      payment_promise_at: plan.promiseTracking.paymentPromiseAt,
+      next_contact_at: plan.promiseTracking.nextContactAt,
+      external_side_effects_blocked: true,
+      requires_human_approval: true,
+    },
+    data: plan,
   };
 }
 
@@ -2804,6 +3050,7 @@ async function runLegalCaseContext(input: DispatchCapabilityInput): Promise<Disp
     tenantId: input.tenantId,
     entities: input.entities,
   });
+  const processMissionContext = buildProcessMissionContext(snapshot);
   const reply = buildLegalCaseContextReply(snapshot);
   const summary = `Contexto juridico resolvido para ${snapshot.processTask.processNumber || snapshot.processTask.title}.`;
 
@@ -2828,6 +3075,7 @@ async function runLegalCaseContext(input: DispatchCapabilityInput): Promise<Disp
       first_draft_status: snapshot.firstDraft.status,
       first_draft_stale: snapshot.firstDraft.isStale,
       first_draft_artifact_id: snapshot.firstDraft.artifactId,
+      process_mission_context: processMissionContext,
     },
   });
 
@@ -2840,6 +3088,8 @@ async function runLegalCaseContext(input: DispatchCapabilityInput): Promise<Disp
     recommended_piece_label: snapshot.caseBrain.recommendedPieceLabel,
     first_draft_status: snapshot.firstDraft.status,
     first_draft_stale: snapshot.firstDraft.isStale,
+    process_mission_confidence: processMissionContext.confidence,
+    process_mission_recommended_action: processMissionContext.recommendedAction,
   });
 
   return {
@@ -2853,8 +3103,894 @@ async function runLegalCaseContext(input: DispatchCapabilityInput): Promise<Disp
       first_draft_status: snapshot.firstDraft.status,
       first_draft_stale: snapshot.firstDraft.isStale,
       recommended_piece_label: snapshot.caseBrain.recommendedPieceLabel,
+      process_mission_confidence: processMissionContext.confidence,
+      process_mission_recommended_action: processMissionContext.recommendedAction,
+      process_mission_goal: processMissionContext.missionGoal,
     },
     data: snapshot,
+  };
+}
+
+function formatProcessMissionRecommendedAction(action: ReturnType<typeof buildProcessMissionContext>["recommendedAction"]) {
+  switch (action) {
+    case "refresh_document_memory":
+      return "Atualizar memoria documental";
+    case "generate_first_draft":
+      return "Gerar primeira minuta";
+    case "review_existing_draft":
+      return "Revisar minuta existente";
+    case "collect_missing_documents":
+      return "Coletar/organizar documentos pendentes";
+    case "human_review":
+      return "Revisao humana antes de agir";
+    default:
+      return "Consolidar contexto do caso";
+  }
+}
+
+function buildProcessMissionPlanReply(context: ReturnType<typeof buildProcessMissionContext>) {
+  const processLabel = context.process.processNumber || context.process.title;
+  return [
+    "## Missao agentica do processo",
+    `- Processo: ${processLabel}`,
+    context.process.clientName ? `- Cliente: ${context.process.clientName}` : null,
+    context.status.currentPhase ? `- Fase atual: ${context.status.currentPhase}` : null,
+    context.status.progressSummary ? `- Resumo operacional: ${context.status.progressSummary}` : null,
+    `- Confianca: ${context.confidence}`,
+    `- Acao recomendada: ${formatProcessMissionRecommendedAction(context.recommendedAction)}`,
+    `- Objetivo da missao: ${context.missionGoal}`,
+    context.status.nextStep ? `- Proximo passo: ${context.status.nextStep}` : null,
+    context.status.pendingItems.length > 0
+      ? `- Pendencias: ${context.status.pendingItems.join("; ")}`
+      : "- Pendencias: nenhuma pendencia critica registrada",
+    `- Memoria documental: ${context.documents.freshness}${context.documents.lastSyncedAt ? ` em ${formatDateTimeLabel(context.documents.lastSyncedAt)}` : ""}`,
+    context.draft.recommendedPiece ? `- Peca/minuta sugerida: ${context.draft.recommendedPiece}` : null,
+    context.grounding.factualSources.length > 0
+      ? `- Fontes: ${context.grounding.factualSources.join("; ")}`
+      : null,
+    context.grounding.inferenceNotes.length > 0
+      ? `- Inferencias: ${context.grounding.inferenceNotes.join("; ")}`
+      : "- Inferencias: sem inferencias relevantes",
+    context.grounding.missingSignals.length > 0
+      ? `- Sinais faltantes: ${context.grounding.missingSignals.join("; ")}`
+      : null,
+    "- Execucao: plano registrado sem side effects externos. Acoes juridicas, Drive, minuta, publicacao ou comunicacao externa seguem supervisionadas.",
+  ].filter(Boolean).join("\n");
+}
+
+async function runLegalProcessMissionPlan(input: DispatchCapabilityInput): Promise<DispatchCapabilityResult> {
+  const snapshot = await getLegalCaseContextSnapshot({
+    tenantId: input.tenantId,
+    entities: input.entities,
+  });
+  const processMissionContext = buildProcessMissionContext(snapshot);
+  const reply = buildProcessMissionPlanReply(processMissionContext);
+  const processLabel = snapshot.processTask.processNumber || snapshot.processTask.title;
+  const summary = `Missao agentica planejada para ${processLabel}: ${formatProcessMissionRecommendedAction(processMissionContext.recommendedAction)}.`;
+
+  await registerArtifact(input, {
+    artifactType: "process_mission_plan",
+    title: `Missao processual - ${snapshot.processTask.clientName || snapshot.processTask.title}`,
+    mimeType: "application/json",
+    dedupeKey: input.auditLogId
+      ? `process-mission-plan:${input.auditLogId}`
+      : `process-mission-plan:${snapshot.processTask.id}:${processMissionContext.recommendedAction}:${processMissionContext.confidence}`,
+    metadata: {
+      reply,
+      summary,
+      process_task_id: snapshot.processTask.id,
+      process_number: snapshot.processTask.processNumber,
+      process_label: processLabel,
+      client_name: snapshot.processTask.clientName,
+      case_brain_task_id: snapshot.caseBrain.taskId,
+      process_mission_context: processMissionContext,
+      process_mission_confidence: processMissionContext.confidence,
+      process_mission_recommended_action: processMissionContext.recommendedAction,
+      process_mission_goal: processMissionContext.missionGoal,
+      external_side_effects_blocked: true,
+    },
+  });
+
+  await registerLearningEvent(input, "process_mission_plan_created", {
+    summary,
+    process_task_id: snapshot.processTask.id,
+    process_number: snapshot.processTask.processNumber,
+    client_name: snapshot.processTask.clientName,
+    case_brain_task_id: snapshot.caseBrain.taskId,
+    confidence: processMissionContext.confidence,
+    recommended_action: processMissionContext.recommendedAction,
+    mission_goal: processMissionContext.missionGoal,
+    factual_sources: processMissionContext.grounding.factualSources,
+    inference_notes: processMissionContext.grounding.inferenceNotes,
+    missing_signals: processMissionContext.grounding.missingSignals,
+    external_side_effects_blocked: true,
+  });
+
+  return {
+    status: "executed",
+    reply,
+    outputPayload: {
+      auditLogId: input.auditLogId || null,
+      handler_type: input.handlerType,
+      process_task_id: snapshot.processTask.id,
+      process_number: snapshot.processTask.processNumber,
+      case_brain_task_id: snapshot.caseBrain.taskId,
+      process_mission_confidence: processMissionContext.confidence,
+      process_mission_recommended_action: processMissionContext.recommendedAction,
+      process_mission_goal: processMissionContext.missionGoal,
+      factual_source_count: processMissionContext.grounding.factualSources.length,
+      missing_signal_count: processMissionContext.grounding.missingSignals.length,
+      external_side_effects_blocked: true,
+    },
+    data: {
+      snapshot,
+      processMissionContext,
+    },
+  };
+}
+
+function cleanEvidenceString(value: unknown) {
+  return typeof value === "string" && value.trim().length > 0 ? value.trim() : null;
+}
+
+function normalizeMovementEvidenceItem(value: unknown): CaseBrainMovementEvidence | null {
+  if (!value || typeof value !== "object" || Array.isArray(value)) return null;
+  const item = value as Record<string, unknown>;
+  const content = cleanEvidenceString(item.conteudo) || cleanEvidenceString(item.content) || cleanEvidenceString(item.texto);
+  if (!content) return null;
+
+  return {
+    date: cleanEvidenceString(item.data) || cleanEvidenceString(item.date) || cleanEvidenceString(item.created_at),
+    content,
+    source: cleanEvidenceString(item.fonte) || cleanEvidenceString(item.source),
+    eventType: cleanEvidenceString(item.tipo_evento) || cleanEvidenceString(item.event_type),
+    requiresAction: item.requer_acao === true || item.requires_action === true,
+    suggestedAction: cleanEvidenceString(item.acao_sugerida) || cleanEvidenceString(item.suggested_action),
+    confidence: cleanEvidenceString(item.confianca_analise) || cleanEvidenceString(item.confidence),
+  };
+}
+
+async function loadCaseBrainDocumentEvidence(params: { tenantId: string; processTaskId: string }): Promise<CaseBrainDocumentEvidence[]> {
+  try {
+    const { data: documents, error } = await serviceSupabase
+      .from("process_documents")
+      .select("id, name, document_type, extraction_status, folder_label, modified_at")
+      .eq("tenant_id", params.tenantId)
+      .eq("process_task_id", params.processTaskId)
+      .order("modified_at", { ascending: false })
+      .limit(12);
+
+    if (error || !documents?.length) return [];
+
+    const rows = documents as CaseBrainDocumentRow[];
+    const ids = rows.map((document) => document.id).filter(Boolean);
+    const contentsByDocumentId = new Map<string, CaseBrainDocumentContentRow>();
+
+    if (ids.length > 0) {
+      const { data: contents } = await serviceSupabase
+        .from("process_document_contents")
+        .select("process_document_id, excerpt, extraction_status")
+        .in("process_document_id", ids);
+
+      for (const content of (contents || []) as CaseBrainDocumentContentRow[]) {
+        contentsByDocumentId.set(content.process_document_id, content);
+      }
+    }
+
+    return rows.map((document) => {
+      const content = contentsByDocumentId.get(document.id);
+      return {
+        id: document.id,
+        name: document.name,
+        documentType: document.document_type,
+        folderLabel: document.folder_label,
+        modifiedAt: document.modified_at,
+        extractionStatus: content?.extraction_status || document.extraction_status,
+        excerpt: content?.excerpt || null,
+      };
+    });
+  } catch {
+    return [];
+  }
+}
+
+async function loadCaseBrainMovementEvidence(params: { tenantId: string; processNumber: string | null }): Promise<CaseBrainMovementEvidence[]> {
+  if (!params.processNumber) return [];
+  const movements: CaseBrainMovementEvidence[] = [];
+
+  try {
+    const { data } = await serviceSupabase
+      .from("process_movimentacoes")
+      .select("data, conteudo, fonte, tipo_evento, requer_acao, acao_sugerida, confianca_analise, created_at")
+      .eq("tenant_id", params.tenantId)
+      .eq("numero_cnj", params.processNumber)
+      .order("data", { ascending: false })
+      .limit(10);
+
+    for (const row of (data || []) as CaseBrainMovementRow[]) {
+      if (!row.conteudo) continue;
+      movements.push({
+        date: row.data || row.created_at,
+        content: row.conteudo,
+        source: row.fonte,
+        eventType: row.tipo_evento,
+        requiresAction: row.requer_acao === true,
+        suggestedAction: row.acao_sugerida,
+        confidence: row.confianca_analise,
+      });
+    }
+  } catch {
+    // Structured movement history is optional across tenants/migrations.
+  }
+
+  try {
+    const { data } = await serviceSupabase
+      .from("process_movimentacoes_inbox")
+      .select("latest_data, latest_conteudo, latest_fonte, latest_created_at, movimentacoes")
+      .eq("tenant_id", params.tenantId)
+      .eq("numero_cnj", params.processNumber)
+      .maybeSingle<CaseBrainMovementInboxRow>();
+
+    if (data?.latest_conteudo) {
+      movements.push({
+        date: data.latest_data || data.latest_created_at,
+        content: data.latest_conteudo,
+        source: data.latest_fonte || "process_movimentacoes_inbox",
+        eventType: null,
+        requiresAction: false,
+        suggestedAction: null,
+        confidence: "medium",
+      });
+    }
+
+    if (Array.isArray(data?.movimentacoes)) {
+      for (const item of data.movimentacoes.slice(0, 8)) {
+        const movement = normalizeMovementEvidenceItem(item);
+        if (movement) movements.push(movement);
+      }
+    }
+  } catch {
+    // Inbox is best-effort and should not block Case Brain generation.
+  }
+
+  const seen = new Set<string>();
+  return movements.filter((movement) => {
+    const key = `${movement.date || "sem-data"}:${movement.content}`;
+    if (seen.has(key)) return false;
+    seen.add(key);
+    return true;
+  }).slice(0, 12);
+}
+
+async function loadCaseBrainEvidence(params: { tenantId: string; snapshot: LegalCaseContextSnapshot }): Promise<CaseBrainEvidence> {
+  const [documents, movements] = await Promise.all([
+    loadCaseBrainDocumentEvidence({ tenantId: params.tenantId, processTaskId: params.snapshot.processTask.id }),
+    loadCaseBrainMovementEvidence({ tenantId: params.tenantId, processNumber: params.snapshot.processTask.processNumber }),
+  ]);
+
+  return { documents, movements };
+}
+
+async function runLegalCaseBrainInsights(input: DispatchCapabilityInput): Promise<DispatchCapabilityResult> {
+  const snapshot = await getLegalCaseContextSnapshot({
+    tenantId: input.tenantId,
+    entities: input.entities,
+  });
+  const evidence = await loadCaseBrainEvidence({ tenantId: input.tenantId, snapshot });
+  const insights = buildCaseBrainInsights(snapshot, evidence);
+  const reply = buildCaseBrainInsightsReply(insights);
+  const summary = `Case Brain 2.0 gerado para ${insights.processLabel}: ${insights.risks.length} risco(s), ${insights.contradictions.length} contradicao(oes), ${insights.timeline.length} marco(s).`;
+
+  await registerArtifact(input, {
+    artifactType: "legal_case_brain_insights",
+    title: `Case Brain 2.0 - ${snapshot.processTask.clientName || snapshot.processTask.title}`,
+    mimeType: "application/json",
+    dedupeKey: input.auditLogId
+      ? `legal-case-brain-insights:${input.auditLogId}`
+      : `legal-case-brain-insights:${snapshot.processTask.id}:${snapshot.caseBrain.taskId || "sem-case-brain"}:${snapshot.documentMemory.lastSyncedAt || "sem-sync"}:${snapshot.firstDraft.artifactId || "sem-minuta"}`,
+    metadata: {
+      reply,
+      summary,
+      process_task_id: snapshot.processTask.id,
+      process_number: snapshot.processTask.processNumber,
+      client_name: snapshot.processTask.clientName,
+      current_phase: insights.currentPhase,
+      confidence: insights.confidence,
+      recommended_action: insights.recommendedAction,
+      timeline_count: insights.timeline.length,
+      risk_count: insights.risks.length,
+      contradiction_count: insights.contradictions.length,
+      likely_next_act_count: insights.likelyNextActs.length,
+      grounding_gap_count: insights.groundingGaps.length,
+      evidence_document_count: insights.evidence.documentCount,
+      evidence_movement_count: insights.evidence.movementCount,
+      insights,
+      external_side_effects_blocked: true,
+    },
+  });
+
+  await registerLearningEvent(input, "legal_case_brain_insights_created", {
+    summary,
+    process_task_id: snapshot.processTask.id,
+    process_number: snapshot.processTask.processNumber,
+    client_name: snapshot.processTask.clientName,
+    case_brain_task_id: snapshot.caseBrain.taskId,
+    confidence: insights.confidence,
+    recommended_action: insights.recommendedAction,
+    timeline_count: insights.timeline.length,
+    risk_count: insights.risks.length,
+    contradiction_count: insights.contradictions.length,
+    evidence_document_count: insights.evidence.documentCount,
+    evidence_movement_count: insights.evidence.movementCount,
+    grounding_gaps: insights.groundingGaps,
+    external_side_effects_blocked: true,
+  });
+
+  return {
+    status: "executed",
+    reply,
+    outputPayload: {
+      auditLogId: input.auditLogId || null,
+      handler_type: input.handlerType,
+      process_task_id: snapshot.processTask.id,
+      process_number: snapshot.processTask.processNumber,
+      case_brain_task_id: snapshot.caseBrain.taskId,
+      case_brain_insights_confidence: insights.confidence,
+      case_brain_recommended_action: insights.recommendedAction,
+      timeline_count: insights.timeline.length,
+      risk_count: insights.risks.length,
+      contradiction_count: insights.contradictions.length,
+      likely_next_act_count: insights.likelyNextActs.length,
+      grounding_gap_count: insights.groundingGaps.length,
+      evidence_document_count: insights.evidence.documentCount,
+      evidence_movement_count: insights.evidence.movementCount,
+      external_side_effects_blocked: true,
+    },
+    data: {
+      snapshot,
+      insights,
+    },
+  };
+}
+
+function buildProcessMissionExecutionBlockedReply(params: {
+  context: ReturnType<typeof buildProcessMissionContext>;
+  reason: string;
+}) {
+  const processLabel = params.context.process.processNumber || params.context.process.title;
+  return [
+    "## Execucao da missao processual",
+    `- Processo: ${processLabel}`,
+    `- Status: bloqueada para supervisao`,
+    `- Motivo: ${params.reason}`,
+    `- Confianca: ${params.context.confidence}`,
+    `- Acao recomendada: ${formatProcessMissionRecommendedAction(params.context.recommendedAction)}`,
+    `- Objetivo da missao: ${params.context.missionGoal}`,
+    "- Execucao: nenhum side effect externo foi realizado.",
+  ].join("\n");
+}
+
+function buildProcessMissionApprovalReply(params: {
+  context: ReturnType<typeof buildProcessMissionContext>;
+  proposedCapability: string;
+  proposedActionLabel: string;
+  caseBrainInsights?: CaseBrainInsights | null;
+}) {
+  const processLabel = params.context.process.processNumber || params.context.process.title;
+  const highRiskCount = params.caseBrainInsights?.risks.filter((risk) => risk.severity === "high").length || 0;
+  const highContradictionCount = params.caseBrainInsights?.contradictions.filter((item) => item.severity === "high").length || 0;
+  return [
+    "## Missao juridica supervisionada",
+    `- Processo: ${processLabel}`,
+    params.context.process.clientName ? `- Cliente: ${params.context.process.clientName}` : null,
+    `- Status: aguardando aprovacao humana`,
+    `- Acao proposta: ${params.proposedActionLabel}`,
+    `- Capability proposta: ${params.proposedCapability}`,
+    `- Confianca: ${params.context.confidence}`,
+    `- Objetivo da missao: ${params.context.missionGoal}`,
+    params.context.draft.recommendedPiece ? `- Peca sugerida: ${params.context.draft.recommendedPiece}` : null,
+    params.context.grounding.factualSources.length > 0
+      ? `- Fontes: ${params.context.grounding.factualSources.join("; ")}`
+      : null,
+    params.context.grounding.missingSignals.length > 0
+      ? `- Lacunas/sinais faltantes: ${params.context.grounding.missingSignals.join("; ")}`
+      : "- Lacunas/sinais faltantes: nenhuma lacuna critica registrada",
+    params.caseBrainInsights ? `- Case Brain 2.0: ${highRiskCount} risco(s) alto(s), ${highContradictionCount} contradicao(oes) alta(s), ${params.caseBrainInsights.groundingGaps.length} lacuna(s) de grounding` : null,
+    "- Guardrail: nenhuma minuta foi gerada ainda. A Draft Factory juridica so sera chamada se um aprovador autorizar.",
+  ].filter(Boolean).join("\n");
+}
+
+function buildProcessMissionApprovalAuditKey(input: DispatchCapabilityInput, context: ReturnType<typeof buildProcessMissionContext>) {
+  const raw = [
+    input.tenantId,
+    input.userId || "system",
+    input.auditLogId || "no-audit",
+    context.process.processTaskId,
+    context.recommendedAction,
+    Date.now(),
+    crypto.randomUUID(),
+  ].join(":");
+
+  return crypto.createHash("sha256").update(raw).digest("hex");
+}
+
+async function requestProcessMissionDraftApproval(
+  input: DispatchCapabilityInput,
+  params: {
+    snapshot: LegalCaseContextSnapshot;
+    context: ReturnType<typeof buildProcessMissionContext>;
+    caseBrainInsights?: CaseBrainInsights | null;
+  }
+): Promise<DispatchCapabilityResult> {
+  const proposedCapability = "legal_first_draft_generate";
+  const proposedHandlerType = "lex_first_draft_generate";
+  const proposedActionLabel = "Gerar primeira minuta juridica";
+  const processLabel = params.snapshot.processTask.processNumber || params.snapshot.processTask.title;
+  const reply = buildProcessMissionApprovalReply({
+    context: params.context,
+    proposedCapability,
+    proposedActionLabel,
+    caseBrainInsights: params.caseBrainInsights || null,
+  });
+  const highRiskCount = params.caseBrainInsights?.risks.filter((risk) => risk.severity === "high").length || 0;
+  const highContradictionCount = params.caseBrainInsights?.contradictions.filter((item) => item.severity === "high").length || 0;
+  const summary = `Missao processual de ${processLabel} pediu aprovacao para gerar primeira minuta.`;
+  const pendingEntities: Record<string, string> = {
+    process_task_id: params.snapshot.processTask.id,
+  };
+
+  if (params.snapshot.processTask.processNumber) {
+    pendingEntities.process_number = params.snapshot.processTask.processNumber;
+  }
+  if (params.snapshot.caseBrain.recommendedPieceInput) {
+    pendingEntities.recommended_piece_input = params.snapshot.caseBrain.recommendedPieceInput;
+  }
+  if (params.snapshot.caseBrain.recommendedPieceLabel) {
+    pendingEntities.recommended_piece_label = params.snapshot.caseBrain.recommendedPieceLabel;
+  }
+
+  if (!input.userId) {
+    const errorMessage = "Nao foi possivel abrir aprovacao juridica sem usuario solicitante autenticado.";
+    const blockedReply = buildProcessMissionExecutionBlockedReply({
+      context: params.context,
+      reason: errorMessage,
+    });
+    await registerProcessMissionStepResult(input, {
+      context: params.context,
+      status: "failed",
+      reply: blockedReply,
+      summary: `Falha ao abrir aprovacao para ${processLabel}.`,
+      errorMessage,
+    });
+
+    return {
+      status: "failed",
+      reply: blockedReply,
+      outputPayload: {
+        auditLogId: input.auditLogId || null,
+        handler_type: input.handlerType,
+        process_task_id: params.snapshot.processTask.id,
+        process_number: params.snapshot.processTask.processNumber,
+        process_mission_confidence: params.context.confidence,
+        process_mission_recommended_action: params.context.recommendedAction,
+        case_brain_risk_count: params.caseBrainInsights?.risks.length || 0,
+        case_brain_high_risk_count: highRiskCount,
+        case_brain_contradiction_count: params.caseBrainInsights?.contradictions.length || 0,
+        case_brain_high_contradiction_count: highContradictionCount,
+        proposed_capability: proposedCapability,
+        approval_error: errorMessage,
+        external_side_effects_blocked: true,
+      },
+      data: { snapshot: params.snapshot, processMissionContext: params.context },
+    };
+  }
+
+  const idempotencyKey = buildProcessMissionApprovalAuditKey(input, params.context);
+  const { id: approvalAuditLogId, error } = await createAgentAuditLog({
+    tenantId: input.tenantId,
+    userId: input.userId,
+    skillInvoked: proposedCapability,
+    intentionRaw: `Missao processual supervisionada: ${proposedActionLabel} para ${processLabel}`,
+    status: "awaiting_approval",
+    idempotencyKey,
+    approvalStatus: "pending",
+    approvalContext: {
+      risk_level: "high",
+      source_capability: input.capabilityName,
+      source_handler_type: input.handlerType,
+      proposed_capability: proposedCapability,
+      proposed_handler_type: proposedHandlerType,
+      process_task_id: params.snapshot.processTask.id,
+      process_number: params.snapshot.processTask.processNumber,
+      client_name: params.snapshot.processTask.clientName,
+      recommended_piece_label: params.snapshot.caseBrain.recommendedPieceLabel,
+      mission_goal: params.context.missionGoal,
+      confidence: params.context.confidence,
+      case_brain_insights_confidence: params.caseBrainInsights?.confidence || null,
+      case_brain_risk_count: params.caseBrainInsights?.risks.length || 0,
+      case_brain_high_risk_count: highRiskCount,
+      case_brain_contradiction_count: params.caseBrainInsights?.contradictions.length || 0,
+      case_brain_high_contradiction_count: highContradictionCount,
+      case_brain_grounding_gap_count: params.caseBrainInsights?.groundingGaps.length || 0,
+      factual_sources: params.context.grounding.factualSources,
+      missing_signals: params.context.grounding.missingSignals,
+      requested_at: new Date().toISOString(),
+    },
+    pendingExecutionPayload: {
+      entities: pendingEntities,
+      idempotencyKey,
+      skillName: proposedCapability,
+      schemaVersion: "1.0.0",
+      source: "legal_process_mission_execute_next",
+    },
+    idempotencyExpiresAt: new Date(Date.now() + 24 * 60 * 60 * 1000).toISOString(),
+  });
+
+  if (error || !approvalAuditLogId) {
+    const errorMessage = error || "Nao foi possivel criar a aprovacao supervisionada da minuta.";
+    const blockedReply = buildProcessMissionExecutionBlockedReply({
+      context: params.context,
+      reason: errorMessage,
+    });
+    await registerProcessMissionStepResult(input, {
+      context: params.context,
+      status: "failed",
+      reply: blockedReply,
+      summary: `Falha ao abrir aprovacao para ${processLabel}.`,
+      errorMessage,
+    });
+
+    return {
+      status: "failed",
+      reply: blockedReply,
+      outputPayload: {
+        auditLogId: input.auditLogId || null,
+        handler_type: input.handlerType,
+        process_task_id: params.snapshot.processTask.id,
+        process_number: params.snapshot.processTask.processNumber,
+        process_mission_confidence: params.context.confidence,
+        process_mission_recommended_action: params.context.recommendedAction,
+        case_brain_risk_count: params.caseBrainInsights?.risks.length || 0,
+        case_brain_high_risk_count: highRiskCount,
+        case_brain_contradiction_count: params.caseBrainInsights?.contradictions.length || 0,
+        case_brain_high_contradiction_count: highContradictionCount,
+        proposed_capability: proposedCapability,
+        approval_error: errorMessage,
+        external_side_effects_blocked: true,
+      },
+      data: { snapshot: params.snapshot, processMissionContext: params.context },
+    };
+  }
+
+  await registerProcessMissionStepResult(input, {
+    context: params.context,
+    status: "blocked",
+    reply,
+    summary,
+    executedCapability: proposedCapability,
+    executedHandlerType: proposedHandlerType,
+    stepOutputPayload: {
+      approval_audit_log_id: approvalAuditLogId,
+      proposed_capability: proposedCapability,
+      proposed_handler_type: proposedHandlerType,
+      proposed_entities: pendingEntities,
+      external_side_effects_blocked: true,
+    },
+  });
+
+  return {
+    status: "awaiting_approval",
+    reply,
+    outputPayload: {
+      auditLogId: approvalAuditLogId,
+      sourceAuditLogId: input.auditLogId || null,
+      handler_type: input.handlerType,
+      process_task_id: params.snapshot.processTask.id,
+      process_number: params.snapshot.processTask.processNumber,
+      case_brain_task_id: params.snapshot.caseBrain.taskId,
+      process_mission_confidence: params.context.confidence,
+      process_mission_recommended_action: params.context.recommendedAction,
+      process_mission_goal: params.context.missionGoal,
+      case_brain_insights_confidence: params.caseBrainInsights?.confidence || null,
+      case_brain_risk_count: params.caseBrainInsights?.risks.length || 0,
+      case_brain_high_risk_count: highRiskCount,
+      case_brain_contradiction_count: params.caseBrainInsights?.contradictions.length || 0,
+      case_brain_high_contradiction_count: highContradictionCount,
+      case_brain_grounding_gap_count: params.caseBrainInsights?.groundingGaps.length || 0,
+      proposed_capability: proposedCapability,
+      proposed_handler_type: proposedHandlerType,
+      proposed_action_label: proposedActionLabel,
+      recommended_piece_label: params.snapshot.caseBrain.recommendedPieceLabel,
+      approval_required: true,
+      external_side_effects_blocked: true,
+      awaitingPayload: {
+        idempotencyKey,
+        entities: pendingEntities,
+        skillName: proposedCapability,
+        riskLevel: "high",
+        schemaVersion: "1.0.0",
+        reason: "Geracao de minuta juridica exige aprovacao humana antes de chamar a Draft Factory.",
+        proposedActionLabel,
+        processLabel,
+        missionGoal: params.context.missionGoal,
+      },
+    },
+    data: {
+      snapshot: params.snapshot,
+      processMissionContext: params.context,
+      proposedCapability,
+      approvalAuditLogId,
+    },
+  };
+}
+
+async function registerProcessMissionStepResult(
+  input: DispatchCapabilityInput,
+  params: {
+    context: ReturnType<typeof buildProcessMissionContext>;
+    status: "executed" | "blocked" | "failed";
+    reply: string;
+    summary: string;
+    executedCapability?: string | null;
+    executedHandlerType?: string | null;
+    errorMessage?: string | null;
+    stepOutputPayload?: Record<string, unknown> | null;
+  }
+) {
+  const processLabel = params.context.process.processNumber || params.context.process.title;
+  await registerArtifact(input, {
+    artifactType: "process_mission_step_result",
+    title: `Resultado da missao processual - ${params.context.process.clientName || params.context.process.title}`,
+    mimeType: "application/json",
+    dedupeKey: input.auditLogId
+      ? `process-mission-step-result:${input.auditLogId}`
+      : `process-mission-step-result:${params.context.process.processTaskId}:${params.context.recommendedAction}:${params.status}`,
+    metadata: {
+      reply: params.reply,
+      summary: params.summary,
+      result_status: params.status,
+      process_task_id: params.context.process.processTaskId,
+      process_number: params.context.process.processNumber,
+      process_label: processLabel,
+      client_name: params.context.process.clientName,
+      process_mission_context: params.context,
+      process_mission_confidence: params.context.confidence,
+      process_mission_recommended_action: params.context.recommendedAction,
+      process_mission_goal: params.context.missionGoal,
+      executed_capability: params.executedCapability || null,
+      executed_handler_type: params.executedHandlerType || null,
+      step_output_payload: params.stepOutputPayload || null,
+      error_message: params.errorMessage || null,
+    },
+  });
+
+  await registerLearningEvent(input, "process_mission_step_executed", {
+    summary: params.summary,
+    result_status: params.status,
+    process_task_id: params.context.process.processTaskId,
+    process_number: params.context.process.processNumber,
+    client_name: params.context.process.clientName,
+    confidence: params.context.confidence,
+    recommended_action: params.context.recommendedAction,
+    mission_goal: params.context.missionGoal,
+    executed_capability: params.executedCapability || null,
+    executed_handler_type: params.executedHandlerType || null,
+    error_message: params.errorMessage || null,
+  });
+}
+
+function resolveCaseBrainMissionBlock(params: {
+  context: ReturnType<typeof buildProcessMissionContext>;
+  insights: CaseBrainInsights;
+}) {
+  const highContradiction = params.insights.contradictions.find((item) => item.severity === "high");
+  if (highContradiction) {
+    return {
+      blockedReason: "case_brain_high_contradiction",
+      reason: `o Case Brain 2.0 apontou contradicao critica: ${highContradiction.title}`,
+    };
+  }
+
+  const actionMovementRisk = params.insights.risks.find((risk) => risk.severity === "high" && risk.title === "Movimentacao recente exige acao");
+  if (actionMovementRisk) {
+    return {
+      blockedReason: "case_brain_action_movement",
+      reason: `o Case Brain 2.0 apontou movimentacao recente que exige acao: ${actionMovementRisk.recommendedAction}`,
+    };
+  }
+
+  const blockingHighRisk = params.insights.risks.find((risk) => {
+    if (risk.severity !== "high") return false;
+    return !(params.context.recommendedAction === "refresh_document_memory" && risk.title === "Memoria documental nao esta fresca");
+  });
+  if (blockingHighRisk) {
+    return {
+      blockedReason: "case_brain_high_risk",
+      reason: `o Case Brain 2.0 apontou risco alto: ${blockingHighRisk.title}`,
+    };
+  }
+
+  return null;
+}
+
+async function runLegalProcessMissionExecuteNext(input: DispatchCapabilityInput): Promise<DispatchCapabilityResult> {
+  const snapshot = await getLegalCaseContextSnapshot({
+    tenantId: input.tenantId,
+    entities: input.entities,
+  });
+  const processMissionContext = buildProcessMissionContext(snapshot);
+  const caseBrainEvidence = await loadCaseBrainEvidence({ tenantId: input.tenantId, snapshot });
+  const caseBrainInsights = buildCaseBrainInsights(snapshot, caseBrainEvidence);
+  const processLabel = snapshot.processTask.processNumber || snapshot.processTask.title;
+
+  if (processMissionContext.confidence === "low") {
+    const reason = "a base do processo ainda esta fraca para execucao automatica";
+    const reply = buildProcessMissionExecutionBlockedReply({ context: processMissionContext, reason });
+    const summary = `Missao processual de ${processLabel} bloqueada por baixa confianca.`;
+    await registerProcessMissionStepResult(input, {
+      context: processMissionContext,
+      status: "blocked",
+      reply,
+      summary,
+      errorMessage: reason,
+    });
+
+    return {
+      status: "blocked",
+      reply,
+      outputPayload: {
+        auditLogId: input.auditLogId || null,
+        handler_type: input.handlerType,
+        process_task_id: snapshot.processTask.id,
+        process_number: snapshot.processTask.processNumber,
+        process_mission_confidence: processMissionContext.confidence,
+        process_mission_recommended_action: processMissionContext.recommendedAction,
+        case_brain_risk_count: caseBrainInsights.risks.length,
+        case_brain_contradiction_count: caseBrainInsights.contradictions.length,
+        case_brain_grounding_gap_count: caseBrainInsights.groundingGaps.length,
+        blocked_reason: "low_confidence_process_mission",
+        external_side_effects_blocked: true,
+      },
+      data: { snapshot, processMissionContext, caseBrainInsights },
+    };
+  }
+
+  const caseBrainBlock = resolveCaseBrainMissionBlock({ context: processMissionContext, insights: caseBrainInsights });
+  if (caseBrainBlock) {
+    const reply = buildProcessMissionExecutionBlockedReply({ context: processMissionContext, reason: caseBrainBlock.reason });
+    const summary = `Missao processual de ${processLabel} bloqueada pelo Case Brain 2.0.`;
+    await registerProcessMissionStepResult(input, {
+      context: processMissionContext,
+      status: "blocked",
+      reply,
+      summary,
+      errorMessage: caseBrainBlock.reason,
+      stepOutputPayload: {
+        case_brain_blocked_reason: caseBrainBlock.blockedReason,
+        case_brain_recommended_action: caseBrainInsights.recommendedAction,
+        case_brain_risk_count: caseBrainInsights.risks.length,
+        case_brain_contradiction_count: caseBrainInsights.contradictions.length,
+        external_side_effects_blocked: true,
+      },
+    });
+
+    return {
+      status: "blocked",
+      reply,
+      outputPayload: {
+        auditLogId: input.auditLogId || null,
+        handler_type: input.handlerType,
+        process_task_id: snapshot.processTask.id,
+        process_number: snapshot.processTask.processNumber,
+        process_mission_confidence: processMissionContext.confidence,
+        process_mission_recommended_action: processMissionContext.recommendedAction,
+        case_brain_insights_confidence: caseBrainInsights.confidence,
+        case_brain_recommended_action: caseBrainInsights.recommendedAction,
+        case_brain_risk_count: caseBrainInsights.risks.length,
+        case_brain_contradiction_count: caseBrainInsights.contradictions.length,
+        case_brain_grounding_gap_count: caseBrainInsights.groundingGaps.length,
+        blocked_reason: caseBrainBlock.blockedReason,
+        external_side_effects_blocked: true,
+      },
+      data: { snapshot, processMissionContext, caseBrainInsights },
+    };
+  }
+
+  if (processMissionContext.recommendedAction === "generate_first_draft") {
+    return requestProcessMissionDraftApproval(input, {
+      snapshot,
+      context: processMissionContext,
+      caseBrainInsights,
+    });
+  }
+
+  if (processMissionContext.recommendedAction !== "refresh_document_memory") {
+    const reason = `a acao ${formatProcessMissionRecommendedAction(processMissionContext.recommendedAction)} ainda exige supervisao explicita nesta fase`;
+    const reply = buildProcessMissionExecutionBlockedReply({ context: processMissionContext, reason });
+    const summary = `Missao processual de ${processLabel} bloqueada: ${processMissionContext.recommendedAction} ainda nao executa automaticamente.`;
+    await registerProcessMissionStepResult(input, {
+      context: processMissionContext,
+      status: "blocked",
+      reply,
+      summary,
+      errorMessage: reason,
+    });
+
+    return {
+      status: "blocked",
+      reply,
+      outputPayload: {
+        auditLogId: input.auditLogId || null,
+        handler_type: input.handlerType,
+        process_task_id: snapshot.processTask.id,
+        process_number: snapshot.processTask.processNumber,
+        process_mission_confidence: processMissionContext.confidence,
+        process_mission_recommended_action: processMissionContext.recommendedAction,
+        case_brain_risk_count: caseBrainInsights.risks.length,
+        case_brain_contradiction_count: caseBrainInsights.contradictions.length,
+        case_brain_grounding_gap_count: caseBrainInsights.groundingGaps.length,
+        blocked_reason: "recommended_action_requires_supervision",
+        external_side_effects_blocked: true,
+      },
+      data: { snapshot, processMissionContext, caseBrainInsights },
+    };
+  }
+
+  const refreshResult = await runLegalDocumentMemoryRefresh({
+    ...input,
+    capabilityName: "legal_document_memory_refresh",
+    handlerType: "lex_document_memory_refresh",
+    entities: { ...input.entities, process_task_id: snapshot.processTask.id },
+  });
+  const summary = refreshResult.status === "executed"
+    ? `Missao processual de ${processLabel} executou atualizacao de memoria documental.`
+    : `Missao processual de ${processLabel} tentou atualizar memoria documental, mas terminou com status ${refreshResult.status}.`;
+  const reply = [
+    "## Execucao da missao processual",
+    `- Processo: ${processLabel}`,
+    `- Acao executada: ${formatProcessMissionRecommendedAction(processMissionContext.recommendedAction)}`,
+    `- Status da acao: ${refreshResult.status}`,
+    "",
+    refreshResult.reply,
+  ].filter(Boolean).join("\n");
+
+  await registerProcessMissionStepResult(input, {
+    context: processMissionContext,
+    status: refreshResult.status === "executed" ? "executed" : refreshResult.status === "failed" ? "failed" : "blocked",
+    reply,
+    summary,
+    executedCapability: "legal_document_memory_refresh",
+    executedHandlerType: "lex_document_memory_refresh",
+    errorMessage: refreshResult.status === "failed"
+      ? getStringValue(refreshResult.outputPayload?.error_message) || refreshResult.reply
+      : null,
+    stepOutputPayload: refreshResult.outputPayload || null,
+  });
+
+  return {
+    status: refreshResult.status,
+    reply,
+    outputPayload: {
+      auditLogId: input.auditLogId || null,
+      handler_type: input.handlerType,
+      process_task_id: snapshot.processTask.id,
+      process_number: snapshot.processTask.processNumber,
+      process_mission_confidence: processMissionContext.confidence,
+      process_mission_recommended_action: processMissionContext.recommendedAction,
+      case_brain_risk_count: caseBrainInsights.risks.length,
+      case_brain_contradiction_count: caseBrainInsights.contradictions.length,
+      case_brain_grounding_gap_count: caseBrainInsights.groundingGaps.length,
+      executed_capability: "legal_document_memory_refresh",
+      executed_handler_type: "lex_document_memory_refresh",
+      step_status: refreshResult.status,
+      step_output_payload: refreshResult.outputPayload || null,
+    },
+    data: {
+      snapshot,
+      processMissionContext,
+      caseBrainInsights,
+      refreshResult,
+    },
   };
 }
 
@@ -2864,6 +4000,7 @@ async function runSupportCaseStatus(input: DispatchCapabilityInput): Promise<Dis
       tenantId: input.tenantId,
       entities: input.entities,
     });
+    const processMissionContext = buildProcessMissionContext(snapshot);
     const contract = buildSupportCaseStatusContract(snapshot);
     const reply = buildSupportCaseStatusReply(contract);
     const summary = contract.responseMode === "handoff"
@@ -2896,6 +4033,7 @@ async function runSupportCaseStatus(input: DispatchCapabilityInput): Promise<Dis
         support_status_inference_notes: contract.grounding.inferenceNotes,
         support_status_missing_signals: contract.grounding.missingSignals,
         support_status_handoff_reason: contract.handoffReason,
+        process_mission_context: processMissionContext,
       },
     });
 
@@ -2917,6 +4055,8 @@ async function runSupportCaseStatus(input: DispatchCapabilityInput): Promise<Dis
       inference_notes: contract.grounding.inferenceNotes,
       missing_signals: contract.grounding.missingSignals,
       handoff_reason: contract.handoffReason,
+      process_mission_confidence: processMissionContext.confidence,
+      process_mission_recommended_action: processMissionContext.recommendedAction,
     });
 
     return {
@@ -2936,10 +4076,14 @@ async function runSupportCaseStatus(input: DispatchCapabilityInput): Promise<Dis
         support_status_inference_count: contract.grounding.inferenceNotes.length,
         support_status_missing_signal_count: contract.grounding.missingSignals.length,
         support_status_handoff_reason: contract.handoffReason,
+        process_mission_confidence: processMissionContext.confidence,
+        process_mission_recommended_action: processMissionContext.recommendedAction,
+        process_mission_goal: processMissionContext.missionGoal,
       },
       data: {
         snapshot,
         contract,
+        processMissionContext,
       },
     };
   } catch (error) {
@@ -3082,6 +4226,7 @@ async function runLegalDocumentMemoryRefresh(input: DispatchCapabilityInput): Pr
           handler_type: input.handlerType,
           process_task_id: snapshotBefore.processTask.id,
           process_number: snapshotBefore.processTask.processNumber,
+          error_message: reply,
         },
       };
     }
@@ -3164,6 +4309,7 @@ async function runLegalDocumentMemoryRefresh(input: DispatchCapabilityInput): Pr
         handler_type: input.handlerType,
         process_task_id: snapshotBefore.processTask.id,
         process_number: snapshotBefore.processTask.processNumber,
+        error_message: errorMessage,
       },
     };
   }
@@ -4793,6 +5939,12 @@ export async function dispatchCapabilityExecution(input: DispatchCapabilityInput
       return runGrowthLeadQualify(input);
     case "growth_lead_intake":
       return runGrowthLeadIntake(input);
+    case "lex_process_mission_plan":
+      return runLegalProcessMissionPlan(input);
+    case "lex_process_mission_execute_next":
+      return runLegalProcessMissionExecuteNext(input);
+    case "lex_case_brain_insights":
+      return runLegalCaseBrainInsights(input);
     case "lex_case_context":
       return runLegalCaseContext(input);
     case "lex_support_case_status":
@@ -4830,6 +5982,8 @@ export async function dispatchCapabilityExecution(input: DispatchCapabilityInput
     case "asaas_cobrar":
     case "billing_create":
       return runAsaasBilling(input);
+    case "finance_collections_followup":
+      return runFinanceCollectionsFollowup(input);
     case "kanban_update":
       return runKanbanUpdate(input);
     case "calculator": {

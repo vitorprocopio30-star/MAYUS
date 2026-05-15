@@ -157,6 +157,9 @@ const INTENT_PATTERNS: IntentDefinition[] = [
       /posicionamento\s+comercial/i,
       /bate[-\s]?papo\s+(de\s+)?(vendas|comercial|consultivo)/i,
       /roteiro\s+(de\s+)?(vendas|atendimento\s+comercial)/i,
+      /atendimento\s+de\s+excel[eê]ncia/i,
+      /trein(ar|e|amento)\s+(de\s+)?(atendimento|vendas|closer|sdr)/i,
+      /sparring\s+(comercial|de\s+atendimento|de\s+vendas)/i,
       /metodo\s+def/i,
       /descoberta.*encantamento.*fechamento/i,
       /mayus.*(vender|vendas).*melhor/i,
@@ -224,6 +227,8 @@ const INTENT_PATTERNS: IntentDefinition[] = [
       /relatorio\s+diario.*menu.*playbook/i,
       /mayus.*(sdr|closer|head|vendedor).*(escritorio|comercial)/i,
       /primeiro\s+atendimento.*mayus/i,
+      /skills?\s+para\s+(escritorios|escrit[oó]rios).*(atendimento|vendas|comercial)/i,
+      /playbook\s+def\s+(para|do)\s+escritorio/i,
     ],
     entityExtractors: [
       {
@@ -334,6 +339,61 @@ const INTENT_PATTERNS: IntentDefinition[] = [
       },
     ],
     baseConfidence: 0.88,
+  },
+  {
+    intent: 'collections_followup',
+    patterns: [
+      /follow[-\s]?up\s+de\s+cobran(?:ca|\u00e7a)/i,
+      /cobran(?:ca|\u00e7a)\s+(vencida|atrasada|em\s+atraso)/i,
+      /cliente\s+inadimplente/i,
+      /inadimplencia|inadimpl\u00eancia/i,
+      /renegoci(?:ar|acao|\u00e7\u00e3o)\s+(pagamento|cobran(?:ca|\u00e7a)|divida|d\u00edvida)/i,
+      /promessa\s+de\s+pagamento/i,
+      /organize\s+(a\s+)?cobran(?:ca|\u00e7a)\s+(atrasada|vencida)/i,
+    ],
+    entityExtractors: [
+      {
+        key: 'client_name',
+        pattern: /(?:cliente|nome)\s*[:\-]?\s*([^\d,.;:!?]+?)(?=\s*(?:area|\u00e1rea|valor|dias|venc|tom|canal|promessa|proximo|pr\u00f3ximo|,|\.|$))/i,
+      },
+      {
+        key: 'legal_area',
+        pattern: /(?:area|\u00e1rea)\s*[:\-]?\s*([^,.;:!?]+?)(?=\s*(?:valor|dias|venc|tom|canal|promessa|proximo|pr\u00f3ximo|,|\.|$))/i,
+      },
+      {
+        key: 'amount',
+        pattern: /(?:valor|pendencia|pend\u00eancia|total|em)\s*[:R$\s]*([0-9]+(?:[.,][0-9]+)*)/i,
+      },
+      {
+        key: 'days_overdue',
+        pattern: /(?:atraso|atrasado|vencida|vencido|ha|h\u00e1)\s*([0-9]{1,3})\s*dias/i,
+      },
+      {
+        key: 'due_date',
+        pattern: /venc(?:imento|e)?\s*(?:em|:)?\s*(\d{2}[\/\-]\d{2}[\/\-]\d{4}|\d{4}-\d{2}-\d{2})/i,
+      },
+      {
+        key: 'collection_stage',
+        pattern: /(atraso\s+leve|inadimplencia|inadimpl\u00eancia|renegociacao|renegocia\u00e7\u00e3o)/i,
+      },
+      {
+        key: 'tone',
+        pattern: /(?:tom)\s*[:\-]?\s*(firme|empatico|emp\u00e1tico|neutro|objetivo)/i,
+      },
+      {
+        key: 'channel',
+        pattern: /(?:canal|por)\s*[:\-]?\s*(WhatsApp|telefone|email|e-mail)/i,
+      },
+      {
+        key: 'payment_promise_at',
+        pattern: /(?:promessa|prometeu\s+pagar|paga\s+em)\s*[:\-]?\s*(\d{2}[\/\-]\d{2}[\/\-]\d{4}|\d{4}-\d{2}-\d{2})/i,
+      },
+      {
+        key: 'next_contact_at',
+        pattern: /(?:proximo\s+contato|pr\u00f3ximo\s+contato|retorno)\s*[:\-]?\s*([0-9]{4}-[0-9]{2}-[0-9]{2}(?:[T\s][0-9]{2}:?[0-9]{2}(?::?[0-9]{2})?)?)/i,
+      },
+    ],
+    baseConfidence: 0.89,
   },
   {
     intent: 'external_action_preview',
@@ -571,8 +631,10 @@ const INTENT_PATTERNS: IntentDefinition[] = [
     baseConfidence: 0.75,
   },
   {
-    intent: 'asaas_cobrar',
+    intent: 'billing_create',
     patterns: [
+      /cobr(e|ar)\s+(a\s+)?entrada/i,
+      /cobr(e|ar)\s+.*R\$/i,
       /cobrar\s+cliente/i,
       /gerar\s+cobrança/i,
       /emitir\s+(cobrança|boleto)/i,
@@ -588,12 +650,28 @@ const INTENT_PATTERNS: IntentDefinition[] = [
         pattern: /(?:cobrar|cobrança\s+(?:para|de))\s+([A-Za-zÀ-ú]+(?:\s+[A-Za-zÀ-ú]+)*?)(?:\s+CPF|\s+CNPJ|\s+R\$|\s+email|\s+e-mail|$)/i,
       },
       {
+        key: 'nome_cliente',
+        pattern: /\b(?:cliente|para|da|do|de)\s+((?!(?:cliente|em|por|valor|venc)\b)[A-Za-z\u00C0-\u00FF]+(?:\s+(?!(?:em|por|no|valor|venc)\b)(?:d[aeo]s?|[A-Za-z\u00C0-\u00FF]+)){0,4})(?=\s*(?:em|por|no\s+valor|valor|R\$|venc|,|\.|$))/i,
+      },
+      {
         key: 'valor',
         pattern: /R\$\s*([\d.,]+)/i,
       },
       {
+        key: 'valor',
+        pattern: /(?:valor|no\s+valor\s+de|em\s+(?!\d{4}-\d{2}-\d{2}))\s*([\d][\d.,]*)/i,
+      },
+      {
         key: 'vencimento',
         pattern: /venc(?:imento|e)?\s*(?:em|:)?\s*(\d{2}[\/\-]\d{2}[\/\-]\d{4}|\d{4}-\d{2}-\d{2})/i,
+      },
+      {
+        key: 'billing_type',
+        pattern: /(pix|boleto|cart[a\u00E3]o(?:\s+de\s+cr[e\u00E9]dito)?)/i,
+      },
+      {
+        key: 'crm_task_id',
+        pattern: /(?:crm_task_id|card|oportunidade)\s*[:#\-]?\s*([0-9a-f]{8}-[0-9a-f-]{27,}|crm-task-[\w-]+)/i,
       },
     ],
     baseConfidence: 0.85,
@@ -669,6 +747,83 @@ const INTENT_PATTERNS: IntentDefinition[] = [
       /asaas/i,
     ],
     baseConfidence: 0.80,
+  },
+  {
+    intent: 'legal_process_mission_execute_next',
+    patterns: [
+      /execut(e|ar)\s+(o\s+|a\s+)?pr[oó]xim[ao]\s+(passo|a[cç][aã]o)\s+(segur[ao]\s+)?(da\s+)?miss[aã]o/i,
+      /execut(e|ar)\s+(o\s+|a\s+)?pr[oó]xim[ao]\s+(passo|a[cç][aã]o)\s+segur[ao](\s+(d[eo]s?s[ea]|do|da)\s+(caso|processo|miss[aã]o))?/i,
+      /rod(e|ar)\s+(a\s+|o\s+)?pr[oó]xim[ao]\s+(a[cç][aã]o|passo)\s+(segur[ao]\s+)?(do\s+|da\s+)?(caso|processo|miss[aã]o)/i,
+      /avance\s+(com\s+)?(a\s+)?miss[aã]o\s+(do\s+)?(caso|processo)/i,
+      /execut(e|ar)\s+(a\s+)?miss[aã]o\s+(ag[eê]ntica|agentica|jur[ií]dica|do\s+processo)/i,
+    ],
+    entityExtractors: [
+      {
+        key: 'process_number',
+        pattern: /(\d{7}-\d{2}\.\d{4}\.\d\.\d{2}\.\d{4})/i,
+      },
+      {
+        key: 'client_name',
+        pattern: /(?:cliente|caso\s+d[aoe]|processo\s+d[aoe]\s+cliente)\s*[:\-]?\s*([A-ZÀ-Ú][A-Za-zÀ-ú]+(?:\s+(?:d[aeo]s?|[A-ZÀ-Ú][A-Za-zÀ-ú]+)){1,5})(?=\s*(?:[,.!?]|$))/i,
+      },
+      {
+        key: 'process_reference',
+        pattern: /(?:processo|caso|miss[aã]o)\s+(?:do|da|de)\s+(?!processo\b|caso\b|miss[aã]o\b|\d{7}-)([^,.;!?]{3,90})/i,
+      },
+    ],
+    baseConfidence: 0.88,
+  },
+  {
+    intent: 'legal_process_mission_plan',
+    patterns: [
+      /(?:mont(e|ar)|planej(e|ar)|crie|fa[cç]a)\s+(uma\s+)?miss[aã]o\s+(ag[eê]ntica|agentica|jur[ií]dica|do\s+processo)/i,
+      /organiz(e|ar)\s+(a\s+|uma\s+)?miss[aã]o\s+(d[eo]s?s[ea]\s+)?(caso|processo|jur[ií]dica|processual)/i,
+      /plano\s+(ag[eê]ntico|agentico|operacional)\s+(do\s+)?(caso|processo)/i,
+      /pr[oó]xim[ao]\s+(decis[aã]o|a[cç][aã]o|passo)\s+(segur[ao]\s+)?(do\s+)?(caso|processo)/i,
+      /(vej(a|e)|verifique)\s+(o\s+)?pr[oó]xim[ao]\s+(passo|a[cç][aã]o)(\s+segur[ao])?\s+(d[eo]s?s[ea]|do|da)\s+(caso|processo)/i,
+      /o\s+que\s+(o\s+)?mayus\s+deve\s+fazer\s+(nesse|neste)\s+(caso|processo)/i,
+    ],
+    entityExtractors: [
+      {
+        key: 'process_number',
+        pattern: /(\d{7}-\d{2}\.\d{4}\.\d\.\d{2}\.\d{4})/i,
+      },
+      {
+        key: 'client_name',
+        pattern: /(?:cliente|caso\s+d[aoe]|processo\s+d[aoe]\s+cliente)\s*[:\-]?\s*([A-ZÀ-Ú][A-Za-zÀ-ú]+(?:\s+(?:d[aeo]s?|[A-ZÀ-Ú][A-Za-zÀ-ú]+)){1,5})(?=\s*(?:[,.!?]|$))/i,
+      },
+      {
+        key: 'process_reference',
+        pattern: /(?:processo|caso|miss[aã]o)\s+(?:do|da|de)\s+(?!processo\b|caso\b|miss[aã]o\b|\d{7}-)([^,.;!?]{3,90})/i,
+      },
+    ],
+    baseConfidence: 0.86,
+  },
+  {
+    intent: 'legal_case_brain_insights',
+    patterns: [
+      /case\s+brain\s*(2\.0|dois|insights|diagn[oó]stico)/i,
+      /cronologia\s+(estruturada\s+)?(do\s+)?(caso|processo)/i,
+      /mapa\s+de\s+riscos\s+(do\s+)?(caso|processo)/i,
+      /(contradi[cç][oõ]es|diverg[eê]ncias)\s+(documentais|do\s+caso|do\s+processo)/i,
+      /fatos\s+documentados.*(infer[eê]ncias|hip[oó]teses)/i,
+      /pr[oó]ximos\s+atos\s+prov[aá]veis/i,
+    ],
+    entityExtractors: [
+      {
+        key: 'process_number',
+        pattern: /(\d{7}-\d{2}\.\d{4}\.\d\.\d{2}\.\d{4})/i,
+      },
+      {
+        key: 'client_name',
+        pattern: /(?:cliente|caso\s+d[aoe]|processo\s+d[aoe]\s+cliente)\s*[:\-]?\s*([A-ZÀ-Ú][A-Za-zÀ-ú]+(?:\s+(?:d[aeo]s?|[A-ZÀ-Ú][A-Za-zÀ-ú]+)){1,5})(?=\s*(?:[,.!?]|$))/i,
+      },
+      {
+        key: 'process_reference',
+        pattern: /(?:processo|caso|case\s+brain)\s+(?:do|da|de)\s+(?!processo\b|caso\b|\d{7}-)([^,.;!?]{3,90})/i,
+      },
+    ],
+    baseConfidence: 0.9,
   },
   {
     intent: 'legal_case_context',

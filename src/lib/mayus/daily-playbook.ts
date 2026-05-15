@@ -1,3 +1,4 @@
+import crypto from "crypto";
 import { buildCrmLeadNextStepStatus } from "@/lib/growth/crm-next-step";
 import { buildCommercialPlaybookModel } from "@/lib/growth/commercial-playbook-template";
 
@@ -42,11 +43,64 @@ export type DailyPlaybookUserTask = {
   type?: string | null;
 };
 
+export type DailyPlaybookWhatsAppSignal = {
+  contactName?: string | null;
+  direction?: "inbound" | "outbound" | string | null;
+  messageType?: string | null;
+  content?: string | null;
+  createdAt?: string | null;
+  unreadCount?: number | null;
+  status?: string | null;
+};
+
+export type DailyPlaybookProcessSignal = {
+  id: string;
+  title?: string | null;
+  stageName?: string | null;
+  sector?: string | null;
+  assignedName?: string | null;
+  deadline?: string | null;
+  lastMovementAt?: string | null;
+  claimValue?: number | null;
+  urgentInjunction?: boolean | null;
+};
+
+export type DailyPlaybookFinancialSignal = {
+  id: string;
+  amount?: number | null;
+  status?: string | null;
+  dueDate?: string | null;
+  type?: string | null;
+  description?: string | null;
+};
+
+export type DailyPlaybookSalesSignal = {
+  id: string;
+  clientName?: string | null;
+  professionalName?: string | null;
+  ticketTotal?: number | null;
+  status?: string | null;
+  contractDate?: string | null;
+};
+
+export type DailyPlaybookSystemSignal = {
+  eventType?: string | null;
+  severity?: string | null;
+  source?: string | null;
+  createdAt?: string | null;
+};
+
 export type DailyPlaybookInput = {
   firmName?: string | null;
   preferences?: Partial<DailyPlaybookPreferences> | null;
   crmTasks?: DailyPlaybookCrmTask[];
   userTasks?: DailyPlaybookUserTask[];
+  whatsappSignals?: DailyPlaybookWhatsAppSignal[];
+  processSignals?: DailyPlaybookProcessSignal[];
+  financialSignals?: DailyPlaybookFinancialSignal[];
+  salesSignals?: DailyPlaybookSalesSignal[];
+  systemSignals?: DailyPlaybookSystemSignal[];
+  officePlaybookStatus?: string | null;
   now?: Date;
 };
 
@@ -70,6 +124,12 @@ export type DailyPlaybook = {
     agendaCriticalTasks: number;
     agendaTodayTasks: number;
     priorityActions: number;
+    whatsappUnanswered: number;
+    legalCriticalDeadlines: number;
+    financialOverdueAmount: number;
+    salesMonthAmount: number;
+    systemAlerts: number;
+    officeScore: number;
   };
   crm: {
     leadsNeedingNextStep: Array<{
@@ -98,6 +158,33 @@ export type DailyPlaybook = {
       scheduledFor: string | null;
     }>;
   };
+  whatsapp: {
+    inboundToday: number;
+    outboundToday: number;
+    unanswered: Array<{ title: string; detail: string; createdAt: string | null }>;
+    documentsReceived: number;
+    audiosReceived: number;
+  };
+  legal: {
+    criticalDeadlines: Array<{ title: string; detail: string; ownerLabel: string; dueAt: string | null }>;
+    staleProcesses: Array<{ title: string; detail: string; lastMovementAt: string | null }>;
+  };
+  financial: {
+    overdueAmount: number;
+    overdueItems: Array<{ title: string; detail: string; dueAt: string | null }>;
+    weekReceivables: number;
+  };
+  sales: {
+    monthAmount: number;
+    tickets: number;
+    averageTicket: number;
+    highlights: Array<{ title: string; detail: string }>;
+  };
+  systemHealth: {
+    score: number;
+    alerts: Array<{ title: string; detail: string }>;
+    officePlaybookStatus: string;
+  };
   priorityActions: DailyPlaybookAction[];
   whatsappSummary: string;
   htmlReport: string;
@@ -109,11 +196,18 @@ export type DailyPlaybookBrainTrace = {
   runId: string;
   stepId: string;
   artifactId: string | null;
+  publicShareToken: string | null;
+  htmlFilePath: string | null;
+  htmlFileUrl: string | null;
 } | null;
 
 type DailyPlaybookSupabase = {
   from: (table: string) => any;
+  storage?: any;
 };
+
+const PLAYBOOK_ARTIFACTS_BUCKET = "brain-artifacts";
+const PLAYBOOK_HTML_SIGNED_URL_TTL_SECONDS = 60 * 60 * 24 * 30;
 
 const DEFAULT_PREFERENCES: DailyPlaybookPreferences = {
   enabled: false,
@@ -203,6 +297,120 @@ function compactAgendaTask(task: DailyPlaybookUserTask) {
   };
 }
 
+function daysBetween(a: Date, b: Date) {
+  return Math.floor((startOfDay(a).getTime() - startOfDay(b).getTime()) / 86400000);
+}
+
+function isWithinDays(value: string | null | undefined, now: Date, days: number) {
+  const date = value ? new Date(value) : null;
+  if (!date || Number.isNaN(date.getTime())) return false;
+  const diff = daysBetween(date, now);
+  return diff >= 0 && diff <= days;
+}
+
+function isBeforeToday(value: string | null | undefined, now: Date) {
+  const date = value ? new Date(value) : null;
+  return Boolean(date && !Number.isNaN(date.getTime()) && startOfDay(date).getTime() < startOfDay(now).getTime());
+}
+
+function currency(value: number) {
+  return new Intl.NumberFormat("pt-BR", { style: "currency", currency: "BRL" }).format(Number(value || 0));
+}
+
+function buildWhatsAppSection(input: DailyPlaybookInput, now: Date): DailyPlaybook["whatsapp"] {
+  const signals = input.whatsappSignals || [];
+  const today = signals.filter((item) => isSameLocalDay(item.createdAt, now));
+  const unanswered = signals
+    .filter((item) => item.direction === "inbound" && String(item.status || "").toLowerCase() !== "answered")
+    .slice(0, 8)
+    .map((item) => ({
+      title: cleanText(item.contactName) || "Contato WhatsApp",
+      detail: cleanText(item.content) || `Mensagem ${cleanText(item.messageType) || "recebida"} aguardando proximo passo.`,
+      createdAt: cleanText(item.createdAt),
+    }));
+
+  return {
+    inboundToday: today.filter((item) => item.direction === "inbound").length,
+    outboundToday: today.filter((item) => item.direction === "outbound").length,
+    unanswered,
+    documentsReceived: today.filter((item) => normalize(item.messageType).includes("document")).length,
+    audiosReceived: today.filter((item) => normalize(item.messageType).includes("audio")).length,
+  };
+}
+
+function buildLegalSection(input: DailyPlaybookInput, now: Date): DailyPlaybook["legal"] {
+  const signals = input.processSignals || [];
+  return {
+    criticalDeadlines: signals
+      .filter((item) => item.urgentInjunction || isWithinDays(item.deadline, now, 3))
+      .slice(0, 8)
+      .map((item) => ({
+        title: cleanText(item.title) || "Processo sem titulo",
+        detail: [cleanText(item.stageName), cleanText(item.sector), item.claimValue ? `valor ${currency(item.claimValue)}` : null].filter(Boolean).join(" - ") || "Prazo juridico sensivel.",
+        ownerLabel: cleanText(item.assignedName) || "Equipe Juridica",
+        dueAt: cleanText(item.deadline),
+      })),
+    staleProcesses: signals
+      .filter((item) => {
+        const date = item.lastMovementAt ? new Date(item.lastMovementAt) : null;
+        return Boolean(date && !Number.isNaN(date.getTime()) && daysBetween(now, date) >= 30);
+      })
+      .slice(0, 8)
+      .map((item) => ({
+        title: cleanText(item.title) || "Processo sem titulo",
+        detail: cleanText(item.stageName) || "Sem movimentacao recente.",
+        lastMovementAt: cleanText(item.lastMovementAt),
+      })),
+  };
+}
+
+function buildFinancialSection(input: DailyPlaybookInput, now: Date): DailyPlaybook["financial"] {
+  const signals = input.financialSignals || [];
+  const overdue = signals.filter((item) => isBeforeToday(item.dueDate, now) && !/pago|paid|quitado/i.test(String(item.status || "")));
+  const week = signals.filter((item) => isWithinDays(item.dueDate, now, 7));
+  return {
+    overdueAmount: overdue.reduce((sum, item) => sum + Number(item.amount || 0), 0),
+    overdueItems: overdue.slice(0, 8).map((item) => ({
+      title: cleanText(item.description) || cleanText(item.type) || "Cobranca pendente",
+      detail: `${currency(Number(item.amount || 0))} - ${cleanText(item.status) || "pendente"}`,
+      dueAt: cleanText(item.dueDate),
+    })),
+    weekReceivables: week.reduce((sum, item) => sum + Number(item.amount || 0), 0),
+  };
+}
+
+function buildSalesSection(input: DailyPlaybookInput, now: Date): DailyPlaybook["sales"] {
+  const month = now.getMonth();
+  const year = now.getFullYear();
+  const sales = (input.salesSignals || []).filter((item) => {
+    const date = item.contractDate ? new Date(item.contractDate) : null;
+    return date && !Number.isNaN(date.getTime()) && date.getMonth() === month && date.getFullYear() === year;
+  });
+  const amount = sales.reduce((sum, item) => sum + Number(item.ticketTotal || 0), 0);
+  return {
+    monthAmount: amount,
+    tickets: sales.length,
+    averageTicket: sales.length ? amount / sales.length : 0,
+    highlights: sales.slice(0, 6).map((item) => ({
+      title: cleanText(item.clientName) || "Venda sem cliente",
+      detail: `${currency(Number(item.ticketTotal || 0))} - ${cleanText(item.professionalName) || "responsavel comercial"}`,
+    })),
+  };
+}
+
+function buildSystemHealthSection(input: DailyPlaybookInput): DailyPlaybook["systemHealth"] {
+  const alerts = (input.systemSignals || [])
+    .filter((item) => /error|failed|warning|critical|erro|falha/i.test(`${item.severity || ""} ${item.eventType || ""}`))
+    .slice(0, 8)
+    .map((item) => ({
+      title: cleanText(item.eventType) || "Alerta MAYUS",
+      detail: `${cleanText(item.source) || "sistema"}${item.createdAt ? ` - ${item.createdAt}` : ""}`,
+    }));
+  const officePlaybookStatus = cleanText(input.officePlaybookStatus) || "nao configurado";
+  const score = Math.max(45, 100 - alerts.length * 8 - (/active|ativo/i.test(officePlaybookStatus) ? 0 : 8));
+  return { score, alerts, officePlaybookStatus };
+}
+
 function buildCrmActions(input: DailyPlaybookInput, now: Date): DailyPlaybook["crm"]["leadsNeedingNextStep"] {
   return (input.crmTasks || [])
     .map((task) => {
@@ -240,8 +448,22 @@ function buildPriorityActions(params: {
   crmLeads: DailyPlaybook["crm"]["leadsNeedingNextStep"];
   todayTasks: DailyPlaybook["agenda"]["today"];
   criticalTasks: DailyPlaybook["agenda"]["critical"];
+  whatsapp: DailyPlaybook["whatsapp"];
+  legal: DailyPlaybook["legal"];
+  financial: DailyPlaybook["financial"];
 }) {
   const actions: DailyPlaybookAction[] = [];
+
+  params.legal.criticalDeadlines.slice(0, 2).forEach((item) => {
+    actions.push({
+      area: "legal",
+      title: item.title,
+      detail: item.detail,
+      urgency: "critical",
+      ownerLabel: item.ownerLabel,
+      dueAt: item.dueAt,
+    });
+  });
 
   params.criticalTasks.slice(0, 4).forEach((task) => {
     actions.push({
@@ -262,6 +484,28 @@ function buildPriorityActions(params: {
       urgency: "attention",
       ownerLabel: lead.ownerLabel,
       dueAt: lead.dueAt,
+    });
+  });
+
+  params.whatsapp.unanswered.slice(0, 2).forEach((item) => {
+    actions.push({
+      area: "crm",
+      title: item.title,
+      detail: `Responder WhatsApp pendente: ${item.detail}`,
+      urgency: "attention",
+      ownerLabel: "Front desk MAYUS",
+      dueAt: item.createdAt,
+    });
+  });
+
+  params.financial.overdueItems.slice(0, 2).forEach((item) => {
+    actions.push({
+      area: "system",
+      title: item.title,
+      detail: `Regularizar financeiro vencido: ${item.detail}`,
+      urgency: "attention",
+      ownerLabel: "Financeiro",
+      dueAt: item.dueAt,
     });
   });
 
@@ -297,18 +541,25 @@ function buildExecutiveSummary(params: {
   crmLeadCount: number;
   criticalTaskCount: number;
   todayTaskCount: number;
+  whatsappUnanswered: number;
+  legalCriticalCount: number;
+  financialOverdueAmount: number;
+  officeScore: number;
 }) {
   const signals = [
     params.crmLeadCount > 0 ? `${params.crmLeadCount} lead(s) precisam de proximo passo organizado` : null,
     params.criticalTaskCount > 0 ? `${params.criticalTaskCount} tarefa(s) critica(s) pedem atencao` : null,
     params.todayTaskCount > 0 ? `${params.todayTaskCount} tarefa(s) na agenda de hoje` : null,
+    params.whatsappUnanswered > 0 ? `${params.whatsappUnanswered} conversa(s) WhatsApp aguardam resposta` : null,
+    params.legalCriticalCount > 0 ? `${params.legalCriticalCount} prazo(s)/processo(s) juridico(s) estao em zona critica` : null,
+    params.financialOverdueAmount > 0 ? `${currency(params.financialOverdueAmount)} vencido no financeiro` : null,
   ].filter(Boolean);
 
   if (signals.length === 0) {
-    return `${params.firmName}: operacao sem alerta prioritario no inicio do dia.`;
+    return `${params.firmName}: operacao sem alerta prioritario no inicio do dia. Score MAYUS ${params.officeScore}/100.`;
   }
 
-  return `${params.firmName}: ${signals.join("; ")}.`;
+  return `${params.firmName}: ${signals.join("; ")}. Score MAYUS ${params.officeScore}/100.`;
 }
 
 function buildWhatsAppSummary(playbook: Omit<DailyPlaybook, "whatsappSummary" | "htmlReport">) {
@@ -349,6 +600,18 @@ function renderAction(action: DailyPlaybookAction, index: number) {
     </div>`;
 }
 
+function renderRows<T>(items: T[], emptyText: string, render: (item: T, index: number) => string) {
+  return items.length > 0 ? items.map(render).join("") : `<p class="muted">${escapeHtml(emptyText)}</p>`;
+}
+
+function renderSimpleRow(title: string, detail: string, index: number) {
+  return `
+    <div class="row">
+      <span class="row-n">${index + 1}</span>
+      <div><b>${escapeHtml(title)}</b><p>${escapeHtml(detail)}</p></div>
+    </div>`;
+}
+
 function buildDailyPlaybookHtmlReport(playbook: Omit<DailyPlaybook, "whatsappSummary" | "htmlReport">) {
   const menu = playbook.reportMenu.map((section, index) => `
     <a class="nav-link" href="#${escapeHtml(section.id)}">
@@ -368,6 +631,12 @@ function buildDailyPlaybookHtmlReport(playbook: Omit<DailyPlaybook, "whatsappSum
       <span class="row-n">${index + 1}</span>
       <div><b>${escapeHtml(task.title)}</b><p>${escapeHtml(task.urgency)} - ${escapeHtml(task.ownerLabel)}${task.scheduledFor ? ` - ${escapeHtml(task.scheduledFor)}` : ""}</p></div>
     </div>`).join("") || `<p class="muted">Agenda sem alerta prioritario.</p>`;
+  const whatsappItems = renderRows(playbook.whatsapp.unanswered, "Nenhuma conversa pendente no recorte.", (item, index) => renderSimpleRow(item.title, `${item.detail}${item.createdAt ? ` - ${item.createdAt}` : ""}`, index));
+  const legalItems = renderRows(playbook.legal.criticalDeadlines, "Nenhum prazo juridico critico nas proximas 72h.", (item, index) => renderSimpleRow(item.title, `${item.detail}${item.dueAt ? ` - prazo ${item.dueAt}` : ""}`, index));
+  const staleLegalItems = renderRows(playbook.legal.staleProcesses, "Nenhum processo parado ha mais de 30 dias no recorte.", (item, index) => renderSimpleRow(item.title, `${item.detail}${item.lastMovementAt ? ` - ultima movimentacao ${item.lastMovementAt}` : ""}`, index));
+  const financialItems = renderRows(playbook.financial.overdueItems, "Nenhuma cobranca vencida no recorte.", (item, index) => renderSimpleRow(item.title, `${item.detail}${item.dueAt ? ` - vencimento ${item.dueAt}` : ""}`, index));
+  const salesItems = renderRows(playbook.sales.highlights, "Nenhuma venda do mes registrada no recorte.", (item, index) => renderSimpleRow(item.title, item.detail, index));
+  const systemItems = renderRows(playbook.systemHealth.alerts, "Nenhum alerta operacional critico nas ultimas verificacoes.", (item, index) => renderSimpleRow(item.title, item.detail, index));
 
   return `<!DOCTYPE html>
 <html lang="pt-BR">
@@ -391,13 +660,18 @@ function buildDailyPlaybookHtmlReport(playbook: Omit<DailyPlaybook, "whatsappSum
     <div class="kpis">
       <div class="kpi"><b>${playbook.metrics.crmLeadsNeedingNextStep}</b><span>Leads sem proximo passo</span></div>
       <div class="kpi"><b>${playbook.metrics.agendaCriticalTasks}</b><span>Tarefas criticas</span></div>
-      <div class="kpi"><b>${playbook.metrics.agendaTodayTasks}</b><span>Agenda hoje</span></div>
-      <div class="kpi"><b>${playbook.metrics.priorityActions}</b><span>Acoes prioritarias</span></div>
+      <div class="kpi"><b>${playbook.metrics.whatsappUnanswered}</b><span>WhatsApps pendentes</span></div>
+      <div class="kpi"><b>${playbook.metrics.officeScore}</b><span>Score MAYUS</span></div>
     </div>
   </section>
   <section class="section" id="playbook"><h2 class="sec-title">Playbook <em>do dia</em></h2>${priorityActions}</section>
   <section class="section" id="crm"><h2 class="sec-title">Comercial <em>e CRM</em></h2><div class="card">${crmItems}</div></section>
+  <section class="section" id="whatsapp"><h2 class="sec-title">WhatsApp <em>e front desk</em></h2><div class="kpis"><div class="kpi"><b>${playbook.whatsapp.inboundToday}</b><span>Inbound hoje</span></div><div class="kpi"><b>${playbook.whatsapp.outboundToday}</b><span>Outbound hoje</span></div><div class="kpi"><b>${playbook.whatsapp.documentsReceived}</b><span>Documentos</span></div><div class="kpi"><b>${playbook.whatsapp.audiosReceived}</b><span>Audios</span></div></div><div class="card" style="margin-top:12px">${whatsappItems}</div></section>
   <section class="section" id="agenda"><h2 class="sec-title">Agenda <em>e prazos</em></h2><div class="card">${agendaItems}</div></section>
+  <section class="section" id="legal"><h2 class="sec-title">Juridico <em>e processos</em></h2><div class="card">${legalItems}</div><div class="card" style="margin-top:12px"><div class="eyebrow">Processos sem movimentacao recente</div>${staleLegalItems}</div></section>
+  <section class="section" id="financial"><h2 class="sec-title">Financeiro <em>e recebiveis</em></h2><div class="kpis"><div class="kpi"><b>${escapeHtml(currency(playbook.financial.overdueAmount))}</b><span>Vencido</span></div><div class="kpi"><b>${escapeHtml(currency(playbook.financial.weekReceivables))}</b><span>Recebiveis 7 dias</span></div><div class="kpi"><b>${escapeHtml(currency(playbook.sales.monthAmount))}</b><span>Vendas mes</span></div><div class="kpi"><b>${escapeHtml(currency(playbook.sales.averageTicket))}</b><span>Ticket medio</span></div></div><div class="card" style="margin-top:12px">${financialItems}</div></section>
+  <section class="section" id="sales"><h2 class="sec-title">Vendas <em>e performance</em></h2><div class="card">${salesItems}</div></section>
+  <section class="section" id="system"><h2 class="sec-title">Saude <em>MAYUS</em></h2><div class="card"><p>Score operacional: <b>${playbook.systemHealth.score}/100</b>. Playbook comercial do escritorio: <b>${escapeHtml(playbook.systemHealth.officePlaybookStatus)}</b>.</p>${systemItems}</div></section>
   <section class="section" id="frontdesk"><h2 class="sec-title">Front desk <em>MAYUS</em></h2><div class="card"><p>MAYUS deve fazer o primeiro atendimento em ate 5 minutos, qualificar, registrar sinais e transferir quando houver urgencia, pedido humano ou setor especifico.</p></div></section>
   <section class="section" id="calls"><h2 class="sec-title">Calls <em>e qualidade</em></h2><div class="card"><p>Revisar dor, urgencia, decisor, objecao dominante, encantamento, isolamento de variaveis e proximo passo com data/canal/responsavel.</p></div></section>
   <footer class="footer">Nenhuma acao externa foi executada automaticamente. Gerado pelo MAYUS para uso operacional interno.</footer>
@@ -419,10 +693,22 @@ export function buildDailyPlaybook(input: DailyPlaybookInput): DailyPlaybook {
     .filter((task) => isCriticalTask(task) && normalize(task.status) !== "concluido")
     .map(compactAgendaTask)
     .slice(0, 12);
-  const priorityActions = buildPriorityActions({ crmLeads, todayTasks, criticalTasks });
+  const whatsapp = buildWhatsAppSection(input, now);
+  const legal = buildLegalSection(input, now);
+  const financial = buildFinancialSection(input, now);
+  const sales = buildSalesSection(input, now);
+  const systemHealth = buildSystemHealthSection(input);
+  const priorityActions = buildPriorityActions({ crmLeads, todayTasks, criticalTasks, whatsapp, legal, financial });
   const generatedAt = now.toISOString();
   const title = `${firmName} - Playbook do dia`;
-  const reportMenu = buildCommercialPlaybookModel({ firmName }).dailyReportSections;
+  const reportMenu = [
+    ...buildCommercialPlaybookModel({ firmName }).dailyReportSections,
+    { id: "whatsapp", label: "WhatsApp", detail: "front desk e conversas pendentes" },
+    { id: "legal", label: "Juridico", detail: "processos, prazos e riscos" },
+    { id: "financial", label: "Financeiro", detail: "recebiveis e vencidos" },
+    { id: "sales", label: "Vendas", detail: "ticket, volume e performance" },
+    { id: "system", label: "Saude MAYUS", detail: "integracoes, alertas e configuracao" },
+  ];
   const base = {
     title,
     generatedAt,
@@ -433,12 +719,22 @@ export function buildDailyPlaybook(input: DailyPlaybookInput): DailyPlaybook {
       crmLeadCount: crmLeads.length,
       criticalTaskCount: criticalTasks.length,
       todayTaskCount: todayTasks.length,
+      whatsappUnanswered: whatsapp.unanswered.length,
+      legalCriticalCount: legal.criticalDeadlines.length,
+      financialOverdueAmount: financial.overdueAmount,
+      officeScore: systemHealth.score,
     }),
     metrics: {
       crmLeadsNeedingNextStep: crmLeads.length,
       agendaCriticalTasks: criticalTasks.length,
       agendaTodayTasks: todayTasks.length,
       priorityActions: priorityActions.length,
+      whatsappUnanswered: whatsapp.unanswered.length,
+      legalCriticalDeadlines: legal.criticalDeadlines.length,
+      financialOverdueAmount: financial.overdueAmount,
+      salesMonthAmount: sales.monthAmount,
+      systemAlerts: systemHealth.alerts.length,
+      officeScore: systemHealth.score,
     },
     crm: {
       leadsNeedingNextStep: crmLeads,
@@ -447,6 +743,11 @@ export function buildDailyPlaybook(input: DailyPlaybookInput): DailyPlaybook {
       today: todayTasks,
       critical: criticalTasks,
     },
+    whatsapp,
+    legal,
+    financial,
+    sales,
+    systemHealth,
     priorityActions,
     externalSideEffectsBlocked: true,
   };
@@ -473,9 +774,87 @@ export function buildDailyPlaybookMetadata(playbook: DailyPlaybook) {
     crm_leads_needing_next_step: playbook.metrics.crmLeadsNeedingNextStep,
     agenda_critical_tasks: playbook.metrics.agendaCriticalTasks,
     agenda_today_tasks: playbook.metrics.agendaTodayTasks,
+    whatsapp_unanswered: playbook.metrics.whatsappUnanswered,
+    legal_critical_deadlines: playbook.metrics.legalCriticalDeadlines,
+    financial_overdue_amount: playbook.metrics.financialOverdueAmount,
+    sales_month_amount: playbook.metrics.salesMonthAmount,
+    system_alerts: playbook.metrics.systemAlerts,
+    office_score: playbook.metrics.officeScore,
     priority_actions: playbook.priorityActions,
+    whatsapp: playbook.whatsapp,
+    legal: playbook.legal,
+    financial: playbook.financial,
+    sales: playbook.sales,
+    system_health: playbook.systemHealth,
     external_side_effects_blocked: playbook.externalSideEffectsBlocked,
   };
+}
+
+function buildPublicShareToken() {
+  return `pb_${crypto.randomBytes(18).toString("base64url")}`;
+}
+
+function normalizeStorageSegment(value: string) {
+  return String(value || "")
+    .replace(/[^a-zA-Z0-9_-]+/g, "-")
+    .replace(/^-+|-+$/g, "") || "unknown";
+}
+
+async function ensurePlaybookArtifactsBucket(supabase: DailyPlaybookSupabase) {
+  if (!supabase.storage) return false;
+
+  if (typeof supabase.storage.getBucket === "function") {
+    const existing = await supabase.storage.getBucket(PLAYBOOK_ARTIFACTS_BUCKET).catch(() => null);
+    if (existing && !existing.error) return true;
+  }
+
+  if (typeof supabase.storage.createBucket !== "function") return false;
+
+  const created = await supabase.storage.createBucket(PLAYBOOK_ARTIFACTS_BUCKET, {
+    public: false,
+    allowedMimeTypes: ["text/html", "application/json"],
+    fileSizeLimit: 1024 * 1024 * 5,
+  }).catch((error: unknown) => ({ error }));
+
+  return !created?.error;
+}
+
+async function uploadDailyPlaybookHtmlFile(params: {
+  supabase: DailyPlaybookSupabase;
+  tenantId: string;
+  artifactId: string;
+  title: string;
+  html: string;
+}) {
+  try {
+    const ready = await ensurePlaybookArtifactsBucket(params.supabase);
+    if (!ready) return null;
+
+    const path = [
+      normalizeStorageSegment(params.tenantId),
+      "daily_playbook",
+      `${normalizeStorageSegment(params.artifactId)}.html`,
+    ].join("/");
+    const filename = `${normalizeStorageSegment(params.title).slice(0, 80) || "mayus-playbook"}.html`;
+    const bucket = params.supabase.storage.from(PLAYBOOK_ARTIFACTS_BUCKET);
+    const uploaded = await bucket.upload(path, Buffer.from(params.html, "utf8"), {
+      contentType: "text/html",
+      upsert: true,
+    });
+    if (uploaded?.error) throw uploaded.error;
+
+    const signed = await bucket.createSignedUrl(path, PLAYBOOK_HTML_SIGNED_URL_TTL_SECONDS, { download: filename });
+    if (signed?.error || !signed?.data?.signedUrl) throw signed?.error || new Error("daily_playbook_signed_url_missing");
+
+    return {
+      path,
+      signedUrl: signed.data.signedUrl as string,
+      filename,
+    };
+  } catch (error) {
+    console.warn("[mayus][daily-playbook][html-file]", error);
+    return null;
+  }
 }
 
 export async function registerDailyPlaybookBrainArtifact(params: {
@@ -485,7 +864,13 @@ export async function registerDailyPlaybookBrainArtifact(params: {
   supabase: DailyPlaybookSupabase;
 }): Promise<DailyPlaybookBrainTrace> {
   const now = new Date().toISOString();
-  const metadata = buildDailyPlaybookMetadata(params.playbook);
+  const publicShareToken = buildPublicShareToken();
+  const metadata = {
+    ...buildDailyPlaybookMetadata(params.playbook),
+    public_share_enabled: true,
+    public_share_token: publicShareToken,
+    public_share_created_at: now,
+  };
   let createdTaskId: string | null = null;
 
   try {
@@ -592,6 +977,33 @@ export async function registerDailyPlaybookBrainArtifact(params: {
 
     if (artifactError) throw artifactError;
 
+    const htmlFile = artifact?.id
+      ? await uploadDailyPlaybookHtmlFile({
+        supabase: params.supabase,
+        tenantId: params.tenantId,
+        artifactId: artifact.id,
+        title: params.playbook.title,
+        html: params.playbook.htmlReport,
+      })
+      : null;
+
+    if (artifact?.id && htmlFile?.path) {
+      await params.supabase
+        .from("brain_artifacts")
+        .update({
+          storage_url: htmlFile.path,
+          mime_type: "text/html",
+          metadata: {
+            ...metadata,
+            html_file_available: true,
+            html_file_path: htmlFile.path,
+            html_file_mime_type: "text/html",
+            html_file_filename: htmlFile.filename,
+          },
+        })
+        .eq("id", artifact.id);
+    }
+
     const { error: learningError } = await params.supabase
       .from("learning_events")
       .insert({
@@ -618,6 +1030,9 @@ export async function registerDailyPlaybookBrainArtifact(params: {
       runId: run.id,
       stepId: step.id,
       artifactId: artifact?.id || null,
+      publicShareToken,
+      htmlFilePath: htmlFile?.path || null,
+      htmlFileUrl: htmlFile?.signedUrl || null,
     };
   } catch (error) {
     if (createdTaskId) {

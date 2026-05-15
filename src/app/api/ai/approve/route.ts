@@ -45,9 +45,9 @@ type BrainMissionSyncInput = {
   brainApproval: BrainApprovalLink | null;
   approvalStatus: "approved" | "rejected";
   approverId: string;
-  taskStatus: "completed" | "completed_with_warnings" | "failed" | "cancelled";
-  runStatus: "completed" | "completed_with_warnings" | "failed" | "cancelled";
-  stepStatus: "completed" | "failed" | "cancelled";
+  taskStatus: "awaiting_approval" | "completed" | "completed_with_warnings" | "failed" | "cancelled";
+  runStatus: "awaiting_approval" | "completed" | "completed_with_warnings" | "failed" | "cancelled";
+  stepStatus: "awaiting_approval" | "completed" | "failed" | "cancelled";
   message?: string | null;
   error?: string | null;
   outputPayload?: Record<string, unknown>;
@@ -347,6 +347,32 @@ export async function POST(req: Request) {
           }
         : undefined,
     });
+
+    if (dispatchResult.status === "awaiting_approval") {
+      await syncBrainMissionFromApproval({
+        brainApproval,
+        approvalStatus: "approved",
+        approverId,
+        taskStatus: "awaiting_approval",
+        runStatus: "awaiting_approval",
+        stepStatus: "awaiting_approval",
+        message: dispatchResult.reply,
+        outputPayload: {
+          ...(dispatchResult.outputPayload || {}),
+          status: "awaiting_approval",
+          auditLogId,
+          handler_type: handlerType,
+        },
+      });
+
+      return NextResponse.json({
+        status: "awaiting_approval",
+        message: dispatchResult.reply,
+        auditLogId,
+        approvedBy: approverId,
+        awaitingApproval: dispatchResult.outputPayload || {},
+      }, { status: 202 });
+    }
 
     if (dispatchResult.status === "unsupported") {
       await syncBrainMissionFromApproval({

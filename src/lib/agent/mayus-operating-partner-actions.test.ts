@@ -12,6 +12,9 @@ function makeDecision(overrides: Partial<MayusOperatingPartnerDecision> = {}): M
     risk_flags: [],
     next_action: "criar follow-up",
     conversation_state: {
+      conversation_role: "seller",
+      conversation_goal: "qualificar e avancar atendimento comercial",
+      customer_temperature: "interested",
       stage: "qualification",
       facts_known: ["lead com dor clara"],
       missing_information: ["decisor"],
@@ -21,6 +24,7 @@ function makeDecision(overrides: Partial<MayusOperatingPartnerDecision> = {}): M
       documents_requested: [],
       last_customer_message: "quero entender melhor",
       last_mayus_message: null,
+      last_commitment: null,
       next_action: "criar follow-up",
       has_mayus_introduced: true,
       conversation_summary: "lead em qualificacao",

@@ -13,8 +13,8 @@ const montserrat = Montserrat({ subsets: ["latin"], weight: ["300", "400", "500"
 type CareerPlan = {
   id: string;
   name: string;
-  type: string; // Categoria Customizada (Ex: Closer, SDR, PÃ³s-Venda)
-  unit: string; // SÃ­mbolo da Unidade (R$, CTR, AGD, etc)
+  type: string; // Categoria Customizada (Ex: Closer, SDR, Pós-Venda)
+  unit: string; // Símbolo da Unidade (R$, CTR, AGD, etc)
   metricType: "currency" | "numeric";
   salary: number | string;
   monthlyGoal: number | string;
@@ -73,11 +73,11 @@ export default function ConfigComercialPage() {
   const activePlan = plans.find(p => p.id === activePlanId);
 
   const handleCreatePlan = (typeName?: string) => {
-    const finalType = typeName || prompt("Nome da Nova Categoria (ex: PÃ³s-Venda, Sucesso):") || "Nova Categoria";
+    const finalType = typeName || prompt("Nome da Nova Categoria (ex: Pós-Venda, Sucesso):") || "Nova Categoria";
     const newId = Math.random().toString(36).substr(2, 9);
     setPlans([...plans, {
       id: newId,
-      name: `NOVO NÃVEL`,
+      name: `NOVO NÍVEL`,
       type: finalType,
       unit: "R$",
       metricType: "currency",
@@ -96,7 +96,7 @@ export default function ConfigComercialPage() {
 
   const handleDeletePlan = (id: string, e: React.MouseEvent) => {
     e.stopPropagation();
-    if(plans.length <= 1) return toast.error("VocÃª precisa de pelo menos 1 plano configurado.");
+    if(plans.length <= 1) return toast.error("Você precisa de pelo menos 1 plano configurado.");
     const filtered = plans.filter(p => p.id !== id);
     setPlans(filtered);
     if(activePlanId === id) setActivePlanId(filtered[0]?.id || "");
@@ -130,11 +130,11 @@ export default function ConfigComercialPage() {
     }
     setTimeout(() => {
       setIsLoading(false);
-      toast.success("ConfiguraÃ§Ãµes de metas salvas com sucesso!");
+      toast.success("Configurações de metas salvas com sucesso!");
     }, 1000);
   };
 
-  // Agrupamento dinÃ¢mico dos planos por categoria
+  // Agrupamento dinâmico dos planos por categoria
   const planCategories = Array.from(new Set(plans.map(p => p.type)));
 
   const getCategoryColor = (type: string) => {
@@ -167,22 +167,22 @@ export default function ConfigComercialPage() {
           className="flex items-center gap-2 bg-gradient-to-r from-[#CCA761] via-[#f1d58d] to-[#CCA761] hover:from-[#e3c27e] hover:via-[#ffe8ad] hover:to-[#e3c27e] text-[#0a0a0a] px-8 py-3.5 rounded-xl font-[900] text-[11px] uppercase tracking-widest transition-all hover:scale-[1.02] active:scale-95 shadow-[0_0_20px_rgba(204,167,97,0.3)] disabled:opacity-50"
         >
           {isLoading ? <Loader2 size={16} className="animate-spin" /> : <Save size={16} />}
-          {isLoading ? "SALVANDO..." : "SALVAR ALTERAÃ‡Ã•ES"}
+          {isLoading ? "SALVANDO..." : "SALVAR ALTERAÇÕES"}
         </button>
       </div>
 
       <div className="space-y-8 animate-fade-in">
-          {/* Regras de ProgressÃ£o */}
+          {/* Regras de Progressão */}
           <div className="glass-card-premium p-6 lg:p-8 rounded-2xl border border-[#CCA761]/20 bg-gradient-to-br from-white/80 dark:from-[#111111]/80 to-gray-50/90 dark:to-[#050505]/90 backdrop-blur-xl shadow-2xl relative overflow-hidden">
             <div className="absolute top-0 right-0 w-64 h-64 bg-[#CCA761]/5 rounded-bl-full pointer-events-none" />
 
             <h2 className="text-[10px] text-[#CCA761] font-black uppercase tracking-[0.3em] mb-8 flex items-center gap-2">
-              <TrendingUp size={14} /> Regras de ProgressÃ£o & EvoluÃ§Ã£o
+              <TrendingUp size={14} /> Regras de Progressão & Evolução
             </h2>
 
             <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-8 relative z-10">
                <div className="space-y-2">
-                 <label className="text-[9px] text-gray-500 uppercase tracking-widest font-black ml-1">CritÃ©rio de PromoÃ§Ã£o</label>
+                 <label className="text-[9px] text-gray-500 uppercase tracking-widest font-black ml-1">Critério de Promoção</label>
                  <div className="relative">
                    <Target size={16} className="absolute left-4 top-1/2 -translate-y-1/2 text-gray-700" />
                    <select
@@ -199,7 +199,7 @@ export default function ConfigComercialPage() {
                </div>
 
                <div className="space-y-2">
-                 <label className="text-[9px] text-gray-500 uppercase tracking-widest font-black ml-1">ConsistÃªncia NecessÃ¡ria (Meses)</label>
+                 <label className="text-[9px] text-gray-500 uppercase tracking-widest font-black ml-1">Consistência Necessária (Meses)</label>
                  <div className="relative">
                    <Calendar size={16} className="absolute left-4 top-1/2 -translate-y-1/2 text-gray-700" />
                    <input
@@ -218,18 +218,18 @@ export default function ConfigComercialPage() {
                     </div>
                     <input type="checkbox" className="hidden" checked={enableEvolution} onChange={() => setEnableEvolution(!enableEvolution)} />
                     <div className="flex flex-col">
-                      <span className="text-[10px] text-gray-300 group-hover:text-white uppercase tracking-widest font-black transition-colors">Modo GamificaÃ§Ã£o Ativo</span>
-                      <span className="text-[8px] text-gray-600 font-bold uppercase tracking-tight">EvoluÃ§Ã£o visual no painel</span>
+                      <span className="text-[10px] text-gray-300 group-hover:text-white uppercase tracking-widest font-black transition-colors">Modo Gamificação Ativo</span>
+                      <span className="text-[8px] text-gray-600 font-bold uppercase tracking-tight">Evolução visual no painel</span>
                     </div>
                  </label>
                </div>
             </div>
           </div>
 
-          {/* Interface de Categorias DinÃ¢micas */}
+          {/* Interface de Categorias Dinâmicas */}
           <div className="grid grid-cols-1 lg:grid-cols-12 gap-8">
 
-            {/* Esquerda: Agrupamentos FlexÃ­veis */}
+            {/* Esquerda: Agrupamentos Flexíveis */}
             <div className="lg:col-span-3 space-y-6">
 
               {planCategories.map(cat => (
@@ -245,7 +245,7 @@ export default function ConfigComercialPage() {
                     >
                       <div className="flex flex-col">
                         <span className={`text-xs font-black uppercase tracking-widest mb-1 ${activePlanId === p.id ? 'text-white' : 'text-gray-300'}`}>{p.name}</span>
-                        <span className="text-[9px] text-gray-500 font-medium">Meta: {p.monthlyGoal} {p.unit} â€¢ Sal: R$ {p.salary}</span>
+                        <span className="text-[9px] text-gray-500 font-medium">Meta: {p.monthlyGoal} {p.unit} • Sal: R$ {p.salary}</span>
                       </div>
                       <button onClick={(e) => handleDeletePlan(p.id, e)} className="text-gray-600 hover:text-red-500 transition-colors p-1">
                         <Trash2 size={14} />
@@ -257,7 +257,7 @@ export default function ConfigComercialPage() {
                     className="w-full py-2.5 bg-white/5 border border-white/5 hover:border-white/20 rounded-xl flex items-center justify-center gap-2 transition-all group"
                   >
                     <Plus size={12} className="text-gray-500 group-hover:rotate-90 transition-transform" />
-                    <span className="text-[9px] text-gray-500 font-bold uppercase tracking-widest italic">Novo NÃ­vel de {cat}</span>
+                    <span className="text-[9px] text-gray-500 font-bold uppercase tracking-widest italic">Novo Nível de {cat}</span>
                   </button>
                </div>
               ))}
@@ -277,7 +277,7 @@ export default function ConfigComercialPage() {
                 <div className="glass-card-premium p-6 lg:p-8 rounded-2xl border border-white/10 bg-[#0a0a0a] shadow-xl relative min-h-full">
                   <div className="flex justify-between items-center mb-8 pb-4 border-b border-white/5">
                      <div className="flex items-center gap-4">
-                        <h2 className="text-[10px] text-gray-400 font-black uppercase tracking-[0.2em]">ConfiguraÃ§Ã£o de Performance</h2>
+                        <h2 className="text-[10px] text-gray-400 font-black uppercase tracking-[0.2em]">Configuração de Performance</h2>
                         <input
                           type="text"
                           value={activePlan.type}
@@ -293,7 +293,7 @@ export default function ConfigComercialPage() {
 
                   <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-6 mb-12">
                      <div className="space-y-2">
-                       <label className="text-[9px] text-gray-500 uppercase tracking-widest font-bold">TÃ­tulo do NÃ­vel</label>
+                       <label className="text-[9px] text-gray-500 uppercase tracking-widest font-bold">Título do Nível</label>
                        <input
                          type="text"
                          value={activePlan.name}
@@ -302,7 +302,7 @@ export default function ConfigComercialPage() {
                        />
                      </div>
                      <div className="space-y-2">
-                       <label className="text-[9px] text-gray-500 uppercase tracking-widest font-bold">MÃ©trica / Unidade</label>
+                       <label className="text-[9px] text-gray-500 uppercase tracking-widest font-bold">Métrica / Unidade</label>
                        <div className="flex gap-2">
                           <select
                             value={activePlan.metricType}
@@ -317,12 +317,12 @@ export default function ConfigComercialPage() {
                             value={activePlan.unit}
                             onChange={(e) => handleUpdateActivePlan("unit", e.target.value)}
                             className="flex-1 bg-[#111] border border-[#333] text-white px-4 py-3 rounded-xl text-xs focus:border-[#CCA761] focus:outline-none font-black uppercase tracking-widest"
-                            placeholder="SÃ­mbolo (Ex: CTR, AGD)"
+                            placeholder="Símbolo (Ex: CTR, AGD)"
                           />
                        </div>
                      </div>
                      <div className="space-y-2">
-                       <label className="text-[9px] text-gray-500 uppercase tracking-widest font-bold">SalÃ¡rio Base (R$)</label>
+                       <label className="text-[9px] text-gray-500 uppercase tracking-widest font-bold">Salário Base (R$)</label>
                        <input
                          type="number"
                          value={activePlan.salary}
@@ -340,7 +340,7 @@ export default function ConfigComercialPage() {
                        />
                      </div>
                      <div className="space-y-2">
-                       <label className="text-[9px] text-gray-500 uppercase tracking-widest font-bold">MÃ­n. HistÃ³rico p/ NÃ­vel</label>
+                       <label className="text-[9px] text-gray-500 uppercase tracking-widest font-bold">Mín. Histórico p/ Nível</label>
                        <input
                          type="number"
                          value={activePlan.minSalesForLevel}
@@ -349,7 +349,7 @@ export default function ConfigComercialPage() {
                        />
                      </div>
                      <div className="space-y-2">
-                       <label className="text-[9px] text-gray-500 uppercase tracking-widest font-bold">DistribuiÃ§Ã£o de ComissÃ£o</label>
+                       <label className="text-[9px] text-gray-500 uppercase tracking-widest font-bold">Distribuição de Comissão</label>
                        <select
                          value={activePlan.commissionType || "fixed"}
                          onChange={(e) => handleUpdateActivePlan("commissionType", e.target.value)}
@@ -367,8 +367,8 @@ export default function ConfigComercialPage() {
 
                   <div className="space-y-4 mb-6">
                      <div className="grid grid-cols-12 gap-4 border-b border-white/5 pb-2 text-[9px] text-gray-500 font-bold uppercase tracking-widest px-2">
-                        <div className="col-span-5">Volume AlcanÃ§ado ({activePlan.unit})</div>
-                        <div className="col-span-6">Valor da ComissÃ£o</div>
+                        <div className="col-span-5">Volume Alcançado ({activePlan.unit})</div>
+                        <div className="col-span-6">Valor da Comissão</div>
                         <div className="col-span-1"></div>
                      </div>
 
@@ -407,7 +407,7 @@ export default function ConfigComercialPage() {
                      className="px-5 py-2.5 bg-white/5 border border-white/10 hover:border-[#CCA761]/30 hover:bg-[#CCA761]/5 rounded-xl flex items-center justify-center gap-2 transition-all mt-6"
                    >
                      <Plus size={14} className="text-[#CCA761]" />
-                     <span className="text-[10px] text-[#CCA761] font-bold uppercase tracking-widest">Adicionar Nova Faixa de BÃ´nus</span>
+                     <span className="text-[10px] text-[#CCA761] font-bold uppercase tracking-widest">Adicionar Nova Faixa de Bônus</span>
                    </button>
                 </div>
               </div>

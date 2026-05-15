@@ -97,4 +97,19 @@ describe("buildWhatsAppSalesReply", () => {
     expect(reply.mayAutoSend).toBe(false);
     expect(reply.requiresHumanReview).toBe(true);
   });
+
+  it("trata decisor ausente como isolamento de variavel, sem empurrar fechamento", () => {
+    const reply = buildWhatsAppSalesReply({
+      contactName: "Mariana",
+      messages: [
+        { direction: "inbound", content: "Gostei, mas preciso falar com meu marido antes de decidir." },
+      ],
+      salesProfile,
+    });
+
+    expect(reply.suggestedReply).toContain("Essa pessoa decide junto");
+    expect(reply.suggestedReply).toContain("resumo simples");
+    expect(reply.suggestedReply).not.toContain("contratar");
+    expect(reply.mayAutoSend).toBe(true);
+  });
 });

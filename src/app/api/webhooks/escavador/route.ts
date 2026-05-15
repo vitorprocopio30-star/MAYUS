@@ -453,13 +453,14 @@ export async function POST(req: NextRequest) {
           .eq('id', processo.id)
 
         // Persiste movimentação na tabela de histórico
-        await adminSupabase.from('process_movimentacoes').insert({
+        const { data: movimentacaoPersistida } = await adminSupabase.from('process_movimentacoes').insert({
           tenant_id: processo.tenant_id,
           numero_cnj,
           data: normalizarDataEvento(novaMovimentacao.data),
           conteudo: novaMovimentacao.conteudo,
-          fonte: 'diario_oficial'
-        })
+          fonte: 'diario_oficial',
+          escavador_movimentacao_id: movimentacaoId,
+        }).select('id').maybeSingle()
 
         await adminSupabase
           .from('process_movimentacoes_inbox')
@@ -475,7 +476,8 @@ export async function POST(req: NextRequest) {
           tenant_id: processo.tenant_id,
           movimentacao: novaMovimentacao,
           advogado_id: processo.advogado_responsavel_id,
-          escavador_movimentacao_id: movimentacaoId ?? ''
+          escavador_movimentacao_id: movimentacaoId ?? '',
+          process_movimentacao_id: movimentacaoPersistida?.id ?? null,
         }).catch(console.error)
 
         // Dispara resumo IA em background apenas uma vez por processo neste evento

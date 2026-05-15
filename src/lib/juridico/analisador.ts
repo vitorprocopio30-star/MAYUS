@@ -96,6 +96,25 @@ type AnalisePrazoLLM =
       motivo: string
     }
 
+type PrazoExplicito = {
+  dias: number
+  descricao: string
+  vencimento: Date
+  evidencia: string
+}
+
+type AnaliseMovimentacaoPayload = {
+  tipo_evento: string | null
+  requer_acao: boolean
+  acao_sugerida: string | null
+  prazo_extraido_dias: number | null
+  data_vencimento_extraida: string | null
+  confianca_analise: 'alta' | 'media' | 'baixa'
+  origem: 'deterministica' | 'llm' | 'heuristica' | 'ignorada'
+  motivo: string
+  evidencia?: string | null
+}
+
 function extrairConteudoLLM(data: any): string | null {
   const content = data?.choices?.[0]?.message?.content
   return typeof content === 'string' ? content.trim() : null
@@ -110,6 +129,106 @@ function calcularDiasUteis(inicio: Date, dias: number): Date {
     if (d !== 0 && d !== 6) count++
   }
   return data
+}
+
+function parseDataBaseMovimentacao(value?: string | null): Date {
+  if (!value) return new Date()
+  if (/^\d{2}\/\d{2}\/\d{4}/.test(value)) {
+    const [dia, mes, ano] = value.split(' ')[0].split('/').map(Number)
+    const parsed = new Date(ano, mes - 1, dia)
+    if (!Number.isNaN(parsed.getTime())) return parsed
+  }
+
+  const parsed = new Date(String(value).includes(' ') ? String(value).replace(' ', 'T') : String(value))
+  return Number.isNaN(parsed.getTime()) ? new Date() : parsed
+}
+
+function limparComplementoPrazo(value: string | undefined): string {
+  return String(value ?? '')
+    .replace(/\s+/g, ' ')
+    .replace(/^(que\s+)?(a\s+parte\s+)?/i, '')
+    .replace(/\s+(sob pena|no prazo|conforme|nos termos).*$/i, '')
+    .trim()
+}
+
+function parseNumeroPrazo(value: string | undefined): number | null {
+  const raw = String(value ?? '').trim().toLowerCase()
+  if (!raw) return null
+
+  const numeric = Number(raw.replace(/^0+/, '') || '0')
+  if (Number.isFinite(numeric) && numeric > 0) return numeric
+
+  const porExtenso: Record<string, number> = {
+    um: 1,
+    uma: 1,
+    dois: 2,
+    duas: 2,
+    tres: 3,
+    três: 3,
+    quatro: 4,
+    cinco: 5,
+    seis: 6,
+    sete: 7,
+    oito: 8,
+    nove: 9,
+    dez: 10,
+    onze: 11,
+    doze: 12,
+    treze: 13,
+    quatorze: 14,
+    catorze: 14,
+    quinze: 15,
+    dezesseis: 16,
+    dezasseis: 16,
+    dezessete: 17,
+    dezassete: 17,
+    dezoito: 18,
+    dezenove: 19,
+    dezanove: 19,
+    vinte: 20,
+    trinta: 30,
+  }
+
+  return porExtenso[raw] ?? null
+}
+
+function formatarAcaoPrazo(complemento: string, dias: number): string {
+  if (!complemento) return `Cumprir prazo processual de ${dias} dias úteis`
+  const primeira = complemento.charAt(0).toUpperCase() + complemento.slice(1)
+  return `Cumprir determinação: ${primeira}`
+}
+
+function extrairPrazoExplicito(textoOriginal: string | null | undefined, dataBase: Date): PrazoExplicito | null {
+  const texto = String(textoOriginal ?? '').replace(/\s+/g, ' ').trim()
+  if (!texto) return null
+
+  const textoNormalizado = normalizarTexto(texto)
+  if (/decurso de prazo|prazo decorrido|certidao de decurso/.test(textoNormalizado)) return null
+
+  const patterns = [
+    /prazo\s+(?:comum\s+)?(?:de\s+)?(\d{1,3}|[a-zçãé]+)(?:\s*\([^)]{1,24}\))?\s+dias?(?:\s+uteis|\s+úteis)?(?:\s+(?:para|a fim de|para que)\s+([^.;\n]+))?/i,
+    /prazo\s+(?:comum\s+)?(?:de\s+)?\d{1,3}\s*\(([^)]{1,24})\)\s+dias?(?:\s+uteis|\s+úteis)?(?:\s+(?:para|a fim de|para que)\s+([^.;\n]+))?/i,
+    /(?:em|no prazo de)\s+(\d{1,3}|[a-zçãé]+)(?:\s*\([^)]{1,24}\))?\s+dias?(?:\s+uteis|\s+úteis)?\s*,?\s+(?:para|a fim de|para que)\s+([^.;\n]+)/i,
+    /(\d{1,3}|[a-zçãé]+)(?:\s*\([^)]{1,24}\))?\s+dias?(?:\s+uteis|\s+úteis)?\s*,?\s+(?:para|a fim de|para que)\s+([^.;\n]+)/i,
+  ]
+
+  for (const pattern of patterns) {
+    const match = texto.match(pattern)
+    if (!match) continue
+
+    const dias = parseNumeroPrazo(match[1])
+    if (dias == null || !Number.isFinite(dias) || dias <= 0 || dias > 120) continue
+
+    const complemento = limparComplementoPrazo(match[2])
+    return {
+      dias,
+      descricao: formatarAcaoPrazo(complemento, dias),
+      vencimento: calcularDiasUteis(dataBase, dias),
+      evidencia: match[0].trim(),
+    }
+  }
+
+  return null
 }
 
 async function classificarComLLM(tenantId: string, conteudo: string, resumo: string | null): Promise<string | null> {
@@ -242,6 +361,7 @@ function limparJsonResposta(responseText: string): string {
 function mapearTipoEventoPorAnalise(analise: AnalisePrazoLLM | null, texto: string): string | null {
   if (!analise || !analise.gerar) return null
 
+  if (analise.tipo === 'prazo') return 'PRAZO'
   if (analise.tipo === 'audiencia') return 'AUDIENCIA'
   if (analise.tipo === 'recurso') return 'RECURSO'
   if (analise.tipo === 'citacao') return 'CITACAO'
@@ -270,12 +390,59 @@ function parseDataVencimentoLLM(value: string | undefined): Date | null {
   return Number.isNaN(parsed.getTime()) ? null : parsed
 }
 
+function analiseTemVencimentoConfiavel(analise: AnalisePrazoLLM | null): boolean {
+  return Boolean(analise?.gerar && parseDataVencimentoLLM(analise.data_vencimento))
+}
+
 function mapearPrioridade(analise: AnalisePrazoLLM | null): string | null {
   if (!analise || !analise.gerar) return null
   if (analise.urgencia === 'alta') return 'alta'
   if (analise.urgencia === 'media') return 'media'
   if (analise.urgencia === 'baixa') return 'baixa'
   return null
+}
+
+async function persistirAnaliseMovimentacao(params: {
+  tenantId: string
+  numeroCnj: string
+  processMovimentacaoId?: string | null
+  escavadorMovimentacaoId?: string | null
+  payload: AnaliseMovimentacaoPayload
+}) {
+  const updatePayload = {
+    tipo_evento: params.payload.tipo_evento,
+    requer_acao: params.payload.requer_acao,
+    acao_sugerida: params.payload.acao_sugerida,
+    prazo_extraido_dias: params.payload.prazo_extraido_dias,
+    data_vencimento_extraida: params.payload.data_vencimento_extraida,
+    confianca_analise: params.payload.confianca_analise,
+    analise_json: params.payload,
+    analisado_em: new Date().toISOString(),
+  }
+
+  try {
+    if (params.processMovimentacaoId) {
+      const { error } = await adminSupabase
+        .from('process_movimentacoes')
+        .update(updatePayload)
+        .eq('id', params.processMovimentacaoId)
+      if (error) console.warn('[ANALISADOR] Falha ao persistir analise por id.', error.message)
+      return
+    }
+
+    if (params.escavadorMovimentacaoId) {
+      const { error } = await adminSupabase
+        .from('process_movimentacoes')
+        .update(updatePayload)
+        .eq('tenant_id', params.tenantId)
+        .eq('numero_cnj', params.numeroCnj)
+        .eq('escavador_movimentacao_id', params.escavadorMovimentacaoId)
+      if (error) console.warn('[ANALISADOR] Falha ao persistir analise por movimentacao do Escavador.', error.message)
+      return
+    }
+  } catch (error) {
+    console.warn('[ANALISADOR] Falha ao persistir analise da movimentacao.', error)
+  }
 }
 
 async function analisarComLLM(params: {
@@ -411,13 +578,32 @@ export async function analisarMovimentacao(params: {
   movimentacao: { id?: string | number; conteudo?: string; data?: string }
   advogado_id?: string | null
   escavador_movimentacao_id?: string | null
+  process_movimentacao_id?: string | null
 }) {
   const textoBruto = (params.movimentacao.conteudo ?? '').toLowerCase()
   const texto = textoBruto.normalize("NFD").replace(/[\u0300-\u036f]/g, "")
   const escavadorMovimentacaoId =
     (params.escavador_movimentacao_id ?? String(params.movimentacao.id ?? '')).trim() || null
+  const dataBase = parseDataBaseMovimentacao(params.movimentacao.data)
+  const prazoExplicito = extrairPrazoExplicito(params.movimentacao.conteudo, dataBase)
 
-  if (isLikelyLowSignalMovement(texto)) {
+  if (!prazoExplicito && isLikelyLowSignalMovement(texto)) {
+    await persistirAnaliseMovimentacao({
+      tenantId: params.tenant_id,
+      numeroCnj: params.numero_cnj,
+      processMovimentacaoId: params.process_movimentacao_id,
+      escavadorMovimentacaoId,
+      payload: {
+        tipo_evento: null,
+        requer_acao: false,
+        acao_sugerida: null,
+        prazo_extraido_dias: null,
+        data_vencimento_extraida: null,
+        confianca_analise: 'alta',
+        origem: 'ignorada',
+        motivo: 'Movimentacao de baixo sinal sem comando processual concreto.',
+      },
+    })
     console.log(`[ANALISADOR] Movimentacao de baixo sinal ignorada para ${params.numero_cnj}.`)
     return
   }
@@ -437,12 +623,31 @@ export async function analisarMovimentacao(params: {
       })
     : null
 
-  if (analiseLLM && !analiseLLM.gerar) {
+  if (analiseLLM && !analiseLLM.gerar && !prazoExplicito) {
+    await persistirAnaliseMovimentacao({
+      tenantId: params.tenant_id,
+      numeroCnj: params.numero_cnj,
+      processMovimentacaoId: params.process_movimentacao_id,
+      escavadorMovimentacaoId,
+      payload: {
+        tipo_evento: null,
+        requer_acao: false,
+        acao_sugerida: null,
+        prazo_extraido_dias: null,
+        data_vencimento_extraida: null,
+        confianca_analise: 'media',
+        origem: 'llm',
+        motivo: analiseLLM.motivo,
+      },
+    })
     console.log(`[ANALISADOR] Prazo nao gerado: ${analiseLLM.motivo}`)
     return
   }
 
   let tipoEvento = mapearTipoEventoPorAnalise(analiseLLM, texto)
+  if (!tipoEvento && prazoExplicito) {
+    tipoEvento = 'PRAZO'
+  }
 
   // Fallback para classificacao por keywords se o JSON do LLM falhar
   if (!tipoEvento) {
@@ -465,7 +670,25 @@ export async function analisarMovimentacao(params: {
     }
   }
 
-  if (!tipoEvento) return
+  if (!tipoEvento) {
+    await persistirAnaliseMovimentacao({
+      tenantId: params.tenant_id,
+      numeroCnj: params.numero_cnj,
+      processMovimentacaoId: params.process_movimentacao_id,
+      escavadorMovimentacaoId,
+      payload: {
+        tipo_evento: null,
+        requer_acao: false,
+        acao_sugerida: null,
+        prazo_extraido_dias: null,
+        data_vencimento_extraida: null,
+        confianca_analise: 'baixa',
+        origem: 'heuristica',
+        motivo: 'Nao foi possivel classificar a movimentacao em um evento juridico acionavel.',
+      },
+    })
+    return
+  }
 
   // Busca regra de prazo
   const { data: prazo } = await adminSupabase
@@ -474,10 +697,76 @@ export async function analisarMovimentacao(params: {
     .eq('tipo_evento', tipoEvento)
     .single()
 
-  if (!prazo) return
+  const prazoGenerico = !prazo && tipoEvento === 'PRAZO' && (prazoExplicito || analiseTemVencimentoConfiavel(analiseLLM))
+    ? {
+        tipo_evento: 'PRAZO',
+        dias_uteis: prazoExplicito?.dias ?? 0,
+        descricao: prazoExplicito?.descricao || String(analiseLLM?.gerar ? analiseLLM.descricao : 'Cumprir prazo processual').trim(),
+        prioridade: 'MEDIA',
+        tipo_tarefa: 'Prazo processual',
+      }
+    : null
+
+  const regraPrazo = prazo ?? prazoGenerico
+
+  if (tipoEvento === 'PRAZO' && !prazoExplicito && !analiseTemVencimentoConfiavel(analiseLLM)) {
+    await persistirAnaliseMovimentacao({
+      tenantId: params.tenant_id,
+      numeroCnj: params.numero_cnj,
+      processMovimentacaoId: params.process_movimentacao_id,
+      escavadorMovimentacaoId,
+      payload: {
+        tipo_evento: tipoEvento,
+        requer_acao: true,
+        acao_sugerida: analiseLLM?.gerar ? analiseLLM.descricao : 'Revisar possivel prazo processual',
+        prazo_extraido_dias: null,
+        data_vencimento_extraida: null,
+        confianca_analise: 'baixa',
+        origem: analiseLLM ? 'llm' : 'heuristica',
+        motivo: 'Possivel prazo identificado sem vencimento confiavel; prazo automatico nao foi criado.',
+      },
+    })
+    return
+  }
+
+  if (!regraPrazo) {
+    await persistirAnaliseMovimentacao({
+      tenantId: params.tenant_id,
+      numeroCnj: params.numero_cnj,
+      processMovimentacaoId: params.process_movimentacao_id,
+      escavadorMovimentacaoId,
+      payload: {
+        tipo_evento: tipoEvento,
+        requer_acao: false,
+        acao_sugerida: null,
+        prazo_extraido_dias: null,
+        data_vencimento_extraida: null,
+        confianca_analise: 'baixa',
+        origem: 'heuristica',
+        motivo: 'Evento classificado, mas sem regra de prazo configurada.',
+      },
+    })
+    return
+  }
 
   // Arquivamento/extinção: encerra processo
   if (tipoEvento === 'ARQUIVAMENTO' || tipoEvento === 'EXTINCAO') {
+    await persistirAnaliseMovimentacao({
+      tenantId: params.tenant_id,
+      numeroCnj: params.numero_cnj,
+      processMovimentacaoId: params.process_movimentacao_id,
+      escavadorMovimentacaoId,
+      payload: {
+        tipo_evento: tipoEvento,
+        requer_acao: false,
+        acao_sugerida: null,
+        prazo_extraido_dias: null,
+        data_vencimento_extraida: null,
+        confianca_analise: analiseLLM ? 'media' : 'baixa',
+        origem: analiseLLM ? 'llm' : 'heuristica',
+        motivo: 'Movimentacao indica encerramento/arquivamento do processo.',
+      },
+    })
     await adminSupabase
       .from('monitored_processes')
       .update({ ativo: false, monitoramento_ativo: false, kanban_coluna: 'ENCERRADO' })
@@ -486,14 +775,30 @@ export async function analisarMovimentacao(params: {
     return
   }
 
-  const dataBase = params.movimentacao.data ? new Date(params.movimentacao.data) : new Date()
-  const vencimento = parseDataVencimentoLLM(analiseLLM && analiseLLM.gerar ? analiseLLM.data_vencimento : undefined)
-    ?? calcularDiasUteis(dataBase, prazo.dias_uteis)
-  const descricaoPrazo = String(analiseLLM?.gerar ? analiseLLM.descricao : prazo.descricao ?? '').trim()
-  const prioridadePrazo = mapearPrioridade(analiseLLM) ?? prazo.prioridade.toLowerCase()
+  const vencimento = prazoExplicito?.vencimento
+    ?? parseDataVencimentoLLM(analiseLLM && analiseLLM.gerar ? analiseLLM.data_vencimento : undefined)
+    ?? calcularDiasUteis(dataBase, regraPrazo.dias_uteis)
+  const descricaoPrazo = String(prazoExplicito?.descricao || (analiseLLM?.gerar ? analiseLLM.descricao : regraPrazo.descricao) || '').trim()
+  const prioridadePrazo = mapearPrioridade(analiseLLM) ?? String(regraPrazo.prioridade || 'MEDIA').toLowerCase()
 
   // Nao gerar prazo para despachos genericos
   if (descricaoPrazo.toLowerCase().includes('despacho')) {
+    await persistirAnaliseMovimentacao({
+      tenantId: params.tenant_id,
+      numeroCnj: params.numero_cnj,
+      processMovimentacaoId: params.process_movimentacao_id,
+      escavadorMovimentacaoId,
+      payload: {
+        tipo_evento: tipoEvento,
+        requer_acao: false,
+        acao_sugerida: null,
+        prazo_extraido_dias: null,
+        data_vencimento_extraida: null,
+        confianca_analise: 'alta',
+        origem: prazoExplicito ? 'deterministica' : analiseLLM ? 'llm' : 'heuristica',
+        motivo: 'Despacho generico ignorado para evitar criacao indevida de prazo.',
+      },
+    })
     console.log(`[ANALISADOR] Despacho generico ignorado para ${params.numero_cnj}.`)
     return
   }
@@ -508,6 +813,23 @@ export async function analisarMovimentacao(params: {
       .limit(1)
 
     if (prazosDuplicados && prazosDuplicados.length > 0) {
+      await persistirAnaliseMovimentacao({
+        tenantId: params.tenant_id,
+        numeroCnj: params.numero_cnj,
+        processMovimentacaoId: params.process_movimentacao_id,
+        escavadorMovimentacaoId,
+        payload: {
+          tipo_evento: tipoEvento,
+          requer_acao: true,
+          acao_sugerida: descricaoPrazo,
+          prazo_extraido_dias: prazoExplicito?.dias ?? null,
+          data_vencimento_extraida: vencimento.toISOString(),
+          confianca_analise: prazoExplicito ? 'alta' : 'media',
+          origem: prazoExplicito ? 'deterministica' : analiseLLM ? 'llm' : 'heuristica',
+          motivo: 'Movimentacao ja processada anteriormente; prazo duplicado nao foi recriado.',
+          evidencia: prazoExplicito?.evidencia ?? null,
+        },
+      })
       console.log(
         `[ANALISADOR] Movimentacao ${escavadorMovimentacaoId} ja processada para ${params.numero_cnj}. Ignorando duplicata.`
       )
@@ -544,10 +866,27 @@ export async function analisarMovimentacao(params: {
     : false
 
   if (duplicadoSemantico) {
-      console.log(
+    await persistirAnaliseMovimentacao({
+      tenantId: params.tenant_id,
+      numeroCnj: params.numero_cnj,
+      processMovimentacaoId: params.process_movimentacao_id,
+      escavadorMovimentacaoId,
+      payload: {
+        tipo_evento: tipoEvento,
+        requer_acao: true,
+        acao_sugerida: descricaoPrazo,
+        prazo_extraido_dias: prazoExplicito?.dias ?? null,
+        data_vencimento_extraida: vencimento.toISOString(),
+        confianca_analise: prazoExplicito ? 'alta' : 'media',
+        origem: prazoExplicito ? 'deterministica' : analiseLLM ? 'llm' : 'heuristica',
+        motivo: 'Prazo semanticamente semelhante ja existe; novo prazo nao foi recriado.',
+        evidencia: prazoExplicito?.evidencia ?? null,
+      },
+    })
+    console.log(
       `[ANALISADOR] Prazo semelhante ja existente para ${params.numero_cnj} (${descricaoPrazo}). Ignorando duplicata.`
-      )
-      return
+    )
+    return
   }
 
   // Upsert do card do processo — um card por processo, movimentacoes acumuladas
@@ -691,6 +1030,28 @@ export async function analisarMovimentacao(params: {
     }
   )
 
+  await persistirAnaliseMovimentacao({
+    tenantId: params.tenant_id,
+    numeroCnj: params.numero_cnj,
+    processMovimentacaoId: params.process_movimentacao_id,
+    escavadorMovimentacaoId,
+    payload: {
+      tipo_evento: tipoEvento,
+      requer_acao: true,
+      acao_sugerida: descricaoPrazo,
+      prazo_extraido_dias: prazoExplicito?.dias ?? null,
+      data_vencimento_extraida: vencimento.toISOString(),
+      confianca_analise: prazoExplicito ? 'alta' : analiseLLM ? 'media' : 'baixa',
+      origem: prazoExplicito ? 'deterministica' : analiseLLM ? 'llm' : 'heuristica',
+      motivo: prazoExplicito?.evidencia
+        ? `Prazo explicito identificado na movimentacao: ${prazoExplicito.evidencia}`
+        : analiseLLM?.gerar
+          ? analiseLLM.motivo
+          : 'Prazo criado por regra de classificacao juridica.',
+      evidencia: prazoExplicito?.evidencia ?? null,
+    },
+  })
+
   const proactiveDraft = await prepareProactiveMovementDraft({
     tenantId: params.tenant_id,
     processTaskId: taskId,
@@ -711,5 +1072,5 @@ export async function analisarMovimentacao(params: {
     console.error(`[ANALISADOR] Lex proativo falhou para ${params.numero_cnj}: ${proactiveDraft.reason}`)
   }
 
-  console.log(`[ANALISADOR] ✅ ${prazo.tipo_tarefa} criado para ${params.numero_cnj} — vence ${vencimento.toDateString()}`)
+  console.log(`[ANALISADOR] ✅ ${regraPrazo.tipo_tarefa} criado para ${params.numero_cnj} — vence ${vencimento.toDateString()}`)
 }

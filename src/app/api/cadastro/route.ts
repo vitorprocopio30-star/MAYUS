@@ -23,6 +23,11 @@ const CadastroSchema = z.object({
 
 type CadastroPayload = z.infer<typeof CadastroSchema>
 
+const PLAN_PRICES = {
+  mayus_monthly: { amount: 647.00, amountCents: 64700, billingCycle: 'mensal' },
+  mayus_annual: { amount: 5964.00, amountCents: 596400, billingCycle: 'anual' },
+} as const
+
 function nextDueDate() {
   const d = new Date()
   d.setDate(d.getDate() + 1)
@@ -56,16 +61,19 @@ export async function POST(req: NextRequest) {
 
   try {
     tenantId = crypto.randomUUID()
+    const plan = PLAN_PRICES[data.plano_id]
 
     const { error: tenantErr } = await supabase.from('tenants').insert({
       id: tenantId,
       name: data.nome_escritorio,
       cnpj: data.cnpj ?? null,
-      billing_cycle: data.plano_id === 'mayus_annual' ? 'anual' : 'mensal',
+      billing_cycle: plan.billingCycle,
       plan_type: 'scale',
       status: 'trial',
       billing_cycle_end: new Date(Date.now() + 7 * 86400000).toISOString(),
       max_processos: 100,
+      platform_billing_amount_cents: plan.amountCents,
+      platform_billing_currency: 'BRL',
       created_at: new Date().toISOString(),
     })
     if (tenantErr) throw new Error(`Tenant: ${tenantErr.message}`)
@@ -97,7 +105,7 @@ export async function POST(req: NextRequest) {
       customer         : asaasCustomerId,
       billingType      : 'UNDEFINED',
       cycle            : data.plano_id === 'mayus_annual' ? 'YEARLY' : 'MONTHLY',
-      value            : data.plano_id === 'mayus_annual' ? 5964.00 : 647.00,
+      value            : plan.amount,
       nextDueDate      : nextDueDate(),
       description      : `MAYUS — Plano ${data.plano_id === 'mayus_annual' ? 'Anual' : 'Mensal'}`,
       externalReference: tenantId,
@@ -107,7 +115,13 @@ export async function POST(req: NextRequest) {
     // 2. Buscar link de checkout
     const checkoutUrl = await AsaasService.getCheckoutUrl(asaasSubId)
 
-    await supabase.from('tenants').update({ asaas_customer_id: customer.id }).eq('id', tenantId)
+    await supabase.from('tenants').update({
+      asaas_customer_id: customer.id,
+      asaas_subscription_id: asaasSubId,
+      platform_billing_amount_cents: plan.amountCents,
+      platform_billing_currency: 'BRL',
+      updated_at: new Date().toISOString(),
+    }).eq('id', tenantId)
 
     return NextResponse.json({
       success      : true,

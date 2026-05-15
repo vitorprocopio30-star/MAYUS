@@ -131,7 +131,7 @@ export default function MuralFeedbacksPage() {
   const handlePost = async () => {
     if (!input.trim()) return;
     if (!profile?.tenant_id || !user?.id) {
-        toast.error("Sua sessÃ£o nÃ£o estÃ¡ ativa.");
+        toast.error("Sua sessão não está ativa.");
         return;
     }
 
@@ -141,9 +141,9 @@ export default function MuralFeedbacksPage() {
       let isApproved = true;
       let sentiment = "neutral";
 
-      // Fase 1: ModeraÃ§Ã£o da IA
+      // Fase 1: Moderação da IA
       if (apiKeyData) {
-         toast.info("A IA GuardiÃ£ estÃ¡ revisando seu texto...");
+         toast.info("A IA Guardiã está revisando seu texto...");
          const res = await fetch("/api/ai/mural-moderator", {
            method: "POST",
            headers: { "Content-Type": "application/json" },
@@ -159,7 +159,7 @@ export default function MuralFeedbacksPage() {
            isApproved = modData.isApproved;
            sentiment = modData.sentiment;
            if (!isApproved) {
-             toast.error(`Bloqueado pela IA: ${modData.reason || "ConteÃºdo imprÃ³prio para o ambiente de trabalho."}`, {
+             toast.error(`Bloqueado pela IA: ${modData.reason || "Conteúdo impróprio para o ambiente de trabalho."}`, {
                 duration: 6000,
              });
              setIsLoading(false);
@@ -167,10 +167,10 @@ export default function MuralFeedbacksPage() {
            }
          }
       } else {
-         toast.warning("Nenhuma inteligÃªncia conectada para moderar. Postando diretamente (Risco de ambiente).");
+         toast.warning("Nenhuma inteligência conectada para moderar. Postando diretamente (Risco de ambiente).");
       }
 
-      // Fase 2: InserÃ§Ã£o no Banco
+      // Fase 2: Inserção no Banco
       const { error } = await supabase
         .from("mural_feedbacks")
         .insert({
@@ -238,7 +238,7 @@ export default function MuralFeedbacksPage() {
           <div className="mt-6 relative bg-gradient-to-r from-[#CCA761]/10 via-transparent to-transparent pl-6 py-4 border-l-[3px] border-[#CCA761]/60 max-w-3xl overflow-hidden group rounded-r-2xl backdrop-blur-sm">
              <div className="absolute inset-0 bg-white/5 translate-x-[-100%] group-hover:opacity-100 transition-opacity duration-1000 pointer-events-none" />
              <p className={`text-[#eadd87]/90 text-lg lg:text-2xl font-medium tracking-wide ${cormorant.className} italic drop-shadow-md leading-relaxed`}>
-                &ldquo;Tudo que Ã© escrito aqui se autodestrÃ³i em 24 horas. Seja transparente. Seja Ã©tico.&rdquo;
+                 &quot;Tudo que é escrito aqui se autodestrói em 24 horas. Seja transparente. Seja ético.&quot;
              </p>
           </div>
         </div>
@@ -246,17 +246,17 @@ export default function MuralFeedbacksPage() {
         <div className="flex flex-col items-center xl:items-end w-full xl:w-auto mt-6 xl:mt-0 gap-4">
            {!apiKeyData ? (
              <div className="flex items-center gap-2 bg-red-500/10 border border-red-500/30 text-red-400 px-4 py-2 rounded-lg text-xs font-bold tracking-widest uppercase">
-                <AlertTriangle size={14} /> IA GuardiÃ£ Inativa
+                <AlertTriangle size={14} /> IA Guardiã Inativa
              </div>
            ) : (
              <div className="flex items-center gap-2 bg-[#CCA761]/10 border border-[#CCA761]/30 text-[#CCA761] px-4 py-2 rounded-lg text-xs font-bold tracking-widest uppercase shadow-[0_0_15px_rgba(204,167,97,0.2)]">
-                <Sparkles size={14} className="animate-pulse" /> IA GuardiÃ£ Ativa
+                <Sparkles size={14} className="animate-pulse" /> IA Guardiã Ativa
              </div>
            )}
         </div>
       </div>
 
-      {/* Caixa de CriaÃ§Ã£o */}
+      {/* Caixa de Criação */}
       <div className="glass-card-premium rounded-2xl p-6 relative z-50 group/box">
         {/* Camada isolada para os efeitos de fundo sem cortar o Dropdown de Emojis */}
         <div className="absolute inset-0 rounded-2xl overflow-hidden pointer-events-none -z-10">
@@ -267,12 +267,12 @@ export default function MuralFeedbacksPage() {
              <textarea
                value={input}
                onChange={(e) => setInput(e.target.value)}
-               placeholder="Escreva seu elogio, crÃ­tica ou sugestÃ£o para o time. Lembre-se, o Agente MAYUS irÃ¡ analisar seu texto..."
+               placeholder="Escreva seu elogio, crítica ou sugestão para o time. Lembre-se, o Agente MAYUS irá analisar seu texto..."
                className="w-full bg-background border border-border rounded-xl p-4 min-h-[120px] focus:outline-none focus:border-primary focus:shadow-[0_0_20px_rgba(204,167,97,0.3)] text-sm text-foreground resize-none transition-all duration-300 placeholder:text-muted-foreground relative z-10"
                disabled={isLoading}
              />
 
-             {/* BotÃ£o de abrir Emoji Picker Customizado */}
+             {/* Botão de abrir Emoji Picker Customizado */}
              <div className="flex flex-wrap items-center gap-2 mt-3 px-2 relative">
                 <button
                   type="button"
@@ -286,7 +286,7 @@ export default function MuralFeedbacksPage() {
                 {showEmojiPicker && (
                   <div className="absolute top-12 left-0 z-50 bg-card/95 backdrop-blur-xl border border-border rounded-2xl p-4 shadow-2xl w-[280px]">
                     <div className="grid grid-cols-6 gap-3">
-                      {["ðŸ”¥","ðŸš€","ðŸ’¡","ðŸ‘","ðŸŽ¯","ðŸ¤","ðŸ¤","âš ï¸","ðŸ¤–","â­","ðŸŽ‰","ðŸ†","ðŸ’¯","ðŸ’Ž","ðŸ¤¯","ðŸ‘€","â¤ï¸","âœ…","ðŸš¨","ðŸ’¼","ðŸ“Œ","ðŸ“ˆ","ðŸ’ª","ðŸ˜Ž"].map((emoji) => (
+                      {["🔥","🚀","💡","👏","🎯","🤝","🤐","⚠️","🤖","⭐","🎉","🏆","💯","💎","🤯","👀","❤️","✅","🚨","💼","📌","📈","💪","😎"].map((emoji) => (
                         <button
                           key={emoji}
                           type="button"
@@ -318,7 +318,7 @@ export default function MuralFeedbacksPage() {
                 disabled={isLoading}
               >
                 {isAnonymous ? <EyeOff size={16} /> : <Eye size={16} />}
-                {isAnonymous ? "Modo AnÃ´nimo Ligado" : "Postar de forma anÃ´nima?"}
+                {isAnonymous ? "Modo Anônimo Ligado" : "Postar de forma anônima?"}
               </button>
 
               <button
@@ -336,7 +336,7 @@ export default function MuralFeedbacksPage() {
         </div>
       </div>
 
-      {/* ExibiÃ§Ã£o do Mural (Vitrine de Post-Its Vidro) */}
+      {/* Exibição do Mural (Vitrine de Post-Its Vidro) */}
       <div className="pt-8">
         {isFetching ? (
            <div className="flex justify-center py-20">
@@ -345,7 +345,7 @@ export default function MuralFeedbacksPage() {
         ) : feedbacks.length === 0 ? (
            <div className="flex flex-col items-center justify-center py-20 opacity-50">
              <MessageSquare size={48} className="text-gray-600 mb-4" />
-             <p className="text-gray-400 font-medium text-sm">O Mural estÃ¡ completamente em branco nas Ãºltimas 24 horas.</p>
+             <p className="text-gray-400 font-medium text-sm">O Mural está completamente em branco nas últimas 24 horas.</p>
            </div>
         ) : (
            <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
@@ -374,12 +374,12 @@ export default function MuralFeedbacksPage() {
 
                    <Quote size={44} className="absolute top-4 right-4 text-[#CCA761]/40 group-hover:text-[#CCA761] group-hover:scale-110 transition-all duration-500 drop-shadow-[0_0_10px_rgba(204,167,97,0.3)] group-hover:drop-shadow-[0_0_20px_rgba(204,167,97,0.8)] z-0" />
 
-                   {/* Corpo do Feedback com Padding Right (pr-12) para nÃ£o atropelar as aspas */}
+                   {/* Corpo do Feedback com Padding Right (pr-12) para não atropelar as aspas */}
                    <div className="text-gray-300 text-sm leading-relaxed whitespace-pre-wrap pt-4 pb-6 pr-12 min-h-[80px] relative z-10 font-medium">
                      {fb.content}
                    </div>
 
-                 {/* RodapÃ© do Post-It */}
+                 {/* Rodapé do Post-It */}
                  <div className="mt-auto pt-4 border-t border-white/5 flex items-end justify-between">
                     <div className="flex items-center gap-3">
                       <div className={`w-8 h-8 rounded-full flex items-center justify-center ${fb.is_anonymous ? 'bg-white/5 text-gray-500' : 'bg-[#CCA761]/20 text-[#CCA761] border border-[#CCA761]/30'}`}>
@@ -387,7 +387,7 @@ export default function MuralFeedbacksPage() {
                       </div>
                       <div className="flex flex-col">
                         <span className={`text-[10px] font-black uppercase tracking-widest ${fb.is_anonymous ? 'text-gray-500' : 'text-[#CCA761]'}`}>
-                          {fb.is_anonymous ? 'Colaborador AnÃ´nimo' : (fb.profiles?.full_name || 'Membro do Time')}
+                          {fb.is_anonymous ? 'Colaborador Anônimo' : (fb.profiles?.full_name || 'Membro do Time')}
                         </span>
                         <span className="text-[9px] font-bold text-gray-600 uppercase tracking-widest mt-0.5">
                           {calculateTimeLeft(fb.created_at)}
@@ -395,7 +395,7 @@ export default function MuralFeedbacksPage() {
                       </div>
                     </div>
 
-                    {/* VotaÃ§Ã£o: Curtir / NÃ£o Curtir */}
+                    {/* Votação: Curtir / Não Curtir */}
                     <div className="flex items-center gap-3">
                       <button
                         onClick={() => handleVote(fb.id, 'like')}
@@ -416,7 +416,7 @@ export default function MuralFeedbacksPage() {
                       <span className="w-2 h-2 rounded-full bg-green-500/50 shadow-[0_0_8px_rgba(34,197,94,0.5)]" title="Sentimento Positivo" />
                     )}
                     {fb.sentiment === 'negative' && (
-                      <span className="w-2 h-2 rounded-full bg-red-500/50 shadow-[0_0_8px_rgba(239,68,68,0.5)]" title="CrÃ­tica/Ponto de AtenÃ§Ã£o" />
+                      <span className="w-2 h-2 rounded-full bg-red-500/50 shadow-[0_0_8px_rgba(239,68,68,0.5)]" title="Crítica/Ponto de Atenção" />
                     )}
                  </div>
                </div>

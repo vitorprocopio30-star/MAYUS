@@ -59,23 +59,83 @@ describe("daily playbook", () => {
           assigned_name_snapshot: "Equipe Juridica",
         },
       ],
+      whatsappSignals: [
+        {
+          contactName: "Maria Aparecida",
+          direction: "inbound",
+          messageType: "document",
+          content: "Enviei o contracheque",
+          status: "pending",
+          createdAt: "2026-04-30T08:10:00.000Z",
+        },
+      ],
+      processSignals: [
+        {
+          id: "proc-1",
+          title: "Joao Ferreira x INSS",
+          stageName: "Prazo aberto",
+          sector: "Previdenciario",
+          deadline: "2026-05-02T12:00:00.000Z",
+          lastMovementAt: "2026-04-28T12:00:00.000Z",
+          claimValue: 12000,
+        },
+      ],
+      financialSignals: [
+        {
+          id: "fin-1",
+          amount: 2400,
+          status: "Pendente",
+          dueDate: "2026-04-25",
+          description: "Parcela Ana Souza",
+        },
+      ],
+      salesSignals: [
+        {
+          id: "sale-1",
+          clientName: "Carlos Lima",
+          professionalName: "Vitor",
+          ticketTotal: 4500,
+          contractDate: "2026-04-20",
+        },
+      ],
+      systemSignals: [
+        {
+          eventType: "whatsapp_internal_command_warning",
+          severity: "warning",
+          source: "mayus",
+          createdAt: "2026-04-30T07:30:00.000Z",
+        },
+      ],
+      officePlaybookStatus: "draft",
     });
 
     expect(playbook.title).toBe("Dutra Advocacia - Playbook do dia");
     expect(playbook.metrics.crmLeadsNeedingNextStep).toBe(1);
     expect(playbook.metrics.agendaCriticalTasks).toBe(1);
     expect(playbook.metrics.agendaTodayTasks).toBe(1);
-    expect(playbook.priorityActions[0]).toMatchObject({
-      area: "agenda",
-      urgency: "critical",
-      ownerLabel: "Equipe Juridica",
-    });
+    expect(playbook.metrics.whatsappUnanswered).toBe(1);
+    expect(playbook.metrics.legalCriticalDeadlines).toBe(1);
+    expect(playbook.metrics.financialOverdueAmount).toBe(2400);
+    expect(playbook.metrics.salesMonthAmount).toBe(4500);
+    expect(playbook.metrics.systemAlerts).toBe(1);
+    expect(playbook.metrics.officeScore).toBeLessThan(100);
+    expect(playbook.priorityActions).toEqual(expect.arrayContaining([
+      expect.objectContaining({
+        area: "agenda",
+        urgency: "critical",
+        ownerLabel: "Equipe Juridica",
+      }),
+    ]));
     expect(playbook.crm.leadsNeedingNextStep[0].organizedObjective).toContain("qualificar Maria Previdenciario em Previdenciario");
     expect(playbook.whatsappSummary).toContain("MAYUS Playbook");
     expect(playbook.whatsappSummary).toContain("Nenhuma acao externa foi executada automaticamente.");
     expect(playbook.reportMenu.map((item) => item.id)).toEqual(expect.arrayContaining(["executive", "crm", "frontdesk", "calls", "playbook"]));
     expect(playbook.htmlReport).toContain("<nav class=\"sidebar\">");
     expect(playbook.htmlReport).toContain("Front desk");
+    expect(playbook.htmlReport).toContain("WhatsApp <em>e front desk</em>");
+    expect(playbook.htmlReport).toContain("Juridico <em>e processos</em>");
+    expect(playbook.htmlReport).toContain("Financeiro <em>e recebiveis</em>");
+    expect(playbook.htmlReport).toContain("Saude <em>MAYUS</em>");
     expect(playbook.externalSideEffectsBlocked).toBe(true);
   });
 
@@ -144,8 +204,16 @@ describe("daily playbook", () => {
       runId: "run-1",
       stepId: "step-1",
       artifactId: "artifact-1",
+      publicShareToken: expect.stringMatching(/^pb_[A-Za-z0-9_-]+$/),
+      htmlFilePath: null,
+      htmlFileUrl: null,
     });
-    expect(inserts.some((item) => item.table === "brain_artifacts" && item.payload.artifact_type === "daily_playbook")).toBe(true);
+    const artifactInsert = inserts.find((item) => item.table === "brain_artifacts" && item.payload.artifact_type === "daily_playbook");
+    expect(artifactInsert).toBeTruthy();
+    expect(artifactInsert?.payload.metadata).toMatchObject({
+      public_share_enabled: true,
+      public_share_token: trace?.publicShareToken,
+    });
     expect(inserts.some((item) => item.table === "learning_events" && item.payload.event_type === "daily_playbook_created")).toBe(true);
     expect(JSON.stringify(inserts)).not.toContain("2199999");
   });

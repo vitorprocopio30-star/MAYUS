@@ -7,9 +7,23 @@ import {
   Send, Bot, User, BrainCircuit, Sparkles, Loader2, KeyRound,
   AlertCircle, CheckCircle, XCircle, ShieldAlert,
   History, Plus, Trash2, Menu, X, MessageSquare, ChevronLeft, Search,
-  Mic, Volume2, Square, VolumeX, SlidersHorizontal
+  Mic, Volume2, Square, VolumeX, SlidersHorizontal, ChevronDown, Headphones
 } from "lucide-react";
 import { useUserProfile } from "@/hooks/useUserProfile";
+import {
+  DEFAULT_MAYUS_REALTIME_MODEL,
+  DEFAULT_MAYUS_REALTIME_VOICE,
+  MAYUS_REALTIME_BRL_PER_USD,
+  MAYUS_REALTIME_WEB_SEARCH_USD_PER_CALL,
+  REALTIME_MODEL_OPTIONS,
+  REALTIME_VOICE_OPTIONS,
+  estimateMayusRealtimeUsageCost,
+  normalizeMayusRealtimeModel,
+  type MayusRealtimeCostEstimate,
+  type MayusRealtimeModel,
+  type MayusRealtimeVoice,
+  type RealtimeUsage,
+} from "@/lib/voice/realtime-persona";
 import { toast } from "sonner";
 import Link from "next/link";
 import dayjs from "dayjs";
@@ -19,6 +33,7 @@ import "dayjs/locale/pt-br";
 dayjs.extend(relativeTime);
 dayjs.locale("pt-br");
 
+const CHAT_TURN_TIMEOUT_MS = 35_000;
 const cormorant = Cormorant_Garamond({ subsets: ["latin"], weight: ["400","500","600","700"], style: ["italic"] });
 const montserrat = Montserrat({ subsets: ["latin"], weight: ["300","400","500","600"] });
 
@@ -37,6 +52,12 @@ interface MessageKernel {
   auditLogId?: string;
   awaitingPayload?: AwaitingPayload;
   outputPayload?: Record<string, unknown>;
+  capabilityName?: string;
+  handlerType?: string | null;
+  missionKind?: string;
+  voiceReply?: string;
+  approvalRequired?: boolean;
+  approvalId?: string | null;
   taskId?: string;
   runId?: string;
   stepId?: string;
@@ -62,6 +83,223 @@ type ModelOption = {
   label: string;
   description: string;
 };
+
+type RealtimeStatus =
+  | "idle"
+  | "connecting"
+  | "listening"
+  | "thinking"
+  | "speaking"
+  | "tool_calling"
+  | "searching"
+  | "creating_task"
+  | "consulting_mayus"
+  | "awaiting_approval"
+  | "error";
+
+type ConversationTransport = "idle" | "realtime" | "legacy";
+
+type RealtimeFunctionCall = {
+  type?: string;
+  name?: string;
+  call_id?: string;
+  arguments?: string;
+};
+
+type RealtimeSessionResponse = {
+  client_secret?: string;
+  model?: MayusRealtimeModel;
+  voice?: MayusRealtimeVoice;
+  expires_at?: string | null;
+  error?: string;
+};
+
+const REALTIME_STATUS_LABEL: Record<RealtimeStatus, string> = {
+  idle: "Realtime pronto",
+  connecting: "Conectando Realtime",
+  listening: "Ouvindo",
+  thinking: "Pensando",
+  speaking: "Falando",
+  tool_calling: "Consultando Brain",
+  searching: "Pesquisando",
+  creating_task: "Criando tarefa",
+  consulting_mayus: "Consultando MAYUS",
+  awaiting_approval: "Aguardando aprovacao",
+  error: "Realtime bloqueado",
+};
+
+const REALTIME_STUCK_STATUSES = new Set<RealtimeStatus>([
+  "thinking",
+  "tool_calling",
+  "searching",
+  "creating_task",
+  "consulting_mayus",
+]);
+
+const MISSION_KIND_LABELS: Record<string, string> = {
+  case_status: "Status do caso",
+  process_mission_plan: "Missao processual",
+  process_execute_next: "Proximo passo seguro",
+  case_brain_insights: "Case Brain 2.0",
+};
+
+const KERNEL_STATUS_LABELS: Record<string, string> = {
+  executed: "Concluido",
+  success: "Concluido",
+  completed: "Concluido",
+  awaiting_approval: "Aguardando aprovacao",
+  failed: "Bloqueado",
+  blocked: "Bloqueado",
+  timeout: "Tempo esgotado",
+};
+
+const FINANCE_ARTIFACT_TYPE_LABELS: Record<string, string> = {
+  asaas_billing: "Asaas billing",
+  collections_followup_plan: "Plano de cobranca",
+  revenue_flow_plan: "Revenue-to-case",
+  revenue_case_opening: "Caso aberto por receita",
+  revenue_to_case: "Revenue-to-case",
+};
+
+const FINANCE_CAPABILITY_ARTIFACT_TYPES: Record<string, string> = {
+  billing_create: "asaas_billing",
+  asaas_cobrar: "asaas_billing",
+  collections_followup: "collections_followup_plan",
+  finance_collections_followup: "collections_followup_plan",
+  revenue_flow_plan: "revenue_flow_plan",
+  growth_revenue_flow_plan: "revenue_flow_plan",
+  revenue_to_case: "revenue_to_case",
+};
+
+type FinanceArtifactHighlight = {
+  artifactType: string;
+  label: string;
+  status: string;
+  details: string[];
+};
+
+function getPayloadString(payload: Record<string, unknown> | undefined, keys: string[]) {
+  if (!payload) return null;
+  for (const key of keys) {
+    const value = payload[key];
+    if (typeof value === "string" && value.trim()) return value.trim();
+    if (typeof value === "number" && Number.isFinite(value)) return String(value);
+    if (typeof value === "boolean") return value ? "sim" : "nao";
+  }
+  return null;
+}
+
+function inferFinanceArtifactType(kernel?: MessageKernel) {
+  if (!kernel) return null;
+  const payload = kernel.outputPayload || {};
+  const directType = getPayloadString(payload, ["artifact_type", "artifactType"]);
+  if (directType && FINANCE_ARTIFACT_TYPE_LABELS[directType]) return directType;
+
+  if (getPayloadString(payload, ["cobranca_id", "billing_idempotency_key", "billing_status"])) {
+    return "asaas_billing";
+  }
+  if (getPayloadString(payload, ["collection_stage", "collection_priority", "days_overdue"])) {
+    return "collections_followup_plan";
+  }
+  if (getPayloadString(payload, ["revenue_flow_step_count", "revenue_flow_blocked_reason"])) {
+    return "revenue_flow_plan";
+  }
+
+  const capability = kernel.capabilityName || kernel.awaitingPayload?.skillName || "";
+  const handlerType = kernel.handlerType || "";
+  return FINANCE_CAPABILITY_ARTIFACT_TYPES[capability] ||
+    FINANCE_CAPABILITY_ARTIFACT_TYPES[handlerType] ||
+    null;
+}
+
+function getFinanceArtifactHighlights(kernel?: MessageKernel): FinanceArtifactHighlight[] {
+  const artifactType = inferFinanceArtifactType(kernel);
+  if (!artifactType || !kernel) return [];
+  const payload = kernel.outputPayload || {};
+  const label = FINANCE_ARTIFACT_TYPE_LABELS[artifactType] || artifactType;
+  const status = artifactType === "asaas_billing"
+    ? getPayloadString(payload, ["billing_status", "status_inicial"]) || (kernel.approvalRequired ? "aguardando aprovacao" : "registrado")
+    : artifactType === "collections_followup_plan"
+      ? getPayloadString(payload, ["collection_priority", "collection_stage"]) || "plano criado"
+      : getPayloadString(payload, ["revenue_flow_blocked_reason"]) || getPayloadString(payload, ["status"]) || "trilha supervisionada";
+
+  const cobrancaId = getPayloadString(payload, ["cobranca_id"]);
+  const collectionStage = getPayloadString(payload, ["collection_stage"]);
+  const revenueStepCount = getPayloadString(payload, ["revenue_flow_step_count"]);
+  const crmTaskId = getPayloadString(payload, ["crm_task_id"]);
+  const billingArtifactId = getPayloadString(payload, ["billing_artifact_id"]);
+  const financialId = getPayloadString(payload, ["financial_id"]);
+  const details = [
+    artifactType === "asaas_billing" && cobrancaId ? `cobranca: ${cobrancaId}` : null,
+    artifactType === "collections_followup_plan" && collectionStage ? `estagio: ${collectionStage}` : null,
+    artifactType === "revenue_flow_plan" && revenueStepCount ? `etapas: ${revenueStepCount}` : null,
+    crmTaskId ? `crm: ${crmTaskId}` : null,
+    billingArtifactId ? `billing: ${billingArtifactId}` : null,
+    financialId ? `financial: ${financialId}` : null,
+  ]
+    .filter((value): value is string => Boolean(value))
+    .slice(0, 4);
+
+  return [{ artifactType, label, status, details }];
+}
+
+function getKernelHighlight(kernel?: MessageKernel) {
+  if (!kernel) return null;
+
+  const capability = kernel.capabilityName || "";
+  const missionKind = kernel.missionKind || (
+    capability === "support_case_status"
+      ? "case_status"
+      : capability === "legal_process_mission_plan"
+        ? "process_mission_plan"
+        : capability === "legal_process_mission_execute_next"
+          ? "process_execute_next"
+          : capability === "legal_case_brain_insights"
+            ? "case_brain_insights"
+          : ""
+  );
+  const financeLabel = FINANCE_ARTIFACT_TYPE_LABELS[inferFinanceArtifactType(kernel) || ""] || null;
+  const label = financeLabel || (missionKind ? MISSION_KIND_LABELS[missionKind] : null);
+  const statusLabel = KERNEL_STATUS_LABELS[kernel.status] || kernel.status;
+  const approval = Boolean(kernel.approvalRequired || kernel.status === "awaiting_approval");
+
+  if (!label && !approval) return null;
+  return {
+    label: label || "Aprovacao MAYUS",
+    statusLabel,
+    approval,
+  };
+}
+
+async function fetchJsonWithTimeout(url: string, init: RequestInit, timeoutMs = 40_000) {
+  const controller = new AbortController();
+  const timeout = window.setTimeout(() => controller.abort(), timeoutMs);
+  try {
+    const response = await fetch(url, { ...init, signal: controller.signal });
+    const data = await response.json().catch(() => ({}));
+    return { response, data };
+  } finally {
+    window.clearTimeout(timeout);
+  }
+}
+
+function normalizeDashboardRole(value: string | null | undefined) {
+  return String(value || "")
+    .normalize("NFD")
+    .replace(/[\u0300-\u036f]/g, "")
+    .toLowerCase();
+}
+
+function isMayusRealtimeTesterRole(role: string | null | undefined) {
+  return ["admin", "administrador", "socio", "mayus_admin"].includes(normalizeDashboardRole(role));
+}
+
+function formatRealtimeDuration(totalSeconds: number) {
+  const safeSeconds = Math.max(0, Math.floor(totalSeconds));
+  const minutes = Math.floor(safeSeconds / 60);
+  const seconds = safeSeconds % 60;
+  return `${minutes}:${String(seconds).padStart(2, "0")}`;
+}
 
 const MODEL_PRESETS: Record<string, Array<Omit<ModelOption, "provider">>> = {
   openrouter: [
@@ -176,6 +414,8 @@ function ApprovalCard({
     low:      "text-green-400 border-green-500/40 bg-green-500/10",
   };
   const badgeClass = riskBadge[awaitingPayload.riskLevel] ?? riskBadge.medium;
+  const financeArtifactType = FINANCE_CAPABILITY_ARTIFACT_TYPES[awaitingPayload.skillName] || null;
+  const financeArtifactLabel = financeArtifactType ? FINANCE_ARTIFACT_TYPE_LABELS[financeArtifactType] : null;
 
   return (
     <div className="border border-[#CCA761]/30 bg-[#0f0f0f] rounded-2xl p-5 max-w-[85%] space-y-4 animate-in fade-in slide-in-from-bottom-2">
@@ -186,6 +426,11 @@ function ApprovalCard({
             <ShieldAlert size={11} /> Aprovação necessária
           </p>
           <p className="text-white font-semibold text-sm">{awaitingPayload.skillName}</p>
+          {financeArtifactLabel && (
+            <p className="mt-1 inline-flex rounded-full border border-[#CCA761]/30 bg-[#CCA761]/10 px-2.5 py-1 text-[10px] font-black uppercase tracking-[0.18em] text-[#E2C37A]">
+              {financeArtifactLabel}
+            </p>
+          )}
         </div>
         <span className={`text-[10px] font-bold uppercase tracking-widest px-2.5 py-1 rounded-full border whitespace-nowrap ${badgeClass}`}>
           {awaitingPayload.riskLevel ?? "desconhecido"}
@@ -276,16 +521,38 @@ export default function MAYUSPlayground() {
   const [currentConversationId, setCurrentConversationId] = useState<string | null>(null);
   const [isSidebarOpen, setIsSidebarOpen] = useState(true);
   const [isMobileMenuOpen, setIsMobileMenuOpen] = useState(false);
+  const [selectedRealtimeModel, setSelectedRealtimeModel] = useState<MayusRealtimeModel>(DEFAULT_MAYUS_REALTIME_MODEL);
+  const [selectedRealtimeVoice, setSelectedRealtimeVoice] = useState<MayusRealtimeVoice>(DEFAULT_MAYUS_REALTIME_VOICE);
+  const [isVoiceSwitcherOpen, setIsVoiceSwitcherOpen] = useState(false);
+  const [isRealtimeModelSwitcherOpen, setIsRealtimeModelSwitcherOpen] = useState(false);
+  const [realtimeStatus, setRealtimeStatus] = useState<RealtimeStatus>("idle");
+  const [conversationTransport, setConversationTransport] = useState<ConversationTransport>("idle");
+  const [realtimeCost, setRealtimeCost] = useState<MayusRealtimeCostEstimate | null>(null);
+  const [activeRealtimeModel, setActiveRealtimeModel] = useState<MayusRealtimeModel>(DEFAULT_MAYUS_REALTIME_MODEL);
+  const [realtimeStartedAtMs, setRealtimeStartedAtMs] = useState<number | null>(null);
+  const [realtimeElapsedSeconds, setRealtimeElapsedSeconds] = useState(0);
 
   const messagesEndRef = useRef<HTMLDivElement>(null);
   const audioRef = useRef<HTMLAudioElement | null>(null);
   const silenceTimerRef = useRef<NodeJS.Timeout | null>(null);
   const recognitionRef = useRef<any>(null);
   const isConversationModeRef = useRef(false);
+  const conversationTransportRef = useRef<ConversationTransport>("idle");
+  const currentConversationIdRef = useRef<string | null>(null);
+  const realtimePeerRef = useRef<RTCPeerConnection | null>(null);
+  const realtimeDataChannelRef = useRef<RTCDataChannel | null>(null);
+  const realtimeMediaStreamRef = useRef<MediaStream | null>(null);
+  const realtimeAudioRef = useRef<HTMLAudioElement | null>(null);
+  const realtimeFunctionArgsRef = useRef<Record<string, string>>({});
+  const realtimeProcessedCallsRef = useRef<Set<string>>(new Set());
+  const realtimeStartedAtRef = useRef<number | null>(null);
   const [isRecording, setIsRecording] = useState(false);
   const [isConversationMode, setIsConversationMode] = useState(false);
   const [playingMessageId, setPlayingMessageId] = useState<number | string | null>(null);
   const { profile, isLoading: profileLoading } = useUserProfile();
+  const canTuneMayusRealtime = Boolean(profile?.is_superadmin) || isMayusRealtimeTesterRole(profile?.role);
+  const selectedRealtimeModelOption = REALTIME_MODEL_OPTIONS.find((option) => option.value === selectedRealtimeModel) || REALTIME_MODEL_OPTIONS[0];
+  const activeRealtimeModelOption = REALTIME_MODEL_OPTIONS.find((option) => option.value === activeRealtimeModel) || REALTIME_MODEL_OPTIONS[0];
 
   const modelOptions = useMemo<ModelOption[]>(() => {
     const seen = new Set<string>();
@@ -389,8 +656,7 @@ export default function MAYUSPlayground() {
   useEffect(() => {
     const handleKeyDown = (e: KeyboardEvent) => {
       if (e.key === "Escape" && isConversationMode) {
-        setIsConversationMode(false);
-        setIsRecording(false);
+        stopConversationMode();
         toast.info("Modo Conversa desativado.");
       }
     };
@@ -402,6 +668,38 @@ export default function MAYUSPlayground() {
     isConversationModeRef.current = isConversationMode;
   }, [isConversationMode]);
 
+  useEffect(() => {
+    conversationTransportRef.current = conversationTransport;
+  }, [conversationTransport]);
+
+  useEffect(() => {
+    if (conversationTransport !== "realtime" || !REALTIME_STUCK_STATUSES.has(realtimeStatus)) return;
+
+    const timeout = window.setTimeout(() => {
+      if (conversationTransportRef.current !== "realtime") return;
+      setRealtimeStatus("listening");
+      toast.warning("O MAYUS demorou nesse estado. Resetei a escuta para evitar travamento.");
+    }, 45_000);
+
+    return () => window.clearTimeout(timeout);
+  }, [conversationTransport, realtimeStatus]);
+
+  useEffect(() => {
+    if (conversationTransport !== "realtime" || !realtimeStartedAtMs) return;
+
+    const refreshElapsed = () => {
+      setRealtimeElapsedSeconds(Math.floor((Date.now() - realtimeStartedAtMs) / 1000));
+    };
+
+    refreshElapsed();
+    const interval = window.setInterval(refreshElapsed, 1000);
+    return () => window.clearInterval(interval);
+  }, [conversationTransport, realtimeStartedAtMs]);
+
+  useEffect(() => {
+    currentConversationIdRef.current = currentConversationId;
+  }, [currentConversationId]);
+
   const fetchConversations = async () => {
     try {
       const res = await fetch("/api/ai/conversations");
@@ -412,7 +710,53 @@ export default function MAYUSPlayground() {
     }
   };
 
+  const ensureConversationForRealtime = async () => {
+    if (currentConversationIdRef.current) return currentConversationIdRef.current;
+
+    const response = await fetch("/api/ai/conversations", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ title: "Conversa por voz" }),
+    });
+    if (!response.ok) throw new Error("Falha ao iniciar conversa por voz.");
+
+    const data = await response.json();
+    const conversationId = String(data?.conversation?.id || "");
+    if (!conversationId) throw new Error("Conversa por voz sem identificador.");
+
+    currentConversationIdRef.current = conversationId;
+    setCurrentConversationId(conversationId);
+    setConversations((prev) => [data.conversation, ...prev]);
+    return conversationId;
+  };
+
+  const persistRealtimeMessage = async (message: Message) => {
+    try {
+      const conversationId = await ensureConversationForRealtime();
+      await fetch(`/api/ai/conversations/${conversationId}`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          role: message.role,
+          content: message.content,
+          kernel: message.kernel || {},
+        }),
+      });
+    } catch (error) {
+      console.warn("[MAYUS Realtime] Falha ao persistir mensagem de voz", error);
+    }
+  };
+
+  const appendRealtimeMessage = (message: Message) => {
+    const content = message.content.trim();
+    if (!content) return;
+    const finalMessage = { ...message, content };
+    setMessages((prev) => [...prev, finalMessage]);
+    void persistRealtimeMessage(finalMessage);
+  };
+
   const loadConversation = async (id: string) => {
+    stopConversationMode();
     setIsLoading(true);
     setCurrentConversationId(id);
     try {
@@ -429,6 +773,7 @@ export default function MAYUSPlayground() {
   };
 
   const createNewChat = () => {
+    stopConversationMode();
     setCurrentConversationId(null);
     setMessages([]);
     if (window.innerWidth < 768) setIsMobileMenuOpen(false);
@@ -521,22 +866,32 @@ export default function MAYUSPlayground() {
     let fallbackOutput = "";
 
     try {
-      const response = await fetch("/api/brain/chat-turn", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({
-          message: userMsg,
-          provider: currentProvider,
-          model: currentModel,
-          conversationId: convId,
-          history: messages
-            .filter(m => m.role === "user" || m.role === "model")
-            .map(m => ({ role: m.role, content: m.content })),
-        }),
-      });
+      const controller = new AbortController();
+      const timeout = window.setTimeout(() => controller.abort(), CHAT_TURN_TIMEOUT_MS);
+      let response: Response;
+      try {
+        response = await fetch("/api/brain/chat-turn", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          signal: controller.signal,
+          body: JSON.stringify({
+            message: userMsg,
+            provider: currentProvider,
+            model: currentModel,
+            conversationId: convId,
+            history: messages
+              .filter(m => m.role === "user" || m.role === "model")
+              .map(m => ({ role: m.role, content: m.content })),
+          }),
+        });
+      } finally {
+        window.clearTimeout(timeout);
+      }
 
       const data = await response.json();
-      if (!response.ok) throw new Error(data.error || "A IA não conseguiu responder.");
+      if (!response.ok) {
+        throw new Error(data.error || "A IA não conseguiu responder.");
+      }
       aiResponseData = data;
 
       // ── Fluxo de aprovação humana ──────────────────────────────────────
@@ -556,9 +911,16 @@ export default function MAYUSPlayground() {
             status: data.kernel.status,
             auditLogId: data.kernel.auditLogId,
             awaitingPayload: data.kernel.awaitingPayload,
+            capabilityName: data.kernel.capabilityName,
+            handlerType: data.kernel.handlerType,
+            missionKind: data.kernel.missionKind,
+            voiceReply: data.kernel.voiceReply,
+            approvalRequired: data.kernel.approvalRequired,
+            approvalId: data.kernel.approvalId,
             taskId: data.kernel.taskId,
             runId: data.kernel.runId,
             stepId: data.kernel.stepId,
+            outputPayload: data.kernel.outputPayload,
           },
         });
         setMessages(prev => [...prev, ...newMessages]);
@@ -577,9 +939,15 @@ export default function MAYUSPlayground() {
         setMessages(prev => [...prev, ...newMessages]);
       }
     } catch (err: any) {
-      toast.error(err.message);
+      const timedOut = err?.name === "AbortError";
+      const errorMessage = timedOut
+        ? "O MAYUS demorou mais que o limite seguro para responder. Pode tentar de novo em alguns segundos."
+        : err.message;
+      toast.error(errorMessage);
       fallbackStatus = true;
-      fallbackOutput = "Erro Crítico: A conexão com o córtex falhou.";
+      fallbackOutput = timedOut
+        ? "O MAYUS demorou mais que o limite seguro para responder. A conversa foi encerrada para nao ficar presa em analise."
+        : "Erro Critico: A conexao com o cortex falhou.";
       setMessages(prev => [...prev, { role: "system", content: fallbackOutput }]);
     } finally {
       setIsLoading(false);
@@ -606,7 +974,7 @@ export default function MAYUSPlayground() {
             });
             
             // Se estiver no Modo Conversa, tocar áudio automaticamente
-           if (isConversationModeRef.current) {
+           if (isConversationModeRef.current && conversationTransportRef.current === "legacy") {
              playMessage(aiResponseData.reply, "latest_conv");
            }
          }
@@ -774,7 +1142,7 @@ export default function MAYUSPlayground() {
       audio.onended = () => {
         setPlayingMessageId(null);
         // Se estiver no Modo Conversa, reabrir microfone após a IA terminar de falar
-        if (isConversationModeRef.current) {
+        if (isConversationModeRef.current && conversationTransportRef.current === "legacy") {
           setTimeout(() => {
             toggleRecording();
           }, 500); // 500ms para hardware sync estável
@@ -791,6 +1159,492 @@ export default function MAYUSPlayground() {
       setPlayingMessageId(null);
     }
   };
+
+  const stopRealtimeSession = () => {
+    realtimeDataChannelRef.current?.close();
+    realtimeDataChannelRef.current = null;
+
+    realtimePeerRef.current?.getSenders().forEach((sender) => sender.track?.stop());
+    realtimePeerRef.current?.close();
+    realtimePeerRef.current = null;
+
+    realtimeMediaStreamRef.current?.getTracks().forEach((track) => track.stop());
+    realtimeMediaStreamRef.current = null;
+
+    if (realtimeAudioRef.current) {
+      realtimeAudioRef.current.pause();
+      realtimeAudioRef.current.srcObject = null;
+      realtimeAudioRef.current.remove();
+      realtimeAudioRef.current = null;
+    }
+
+    realtimeFunctionArgsRef.current = {};
+    realtimeProcessedCallsRef.current.clear();
+    realtimeStartedAtRef.current = null;
+    setRealtimeStartedAtMs(null);
+    setRealtimeStatus("idle");
+  };
+
+  const stopConversationMode = () => {
+    if (recognitionRef.current) {
+      recognitionRef.current.stop();
+      recognitionRef.current = null;
+    }
+    if (silenceTimerRef.current) clearTimeout(silenceTimerRef.current);
+    audioRef.current?.pause();
+    setPlayingMessageId(null);
+    setIsRecording(false);
+    stopRealtimeSession();
+    setConversationTransport("idle");
+    setIsConversationMode(false);
+  };
+
+  const sendRealtimeEvent = (event: Record<string, unknown>) => {
+    const channel = realtimeDataChannelRef.current;
+    if (!channel || channel.readyState !== "open") return false;
+    channel.send(JSON.stringify(event));
+    return true;
+  };
+
+  const handleRealtimeCost = (usage: RealtimeUsage | null | undefined) => {
+    const estimate = estimateMayusRealtimeUsageCost(usage, MAYUS_REALTIME_BRL_PER_USD, activeRealtimeModel);
+    if (!estimate.usd) return;
+
+    setRealtimeCost((previous) => ({
+      model: activeRealtimeModel,
+      usd: (previous?.usd || 0) + estimate.usd,
+      brl: (previous?.brl || 0) + estimate.brl,
+      textInputTokens: (previous?.textInputTokens || 0) + estimate.textInputTokens,
+      textOutputTokens: (previous?.textOutputTokens || 0) + estimate.textOutputTokens,
+      audioInputTokens: (previous?.audioInputTokens || 0) + estimate.audioInputTokens,
+      audioOutputTokens: (previous?.audioOutputTokens || 0) + estimate.audioOutputTokens,
+    }));
+  };
+
+  const addRealtimeFixedCost = (usd: number) => {
+    if (!usd) return;
+    setRealtimeCost((previous) => ({
+      model: activeRealtimeModel,
+      usd: (previous?.usd || 0) + usd,
+      brl: (previous?.brl || 0) + usd * MAYUS_REALTIME_BRL_PER_USD,
+      textInputTokens: previous?.textInputTokens || 0,
+      textOutputTokens: previous?.textOutputTokens || 0,
+      audioInputTokens: previous?.audioInputTokens || 0,
+      audioOutputTokens: previous?.audioOutputTokens || 0,
+    }));
+  };
+
+  const sendRealtimeToolOutput = (callId: string, output: Record<string, unknown>) => {
+    sendRealtimeEvent({
+      type: "conversation.item.create",
+      item: {
+        type: "function_call_output",
+        call_id: callId,
+        output: JSON.stringify(output),
+      },
+    });
+    sendRealtimeEvent({ type: "response.create" });
+  };
+
+  const formatRealtimeSources = (sources: Array<{ title?: string; url?: string }> = []) => {
+    const validSources = sources.filter((source) => source?.url);
+    if (!validSources.length) return "";
+    return [
+      "",
+      "Fontes:",
+      ...validSources.map((source, index) => `${index + 1}. [${source.title || source.url}](${source.url})`),
+    ].join("\n");
+  };
+
+  const handleRealtimeFunctionCall = async (call: RealtimeFunctionCall) => {
+    if (!call.name || !call.call_id) return;
+    if (realtimeProcessedCallsRef.current.has(call.call_id)) return;
+    realtimeProcessedCallsRef.current.add(call.call_id);
+
+    let args: Record<string, unknown> = {};
+    try {
+      args = JSON.parse(call.arguments || "{}");
+    } catch {
+      args = {};
+    }
+
+    let nextStatus: RealtimeStatus = "thinking";
+
+    try {
+      if (call.name === "consultar_cerebro_mayus") {
+        setRealtimeStatus("tool_calling");
+        const prompt = typeof args.prompt === "string" && args.prompt.trim()
+          ? args.prompt.trim()
+          : "Consulta de voz recebida pelo Realtime do MAYUS.";
+        const reason = typeof args.reason === "string" ? args.reason : "realtime_voice";
+        const conversationSummary = typeof args.conversationSummary === "string" ? args.conversationSummary : "";
+        const missionKind = typeof args.missionKind === "string" ? args.missionKind : undefined;
+
+        appendRealtimeMessage({
+          role: "system",
+          content: "MAYUS Realtime consultou o Brain operacional.",
+        });
+
+        const { response, data } = await fetchJsonWithTimeout("/api/agent/voice/brain-bridge", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({
+            toolName: "consultar_cerebro_mayus",
+            prompt,
+            toolPayload: {
+              prompt,
+              reason,
+              conversationSummary,
+              missionKind,
+              provider: "openai_realtime",
+              voice: selectedRealtimeVoice,
+            },
+            history: messages
+              .filter((message) => message.role === "user" || message.role === "model")
+              .slice(-8)
+              .map((message) => ({ role: message.role, content: message.content })),
+          }),
+        });
+
+        const brainReply = data?.voiceReply || data?.reply || "Brain consultado sem resposta textual.";
+        const approvalRequired = Boolean(data?.approvalRequired || data?.kernel?.approvalRequired);
+        if (response.ok && (approvalRequired || data?.kernel?.status === "awaiting_approval")) {
+          nextStatus = "awaiting_approval";
+        }
+        if (
+          response.ok &&
+          data?.kernel?.status === "awaiting_approval" &&
+          data?.kernel?.auditLogId &&
+          data?.kernel?.awaitingPayload
+        ) {
+          appendRealtimeMessage({
+            role: "approval",
+            content: "",
+            kernel: {
+              status: data.kernel.status,
+              auditLogId: data.kernel.auditLogId,
+              awaitingPayload: data.kernel.awaitingPayload,
+              capabilityName: data.kernel.capabilityName,
+              handlerType: data.kernel.handlerType,
+              missionKind: data.missionKind || data.kernel.missionKind,
+              voiceReply: data.voiceReply || brainReply,
+              approvalRequired,
+              approvalId: data.approvalId || data.kernel.approvalId || null,
+              taskId: data.taskId || data.kernel.taskId,
+              runId: data.runId || data.kernel.runId,
+              stepId: data.stepId || data.kernel.stepId,
+              outputPayload: data.kernel.outputPayload,
+            },
+          });
+        }
+
+        sendRealtimeToolOutput(call.call_id, response.ok
+          ? {
+              ok: true,
+              reply: brainReply,
+              voiceReply: data?.voiceReply || brainReply,
+              fullReply: data?.reply || brainReply,
+              missionKind: data?.missionKind || data?.kernel?.missionKind || "general_brain",
+              approvalRequired,
+              approvalId: data?.approvalId || data?.kernel?.approvalId || null,
+              kernel: data?.kernel || {},
+              taskId: data?.taskId || null,
+              runId: data?.runId || null,
+              stepId: data?.stepId || null,
+            }
+          : {
+              ok: false,
+              error: data?.error || "Falha ao consultar o MAYUS Brain.",
+            });
+      } else if (call.name === "pesquisar_web_mayus") {
+        setRealtimeStatus("searching");
+        const query = typeof args.query === "string" && args.query.trim() ? args.query.trim() : "";
+        const { response, data } = await fetchJsonWithTimeout("/api/agent/voice/realtime-web-search", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({
+            query,
+            reason: args.reason,
+            conversationSummary: args.conversationSummary,
+          }),
+        });
+
+        if (response.ok) {
+          addRealtimeFixedCost(Number(data?.cost?.usd || MAYUS_REALTIME_WEB_SEARCH_USD_PER_CALL));
+          appendRealtimeMessage({
+            role: "model",
+            content: `Pesquisa web concluida:\n${data?.answer || "Sem resposta textual."}${formatRealtimeSources(data?.sources || [])}`,
+          });
+        }
+
+        sendRealtimeToolOutput(call.call_id, response.ok
+          ? {
+              ok: true,
+              answer: data?.answer,
+              sources: data?.sources || [],
+              cost: data?.cost || null,
+            }
+          : {
+              ok: false,
+              error: data?.error || "Falha ao pesquisar na web.",
+            });
+      } else if (call.name === "criar_tarefa_mayus") {
+        setRealtimeStatus("creating_task");
+        const { response, data } = await fetchJsonWithTimeout("/api/agent/voice/realtime-task", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify(args),
+        });
+
+        if (response.ok) {
+          if (data?.requiresApproval) nextStatus = "awaiting_approval";
+          appendRealtimeMessage({
+            role: "model",
+            content: `${data?.reply || "Tarefa registrada."}${data?.task?.title ? `\n\nTarefa: ${data.task.title}` : ""}`,
+          });
+        }
+
+        sendRealtimeToolOutput(call.call_id, response.ok
+          ? {
+              ok: true,
+              reply: data?.reply,
+              task: data?.task || null,
+              requiresApproval: Boolean(data?.requiresApproval),
+            }
+          : {
+              ok: false,
+              error: data?.error || "Falha ao criar tarefa.",
+            });
+      } else if (call.name === "responder_sobre_mayus") {
+        setRealtimeStatus("consulting_mayus");
+        const question = typeof args.question === "string" && args.question.trim()
+          ? args.question.trim()
+          : "O que e o MAYUS?";
+        const { response, data } = await fetchJsonWithTimeout("/api/agent/voice/mayus-knowledge", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({
+            question,
+            conversationSummary: args.conversationSummary,
+          }),
+        });
+
+        if (response.ok) {
+          appendRealtimeMessage({
+            role: "model",
+            content: data?.answer || "Consultei a base interna do MAYUS.",
+          });
+        }
+
+        sendRealtimeToolOutput(call.call_id, response.ok
+          ? {
+              ok: true,
+              answer: data?.answer,
+              sources: data?.sources || [],
+            }
+          : {
+              ok: false,
+              error: data?.error || "Falha ao consultar a base do MAYUS.",
+            });
+      } else {
+        sendRealtimeToolOutput(call.call_id, {
+          ok: false,
+          error: `Ferramenta Realtime nao reconhecida: ${call.name}.`,
+        });
+      }
+
+      setRealtimeStatus(nextStatus);
+    } catch (error: any) {
+      sendRealtimeToolOutput(call.call_id, {
+        ok: false,
+        error: error?.name === "AbortError"
+          ? "Tempo limite da ferramenta MAYUS Realtime esgotado."
+          : error?.message || "Falha de rede ao executar ferramenta MAYUS Realtime.",
+      });
+      setRealtimeStatus("error");
+    }
+  };
+
+  const handleRealtimeEvent = (event: any) => {
+    if (!event?.type) return;
+
+    if (event.type === "error") {
+      console.error("[MAYUS Realtime]", event);
+      setRealtimeStatus("error");
+      toast.error(event?.error?.message || "Realtime encontrou um bloqueio.");
+      return;
+    }
+
+    if (event.type === "input_audio_buffer.speech_started") {
+      setRealtimeStatus("listening");
+      return;
+    }
+
+    if (event.type === "input_audio_buffer.speech_stopped") {
+      setRealtimeStatus("thinking");
+      return;
+    }
+
+    if (event.type === "response.created") {
+      setRealtimeStatus("thinking");
+      return;
+    }
+
+    if (event.type === "response.audio.delta") {
+      setRealtimeStatus("speaking");
+      return;
+    }
+
+    if (event.type === "response.audio.done") {
+      setRealtimeStatus("listening");
+      return;
+    }
+
+    if (event.type === "conversation.item.input_audio_transcription.completed" && event.transcript) {
+      appendRealtimeMessage({ role: "user", content: String(event.transcript) });
+      setInput("");
+      return;
+    }
+
+    if (
+      (event.type === "response.audio_transcript.done" || event.type === "response.output_text.done") &&
+      event.transcript
+    ) {
+      appendRealtimeMessage({ role: "model", content: String(event.transcript) });
+      return;
+    }
+
+    if (event.type === "response.function_call_arguments.delta" && event.call_id) {
+      realtimeFunctionArgsRef.current[event.call_id] =
+        (realtimeFunctionArgsRef.current[event.call_id] || "") + String(event.delta || "");
+      return;
+    }
+
+    if (event.type === "response.done") {
+      handleRealtimeCost(event.response?.usage);
+      const output = Array.isArray(event.response?.output) ? event.response.output : [];
+      const functionCalls = output.filter((item: RealtimeFunctionCall) => item?.type === "function_call");
+      for (const call of functionCalls) {
+        const mergedCall = {
+          ...call,
+          arguments: call.arguments || realtimeFunctionArgsRef.current[call.call_id || ""],
+        };
+        void handleRealtimeFunctionCall(mergedCall);
+      }
+      if (functionCalls.length === 0) setRealtimeStatus("listening");
+    }
+  };
+
+  const startRealtimeSession = async () => {
+    if (!navigator.mediaDevices?.getUserMedia) {
+      throw new Error("Seu navegador nao liberou microfone para Realtime.");
+    }
+
+    setRealtimeStatus("connecting");
+    setRealtimeCost(null);
+    setRealtimeElapsedSeconds(0);
+    const startedAt = Date.now();
+    realtimeStartedAtRef.current = startedAt;
+    setRealtimeStartedAtMs(startedAt);
+    setActiveRealtimeModel(selectedRealtimeModel);
+
+    const sessionResponse = await fetch("/api/agent/voice/realtime-session", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ voice: selectedRealtimeVoice, model: selectedRealtimeModel }),
+    });
+    const sessionData = (await sessionResponse.json().catch(() => ({}))) as RealtimeSessionResponse;
+    if (!sessionResponse.ok || !sessionData.client_secret) {
+      throw new Error(sessionData.error || "Falha ao criar sessao Realtime.");
+    }
+    setActiveRealtimeModel(normalizeMayusRealtimeModel(sessionData.model));
+
+    const peer = new RTCPeerConnection();
+    realtimePeerRef.current = peer;
+
+    const remoteAudio = document.createElement("audio");
+    remoteAudio.autoplay = true;
+    realtimeAudioRef.current = remoteAudio;
+    peer.ontrack = (event) => {
+      remoteAudio.srcObject = event.streams[0];
+      void remoteAudio.play().catch(() => {});
+    };
+
+    const stream = await navigator.mediaDevices.getUserMedia({ audio: true });
+    realtimeMediaStreamRef.current = stream;
+    stream.getTracks().forEach((track) => peer.addTrack(track, stream));
+
+    const channel = peer.createDataChannel("oai-events");
+    realtimeDataChannelRef.current = channel;
+    channel.addEventListener("open", () => {
+      setRealtimeStatus("listening");
+      setConversationTransport("realtime");
+      toast.success("MAYUS Realtime ativo.");
+    });
+    channel.addEventListener("message", (message) => {
+      try {
+        handleRealtimeEvent(JSON.parse(message.data));
+      } catch (error) {
+        console.warn("[MAYUS Realtime] Evento invalido", error);
+      }
+    });
+    channel.addEventListener("close", () => {
+      if (conversationTransportRef.current === "realtime") setRealtimeStatus("idle");
+    });
+
+    const offer = await peer.createOffer();
+    await peer.setLocalDescription(offer);
+
+    const sdpResponse = await fetch("https://api.openai.com/v1/realtime/calls", {
+      method: "POST",
+      body: offer.sdp,
+      headers: {
+        Authorization: `Bearer ${sessionData.client_secret}`,
+        "Content-Type": "application/sdp",
+      },
+    });
+    if (!sdpResponse.ok) {
+      throw new Error("OpenAI Realtime recusou a conexao WebRTC.");
+    }
+
+    await peer.setRemoteDescription({
+      type: "answer",
+      sdp: await sdpResponse.text(),
+    });
+  };
+
+  const startLegacyConversationMode = () => {
+    setConversationTransport("legacy");
+    setRealtimeStatus("error");
+    setTimeout(() => {
+      if (!isRecording && !playingMessageId) toggleRecording();
+    }, 500);
+  };
+
+  const toggleConversationMode = async () => {
+    if (isConversationMode) {
+      stopConversationMode();
+      toast.info("Modo Conversa desativado.");
+      return;
+    }
+
+    setIsConversationMode(true);
+    setConversationTransport("realtime");
+    try {
+      await startRealtimeSession();
+    } catch (error: any) {
+      console.error("[MAYUS Realtime] fallback", error);
+      stopRealtimeSession();
+      toast.error(error?.message || "Realtime indisponivel. Usando fallback de voz.");
+      startLegacyConversationMode();
+    }
+  };
+
+  useEffect(() => {
+    return () => {
+      stopConversationMode();
+    };
+  }, []);
 
   if (checkingVault) {
     return <div className="p-8 flex items-center justify-center animate-pulse text-[#CCA761]">Acessando Cofre de Chaves...</div>;
@@ -909,27 +1763,142 @@ export default function MAYUSPlayground() {
             </div>
           </div>
           <div className="flex items-center gap-3">
-            <button
-              onClick={() => {
-                const newState = !isConversationMode;
-                setIsConversationMode(newState);
-                if (newState) {
-                  toast.success("Modo Conversa Ativado");
-                  if (!isRecording && !playingMessageId) {
-                    setTimeout(() => toggleRecording(), 500);
-                  }
-                } else {
-                  setIsRecording(false);
-                }
-              }}
-              className={`flex items-center gap-2 px-4 py-2 rounded-xl border transition-all text-[10px] font-black uppercase tracking-[0.2em] ${
-                isConversationMode 
-                  ? 'bg-[#CCA761] border-[#CCA761] text-black shadow-[0_0_20px_rgba(204,167,97,0.4)] animate-pulse' 
-                  : 'bg-white/5 border-white/10 text-gray-500 hover:border-[#CCA761]/40'
-              }`}
-            >
-              <Sparkles size={14} /> {isConversationMode ? 'Modo Conversa Ativo' : 'Ativar Modo Conversa'}
-            </button>
+            <div className="relative flex items-stretch rounded-xl border border-white/10 bg-white/5">
+              <button
+                onClick={toggleConversationMode}
+                disabled={realtimeStatus === "connecting"}
+                className={`flex items-center gap-2 px-4 py-2 transition-all text-[10px] font-black uppercase tracking-[0.2em] ${
+                  isConversationMode
+                    ? 'bg-[#CCA761] text-black shadow-[0_0_20px_rgba(204,167,97,0.4)]'
+                    : 'text-gray-500 hover:text-[#CCA761] hover:bg-white/5'
+                }`}
+              >
+                {realtimeStatus === "connecting" ? <Loader2 size={14} className="animate-spin" /> : <Sparkles size={14} />}
+                {isConversationMode ? REALTIME_STATUS_LABEL[realtimeStatus] : 'Ativar Modo Conversa'}
+              </button>
+              {canTuneMayusRealtime && (
+                <>
+                  <button
+                    type="button"
+                    onClick={() => {
+                      setIsRealtimeModelSwitcherOpen((value) => !value);
+                      setIsVoiceSwitcherOpen(false);
+                    }}
+                    className="flex items-center gap-1 border-l border-white/10 px-3 text-[10px] font-black uppercase tracking-[0.18em] text-[#CCA761] hover:bg-[#CCA761]/10 transition-colors"
+                    title="Escolher modelo Realtime"
+                  >
+                    <SlidersHorizontal size={13} />
+                    {selectedRealtimeModelOption.label}
+                    <ChevronDown size={12} />
+                  </button>
+
+                  {isRealtimeModelSwitcherOpen && (
+                    <div className="absolute right-0 top-full mt-3 w-[min(86vw,340px)] rounded-2xl border border-[#CCA761]/25 bg-[#080808] shadow-2xl shadow-black/60 z-50 overflow-hidden">
+                      <div className="p-4 border-b border-white/10">
+                        <p className="text-[10px] uppercase tracking-[0.25em] text-[#CCA761] font-black">Modelo Realtime</p>
+                        <p className="mt-1 text-[11px] text-gray-500 normal-case tracking-normal">
+                          Premium continua padrao. Mini e apenas teste economico.
+                        </p>
+                      </div>
+                      <div className="p-2 space-y-1">
+                        {REALTIME_MODEL_OPTIONS.map((model) => {
+                          const active = selectedRealtimeModel === model.value;
+                          return (
+                            <button
+                              key={model.value}
+                              type="button"
+                              onClick={() => {
+                                setSelectedRealtimeModel(model.value);
+                                setIsRealtimeModelSwitcherOpen(false);
+                                if (isConversationMode) {
+                                  stopConversationMode();
+                                  toast.info("Modelo Realtime alterado. Ative o modo conversa novamente para testar.");
+                                }
+                              }}
+                              className={`w-full text-left rounded-xl px-3 py-3 border transition-colors ${
+                                active
+                                  ? "border-[#CCA761]/50 bg-[#CCA761]/10"
+                                  : "border-transparent hover:border-white/10 hover:bg-white/[0.04]"
+                              }`}
+                            >
+                              <div className="flex items-start justify-between gap-3">
+                                <div className="min-w-0">
+                                  <p className="text-sm font-bold text-gray-100">{model.label}</p>
+                                  <p className="mt-1 text-[10px] uppercase tracking-[0.18em] text-[#CCA761]/80 truncate">
+                                    {model.value}
+                                  </p>
+                                  <p className="mt-1 text-[11px] text-gray-500">{model.description}</p>
+                                </div>
+                                {active && <CheckCircle size={16} className="text-[#CCA761] shrink-0 mt-0.5" />}
+                              </div>
+                            </button>
+                          );
+                        })}
+                      </div>
+                    </div>
+                  )}
+                </>
+              )}
+              <button
+                type="button"
+                onClick={() => {
+                  setIsVoiceSwitcherOpen((value) => !value);
+                  setIsRealtimeModelSwitcherOpen(false);
+                }}
+                className="flex items-center gap-1 border-l border-white/10 px-3 text-[10px] font-black uppercase tracking-[0.18em] text-[#CCA761] hover:bg-[#CCA761]/10 transition-colors"
+                title="Escolher voz Realtime"
+              >
+                <Headphones size={13} />
+                {selectedRealtimeVoice}
+                <ChevronDown size={12} />
+              </button>
+
+              {isVoiceSwitcherOpen && (
+                <div className="absolute right-0 top-full mt-3 w-[min(86vw,300px)] rounded-2xl border border-[#CCA761]/25 bg-[#080808] shadow-2xl shadow-black/60 z-50 overflow-hidden">
+                  <div className="p-4 border-b border-white/10">
+                    <p className="text-[10px] uppercase tracking-[0.25em] text-[#CCA761] font-black">Voz Realtime</p>
+                    <p className="mt-1 text-[11px] text-gray-500 normal-case tracking-normal">
+                      Trocar a voz exige reiniciar a sessao ativa.
+                    </p>
+                  </div>
+                  <div className="max-h-72 overflow-y-auto p-2 space-y-1">
+                    {REALTIME_VOICE_OPTIONS.map((voice) => {
+                      const active = selectedRealtimeVoice === voice.value;
+                      return (
+                        <button
+                          key={voice.value}
+                          type="button"
+                          onClick={() => {
+                            setSelectedRealtimeVoice(voice.value);
+                            setIsVoiceSwitcherOpen(false);
+                            if (isConversationMode) {
+                              stopConversationMode();
+                              toast.info("Voz alterada. Ative o modo conversa novamente para testar.");
+                            }
+                          }}
+                          className={`w-full text-left rounded-xl px-3 py-3 border transition-colors ${
+                            active
+                              ? "border-[#CCA761]/50 bg-[#CCA761]/10"
+                              : "border-transparent hover:border-white/10 hover:bg-white/[0.04]"
+                          }`}
+                        >
+                          <div className="flex items-start justify-between gap-3">
+                            <div>
+                              <p className="text-sm font-bold text-gray-100">{voice.label}</p>
+                              <p className="mt-1 text-[11px] text-gray-500">{voice.description}</p>
+                            </div>
+                            {active && <CheckCircle size={16} className="text-[#CCA761] shrink-0 mt-0.5" />}
+                          </div>
+                        </button>
+                      );
+                    })}
+                    <div className="px-3 py-2 text-[10px] text-gray-600">
+                      Onyx continua no fallback TTS, nao no Realtime.
+                    </div>
+                  </div>
+                </div>
+              )}
+            </div>
             <div className="relative">
               <button
                 type="button"
@@ -1029,6 +1998,9 @@ export default function MAYUSPlayground() {
           )}
 
           {messages.map((msg, idx) => {
+            const kernelHighlight = getKernelHighlight(msg.kernel);
+            const financeArtifactHighlights = getFinanceArtifactHighlights(msg.kernel);
+
             if (msg.role === "approval" && msg.kernel?.auditLogId && msg.kernel?.awaitingPayload) {
               return (
                 <div key={idx} className="flex gap-4 animate-in fade-in slide-in-from-bottom-2">
@@ -1040,7 +2012,7 @@ export default function MAYUSPlayground() {
                       auditLogId={msg.kernel.auditLogId}
                       awaitingPayload={msg.kernel.awaitingPayload as AwaitingPayload}
                       onDecided={(decision) => {
-                        if (isConversationModeRef.current) {
+                        if (isConversationModeRef.current && conversationTransportRef.current === "legacy") {
                           const confirmMsg = decision === 'approved'
                             ? "Excelente! Aprovado. Executando agora mesmo, Doutor!"
                             : "Entendido. Ação cancelada conforme solicitado.";
@@ -1083,6 +2055,47 @@ export default function MAYUSPlayground() {
                   >
                     {msg.content}
                   </ReactMarkdown>
+
+                  {msg.role === 'model' && kernelHighlight && (
+                    <div className="mt-3 flex flex-wrap items-center gap-2 border-t border-white/10 pt-3">
+                      <span className={`rounded-full border px-2.5 py-1 text-[10px] font-black uppercase tracking-[0.18em] ${
+                        kernelHighlight.approval
+                          ? "border-amber-400/40 bg-amber-400/10 text-amber-200"
+                          : "border-[#CCA761]/30 bg-[#CCA761]/10 text-[#E2C37A]"
+                      }`}>
+                        {kernelHighlight.label}
+                      </span>
+                      <span className="text-[10px] uppercase tracking-[0.16em] text-gray-500">
+                        {kernelHighlight.statusLabel}
+                      </span>
+                    </div>
+                  )}
+
+                  {msg.role === 'model' && financeArtifactHighlights.length > 0 && (
+                    <div className="mt-3 space-y-2 rounded-xl border border-[#CCA761]/20 bg-[#CCA761]/5 p-3">
+                      {financeArtifactHighlights.map((highlight) => (
+                        <div key={highlight.artifactType} className="space-y-2">
+                          <div className="flex flex-wrap items-center gap-2">
+                            <span className="rounded-full border border-[#CCA761]/30 bg-[#CCA761]/10 px-2.5 py-1 text-[10px] font-black uppercase tracking-[0.18em] text-[#E2C37A]">
+                              {highlight.label}
+                            </span>
+                            <span className="text-[10px] uppercase tracking-[0.16em] text-gray-500">
+                              {highlight.status}
+                            </span>
+                          </div>
+                          {highlight.details.length > 0 && (
+                            <div className="flex flex-wrap gap-1.5">
+                              {highlight.details.map((detail) => (
+                                <span key={detail} className="rounded-full border border-white/10 bg-black/30 px-2 py-1 text-[10px] text-gray-400">
+                                  {detail}
+                                </span>
+                              ))}
+                            </div>
+                          )}
+                        </div>
+                      ))}
+                    </div>
+                  )}
 
                   {msg.role === 'model' && (
                     <button
@@ -1129,7 +2142,11 @@ export default function MAYUSPlayground() {
                 type="text"
                 value={input}
                 onChange={(e) => setInput(e.target.value)}
-                placeholder={isConversationMode ? "Ouvindo... Pode falar." : "Sua instrução para a IA..."}
+                placeholder={
+                  isConversationMode
+                    ? `${REALTIME_STATUS_LABEL[realtimeStatus]}... ${activeRealtimeModelOption.label}, voz ${selectedRealtimeVoice}.`
+                    : "Sua instrução para a IA..."
+                }
                 className={`w-full bg-gray-50 dark:bg-[#141414] border rounded-2xl pl-6 pr-14 py-4 focus:outline-none transition-all text-sm text-gray-200 shadow-xl ${
                   isConversationMode 
                     ? 'border-[#CCA761]/40 shadow-[#CCA761]/5' 
@@ -1139,18 +2156,28 @@ export default function MAYUSPlayground() {
               />
               <button
                 type="button"
-                onClick={toggleRecording}
+                onClick={isConversationMode && conversationTransport === "realtime" ? toggleConversationMode : toggleRecording}
                 disabled={isLoading}
                 className={`absolute right-4 top-1/2 -translate-y-1/2 p-2 rounded-full transition-all ${
-                  isRecording 
-                    ? 'bg-[#CCA761] text-black animate-pulse shadow-[0_0_15px_rgba(204,167,97,0.4)]' 
-                    : playingMessageId 
+                  realtimeStatus === "connecting"
+                    ? 'bg-[#CCA761]/20 text-[#CCA761] border border-[#CCA761]/30'
+                    : conversationTransport === "realtime" && realtimeStatus === "speaking"
+                    ? 'bg-[#CCA761] text-black animate-pulse shadow-[0_0_15px_rgba(204,167,97,0.4)]'
+                    : isRecording
+                    ? 'bg-[#CCA761] text-black animate-pulse shadow-[0_0_15px_rgba(204,167,97,0.4)]'
+                    : playingMessageId
                     ? 'bg-[#CCA761]/20 text-[#CCA761] border border-[#CCA761]/30'
                     : 'text-gray-500 hover:text-[#CCA761]'
                 }`}
-                title={isRecording ? "Ouvindo..." : playingMessageId ? "IA Falando" : "Ditar Mensagem"}
+                title={conversationTransport === "realtime" ? "Encerrar Realtime" : isRecording ? "Ouvindo..." : playingMessageId ? "IA Falando" : "Ditar Mensagem"}
               >
-                {playingMessageId ? <Volume2 size={18} className="animate-pulse" /> : <Mic size={18} />}
+                {realtimeStatus === "connecting"
+                  ? <Loader2 size={18} className="animate-spin" />
+                  : conversationTransport === "realtime" && realtimeStatus === "speaking"
+                    ? <Volume2 size={18} className="animate-pulse" />
+                    : playingMessageId
+                      ? <Volume2 size={18} className="animate-pulse" />
+                      : <Mic size={18} />}
               </button>
             </div>
             <button
@@ -1167,9 +2194,37 @@ export default function MAYUSPlayground() {
           <div className="text-center mt-3 flex items-center justify-center gap-2">
              {isConversationMode && <span className="w-1.5 h-1.5 rounded-full bg-[#CCA761] animate-ping" />}
              <p className="text-[10px] text-gray-600 font-medium lowercase tracking-widest">
-               {isConversationMode ? 'Modo conversa ativo • kernel em escuta' : 'As sessões e decisões do kernel no ambiente logado são auditáveis.'}
+               {isConversationMode
+                 ? `modo conversa ${conversationTransport} • ${REALTIME_STATUS_LABEL[realtimeStatus].toLowerCase()} • ${activeRealtimeModelOption.label} • voz ${selectedRealtimeVoice}${realtimeCost ? ` • US$ ${realtimeCost.usd.toFixed(3)} / R$ ${realtimeCost.brl.toFixed(2)}` : ""}`
+                 : 'As sessões e decisões do kernel no ambiente logado são auditáveis.'}
              </p>
           </div>
+          {/* Medidor temporario do piloto Realtime MAYUS: remover quando o comparativo premium/mini terminar. */}
+          {canTuneMayusRealtime && isConversationMode && (
+            <div className="mt-2 flex flex-wrap items-center justify-center gap-2 text-[10px] text-gray-500">
+              <span className="rounded-full border border-[#CCA761]/20 bg-[#CCA761]/5 px-2.5 py-1 uppercase tracking-[0.18em] text-[#CCA761]/80">
+                teste realtime
+              </span>
+              <span className="rounded-full border border-white/10 bg-white/[0.03] px-2.5 py-1">
+                {activeRealtimeModelOption.label}: {activeRealtimeModel}
+              </span>
+              <span className="rounded-full border border-white/10 bg-white/[0.03] px-2.5 py-1">
+                tempo {formatRealtimeDuration(realtimeElapsedSeconds)}
+              </span>
+              <span className="rounded-full border border-white/10 bg-white/[0.03] px-2.5 py-1">
+                US$ {(realtimeCost?.usd || 0).toFixed(4)}
+              </span>
+              <span className="rounded-full border border-white/10 bg-white/[0.03] px-2.5 py-1">
+                R$ {(realtimeCost?.brl || 0).toFixed(2)}
+              </span>
+              <span className="rounded-full border border-white/10 bg-white/[0.03] px-2.5 py-1">
+                audio {realtimeCost?.audioInputTokens || 0}/{realtimeCost?.audioOutputTokens || 0}
+              </span>
+              <span className="rounded-full border border-white/10 bg-white/[0.03] px-2.5 py-1">
+                texto {realtimeCost?.textInputTokens || 0}/{realtimeCost?.textOutputTokens || 0}
+              </span>
+            </div>
+          )}
         </div>
 
       </main>

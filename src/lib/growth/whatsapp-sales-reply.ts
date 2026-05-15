@@ -254,7 +254,14 @@ function buildSuggestedReply(plan: SalesConsultationPlan, lastInboundText: strin
     ].join("\n\n");
   }
 
-  if (/humano|atendente|advogado|doutor|doutora|responsavel|falar com|conjuge|esposa|marido|socio|familia/.test(normalized)) {
+  if (/conjuge|esposa|marido|socio|familia|preciso falar com (meu|minha)|vou falar com (meu|minha)/.test(normalized)) {
+    return [
+      `Faz sentido, ${leadFirstName}. Essa pessoa decide junto com voce ou voce quer entender primeiro para explicar com mais seguranca?`,
+      "Se ela participa da decisao, eu posso organizar um resumo simples do que ja entendemos e deixar o proximo passo claro para voces dois.",
+    ].join("\n\n");
+  }
+
+  if (/humano|atendente|advogado|doutor|doutora|responsavel|falar com/.test(normalized)) {
     return [
       `Faz sentido, ${leadFirstName}. Eu vou organizar isso para a pessoa certa pegar o contexto sem voce repetir tudo.`,
       "Antes de eu encaminhar: o ponto principal e urgencia, documentos, valor, estrategia do caso ou falar com alguem especifico?",

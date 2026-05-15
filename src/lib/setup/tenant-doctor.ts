@@ -1,3 +1,10 @@
+import {
+  buildDefaultOfficePlaybookProfile,
+  getOfficePlaybookMissingSignals,
+  normalizeOfficePlaybookProfile,
+  OFFICE_PLAYBOOK_OWNER_QUESTIONS,
+} from "@/lib/growth/office-playbook-profile";
+
 export type TenantDoctorStatus = "ok" | "fixed" | "warning" | "blocked";
 export type TenantDoctorCategory = "tenant" | "crm" | "skills" | "integrations" | "commercial" | "audit";
 
@@ -71,10 +78,11 @@ const DEFAULT_CRM_STAGES = [
 
 const DEFAULT_SALES_LLM_TESTBENCH = {
   enabled: true,
-  default_model: "deepseek/deepseek-v4-pro",
+  default_model: "openai/gpt-5.4-nano",
   candidate_models: [
-    "deepseek/deepseek-v4-pro",
+    "openai/gpt-5.4-nano",
     "minimax/minimax-m2.7",
+    "deepseek/deepseek-v4-pro",
     "xiaomi/mimo-v2.5",
     "qwen/qwen3.6-plus",
     "moonshotai/kimi-k2.6",
@@ -434,6 +442,70 @@ function getOfficeKnowledgeMissingSignals(profile: Record<string, any> | null) {
   return missing;
 }
 
+async function ensureOfficePlaybookProfile(tenantId: string, supabase: DoctorSupabase, autoFix: boolean) {
+  const { data, error } = await supabase
+    .from("tenant_settings")
+    .select("ai_features")
+    .eq("tenant_id", tenantId)
+    .maybeSingle();
+
+  if (error) throw error;
+
+  const aiFeatures = data?.ai_features && typeof data.ai_features === "object" ? data.ai_features as Record<string, any> : {};
+  const existingProfile = normalizeOfficePlaybookProfile(aiFeatures.office_playbook_profile);
+  const missing = getOfficePlaybookMissingSignals(existingProfile);
+
+  if (missing.length === 0) {
+    return check({
+      id: "commercial:office_playbook_profile",
+      category: "commercial",
+      status: "ok",
+      title: "Playbook comercial do escritorio configurado",
+      detail: "Teses, cliente ideal, perguntas, documentos, objecoes, promessas proibidas e proximos passos estao disponiveis para o MAYUS vender conforme o escritorio.",
+      autoFixable: true,
+    });
+  }
+
+  const questions = (existingProfile?.owner_questions?.length ? existingProfile.owner_questions : OFFICE_PLAYBOOK_OWNER_QUESTIONS).slice(0, 5);
+  const nextAction = `Perguntar ao dono do escritorio: ${questions.join(" | ")}`;
+
+  if (!autoFix) {
+    return check({
+      id: "commercial:office_playbook_profile",
+      category: "commercial",
+      status: "warning",
+      title: "Playbook comercial do escritorio incompleto",
+      detail: `Faltam sinais para vender por tese do escritorio: ${missing.join(", ")}.`,
+      autoFixable: true,
+      nextAction,
+    });
+  }
+
+  const nextProfile = buildDefaultOfficePlaybookProfile(existingProfile);
+  const { error: upsertError } = await supabase
+    .from("tenant_settings")
+    .upsert({
+      tenant_id: tenantId,
+      ai_features: {
+        ...aiFeatures,
+        office_playbook_profile: nextProfile,
+      },
+    }, { onConflict: "tenant_id" });
+
+  if (upsertError) throw upsertError;
+
+  return check({
+    id: "commercial:office_playbook_profile",
+    category: "commercial",
+    status: "fixed",
+    title: "Perguntas de playbook comercial semeadas",
+    detail: "O MAYUS criou um rascunho de auto-configuracao para perguntar ao dono a tese, cliente ideal, oferta, documentos, objecoes, promessas proibidas e proximos passos do escritorio.",
+    autoFixable: true,
+    fixed: true,
+    nextAction,
+  });
+}
+
 async function diagnoseCommercialSalesProfile(tenantId: string, supabase: DoctorSupabase) {
   const { data, error } = await supabase
     .from("tenant_settings")
@@ -587,9 +659,9 @@ async function ensureSalesLlmTestbench(tenantId: string, supabase: DoctorSupabas
       category: "commercial",
       status: "warning",
       title: "Bancada LLM de vendas ausente",
-      detail: "O WhatsApp comercial ainda nao tem a bancada DeepSeek/MiniMax/MiMo/Qwen/Kimi configurada.",
+      detail: "O WhatsApp comercial ainda nao tem a bancada GPT/MiniMax/DeepSeek/MiMo/Qwen/Kimi configurada.",
       autoFixable: true,
-      nextAction: "Rodar o Auto Setup Doctor para ativar DeepSeek V4 Pro como modelo padrao de teste de vendas.",
+      nextAction: "Rodar o Auto Setup Doctor para ativar GPT-5.4 nano como modelo padrao operacional de vendas.",
     });
   }
 
@@ -610,7 +682,7 @@ async function ensureSalesLlmTestbench(tenantId: string, supabase: DoctorSupabas
     category: "commercial",
     status: "fixed",
     title: "Bancada LLM de vendas ativada",
-    detail: "DeepSeek V4 Pro ficou como padrao e MiniMax, MiMo, Qwen e Kimi foram cadastrados como candidatos de teste.",
+    detail: "GPT-5.4 nano ficou como padrao e MiniMax, DeepSeek, MiMo, Qwen e Kimi foram cadastrados como candidatos de teste.",
     autoFixable: true,
     fixed: true,
   });
@@ -886,6 +958,7 @@ export async function runTenantDoctor(params: {
   checks.push(...await ensureCrmDefaults(params.tenantId, supabase, autoFix));
   checks.push(await diagnoseAgentSkills(params.tenantId, supabase, ensureDefaultSkills, autoFix));
   checks.push(await diagnoseCommercialSalesProfile(params.tenantId, supabase));
+  checks.push(await ensureOfficePlaybookProfile(params.tenantId, supabase, autoFix));
   checks.push(await ensureOfficeKnowledgeProfile(params.tenantId, supabase, autoFix));
   checks.push(await ensureSalesLlmTestbench(params.tenantId, supabase, autoFix));
   checks.push(await ensureMayusOperatingPartner(params.tenantId, supabase, autoFix));

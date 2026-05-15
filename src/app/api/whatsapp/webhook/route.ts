@@ -1,7 +1,10 @@
 import { NextRequest, NextResponse } from "next/server";
 import { createClient } from "@supabase/supabase-js";
+import crypto from "crypto";
 import { handleWhatsAppInternalCommand } from "@/lib/mayus/whatsapp-command-runtime";
 import { enqueueWhatsAppReply, processPendingWhatsAppRepliesBatch } from "@/lib/whatsapp/reply-processor";
+
+export const maxDuration = 60;
 
 // ==============================================================================
 // 🚀 MAYUS - WEBHOOK OFICIAL META CLOUD API (WhatsApp Business Platform)
@@ -16,9 +19,28 @@ const supabase = createClient(
   process.env.SUPABASE_SERVICE_ROLE_KEY!
 );
 
-const IMMEDIATE_REPLY_TIMEOUT_MS = 8000;
+const QUEUED_REPLY_TIMEOUT_MS = 58000;
+const MAX_META_WEBHOOK_BODY_BYTES = 1024 * 1024;
 
-async function processImmediateReply(params: { messageId: string }) {
+function verifyMetaSignature(rawBody: string, signatureHeader: string | null) {
+  const appSecret = process.env.META_APP_SECRET || process.env.WHATSAPP_APP_SECRET;
+  if (!appSecret) {
+    return process.env.NODE_ENV !== "production";
+  }
+
+  if (!signatureHeader?.startsWith("sha256=")) {
+    return false;
+  }
+
+  const expected = `sha256=${crypto.createHmac("sha256", appSecret).update(rawBody).digest("hex")}`;
+  if (signatureHeader.length !== expected.length) {
+    return false;
+  }
+
+  return crypto.timingSafeEqual(Buffer.from(signatureHeader), Buffer.from(expected));
+}
+
+async function processQueuedReply(params: { messageId: string }) {
   let timeout: ReturnType<typeof setTimeout> | null = null;
 
   try {
@@ -29,7 +51,7 @@ async function processImmediateReply(params: { messageId: string }) {
         limit: 1,
       }),
       new Promise((_, reject) => {
-        timeout = setTimeout(() => reject(new Error(`Timeout ao processar resposta imediata apos ${IMMEDIATE_REPLY_TIMEOUT_MS}ms.`)), IMMEDIATE_REPLY_TIMEOUT_MS);
+        timeout = setTimeout(() => reject(new Error(`Timeout ao processar resposta agentica apos ${QUEUED_REPLY_TIMEOUT_MS}ms.`)), QUEUED_REPLY_TIMEOUT_MS);
       }),
     ]);
   } finally {
@@ -69,7 +91,26 @@ export async function GET(req: NextRequest) {
 // ==============================================================================
 export async function POST(req: NextRequest) {
   try {
-    const body = await req.json();
+    const contentLength = Number(req.headers.get("content-length") || "0");
+    if (Number.isFinite(contentLength) && contentLength > MAX_META_WEBHOOK_BODY_BYTES) {
+      return NextResponse.json({ success: false, error: "payload_too_large" }, { status: 413 });
+    }
+
+    const rawBody = await req.text();
+    if (Buffer.byteLength(rawBody, "utf8") > MAX_META_WEBHOOK_BODY_BYTES) {
+      return NextResponse.json({ success: false, error: "payload_too_large" }, { status: 413 });
+    }
+
+    if (!verifyMetaSignature(rawBody, req.headers.get("x-hub-signature-256"))) {
+      return NextResponse.json({ success: false, error: "invalid_signature" }, { status: 401 });
+    }
+
+    let body: any;
+    try {
+      body = JSON.parse(rawBody || "{}");
+    } catch {
+      return NextResponse.json({ success: false, error: "invalid_json" }, { status: 400 });
+    }
 
     // A Meta envia objetos do tipo "whatsapp_business_account"
     const entry = body?.entry?.[0];
@@ -373,9 +414,9 @@ export async function POST(req: NextRequest) {
           });
 
           try {
-            await processImmediateReply({ messageId: savedMessage.id });
+            await processQueuedReply({ messageId: savedMessage.id });
           } catch (replyError) {
-            console.error("[Meta Webhook] Erro ao processar resposta imediata:", replyError);
+            console.error("[Meta Webhook] Erro ao processar resposta agentica enfileirada:", replyError);
           }
         }
       }

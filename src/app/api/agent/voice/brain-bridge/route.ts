@@ -1,6 +1,6 @@
 import { NextRequest, NextResponse } from "next/server";
 import { getBrainAuthContext } from "@/lib/brain/server";
-import { executeBrainTurn, normalizeChatHistory } from "@/lib/brain/turn";
+import { executeBrainTurn, normalizeBrainMissionKind, normalizeChatHistory } from "@/lib/brain/turn";
 
 export const dynamic = "force-dynamic";
 
@@ -9,6 +9,7 @@ type VoiceBridgeBody = {
   history?: Array<{ role?: string; content?: string }>;
   toolName?: string;
   toolPayload?: Record<string, unknown>;
+  missionKind?: string;
 };
 
 const EXECUTIVE_ROLES = new Set(["admin", "administrador", "socio", "sócio", "mayus_admin"]);
@@ -32,11 +33,15 @@ function resolvePrompt(prompt: unknown, toolName: unknown, toolPayload: unknown)
   if (typeof embeddedPrompt === "string") return embeddedPrompt.trim();
 
   return [
-    "Solicitacao recebida pelo shell de voz ElevenLabs do MAYUS.",
+    "Solicitacao recebida pelo shell de voz do MAYUS.",
     `Tool solicitado: ${normalizedToolName}.`,
     `Payload: ${JSON.stringify(payload)}.`,
     "Interprete o pedido, decida a melhor acao e responda em linguagem natural para o usuario.",
   ].join("\n");
+}
+
+function cleanString(value: unknown, fallback = "") {
+  return typeof value === "string" && value.trim() ? value.trim() : fallback;
 }
 
 
@@ -64,6 +69,9 @@ export async function POST(req: NextRequest) {
     const toolPayload = body.toolPayload && typeof body.toolPayload === "object" && !Array.isArray(body.toolPayload)
       ? body.toolPayload
       : {};
+    const provider = cleanString(toolPayload.provider, "elevenlabs");
+    const source = provider === "openai_realtime" ? "openai_realtime_voice" : "elevenlabs_voice";
+    const missionKind = normalizeBrainMissionKind(toolPayload.missionKind || body.missionKind);
 
     const turn = await executeBrainTurn({
       authContext: auth.context,
@@ -80,8 +88,9 @@ export async function POST(req: NextRequest) {
         tool_payload: toolPayload,
       },
       taskContext: {
-        source: "elevenlabs_voice_shell",
-        provider: "elevenlabs",
+        source,
+        provider,
+        missionKind,
         humanized_layer: true,
       },
       policySnapshot: {
@@ -97,10 +106,15 @@ export async function POST(req: NextRequest) {
 
     return NextResponse.json({
       reply: turn.reply,
+      voiceReply: turn.voiceReply,
+      missionKind: turn.missionKind,
+      approvalRequired: turn.approvalRequired,
+      approvalId: turn.approvalId,
       kernel: turn.kernel,
       taskId: turn.taskId,
       runId: turn.runId,
       stepId: turn.stepId,
+      orb: turn.orb,
     }, { status: turn.responseStatus });
   } catch (error) {
     console.error("[voice/brain-bridge] fatal", error);

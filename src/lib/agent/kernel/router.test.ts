@@ -5,7 +5,7 @@ const baseContext = {
   userId: "user-1",
   tenantId: "tenant-1",
   channel: "chat" as const,
-  availableSkills: ["marketing_copywriter", "marketing_ops_assistant", "sales_profile_setup", "sales_consultation", "commercial_playbook_setup", "lead_reactivation", "client_acceptance_record", "external_action_preview", "revenue_flow_plan", "lead_schedule", "lead_followup", "lead_qualify", "lead_intake", "support_case_status", "legal_case_context", "legal_document_memory_refresh", "legal_first_draft_generate", "legal_draft_workflow", "legal_draft_review_guidance", "legal_draft_revision_loop", "legal_artifact_publish_premium", "query_process_status"],
+  availableSkills: ["marketing_copywriter", "marketing_ops_assistant", "sales_profile_setup", "sales_consultation", "commercial_playbook_setup", "billing_create", "collections_followup", "lead_reactivation", "client_acceptance_record", "external_action_preview", "revenue_flow_plan", "lead_schedule", "lead_followup", "lead_qualify", "lead_intake", "support_case_status", "legal_process_mission_plan", "legal_process_mission_execute_next", "legal_case_brain_insights", "legal_case_context", "legal_document_memory_refresh", "legal_first_draft_generate", "legal_draft_workflow", "legal_draft_review_guidance", "legal_draft_revision_loop", "legal_artifact_publish_premium", "query_process_status"],
 };
 
 describe("route - juridico MAYUS", () => {
@@ -95,6 +95,16 @@ describe("route - juridico MAYUS", () => {
     expect(result.confidence).toBeGreaterThanOrEqual(0.9);
   });
 
+  it("detecta skills para escritorios como playbook comercial", () => {
+    const result = route(
+      "Mayus, crie skills para escritorios fazerem atendimento e vendas com playbook DEF.",
+      baseContext
+    );
+
+    expect(result.intent).toBe("commercial_playbook_setup");
+    expect(result.confidence).toBeGreaterThanOrEqual(0.9);
+  });
+
   it("detecta reativacao de leads frios por segmento", () => {
     const result = route(
       "Mayus, recupere leads frios de previdenciario ha 45 dias maximo 12 leads.",
@@ -156,6 +166,63 @@ describe("route - juridico MAYUS", () => {
       amount: "4500",
     }));
     expect(result.confidence).toBeGreaterThanOrEqual(0.9);
+  });
+
+  it("detecta atendimento de excelencia como sales_consultation", () => {
+    const result = route(
+      "Mayus, treine atendimento de excelencia para o escritorio com sparring comercial e objecoes de WhatsApp.",
+      baseContext
+    );
+
+    expect(result.intent).toBe("sales_consultation");
+    expect(result.confidence).toBeGreaterThanOrEqual(0.9);
+  });
+
+  it("detecta plano financeiro de cobranca vencida", () => {
+    const result = route(
+      "Mayus, organize a cobranca atrasada cliente Maria Silva area Previdenciario valor 1500 ha 12 dias tom firme por WhatsApp.",
+      baseContext
+    );
+
+    expect(result.intent).toBe("collections_followup");
+    expect(result.entities).toEqual(expect.objectContaining({
+      client_name: "Maria Silva",
+      legal_area: "Previdenciario",
+      amount: "1500",
+      days_overdue: "12",
+      tone: "firme",
+      channel: "WhatsApp",
+    }));
+    expect(result.confidence).toBeGreaterThanOrEqual(0.9);
+  });
+
+  it("detecta cobranca agentica de entrada pelo chat", () => {
+    const result = route(
+      "Mayus, cobre a entrada da Maria Silva em R$ 1500 via PIX.",
+      baseContext
+    );
+
+    expect(result.intent).toBe("billing_create");
+    expect(result.entities).toEqual(expect.objectContaining({
+      nome_cliente: "Maria Silva",
+      valor: "1500",
+      billing_type: "PIX",
+    }));
+    expect(result.confidence).toBeGreaterThanOrEqual(0.85);
+  });
+
+  it("detecta pedido de pix para cliente mesmo quando ainda falta valor", () => {
+    const result = route(
+      "Mayus, gerar PIX para cliente Carlos Souza.",
+      baseContext
+    );
+
+    expect(result.intent).toBe("billing_create");
+    expect(result.entities).toEqual(expect.objectContaining({
+      nome_cliente: "Carlos Souza",
+      billing_type: "PIX",
+    }));
+    expect(result.entities.valor).toBeUndefined();
   });
 
   it("detecta pedido de agendamento supervisionado de lead", () => {
@@ -266,6 +333,18 @@ describe("route - juridico MAYUS", () => {
     expect(result.ambiguous).toBe(false);
   });
 
+  it("roteia status direto de processo para suporte de caso", () => {
+    const result = route(
+      "Qual o status do processo 1234567-89.2024.8.26.0100?",
+      baseContext
+    );
+
+    expect(result.intent).toBe("support_case_status");
+    expect(result.entities).toEqual({ process_number: "1234567-89.2024.8.26.0100" });
+    expect(result.confidence).toBeGreaterThanOrEqual(0.85);
+    expect(result.ambiguous).toBe(false);
+  });
+
   it("detecta consulta de contexto juridico e extrai o numero do processo", () => {
     const result = route(
       "Quero o contexto jurídico, a peça sugerida e o status da minuta do processo 1234567-89.2024.8.26.0100.",
@@ -274,6 +353,89 @@ describe("route - juridico MAYUS", () => {
 
     expect(result.intent).toBe("legal_case_context");
     expect(result.entities).toEqual({ process_number: "1234567-89.2024.8.26.0100" });
+    expect(result.confidence).toBeGreaterThanOrEqual(0.85);
+    expect(result.ambiguous).toBe(false);
+  });
+
+  it("detecta pedido de Case Brain 2.0 com cronologia e riscos", () => {
+    const result = route(
+      "Mayus, gere o Case Brain 2.0 com cronologia estruturada e mapa de riscos do processo 1234567-89.2024.8.26.0100.",
+      baseContext
+    );
+
+    expect(result.intent).toBe("legal_case_brain_insights");
+    expect(result.entities).toEqual({ process_number: "1234567-89.2024.8.26.0100" });
+    expect(result.confidence).toBeGreaterThanOrEqual(0.9);
+    expect(result.ambiguous).toBe(false);
+  });
+
+  it("detecta pedido de plano de missao agentica processual", () => {
+    const result = route(
+      "Mayus, monte um plano agentico do processo 1234567-89.2024.8.26.0100 e diga a proxima acao segura.",
+      baseContext
+    );
+
+    expect(result.intent).toBe("legal_process_mission_plan");
+    expect(result.entities).toEqual({ process_number: "1234567-89.2024.8.26.0100" });
+    expect(result.confidence).toBeGreaterThanOrEqual(0.85);
+    expect(result.ambiguous).toBe(false);
+  });
+
+  it("roteia organizacao de missao processual em linguagem natural", () => {
+    const result = route(
+      "Mayus, organize a missao desse processo.",
+      baseContext
+    );
+
+    expect(result.intent).toBe("legal_process_mission_plan");
+    expect(result.confidence).toBeGreaterThanOrEqual(0.85);
+    expect(result.ambiguous).toBe(false);
+  });
+
+  it("roteia pedido de proximo passo desse processo para plano de missao", () => {
+    const result = route(
+      "Mayus, veja o proximo passo desse processo.",
+      baseContext
+    );
+
+    expect(result.intent).toBe("legal_process_mission_plan");
+    expect(result.confidence).toBeGreaterThanOrEqual(0.85);
+    expect(result.ambiguous).toBe(false);
+  });
+
+  it("detecta pedido para executar proximo passo seguro da missao processual", () => {
+    const result = route(
+      "Mayus, execute o proximo passo seguro da missao do processo 1234567-89.2024.8.26.0100.",
+      baseContext
+    );
+
+    expect(result.intent).toBe("legal_process_mission_execute_next");
+    expect(result.entities).toEqual({ process_number: "1234567-89.2024.8.26.0100" });
+    expect(result.confidence).toBeGreaterThanOrEqual(0.85);
+    expect(result.ambiguous).toBe(false);
+  });
+
+  it("roteia execucao curta do proximo passo seguro", () => {
+    const result = route(
+      "Mayus, execute o proximo passo seguro.",
+      baseContext
+    );
+
+    expect(result.intent).toBe("legal_process_mission_execute_next");
+    expect(result.confidence).toBeGreaterThanOrEqual(0.85);
+    expect(result.ambiguous).toBe(false);
+  });
+
+  it("detecta execucao de proxima acao segura com acento e referencia textual", () => {
+    const result = route(
+      "Mayus, rode a próxima ação segura da missão do processo da Maria da Silva.",
+      baseContext
+    );
+
+    expect(result.intent).toBe("legal_process_mission_execute_next");
+    expect(result.entities).toEqual(expect.objectContaining({
+      process_reference: "Maria da Silva",
+    }));
     expect(result.confidence).toBeGreaterThanOrEqual(0.85);
     expect(result.ambiguous).toBe(false);
   });

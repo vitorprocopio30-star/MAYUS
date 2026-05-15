@@ -122,4 +122,43 @@ describe("execute - authorization guards", () => {
     expect(result.status).toBe("success");
     expect(result.auditLogId).toBe("audit-1");
   });
+
+  it("normaliza cobranca e abre aprovacao sem executar Asaas", async () => {
+    fetchAgentSkillByNameMock.mockResolvedValue(makeSkill({
+      name: "billing_create",
+      description: "Cria cobranca no Asaas com link de pagamento supervisionado.",
+      requires_human_confirmation: true,
+      handler_type: "asaas_cobrar",
+    }));
+
+    const result = await execute(
+      {
+        intent: "billing_create",
+        entities: { nome_cliente: "Maria Silva", valor: "1.500,00" },
+        confidence: 0.95,
+        safeText: "cobre a entrada da Maria em R$ 1500",
+        ambiguous: false,
+      },
+      {
+        userId: "user-1",
+        tenantId: "tenant-1",
+        userRole: "Administrador",
+        channel: "chat",
+      }
+    );
+
+    expect(result.status).toBe("awaiting_approval");
+    expect(result.auditLogId).toBe("audit-1");
+    expect(result.awaitingPayload).toEqual(expect.objectContaining({
+      skillName: "billing_create",
+      riskLevel: "high",
+      entities: expect.objectContaining({
+        nome_cliente: "Maria Silva",
+        valor: "1500",
+        billing_type: "UNDEFINED",
+        vencimento: expect.stringMatching(/^\d{4}-\d{2}-\d{2}$/),
+      }),
+    }));
+    expect(fromMock).toHaveBeenCalledWith("agent_audit_logs");
+  });
 });

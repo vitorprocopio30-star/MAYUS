@@ -77,7 +77,7 @@ async function main() {
       email_confirm: true,
       app_metadata: {
         tenant_id: tenantId,
-        role: "Administrador",
+        role: "admin",
         custom_permissions: ["ALL"],
       },
       user_metadata: {
@@ -94,7 +94,7 @@ async function main() {
       app_metadata: {
         ...(existingUser.app_metadata || {}),
         tenant_id: tenantId,
-        role: "Administrador",
+        role: "admin",
         custom_permissions: ["ALL"],
       },
       user_metadata: {
@@ -117,7 +117,7 @@ async function main() {
       id: userId,
       tenant_id: tenantId,
       full_name: "Playwright E2E",
-      role: "Administrador",
+      role: "admin",
       is_active: true,
     });
 

@@ -26,8 +26,10 @@ describe("whatsapp command center", () => {
 
   it("identifica intents operacionais", () => {
     expect(inferWhatsAppCommandIntent("Mayus, relatorio do escritorio")).toBe("daily_playbook");
+    expect(inferWhatsAppCommandIntent("E analise do escritorio, Marlos")).toBe("daily_playbook");
     expect(inferWhatsAppCommandIntent("Mayus, leads sem proximo passo")).toBe("crm_next_steps");
     expect(inferWhatsAppCommandIntent("Mayus, agenda de hoje")).toBe("agenda_today");
+    expect(inferWhatsAppCommandIntent("Mayus, configurar vendas do escritorio")).toBe("office_playbook_setup");
   });
 
   it("bloqueia remetente nao autorizado", () => {
@@ -79,5 +81,71 @@ describe("whatsapp command center", () => {
     expect(result.replyText).toContain("Nenhuma acao externa foi executada automaticamente.");
     expect(result.playbook.metrics.crmLeadsNeedingNextStep).toBe(1);
     expect(JSON.stringify(result.metadata)).not.toContain("21999990000");
+  });
+
+  it("inicia entrevista de playbook comercial para usuario autorizado", () => {
+    const result = buildWhatsAppCommandResponse({
+      tenantId: "tenant-1",
+      senderPhone: "5521999990000",
+      text: "Mayus, configurar vendas do escritorio",
+      aiFeatures,
+      now: new Date("2026-05-06T20:00:00.000Z"),
+    });
+
+    expect(result.handled).toBe(true);
+    if (!result.handled) throw new Error("expected handled command");
+    expect(result.intent).toBe("office_playbook_setup");
+    expect(result.replyText).toContain("Primeira pergunta");
+    expect(result.officePlaybookSetup?.nextProfile.setup_session).toEqual(expect.objectContaining({
+      active: true,
+      current_step: "main_legal_areas",
+    }));
+  });
+
+  it("salva resposta da entrevista e avanca para proxima pergunta", () => {
+    const result = buildWhatsAppCommandResponse({
+      tenantId: "tenant-1",
+      senderPhone: "5521999990000",
+      text: "Direito bancario, previdenciario",
+      aiFeatures: {
+        ...aiFeatures,
+        office_playbook_profile: {
+          status: "needs_owner_input",
+          setup_session: { active: true, current_step: "main_legal_areas", completed_steps: [] },
+        },
+      },
+      now: new Date("2026-05-06T20:01:00.000Z"),
+    });
+
+    expect(result.handled).toBe(true);
+    if (!result.handled) throw new Error("expected handled command");
+    expect(result.replyText).toContain("Proxima pergunta");
+    expect(result.officePlaybookSetup?.nextProfile.main_legal_areas).toEqual(["Direito bancario", "previdenciario"]);
+    expect(result.officePlaybookSetup?.nextProfile.setup_session).toEqual(expect.objectContaining({
+      active: true,
+      current_step: "thesis_by_area",
+      completed_steps: ["main_legal_areas"],
+    }));
+  });
+
+  it("ativa playbook quando dono confirma", () => {
+    const result = buildWhatsAppCommandResponse({
+      tenantId: "tenant-1",
+      senderPhone: "5521999990000",
+      text: "confirmar playbook",
+      aiFeatures: {
+        ...aiFeatures,
+        office_playbook_profile: {
+          status: "draft",
+          main_legal_areas: ["bancario"],
+          setup_session: { active: false, current_step: null, completed_steps: ["main_legal_areas"] },
+        },
+      },
+    });
+
+    expect(result.handled).toBe(true);
+    if (!result.handled) throw new Error("expected handled command");
+    expect(result.officePlaybookSetup?.nextProfile.status).toBe("active");
+    expect(result.replyText).toContain("ativado");
   });
 });

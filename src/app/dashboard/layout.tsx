@@ -3,6 +3,7 @@
 import { AdminSidebar } from "@/components/layout/AdminSidebar";
 import { AdminHeader } from "@/components/layout/AdminHeader";
 import { MAYUSOrb } from "@/components/dashboard/MAYUSOrb";
+import { OrbStateProvider } from "@/components/dashboard/mayus-orb/OrbStateProvider";
 import { useEffect, useState, type CSSProperties } from "react";
 
 const DEFAULT_SIDEBAR_OFFSET = "280px";
@@ -39,6 +40,7 @@ export default function DashboardLayout({
   }, []);
 
   return (
+    <OrbStateProvider>
     <div className="min-h-screen flex bg-white dark:bg-[#030303] text-white/90 transition-all duration-300 overflow-x-hidden">
       
       {/* Sidebar Fixa à Esquerda */}
@@ -63,5 +65,6 @@ export default function DashboardLayout({
         
       </div>
     </div>
+    </OrbStateProvider>
   );
 }

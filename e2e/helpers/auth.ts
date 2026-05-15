@@ -7,6 +7,13 @@ let cachedEnvFile: Record<string, string> | null = null;
 
 type LoginThroughUiOptions = {
   browserProfileMode?: "real" | "ui-harness";
+  credentials?: PlaywrightCredentials;
+};
+
+export type PlaywrightCredentials = {
+  email: string;
+  password: string;
+  available: boolean;
 };
 
 function loadLocalEnvFile() {
@@ -56,16 +63,30 @@ function getPlaywrightRuntimeConfig() {
   };
 }
 
-export function getPlaywrightCredentials() {
+function credentialsFromEnv(params: { emailKey: string; passwordKey: string }): PlaywrightCredentials {
   const localEnv = loadLocalEnvFile();
-  const email = process.env.PLAYWRIGHT_EMAIL?.trim() || localEnv.PLAYWRIGHT_EMAIL?.trim() || "";
-  const password = process.env.PLAYWRIGHT_PASSWORD?.trim() || localEnv.PLAYWRIGHT_PASSWORD?.trim() || "";
+  const email = process.env[params.emailKey]?.trim() || localEnv[params.emailKey]?.trim() || "";
+  const password = process.env[params.passwordKey]?.trim() || localEnv[params.passwordKey]?.trim() || "";
 
   return {
     email,
     password,
     available: Boolean(email && password),
   };
+}
+
+export function getPlaywrightCredentials() {
+  return credentialsFromEnv({
+    emailKey: "PLAYWRIGHT_EMAIL",
+    passwordKey: "PLAYWRIGHT_PASSWORD",
+  });
+}
+
+export function getPlaywrightSuperadminCredentials() {
+  return credentialsFromEnv({
+    emailKey: "PLAYWRIGHT_SUPERADMIN_EMAIL",
+    passwordKey: "PLAYWRIGHT_SUPERADMIN_PASSWORD",
+  });
 }
 
 function buildProfileFromSessionUser(user: any) {
@@ -110,11 +131,11 @@ async function installUiHarnessBrowserProfile(page: Page, runtime: ReturnType<ty
 }
 
 export async function loginThroughUi(page: Page, options: LoginThroughUiOptions = {}) {
-  const credentials = getPlaywrightCredentials();
+  const credentials = options.credentials || getPlaywrightCredentials();
   const runtime = getPlaywrightRuntimeConfig();
 
   if (!credentials.available) {
-    throw new Error("Credenciais PLAYWRIGHT_EMAIL/PLAYWRIGHT_PASSWORD nao configuradas.");
+    throw new Error("Credenciais Playwright nao configuradas.");
   }
 
   if (!runtime.supabaseUrl || !runtime.anonKey) {

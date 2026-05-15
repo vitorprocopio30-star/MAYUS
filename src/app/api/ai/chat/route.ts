@@ -22,7 +22,7 @@ import {
   fetchTenantAgentSkills,
   type AgentCapabilityRecord,
 } from "@/lib/agent/capabilities/registry";
-import { dispatchCapabilityExecution } from "@/lib/agent/capabilities/dispatcher";
+import { dispatchCapabilityExecution, type DispatchCapabilityResult } from "@/lib/agent/capabilities/dispatcher";
 import {
   route,
   sanitizeText,
@@ -31,6 +31,12 @@ import {
 } from "@/lib/agent/kernel/router";
 import { execute, type ExecutorContext } from "@/lib/agent/kernel/executor";
 import { handleFallback, type FallbackContext } from "@/lib/agent/kernel/fallback";
+import {
+  buildMayusOrbPresentingEvent,
+  buildMayusOrbWorkingEvent,
+  withMayusOrbEvent,
+  type MayusOrbEvent,
+} from "@/lib/brain/orb-events";
 
 export const dynamic = "force-dynamic";
 
@@ -43,6 +49,13 @@ const ALLOWED_PROVIDERS = [
 const MAX_CHAT_BODY_BYTES = 512 * 1024;
 const MAX_CHAT_MESSAGE_CHARS = 20_000;
 const MAX_CHAT_HISTORY_ITEMS = 100;
+const DETERMINISTIC_ROUTER_INTENTS = new Set([
+  "support_case_status",
+  "collections_followup",
+  "legal_process_mission_plan",
+  "legal_process_mission_execute_next",
+  "legal_case_brain_insights",
+]);
 
 // ─── Clients Supabase ─────────────────────────────────────────────────────────
 
@@ -94,9 +107,13 @@ REGRAS DE EXECUÇÃO DE SKILLS:
 - Para recuperar ou reativar leads frios por segmento com lista, mensagens e aprovacao humana, use a skill lead_reactivation.
 - Para criar agendamento interno supervisionado de consulta, qualificacao ou retorno de lead, use a skill lead_schedule.
 - Para montar o plano proposta -> contrato -> cobranca -> abertura de caso sem executar integracoes externas automaticamente, use a skill revenue_flow_plan.
+- Para organizar cobranca vencida, inadimplencia, renegociacao ou promessa de pagamento sem envio externo automatico, use a skill collections_followup.
 - Para criar preview/checklist de aprovacao antes de ZapSign, Asaas, WhatsApp ou outra acao externa, use a skill external_action_preview.
 - Para registrar aceite do cliente com trilha auditavel sem executar contrato/cobranca/caso automaticamente, use a skill client_acceptance_record.
 - Para responder cliente sobre status do caso em linguagem curta, segura e com handoff humano quando faltar base suficiente, use a skill support_case_status.
+- Para montar uma missão agentica supervisionada de processo com proxima acao recomendada, confianca, fontes e lacunas sem executar side effects, use a skill legal_process_mission_plan.
+- Para executar o proximo passo seguro de uma missao agentica de processo, use legal_process_mission_execute_next; nesta fase, somente atualizacao de memoria documental pode ser executada automaticamente.
+- Para gerar Case Brain 2.0 com cronologia, riscos, contradicoes, fatos documentados/inferencias e proximos atos provaveis, use a skill legal_case_brain_insights.
 - Para consultar contexto juridico de um processo, status de minuta, pendencias documentais ou peca sugerida, use a skill legal_case_context.
 - Para sincronizar o repositorio documental do processo e atualizar a memoria documental, use a skill legal_document_memory_refresh.
 - Para gerar ou atualizar a primeira minuta juridica sugerida pelo Case Brain, use a skill legal_first_draft_generate.
@@ -260,7 +277,7 @@ async function fetchInstitutionalMemory(supabase: SupabaseClient, tenantId: stri
 
   const result = `\n\nCONHECIMENTO INSTITUCIONAL DO ESCRITÓRIO (seguir obrigatoriamente):\n${Object.entries(grouped)
     .map(([cat, rules]) => `[${cat}]\n${rules.join("\n")}`).join("\n\n")}`;
-  
+
   memoryCache.set(tenantId, { data: result, expiresAt: Date.now() + 5 * 60 * 1000 });
   return result;
 }
@@ -278,12 +295,13 @@ async function assignBrainStepCapability(params: {
   taskId?: string;
   runId?: string;
   stepId?: string;
+  channel?: string;
   toolName: string;
   handlerType?: string | null;
   toolArguments: string;
-}) {
+}): Promise<MayusOrbEvent | null> {
   if (!params.stepId) {
-    return;
+    return null;
   }
 
   let parsedArguments: Record<string, unknown> | string = params.toolArguments;
@@ -293,6 +311,23 @@ async function assignBrainStepCapability(params: {
     parsedArguments = params.toolArguments;
   }
 
+  const orb = params.channel === "voice"
+    ? buildMayusOrbWorkingEvent({
+        taskId: params.taskId,
+        runId: params.runId,
+        stepId: params.stepId,
+        capabilityName: params.toolName,
+        handlerType: params.handlerType,
+        sourceModule: "mayus",
+      })
+    : null;
+  const inputPayload = {
+    tool_name: params.toolName,
+    tool_arguments: parsedArguments,
+    task_id: params.taskId || null,
+    run_id: params.runId || null,
+  };
+
   const { error } = await adminSupabase
     .from("brain_steps")
     .update({
@@ -300,18 +335,66 @@ async function assignBrainStepCapability(params: {
       capability_name: params.toolName,
       handler_type: params.handlerType || null,
       step_type: "capability",
-      input_payload: {
-        tool_name: params.toolName,
-        tool_arguments: parsedArguments,
-        task_id: params.taskId || null,
-        run_id: params.runId || null,
-      },
+      status: "running",
+      input_payload: orb ? withMayusOrbEvent(inputPayload, orb) : inputPayload,
     })
     .eq("id", params.stepId);
 
   if (error) {
     console.error("[ai/chat] Falha ao registrar capability no brain_step:", error.message);
   }
+
+  return orb;
+}
+
+function buildDispatchAwaitingApprovalResponse(params: {
+  dispatchResult: DispatchCapabilityResult;
+  fallbackAuditLogId?: string | null;
+  fallbackCapabilityName: string;
+  fallbackHandlerType: string | null;
+  presentationChannel: "chat" | "voice";
+  taskId?: string;
+  runId?: string;
+  stepId?: string;
+}) {
+  const outputPayload = params.dispatchResult.outputPayload || {};
+  const awaitingPayload = (outputPayload.awaitingPayload || {}) as Record<string, unknown>;
+  const approvalAuditLogId = typeof outputPayload.auditLogId === "string"
+    ? outputPayload.auditLogId
+    : params.fallbackAuditLogId;
+  const capabilityName = outputPayload.proposed_capability || params.fallbackCapabilityName;
+  const handlerType = outputPayload.proposed_handler_type || params.fallbackHandlerType;
+  const orb = buildMayusOrbPresentingEvent({
+    status: "awaiting_approval",
+    taskId: params.taskId,
+    runId: params.runId,
+    stepId: params.stepId,
+    capabilityName: String(capabilityName),
+    handlerType: String(handlerType || ""),
+    sourceModule: "mayus",
+  });
+
+  return NextResponse.json({
+    reply: params.dispatchResult.reply,
+    data: params.dispatchResult.data,
+    orb,
+    kernel: {
+      status: "awaiting_approval",
+      auditLogId: approvalAuditLogId,
+      awaitingPayload: Object.keys(awaitingPayload).length > 0
+        ? awaitingPayload
+        : {
+          entities: {},
+          skillName: capabilityName,
+          riskLevel: "high",
+        },
+      capabilityName,
+      handlerType,
+      channel: params.presentationChannel,
+      outputPayload,
+      orb,
+    },
+  });
 }
 
 async function executeToolInvocation(params: {
@@ -324,32 +407,47 @@ async function executeToolInvocation(params: {
   userId: string;
   tenantId: string;
   history: Array<{ role: string; content: string }>;
+  presentationChannel: "chat" | "voice";
   taskId?: string;
   runId?: string;
   stepId?: string;
 }): Promise<NextResponse> {
   const toolIntent = buildIntentFromToolCall(params.toolName, params.toolArguments, params.safeText);
-  const execResult = await execute(toolIntent, params.executorContext);
   const matchedSkill = params.authorizedSkills.find((skill) => skill.name === params.toolName);
-
+  const handlerType = matchedSkill?.handler_type ?? null;
   await assignBrainStepCapability({
     taskId: params.taskId,
     runId: params.runId,
     stepId: params.stepId,
+    channel: params.presentationChannel,
     toolName: params.toolName,
-    handlerType: matchedSkill?.handler_type ?? null,
+    handlerType,
     toolArguments: params.toolArguments,
   });
 
+  const execResult = await execute(toolIntent, params.executorContext);
+
   if (execResult.status === "awaiting_approval") {
+    const orb = buildMayusOrbPresentingEvent({
+      status: "awaiting_approval",
+      taskId: params.taskId,
+      runId: params.runId,
+      stepId: params.stepId,
+      capabilityName: matchedSkill?.name ?? params.toolName,
+      handlerType,
+      sourceModule: "mayus",
+    });
     return NextResponse.json({
       reply: execResult.message,
+      orb,
       kernel: {
         status: "awaiting_approval",
         auditLogId: execResult.auditLogId,
         awaitingPayload: execResult.awaitingPayload,
         capabilityName: matchedSkill?.name ?? params.toolName,
-        handlerType: matchedSkill?.handler_type ?? null,
+        handlerType,
+        channel: params.presentationChannel,
+        orb,
       },
     });
   }
@@ -361,11 +459,24 @@ async function executeToolInvocation(params: {
       originalIntent: params.toolName,
       safeText: params.safeText,
     });
-    return NextResponse.json({ reply: fb.message, kernel: { status: execResult.status } });
+    const orb = buildMayusOrbPresentingEvent({
+      status: "failed",
+      taskId: params.taskId,
+      runId: params.runId,
+      stepId: params.stepId,
+      capabilityName: matchedSkill?.name ?? params.toolName,
+      handlerType,
+      sourceModule: "mayus",
+    });
+    return NextResponse.json({
+      reply: fb.message,
+      orb,
+      kernel: { status: execResult.status, channel: params.presentationChannel, orb },
+    });
   }
 
   const dispatchResult = await dispatchCapabilityExecution({
-    handlerType: matchedSkill?.handler_type ?? null,
+    handlerType,
     capabilityName: matchedSkill?.name ?? params.toolName,
     tenantId: params.tenantId,
     userId: params.userId,
@@ -380,23 +491,190 @@ async function executeToolInvocation(params: {
     },
   });
 
+  if (dispatchResult.status === "awaiting_approval") {
+    return buildDispatchAwaitingApprovalResponse({
+      dispatchResult,
+      fallbackAuditLogId: execResult.auditLogId,
+      fallbackCapabilityName: matchedSkill?.name ?? params.toolName,
+      fallbackHandlerType: handlerType,
+      presentationChannel: params.presentationChannel,
+      taskId: params.taskId,
+      runId: params.runId,
+      stepId: params.stepId,
+    });
+  }
+
   if (dispatchResult.status !== "unsupported") {
+    const orb = buildMayusOrbPresentingEvent({
+      status: dispatchResult.status === "executed" ? "completed" : "failed",
+      taskId: params.taskId,
+      runId: params.runId,
+      stepId: params.stepId,
+      capabilityName: matchedSkill?.name ?? params.toolName,
+      handlerType,
+      sourceModule: "mayus",
+    });
     return NextResponse.json({
       reply: dispatchResult.reply,
       data: dispatchResult.data,
+      orb,
       kernel: {
         status: dispatchResult.status,
         auditLogId: execResult.auditLogId,
         capabilityName: matchedSkill?.name ?? params.toolName,
-        handlerType: matchedSkill?.handler_type ?? null,
+        handlerType,
+        channel: params.presentationChannel,
         outputPayload: dispatchResult.outputPayload || {},
+        orb,
       },
     });
   }
 
+  const orb = buildMayusOrbPresentingEvent({
+    status: "completed_with_warnings",
+    taskId: params.taskId,
+    runId: params.runId,
+    stepId: params.stepId,
+    capabilityName: matchedSkill?.name ?? params.toolName,
+    handlerType,
+    sourceModule: "mayus",
+  });
+
   return NextResponse.json({
     reply: `Acao "${matchedSkill?.name ?? params.toolName}" autorizada e registrada. A execucao server-side desta capability ainda sera conectada ao novo runtime.`,
-    kernel: { status: "success", auditLogId: execResult.auditLogId },
+    orb,
+    kernel: { status: "success", auditLogId: execResult.auditLogId, channel: params.presentationChannel, orb },
+  });
+}
+
+async function executeRouterIntentInvocation(params: {
+  routerIntent: RouterIntent;
+  executorContext: ExecutorContext;
+  fallbackBase: Omit<FallbackContext, "reason">;
+  authorizedSkills: AgentSkill[];
+  userId: string;
+  tenantId: string;
+  history: Array<{ role: string; content: string }>;
+  presentationChannel: "chat" | "voice";
+  taskId?: string;
+  runId?: string;
+  stepId?: string;
+}): Promise<NextResponse> {
+  const matchedSkill = params.authorizedSkills.find((skill) => skill.name === params.routerIntent.intent);
+  const handlerType = matchedSkill?.handler_type ?? null;
+
+  await assignBrainStepCapability({
+    taskId: params.taskId,
+    runId: params.runId,
+    stepId: params.stepId,
+    channel: params.presentationChannel,
+    toolName: params.routerIntent.intent,
+    handlerType,
+    toolArguments: JSON.stringify(params.routerIntent.entities || {}),
+  });
+
+  const execResult = await execute(params.routerIntent, params.executorContext);
+
+  if (execResult.status === "awaiting_approval") {
+    const orb = buildMayusOrbPresentingEvent({
+      status: "awaiting_approval",
+      taskId: params.taskId,
+      runId: params.runId,
+      stepId: params.stepId,
+      capabilityName: matchedSkill?.name ?? params.routerIntent.intent,
+      handlerType,
+      sourceModule: "mayus",
+    });
+    return NextResponse.json({
+      reply: execResult.message,
+      orb,
+      kernel: {
+        status: "awaiting_approval",
+        auditLogId: execResult.auditLogId,
+        awaitingPayload: execResult.awaitingPayload,
+        capabilityName: matchedSkill?.name ?? params.routerIntent.intent,
+        handlerType,
+        channel: params.presentationChannel,
+        orb,
+      },
+    });
+  }
+
+  if (execResult.status !== "success") {
+    const fb = await handleFallback({
+      ...params.fallbackBase,
+      reason: execResult.status,
+      originalIntent: params.routerIntent.intent,
+      safeText: params.routerIntent.safeText,
+    });
+    const orb = buildMayusOrbPresentingEvent({
+      status: "failed",
+      taskId: params.taskId,
+      runId: params.runId,
+      stepId: params.stepId,
+      capabilityName: matchedSkill?.name ?? params.routerIntent.intent,
+      handlerType,
+      sourceModule: "mayus",
+    });
+    return NextResponse.json({
+      reply: fb.message,
+      orb,
+      kernel: { status: execResult.status, channel: params.presentationChannel, orb },
+    });
+  }
+
+  const dispatchResult = await dispatchCapabilityExecution({
+    handlerType,
+    capabilityName: matchedSkill?.name ?? params.routerIntent.intent,
+    tenantId: params.tenantId,
+    userId: params.userId,
+    entities: params.routerIntent.entities,
+    history: params.history,
+    auditLogId: execResult.auditLogId,
+    brainContext: {
+      taskId: params.taskId,
+      runId: params.runId,
+      stepId: params.stepId,
+      sourceModule: "mayus",
+    },
+  });
+
+  if (dispatchResult.status === "awaiting_approval") {
+    return buildDispatchAwaitingApprovalResponse({
+      dispatchResult,
+      fallbackAuditLogId: execResult.auditLogId,
+      fallbackCapabilityName: matchedSkill?.name ?? params.routerIntent.intent,
+      fallbackHandlerType: handlerType,
+      presentationChannel: params.presentationChannel,
+      taskId: params.taskId,
+      runId: params.runId,
+      stepId: params.stepId,
+    });
+  }
+
+  const orb = buildMayusOrbPresentingEvent({
+    status: dispatchResult.status === "executed" ? "completed" : "failed",
+    taskId: params.taskId,
+    runId: params.runId,
+    stepId: params.stepId,
+    capabilityName: matchedSkill?.name ?? params.routerIntent.intent,
+    handlerType,
+    sourceModule: "mayus",
+  });
+
+  return NextResponse.json({
+    reply: dispatchResult.reply,
+    data: dispatchResult.data,
+    orb,
+    kernel: {
+      status: dispatchResult.status,
+      auditLogId: execResult.auditLogId,
+      capabilityName: matchedSkill?.name ?? params.routerIntent.intent,
+      handlerType,
+      channel: params.presentationChannel,
+      outputPayload: dispatchResult.outputPayload || {},
+      orb,
+    },
   });
 }
 
@@ -439,8 +717,9 @@ export async function POST(req: Request) {
     const tenantId = profile.tenant_id as string;
     const userRole = String(profile.role || "user");
 
-    const { message, provider, model, history = [], taskId, runId, stepId } = await readJsonBodyWithLimit(req);
+    const { message, provider, model, history = [], channel, taskId, runId, stepId } = await readJsonBodyWithLimit(req);
     const providerInput = String(provider || "").trim().toLowerCase();
+    const presentationChannel: "chat" | "voice" = channel === "voice" ? "voice" : "chat";
 
     if (!message || !provider) {
       return NextResponse.json({ error: "Faltando parametros obrigatorios." }, { status: 400 });
@@ -464,13 +743,13 @@ export async function POST(req: Request) {
 
     // 6. Memória e Skills via USER CLIENT
     const memoryContext = await fetchInstitutionalMemory(userSupabase, tenantId);
-    
+
     // Consciência Temporal (Fuso Horário Brasil)
     const now = new Date();
-    const brDate = now.toLocaleDateString("pt-BR", { timeZone: "America/Sao_Paulo" }).split('/').reverse().join('-'); 
+    const brDate = now.toLocaleDateString("pt-BR", { timeZone: "America/Sao_Paulo" }).split('/').reverse().join('-');
     const timeContext = `\n\nDATA ATUAL (SERVIÇO): ${brDate}\n`;
 
-    const dynamicSystemPrompt = (MAYUS_SYSTEM_PROMPT + timeContext + memoryContext).substring(0, 30000); 
+    const dynamicSystemPrompt = (MAYUS_SYSTEM_PROMPT + timeContext + memoryContext).substring(0, 30000);
     const authorizedSkills = await fetchAuthorizedSkills(userSupabase, tenantId, userRole);
     const authorizedSkillNames = authorizedSkills.map((s) => s.name as string);
 
@@ -485,8 +764,28 @@ export async function POST(req: Request) {
       const precheck = await precheckSkillPermission(userSupabase, { tenantId, userRole, intent: routerResult.intent });
       if (precheck === "permission_denied") {
         const fb = await handleFallback({ ...fallbackBase, reason: "permission_denied", originalIntent: routerResult.intent, safeText: routerResult.safeText });
-        return NextResponse.json({ reply: fb.message, kernel: { status: "permission_denied" } });
+        return NextResponse.json({ reply: fb.message, kernel: { status: "permission_denied", channel: presentationChannel } });
       }
+    }
+
+    if (
+      routerResult.confidence >= 0.85 &&
+      !routerResult.ambiguous &&
+      DETERMINISTIC_ROUTER_INTENTS.has(routerResult.intent)
+    ) {
+      return executeRouterIntentInvocation({
+        routerIntent: routerResult,
+        executorContext,
+        fallbackBase,
+        authorizedSkills,
+        userId,
+        tenantId,
+        history,
+        presentationChannel,
+        taskId,
+        runId,
+        stepId,
+      });
     }
 
     // 8. Provider: OpenAI-compatible APIs (OpenAI / OpenRouter / Google / Groq)
@@ -520,7 +819,7 @@ export async function POST(req: Request) {
           {
             error: aiResult.notice.message,
             ai_notice: aiResult.notice,
-            kernel: { status: "ai_unavailable" },
+            kernel: { status: "ai_unavailable", channel: presentationChannel },
           },
           { status: aiResult.failureKind === "missing_key" || aiResult.failureKind === "invalid_key" ? 400 : 503 }
         )
@@ -541,6 +840,7 @@ export async function POST(req: Request) {
             userId,
             tenantId,
             history,
+            presentationChannel,
             taskId,
             runId,
             stepId,
@@ -551,7 +851,7 @@ export async function POST(req: Request) {
       return NextResponse.json({
         reply: responseMessage.content,
         ai_notice: aiResult.notice || null,
-        kernel: { status: "success" },
+        kernel: { status: "success", channel: presentationChannel },
       });
     }
 
@@ -595,7 +895,7 @@ export async function POST(req: Request) {
           {
             error: aiResult.notice.message,
             ai_notice: aiResult.notice,
-            kernel: { status: "ai_unavailable" },
+            kernel: { status: "ai_unavailable", channel: presentationChannel },
           },
           { status: aiResult.failureKind === "missing_key" || aiResult.failureKind === "invalid_key" ? 400 : 503 }
         );
@@ -618,6 +918,7 @@ export async function POST(req: Request) {
             userId,
             tenantId,
             history,
+            presentationChannel,
             taskId,
             runId,
             stepId,
@@ -638,6 +939,7 @@ export async function POST(req: Request) {
             userId,
             tenantId,
             history,
+            presentationChannel,
             taskId,
             runId,
             stepId,
@@ -656,7 +958,7 @@ export async function POST(req: Request) {
       return NextResponse.json({
         reply,
         ai_notice: aiResult.notice || null,
-        kernel: { status: "success" },
+        kernel: { status: "success", channel: presentationChannel },
       });
     }
 
@@ -683,6 +985,7 @@ export async function POST(req: Request) {
       return NextResponse.json({
         reply: resData.reply || resData.output || "Fluxo n8n finalizado.",
         tool_calls: resData.tool_calls || [],
+        kernel: { status: "success", channel: presentationChannel },
       });
     }
 

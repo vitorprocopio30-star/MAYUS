@@ -60,10 +60,36 @@ type ProcessTaskRow = {
 
 type BrainTaskBootstrapRow = { id: string };
 type BrainBootstrapRefs = { taskId: string; runId: string; stepId: string; created: boolean };
+type RevenueToCasePolicyConfidence = "high" | "medium" | "low";
+type RevenueToCasePolicyReason = "eligible" | "tenant_billing" | "case_opening_disabled" | "case_context_missing";
+type RevenueToCaseReviewReason = RevenueToCasePolicyReason | "billing_artifact_not_found" | "client_not_found" | "case_opening_failed";
+
+export type RevenueToCasePolicy = {
+  canOpenCase: boolean;
+  reason: RevenueToCasePolicyReason;
+  confidence: RevenueToCasePolicyConfidence;
+  evidence: string[];
+  nextBestAction: string;
+};
 
 function getString(metadata: Record<string, unknown> | null | undefined, key: string) {
   const value = metadata?.[key];
   return typeof value === "string" && value.trim().length > 0 ? value : null;
+}
+
+function getBoolean(metadata: Record<string, unknown> | null | undefined, key: string) {
+  const value = metadata?.[key];
+  if (typeof value === "boolean") return value;
+  if (typeof value === "string") {
+    const normalized = value
+      .normalize("NFD")
+      .replace(/[\u0300-\u036f]/g, "")
+      .trim()
+      .toLowerCase();
+    if (["true", "sim", "yes", "1"].includes(normalized)) return true;
+    if (["false", "nao", "no", "0"].includes(normalized)) return false;
+  }
+  return null;
 }
 
 function getNumber(metadata: Record<string, unknown> | null | undefined, key: string) {
@@ -74,6 +100,174 @@ function getNumber(metadata: Record<string, unknown> | null | undefined, key: st
     if (Number.isFinite(normalized)) return normalized;
   }
   return null;
+}
+
+function uniqueStrings(values: Array<string | null | undefined>) {
+  return Array.from(new Set(values.filter((value): value is string => typeof value === "string" && value.trim().length > 0)));
+}
+
+function getFirstString(metadata: Record<string, unknown> | null | undefined, keys: string[]) {
+  for (const key of keys) {
+    const value = getString(metadata, key);
+    if (value) return value;
+  }
+  return null;
+}
+
+function getFirstBoolean(metadata: Record<string, unknown> | null | undefined, keys: string[]) {
+  for (const key of keys) {
+    const value = getBoolean(metadata, key);
+    if (value !== null) return value;
+  }
+  return null;
+}
+
+export function evaluateRevenueToCasePolicy(input: {
+  billingArtifact: Pick<BillingArtifactRow, "metadata"> | null;
+  crmTask?: Pick<CrmTaskMatch, "id" | "sector"> | null;
+}): RevenueToCasePolicy {
+  const metadata = input.billingArtifact?.metadata || null;
+  const source = getFirstString(metadata, ["source", "billing_source", "source_module"]);
+  const explicitOpen = getFirstBoolean(metadata, ["open_case_on_payment", "case_opening_intent", "revenue_to_case"]);
+  const isTenantBilling = source === "platform_subscription" ||
+    getBoolean(metadata, "tenant_billing") === true ||
+    getBoolean(metadata, "platform_subscription") === true;
+
+  const evidence = uniqueStrings([
+    source ? `source:${source}` : null,
+    input.crmTask?.id ? "crm_task:resolved" : null,
+    getString(metadata, "crm_task_id") ? "metadata:crm_task_id" : null,
+    getString(metadata, "legal_area") ? "metadata:legal_area" : null,
+    input.crmTask?.sector ? "crm_task:sector" : null,
+    explicitOpen === true ? "metadata:case_opening_intent" : null,
+  ]);
+
+  if (isTenantBilling) {
+    return {
+      canOpenCase: false,
+      reason: "tenant_billing",
+      confidence: "high",
+      evidence,
+      nextBestAction: "Registrar como receita SaaS do MAYUS; nao abrir caso juridico.",
+    };
+  }
+
+  if (explicitOpen === false) {
+    return {
+      canOpenCase: false,
+      reason: "case_opening_disabled",
+      confidence: "high",
+      evidence,
+      nextBestAction: "Registrar a receita e manter a abertura do caso bloqueada por politica explicita.",
+    };
+  }
+
+  const hasCrmContext = Boolean(input.crmTask?.id || getString(metadata, "crm_task_id"));
+  const hasLegalContext = Boolean(getString(metadata, "legal_area") || input.crmTask?.sector);
+
+  if (hasCrmContext || hasLegalContext || explicitOpen === true) {
+    return {
+      canOpenCase: true,
+      reason: "eligible",
+      confidence: hasCrmContext ? "high" : "medium",
+      evidence,
+      nextBestAction: "Abrir caso juridico, registrar trilha revenue-to-case e notificar responsavel.",
+    };
+  }
+
+  return {
+    canOpenCase: false,
+    reason: "case_context_missing",
+    confidence: "low",
+    evidence,
+    nextBestAction: "Registrar a receita e revisar manualmente antes de abrir caso juridico.",
+  };
+}
+
+export function buildRevenueCaseOpeningReviewMetadata(input: {
+  paymentId: string;
+  customerId: string;
+  reason: RevenueToCaseReviewReason;
+  tenantId?: string | null;
+  clientId?: string | null;
+  billingArtifactId?: string | null;
+  crmTaskId?: string | null;
+  caseId?: string | null;
+  processTaskId?: string | null;
+  amount?: number | null;
+  policy?: RevenueToCasePolicy | null;
+  failureStage?: string | null;
+}) {
+  const failed = input.reason === "case_opening_failed";
+  const recoveryActions = failed
+    ? [
+        "Verificar se case, process_task ou sale foram criados antes de repetir a abertura.",
+        "Vincular manualmente o pagamento ao caso correto ou arquivar duplicidade operacional.",
+        "Reexecutar revenue-to-case somente apos revisar o artifact asaas_billing e o responsavel juridico.",
+      ]
+    : [
+        "Conferir se a cobranca pertence a um servico juridico do escritorio.",
+        "Adicionar CRM, area juridica ou intencao explicita antes de abrir o caso automaticamente.",
+        "Manter o valor como receita recebida enquanto a abertura do caso estiver em revisao.",
+      ];
+
+  return {
+    summary: failed
+      ? "Abertura automatica de caso falhou e exige recuperacao supervisionada."
+      : "Pagamento confirmado precisa de revisao antes de abrir caso juridico.",
+    status: failed ? "failed" : "review_required",
+    review_reason: input.reason,
+    payment_id: input.paymentId,
+    customer_id: input.customerId,
+    tenant_id: input.tenantId || null,
+    client_id: input.clientId || null,
+    billing_artifact_id: input.billingArtifactId || null,
+    crm_task_id: input.crmTaskId || null,
+    case_id: input.caseId || null,
+    process_task_id: input.processTaskId || null,
+    amount: input.amount ?? null,
+    policy: input.policy ? {
+      reason: input.policy.reason,
+      confidence: input.policy.confidence,
+      evidence: input.policy.evidence,
+      next_best_action: input.policy.nextBestAction,
+    } : null,
+    failure_stage: input.failureStage || null,
+    error_public_message: failed ? "A abertura automatica falhou; revise a trilha antes de repetir." : null,
+    recovery_actions: recoveryActions,
+    next_best_action: recoveryActions[0],
+    requires_human_action: true,
+    external_side_effects_blocked: true,
+  };
+}
+
+export function buildRevenueToCaseNotificationPayload(input: {
+  status: "success" | "review" | "error";
+  tenantId: string;
+  userId?: string | null;
+  clientName: string;
+  paymentId: string;
+  caseId?: string | null;
+  reason?: string | null;
+}) {
+  const title = input.status === "success"
+    ? "Caso aberto por pagamento"
+    : input.status === "error"
+      ? "Revenue-to-case falhou"
+      : "Revenue-to-case precisa de revisao";
+  const message = input.status === "success"
+    ? `${input.clientName}: pagamento ${input.paymentId} abriu o caso ${input.caseId || "juridico"}.`
+    : `${input.clientName}: pagamento ${input.paymentId} nao abriu caso automaticamente (${input.reason || "revisao"}).`;
+
+  return {
+    tenant_id: input.tenantId,
+    user_id: input.userId || null,
+    title,
+    message: message.slice(0, 180),
+    type: input.status === "success" ? "success" : input.status === "error" ? "error" : "warning",
+    link_url: "/dashboard",
+    created_at: new Date().toISOString(),
+  };
 }
 
 async function resolveTenantAndClient(customerId: string) {
@@ -658,6 +852,96 @@ async function bootstrapCaseBrainTask(params: {
   return { taskId: task.id, runId: run.id, stepId: step.id, created: true };
 }
 
+async function insertDedupedRevenueToCaseNotification(payload: ReturnType<typeof buildRevenueToCaseNotificationPayload>) {
+  try {
+    const { data: existing } = await serviceSupabase
+      .from("notifications")
+      .select("id")
+      .eq("tenant_id", payload.tenant_id)
+      .eq("title", payload.title)
+      .eq("message", payload.message)
+      .limit(1);
+
+    if (existing?.length) return;
+    await serviceSupabase.from("notifications").insert(payload);
+  } catch (error) {
+    console.error("[revenue-to-case] notification", error instanceof Error ? error.name : "unknown");
+  }
+}
+
+async function recordRevenueCaseOpeningReview(params: {
+  tenantId: string;
+  clientName: string;
+  paymentId: string;
+  customerId: string;
+  reason: RevenueToCaseReviewReason;
+  clientId?: string | null;
+  billingArtifact?: BillingArtifactRow | null;
+  crmTask?: CrmTaskMatch | null;
+  caseId?: string | null;
+  processTaskId?: string | null;
+  amount?: number | null;
+  policy?: RevenueToCasePolicy | null;
+  failureStage?: string | null;
+}) {
+  const metadata = buildRevenueCaseOpeningReviewMetadata({
+    paymentId: params.paymentId,
+    customerId: params.customerId,
+    reason: params.reason,
+    tenantId: params.tenantId,
+    clientId: params.clientId || null,
+    billingArtifactId: params.billingArtifact?.id || null,
+    crmTaskId: params.crmTask?.id || getString(params.billingArtifact?.metadata, "crm_task_id"),
+    caseId: params.caseId || null,
+    processTaskId: params.processTaskId || null,
+    amount: params.amount ?? null,
+    policy: params.policy || null,
+    failureStage: params.failureStage || null,
+  });
+
+  await serviceSupabase.from("system_event_logs").insert({
+    tenant_id: params.tenantId,
+    source: "webhook",
+    provider: "asaas",
+    event_name: "asaas_revenue_to_case_review",
+    status: params.reason === "case_opening_failed" ? "error" : "warning",
+    payload: metadata,
+    created_at: new Date().toISOString(),
+  });
+
+  if (!params.billingArtifact?.task_id) return metadata;
+
+  try {
+    await createBrainArtifact({
+      tenantId: params.tenantId,
+      taskId: params.billingArtifact.task_id,
+      runId: params.billingArtifact.run_id,
+      stepId: params.billingArtifact.step_id,
+      artifactType: "revenue_case_opening_review",
+      title: `Revisao revenue-to-case - ${params.clientName}`,
+      sourceModule: "financeiro",
+      mimeType: "application/json",
+      dedupeKey: `revenue-to-case-review:${params.paymentId}:${params.reason}`,
+      metadata,
+    });
+
+    await serviceSupabase.from("learning_events").insert({
+      tenant_id: params.tenantId,
+      task_id: params.billingArtifact.task_id,
+      run_id: params.billingArtifact.run_id,
+      step_id: params.billingArtifact.step_id,
+      event_type: "revenue_to_case_review_required",
+      source_module: "financeiro",
+      payload: metadata,
+      created_by: params.crmTask?.assigned_to || null,
+    });
+  } catch (error) {
+    console.error("[revenue-to-case] review artifact", error instanceof Error ? error.name : "unknown");
+  }
+
+  return metadata;
+}
+
 export async function openCaseFromConfirmedBilling(params: {
   paymentId: string;
   customerId: string;
@@ -695,106 +979,201 @@ export async function openCaseFromConfirmedBilling(params: {
   const amount = getNumber(billingArtifact.metadata, "valor") ?? params.paymentValue ?? crmTask?.value ?? 0;
   const clientName = getString(billingArtifact.metadata, "client_name") || getString(billingArtifact.metadata, "nome_cliente") || client.name;
   const legalArea = getString(billingArtifact.metadata, "legal_area");
-  const caseRecord = await resolveOrCreateCase(resolved.tenantId, clientName);
-  const professionalName = await resolveAssignedName(crmTask?.assigned_to || null);
+  const policy = evaluateRevenueToCasePolicy({ billingArtifact, crmTask });
 
-  await moveCrmTaskToWin({ tenantId: resolved.tenantId, crmTask, value: amount });
-
-  const processTask = await createProcessTaskFromBilling({
-    tenantId: resolved.tenantId,
-    clientName,
-    clientPhone: client.phone,
-    caseId: caseRecord.id,
-    crmTask,
-    amount,
-    billingArtifact,
-  });
-
-  const saleId = await maybeCreateSale({
-    tenantId: resolved.tenantId,
-    clientName,
-    professionalId: crmTask?.assigned_to || null,
-    professionalName,
-    amount,
-    installments: Math.max(1, Math.round(getNumber(billingArtifact.metadata, "parcelas") ?? 1)),
-  });
-
-  const caseBrainRefs = await bootstrapCaseBrainTask({
-    tenantId: resolved.tenantId,
-    clientId: client.id,
-    clientName,
-    caseId: caseRecord.id,
-    processTaskId: processTask.id,
-    legalArea,
-    sourceTaskId: billingArtifact.task_id,
-    sourceRunId: billingArtifact.run_id,
-    sourceStepId: billingArtifact.step_id,
-  });
-
-  await executeCaseBrainBootstrap({
-    tenantId: resolved.tenantId,
-    refs: caseBrainRefs,
-    client,
-    clientName,
-    caseRecord,
-    crmTask,
-    processTask,
-    billingArtifact,
-    saleId,
-    legalArea,
-    amount,
-  });
-
-  if (billingArtifact.task_id) {
-    await createBrainArtifact({
+  if (!policy.canOpenCase) {
+    await recordRevenueCaseOpeningReview({
       tenantId: resolved.tenantId,
-      taskId: billingArtifact.task_id,
-      runId: billingArtifact.run_id,
-      stepId: billingArtifact.step_id,
-      artifactType: "revenue_case_opening",
-      title: `Caso aberto - ${clientName}`,
-      dedupeKey: `payment:${params.paymentId}`,
-      metadata: {
-        payment_id: params.paymentId,
-        customer_id: params.customerId,
-        client_id: client.id,
-        crm_task_id: crmTask?.id || null,
-        process_task_id: processTask.id,
-        case_id: caseRecord.id,
-        sale_id: saleId,
-        case_brain_task_id: caseBrainRefs.taskId,
-      },
+      clientName,
+      paymentId: params.paymentId,
+      customerId: params.customerId,
+      reason: policy.reason,
+      clientId: client.id,
+      billingArtifact,
+      crmTask,
+      amount,
+      policy,
     });
 
-    await serviceSupabase.from("learning_events").insert({
-      tenant_id: resolved.tenantId,
-      task_id: billingArtifact.task_id,
-      run_id: billingArtifact.run_id,
-      step_id: billingArtifact.step_id,
-      event_type: "revenue_to_case_completed",
-      source_module: "financeiro",
-      payload: {
-        payment_id: params.paymentId,
-        customer_id: params.customerId,
-        client_id: client.id,
-        crm_task_id: crmTask?.id || null,
-        process_task_id: processTask.id,
-        case_id: caseRecord.id,
-        sale_id: saleId,
-        case_brain_task_id: caseBrainRefs.taskId,
-      },
-      created_by: crmTask?.assigned_to || null,
-    });
+    await insertDedupedRevenueToCaseNotification(buildRevenueToCaseNotificationPayload({
+      status: "review",
+      tenantId: resolved.tenantId,
+      userId: crmTask?.assigned_to || getString(billingArtifact.metadata, "assigned_to"),
+      clientName,
+      paymentId: params.paymentId,
+      reason: policy.reason,
+    }));
+
+    return {
+      handled: true as const,
+      reason: policy.reason,
+      tenantId: resolved.tenantId,
+      clientId: client.id,
+      billingArtifactId: billingArtifact.id,
+      requiresReview: true,
+      policy,
+    };
   }
 
-  return {
-    handled: true as const,
-    reason: "case_opened",
-    tenantId: resolved.tenantId,
-    clientId: client.id,
-    caseId: caseRecord.id,
-    processTaskId: processTask.id,
-    saleId,
-    caseBrainTaskId: caseBrainRefs.taskId,
-  };
+  let caseRecord: CaseRow | null = null;
+  let processTask: ProcessTaskRow | null = null;
+  let saleId: string | null = null;
+  let caseBrainRefs: BrainBootstrapRefs | null = null;
+
+  try {
+    caseRecord = await resolveOrCreateCase(resolved.tenantId, clientName);
+    const professionalName = await resolveAssignedName(crmTask?.assigned_to || null);
+
+    await moveCrmTaskToWin({ tenantId: resolved.tenantId, crmTask, value: amount });
+
+    processTask = await createProcessTaskFromBilling({
+      tenantId: resolved.tenantId,
+      clientName,
+      clientPhone: client.phone,
+      caseId: caseRecord.id,
+      crmTask,
+      amount,
+      billingArtifact,
+    });
+
+    saleId = await maybeCreateSale({
+      tenantId: resolved.tenantId,
+      clientName,
+      professionalId: crmTask?.assigned_to || null,
+      professionalName,
+      amount,
+      installments: Math.max(1, Math.round(getNumber(billingArtifact.metadata, "parcelas") ?? 1)),
+    });
+
+    caseBrainRefs = await bootstrapCaseBrainTask({
+      tenantId: resolved.tenantId,
+      clientId: client.id,
+      clientName,
+      caseId: caseRecord.id,
+      processTaskId: processTask.id,
+      legalArea,
+      sourceTaskId: billingArtifact.task_id,
+      sourceRunId: billingArtifact.run_id,
+      sourceStepId: billingArtifact.step_id,
+    });
+
+    await executeCaseBrainBootstrap({
+      tenantId: resolved.tenantId,
+      refs: caseBrainRefs,
+      client,
+      clientName,
+      caseRecord,
+      crmTask,
+      processTask,
+      billingArtifact,
+      saleId,
+      legalArea,
+      amount,
+    });
+
+    if (billingArtifact.task_id) {
+      await createBrainArtifact({
+        tenantId: resolved.tenantId,
+        taskId: billingArtifact.task_id,
+        runId: billingArtifact.run_id,
+        stepId: billingArtifact.step_id,
+        artifactType: "revenue_case_opening",
+        title: `Caso aberto - ${clientName}`,
+        dedupeKey: `payment:${params.paymentId}`,
+        metadata: {
+          payment_id: params.paymentId,
+          customer_id: params.customerId,
+          client_id: client.id,
+          crm_task_id: crmTask?.id || null,
+          process_task_id: processTask.id,
+          case_id: caseRecord.id,
+          sale_id: saleId,
+          case_brain_task_id: caseBrainRefs.taskId,
+          policy_confidence: policy.confidence,
+        },
+      });
+
+      await serviceSupabase.from("learning_events").insert({
+        tenant_id: resolved.tenantId,
+        task_id: billingArtifact.task_id,
+        run_id: billingArtifact.run_id,
+        step_id: billingArtifact.step_id,
+        event_type: "revenue_to_case_completed",
+        source_module: "financeiro",
+        payload: {
+          payment_id: params.paymentId,
+          customer_id: params.customerId,
+          client_id: client.id,
+          crm_task_id: crmTask?.id || null,
+          process_task_id: processTask.id,
+          case_id: caseRecord.id,
+          sale_id: saleId,
+          case_brain_task_id: caseBrainRefs.taskId,
+          policy_confidence: policy.confidence,
+        },
+        created_by: crmTask?.assigned_to || null,
+      });
+    }
+
+    await insertDedupedRevenueToCaseNotification(buildRevenueToCaseNotificationPayload({
+      status: "success",
+      tenantId: resolved.tenantId,
+      userId: crmTask?.assigned_to || getString(billingArtifact.metadata, "assigned_to"),
+      clientName,
+      paymentId: params.paymentId,
+      caseId: caseRecord.id,
+    }));
+
+    return {
+      handled: true as const,
+      reason: "case_opened",
+      tenantId: resolved.tenantId,
+      clientId: client.id,
+      caseId: caseRecord.id,
+      processTaskId: processTask.id,
+      saleId,
+      caseBrainTaskId: caseBrainRefs.taskId,
+      policy,
+    };
+  } catch (error) {
+    await recordRevenueCaseOpeningReview({
+      tenantId: resolved.tenantId,
+      clientName,
+      paymentId: params.paymentId,
+      customerId: params.customerId,
+      reason: "case_opening_failed",
+      clientId: client.id,
+      billingArtifact,
+      crmTask,
+      caseId: caseRecord?.id || null,
+      processTaskId: processTask?.id || null,
+      amount,
+      policy,
+      failureStage: processTask ? "post_process_task" : caseRecord ? "post_case" : "case_resolution",
+    });
+
+    await insertDedupedRevenueToCaseNotification(buildRevenueToCaseNotificationPayload({
+      status: "error",
+      tenantId: resolved.tenantId,
+      userId: crmTask?.assigned_to || getString(billingArtifact.metadata, "assigned_to"),
+      clientName,
+      paymentId: params.paymentId,
+      caseId: caseRecord?.id || null,
+      reason: "case_opening_failed",
+    }));
+
+    return {
+      handled: true as const,
+      reason: "case_opening_failed",
+      tenantId: resolved.tenantId,
+      clientId: client.id,
+      caseId: caseRecord?.id || null,
+      processTaskId: processTask?.id || null,
+      saleId,
+      caseBrainTaskId: caseBrainRefs?.taskId || null,
+      requiresReview: true,
+      publicError: "Abertura automatica falhou; revisao humana necessaria.",
+      policy,
+    };
+  }
 }
