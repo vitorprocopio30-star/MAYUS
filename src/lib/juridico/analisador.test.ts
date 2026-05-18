@@ -1,13 +1,24 @@
 import { beforeEach, describe, expect, it, vi } from "vitest";
 
-const { createClientMock, callLLMWithFallbackMock, prepareProactiveMovementDraftMock, upserts, updates, duplicatePrazoByMovement } = vi.hoisted(() => {
+const { createClientMock, callLLMWithFallbackMock, prepareProactiveMovementDraftMock, inserts, upserts, updates, duplicatePrazoByMovement, processTaskInsertError, pipelineContextMock } = vi.hoisted(() => {
   return {
     createClientMock: vi.fn(),
     callLLMWithFallbackMock: vi.fn(),
     prepareProactiveMovementDraftMock: vi.fn(),
+    inserts: [] as Array<{ table: string; payload: any }>,
     upserts: [] as Array<{ table: string; payload: any }>,
     updates: [] as Array<{ table: string; payload: any }>,
     duplicatePrazoByMovement: { value: false },
+    processTaskInsertError: { value: null as Error | null },
+    pipelineContextMock: {
+      value: {
+        pipelineId: "pipeline-1",
+        linkedTaskContext: null,
+        stages: [{ id: "stage-1", name: "Sentenca", order_index: 1 }],
+        visibleStages: [{ id: "stage-1", name: "Sentenca", order_index: 1 }],
+        fallbackStageId: "stage-1",
+      } as any,
+    },
   };
 });
 
@@ -25,13 +36,7 @@ vi.mock("@/lib/lex/proactive-movement-draft", () => ({
 
 vi.mock("@/lib/juridico/process-pipeline-resolver", () => ({
   chooseSemanticLegalStage: vi.fn(() => "stage-1"),
-  resolveProcessPipelineContext: vi.fn(async () => ({
-    pipelineId: "pipeline-1",
-    linkedTaskContext: null,
-    stages: [{ id: "stage-1", name: "Sentenca", order_index: 1 }],
-    visibleStages: [{ id: "stage-1", name: "Sentenca", order_index: 1 }],
-    fallbackStageId: "stage-1",
-  })),
+  resolveProcessPipelineContext: vi.fn(async () => pipelineContextMock.value),
 }));
 
 function createChain(table: string): any {
@@ -92,11 +97,16 @@ function createChain(table: string): any {
       updates.push({ table, payload });
       return chain;
     }),
-    insert: vi.fn(() => ({
-      select: vi.fn(() => ({
-        single: vi.fn(async () => ({ data: { id: "task-1" }, error: null })),
-      })),
-    })),
+    insert: vi.fn((payload: any) => {
+      inserts.push({ table, payload });
+      return {
+        select: vi.fn(() => ({
+          single: vi.fn(async () => table === "process_tasks" && processTaskInsertError.value
+            ? { data: null, error: processTaskInsertError.value }
+            : { data: { id: "task-1" }, error: null }),
+        })),
+      };
+    }),
     upsert: vi.fn(async (payload: any) => {
       upserts.push({ table, payload });
       return { data: null, error: null };
@@ -110,9 +120,18 @@ describe("analisarMovimentacao", () => {
   beforeEach(() => {
     vi.resetModules();
     vi.clearAllMocks();
+    inserts.length = 0;
     upserts.length = 0;
     updates.length = 0;
     duplicatePrazoByMovement.value = false;
+    processTaskInsertError.value = null;
+    pipelineContextMock.value = {
+      pipelineId: "pipeline-1",
+      linkedTaskContext: null,
+      stages: [{ id: "stage-1", name: "Sentenca", order_index: 1 }],
+      visibleStages: [{ id: "stage-1", name: "Sentenca", order_index: 1 }],
+      fallbackStageId: "stage-1",
+    };
     createClientMock.mockReturnValue({
       from: vi.fn((table: string) => createChain(table)),
     });
@@ -127,10 +146,10 @@ describe("analisarMovimentacao", () => {
     prepareProactiveMovementDraftMock.mockResolvedValue({ status: "skipped" });
   });
 
-  it("usa callLLMWithFallback e preserva heuristica quando a IA nao retorna JSON valido", async () => {
+  it("envia heuristica de baixa confianca para revisao humana quando a IA nao retorna JSON valido", async () => {
     const { analisarMovimentacao } = await import("./analisador");
 
-    await analisarMovimentacao({
+    const result = await analisarMovimentacao({
       processo_id: "process-1",
       numero_cnj: "0000001-11.2026.8.26.0100",
       tenant_id: "tenant-1",
@@ -148,16 +167,28 @@ describe("analisarMovimentacao", () => {
       useCase: "classificar_movimentacao",
       request: expect.objectContaining({ max_tokens: 400 }),
     }));
-    expect(upserts).toEqual(expect.arrayContaining([
+    expect(upserts.filter((item) => item.table === "process_prazos")).toHaveLength(0);
+    expect(result).toEqual(expect.objectContaining({
+      automation_status: "review_required",
+      requires_human_review: true,
+      confianca_analise: "baixa",
+    }));
+    expect(updates).toEqual(expect.arrayContaining([
       expect.objectContaining({
-        table: "process_prazos",
+        table: "process_movimentacoes",
         payload: expect.objectContaining({
-          tenant_id: "tenant-1",
-          monitored_process_id: "process-1",
-          tipo: "prazo",
-          descricao: "Avaliar recurso contra sentenca",
-          prioridade: "alta",
-          criado_por_ia: true,
+          tipo_evento: "SENTENCA",
+          requer_acao: true,
+          confianca_analise: "baixa",
+        }),
+      }),
+    ]));
+    expect(inserts).toEqual(expect.arrayContaining([
+      expect.objectContaining({
+        table: "system_event_logs",
+        payload: expect.objectContaining({
+          event_name: "legal_movement_review_required",
+          status: "review_required",
         }),
       }),
     ]));
@@ -212,6 +243,126 @@ describe("analisarMovimentacao", () => {
           prazo_extraido_dias: 5,
           confianca_analise: "alta",
           analise_json: expect.objectContaining({ origem: "deterministica" }),
+        }),
+      }),
+    ]));
+  });
+
+  it("envia alta confianca para revisao humana quando a criacao automatica falha", async () => {
+    processTaskInsertError.value = new Error("insert denied");
+    callLLMWithFallbackMock.mockResolvedValue({
+      ok: true,
+      data: {
+        choices: [{ message: { content: JSON.stringify({ gerar: false, motivo: "Sem analise acionavel" }) } }],
+      },
+      usedClient: { provider: "openai", model: "test", endpoint: "https://example.test", source: "env" },
+      fallbackTrace: [],
+    });
+    const { analisarMovimentacao } = await import("./analisador");
+
+    const result = await analisarMovimentacao({
+      processo_id: "process-1",
+      numero_cnj: "0000001-11.2026.8.26.0100",
+      tenant_id: "tenant-1",
+      movimentacao: {
+        id: "mov-falha-auto",
+        conteudo: "Intime-se a parte autora. Prazo de 5 dias para apresentar documentos.",
+        data: "2026-05-13",
+      },
+      advogado_id: "lawyer-1",
+      escavador_movimentacao_id: "mov-falha-auto",
+      process_movimentacao_id: "pm-falha-auto",
+    });
+
+    expect(result).toEqual(expect.objectContaining({
+      automation_status: "review_required",
+      requires_human_review: true,
+      confianca_analise: "alta",
+    }));
+    expect(upserts.filter((item) => item.table === "process_prazos")).toHaveLength(0);
+    expect(inserts).toEqual(expect.arrayContaining([
+      expect.objectContaining({
+        table: "system_event_logs",
+        payload: expect.objectContaining({
+          event_name: "legal_movement_auto_create_failed",
+          status: "failed",
+        }),
+      }),
+      expect.objectContaining({
+        table: "system_event_logs",
+        payload: expect.objectContaining({
+          event_name: "legal_movement_review_required",
+          status: "review_required",
+        }),
+      }),
+    ]));
+    expect(updates).toEqual(expect.arrayContaining([
+      expect.objectContaining({
+        table: "process_movimentacoes",
+        payload: expect.objectContaining({
+          analise_json: expect.objectContaining({
+            motivo: expect.stringContaining("Falha ao criar card processual"),
+          }),
+        }),
+      }),
+    ]));
+  });
+
+  it("envia alta confianca para revisao humana quando nao ha pipeline juridica", async () => {
+    pipelineContextMock.value = {
+      pipelineId: null,
+      linkedTaskContext: null,
+      stages: [],
+      visibleStages: [],
+      fallbackStageId: null,
+    };
+    callLLMWithFallbackMock.mockResolvedValue({
+      ok: true,
+      data: {
+        choices: [{ message: { content: JSON.stringify({ gerar: false, motivo: "Sem analise acionavel" }) } }],
+      },
+      usedClient: { provider: "openai", model: "test", endpoint: "https://example.test", source: "env" },
+      fallbackTrace: [],
+    });
+    const { analisarMovimentacao } = await import("./analisador");
+
+    const result = await analisarMovimentacao({
+      processo_id: "process-1",
+      numero_cnj: "0000001-11.2026.8.26.0100",
+      tenant_id: "tenant-1",
+      movimentacao: {
+        id: "mov-sem-pipeline",
+        conteudo: "Intime-se a parte autora. Prazo de 5 dias para apresentar documentos.",
+        data: "2026-05-13",
+      },
+      advogado_id: "lawyer-1",
+      escavador_movimentacao_id: "mov-sem-pipeline",
+      process_movimentacao_id: "pm-sem-pipeline",
+    });
+
+    expect(result).toEqual(expect.objectContaining({
+      automation_status: "review_required",
+      requires_human_review: true,
+      confianca_analise: "alta",
+    }));
+    expect(upserts.filter((item) => item.table === "process_prazos")).toHaveLength(0);
+    expect(inserts).toEqual(expect.arrayContaining([
+      expect.objectContaining({
+        table: "system_event_logs",
+        payload: expect.objectContaining({ event_name: "legal_movement_auto_create_failed" }),
+      }),
+      expect.objectContaining({
+        table: "system_event_logs",
+        payload: expect.objectContaining({ event_name: "legal_movement_review_required" }),
+      }),
+    ]));
+    expect(updates).toEqual(expect.arrayContaining([
+      expect.objectContaining({
+        table: "process_movimentacoes",
+        payload: expect.objectContaining({
+          analise_json: expect.objectContaining({
+            motivo: expect.stringContaining("Pipeline juridica"),
+          }),
         }),
       }),
     ]));
@@ -322,10 +473,55 @@ describe("analisarMovimentacao", () => {
     ]));
   });
 
-  it("persiste analise estruturada quando a movimentacao indica arquivamento", async () => {
+  it("envia prazo inferido por IA para revisao mesmo com vencimento em beta", async () => {
+    callLLMWithFallbackMock.mockResolvedValue({
+      ok: true,
+      data: {
+        choices: [{ message: { content: JSON.stringify({
+          gerar: true,
+          tipo: "prazo",
+          descricao: "Manifestar-se sobre a peticao da parte contraria",
+          data_vencimento: "2026-05-20",
+          urgencia: "media",
+          motivo: "A movimentacao indica obrigacao de manifestacao",
+        }) } }],
+      },
+      usedClient: { provider: "openai", model: "test", endpoint: "https://example.test", source: "env" },
+      fallbackTrace: [],
+    });
     const { analisarMovimentacao } = await import("./analisador");
 
-    await analisarMovimentacao({
+    const result = await analisarMovimentacao({
+      processo_id: "process-1",
+      numero_cnj: "0000001-11.2026.8.26.0100",
+      tenant_id: "tenant-1",
+      movimentacao: {
+        id: "mov-prazo-ia-com-data",
+        conteudo: "Intimacao para manifestacao sobre peticao da parte contraria.",
+        data: "2026-05-13",
+      },
+      escavador_movimentacao_id: "mov-prazo-ia-com-data",
+    });
+
+    expect(upserts.filter((item) => item.table === "process_prazos")).toHaveLength(0);
+    expect(result).toEqual(expect.objectContaining({
+      automation_status: "review_required",
+      requires_human_review: true,
+      confianca_analise: "media",
+      paid_summary_recommended: true,
+    }));
+    expect(inserts).toEqual(expect.arrayContaining([
+      expect.objectContaining({
+        table: "system_event_logs",
+        payload: expect.objectContaining({ event_name: "legal_movement_review_required" }),
+      }),
+    ]));
+  });
+
+  it("envia arquivamento para revisao humana sem inativar automaticamente em beta", async () => {
+    const { analisarMovimentacao } = await import("./analisador");
+
+    const result = await analisarMovimentacao({
       processo_id: "process-1",
       numero_cnj: "0000001-11.2026.8.26.0100",
       tenant_id: "tenant-1",
@@ -338,26 +534,23 @@ describe("analisarMovimentacao", () => {
     });
 
     expect(upserts.filter((item) => item.table === "process_prazos")).toHaveLength(0);
+    expect(result).toEqual(expect.objectContaining({
+      automation_status: "review_required",
+      requires_human_review: true,
+    }));
     expect(updates).toEqual(expect.arrayContaining([
       expect.objectContaining({
         table: "process_movimentacoes",
         payload: expect.objectContaining({
           tipo_evento: "ARQUIVAMENTO",
-          requer_acao: false,
+          requer_acao: true,
           analise_json: expect.objectContaining({
-            motivo: expect.stringContaining("encerramento"),
+            motivo: expect.stringContaining("revisao humana"),
           }),
         }),
       }),
-      expect.objectContaining({
-        table: "monitored_processes",
-        payload: expect.objectContaining({
-          ativo: false,
-          monitoramento_ativo: false,
-          kanban_coluna: "ENCERRADO",
-        }),
-      }),
     ]));
+    expect(updates.some((item) => item.table === "monitored_processes")).toBe(false);
   });
 
   it("interpreta prazo por extenso e com numero entre parenteses", async () => {

@@ -195,6 +195,44 @@ function obterTimestampMovimentacao(dataReferencia?: string | null, createdAt?: 
   return new Date(`${dataISO}T12:00:00`).getTime()
 }
 
+function getDeadlineOrigin(item: any) {
+  const timeline = Array.isArray(item?.process_tasks?.movimentacoes_timeline)
+    ? item.process_tasks.movimentacoes_timeline
+    : []
+  const escavadorId = String(item?.escavador_movimentacao_id ?? '').trim()
+  const matchingTimelineEntry = escavadorId
+    ? timeline.find((mov: any) => String(mov?.escavador_movimentacao_id ?? '').trim() === escavadorId)
+    : null
+  const reviewedByHuman = Boolean(matchingTimelineEntry?.revisado_por_humano)
+    || (!escavadorId && timeline.length === 1 && Boolean(timeline[0]?.revisado_por_humano))
+  const hasKanbanCard = Boolean(item?.process_task_id)
+
+  if (reviewedByHuman) {
+    return {
+      label: 'Revisado por humano',
+      description: 'Prazo validado por revisor antes de entrar na agenda.',
+      className: 'border-emerald-500/30 bg-emerald-500/10 text-emerald-300',
+      hasKanbanCard,
+    }
+  }
+
+  if (item?.criado_por_ia) {
+    return {
+      label: 'IA alta confiança',
+      description: 'Prazo criado automaticamente por regra de alta confiança.',
+      className: 'border-[#CCA761]/40 bg-[#CCA761]/10 text-[#CCA761]',
+      hasKanbanCard,
+    }
+  }
+
+  return {
+    label: 'Manual',
+    description: 'Prazo criado ou ajustado manualmente pela equipe.',
+    className: 'border-white/10 bg-white/5 text-gray-300',
+    hasKanbanCard,
+  }
+}
+
 const supabase = createClient()
 
 export default function PrazosPage() {
@@ -1187,7 +1225,9 @@ export default function PrazosPage() {
           </div>
       ) : (
         <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
-          {filteredItems.map(item => (
+          {filteredItems.map(item => {
+            const deadlineOrigin = getDeadlineOrigin(item)
+            return (
               <div 
                 key={item.id} 
                 onClick={() => handleOpenDrawer(item, null)}
@@ -1213,6 +1253,20 @@ export default function PrazosPage() {
                       {monitoringProcessNumber === item.monitored_processes?.numero_processo ? 'Monitorando...' : '+ Monitorar'}
                     </button>
                   )}
+                  <span
+                    className={`px-2.5 py-1 rounded-lg text-[10px] font-bold tracking-widest border uppercase ${deadlineOrigin.className}`}
+                    title={deadlineOrigin.description}
+                  >
+                    {deadlineOrigin.label}
+                  </span>
+                  {!deadlineOrigin.hasKanbanCard && (
+                    <span
+                      className="px-2.5 py-1 rounded-lg text-[10px] font-bold tracking-widest border border-orange-500/30 bg-orange-500/10 text-orange-300 uppercase"
+                      title="Este prazo nao esta vinculado a um card Kanban processual."
+                    >
+                      Sem card
+                    </span>
+                  )}
                 </div>
                 <div className={`px-3 py-1 rounded-full text-[11px] font-bold border transition-all ${getUrgencyStyle(item.data_vencimento, item.status)}`}>
                   {item.status === 'concluido' ? 'CONCLUÍDO' : 
@@ -1220,6 +1274,12 @@ export default function PrazosPage() {
                    `${diasRestantes(item.data_vencimento)} DIAS`}
                 </div>
               </div>
+
+              {!deadlineOrigin.hasKanbanCard && (
+                <div className="mb-4 rounded-xl border border-orange-500/20 bg-orange-500/10 px-3 py-2 text-[11px] leading-relaxed text-orange-200">
+                  Prazo sem card Kanban vinculado. Revise o processo para garantir acompanhamento no quadro processual.
+                </div>
+              )}
 
               <h3 className="text-lg font-medium text-white mb-2 line-clamp-2 leading-tight">
                 {item.descricao}
@@ -1379,7 +1439,7 @@ export default function PrazosPage() {
               </div>
             </GlassCard>
           </div>
-        ))}
+        )})}
         </div>
       )}
 

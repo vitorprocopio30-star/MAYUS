@@ -322,24 +322,16 @@ export async function POST(req: NextRequest) {
     const monitoramentos = Array.isArray(rawMon) ? rawMon : [rawMon]
     
     const movimentacao = body.movimentacao ?? {}
-      const movimentacaoId = String(movimentacao.id ?? '').trim() || null
-      const resumoSolicitadoNoEvento = new Set<string>()
+    const movimentacaoId = String(movimentacao.id ?? '').trim() || null
+    const resumoSolicitadoNoEvento = new Set<string>()
 
-      for (const mon of monitoramentos) {
+    for (const mon of monitoramentos) {
       // Extração robusta do número do processo (inclui mon.numero aprovado pelo user)
       const numero_cnj = mon.numero ?? mon.termo ?? mon.valor ?? mon.processo?.numero_novo ?? mon.processo?.numero
       if (!numero_cnj) {
         console.warn('[ESCAVADOR_WEBHOOK] Monitoramento sem número identificável:', mon)
         continue
       }
-
-      // Enfileira para o agente processar (log de auditoria)
-      await adminSupabase.from('process_update_queue').insert({
-        numero_cnj,
-        evento,
-        payload: body,
-        status: 'PENDENTE'
-      })
 
       const monitoramentoIdEscavador = String(mon.id ?? '').trim() || null
       const contextoOab = await resolverContextoMonitoramentoOab(monitoramentoIdEscavador, extrairOabDoMonitoramento(mon))
@@ -367,6 +359,7 @@ export async function POST(req: NextRequest) {
                 .from('monitored_processes')
                 .update({ escavador_monitoramento_id: monitoramentoIdEscavador })
                 .eq('id', p.id)
+                .eq('tenant_id', p.tenant_id)
             }
           }
         }
@@ -403,6 +396,15 @@ export async function POST(req: NextRequest) {
           continue
         }
 
+        await adminSupabase.from('process_update_queue').insert({
+          tenant_id: contextoOab.tenantId,
+          numero_cnj,
+          evento,
+          payload: body,
+          status: 'PENDENTE',
+          created_at: new Date().toISOString()
+        })
+
         const movimentacoesInbox = [novaMovimentacao, ...historicoAtual].slice(0, 50)
         await adminSupabase
           .from('process_movimentacoes_inbox')
@@ -435,6 +437,15 @@ export async function POST(req: NextRequest) {
           continue
         }
 
+        await adminSupabase.from('process_update_queue').insert({
+          tenant_id: processo.tenant_id,
+          numero_cnj,
+          evento,
+          payload: body,
+          status: 'PENDENTE',
+          created_at: new Date().toISOString()
+        })
+
         // Mantém histórico dos últimos 50 movimentos
         const movimentacoes = [
           novaMovimentacao,
@@ -451,6 +462,7 @@ export async function POST(req: NextRequest) {
             updated_at: new Date().toISOString()
           })
           .eq('id', processo.id)
+          .eq('tenant_id', processo.tenant_id)
 
         // Persiste movimentação na tabela de histórico
         const { data: movimentacaoPersistida } = await adminSupabase.from('process_movimentacoes').insert({
@@ -468,19 +480,25 @@ export async function POST(req: NextRequest) {
           .eq('tenant_id', processo.tenant_id)
           .eq('numero_cnj', numero_cnj)
 
-        // Dispara analisador jurídico (cria tarefas automáticas) - Aguardado para não morrer na Vercel
+        // Dispara analisador jurídico. Em beta, só alta confiança executa; demais casos entram em revisão humana.
+        let paidSummaryRecommended = false
         const { analisarMovimentacao } = await import('@/lib/juridico/analisador')
-        await analisarMovimentacao({
-          processo_id: processo.id,
-          numero_cnj,
-          tenant_id: processo.tenant_id,
-          movimentacao: novaMovimentacao,
-          advogado_id: processo.advogado_responsavel_id,
-          escavador_movimentacao_id: movimentacaoId ?? '',
-          process_movimentacao_id: movimentacaoPersistida?.id ?? null,
-        }).catch(console.error)
+        try {
+          const analiseResultado = await analisarMovimentacao({
+            processo_id: processo.id,
+            numero_cnj,
+            tenant_id: processo.tenant_id,
+            movimentacao: novaMovimentacao,
+            advogado_id: processo.advogado_responsavel_id,
+            escavador_movimentacao_id: movimentacaoId ?? '',
+            process_movimentacao_id: movimentacaoPersistida?.id ?? null,
+          })
+          paidSummaryRecommended = analiseResultado?.paid_summary_recommended === true
+        } catch (error) {
+          console.error(error)
+        }
 
-        // Dispara resumo IA em background apenas uma vez por processo neste evento
+        // Resumo IA é chamada paga: só dispara quando a análise jurídica recomenda e passa cooldown.
         const resumoKey = `${processo.tenant_id}:${numero_cnj}`
         const ultimaSolicitacaoTs = processo.resumo_solicitado_em
           ? new Date(processo.resumo_solicitado_em).getTime()
@@ -489,13 +507,14 @@ export async function POST(req: NextRequest) {
           ? Date.now() - ultimaSolicitacaoTs < 20 * 60 * 1000
           : false
 
-        if (!resumoSolicitadoNoEvento.has(resumoKey) && !cooldownAtivo) {
+        if (paidSummaryRecommended && !resumoSolicitadoNoEvento.has(resumoKey) && !cooldownAtivo) {
           resumoSolicitadoNoEvento.add(resumoKey)
 
           await adminSupabase
             .from('monitored_processes')
             .update({ resumo_solicitado_em: new Date().toISOString() })
             .eq('id', processo.id)
+            .eq('tenant_id', processo.tenant_id)
 
           solicitarResumoIA(numero_cnj, processo.tenant_id).catch(console.error)
         }
@@ -504,7 +523,7 @@ export async function POST(req: NextRequest) {
   }
 
   // 3. Evento: atualização do tribunal (síncrono ou assíncrono)
-  if (evento === 'update_time' || evento === 'resultado_processo_async') {
+  if (evento === 'update_time' || evento === 'resultado_processo_async' || evento === 'atualizacao_processo_concluida') {
     const numero_cnj = body.processo?.numero_unico ?? body.app?.monitor?.valor
     if (numero_cnj) {
       await adminSupabase.from('process_update_queue').insert({
