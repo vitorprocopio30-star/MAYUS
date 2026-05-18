@@ -205,7 +205,7 @@ describe("analisarMovimentacao", () => {
     });
     const { analisarMovimentacao } = await import("./analisador");
 
-    await analisarMovimentacao({
+    const result = await analisarMovimentacao({
       processo_id: "process-1",
       numero_cnj: "0000001-11.2026.8.26.0100",
       tenant_id: "tenant-1",
@@ -219,6 +219,12 @@ describe("analisarMovimentacao", () => {
       process_movimentacao_id: "pm-1",
     });
 
+    expect(result).toEqual(expect.objectContaining({
+      polo_representado: "AUTOR",
+      obrigacao_de_quem: "ESCRITORIO",
+      confidence_reason: expect.stringContaining("Prazo explicito"),
+      review_required: false,
+    }));
     expect(upserts).toEqual(expect.arrayContaining([
       expect.objectContaining({
         table: "process_prazos",
@@ -242,7 +248,12 @@ describe("analisarMovimentacao", () => {
           acao_sugerida: "Cumprir determinação: Apresentar documentos",
           prazo_extraido_dias: 5,
           confianca_analise: "alta",
-          analise_json: expect.objectContaining({ origem: "deterministica" }),
+          analise_json: expect.objectContaining({
+            origem: "deterministica",
+            polo_representado: "AUTOR",
+            obrigacao_de_quem: "ESCRITORIO",
+            review_required: false,
+          }),
         }),
       }),
     ]));
@@ -507,13 +518,24 @@ describe("analisarMovimentacao", () => {
     expect(result).toEqual(expect.objectContaining({
       automation_status: "review_required",
       requires_human_review: true,
+      review_required: true,
       confianca_analise: "media",
       paid_summary_recommended: true,
+      polo_representado: "AUTOR",
+      obrigacao_de_quem: "PARTE_CONTRARIA",
+      confidence_reason: expect.stringContaining("beta"),
     }));
     expect(inserts).toEqual(expect.arrayContaining([
       expect.objectContaining({
         table: "system_event_logs",
-        payload: expect.objectContaining({ event_name: "legal_movement_review_required" }),
+        payload: expect.objectContaining({
+          event_name: "legal_movement_review_required",
+          payload: expect.objectContaining({
+            polo_representado: "AUTOR",
+            obrigacao_de_quem: "PARTE_CONTRARIA",
+            review_required: true,
+          }),
+        }),
       }),
     ]));
   });
