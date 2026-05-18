@@ -60,6 +60,12 @@ export interface BrainInboxApprovalItem {
     proposedActionLabel?: string;
     processLabel?: string;
     missionGoal?: string;
+    policyDecision?: {
+      outcome?: string;
+      surface?: string;
+      module?: string;
+      autonomy_mode?: string;
+    };
   } | null;
   task: BrainInboxTaskItem | null;
   step: BrainInboxStepItem | null;
