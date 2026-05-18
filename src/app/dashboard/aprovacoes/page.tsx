@@ -13,7 +13,6 @@ import {
   Link2,
   ShieldAlert,
   ShieldCheck,
-  XCircle,
 } from "lucide-react";
 import { toast } from "sonner";
 import { useUserProfile } from "@/hooks/useUserProfile";
@@ -22,6 +21,48 @@ import type { BrainInboxApprovalItem, BrainInboxArtifactItem, BrainInboxEventIte
 
 dayjs.extend(relativeTime);
 dayjs.locale("pt-br");
+
+type ApprovalFilterId = "all" | "setup" | "legal" | "finance" | "escavador" | "external_messages";
+
+type LegalMovementReviewItem = {
+  id: string;
+  created_at: string;
+  status: string | null;
+  numero_cnj: string | null;
+  tipo_evento: string | null;
+  acao_sugerida: string | null;
+  data_vencimento_extraida: string | null;
+  confianca_analise: string | null;
+  origem: string | null;
+  motivo: string | null;
+  evidencia: string | null;
+  movimentacao_data: string | null;
+  movimentacao_conteudo: string | null;
+  cliente_nome: string | null;
+  tribunal: string | null;
+  review_error?: string | null;
+  review_note?: string | null;
+};
+
+const APPROVAL_FILTERS: Array<{ id: ApprovalFilterId; label: string }> = [
+  { id: "all", label: "Todas" },
+  { id: "setup", label: "Setup" },
+  { id: "legal", label: "Juridico" },
+  { id: "finance", label: "Financeiro" },
+  { id: "escavador", label: "Escavador" },
+  { id: "external_messages", label: "Mensagens externas" },
+];
+
+function toDateInputValue(value: string | null | undefined) {
+  if (!value) return "";
+  const parsed = dayjs(value);
+  return parsed.isValid() ? parsed.format("YYYY-MM-DD") : "";
+}
+
+function isTerminalLegalReview(tipoEvento: string | null | undefined) {
+  const normalized = String(tipoEvento || "").trim().toUpperCase();
+  return normalized === "ARQUIVAMENTO" || normalized === "EXTINCAO";
+}
 
 function getRiskBadge(riskLevel: string | null | undefined) {
   switch (riskLevel) {
@@ -77,6 +118,42 @@ function getStringEntity(approval: BrainInboxApprovalItem, key: string) {
 
 function isLegalDraftApproval(approval: BrainInboxApprovalItem) {
   return approval.awaiting_payload?.skillName === "legal_first_draft_generate";
+}
+
+function buildApprovalSignal(approval: BrainInboxApprovalItem) {
+  return [
+    approval.awaiting_payload?.skillName,
+    approval.awaiting_payload?.policyDecision?.surface,
+    approval.awaiting_payload?.policyDecision?.module,
+    approval.step?.capability_name,
+    approval.step?.handler_type,
+    approval.step?.step_type,
+    approval.task?.module,
+    approval.task?.title,
+    approval.task?.goal,
+    ...Object.keys(approval.awaiting_payload?.entities || {}),
+  ]
+    .filter(Boolean)
+    .join(" ")
+    .normalize("NFD")
+    .replace(/[\u0300-\u036f]/g, "")
+    .toLowerCase();
+}
+
+function classifyApproval(approval: BrainInboxApprovalItem): ApprovalFilterId {
+  const signal = buildApprovalSignal(approval);
+
+  if (/\b(setup|office_setup|tenant_setup|doctor|autoconfig|office_profile)\b/.test(signal)) return "setup";
+  if (/\b(escavador|paid_search|monitoramento)\b/.test(signal)) return "escavador";
+  if (/\b(billing|asaas|finance|financial|cobranca|collections|revenue)\b/.test(signal)) return "finance";
+  if (/\b(whatsapp|external_message|zapsign|contract|publish|publicacao|filing|protocol)\b/.test(signal)) return "external_messages";
+  if (/\b(legal|lex|juridic|process|draft|minuta|peticao|petition|case_context|case_status)\b/.test(signal)) return "legal";
+
+  return "all";
+}
+
+function matchesApprovalFilter(approval: BrainInboxApprovalItem, filter: ApprovalFilterId) {
+  return filter === "all" || classifyApproval(approval) === filter;
 }
 
 function LegalDraftApprovalDetails({ approval }: { approval: BrainInboxApprovalItem }) {
@@ -238,6 +315,243 @@ function ApprovalCard({ approval, onRefresh }: { approval: BrainInboxApprovalIte
   );
 }
 
+function LegalMovementReviewCard({ review, onRefresh }: { review: LegalMovementReviewItem; onRefresh: () => Promise<void> }) {
+  const [loading, setLoading] = useState<"approved" | "ignored" | null>(null);
+  const [actionLabel, setActionLabel] = useState(() => review.acao_sugerida || "");
+  const [dueDate, setDueDate] = useState(() => toDateInputValue(review.data_vencimento_extraida));
+  const [note, setNote] = useState("");
+  const terminalReview = isTerminalLegalReview(review.tipo_evento);
+  const canApprove = !terminalReview && Boolean(actionLabel.trim()) && Boolean(dueDate);
+
+  useEffect(() => {
+    setActionLabel(review.acao_sugerida || "");
+    setDueDate(toDateInputValue(review.data_vencimento_extraida));
+    setNote("");
+    setLoading(null);
+  }, [review.id, review.acao_sugerida, review.data_vencimento_extraida]);
+
+  const handleDecision = async (decision: "approved" | "ignored") => {
+    if (decision === "approved" && terminalReview) {
+      toast.error("Encerramento/arquivamento exige acao manual no beta.");
+      return;
+    }
+
+    if (decision === "approved" && !dueDate) {
+      toast.error("Informe um vencimento revisado antes de aprovar.");
+      return;
+    }
+
+    if (decision === "approved" && !actionLabel.trim()) {
+      toast.error("Informe a acao revisada antes de aprovar.");
+      return;
+    }
+
+    setLoading(decision);
+    try {
+      const requestBody: Record<string, unknown> = {
+        review_id: review.id,
+        decision,
+      };
+      const trimmedNote = note.trim();
+      if (trimmedNote) requestBody.note = trimmedNote;
+      if (decision === "approved") {
+        requestBody.acao_sugerida = actionLabel.trim();
+        requestBody.data_vencimento_extraida = dueDate;
+      }
+
+      const response = await fetch("/api/juridico/movement-reviews", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify(requestBody),
+      });
+      const data = await response.json().catch(() => ({}));
+      if (!response.ok) throw new Error(data?.error || "Nao foi possivel processar revisao juridica.");
+      toast.success(decision === "approved" ? "Prazo/card aprovado com valores revisados." : "Movimentacao ignorada com auditoria.");
+      await onRefresh();
+    } catch (error: any) {
+      toast.error(error?.message || "Falha ao processar revisao juridica.");
+    } finally {
+      setLoading(null);
+    }
+  };
+
+  return (
+    <div className="rounded-2xl border border-[#CCA761]/20 bg-[#0f0f0f] p-5 space-y-4">
+      <div className="flex items-start justify-between gap-3">
+        <div>
+          <p className="text-[10px] uppercase tracking-[0.2em] text-[#CCA761]">Revisao juridica beta</p>
+          <h3 className="mt-1 text-base font-semibold text-white break-words">
+            {review.tipo_evento || "Movimentacao ambigua"} · {review.numero_cnj || "processo sem CNJ"}
+          </h3>
+          <p className="mt-1 text-xs text-gray-500">
+            {review.cliente_nome || "Cliente nao identificado"} · {review.tribunal || "tribunal nao informado"} · {dayjs(review.created_at).fromNow()}
+          </p>
+        </div>
+        <span className="rounded-full border border-orange-500/30 bg-orange-500/10 px-2.5 py-1 text-[10px] font-bold uppercase tracking-widest text-orange-300">
+          {review.confianca_analise || "revisar"}
+        </span>
+      </div>
+
+      <div className="rounded-xl border border-white/10 bg-black/25 p-3 text-sm text-gray-200 leading-relaxed">
+        <p className="text-[10px] uppercase tracking-[0.18em] text-gray-500">Movimentacao</p>
+        <p className="mt-2 line-clamp-4">{review.movimentacao_conteudo || "Sem conteudo textual salvo."}</p>
+        {review.movimentacao_data && <p className="mt-2 text-[11px] text-gray-500">Data: {review.movimentacao_data}</p>}
+      </div>
+
+      <div className="grid gap-3 md:grid-cols-2">
+        <div className="rounded-xl border border-white/10 bg-black/20 p-3">
+          <label className="text-[10px] uppercase tracking-[0.18em] text-gray-500" htmlFor={`review-action-${review.id}`}>Acao revisada</label>
+          <textarea
+            id={`review-action-${review.id}`}
+            value={actionLabel}
+            onChange={(event) => setActionLabel(event.target.value)}
+            rows={3}
+            placeholder="Descreva a acao que deve virar prazo/card"
+            className="mt-2 w-full resize-none rounded-lg border border-white/10 bg-white/5 px-3 py-2 text-sm text-white outline-none transition-colors placeholder:text-gray-600 focus:border-[#CCA761]/50"
+          />
+        </div>
+        <div className="rounded-xl border border-white/10 bg-black/20 p-3">
+          <label className="text-[10px] uppercase tracking-[0.18em] text-gray-500" htmlFor={`review-due-${review.id}`}>Vencimento revisado</label>
+          <input
+            id={`review-due-${review.id}`}
+            type="date"
+            value={dueDate}
+            onChange={(event) => setDueDate(event.target.value)}
+            className="mt-2 w-full rounded-lg border border-white/10 bg-white/5 px-3 py-2 text-sm text-white outline-none transition-colors [color-scheme:dark] focus:border-[#CCA761]/50"
+          />
+          <p className="mt-2 text-[11px] text-gray-500">
+            Original: {review.data_vencimento_extraida ? dayjs(review.data_vencimento_extraida).format("DD/MM/YYYY") : "nao confiavel"}
+          </p>
+        </div>
+      </div>
+
+      <div className="rounded-xl border border-white/10 bg-black/20 p-3">
+        <label className="text-[10px] uppercase tracking-[0.18em] text-gray-500" htmlFor={`review-note-${review.id}`}>Nota do revisor</label>
+        <textarea
+          id={`review-note-${review.id}`}
+          value={note}
+          onChange={(event) => setNote(event.target.value)}
+          rows={2}
+          placeholder="Opcional: registre a justificativa da decisao humana"
+          className="mt-2 w-full resize-none rounded-lg border border-white/10 bg-white/5 px-3 py-2 text-sm text-white outline-none transition-colors placeholder:text-gray-600 focus:border-[#CCA761]/50"
+        />
+      </div>
+
+      {terminalReview && (
+        <div className="rounded-xl border border-red-500/20 bg-red-500/10 p-3 text-xs text-red-100 leading-relaxed">
+          Encerramento, arquivamento ou extincao exigem acao manual no beta. Use a nota para registrar a revisao e ignore esta fila quando concluir fora do MAYUS.
+        </div>
+      )}
+
+      {(review.motivo || review.evidencia) && (
+        <div className="rounded-xl border border-amber-500/20 bg-amber-500/10 p-3 text-xs text-amber-100 leading-relaxed">
+          {review.motivo && <p><span className="font-semibold text-amber-300">Motivo:</span> {review.motivo}</p>}
+          {review.evidencia && <p className="mt-2"><span className="font-semibold text-amber-300">Evidencia:</span> {review.evidencia}</p>}
+        </div>
+      )}
+
+      <div className="flex gap-2 pt-2">
+        <button
+          onClick={() => handleDecision("approved")}
+          disabled={loading !== null || !canApprove}
+          title={terminalReview ? "Encerramento/arquivamento exige acao manual no beta." : !actionLabel.trim() ? "Informe a acao revisada." : !dueDate ? "Informe o vencimento revisado." : undefined}
+          className="flex-1 rounded-xl border border-emerald-500/30 bg-emerald-500/10 px-3 py-2 text-xs font-bold uppercase tracking-widest text-emerald-300 transition-colors hover:bg-emerald-500/20 disabled:opacity-50"
+        >
+          {loading === "approved" ? "Aprovando..." : "Aprovar Prazo/Card"}
+        </button>
+        <button
+          onClick={() => handleDecision("ignored")}
+          disabled={loading !== null}
+          className="flex-1 rounded-xl border border-white/10 bg-white/5 px-3 py-2 text-xs font-bold uppercase tracking-widest text-gray-300 transition-colors hover:bg-white/10 disabled:opacity-50"
+        >
+          {loading === "ignored" ? "Ignorando..." : "Ignorar"}
+        </button>
+      </div>
+    </div>
+  );
+}
+
+function StuckMovementReviewCard({ review, onRefresh }: { review: LegalMovementReviewItem; onRefresh: () => Promise<void> }) {
+  const [loading, setLoading] = useState(false);
+  const [note, setNote] = useState("");
+
+  const handleRecover = async () => {
+    const recoveryNote = note.trim();
+    if (!recoveryNote) {
+      toast.error("Informe o motivo da recuperação.");
+      return;
+    }
+
+    setLoading(true);
+    try {
+      const response = await fetch("/api/juridico/movement-reviews", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ review_id: review.id, decision: "recover", note: recoveryNote }),
+      });
+      const data = await response.json().catch(() => ({}));
+      if (!response.ok) throw new Error(data?.error || "Nao foi possivel recuperar revisao juridica.");
+      toast.success("Revisao recuperada para nova decisao humana.");
+      await onRefresh();
+    } catch (error: any) {
+      toast.error(error?.message || "Falha ao recuperar revisao juridica.");
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  return (
+    <div className="rounded-2xl border border-red-500/20 bg-red-500/5 p-5 space-y-4">
+      <div className="flex items-start justify-between gap-3">
+        <div>
+          <p className="text-[10px] uppercase tracking-[0.2em] text-red-300">Revisao travada</p>
+          <h3 className="mt-1 text-base font-semibold text-white break-words">
+            {review.tipo_evento || "Movimentacao ambigua"} · {review.numero_cnj || "processo sem CNJ"}
+          </h3>
+          <p className="mt-1 text-xs text-gray-500">
+            {review.cliente_nome || "Cliente nao identificado"} · {review.tribunal || "tribunal nao informado"} · {dayjs(review.created_at).fromNow()}
+          </p>
+        </div>
+        <span className="rounded-full border border-red-500/30 bg-red-500/10 px-2.5 py-1 text-[10px] font-bold uppercase tracking-widest text-red-300">
+          {review.status || "processing"}
+        </span>
+      </div>
+
+      <div className="rounded-xl border border-white/10 bg-black/25 p-3 text-sm text-gray-200 leading-relaxed">
+        <p className="text-[10px] uppercase tracking-[0.18em] text-gray-500">Movimentacao</p>
+        <p className="mt-2 line-clamp-3">{review.movimentacao_conteudo || "Sem conteudo textual salvo."}</p>
+      </div>
+
+      {(review.review_error || review.review_note) && (
+        <div className="rounded-xl border border-red-500/20 bg-red-500/10 p-3 text-xs text-red-100 leading-relaxed">
+          {review.review_error && <p><span className="font-semibold text-red-300">Erro:</span> {review.review_error}</p>}
+          {review.review_note && <p className="mt-2"><span className="font-semibold text-red-300">Nota anterior:</span> {review.review_note}</p>}
+        </div>
+      )}
+
+      <div className="rounded-xl border border-white/10 bg-black/20 p-3">
+        <label className="text-[10px] uppercase tracking-[0.18em] text-gray-500" htmlFor={`recover-note-${review.id}`}>Motivo da recuperação</label>
+        <textarea
+          id={`recover-note-${review.id}`}
+          value={note}
+          onChange={(event) => setNote(event.target.value)}
+          rows={2}
+          placeholder="Explique por que esta revisão deve voltar para a fila"
+          className="mt-2 w-full resize-none rounded-lg border border-white/10 bg-white/5 px-3 py-2 text-sm text-white outline-none transition-colors placeholder:text-gray-600 focus:border-red-400/50"
+        />
+      </div>
+
+      <button
+        onClick={handleRecover}
+        disabled={loading || !note.trim()}
+        className="w-full rounded-xl border border-red-500/30 bg-red-500/10 px-3 py-2 text-xs font-bold uppercase tracking-widest text-red-300 transition-colors hover:bg-red-500/20 disabled:opacity-50"
+      >
+        {loading ? "Recuperando..." : "Voltar para revisão humana"}
+      </button>
+    </div>
+  );
+}
+
 function ActivityCard({ task }: { task: BrainInboxTaskItem }) {
   return (
     <div className="rounded-xl border border-white/8 bg-[#0f0f0f] p-4">
@@ -341,6 +655,14 @@ function getEventTitle(event: BrainInboxEventItem) {
       return "Resultado de missao registrado";
     case "legal_first_draft_requested_via_chat":
       return "Minuta juridica solicitada via chat";
+    case "memory_promotion_proposed":
+      return "Memoria proposta para aprovacao";
+    case "memory_promotion_approved":
+      return "Memoria promovida";
+    case "memory_promotion_rejected":
+      return "Proposta de memoria rejeitada";
+    case "memory_promotion_revoked":
+      return "Memoria revogada";
     default:
       return event.event_type.replaceAll("_", " ");
   }
@@ -365,6 +687,11 @@ function getEventDescription(event: BrainInboxEventItem) {
 
   if (typeof event.payload?.summary === "string" && event.payload.summary.trim()) {
     return event.payload.summary;
+  }
+
+  if (typeof event.payload?.key === "string" && event.payload.key.trim()) {
+    const category = typeof event.payload?.category === "string" ? ` (${event.payload.category})` : "";
+    return `Chave: ${event.payload.key}${category}`;
   }
 
   if (typeof event.payload?.piece_label === "string" && event.payload.piece_label.trim()) {
@@ -399,8 +726,24 @@ function EventCard({ event }: { event: BrainInboxEventItem }) {
 export default function BrainApprovalsPage() {
   const { role, isLoading: profileLoading } = useUserProfile();
   const [inbox, setInbox] = useState<BrainInboxResponse | null>(null);
+  const [movementReviews, setMovementReviews] = useState<LegalMovementReviewItem[]>([]);
+  const [stuckMovementReviews, setStuckMovementReviews] = useState<LegalMovementReviewItem[]>([]);
   const [isLoading, setIsLoading] = useState(true);
+  const [reviewsLoading, setReviewsLoading] = useState(true);
+  const [approvalFilter, setApprovalFilter] = useState<ApprovalFilterId>("all");
   const isExecutive = isBrainExecutiveRole(role);
+  const pendingApprovals = inbox?.pending_approvals || [];
+  const recentApprovals = inbox?.recent_approvals || [];
+  const filteredPendingApprovals = pendingApprovals.filter((approval) => matchesApprovalFilter(approval, approvalFilter));
+  const filteredRecentApprovals = recentApprovals.filter((approval) => matchesApprovalFilter(approval, approvalFilter));
+  const filterCounts = Object.fromEntries(
+    APPROVAL_FILTERS.map((filter) => [
+      filter.id,
+      filter.id === "all"
+        ? pendingApprovals.length
+        : pendingApprovals.filter((approval) => matchesApprovalFilter(approval, filter.id)).length,
+    ])
+  ) as Record<ApprovalFilterId, number>;
 
   const loadInbox = useCallback(async () => {
     setIsLoading(true);
@@ -422,11 +765,27 @@ export default function BrainApprovalsPage() {
     }
   }, []);
 
+  const loadMovementReviews = useCallback(async () => {
+    setReviewsLoading(true);
+    try {
+      const response = await fetch("/api/juridico/movement-reviews", { cache: "no-store" });
+      const data = await response.json().catch(() => ({}));
+      if (!response.ok) throw new Error(data?.error || "Nao foi possivel carregar revisoes juridicas.");
+      setMovementReviews(Array.isArray(data?.reviews) ? data.reviews : []);
+      setStuckMovementReviews(Array.isArray(data?.stuck_reviews) ? data.stuck_reviews : []);
+    } catch (error: any) {
+      toast.error(error?.message || "Falha ao carregar revisoes juridicas.");
+    } finally {
+      setReviewsLoading(false);
+    }
+  }, []);
+
   useEffect(() => {
     if (!profileLoading && isExecutive) {
       void loadInbox();
+      void loadMovementReviews();
     }
-  }, [profileLoading, isExecutive, loadInbox]);
+  }, [profileLoading, isExecutive, loadInbox, loadMovementReviews]);
 
   if (!profileLoading && !isExecutive) {
     return (
@@ -448,7 +807,7 @@ export default function BrainApprovalsPage() {
         </div>
 
         <button
-          onClick={() => void loadInbox()}
+          onClick={() => void Promise.all([loadInbox(), loadMovementReviews()])}
           className="inline-flex items-center gap-2 self-start rounded-xl border border-[#CCA761]/30 bg-[#CCA761]/10 px-4 py-2 text-xs font-bold uppercase tracking-widest text-[#CCA761] hover:bg-[#CCA761]/20"
         >
           <Clock3 size={14} /> Atualizar inbox
@@ -461,6 +820,13 @@ export default function BrainApprovalsPage() {
           <div className="mt-3 flex items-end gap-2">
             <span className="text-3xl font-semibold text-white">{inbox?.pending_count ?? 0}</span>
             <ShieldAlert className="text-orange-300 mb-1" size={18} />
+          </div>
+        </div>
+        <div className="rounded-2xl border border-[#CCA761]/20 bg-[#CCA761]/10 p-5">
+          <p className="text-[10px] uppercase tracking-[0.18em] text-[#CCA761]">Revisões jurídicas</p>
+          <div className="mt-3 flex items-end gap-2">
+            <span className="text-3xl font-semibold text-white">{movementReviews.length}</span>
+            <ShieldAlert className="text-[#CCA761] mb-1" size={18} />
           </div>
         </div>
         <div className="rounded-2xl border border-white/10 bg-[#0f0f0f] p-5">
@@ -493,6 +859,88 @@ export default function BrainApprovalsPage() {
           </div>
         </div>
 
+      <div className="flex flex-wrap gap-2">
+        {APPROVAL_FILTERS.map((filter) => {
+          const active = approvalFilter === filter.id;
+          return (
+            <button
+              key={filter.id}
+              onClick={() => setApprovalFilter(filter.id)}
+              className={`inline-flex items-center gap-2 rounded-xl border px-3 py-2 text-xs font-bold uppercase tracking-widest transition-colors ${
+                active
+                  ? "border-[#CCA761]/60 bg-[#CCA761]/15 text-[#CCA761]"
+                  : "border-white/10 bg-[#0f0f0f] text-gray-400 hover:border-[#CCA761]/30 hover:text-[#CCA761]"
+              }`}
+            >
+              {filter.label}
+              <span className="rounded-full border border-white/10 bg-black/20 px-2 py-0.5 text-[10px] text-gray-300">
+                {filterCounts[filter.id] || 0}
+              </span>
+            </button>
+          );
+        })}
+      </div>
+
+      <section className="space-y-4">
+        <div className="flex items-center justify-between gap-3">
+          <div>
+            <h2 className="text-lg text-white font-semibold">Revisão jurídica beta</h2>
+            <p className="mt-1 text-xs text-gray-500">
+              Movimentações com confiança média/baixa não criam prazo, card ou encerramento sem decisão humana.
+            </p>
+          </div>
+          <span className="text-xs uppercase tracking-widest text-gray-500">
+            {movementReviews.length} aguardando revisão
+          </span>
+        </div>
+
+        {reviewsLoading ? (
+          <div className="rounded-2xl border border-white/10 bg-[#0f0f0f] p-6 flex items-center justify-center gap-3 text-gray-400">
+            <Loader2 size={16} className="animate-spin text-[#CCA761]" /> Carregando revisões jurídicas...
+          </div>
+        ) : movementReviews.length > 0 ? (
+          <div className="grid gap-4 xl:grid-cols-2">
+            {movementReviews.map((review) => (
+              <LegalMovementReviewCard key={review.id} review={review} onRefresh={loadMovementReviews} />
+            ))}
+          </div>
+        ) : (
+          <div className="rounded-2xl border border-white/10 bg-[#0f0f0f] p-6 text-center text-gray-400">
+            Nenhuma movimentação jurídica aguardando revisão humana.
+          </div>
+        )}
+      </section>
+
+      <section className="space-y-4">
+        <div className="flex items-center justify-between gap-3">
+          <div>
+            <h2 className="text-lg text-white font-semibold">Revisões travadas</h2>
+            <p className="mt-1 text-xs text-gray-500">
+              Decisões que ficaram em processamento podem voltar para revisão humana com auditoria.
+            </p>
+          </div>
+          <span className="text-xs uppercase tracking-widest text-gray-500">
+            {stuckMovementReviews.length} em processamento
+          </span>
+        </div>
+
+        {reviewsLoading ? (
+          <div className="rounded-2xl border border-white/10 bg-[#0f0f0f] p-6 flex items-center justify-center gap-3 text-gray-400">
+            <Loader2 size={16} className="animate-spin text-[#CCA761]" /> Verificando revisões travadas...
+          </div>
+        ) : stuckMovementReviews.length > 0 ? (
+          <div className="grid gap-4 xl:grid-cols-2">
+            {stuckMovementReviews.map((review) => (
+              <StuckMovementReviewCard key={review.id} review={review} onRefresh={loadMovementReviews} />
+            ))}
+          </div>
+        ) : (
+          <div className="rounded-2xl border border-white/10 bg-[#0f0f0f] p-6 text-center text-gray-500">
+            Nenhuma revisão jurídica travada em processamento.
+          </div>
+        )}
+      </section>
+
       {isLoading ? (
         <div className="rounded-2xl border border-white/10 bg-[#0f0f0f] p-8 flex items-center justify-center gap-3 text-gray-400">
           <Loader2 size={18} className="animate-spin text-[#CCA761]" />
@@ -503,12 +951,12 @@ export default function BrainApprovalsPage() {
           <section className="space-y-4">
             <div className="flex items-center justify-between">
               <h2 className="text-lg text-white font-semibold">Aprovações pendentes</h2>
-              <span className="text-xs uppercase tracking-widest text-gray-500">{inbox?.pending_count ?? 0} aguardando decisao</span>
+              <span className="text-xs uppercase tracking-widest text-gray-500">{filteredPendingApprovals.length} aguardando decisao</span>
             </div>
 
-            {inbox?.pending_approvals.length ? (
+            {filteredPendingApprovals.length ? (
               <div className="space-y-4">
-                {inbox.pending_approvals.map((approval) => (
+                {filteredPendingApprovals.map((approval) => (
                   <ApprovalCard key={approval.id} approval={approval} onRefresh={loadInbox} />
                 ))}
               </div>
@@ -523,8 +971,8 @@ export default function BrainApprovalsPage() {
             <div>
               <h2 className="text-lg text-white font-semibold">Aprovações recentes</h2>
               <div className="mt-3 space-y-3">
-                {inbox?.recent_approvals.length ? (
-                  inbox.recent_approvals.map((approval) => (
+                {filteredRecentApprovals.length ? (
+                  filteredRecentApprovals.map((approval) => (
                     <div key={approval.id} className="rounded-xl border border-white/8 bg-[#0f0f0f] p-4 text-sm">
                       <div className="flex items-start justify-between gap-3">
                         <div>
@@ -539,7 +987,7 @@ export default function BrainApprovalsPage() {
                   ))
                 ) : (
                   <div className="rounded-xl border border-white/8 bg-[#0f0f0f] p-4 text-sm text-gray-400">
-                    Nenhuma decisao recente registrada.
+                    Nenhuma decisao recente registrada para este filtro.
                   </div>
                 )}
               </div>

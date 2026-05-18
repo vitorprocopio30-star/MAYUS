@@ -115,6 +115,34 @@ type AnaliseMovimentacaoPayload = {
   evidencia?: string | null
 }
 
+export type AnaliseMovimentacaoResult = AnaliseMovimentacaoPayload & {
+  automation_status: 'none' | 'review_required' | 'deadline_card_created' | 'duplicate_skipped'
+  requires_human_review: boolean
+  paid_summary_recommended: boolean
+  process_task_id?: string | null
+}
+
+function shouldRecommendPaidSummary(payload: AnaliseMovimentacaoPayload): boolean {
+  if (payload.origem === 'ignorada') return false
+  if (payload.confianca_analise === 'baixa') return false
+  if (payload.tipo_evento === 'ARQUIVAMENTO' || payload.tipo_evento === 'EXTINCAO') return false
+  return payload.requer_acao || ['PRAZO', 'AUDIENCIA', 'RECURSO', 'CITACAO', 'SENTENCA'].includes(String(payload.tipo_evento || ''))
+}
+
+function buildAnaliseResult(
+  payload: AnaliseMovimentacaoPayload,
+  automationStatus: AnaliseMovimentacaoResult['automation_status'],
+  processTaskId?: string | null
+): AnaliseMovimentacaoResult {
+  return {
+    ...payload,
+    automation_status: automationStatus,
+    requires_human_review: automationStatus === 'review_required',
+    paid_summary_recommended: shouldRecommendPaidSummary(payload),
+    process_task_id: processTaskId ?? null,
+  }
+}
+
 function extrairConteudoLLM(data: any): string | null {
   const content = data?.choices?.[0]?.message?.content
   return typeof content === 'string' ? content.trim() : null
@@ -402,6 +430,25 @@ function mapearPrioridade(analise: AnalisePrazoLLM | null): string | null {
   return null
 }
 
+function movementTimelineKey(entry: any) {
+  const escavadorId = String(entry?.escavador_movimentacao_id || '').trim()
+  if (escavadorId) return `escavador:${escavadorId}`
+
+  const data = String(entry?.data || '').trim()
+  const tipo = String(entry?.tipo_evento || '').trim()
+  const conteudo = String(entry?.conteudo || '').trim().slice(0, 500)
+  if (!data && !tipo && !conteudo) return null
+  return `raw:${data}:${tipo}:${conteudo}`
+}
+
+function appendUniqueMovementEntry(timeline: any[], entry: any) {
+  const nextKey = movementTimelineKey(entry)
+  const deduped = nextKey
+    ? timeline.filter((item) => movementTimelineKey(item) !== nextKey)
+    : timeline
+  return [...deduped, entry].slice(-50)
+}
+
 async function persistirAnaliseMovimentacao(params: {
   tenantId: string
   numeroCnj: string
@@ -426,6 +473,7 @@ async function persistirAnaliseMovimentacao(params: {
         .from('process_movimentacoes')
         .update(updatePayload)
         .eq('id', params.processMovimentacaoId)
+        .eq('tenant_id', params.tenantId)
       if (error) console.warn('[ANALISADOR] Falha ao persistir analise por id.', error.message)
       return
     }
@@ -443,6 +491,94 @@ async function persistirAnaliseMovimentacao(params: {
   } catch (error) {
     console.warn('[ANALISADOR] Falha ao persistir analise da movimentacao.', error)
   }
+}
+
+async function registrarRevisaoHumanaMovimentacao(params: {
+  tenantId: string
+  numeroCnj: string
+  processMovimentacaoId?: string | null
+  escavadorMovimentacaoId?: string | null
+  processoId?: string | null
+  payload: AnaliseMovimentacaoPayload
+}) {
+  try {
+    await adminSupabase.from('system_event_logs').insert({
+      tenant_id: params.tenantId,
+      source: 'juridico',
+      provider: 'mayus',
+      event_name: 'legal_movement_review_required',
+      status: 'review_required',
+      payload: {
+        numero_cnj: params.numeroCnj,
+        processo_id: params.processoId ?? null,
+        process_movimentacao_id: params.processMovimentacaoId ?? null,
+        escavador_movimentacao_id: params.escavadorMovimentacaoId ?? null,
+        tipo_evento: params.payload.tipo_evento,
+        requer_acao: params.payload.requer_acao,
+        acao_sugerida: params.payload.acao_sugerida,
+        prazo_extraido_dias: params.payload.prazo_extraido_dias,
+        data_vencimento_extraida: params.payload.data_vencimento_extraida,
+        confianca_analise: params.payload.confianca_analise,
+        origem: params.payload.origem,
+        motivo: params.payload.motivo,
+        evidencia: params.payload.evidencia ?? null,
+      },
+      created_at: new Date().toISOString(),
+    })
+  } catch (error) {
+    console.warn('[ANALISADOR] Falha ao auditar revisao humana da movimentacao.', error)
+  }
+}
+
+function sanitizeAutomationError(error: unknown) {
+  const message = error instanceof Error ? error.message : String(error || 'Erro desconhecido')
+  return message.replace(/(token|apikey|api_key|authorization|password|secret)=[^\s]+/gi, '$1=[redacted]').slice(0, 500)
+}
+
+async function registrarFalhaAutomacaoMovimentacao(params: {
+  tenantId: string
+  numeroCnj: string
+  processMovimentacaoId?: string | null
+  escavadorMovimentacaoId?: string | null
+  processoId?: string | null
+  errorMessage: string
+  payload: AnaliseMovimentacaoPayload
+}) {
+  try {
+    await adminSupabase.from('system_event_logs').insert({
+      tenant_id: params.tenantId,
+      source: 'juridico',
+      provider: 'mayus',
+      event_name: 'legal_movement_auto_create_failed',
+      status: 'failed',
+      payload: {
+        numero_cnj: params.numeroCnj,
+        processo_id: params.processoId ?? null,
+        process_movimentacao_id: params.processMovimentacaoId ?? null,
+        escavador_movimentacao_id: params.escavadorMovimentacaoId ?? null,
+        error: params.errorMessage,
+        tipo_evento: params.payload.tipo_evento,
+        acao_sugerida: params.payload.acao_sugerida,
+        data_vencimento_extraida: params.payload.data_vencimento_extraida,
+      },
+      created_at: new Date().toISOString(),
+    })
+  } catch (error) {
+    console.warn('[ANALISADOR] Falha ao auditar erro de automacao da movimentacao.', error)
+  }
+}
+
+async function persistirRevisaoMovimentacao(params: {
+  tenantId: string
+  numeroCnj: string
+  processMovimentacaoId?: string | null
+  escavadorMovimentacaoId?: string | null
+  processoId?: string | null
+  payload: AnaliseMovimentacaoPayload
+}): Promise<AnaliseMovimentacaoResult> {
+  await persistirAnaliseMovimentacao(params)
+  await registrarRevisaoHumanaMovimentacao(params)
+  return buildAnaliseResult(params.payload, 'review_required')
 }
 
 async function analisarComLLM(params: {
@@ -588,32 +724,35 @@ export async function analisarMovimentacao(params: {
   const prazoExplicito = extrairPrazoExplicito(params.movimentacao.conteudo, dataBase)
 
   if (!prazoExplicito && isLikelyLowSignalMovement(texto)) {
+    const payload: AnaliseMovimentacaoPayload = {
+      tipo_evento: null,
+      requer_acao: false,
+      acao_sugerida: null,
+      prazo_extraido_dias: null,
+      data_vencimento_extraida: null,
+      confianca_analise: 'alta',
+      origem: 'ignorada',
+      motivo: 'Movimentacao de baixo sinal sem comando processual concreto.',
+    }
     await persistirAnaliseMovimentacao({
       tenantId: params.tenant_id,
       numeroCnj: params.numero_cnj,
       processMovimentacaoId: params.process_movimentacao_id,
       escavadorMovimentacaoId,
-      payload: {
-        tipo_evento: null,
-        requer_acao: false,
-        acao_sugerida: null,
-        prazo_extraido_dias: null,
-        data_vencimento_extraida: null,
-        confianca_analise: 'alta',
-        origem: 'ignorada',
-        motivo: 'Movimentacao de baixo sinal sem comando processual concreto.',
-      },
+      payload,
     })
     console.log(`[ANALISADOR] Movimentacao de baixo sinal ignorada para ${params.numero_cnj}.`)
-    return
+    return buildAnaliseResult(payload, 'none')
   }
 
   // Busca contexto do processo
-  const { data: processo } = await adminSupabase
+  const { data: processo, error: processoError } = await adminSupabase
     .from('monitored_processes')
     .select('numero_processo, resumo_curto, cliente_nome, tribunal, partes, movimentacoes, advogado_responsavel_id, classe_processual, linked_task_id')
     .eq('id', params.processo_id)
+    .eq('tenant_id', params.tenant_id)
     .single()
+  if (processoError) console.warn(`[ANALISADOR] Falha ao carregar contexto do processo ${params.numero_cnj}: ${processoError.message}`)
 
   const analiseLLM = processo
     ? await analisarComLLM({
@@ -624,24 +763,25 @@ export async function analisarMovimentacao(params: {
     : null
 
   if (analiseLLM && !analiseLLM.gerar && !prazoExplicito) {
+    const payload: AnaliseMovimentacaoPayload = {
+      tipo_evento: null,
+      requer_acao: false,
+      acao_sugerida: null,
+      prazo_extraido_dias: null,
+      data_vencimento_extraida: null,
+      confianca_analise: 'media',
+      origem: 'llm',
+      motivo: analiseLLM.motivo,
+    }
     await persistirAnaliseMovimentacao({
       tenantId: params.tenant_id,
       numeroCnj: params.numero_cnj,
       processMovimentacaoId: params.process_movimentacao_id,
       escavadorMovimentacaoId,
-      payload: {
-        tipo_evento: null,
-        requer_acao: false,
-        acao_sugerida: null,
-        prazo_extraido_dias: null,
-        data_vencimento_extraida: null,
-        confianca_analise: 'media',
-        origem: 'llm',
-        motivo: analiseLLM.motivo,
-      },
+      payload,
     })
     console.log(`[ANALISADOR] Prazo nao gerado: ${analiseLLM.motivo}`)
-    return
+    return buildAnaliseResult(payload, 'none')
   }
 
   let tipoEvento = mapearTipoEventoPorAnalise(analiseLLM, texto)
@@ -671,23 +811,24 @@ export async function analisarMovimentacao(params: {
   }
 
   if (!tipoEvento) {
+    const payload: AnaliseMovimentacaoPayload = {
+      tipo_evento: null,
+      requer_acao: false,
+      acao_sugerida: null,
+      prazo_extraido_dias: null,
+      data_vencimento_extraida: null,
+      confianca_analise: 'baixa',
+      origem: 'heuristica',
+      motivo: 'Nao foi possivel classificar a movimentacao em um evento juridico acionavel.',
+    }
     await persistirAnaliseMovimentacao({
       tenantId: params.tenant_id,
       numeroCnj: params.numero_cnj,
       processMovimentacaoId: params.process_movimentacao_id,
       escavadorMovimentacaoId,
-      payload: {
-        tipo_evento: null,
-        requer_acao: false,
-        acao_sugerida: null,
-        prazo_extraido_dias: null,
-        data_vencimento_extraida: null,
-        confianca_analise: 'baixa',
-        origem: 'heuristica',
-        motivo: 'Nao foi possivel classificar a movimentacao em um evento juridico acionavel.',
-      },
+      payload,
     })
-    return
+    return buildAnaliseResult(payload, 'none')
   }
 
   // Busca regra de prazo
@@ -710,69 +851,69 @@ export async function analisarMovimentacao(params: {
   const regraPrazo = prazo ?? prazoGenerico
 
   if (tipoEvento === 'PRAZO' && !prazoExplicito && !analiseTemVencimentoConfiavel(analiseLLM)) {
-    await persistirAnaliseMovimentacao({
+    const payload: AnaliseMovimentacaoPayload = {
+      tipo_evento: tipoEvento,
+      requer_acao: true,
+      acao_sugerida: analiseLLM?.gerar ? analiseLLM.descricao : 'Revisar possivel prazo processual',
+      prazo_extraido_dias: null,
+      data_vencimento_extraida: null,
+      confianca_analise: 'baixa',
+      origem: analiseLLM ? 'llm' : 'heuristica',
+      motivo: 'Possivel prazo identificado sem vencimento confiavel; prazo automatico nao foi criado.',
+    }
+    return persistirRevisaoMovimentacao({
       tenantId: params.tenant_id,
       numeroCnj: params.numero_cnj,
       processMovimentacaoId: params.process_movimentacao_id,
       escavadorMovimentacaoId,
-      payload: {
-        tipo_evento: tipoEvento,
-        requer_acao: true,
-        acao_sugerida: analiseLLM?.gerar ? analiseLLM.descricao : 'Revisar possivel prazo processual',
-        prazo_extraido_dias: null,
-        data_vencimento_extraida: null,
-        confianca_analise: 'baixa',
-        origem: analiseLLM ? 'llm' : 'heuristica',
-        motivo: 'Possivel prazo identificado sem vencimento confiavel; prazo automatico nao foi criado.',
-      },
+      processoId: params.processo_id,
+      payload,
     })
-    return
   }
 
   if (!regraPrazo) {
+    const payload: AnaliseMovimentacaoPayload = {
+      tipo_evento: tipoEvento,
+      requer_acao: false,
+      acao_sugerida: null,
+      prazo_extraido_dias: null,
+      data_vencimento_extraida: null,
+      confianca_analise: 'baixa',
+      origem: 'heuristica',
+      motivo: 'Evento classificado, mas sem regra de prazo configurada.',
+    }
     await persistirAnaliseMovimentacao({
       tenantId: params.tenant_id,
       numeroCnj: params.numero_cnj,
       processMovimentacaoId: params.process_movimentacao_id,
       escavadorMovimentacaoId,
-      payload: {
-        tipo_evento: tipoEvento,
-        requer_acao: false,
-        acao_sugerida: null,
-        prazo_extraido_dias: null,
-        data_vencimento_extraida: null,
-        confianca_analise: 'baixa',
-        origem: 'heuristica',
-        motivo: 'Evento classificado, mas sem regra de prazo configurada.',
-      },
+      payload,
     })
-    return
+    return buildAnaliseResult(payload, 'none')
   }
 
   // Arquivamento/extinção: encerra processo
   if (tipoEvento === 'ARQUIVAMENTO' || tipoEvento === 'EXTINCAO') {
-    await persistirAnaliseMovimentacao({
+    const payload: AnaliseMovimentacaoPayload = {
+      tipo_evento: tipoEvento,
+      requer_acao: true,
+      acao_sugerida: 'Revisar encerramento/arquivamento antes de inativar o processo ou cancelar monitoramento.',
+      prazo_extraido_dias: null,
+      data_vencimento_extraida: null,
+      confianca_analise: analiseLLM ? 'media' : 'baixa',
+      origem: analiseLLM ? 'llm' : 'heuristica',
+      motivo: 'Movimentacao indica possivel encerramento/arquivamento; em beta, a inativacao automatica exige revisao humana.',
+    }
+    const result = await persistirRevisaoMovimentacao({
       tenantId: params.tenant_id,
       numeroCnj: params.numero_cnj,
       processMovimentacaoId: params.process_movimentacao_id,
       escavadorMovimentacaoId,
-      payload: {
-        tipo_evento: tipoEvento,
-        requer_acao: false,
-        acao_sugerida: null,
-        prazo_extraido_dias: null,
-        data_vencimento_extraida: null,
-        confianca_analise: analiseLLM ? 'media' : 'baixa',
-        origem: analiseLLM ? 'llm' : 'heuristica',
-        motivo: 'Movimentacao indica encerramento/arquivamento do processo.',
-      },
+      processoId: params.processo_id,
+      payload,
     })
-    await adminSupabase
-      .from('monitored_processes')
-      .update({ ativo: false, monitoramento_ativo: false, kanban_coluna: 'ENCERRADO' })
-      .eq('id', params.processo_id)
-    console.log(`[ANALISADOR] Processo encerrado: ${params.numero_cnj}`)
-    return
+    console.log(`[ANALISADOR] Encerramento enviado para revisao humana: ${params.numero_cnj}`)
+    return result
   }
 
   const vencimento = prazoExplicito?.vencimento
@@ -783,24 +924,25 @@ export async function analisarMovimentacao(params: {
 
   // Nao gerar prazo para despachos genericos
   if (descricaoPrazo.toLowerCase().includes('despacho')) {
+    const payload: AnaliseMovimentacaoPayload = {
+      tipo_evento: tipoEvento,
+      requer_acao: false,
+      acao_sugerida: null,
+      prazo_extraido_dias: null,
+      data_vencimento_extraida: null,
+      confianca_analise: 'alta',
+      origem: prazoExplicito ? 'deterministica' : analiseLLM ? 'llm' : 'heuristica',
+      motivo: 'Despacho generico ignorado para evitar criacao indevida de prazo.',
+    }
     await persistirAnaliseMovimentacao({
       tenantId: params.tenant_id,
       numeroCnj: params.numero_cnj,
       processMovimentacaoId: params.process_movimentacao_id,
       escavadorMovimentacaoId,
-      payload: {
-        tipo_evento: tipoEvento,
-        requer_acao: false,
-        acao_sugerida: null,
-        prazo_extraido_dias: null,
-        data_vencimento_extraida: null,
-        confianca_analise: 'alta',
-        origem: prazoExplicito ? 'deterministica' : analiseLLM ? 'llm' : 'heuristica',
-        motivo: 'Despacho generico ignorado para evitar criacao indevida de prazo.',
-      },
+      payload,
     })
     console.log(`[ANALISADOR] Despacho generico ignorado para ${params.numero_cnj}.`)
-    return
+    return buildAnaliseResult(payload, 'none')
   }
 
   // Deduplicacao idempotente por movimentacao do Escavador
@@ -813,27 +955,28 @@ export async function analisarMovimentacao(params: {
       .limit(1)
 
     if (prazosDuplicados && prazosDuplicados.length > 0) {
+      const payload: AnaliseMovimentacaoPayload = {
+        tipo_evento: tipoEvento,
+        requer_acao: true,
+        acao_sugerida: descricaoPrazo,
+        prazo_extraido_dias: prazoExplicito?.dias ?? null,
+        data_vencimento_extraida: vencimento.toISOString(),
+        confianca_analise: prazoExplicito ? 'alta' : 'media',
+        origem: prazoExplicito ? 'deterministica' : analiseLLM ? 'llm' : 'heuristica',
+        motivo: 'Movimentacao ja processada anteriormente; prazo duplicado nao foi recriado.',
+        evidencia: prazoExplicito?.evidencia ?? null,
+      }
       await persistirAnaliseMovimentacao({
         tenantId: params.tenant_id,
         numeroCnj: params.numero_cnj,
         processMovimentacaoId: params.process_movimentacao_id,
         escavadorMovimentacaoId,
-        payload: {
-          tipo_evento: tipoEvento,
-          requer_acao: true,
-          acao_sugerida: descricaoPrazo,
-          prazo_extraido_dias: prazoExplicito?.dias ?? null,
-          data_vencimento_extraida: vencimento.toISOString(),
-          confianca_analise: prazoExplicito ? 'alta' : 'media',
-          origem: prazoExplicito ? 'deterministica' : analiseLLM ? 'llm' : 'heuristica',
-          motivo: 'Movimentacao ja processada anteriormente; prazo duplicado nao foi recriado.',
-          evidencia: prazoExplicito?.evidencia ?? null,
-        },
+        payload,
       })
       console.log(
         `[ANALISADOR] Movimentacao ${escavadorMovimentacaoId} ja processada para ${params.numero_cnj}. Ignorando duplicata.`
       )
-      return
+      return buildAnaliseResult(payload, 'duplicate_skipped')
     }
   }
 
@@ -866,29 +1009,62 @@ export async function analisarMovimentacao(params: {
     : false
 
   if (duplicadoSemantico) {
+    const payload: AnaliseMovimentacaoPayload = {
+      tipo_evento: tipoEvento,
+      requer_acao: true,
+      acao_sugerida: descricaoPrazo,
+      prazo_extraido_dias: prazoExplicito?.dias ?? null,
+      data_vencimento_extraida: vencimento.toISOString(),
+      confianca_analise: prazoExplicito ? 'alta' : 'media',
+      origem: prazoExplicito ? 'deterministica' : analiseLLM ? 'llm' : 'heuristica',
+      motivo: 'Prazo semanticamente semelhante ja existe; novo prazo nao foi recriado.',
+      evidencia: prazoExplicito?.evidencia ?? null,
+    }
     await persistirAnaliseMovimentacao({
       tenantId: params.tenant_id,
       numeroCnj: params.numero_cnj,
       processMovimentacaoId: params.process_movimentacao_id,
       escavadorMovimentacaoId,
-      payload: {
-        tipo_evento: tipoEvento,
-        requer_acao: true,
-        acao_sugerida: descricaoPrazo,
-        prazo_extraido_dias: prazoExplicito?.dias ?? null,
-        data_vencimento_extraida: vencimento.toISOString(),
-        confianca_analise: prazoExplicito ? 'alta' : 'media',
-        origem: prazoExplicito ? 'deterministica' : analiseLLM ? 'llm' : 'heuristica',
-        motivo: 'Prazo semanticamente semelhante ja existe; novo prazo nao foi recriado.',
-        evidencia: prazoExplicito?.evidencia ?? null,
-      },
+      payload,
     })
     console.log(
       `[ANALISADOR] Prazo semelhante ja existente para ${params.numero_cnj} (${descricaoPrazo}). Ignorando duplicata.`
     )
-    return
+    return buildAnaliseResult(payload, 'duplicate_skipped')
   }
 
+  const confiancaAcaoAutomatica: AnaliseMovimentacaoPayload['confianca_analise'] = prazoExplicito
+    ? 'alta'
+    : analiseLLM
+      ? 'media'
+      : 'baixa'
+
+  if (confiancaAcaoAutomatica !== 'alta') {
+    const payload: AnaliseMovimentacaoPayload = {
+      tipo_evento: tipoEvento,
+      requer_acao: true,
+      acao_sugerida: descricaoPrazo,
+      prazo_extraido_dias: prazoExplicito?.dias ?? null,
+      data_vencimento_extraida: vencimento.toISOString(),
+      confianca_analise: confiancaAcaoAutomatica,
+      origem: analiseLLM ? 'llm' : 'heuristica',
+      motivo: analiseLLM?.gerar
+        ? `${analiseLLM.motivo} Em beta, a criacao automatica de prazo/card exige evidencia deterministica de alta confianca.`
+        : 'Evento juridico acionavel detectado por heuristica; em beta, exige revisao humana antes de criar prazo/card.',
+      evidencia: prazoExplicito?.evidencia ?? null,
+    }
+
+    return persistirRevisaoMovimentacao({
+      tenantId: params.tenant_id,
+      numeroCnj: params.numero_cnj,
+      processMovimentacaoId: params.process_movimentacao_id,
+      escavadorMovimentacaoId,
+      processoId: params.processo_id,
+      payload,
+    })
+  }
+
+  try {
   // Upsert do card do processo — um card por processo, movimentacoes acumuladas
   const movimentacaoEntry = {
     data: params.movimentacao.data ?? new Date().toISOString().slice(0, 10),
@@ -912,16 +1088,18 @@ export async function analisarMovimentacao(params: {
   ]) || pipelineContext.fallbackStageId
 
   if (!pipelineId || !stageId) {
-    console.warn(`[ANALISADOR] Pipeline juridica nao encontrada para ${params.numero_cnj}. Prazo sera criado sem card.`)
+    throw new Error(`Pipeline juridica nao encontrada para ${params.numero_cnj}; prazo automatico nao foi criado sem card Kanban.`)
   }
 
-  const { data: cardsExistentes } = await adminSupabase
+  const { data: cardsExistentes, error: cardsError } = await adminSupabase
     .from('process_tasks')
     .select('id, title, description, client_name, movimentacoes_timeline')
+    .eq('tenant_id', params.tenant_id)
     .eq('processo_1grau', params.numero_cnj)
     .eq('pipeline_id', pipelineId || '')
     .order('updated_at', { ascending: false })
     .limit(1)
+  if (cardsError) throw new Error(`Falha ao buscar card processual existente: ${cardsError.message}`)
 
   const cardExistente = cardsExistentes?.[0] ?? null
   let taskId: string | null = null
@@ -930,7 +1108,7 @@ export async function analisarMovimentacao(params: {
     const timelineAtual = Array.isArray(cardExistente.movimentacoes_timeline)
       ? cardExistente.movimentacoes_timeline
       : []
-    const timelineAtualizada = [...timelineAtual, movimentacaoEntry]
+    const timelineAtualizada = appendUniqueMovementEntry(timelineAtual, movimentacaoEntry)
     const cardClientName = buildProcessCardClientName(processo ?? {})
     const cardDescription = buildProcessCardDescription({
       processo: {
@@ -941,7 +1119,7 @@ export async function analisarMovimentacao(params: {
       proximaAcao: descricaoPrazo,
     })
 
-    await adminSupabase
+    const { data: updatedCard, error: updateCardError } = await adminSupabase
       .from('process_tasks')
       .update({
         stage_id: stageId,
@@ -954,16 +1132,20 @@ export async function analisarMovimentacao(params: {
         updated_at: new Date().toISOString()
       })
       .eq('id', cardExistente.id)
+      .eq('tenant_id', params.tenant_id)
+      .select('id')
+      .maybeSingle()
+    if (updateCardError) throw new Error(`Falha ao atualizar card processual: ${updateCardError.message}`)
+    if (!updatedCard?.id) throw new Error('Card processual nao encontrado para atualizacao neste tenant.')
 
     taskId = cardExistente.id
   } else {
-    if (!pipelineId || !stageId) {
-      taskId = null
-    } else {
-    const { count } = await adminSupabase
+    const { count, error: countError } = await adminSupabase
       .from('process_tasks')
       .select('*', { count: 'exact', head: true })
       .eq('stage_id', stageId)
+      .eq('tenant_id', params.tenant_id)
+    if (countError) throw new Error(`Falha ao calcular posicao do card processual: ${countError.message}`)
     const position_index = count ?? 0
     const cardTitle = buildProcessCardTitle({
       ...(processo ?? {}),
@@ -979,7 +1161,8 @@ export async function analisarMovimentacao(params: {
       proximaAcao: descricaoPrazo,
     })
 
-    const { data: novoCard } = await adminSupabase.from('process_tasks').insert({
+    const { data: novoCard, error: insertCardError } = await adminSupabase.from('process_tasks').insert({
+      tenant_id: params.tenant_id,
       pipeline_id: pipelineId,
       stage_id: stageId,
       title: cardTitle,
@@ -996,20 +1179,22 @@ export async function analisarMovimentacao(params: {
       created_at: new Date().toISOString(),
       updated_at: new Date().toISOString()
     }).select('id').single()
+    if (insertCardError) throw new Error(`Falha ao criar card processual: ${insertCardError.message}`)
 
     taskId = novoCard?.id ?? null
 
     if (taskId) {
-      await adminSupabase
+      const { error: linkError } = await adminSupabase
         .from('monitored_processes')
         .update({ linked_task_id: taskId })
         .eq('id', params.processo_id)
-    }
+        .eq('tenant_id', params.tenant_id)
+      if (linkError) throw new Error(`Falha ao vincular card ao processo monitorado: ${linkError.message}`)
     }
   }
 
   // Registra em process_prazos
-  await adminSupabase.from('process_prazos').upsert(
+  const { error: prazoError } = await adminSupabase.from('process_prazos').upsert(
     {
       tenant_id: params.tenant_id,
       monitored_process_id: params.processo_id,
@@ -1025,31 +1210,34 @@ export async function analisarMovimentacao(params: {
       created_at: new Date().toISOString()
     },
     {
-      onConflict: 'monitored_process_id,tipo,descricao,data_vencimento',
+      onConflict: escavadorMovimentacaoId
+        ? 'monitored_process_id,escavador_movimentacao_id'
+        : 'monitored_process_id,tipo,descricao,data_vencimento',
       ignoreDuplicates: true
     }
   )
+  if (prazoError) throw new Error(`Falha ao registrar prazo processual: ${prazoError.message}`)
+
+  const payloadFinal: AnaliseMovimentacaoPayload = {
+    tipo_evento: tipoEvento,
+    requer_acao: true,
+    acao_sugerida: descricaoPrazo,
+    prazo_extraido_dias: prazoExplicito?.dias ?? null,
+    data_vencimento_extraida: vencimento.toISOString(),
+    confianca_analise: 'alta',
+    origem: 'deterministica',
+    motivo: prazoExplicito?.evidencia
+      ? `Prazo explicito identificado na movimentacao: ${prazoExplicito.evidencia}`
+      : 'Prazo criado por regra deterministica de alta confianca.',
+    evidencia: prazoExplicito?.evidencia ?? null,
+  }
 
   await persistirAnaliseMovimentacao({
     tenantId: params.tenant_id,
     numeroCnj: params.numero_cnj,
     processMovimentacaoId: params.process_movimentacao_id,
     escavadorMovimentacaoId,
-    payload: {
-      tipo_evento: tipoEvento,
-      requer_acao: true,
-      acao_sugerida: descricaoPrazo,
-      prazo_extraido_dias: prazoExplicito?.dias ?? null,
-      data_vencimento_extraida: vencimento.toISOString(),
-      confianca_analise: prazoExplicito ? 'alta' : analiseLLM ? 'media' : 'baixa',
-      origem: prazoExplicito ? 'deterministica' : analiseLLM ? 'llm' : 'heuristica',
-      motivo: prazoExplicito?.evidencia
-        ? `Prazo explicito identificado na movimentacao: ${prazoExplicito.evidencia}`
-        : analiseLLM?.gerar
-          ? analiseLLM.motivo
-          : 'Prazo criado por regra de classificacao juridica.',
-      evidencia: prazoExplicito?.evidencia ?? null,
-    },
+    payload: payloadFinal,
   })
 
   const proactiveDraft = await prepareProactiveMovementDraft({
@@ -1073,4 +1261,37 @@ export async function analisarMovimentacao(params: {
   }
 
   console.log(`[ANALISADOR] ✅ ${regraPrazo.tipo_tarefa} criado para ${params.numero_cnj} — vence ${vencimento.toDateString()}`)
+  return buildAnaliseResult(payloadFinal, 'deadline_card_created', taskId)
+  } catch (error) {
+    const errorMessage = sanitizeAutomationError(error)
+    const payloadFalha: AnaliseMovimentacaoPayload = {
+      tipo_evento: tipoEvento,
+      requer_acao: true,
+      acao_sugerida: descricaoPrazo,
+      prazo_extraido_dias: prazoExplicito?.dias ?? null,
+      data_vencimento_extraida: vencimento.toISOString(),
+      confianca_analise: 'alta',
+      origem: 'deterministica',
+      motivo: `Prazo de alta confianca nao foi criado por falha operacional: ${errorMessage}`,
+      evidencia: prazoExplicito?.evidencia ?? null,
+    }
+
+    await registrarFalhaAutomacaoMovimentacao({
+      tenantId: params.tenant_id,
+      numeroCnj: params.numero_cnj,
+      processMovimentacaoId: params.process_movimentacao_id,
+      escavadorMovimentacaoId,
+      processoId: params.processo_id,
+      errorMessage,
+      payload: payloadFalha,
+    })
+    return persistirRevisaoMovimentacao({
+      tenantId: params.tenant_id,
+      numeroCnj: params.numero_cnj,
+      processMovimentacaoId: params.process_movimentacao_id,
+      escavadorMovimentacaoId,
+      processoId: params.processo_id,
+      payload: payloadFalha,
+    })
+  }
 }

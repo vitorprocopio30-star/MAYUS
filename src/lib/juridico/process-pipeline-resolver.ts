@@ -20,6 +20,8 @@ type SupabaseLike = {
   from(table: string): any;
 };
 
+const MIN_LEGAL_PIPELINE_SCORE = 2;
+
 export type ResolveProcessPipelineInput = {
   supabase: SupabaseLike;
   tenantId: string;
@@ -132,6 +134,7 @@ export async function resolveProcessPipelineContext(
       .from("process_tasks")
       .select("pipeline_id, title, description, client_name")
       .eq("id", linkedTaskId)
+      .eq("tenant_id", tenantId)
       .maybeSingle();
     linkedTaskContext = linkedTask || null;
     pipelineId = linkedTask?.pipeline_id ?? null;
@@ -141,6 +144,7 @@ export async function resolveProcessPipelineContext(
     const { data: taskByProcess } = await supabase
       .from("process_tasks")
       .select("pipeline_id")
+      .eq("tenant_id", tenantId)
       .eq("processo_1grau", processNumber)
       .order("updated_at", { ascending: false })
       .limit(1)
@@ -160,7 +164,10 @@ export async function resolveProcessPipelineContext(
       .map((pipeline) => ({ ...pipeline, score: scoreLegalPipelineName(pipeline.name) }))
       .sort((a, b) => b.score - a.score);
 
-    pipelineId = ranked[0]?.id ?? null;
+    const bestPipeline = ranked[0];
+    pipelineId = bestPipeline && bestPipeline.score >= MIN_LEGAL_PIPELINE_SCORE
+      ? bestPipeline.id
+      : null;
   }
 
   const { data: stages } = pipelineId
