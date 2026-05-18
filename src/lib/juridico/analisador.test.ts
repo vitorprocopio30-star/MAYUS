@@ -522,7 +522,7 @@ describe("analisarMovimentacao", () => {
       confianca_analise: "media",
       paid_summary_recommended: true,
       polo_representado: "AUTOR",
-      obrigacao_de_quem: "PARTE_CONTRARIA",
+      obrigacao_de_quem: "ESCRITORIO",
       confidence_reason: expect.stringContaining("beta"),
     }));
     expect(inserts).toEqual(expect.arrayContaining([
@@ -532,12 +532,43 @@ describe("analisarMovimentacao", () => {
           event_name: "legal_movement_review_required",
           payload: expect.objectContaining({
             polo_representado: "AUTOR",
-            obrigacao_de_quem: "PARTE_CONTRARIA",
+            obrigacao_de_quem: "ESCRITORIO",
             review_required: true,
           }),
         }),
       }),
     ]));
+  });
+
+  it("classifica ato da parte contraria sem providencia do escritorio como sem obrigacao", async () => {
+    callLLMWithFallbackMock.mockResolvedValue({
+      ok: true,
+      data: {
+        choices: [{ message: { content: JSON.stringify({ gerar: false, motivo: "Peticao adversa sem intimacao ou prazo para o escritorio" }) } }],
+      },
+      usedClient: { provider: "openai", model: "test", endpoint: "https://example.test", source: "env" },
+      fallbackTrace: [],
+    });
+    const { analisarMovimentacao } = await import("./analisador");
+
+    const result = await analisarMovimentacao({
+      processo_id: "process-1",
+      numero_cnj: "0000001-11.2026.8.26.0100",
+      tenant_id: "tenant-1",
+      movimentacao: {
+        id: "mov-parte-contraria-sem-prazo",
+        conteudo: "Juntada de peticao da parte contraria.",
+        data: "2026-05-13",
+      },
+      escavador_movimentacao_id: "mov-parte-contraria-sem-prazo",
+    });
+
+    expect(result).toEqual(expect.objectContaining({
+      automation_status: "none",
+      requires_human_review: false,
+      review_required: false,
+      obrigacao_de_quem: "NENHUMA",
+    }));
   });
 
   it("envia arquivamento para revisao humana sem inativar automaticamente em beta", async () => {

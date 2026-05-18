@@ -381,12 +381,19 @@ function inferirObrigacaoDeQuem(params: {
   textoMovimentacao: string
   tipoEvento: string | null
   requerAcao: boolean
+  acaoSugerida?: string | null
   poloRepresentado: NonNullable<AnaliseMovimentacaoPayload['polo_representado']>
 }): NonNullable<AnaliseMovimentacaoPayload['obrigacao_de_quem']> {
   if (!params.requerAcao) return 'NENHUMA'
 
   const texto = normalizarTexto(params.textoMovimentacao)
+  const acao = normalizarTexto(params.acaoSugerida)
   if (params.tipoEvento === 'ARQUIVAMENTO' || params.tipoEvento === 'EXTINCAO') return 'JUIZO'
+
+  if (/manifest|responder|impugn|contrarrazo|apresentar|cumprir|emendar|regularizar|juntar|recolher|comparecer/.test(acao)) {
+    return 'ESCRITORIO'
+  }
+
   if (texto.includes('parte contraria') || texto.includes('parte adversa') || texto.includes('adversario')) return 'PARTE_CONTRARIA'
 
   const mencionaAutor = /parte autora|autor(a)?\b|polo ativo/.test(texto)
@@ -421,6 +428,7 @@ function enriquecerPayloadClassificador(params: {
       textoMovimentacao: params.textoMovimentacao,
       tipoEvento: params.payload.tipo_evento,
       requerAcao: params.payload.requer_acao,
+      acaoSugerida: params.payload.acao_sugerida,
       poloRepresentado,
     })
 
