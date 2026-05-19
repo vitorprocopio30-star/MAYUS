@@ -116,6 +116,292 @@ test.describe("Documentos authenticated", () => {
     await expect(page.getByText(/falhas recentes/i)).toBeVisible();
   });
 
+  test("opera o Scanner do Drive beta com preview, revisao e apply supervisionado", async ({ page }) => {
+    test.setTimeout(180_000);
+
+    let createdScan = false;
+    let approvedReview = false;
+    let appliedScan = false;
+    let revertedScan = false;
+    const runId = "drive-scan-run-e2e";
+    const createdRunId = "drive-scan-run-created-e2e";
+
+    await page.route("**/api/documentos/drive-scan/preview**", async (route) => {
+      const request = route.request();
+      const url = new URL(request.url());
+      const activeRunId = createdScan ? createdRunId : runId;
+
+      if (request.method() === "POST") {
+        const body = request.postDataJSON() as Record<string, unknown>;
+        expect(body).toEqual(expect.objectContaining({ maxDepth: 4, maxItems: 500 }));
+        createdScan = true;
+        await route.fulfill({
+          status: 200,
+          contentType: "application/json",
+          body: JSON.stringify({
+            success: true,
+            scanRunId: createdRunId,
+            counters: { filesScanned: 4, needsReview: 2, proposedActions: 2, duplicates: 1 },
+          }),
+        });
+        return;
+      }
+
+      const requestedRunId = url.searchParams.get("runId");
+      if (!requestedRunId) {
+        await route.fulfill({
+          status: 200,
+          contentType: "application/json",
+          body: JSON.stringify({
+            runs: [
+              {
+                id: activeRunId,
+                root_folder_name: createdScan ? "Acervo E2E atualizado" : "Acervo E2E",
+                root_folder_url: "https://drive.google.com/drive/folders/e2e",
+                status: "preview_ready",
+                counters: { filesScanned: 4, needsReview: approvedReview ? 1 : 2, proposedActions: appliedScan ? 0 : 2, duplicates: 1 },
+                created_at: "2026-05-18T10:00:00.000Z",
+                completed_at: "2026-05-18T10:01:00.000Z",
+              },
+            ],
+          }),
+        });
+        return;
+      }
+
+      const actions = [
+        {
+          id: "drive-action-review-e2e",
+          scan_run_id: requestedRunId,
+          scan_item_id: "drive-item-review-e2e",
+          action_type: "move_to_process_folder",
+          target_process_task_id: "process-task-drive-e2e",
+          target_folder_label: "02-Inicial",
+          confidence: "medium",
+          reason: "Nome do cliente confere, mas a pasta de origem exige revisao humana.",
+          status: revertedScan ? "reverted" : appliedScan ? "applied" : approvedReview ? "approved" : "review_required",
+          file: {
+            name: "inicial-cliente-e2e.pdf",
+            parent_path: ["Acervo", "Entrada"],
+            web_view_link: "https://drive.google.com/file/d/e2e-review",
+            candidate_client_name: "Cliente Drive E2E",
+          },
+          targetProcess: {
+            title: "Cliente Drive E2E x INSS",
+            client_name: "Cliente Drive E2E",
+            process_number: "0000002-22.2026.8.26.0100",
+          },
+        },
+        {
+          id: "drive-action-proposed-e2e",
+          scan_run_id: requestedRunId,
+          scan_item_id: "drive-item-proposed-e2e",
+          action_type: "move_to_process_folder",
+          target_process_task_id: "process-task-drive-e2e",
+          target_folder_label: "06-Provas",
+          confidence: "high",
+          reason: "Vinculo forte por numero CNJ no nome do arquivo.",
+          status: revertedScan ? "reverted" : appliedScan ? "applied" : "proposed",
+          file: {
+            name: "prova-cnj-e2e.pdf",
+            parent_path: ["Acervo", "Entrada"],
+            web_view_link: "https://drive.google.com/file/d/e2e-proposed",
+          },
+          targetProcess: {
+            title: "Cliente Drive E2E x INSS",
+            client_name: "Cliente Drive E2E",
+            process_number: "0000002-22.2026.8.26.0100",
+          },
+        },
+        {
+          id: "drive-action-applied-e2e",
+          scan_run_id: requestedRunId,
+          scan_item_id: "drive-item-applied-e2e",
+          action_type: "move_to_process_folder",
+          target_process_task_id: "process-task-drive-e2e",
+          target_folder_label: "01-Documentos do Cliente",
+          confidence: "high",
+          reason: "Acao aplicada em execucao anterior.",
+          status: revertedScan ? "reverted" : "applied",
+          file: {
+            name: "rg-cliente-e2e.pdf",
+            parent_path: ["Acervo", "Cliente Drive E2E"],
+            web_view_link: "https://drive.google.com/file/d/e2e-applied",
+          },
+          targetProcess: {
+            title: "Cliente Drive E2E x INSS",
+            client_name: "Cliente Drive E2E",
+            process_number: "0000002-22.2026.8.26.0100",
+          },
+        },
+        {
+          id: "drive-action-duplicate-e2e",
+          scan_run_id: requestedRunId,
+          scan_item_id: "drive-item-duplicate-e2e",
+          action_type: "mark_duplicate",
+          target_process_task_id: null,
+          target_folder_label: null,
+          confidence: "low",
+          reason: "Arquivo provavelmente duplicado, sem processo seguro.",
+          status: "review_required",
+          file: {
+            name: "contrato-duplicado-e2e.pdf",
+            parent_path: ["Acervo", "Duplicados"],
+            web_view_link: "https://drive.google.com/file/d/e2e-duplicate",
+          },
+          targetProcess: null,
+        },
+      ];
+
+      await route.fulfill({
+        status: 200,
+        contentType: "application/json",
+        body: JSON.stringify({
+          run: {
+            id: requestedRunId,
+            root_folder_name: requestedRunId === createdRunId ? "Acervo E2E atualizado" : "Acervo E2E",
+            root_folder_url: "https://drive.google.com/drive/folders/e2e",
+            status: "preview_ready",
+            counters: { filesScanned: 4, needsReview: approvedReview ? 1 : 2, proposedActions: appliedScan ? 0 : 2, duplicates: 1 },
+            created_at: "2026-05-18T10:00:00.000Z",
+            completed_at: "2026-05-18T10:01:00.000Z",
+          },
+          summary: {
+            totalActions: actions.length,
+            pendingReview: actions.filter((action) => action.status === "review_required").length,
+            approved: actions.filter((action) => action.status === "approved").length,
+            applied: actions.filter((action) => action.status === "applied").length,
+            failed: 0,
+            skipped: 0,
+            duplicates: 1,
+            withoutProcess: 1,
+            lowOrMediumConfidence: 2,
+            scannedItems: 4,
+          },
+          actions,
+          items: [],
+        }),
+      });
+    });
+
+    await page.route("**/api/documentos/drive-scan/review**", async (route) => {
+      if (route.request().method() === "POST") {
+        const body = route.request().postDataJSON() as Record<string, unknown>;
+        expect(body).toEqual(expect.objectContaining({ actionId: "drive-action-review-e2e", decision: "approve" }));
+        approvedReview = true;
+        await route.fulfill({
+          status: 200,
+          contentType: "application/json",
+          body: JSON.stringify({ success: true, action: { id: "drive-action-review-e2e", status: "approved" }, updatedCount: 1 }),
+        });
+        return;
+      }
+
+      const items = [
+        ...(approvedReview ? [] : [{
+          id: "drive-action-review-e2e",
+          scan_run_id: runId,
+          scan_item_id: "drive-item-review-e2e",
+          action_type: "move_to_process_folder",
+          target_process_task_id: "process-task-drive-e2e",
+          target_folder_label: "02-Inicial",
+          confidence: "medium",
+          reason: "Nome do cliente confere, mas a pasta de origem exige revisao humana.",
+          status: "review_required",
+          pendingCategory: "medium_confidence",
+          pendingLabel: "Media confianca",
+          file: { name: "inicial-cliente-e2e.pdf", parent_path: ["Acervo", "Entrada"] },
+          targetProcess: { title: "Cliente Drive E2E x INSS", client_name: "Cliente Drive E2E", process_number: "0000002-22.2026.8.26.0100" },
+        }]),
+        {
+          id: "drive-action-duplicate-e2e",
+          scan_run_id: runId,
+          scan_item_id: "drive-item-duplicate-e2e",
+          action_type: "mark_duplicate",
+          target_process_task_id: null,
+          target_folder_label: null,
+          confidence: "low",
+          reason: "Arquivo provavelmente duplicado, sem processo seguro.",
+          status: "review_required",
+          pendingCategory: "duplicate",
+          pendingLabel: "Duplicado provavel",
+          file: { name: "contrato-duplicado-e2e.pdf", parent_path: ["Acervo", "Duplicados"] },
+          targetProcess: null,
+        },
+      ];
+
+      await route.fulfill({
+        status: 200,
+        contentType: "application/json",
+        body: JSON.stringify({
+          summary: { total: items.length, movable: approvedReview ? 0 : 1, duplicates: 1, unmatched: 1, lowOrMediumConfidence: items.length, failedOperations: 0 },
+          items,
+        }),
+      });
+    });
+
+    await page.route("**/api/documentos/drive-scan/apply", async (route) => {
+      const body = route.request().postDataJSON() as Record<string, unknown>;
+      expect(body).toEqual(expect.objectContaining({ scanRunId: createdScan ? createdRunId : runId }));
+      appliedScan = true;
+      revertedScan = false;
+      await route.fulfill({
+        status: 200,
+        contentType: "application/json",
+        body: JSON.stringify({ success: true, counters: { applied: 2, skipped: 0, failed: 0, syncedProcesses: 1 } }),
+      });
+    });
+
+    await page.route("**/api/documentos/drive-scan/revert", async (route) => {
+      const body = route.request().postDataJSON() as Record<string, unknown>;
+      expect(body).toEqual(expect.objectContaining({ scanRunId: createdRunId }));
+      expect(body.actionIds).toEqual(expect.arrayContaining([
+        "drive-action-review-e2e",
+        "drive-action-proposed-e2e",
+        "drive-action-applied-e2e",
+      ]));
+      revertedScan = true;
+      await route.fulfill({
+        status: 200,
+        contentType: "application/json",
+        body: JSON.stringify({ success: true, counters: { reverted: 3, skipped: 0, failed: 0 } }),
+      });
+    });
+
+    await openDocumentos(page);
+
+    const panel = page.getByTestId("drive-scan-beta-panel");
+    await expect(panel).toBeVisible({ timeout: 60_000 });
+    await expect(panel.getByText(/scanner do drive beta/i)).toBeVisible();
+    await expect(page.getByTestId(`drive-scan-run-${runId}`)).toBeVisible();
+    await expect(page.getByTestId("drive-scan-review-drive-action-review-e2e")).toBeVisible();
+    await expect(page.getByTestId("drive-scan-action-drive-action-proposed-e2e")).toBeVisible();
+
+    await page.getByTestId("drive-scan-review-drive-action-review-e2e").getByRole("button", { name: /aprovar/i }).click();
+    await expect(page.getByTestId("drive-scan-review-drive-action-review-e2e")).toBeHidden({ timeout: 30_000 });
+    expect(approvedReview).toBe(true);
+
+    await page.getByTestId("drive-scan-create-button").click();
+    await expect(page.getByTestId(`drive-scan-run-${createdRunId}`)).toBeVisible({ timeout: 30_000 });
+    expect(createdScan).toBe(true);
+
+    page.once("dialog", async (dialog) => {
+      expect(dialog.message()).toMatch(/mover arquivos reais no Google Drive/i);
+      await dialog.accept();
+    });
+    await page.getByTestId("drive-scan-apply-button").click();
+    await expect(page.getByTestId("drive-scan-action-drive-action-proposed-e2e")).toContainText(/applied|aplicada|aplicado/i, { timeout: 30_000 });
+    expect(appliedScan).toBe(true);
+
+    page.once("dialog", async (dialog) => {
+      expect(dialog.message()).toMatch(/movidos de volta no Google Drive/i);
+      await dialog.accept();
+    });
+    await page.getByTestId("drive-scan-revert-button").click();
+    await expect(page.getByTestId("drive-scan-action-drive-action-proposed-e2e")).toContainText(/revertida/i, { timeout: 30_000 });
+    expect(revertedScan).toBe(true);
+  });
+
   test("abre o detalhe de um processo quando houver cards e respeita o estado vazio quando nao houver", async ({ page }) => {
     test.setTimeout(120_000);
     const fixture = await openDocumentosWithFixture(page);

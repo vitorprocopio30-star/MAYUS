@@ -1,6 +1,6 @@
 "use client";
 
-import { useCallback, useEffect, useMemo, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import Link from "next/link";
 import { Cormorant_Garamond, Montserrat } from "next/font/google";
 import { createClient } from "@/lib/supabase/client";
@@ -288,6 +288,9 @@ type DriveScanCounters = {
   applied?: number;
   skipped?: number;
   failed?: number;
+  preview?: DriveScanCounters;
+  apply?: DriveScanCounters & { syncedProcesses?: number };
+  revert?: DriveScanCounters & { reverted?: number };
 };
 
 type DriveScanRunRecord = {
@@ -319,7 +322,7 @@ type DriveScanActionRecord = {
   applied_at?: string | null;
   file?: {
     name?: string | null;
-    parent_path?: string | null;
+    parent_path?: string[] | string | null;
     web_view_link?: string | null;
     candidate_process_number?: string | null;
     candidate_client_name?: string | null;
@@ -353,7 +356,7 @@ type DriveScanRunDetail = {
     id: string;
     name?: string | null;
     status?: string | null;
-    parent_path?: string | null;
+    parent_path?: string[] | string | null;
     web_view_link?: string | null;
     review_reason?: string | null;
   }>;
@@ -436,7 +439,11 @@ function formatDateTime(value?: string | null) {
 
 function getDriveScanCounter(counters: DriveScanCounters | null | undefined, key: keyof DriveScanCounters) {
   const value = counters?.[key];
-  return typeof value === "number" && Number.isFinite(value) ? value : 0;
+  if (typeof value === "number" && Number.isFinite(value)) return value;
+
+  const preview = isRecord(counters?.preview) ? counters.preview : null;
+  const previewValue = preview?.[key as string];
+  return typeof previewValue === "number" && Number.isFinite(previewValue) ? previewValue : 0;
 }
 
 function sanitizeDriveScanMessage(message?: string | null) {
@@ -473,6 +480,20 @@ function getDriveScanStatusLabel(status?: string | null) {
       return "Falhou";
     case "scanning":
       return "Analisando";
+    case "proposed":
+      return "Proposta";
+    case "review_required":
+      return "Revisao";
+    case "approved":
+      return "Aprovada";
+    case "applied":
+      return "Aplicada";
+    case "rejected":
+      return "Rejeitada";
+    case "skipped":
+      return "Ignorada";
+    case "reverted":
+      return "Revertida";
     default:
       return status || "Registrada";
   }
@@ -493,6 +514,31 @@ function getDriveActionTypeLabel(type?: string | null) {
     default:
       return type || "Acao";
   }
+}
+
+function getDriveActionStatusBadge(status?: string | null) {
+  switch (status) {
+    case "applied":
+      return "border-emerald-500/25 bg-emerald-500/10 text-emerald-200";
+    case "approved":
+    case "proposed":
+      return "border-[#CCA761]/25 bg-[#CCA761]/10 text-[#CCA761]";
+    case "review_required":
+      return "border-amber-500/25 bg-amber-500/10 text-amber-100";
+    case "failed":
+      return "border-red-500/25 bg-red-500/10 text-red-200";
+    case "rejected":
+    case "skipped":
+    case "reverted":
+      return "border-white/10 bg-white/5 text-gray-300";
+    default:
+      return "border-white/10 bg-white/5 text-gray-400";
+  }
+}
+
+function formatDrivePath(value?: string[] | string | null) {
+  if (Array.isArray(value)) return value.filter(Boolean).join(" / ") || "Pasta raiz";
+  return String(value || "Pasta raiz");
 }
 
 function getConfidenceLabel(confidence?: string | null) {
@@ -857,6 +903,7 @@ export default function DocumentosPage() {
   const [driveScanBusy, setDriveScanBusy] = useState(false);
   const [driveScanLoading, setDriveScanLoading] = useState(false);
   const [driveScanWarning, setDriveScanWarning] = useState<string | null>(null);
+  const selectedDriveRunIdRef = useRef<string | null>(null);
 
   const selectedCard = useMemo(() => cards.find(c => c.id === selectedCardId), [cards, selectedCardId]);
   const selectedCardDraftStale = useMemo(() => (selectedCard ? isDraftFactoryCardStale(selectedCard) : false), [selectedCard]);
@@ -922,6 +969,10 @@ export default function DocumentosPage() {
     const nextRequestedTaskId = String(new URLSearchParams(window.location.search).get("taskId") || "").trim() || null;
     setRequestedTaskId(nextRequestedTaskId);
   }, []);
+
+  useEffect(() => {
+    selectedDriveRunIdRef.current = selectedDriveRunId;
+  }, [selectedDriveRunId]);
 
   useEffect(() => {
     if (!requestedTaskId || cards.length === 0) return;
@@ -1245,11 +1296,172 @@ export default function DocumentosPage() {
     }
   }, [draftEditorContentByVersionId, loadDraftQueueHealth, loadDraftVersions, loadRepository]);
 
+  const loadDriveScanData = useCallback(async (preferredRunId?: string | null) => {
+    setDriveScanLoading(true);
+
+    try {
+      const [runsResponse, reviewResponse] = await Promise.all([
+        fetch("/api/documentos/drive-scan/preview", { cache: "no-store" }),
+        fetch("/api/documentos/drive-scan/review", { cache: "no-store" }),
+      ]);
+      const runsPayload = await runsResponse.json().catch(() => null);
+      const reviewPayload = await reviewResponse.json().catch(() => null);
+
+      if (!runsResponse.ok) {
+        throw new Error(runsPayload?.error || "Nao foi possivel carregar as analises do Drive.");
+      }
+
+      if (!reviewResponse.ok) {
+        throw new Error(reviewPayload?.error || "Nao foi possivel carregar a fila de revisao do Drive.");
+      }
+
+      const runs = Array.isArray(runsPayload?.runs) ? runsPayload.runs as DriveScanRunRecord[] : [];
+      const reviewItems = Array.isArray(reviewPayload?.items) ? reviewPayload.items as DriveScanActionRecord[] : [];
+      const currentRunId = selectedDriveRunIdRef.current;
+      const nextRunId = preferredRunId || (currentRunId && runs.some((run) => run.id === currentRunId) ? currentRunId : null) || runs[0]?.id || null;
+
+      setDriveScanRuns(runs);
+      setDriveReviewItems(reviewItems);
+      setDriveReviewSummary((reviewPayload?.summary || null) as DriveScanReviewSummary | null);
+      setDriveScanWarning(null);
+
+      if (!nextRunId) {
+        setSelectedDriveRunId(null);
+        setDriveScanDetail(null);
+        return;
+      }
+
+      const detailResponse = await fetch(`/api/documentos/drive-scan/preview?runId=${encodeURIComponent(nextRunId)}`, { cache: "no-store" });
+      const detailPayload = await detailResponse.json().catch(() => null);
+
+      if (!detailResponse.ok) {
+        throw new Error(detailPayload?.error || "Nao foi possivel carregar o detalhe da analise do Drive.");
+      }
+
+      setSelectedDriveRunId(nextRunId);
+      setDriveScanDetail(detailPayload as DriveScanRunDetail);
+    } catch (error: any) {
+      const message = sanitizeDriveScanMessage(error?.message);
+      setDriveScanWarning(message);
+      console.error("[documentos][drive-scan]", error);
+    } finally {
+      setDriveScanLoading(false);
+    }
+  }, []);
+
+  const handleCreateDriveScan = useCallback(async () => {
+    setDriveScanBusy(true);
+    try {
+      const response = await fetch("/api/documentos/drive-scan/preview", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ maxDepth: 4, maxItems: 500 }),
+      });
+      const data = await response.json().catch(() => null);
+
+      if (!response.ok) {
+        throw new Error(data?.error || "Nao foi possivel iniciar a analise do Drive.");
+      }
+
+      const counters = data?.counters || {};
+      toast.success(`Analise do Drive criada: ${getDriveScanCounter(counters, "filesScanned")} arquivo(s), ${getDriveScanCounter(counters, "needsReview")} para revisao.`);
+      await loadDriveScanData(data?.scanRunId || null);
+    } catch (error: any) {
+      toast.error(sanitizeDriveScanMessage(error?.message));
+    } finally {
+      setDriveScanBusy(false);
+    }
+  }, [loadDriveScanData]);
+
+  const handleDriveReviewDecision = useCallback(async (actionId: string, decision: "approve" | "reject") => {
+    setDriveScanBusy(true);
+    try {
+      const response = await fetch("/api/documentos/drive-scan/review", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ actionId, decision }),
+      });
+      const data = await response.json().catch(() => null);
+
+      if (!response.ok) {
+        throw new Error(data?.error || "Nao foi possivel registrar a revisao do Drive.");
+      }
+
+      toast.success(decision === "approve" ? "Acao aprovada para aplicacao supervisionada." : "Acao rejeitada na revisao humana.");
+      await loadDriveScanData(selectedDriveRunId);
+    } catch (error: any) {
+      toast.error(sanitizeDriveScanMessage(error?.message));
+    } finally {
+      setDriveScanBusy(false);
+    }
+  }, [loadDriveScanData, selectedDriveRunId]);
+
+  const handleApplyDriveScan = useCallback(async (scanRunId: string) => {
+    if (typeof window !== "undefined" && !window.confirm("Aplicar agora as acoes seguras/aprovadas? Esta operacao pode mover arquivos reais no Google Drive.")) {
+      return;
+    }
+
+    setDriveScanBusy(true);
+    try {
+      const response = await fetch("/api/documentos/drive-scan/apply", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ scanRunId }),
+      });
+      const data = await response.json().catch(() => null);
+
+      if (!response.ok) {
+        throw new Error(data?.error || "Nao foi possivel aplicar a organizacao do Drive.");
+      }
+
+      const apply = data?.counters?.apply || data?.apply || data?.counters || {};
+      toast.success(`Organizacao aplicada: ${getNumber(apply.applied)} movida(s), ${getNumber(apply.skipped)} ignorada(s), ${getNumber(apply.failed)} falha(s).`);
+      await Promise.all([loadDriveScanData(scanRunId), loadRepository()]);
+    } catch (error: any) {
+      toast.error(sanitizeDriveScanMessage(error?.message));
+    } finally {
+      setDriveScanBusy(false);
+    }
+  }, [loadDriveScanData, loadRepository]);
+
+  const handleRevertDriveScan = useCallback(async (scanRunId: string, actionIds: string[]) => {
+    if (actionIds.length === 0) {
+      toast.error("Nenhuma acao aplicada disponivel para reversao.");
+      return;
+    }
+
+    if (typeof window !== "undefined" && !window.confirm(`Reverter ${actionIds.length} acao(oes) aplicada(s)? Os arquivos serao movidos de volta no Google Drive quando houver dados de origem.`)) {
+      return;
+    }
+
+    setDriveScanBusy(true);
+    try {
+      const response = await fetch("/api/documentos/drive-scan/revert", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ scanRunId, actionIds }),
+      });
+      const data = await response.json().catch(() => null);
+
+      if (!response.ok) {
+        throw new Error(data?.error || "Nao foi possivel reverter a organizacao do Drive.");
+      }
+
+      const revert = data?.counters?.revert || data?.revert || data?.counters || {};
+      toast.success(`Reversao concluida: ${getNumber(revert.reverted)} arquivo(s) restaurado(s), ${getNumber(revert.failed)} falha(s).`);
+      await Promise.all([loadDriveScanData(scanRunId), loadRepository()]);
+    } catch (error: any) {
+      toast.error(sanitizeDriveScanMessage(error?.message));
+    } finally {
+      setDriveScanBusy(false);
+    }
+  }, [loadDriveScanData, loadRepository]);
+
   useEffect(() => {
     if (!profileLoading && tenantId) {
-      void Promise.all([loadRepository(), loadDraftQueueHealth()]);
+      void Promise.all([loadRepository(), loadDraftQueueHealth(), loadDriveScanData()]);
     }
-  }, [profileLoading, tenantId, loadDraftQueueHealth, loadRepository]);
+  }, [profileLoading, tenantId, loadDraftQueueHealth, loadDriveScanData, loadRepository]);
 
   useEffect(() => {
     if (!selectedCardId) return;
@@ -1289,6 +1501,19 @@ export default function DocumentosPage() {
     failed: cards.filter((card) => card.firstDraftStatus === "failed").length,
     stale: cards.filter((card) => card.firstDraftStatus === "completed" && isDraftFactoryCardStale(card)).length,
   }), [cards]);
+
+  const selectedDriveRun = driveScanDetail?.run || driveScanRuns.find((run) => run.id === selectedDriveRunId) || null;
+  const selectedDriveSummary = driveScanDetail?.summary || null;
+  const selectedDriveActions = useMemo(() => driveScanDetail?.actions || [], [driveScanDetail]);
+  const selectedDriveAppliedActionIds = useMemo(
+    () => selectedDriveActions.filter((action) => action.status === "applied").map((action) => action.id),
+    [selectedDriveActions],
+  );
+  const selectedDriveActionableCount = selectedDriveActions.filter((action) => (
+    ["move_to_process_folder", "create_process_folder"].includes(action.action_type) &&
+    (action.status === "approved" || (action.status === "proposed" && action.confidence === "high"))
+  )).length;
+  const drivePendingReviewCount = driveReviewSummary?.total ?? driveReviewItems.length;
 
   const handleCreateStructure = async (taskId: string) => {
     setBusyTaskId(taskId);
@@ -1898,6 +2123,311 @@ export default function DocumentosPage() {
             </div>
           </div>
         )}
+
+        <section data-testid="drive-scan-beta-panel" className="rounded-3xl border border-[#4285F4]/15 bg-[#06080d] p-6 sm:p-8 shadow-[0_0_60px_rgba(66,133,244,0.05)] relative overflow-hidden">
+          <div className="absolute inset-0 bg-[radial-gradient(circle_at_top_left,rgba(66,133,244,0.14),transparent_32%),radial-gradient(circle_at_bottom_right,rgba(204,167,97,0.10),transparent_28%)] pointer-events-none" />
+          <div className="relative z-10 space-y-6">
+            <div className="flex flex-col xl:flex-row xl:items-start xl:justify-between gap-5">
+              <div className="space-y-3 max-w-3xl">
+                <div className="inline-flex items-center gap-2 rounded-full border border-[#4285F4]/20 bg-[#4285F4]/10 px-3 py-1 text-[10px] uppercase tracking-[0.24em] text-[#8ab4ff] font-black">
+                  <GoogleDriveLogo size={14} /> Scanner do Drive beta
+                </div>
+                <h2 className={`text-3xl text-white tracking-wide ${cormorant.className} font-bold`}>Organização supervisionada do acervo</h2>
+                <p className="text-sm text-gray-400 leading-relaxed">
+                  Analisa a pasta raiz do Google Drive, propõe movimentações por processo e mantém ações sensíveis em revisão humana antes de mover arquivos.
+                </p>
+              </div>
+
+              <div className="flex flex-col sm:flex-row gap-3">
+                <button
+                  type="button"
+                  onClick={() => void handleCreateDriveScan()}
+                  disabled={driveScanBusy || driveScanLoading}
+                  data-testid="drive-scan-create-button"
+                  className="inline-flex items-center justify-center gap-2 rounded-xl border border-[#4285F4]/25 bg-[#4285F4]/10 px-5 py-3 text-[10px] font-black uppercase tracking-[0.2em] text-[#8ab4ff] transition-colors hover:bg-[#4285F4]/15 disabled:opacity-50"
+                >
+                  {driveScanBusy ? <Loader2 size={14} className="animate-spin" /> : <Search size={14} />}
+                  Analisar Drive
+                </button>
+                <button
+                  type="button"
+                  onClick={() => void loadDriveScanData(selectedDriveRunId)}
+                  disabled={driveScanLoading || driveScanBusy}
+                  data-testid="drive-scan-refresh-button"
+                  className="inline-flex items-center justify-center gap-2 rounded-xl border border-white/10 bg-white/5 px-5 py-3 text-[10px] font-black uppercase tracking-[0.2em] text-gray-300 transition-colors hover:bg-white/10 disabled:opacity-50"
+                >
+                  <RefreshCw size={14} className={driveScanLoading ? "animate-spin text-[#CCA761]" : "text-[#CCA761]"} />
+                  Recarregar
+                </button>
+              </div>
+            </div>
+
+            {driveScanWarning && (
+              <div data-testid="drive-scan-warning" className="rounded-2xl border border-amber-500/20 bg-amber-500/10 px-4 py-3 text-sm text-amber-100 leading-relaxed flex items-start gap-3">
+                <AlertTriangle size={16} className="text-amber-300 shrink-0 mt-0.5" />
+                <span>{driveScanWarning}</span>
+              </div>
+            )}
+
+            <div className="grid grid-cols-2 md:grid-cols-4 gap-3">
+              {[
+                { label: "Arquivos", value: selectedDriveSummary?.scannedItems ?? getDriveScanCounter(selectedDriveRun?.counters, "filesScanned"), tone: "border-[#4285F4]/20 bg-[#4285F4]/10 text-[#8ab4ff]" },
+                { label: "Revisão", value: selectedDriveSummary?.pendingReview ?? drivePendingReviewCount, tone: "border-amber-500/20 bg-amber-500/10 text-amber-100" },
+                { label: "Duplicados", value: selectedDriveSummary?.duplicates ?? getDriveScanCounter(selectedDriveRun?.counters, "duplicates"), tone: "border-white/10 bg-white/5 text-gray-300" },
+                { label: "Aplicadas", value: selectedDriveSummary?.applied ?? getNumber(selectedDriveRun?.counters?.apply?.applied), tone: "border-emerald-500/20 bg-emerald-500/10 text-emerald-200" },
+              ].map((metric) => (
+                <div key={metric.label} className={`rounded-2xl border px-4 py-3 ${metric.tone}`}>
+                  <p className="text-[10px] uppercase tracking-[0.2em] font-black">{metric.label}</p>
+                  <p className="mt-2 text-2xl font-black text-white">{metric.value}</p>
+                </div>
+              ))}
+            </div>
+
+            <div className="grid grid-cols-1 xl:grid-cols-[0.95fr_1.35fr] gap-5 items-start">
+              <div className="space-y-5">
+                <div className="rounded-2xl border border-white/8 bg-gray-200 dark:bg-black/20 p-5 space-y-4">
+                  <div className="flex items-center justify-between gap-3">
+                    <div>
+                      <p className="text-[10px] uppercase tracking-[0.24em] text-gray-500 font-black">Análises recentes</p>
+                      <p className="text-xs text-gray-400 mt-1">Selecione um run para revisar ações e aplicar mudanças.</p>
+                    </div>
+                    <span className="rounded-full border border-white/10 bg-white/5 px-2.5 py-1 text-[10px] text-gray-400 font-black">{driveScanRuns.length}</span>
+                  </div>
+
+                  {driveScanRuns.length > 0 ? (
+                    <div className="space-y-2 max-h-[330px] overflow-y-auto pr-1">
+                      {driveScanRuns.map((run) => {
+                        const active = run.id === selectedDriveRunId;
+                        return (
+                          <div key={run.id} className={`rounded-xl border transition-colors ${active ? "border-[#4285F4]/35 bg-[#4285F4]/10" : "border-white/5 bg-[#0b0b0b] hover:border-white/10"}`}>
+                            <button
+                              type="button"
+                              onClick={() => void loadDriveScanData(run.id)}
+                              data-testid={`drive-scan-run-${run.id}`}
+                              className="w-full text-left px-4 py-3"
+                            >
+                              <div className="flex items-start justify-between gap-3">
+                                <div className="min-w-0">
+                                  <p className="text-sm font-bold text-white truncate">{run.root_folder_name || "Pasta raiz do Drive"}</p>
+                                  <p className="mt-1 text-[10px] uppercase tracking-[0.16em] text-gray-500 font-black">{formatDateTime(run.created_at)}</p>
+                                </div>
+                                <span className="shrink-0 rounded-full border border-white/10 bg-white/5 px-2 py-1 text-[9px] uppercase tracking-widest text-gray-300 font-black">
+                                  {getDriveScanStatusLabel(run.status)}
+                                </span>
+                              </div>
+                              <div className="mt-3 flex flex-wrap gap-2 text-[10px] text-gray-400">
+                                <span>{getDriveScanCounter(run.counters, "filesScanned")} arquivos</span>
+                                <span>•</span>
+                                <span>{getDriveScanCounter(run.counters, "needsReview")} revisão</span>
+                                <span>•</span>
+                                <span>{getDriveScanCounter(run.counters, "proposedActions")} propostas</span>
+                              </div>
+                              {run.error_message && <p className="mt-2 text-xs text-red-200 leading-relaxed">{run.error_message}</p>}
+                            </button>
+                          </div>
+                        );
+                      })}
+                    </div>
+                  ) : (
+                    <div className="rounded-xl border border-dashed border-white/10 bg-[#0b0b0b] px-4 py-5 text-sm text-gray-500 leading-relaxed">
+                      Nenhuma análise registrada. Inicie uma varredura para criar o primeiro preview supervisionado.
+                    </div>
+                  )}
+                </div>
+
+                <div className="rounded-2xl border border-amber-500/15 bg-amber-500/[0.04] p-5 space-y-4">
+                  <div className="flex items-center justify-between gap-3">
+                    <div>
+                      <p className="text-[10px] uppercase tracking-[0.24em] text-amber-200 font-black">Fila humana</p>
+                      <p className="text-xs text-gray-400 mt-1">Duplicados, baixa confiança, sem processo e falhas ficam bloqueados.</p>
+                    </div>
+                    <ShieldAlert size={16} className="text-amber-300" />
+                  </div>
+
+                  {driveReviewItems.length > 0 ? (
+                    <div className="space-y-3 max-h-[460px] overflow-y-auto pr-1" data-testid="drive-scan-review-list">
+                      {driveReviewItems.map((item) => {
+                        const canDecide = item.status === "review_required";
+                        const canApprove = canDecide
+                          && ["move_to_process_folder", "create_process_folder"].includes(item.action_type)
+                          && Boolean(item.target_process_task_id);
+                        return (
+                          <div key={item.id} data-testid={`drive-scan-review-${item.id}`} className="rounded-xl border border-white/8 bg-[#080808] p-4 space-y-3">
+                            <div className="flex items-start justify-between gap-3">
+                              <div className="min-w-0">
+                                <p className="text-sm font-bold text-white truncate">{item.file?.name || "Arquivo sem nome"}</p>
+                                <p className="mt-1 text-xs text-gray-500 truncate">{formatDrivePath(item.file?.parent_path)}</p>
+                              </div>
+                              <span className="shrink-0 rounded-full border border-amber-500/20 bg-amber-500/10 px-2 py-1 text-[9px] uppercase tracking-widest text-amber-100 font-black">
+                                {item.pendingLabel || "Revisão"}
+                              </span>
+                            </div>
+
+                            <div className="flex flex-wrap gap-2 text-[10px] uppercase tracking-[0.16em] font-black">
+                              <span className="rounded-full border border-white/10 bg-white/5 px-2 py-1 text-gray-300">{getDriveActionTypeLabel(item.action_type)}</span>
+                              <span className="rounded-full border border-white/10 bg-white/5 px-2 py-1 text-gray-300">{getConfidenceLabel(item.confidence)}</span>
+                            </div>
+
+                            <p className="text-xs text-gray-400 leading-relaxed">{item.reason || item.file?.review_reason || "Sem justificativa detalhada."}</p>
+                            {item.targetProcess && (
+                              <p className="text-xs text-[#8ab4ff] leading-relaxed">
+                                Destino provável: {item.targetProcess.title || item.targetProcess.client_name || "Processo"}
+                                {item.targetProcess.process_number ? ` • ${item.targetProcess.process_number}` : ""}
+                              </p>
+                            )}
+                            {item.error_message && <p className="text-xs text-red-200 leading-relaxed">{item.error_message}</p>}
+
+                            <div className="flex flex-wrap gap-2 pt-1">
+                              <button
+                                type="button"
+                                onClick={() => void handleDriveReviewDecision(item.id, "approve")}
+                                disabled={!canApprove || driveScanBusy}
+                                title={canApprove ? "Aprovar movimentacao supervisionada." : "Esta acao nao move arquivo com seguranca; rejeite ou trate manualmente."}
+                                className="rounded-lg border border-emerald-500/20 bg-emerald-500/10 px-3 py-2 text-[10px] font-black uppercase tracking-[0.18em] text-emerald-200 transition-colors hover:bg-emerald-500/15 disabled:opacity-40"
+                              >
+                                Aprovar
+                              </button>
+                              <button
+                                type="button"
+                                onClick={() => void handleDriveReviewDecision(item.id, "reject")}
+                                disabled={!canDecide || driveScanBusy}
+                                className="rounded-lg border border-red-500/20 bg-red-500/10 px-3 py-2 text-[10px] font-black uppercase tracking-[0.18em] text-red-200 transition-colors hover:bg-red-500/15 disabled:opacity-40"
+                              >
+                                Rejeitar
+                              </button>
+                            </div>
+                          </div>
+                        );
+                      })}
+                    </div>
+                  ) : (
+                    <div data-testid="drive-scan-review-empty" className="rounded-xl border border-dashed border-white/10 bg-[#0b0b0b] px-4 py-5 text-sm text-gray-500 leading-relaxed">
+                      Nenhuma ação pendente de revisão humana no scanner do Drive.
+                    </div>
+                  )}
+                </div>
+              </div>
+
+              <div className="rounded-2xl border border-white/8 bg-gray-200 dark:bg-black/20 p-5 space-y-5" data-testid="drive-scan-detail">
+                <div className="flex flex-col lg:flex-row lg:items-start lg:justify-between gap-4">
+                  <div>
+                    <p className="text-[10px] uppercase tracking-[0.24em] text-gray-500 font-black">Preview selecionado</p>
+                    <h3 className="mt-2 text-xl font-black text-white">{selectedDriveRun?.root_folder_name || "Nenhuma análise selecionada"}</h3>
+                    <p className="mt-1 text-xs text-gray-500">
+                      {selectedDriveRun ? `${formatDateTime(selectedDriveRun.created_at)} • ${getDriveScanStatusLabel(selectedDriveRun.status)}` : "Crie ou selecione uma análise recente para ver ações."}
+                    </p>
+                  </div>
+                  {selectedDriveRun?.root_folder_url && (
+                    <a
+                      href={selectedDriveRun.root_folder_url}
+                      target="_blank"
+                      rel="noreferrer"
+                      className="inline-flex items-center gap-2 rounded-lg border border-white/10 bg-white/5 px-3 py-2 text-[10px] font-black uppercase tracking-[0.18em] text-gray-300 hover:bg-white/10"
+                    >
+                      <ExternalLink size={12} /> Abrir Drive
+                    </a>
+                  )}
+                </div>
+
+                {selectedDriveRun ? (
+                  <>
+                    <div className="grid grid-cols-2 md:grid-cols-4 gap-3">
+                      {[
+                        { label: "Ações", value: selectedDriveSummary?.totalActions ?? selectedDriveActions.length },
+                        { label: "Aprovadas", value: selectedDriveSummary?.approved ?? selectedDriveActions.filter((action) => action.status === "approved").length },
+                        { label: "Falhas", value: selectedDriveSummary?.failed ?? selectedDriveActions.filter((action) => action.status === "failed").length },
+                        { label: "Sem processo", value: selectedDriveSummary?.withoutProcess ?? selectedDriveActions.filter((action) => !action.target_process_task_id).length },
+                      ].map((item) => (
+                        <div key={item.label} className="rounded-xl border border-white/5 bg-[#0b0b0b] px-4 py-3">
+                          <p className="text-[10px] uppercase tracking-[0.18em] text-gray-500 font-black">{item.label}</p>
+                          <p className="mt-2 text-2xl font-black text-white">{item.value}</p>
+                        </div>
+                      ))}
+                    </div>
+
+                    <div className="flex flex-col sm:flex-row gap-3">
+                      <button
+                        type="button"
+                        onClick={() => void handleApplyDriveScan(selectedDriveRun.id)}
+                        disabled={driveScanBusy || selectedDriveActionableCount === 0}
+                        data-testid="drive-scan-apply-button"
+                        className="inline-flex items-center justify-center gap-2 rounded-xl border border-emerald-500/20 bg-emerald-500/10 px-5 py-3 text-[10px] font-black uppercase tracking-[0.2em] text-emerald-200 transition-colors hover:bg-emerald-500/15 disabled:opacity-45"
+                      >
+                        {driveScanBusy ? <Loader2 size={14} className="animate-spin" /> : <CheckCircle2 size={14} />}
+                        Aplicar seguras/aprovadas ({selectedDriveActionableCount})
+                      </button>
+                      <button
+                        type="button"
+                        onClick={() => void handleRevertDriveScan(selectedDriveRun.id, selectedDriveAppliedActionIds)}
+                        disabled={driveScanBusy || selectedDriveAppliedActionIds.length === 0}
+                        data-testid="drive-scan-revert-button"
+                        className="inline-flex items-center justify-center gap-2 rounded-xl border border-amber-500/20 bg-amber-500/10 px-5 py-3 text-[10px] font-black uppercase tracking-[0.2em] text-amber-100 transition-colors hover:bg-amber-500/15 disabled:opacity-45"
+                      >
+                        <RefreshCw size={14} /> Reverter aplicadas ({selectedDriveAppliedActionIds.length})
+                      </button>
+                    </div>
+
+                    <div className="space-y-3">
+                      <div className="flex items-center justify-between gap-3">
+                        <p className="text-[10px] uppercase tracking-[0.24em] text-gray-500 font-black">Ações propostas</p>
+                        <p className="text-[10px] text-gray-500">Mostrando {Math.min(selectedDriveActions.length, 14)} de {selectedDriveActions.length}</p>
+                      </div>
+
+                      {selectedDriveActions.length > 0 ? (
+                        <div className="space-y-3 max-h-[620px] overflow-y-auto pr-1">
+                          {selectedDriveActions.slice(0, 14).map((action) => (
+                            <div key={action.id} data-testid={`drive-scan-action-${action.id}`} className="rounded-xl border border-white/6 bg-[#080808] p-4 space-y-3">
+                              <div className="flex flex-col md:flex-row md:items-start md:justify-between gap-3">
+                                <div className="min-w-0">
+                                  <p className="text-sm font-bold text-white truncate">{action.file?.name || "Arquivo sem nome"}</p>
+                                  <p className="mt-1 text-xs text-gray-500 truncate">{formatDrivePath(action.file?.parent_path)}</p>
+                                </div>
+                                <div className="flex flex-wrap gap-2 shrink-0">
+                                  <span className={`rounded-full border px-2 py-1 text-[9px] uppercase tracking-widest font-black ${getDriveActionStatusBadge(action.status)}`}>
+                                    {getDriveScanStatusLabel(action.status)}
+                                  </span>
+                                  <span className="rounded-full border border-white/10 bg-white/5 px-2 py-1 text-[9px] uppercase tracking-widest text-gray-300 font-black">
+                                    {getConfidenceLabel(action.confidence)}
+                                  </span>
+                                </div>
+                              </div>
+
+                              <div className="grid grid-cols-1 md:grid-cols-2 gap-3 text-xs text-gray-400">
+                                <div className="rounded-lg border border-white/5 bg-white/[0.03] px-3 py-2">
+                                  <span className="block text-[9px] uppercase tracking-[0.18em] text-gray-500 font-black mb-1">Ação</span>
+                                  {getDriveActionTypeLabel(action.action_type)}
+                                </div>
+                                <div className="rounded-lg border border-white/5 bg-white/[0.03] px-3 py-2">
+                                  <span className="block text-[9px] uppercase tracking-[0.18em] text-gray-500 font-black mb-1">Destino</span>
+                                  {action.targetProcess?.title || action.targetProcess?.client_name || "Sem processo vinculado"}
+                                  {action.target_folder_label ? ` • ${action.target_folder_label}` : ""}
+                                </div>
+                              </div>
+
+                              {(action.reason || action.error_message) && (
+                                <p className={`text-xs leading-relaxed ${action.error_message ? "text-red-200" : "text-gray-400"}`}>
+                                  {action.error_message || action.reason}
+                                </p>
+                              )}
+                            </div>
+                          ))}
+                        </div>
+                      ) : (
+                        <div className="rounded-xl border border-dashed border-white/10 bg-[#0b0b0b] px-4 py-5 text-sm text-gray-500 leading-relaxed">
+                          Esta análise ainda não possui ações propostas.
+                        </div>
+                      )}
+                    </div>
+                  </>
+                ) : (
+                  <div className="rounded-xl border border-dashed border-white/10 bg-[#0b0b0b] px-4 py-8 text-center text-sm text-gray-500 leading-relaxed">
+                    O cockpit do scanner aparecerá aqui depois da primeira análise do Drive.
+                  </div>
+                )}
+              </div>
+            </div>
+          </div>
+        </section>
 
         {/* Donna Banner */}
         <Link
