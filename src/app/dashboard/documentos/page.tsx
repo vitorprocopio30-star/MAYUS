@@ -373,6 +373,40 @@ type DriveScanReviewSummary = {
   byActionType?: Record<string, number>;
 };
 
+type DocumentEvidencePackDocument = {
+  id: string;
+  name: string;
+  documentType?: string | null;
+  folderLabel?: string | null;
+  webViewLink?: string | null;
+  extractionStatus?: string | null;
+  textAvailable?: boolean;
+  relevanceScore?: number;
+  relevanceReasons?: string[];
+};
+
+type DocumentEvidencePackRecord = {
+  artifactId?: string | null;
+  generatedAt: string;
+  summary: string;
+  documentMemory: {
+    freshness: "fresh" | "stale" | "missing";
+    documentCount: number;
+    syncStatus?: string | null;
+    lastSyncedAt?: string | null;
+    missingDocuments: string[];
+  };
+  documents: DocumentEvidencePackDocument[];
+  factBasis: DocumentEvidencePackDocument[];
+  gaps: Array<{ code: string; severity: "high" | "medium" | "low"; label: string; documentId?: string | null }>;
+  risks: Array<{ code: string; severity: "high" | "medium" | "low"; title: string; reason: string; documentIds?: string[] }>;
+  citationChecklist: {
+    readyForFactCitations: boolean;
+    pendingValidations: string[];
+    factCitationBasis: string[];
+  };
+};
+
 const DOCUMENT_FOLDER_OPTIONS = [
   "01-Documentos do Cliente",
   "02-Inicial",
@@ -884,6 +918,8 @@ export default function DocumentosPage() {
   const [pieceObjectiveByTask, setPieceObjectiveByTask] = useState<Record<string, string>>({});
   const [pieceInstructionsByTask, setPieceInstructionsByTask] = useState<Record<string, string>>({});
   const [generatedPieceByTask, setGeneratedPieceByTask] = useState<Record<string, GeneratedPieceResult | null>>({});
+  const [evidencePackByTask, setEvidencePackByTask] = useState<Record<string, DocumentEvidencePackRecord | null>>({});
+  const [evidencePackBusyKey, setEvidencePackBusyKey] = useState<string | null>(null);
   const [downloadBusyTaskId, setDownloadBusyTaskId] = useState<string | null>(null);
   const [premiumPublishBusyKey, setPremiumPublishBusyKey] = useState<string | null>(null);
   const [requestedTaskId, setRequestedTaskId] = useState<string | null>(null);
@@ -906,6 +942,7 @@ export default function DocumentosPage() {
   const selectedDriveRunIdRef = useRef<string | null>(null);
 
   const selectedCard = useMemo(() => cards.find(c => c.id === selectedCardId), [cards, selectedCardId]);
+  const selectedEvidencePack = selectedCard ? evidencePackByTask[selectedCard.id] || null : null;
   const selectedCardDraftStale = useMemo(() => (selectedCard ? isDraftFactoryCardStale(selectedCard) : false), [selectedCard]);
   const selectedCardVersions = useMemo(() => (selectedCard ? draftVersionsByTask[selectedCard.id] || [] : []), [draftVersionsByTask, selectedCard]);
   const selectedDraftVersion = useMemo(() => {
@@ -948,6 +985,13 @@ export default function DocumentosPage() {
     return null;
   }, [selectedDraftVersion, selectedDraftVersionStale]);
   const canFormallyReviewDraft = isFullAccessRole(role);
+
+  const clearEvidencePackForTask = useCallback((taskId: string) => {
+    setEvidencePackByTask((current) => {
+      if (!current[taskId]) return current;
+      return { ...current, [taskId]: null };
+    });
+  }, []);
 
   useEffect(() => {
     if (!selectedDraftVersion) return;
@@ -1530,6 +1574,7 @@ export default function DocumentosPage() {
       }
 
       toast.success(data?.alreadyExists ? "Estrutura documental já existia para este processo." : "Estrutura documental criada no Google Drive.");
+      clearEvidencePackForTask(taskId);
       await loadRepository();
     } catch (error: any) {
       toast.error(error?.message || "Não foi possível criar a estrutura documental.");
@@ -1556,6 +1601,7 @@ export default function DocumentosPage() {
       } else {
         toast.success(`Sincronização concluída com ${data?.memory?.document_count || 0} documento(s).`);
       }
+      clearEvidencePackForTask(taskId);
       await loadRepository();
     } catch (error: any) {
       toast.error(error?.message || "Não foi possível sincronizar os documentos.");
@@ -1593,6 +1639,7 @@ export default function DocumentosPage() {
         toast.success(baseMessage);
       }
 
+      clearEvidencePackForTask(taskId);
       await loadRepository();
     } catch (error: any) {
       toast.error(error?.message || "Não foi possível organizar o acervo.");
@@ -1639,6 +1686,7 @@ export default function DocumentosPage() {
 
       setUploadFilesByTask((current) => ({ ...current, [taskId]: [] }));
       setUploadInputVersionByTask((current) => ({ ...current, [taskId]: (current[taskId] || 0) + 1 }));
+      clearEvidencePackForTask(taskId);
       await loadRepository();
     } catch (error: any) {
       toast.error(error?.message || "Não foi possível enviar o documento.");
@@ -1685,6 +1733,35 @@ export default function DocumentosPage() {
       toast.error(error?.message || "Não foi possível gerar a peça com base no Drive.");
     } finally {
       setPieceBusyTaskId(null);
+    }
+  };
+
+  const handleLoadEvidencePack = async (taskId: string, persist = false) => {
+    const busyKey = `${taskId}:${persist ? "persist" : "preview"}`;
+    setEvidencePackBusyKey(busyKey);
+
+    try {
+      const response = await fetch(`/api/documentos/processos/${taskId}/evidence-pack`, {
+        method: persist ? "POST" : "GET",
+        cache: "no-store",
+      });
+      const data = await response.json().catch(() => null);
+
+      if (!response.ok) {
+        throw new Error(data?.error || "Nao foi possivel montar o pacote de evidencias.");
+      }
+
+      const pack = data?.pack as DocumentEvidencePackRecord | undefined;
+      if (!pack) {
+        throw new Error("O pacote de evidencias retornou vazio.");
+      }
+
+      setEvidencePackByTask((current) => ({ ...current, [taskId]: pack }));
+      toast.success(persist ? "Pacote de evidencias salvo como artifact auditavel." : "Pacote de evidencias montado para revisao.");
+    } catch (error: any) {
+      toast.error(error?.message || "Nao foi possivel montar o pacote de evidencias.");
+    } finally {
+      setEvidencePackBusyKey((current) => (current === busyKey ? null : current));
     }
   };
 
@@ -2624,6 +2701,104 @@ export default function DocumentosPage() {
                             <strong className="block text-amber-400 font-bold mb-1 uppercase tracking-wider text-[10px]">Análise da IA: Documentos Faltantes</strong>
                             {selectedCard.missingDocuments.join(", ")}
                           </div>
+                        </div>
+                      )}
+                    </div>
+
+                    <div data-testid="document-evidence-pack-panel" className="bg-[#0f0f0f] border border-[#8ab4ff]/15 rounded-xl p-5 space-y-4">
+                      <div className="flex items-start justify-between gap-3">
+                        <div>
+                          <div className="flex items-center gap-2 text-[#8ab4ff] text-[10px] uppercase tracking-[0.3em] font-black">
+                            <ShieldAlert size={12} /> Pacote de Evidências
+                          </div>
+                          <p className="text-xs text-gray-400 mt-2 leading-relaxed">
+                            Consolida documentos, lacunas e riscos antes de usar fatos em peças verificáveis.
+                          </p>
+                        </div>
+                        {selectedEvidencePack?.artifactId && (
+                          <span className="shrink-0 rounded-full border border-emerald-500/20 bg-emerald-500/10 px-2.5 py-1 text-[9px] font-black uppercase tracking-widest text-emerald-200">
+                            Artifact salvo
+                          </span>
+                        )}
+                      </div>
+
+                      <div className="grid grid-cols-1 sm:grid-cols-2 gap-2">
+                        <button
+                          type="button"
+                          onClick={() => handleLoadEvidencePack(selectedCard.id)}
+                          disabled={Boolean(evidencePackBusyKey)}
+                          data-testid={`document-evidence-pack-preview-${selectedCard.id}`}
+                          className="inline-flex items-center justify-center gap-2 rounded-xl border border-[#8ab4ff]/25 bg-[#4285F4]/10 px-4 py-2.5 text-[10px] font-black uppercase tracking-[0.18em] text-[#8ab4ff] transition-colors hover:bg-[#4285F4]/15 disabled:opacity-50"
+                        >
+                          {evidencePackBusyKey === `${selectedCard.id}:preview` ? <Loader2 size={12} className="animate-spin" /> : <Search size={12} />}
+                          Montar Preview
+                        </button>
+                        <button
+                          type="button"
+                          onClick={() => handleLoadEvidencePack(selectedCard.id, true)}
+                          disabled={Boolean(evidencePackBusyKey) || !canFormallyReviewDraft}
+                          data-testid={`document-evidence-pack-persist-${selectedCard.id}`}
+                          title={canFormallyReviewDraft ? "Salvar artifact auditavel do pacote." : "Apenas usuarios com acesso completo podem salvar o artifact."}
+                          className="inline-flex items-center justify-center gap-2 rounded-xl border border-[#CCA761]/25 bg-[#CCA761]/10 px-4 py-2.5 text-[10px] font-black uppercase tracking-[0.18em] text-[#e9d5a7] transition-colors hover:bg-[#CCA761]/15 disabled:opacity-50"
+                        >
+                          {evidencePackBusyKey === `${selectedCard.id}:persist` ? <Loader2 size={12} className="animate-spin" /> : <CheckCircle2 size={12} />}
+                          Salvar Snapshot
+                        </button>
+                      </div>
+
+                      {selectedEvidencePack ? (
+                        <div className="space-y-3">
+                          <div className={`rounded-xl border px-4 py-3 text-xs leading-relaxed ${selectedEvidencePack.citationChecklist.readyForFactCitations ? "border-emerald-500/20 bg-emerald-500/10 text-emerald-100" : "border-amber-500/20 bg-amber-500/10 text-amber-100"}`}>
+                            <p className="font-semibold">{selectedEvidencePack.summary}</p>
+                            <p className="mt-1 opacity-80">Gerado em {formatDateTime(selectedEvidencePack.generatedAt)}</p>
+                          </div>
+
+                          <div className="grid grid-cols-3 gap-2">
+                            {[
+                              { label: "Fontes", value: selectedEvidencePack.factBasis.length },
+                              { label: "Lacunas", value: selectedEvidencePack.gaps.length },
+                              { label: "Riscos", value: selectedEvidencePack.risks.length },
+                            ].map((item) => (
+                              <div key={item.label} className="rounded-xl border border-white/5 bg-gray-200 dark:bg-black/20 px-3 py-2">
+                                <p className="text-[9px] uppercase tracking-[0.18em] text-gray-500 font-black">{item.label}</p>
+                                <p className="mt-1 text-xl font-black text-white">{item.value}</p>
+                              </div>
+                            ))}
+                          </div>
+
+                          <div className="rounded-xl border border-white/5 bg-gray-200 dark:bg-black/20 px-4 py-3 text-xs text-gray-300 leading-relaxed">
+                            Memória: <span className="font-semibold text-white">{selectedEvidencePack.documentMemory.freshness}</span>
+                            {selectedEvidencePack.documentMemory.lastSyncedAt ? ` · sync ${formatDateTime(selectedEvidencePack.documentMemory.lastSyncedAt)}` : " · sem sync confirmado"}
+                          </div>
+
+                          {selectedEvidencePack.factBasis.length > 0 && (
+                            <div className="space-y-2">
+                              <p className="text-[10px] uppercase tracking-[0.2em] text-gray-500 font-black">Base factual citável</p>
+                              {selectedEvidencePack.factBasis.slice(0, 3).map((document) => (
+                                <a
+                                  key={document.id}
+                                  href={document.webViewLink || undefined}
+                                  target="_blank"
+                                  rel="noopener noreferrer"
+                                  className="block rounded-lg border border-white/5 bg-gray-50 dark:bg-[#141414] px-3 py-2 text-xs text-gray-300 hover:border-[#8ab4ff]/25 hover:text-white"
+                                >
+                                  <span className="font-semibold">{document.name}</span>
+                                  <span className="block mt-1 text-[10px] text-gray-500">{getDocumentTypeLabel(document.documentType)} · score {document.relevanceScore || 0}</span>
+                                </a>
+                              ))}
+                            </div>
+                          )}
+
+                          {selectedEvidencePack.citationChecklist.pendingValidations.length > 0 && (
+                            <div className="rounded-xl border border-amber-500/20 bg-amber-500/10 px-4 py-3 text-xs text-amber-100 leading-relaxed">
+                              <p className="font-semibold uppercase tracking-[0.18em] text-[10px] mb-2">Pendências antes de citar fatos</p>
+                              <p>{selectedEvidencePack.citationChecklist.pendingValidations.slice(0, 3).join(" ")}</p>
+                            </div>
+                          )}
+                        </div>
+                      ) : (
+                        <div className="rounded-xl border border-dashed border-white/10 bg-[#101010] px-4 py-3 text-xs text-gray-500 leading-relaxed">
+                          Monte o preview para ver fontes citáveis, documentos sem texto, duplicidades e lacunas antes da peça verificável.
                         </div>
                       )}
                     </div>

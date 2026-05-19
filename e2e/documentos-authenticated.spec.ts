@@ -81,6 +81,55 @@ test.describe("Documentos authenticated", () => {
     await expect(page.getByText(/filtro da draft factory/i)).toBeVisible();
   });
 
+  test("monta preview do Pacote de Evidencias no modal de Documentos", async ({ page }) => {
+    test.setTimeout(240_000);
+    const fixture = await ensurePlaywrightDocumentFixture({ scenario: "formal_history" });
+
+    await page.route(`**/api/documentos/processos/${fixture.processTaskId}/evidence-pack`, async (route) => {
+      await route.fulfill({
+        status: 200,
+        contentType: "application/json",
+        body: JSON.stringify({
+          pack: {
+            generatedAt: "2026-05-18T12:00:00.000Z",
+            summary: "Pacote documental pronto para citacoes factuais com 2 fonte(s) util(is).",
+            documentMemory: {
+              freshness: "fresh",
+              documentCount: 2,
+              syncStatus: "synced",
+              lastSyncedAt: "2026-05-18T10:30:00.000Z",
+              missingDocuments: [],
+            },
+            documents: [],
+            factBasis: [
+              { id: "doc-1", name: "Peticao inicial.pdf", documentType: "inicial", folderLabel: "02-Inicial", webViewLink: "https://drive.test/doc-1", relevanceScore: 85 },
+              { id: "doc-2", name: "Contestacao.pdf", documentType: "contestacao", folderLabel: "03-Contestacao", webViewLink: "https://drive.test/doc-2", relevanceScore: 65 },
+            ],
+            gaps: [],
+            risks: [],
+            citationChecklist: {
+              readyForFactCitations: true,
+              pendingValidations: [],
+              factCitationBasis: ["Peticao inicial.pdf (inicial)", "Contestacao.pdf (contestacao)"],
+            },
+          },
+        }),
+      });
+    });
+
+    await loginThroughUi(page);
+    await page.goto("/dashboard/documentos", { waitUntil: "domcontentloaded" });
+    await waitForDocumentsHydration(page);
+
+    await page.getByTestId(`documents-card-${fixture.processTaskId}`).click();
+    await expect(page.getByTestId("document-evidence-pack-panel")).toBeVisible({ timeout: 30_000 });
+    await page.getByTestId(`document-evidence-pack-preview-${fixture.processTaskId}`).click();
+
+    await expect(page.getByText(/pacote documental pronto para citacoes factuais/i)).toBeVisible({ timeout: 30_000 });
+    await expect(page.getByText(/base factual cit[aá]vel/i)).toBeVisible();
+    await expect(page.getByText(/peticao inicial\.pdf/i)).toBeVisible();
+  });
+
   test("exibe filtros da Draft Factory e o painel de saude da fila", async ({ page }) => {
     test.setTimeout(240_000);
     await openDocumentos(page);
