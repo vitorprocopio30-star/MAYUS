@@ -6,6 +6,7 @@ import {
   normalizeLegalPieceRequest,
   type NormalizedPieceRequest,
 } from '@/lib/juridico/piece-catalog';
+import { evaluateVerifiedPieceReadiness, type VerifiedPieceSnapshot } from '@/lib/juridico/verified-piece';
 import { supabaseAdmin } from '@/lib/supabase/admin';
 
 type ProcessTaskRecord = {
@@ -148,6 +149,7 @@ export type GeneratedLegalPiece = {
   aiFallbackTrace?: LLMFallbackTrace[];
   expansionApplied: boolean;
   qualityMetrics: DraftMetrics;
+  verifiedPiece: VerifiedPieceSnapshot;
 };
 
 export type GenerateLegalPieceParams = {
@@ -254,6 +256,30 @@ function buildProfileSummary(profile: TenantLegalProfileRecord | null) {
   ]
     .filter(Boolean)
     .join('\n') || 'Perfil juridico padrao do tenant nao configurado.';
+}
+
+function buildVerifiedPiecePrompt(snapshot: VerifiedPieceSnapshot) {
+  const factBasis = snapshot.factBasis.length > 0
+    ? snapshot.factBasis.map((document) => `- ${document.name}${document.documentType ? ` (${document.documentType})` : ''}${document.webViewLink ? ` - ${document.webViewLink}` : ''}`).join('\n')
+    : '- Nenhuma fonte factual citavel foi validada.';
+  const pending = snapshot.pendingValidations.length > 0
+    ? snapshot.pendingValidations.map((item) => `- ${item}`).join('\n')
+    : '- Nenhuma pendencia factual registrada.';
+
+  return [
+    'STATUS DE PECA VERIFICAVEL:',
+    `- status: ${snapshot.status}`,
+    `- artifact do pacote de evidencias: ${snapshot.evidencePackArtifactId || 'nao salvo'}`,
+    `- resumo: ${snapshot.summary}`,
+    '- fontes factuais permitidas:',
+    factBasis,
+    '- pendencias/bloqueios:',
+    pending,
+    'REGRAS DE VERIFICACAO:',
+    '- Fatos materiais devem estar apoiados nas fontes factuais permitidas acima ou nos DOCUMENTOS-FONTE recebidos.',
+    '- Se um fato nao estiver sustentado, escreva como ponto pendente de confirmacao, nao como afirmacao categorica.',
+    '- Nao cite documento, data, valor, parte, decisao ou evento que nao esteja no pacote documental ou no contexto fornecido.',
+  ].join('\n');
 }
 
 function buildDocumentScore(params: {
@@ -573,11 +599,12 @@ function buildPlanningPrompt(params: {
   profile: TenantLegalProfileRecord | null;
   selectedDocuments: SelectedProcessDocument[];
   styleReferencePacket: string;
+  verifiedPiece: VerifiedPieceSnapshot;
   missingDocuments: string[];
   objective: string;
   instructions: string;
 }) {
-  const { task, pieceRequest, practiceArea, memory, template, profile, selectedDocuments, styleReferencePacket, missingDocuments, objective, instructions } = params;
+  const { task, pieceRequest, practiceArea, memory, template, profile, selectedDocuments, styleReferencePacket, verifiedPiece, missingDocuments, objective, instructions } = params;
   const keyFacts = formatKeyFacts(memory?.key_facts);
   const sourceDocuments = selectedDocuments.length > 0
     ? selectedDocuments.map((document, index) => {
@@ -639,6 +666,8 @@ ${instructions || 'Sem instrucoes extras.'}
 PENDENCIAS DOCUMENTAIS:
 ${missingDocuments.length > 0 ? missingDocuments.map((item) => `- ${item}`).join('\n') : '- Nenhuma pendencia critica detectada.'}
 
+${buildVerifiedPiecePrompt(verifiedPiece)}
+
 DOCUMENTOS-FONTE:
 ${sourceDocuments}
 
@@ -677,10 +706,11 @@ function buildWriterPrompt(params: {
   plan: PiecePlan;
   selectedDocuments: SelectedProcessDocument[];
   styleReferencePacket: string;
+  verifiedPiece: VerifiedPieceSnapshot;
   objective: string;
   instructions: string;
 }) {
-  const { task, pieceRequest, practiceArea, memory, template, profile, plan, selectedDocuments, styleReferencePacket, objective, instructions } = params;
+  const { task, pieceRequest, practiceArea, memory, template, profile, plan, selectedDocuments, styleReferencePacket, verifiedPiece, objective, instructions } = params;
   const writingDirectives = buildWritingDirectives(pieceRequest, profile?.default_tone);
   const globalPieceReference = buildGlobalPieceReference(pieceRequest);
   const sourceDocuments = selectedDocuments.length > 0
@@ -756,6 +786,8 @@ ${plan.missingDocuments.length > 0 ? plan.missingDocuments.map((item) => `- ${it
 
 ALERTAS:
 ${plan.warnings.length > 0 ? plan.warnings.map((item) => `- ${item}`).join('\n') : '- Nenhum alerta especifico adicional.'}
+
+${buildVerifiedPiecePrompt(verifiedPiece)}
 
 MEMORIA CONSOLIDADA:
 ${memory?.summary_master || 'Sem resumo mestre consolidado.'}
@@ -892,7 +924,7 @@ export async function generateLegalPiece(params: GenerateLegalPieceParams): Prom
   if (taskError) throw taskError;
   if (!task) throw new Error('Processo nao encontrado.');
 
-  const [memoryRes, documentsRes, templateRes, profileRes] = await Promise.all([
+  const [memoryRes, documentsRes, templateRes, profileRes, verifiedPiece] = await Promise.all([
     supabaseAdmin
       .from('process_document_memory')
       .select('summary_master, missing_documents, key_documents, key_facts, current_phase, document_count, sync_status, last_synced_at')
@@ -913,6 +945,7 @@ export async function generateLegalPiece(params: GenerateLegalPieceParams): Prom
       .select('office_display_name, default_tone, citation_style, signature_block')
       .eq('tenant_id', params.tenantId)
       .maybeSingle<TenantLegalProfileRecord>(),
+    evaluateVerifiedPieceReadiness({ tenantId: params.tenantId, processTaskId: task.id }),
   ]);
 
   if (memoryRes.error) throw memoryRes.error;
@@ -977,6 +1010,13 @@ export async function generateLegalPiece(params: GenerateLegalPieceParams): Prom
   const initiallySelectedDocuments = scoredDocuments
     .filter((document) => document.score > 0 || selectedIds.has(document.id))
     .slice(0, MAX_SOURCE_DOCUMENTS);
+  const verifiedFactBasisIds = new Set(verifiedPiece.ready ? verifiedPiece.factBasis.map((document) => document.id) : []);
+  const verifiedFactBasisDocuments = verifiedFactBasisIds.size > 0
+    ? scoredDocuments.filter((document) => verifiedFactBasisIds.has(document.id)).slice(0, MAX_SOURCE_DOCUMENTS)
+    : [];
+  const plannerSourceDocuments = verifiedFactBasisIds.size > 0
+    ? verifiedFactBasisDocuments
+    : initiallySelectedDocuments;
 
   const missingDocuments = buildMissingDocuments(
     pieceRequest,
@@ -1028,8 +1068,9 @@ MODO ATUAL: REDATOR JURIDICO
         memory,
         template,
         profile: profileRes.data || null,
-        selectedDocuments: initiallySelectedDocuments,
+        selectedDocuments: plannerSourceDocuments,
         styleReferencePacket: styleReferencePacket.packet,
+        verifiedPiece,
         missingDocuments,
         objective,
         instructions,
@@ -1051,11 +1092,14 @@ MODO ATUAL: REDATOR JURIDICO
     missingDocuments,
   });
 
-  const selectedDocuments = (
+  const plannedSelectedDocuments = (
     plan.recommendedDocumentIds.length > 0
       ? initiallySelectedDocuments.filter((document) => plan.recommendedDocumentIds.includes(document.id))
       : initiallySelectedDocuments
   );
+  const selectedDocuments = verifiedFactBasisIds.size > 0
+    ? verifiedFactBasisDocuments
+    : plannedSelectedDocuments;
   const writerPrompt = buildWriterPrompt({
     task,
     pieceRequest,
@@ -1064,8 +1108,9 @@ MODO ATUAL: REDATOR JURIDICO
     template,
     profile: profileRes.data || null,
     plan,
-    selectedDocuments: selectedDocuments.length > 0 ? selectedDocuments : initiallySelectedDocuments,
+    selectedDocuments: verifiedFactBasisIds.size > 0 ? selectedDocuments : selectedDocuments.length > 0 ? selectedDocuments : initiallySelectedDocuments,
     styleReferencePacket: styleReferencePacket.packet,
+    verifiedPiece,
     objective,
     instructions,
   });
@@ -1104,6 +1149,8 @@ MODO ATUAL: REDATOR JURIDICO
     ...styleReferencePacket.warnings,
     ...plan.warnings,
     ...plan.missingDocuments.map((item) => `Documento pendente: ${item}`),
+    ...verifiedPiece.blockReasons.map((item) => `Peca nao verificavel: ${item}`),
+    ...verifiedPiece.warnings.map((item) => `Evidencia pendente: ${item}`),
     ...(plan.usedFallbackPlan ? ['Planner de peca caiu em fallback local; revisar a estrutura gerada.'] : []),
     ...(isDraftTooShallow(pieceRequest, metrics) ? ['A minuta final ainda ficou abaixo do piso ideal de profundidade e precisa de revisao reforcada.'] : []),
   ]));
@@ -1121,7 +1168,7 @@ MODO ATUAL: REDATOR JURIDICO
     practiceArea: plan.practiceArea || practiceArea || null,
     outline: plan.outline.map((section) => section.title),
     draftMarkdown,
-    usedDocuments: buildUsedDocuments(selectedDocuments.length > 0 ? selectedDocuments : initiallySelectedDocuments),
+    usedDocuments: buildUsedDocuments(verifiedFactBasisIds.size > 0 ? selectedDocuments : selectedDocuments.length > 0 ? selectedDocuments : initiallySelectedDocuments),
     missingDocuments: plan.missingDocuments,
     warnings,
     confidenceNote,
@@ -1132,5 +1179,6 @@ MODO ATUAL: REDATOR JURIDICO
     aiFallbackTrace,
     expansionApplied,
     qualityMetrics: metrics,
+    verifiedPiece,
   };
 }

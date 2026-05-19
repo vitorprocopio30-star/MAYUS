@@ -1,4 +1,5 @@
 import { supabaseAdmin } from "@/lib/supabase/admin";
+import { assertDraftVerifiedAgainstCurrent, evaluateVerifiedPieceReadiness } from "@/lib/juridico/verified-piece";
 
 export type ProcessDraftVersionRecord = {
   id: string;
@@ -408,6 +409,10 @@ export async function createHumanReviewedProcessDraftVersion(params: {
   const nowIso = new Date().toISOString();
   const metrics = buildDraftTextMetrics(nextDraftMarkdown);
   const baseMetadata = withoutPublicationMetadata(baseVersion.metadata);
+  const verifiedPiece = await evaluateVerifiedPieceReadiness({
+    tenantId: params.tenantId,
+    processTaskId: params.processTaskId,
+  });
   const learningLoopCapture = buildDraftLearningLoopDelta({
     baselineMarkdown: baseVersion.draft_markdown,
     finalMarkdown: nextDraftMarkdown,
@@ -440,8 +445,12 @@ export async function createHumanReviewedProcessDraftVersion(params: {
       edited_at: nowIso,
       edited_by: params.actorId,
       edited_in_surface: params.surface || "documentos",
+      verified_piece: verifiedPiece,
+      evidence_pack_artifact_id: verifiedPiece.evidencePackArtifactId,
+      fact_basis: verifiedPiece.factBasis,
+      pending_validations: verifiedPiece.pendingValidations,
       warnings: [],
-      requires_human_review: false,
+      requires_human_review: verifiedPiece.requiresHumanReview,
       learning_loop_capture: learningLoopCapture,
       promotion_candidate: promotionCandidate,
       quality_metrics: {
@@ -580,6 +589,22 @@ export async function updateProcessDraftVersionWorkflow(params: {
   action: "approve" | "publish";
   actorId: string;
 }) {
+  const verifiedPiece = await evaluateVerifiedPieceReadiness({
+    tenantId: params.tenantId,
+    processTaskId: params.processTaskId,
+  });
+
+  const version = await getProcessDraftVersionForTask({
+    tenantId: params.tenantId,
+    processTaskId: params.processTaskId,
+    versionId: params.versionId,
+  });
+  if (!version) throw new Error("Versao da minuta nao encontrada.");
+  assertDraftVerifiedAgainstCurrent({
+    draftMetadata: version.metadata,
+    currentSnapshot: verifiedPiece,
+  });
+
   const { data: updatedVersion, error: updateError } = await supabaseAdmin
     .rpc("transition_process_draft_version_atomic", {
       p_tenant_id: params.tenantId,

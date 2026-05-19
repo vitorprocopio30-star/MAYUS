@@ -433,6 +433,41 @@ export async function buildDocumentEvidencePack(params: {
   return buildDocumentEvidencePackFromRows(rows);
 }
 
+function isRecord(value: unknown): value is Record<string, unknown> {
+  return Boolean(value) && typeof value === "object" && !Array.isArray(value);
+}
+
+export async function loadLatestDocumentEvidencePackArtifact(params: {
+  tenantId: string;
+  processTaskId: string;
+  supabase?: EvidenceSupabase;
+}) {
+  const supabase = params.supabase || supabaseAdmin;
+  const { data, error } = await supabase
+    .from("brain_artifacts")
+    .select("id, metadata, created_at")
+    .eq("tenant_id", params.tenantId)
+    .eq("artifact_type", "document_evidence_pack")
+    .eq("metadata->>process_task_id", params.processTaskId)
+    .order("created_at", { ascending: false })
+    .limit(1)
+    .maybeSingle<{ id: string; metadata: Record<string, unknown> | null; created_at: string }>();
+
+  if (error) throw error;
+
+  const evidencePack = isRecord(data?.metadata?.evidence_pack)
+    ? data.metadata.evidence_pack as DocumentEvidencePack
+    : null;
+
+  if (!data?.id || !evidencePack) return null;
+
+  return {
+    artifactId: data.id,
+    createdAt: data.created_at,
+    pack: { ...evidencePack, artifactId: data.id },
+  };
+}
+
 async function ensureEvidenceBrainTask(params: {
   tenantId: string;
   processTaskId: string;

@@ -1,5 +1,6 @@
 import { createBrainArtifact } from "@/lib/brain/artifacts";
 import { generateLegalPiece, type GeneratedLegalPiece } from "@/lib/juridico/generate-piece";
+import type { VerifiedPieceSnapshot } from "@/lib/juridico/verified-piece";
 import { createProcessDraftVersion } from "@/lib/lex/draft-versions";
 import { supabaseAdmin } from "@/lib/supabase/admin";
 
@@ -355,6 +356,23 @@ function parseGeneratedPieceArtifact(artifact: BrainArtifactDraftRow): Generated
           modifiedAt: getString(document, "modifiedAt") || getString(document, "modified_at"),
         }))
     : [];
+  const verifiedPiece = isRecord(metadata.verified_piece)
+    ? metadata.verified_piece as VerifiedPieceSnapshot
+    : {
+        status: "blocked",
+        ready: false,
+        requiresHumanReview: true,
+        evidencePackArtifactId: null,
+        evidencePackGeneratedAt: null,
+        summary: "Artifact legado sem validacao verificavel.",
+        factBasis: [],
+        pendingValidations: ["Artifact legado sem validacao verificavel."],
+        warnings: [],
+        blockReasons: ["Artifact legado sem validacao verificavel."],
+        gaps: [],
+        risks: [],
+        documentMemory: null,
+      } satisfies VerifiedPieceSnapshot;
 
   return {
     pieceType: getString(metadata, "piece_type") || "peca_juridica",
@@ -378,6 +396,7 @@ function parseGeneratedPieceArtifact(artifact: BrainArtifactDraftRow): Generated
       paragraphCount: getNumber(qualityMetrics?.paragraphCount),
       sectionCount: getNumber(qualityMetrics?.sectionCount),
     },
+    verifiedPiece,
   };
 }
 
@@ -972,6 +991,10 @@ export async function executeDraftFactoryForProcessTask(params: {
         validated_case_law_references: caseBrain.sourcePack.validated_external_sources?.case_law_references || [],
         missing_documents: result.missingDocuments,
         warnings: result.warnings,
+        verified_piece: result.verifiedPiece,
+        evidence_pack_artifact_id: result.verifiedPiece.evidencePackArtifactId,
+        fact_basis: result.verifiedPiece.factBasis,
+        pending_validations: result.verifiedPiece.pendingValidations,
         confidence_note: result.confidenceNote,
         requires_human_review: result.requiresHumanReview,
         expansion_applied: result.expansionApplied,
@@ -1003,6 +1026,10 @@ export async function executeDraftFactoryForProcessTask(params: {
           recommended_piece_label: caseBrain.draftPlan.recommended_piece_label,
           validated_law_references: caseBrain.sourcePack.validated_external_sources?.law_references || [],
           validated_case_law_references: caseBrain.sourcePack.validated_external_sources?.case_law_references || [],
+          verified_piece: result.verifiedPiece,
+          evidence_pack_artifact_id: result.verifiedPiece.evidencePackArtifactId,
+          fact_basis: result.verifiedPiece.factBasis,
+          pending_validations: result.verifiedPiece.pendingValidations,
           warnings: result.warnings,
           missing_documents: result.missingDocuments,
         used_documents: result.usedDocuments,
