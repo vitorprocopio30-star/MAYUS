@@ -197,6 +197,7 @@ type GeneratedPieceResult = {
   caseBrainTaskId?: string;
   recommendedPieceInput?: string | null;
   recommendedPieceLabel?: string | null;
+  verifiedPiece?: VerifiedPieceRecord | null;
 };
 
 type ProcessDraftVersion = {
@@ -405,6 +406,19 @@ type DocumentEvidencePackRecord = {
     pendingValidations: string[];
     factCitationBasis: string[];
   };
+};
+
+type VerifiedPieceRecord = {
+  status: "ready" | "needs_review" | "blocked";
+  ready: boolean;
+  requiresHumanReview: boolean;
+  evidencePackArtifactId: string | null;
+  evidencePackGeneratedAt: string | null;
+  summary: string;
+  factBasis: DocumentEvidencePackDocument[];
+  pendingValidations: string[];
+  warnings: string[];
+  blockReasons: string[];
 };
 
 const DOCUMENT_FOLDER_OPTIONS = [
@@ -661,6 +675,35 @@ function getPromotionCandidate(version: ProcessDraftVersion | null) {
   } satisfies PromotionCandidateRecord;
 }
 
+function getVerifiedPieceFromMetadata(metadata: Record<string, unknown> | null | undefined): VerifiedPieceRecord | null {
+  const verified = isRecord(metadata?.verified_piece) ? metadata.verified_piece : null;
+  if (!verified) return null;
+
+  return {
+    status: verified.status === "ready" || verified.status === "needs_review" || verified.status === "blocked" ? verified.status : "blocked",
+    ready: getBoolean(verified.ready),
+    requiresHumanReview: getBoolean(verified.requiresHumanReview, true),
+    evidencePackArtifactId: getString(verified, "evidencePackArtifactId"),
+    evidencePackGeneratedAt: getString(verified, "evidencePackGeneratedAt"),
+    summary: getString(verified, "summary") || "Status verificavel indisponivel.",
+    factBasis: Array.isArray(verified.factBasis) ? verified.factBasis.filter(isRecord).map((document) => ({
+      id: getString(document, "id") || getString(document, "name") || "documento",
+      name: getString(document, "name") || "Documento",
+      documentType: getString(document, "documentType") || getString(document, "document_type"),
+      folderLabel: getString(document, "folderLabel") || getString(document, "folder_label"),
+      webViewLink: getString(document, "webViewLink") || getString(document, "web_view_link"),
+      relevanceScore: getNumber(document.relevanceScore),
+    })) : [],
+    pendingValidations: getStringArray(verified.pendingValidations),
+    warnings: getStringArray(verified.warnings),
+    blockReasons: getStringArray(verified.blockReasons),
+  };
+}
+
+function getDraftVerifiedPiece(version: ProcessDraftVersion | null) {
+  return getVerifiedPieceFromMetadata(isRecord(version?.metadata) ? version?.metadata : null);
+}
+
 function isAutoDraftFactoryEnabled(metadata: Record<string, unknown> | null | undefined) {
   return metadata?.auto_draft_factory_on_case_brain_ready === true;
 }
@@ -751,6 +794,7 @@ function buildGeneratedPieceFromArtifact(artifact: BrainArtifactDraftRecord): Ge
     caseBrainTaskId: getString(metadata, "case_brain_task_id") || undefined,
     recommendedPieceInput: getString(metadata, "recommended_piece_input"),
     recommendedPieceLabel: getString(metadata, "recommended_piece_label"),
+    verifiedPiece: getVerifiedPieceFromMetadata(metadata),
   };
 }
 
@@ -798,6 +842,7 @@ function buildGeneratedPieceFromVersion(version: ProcessDraftVersion): Generated
     caseBrainTaskId: version.source_case_brain_task_id || getString(metadata, "source_case_brain_task_id") || undefined,
     recommendedPieceInput: getString(metadata, "recommended_piece_input"),
     recommendedPieceLabel: getString(metadata, "recommended_piece_label"),
+    verifiedPiece: getVerifiedPieceFromMetadata(metadata),
   };
 }
 
@@ -956,6 +1001,7 @@ export default function DocumentosPage() {
   const selectedDraftPremiumPublication = useMemo(() => getPremiumPublication(selectedDraftVersion), [selectedDraftVersion]);
   const selectedDraftLearningLoopCapture = useMemo(() => getLearningLoopCapture(selectedDraftVersion), [selectedDraftVersion]);
   const selectedDraftPromotionCandidate = useMemo(() => getPromotionCandidate(selectedDraftVersion), [selectedDraftVersion]);
+  const selectedDraftVerifiedPiece = useMemo(() => getDraftVerifiedPiece(selectedDraftVersion), [selectedDraftVersion]);
   const selectedDraftVersionStale = useMemo(() => {
     if (!selectedCard || !selectedDraftVersion) return false;
     return isDraftVersionStale(selectedDraftVersion, selectedCard.caseBrainTaskId);
@@ -985,6 +1031,10 @@ export default function DocumentosPage() {
     return null;
   }, [selectedDraftVersion, selectedDraftVersionStale]);
   const canFormallyReviewDraft = isFullAccessRole(role);
+  const selectedDraftVerificationBlocked = Boolean(selectedDraftVersion && selectedDraftVerifiedPiece?.ready !== true);
+  const selectedDraftVerificationReason = selectedDraftVerifiedPiece?.blockReasons?.[0]
+    || selectedDraftVerifiedPiece?.pendingValidations?.[0]
+    || "Salve um Pacote de Evidencias pronto antes de usar esta minuta oficialmente.";
 
   const clearEvidencePackForTask = useCallback((taskId: string) => {
     setEvidencePackByTask((current) => {
@@ -2944,19 +2994,33 @@ export default function DocumentosPage() {
                                   )}
                                 </div>
 
-                                {selectedDraftVersionStale && (
-                                  <div className="rounded-xl border border-amber-500/20 bg-amber-500/10 px-4 py-3 text-xs text-amber-100 leading-relaxed">
-                                    Esta versão foi gerada com um `Case Brain` anterior e não pode mais ser aprovada ou publicada como versão vigente.
+                                 {selectedDraftVersionStale && (
+                                   <div className="rounded-xl border border-amber-500/20 bg-amber-500/10 px-4 py-3 text-xs text-amber-100 leading-relaxed">
+                                     Esta versão foi gerada com um `Case Brain` anterior e não pode mais ser aprovada ou publicada como versão vigente.
+                                   </div>
+                                 )}
+
+                                {selectedDraftVersion && (
+                                  <div className={`rounded-xl border px-4 py-3 text-xs leading-relaxed ${selectedDraftVerifiedPiece?.ready ? "border-emerald-500/20 bg-emerald-500/10 text-emerald-100" : "border-amber-500/20 bg-amber-500/10 text-amber-100"}`}>
+                                    <p className="font-semibold uppercase tracking-[0.18em] text-[10px] mb-2">Peça verificável</p>
+                                    <p>
+                                      {selectedDraftVerifiedPiece?.ready
+                                        ? `Pronta para uso oficial com ${selectedDraftVerifiedPiece.factBasis.length} fonte(s) factual(is).`
+                                        : selectedDraftVerificationReason}
+                                    </p>
+                                    {selectedDraftVerifiedPiece?.evidencePackGeneratedAt && (
+                                      <p className="mt-2 opacity-80">Pacote salvo em {formatDateTime(selectedDraftVerifiedPiece.evidencePackGeneratedAt)}</p>
+                                    )}
                                   </div>
                                 )}
 
-                                <div className="flex flex-wrap gap-2">
+                                 <div className="flex flex-wrap gap-2">
                                   {canFormallyReviewDraft && selectedDraftVersion.workflow_status === "draft" && (
                                     <button
                                       type="button"
                                       onClick={() => handleDraftWorkflowAction(selectedCard.id, selectedDraftVersion.id, "approve")}
                                       data-testid={`documents-approve-version-${selectedDraftVersion.id}`}
-                                      disabled={selectedDraftVersionStale || selectedCurrentDraftHasUnsavedChanges || draftWorkflowBusyKey === `${selectedCard.id}:${selectedDraftVersion.id}:approve`}
+                                      disabled={selectedDraftVersionStale || selectedDraftVerificationBlocked || selectedCurrentDraftHasUnsavedChanges || draftWorkflowBusyKey === `${selectedCard.id}:${selectedDraftVersion.id}:approve`}
                                       className="inline-flex items-center justify-center gap-2 rounded-xl border border-emerald-500/25 bg-emerald-500/10 px-4 py-2.5 text-[10px] font-black uppercase tracking-[0.18em] text-emerald-200 disabled:opacity-50"
                                     >
                                       {draftWorkflowBusyKey === `${selectedCard.id}:${selectedDraftVersion.id}:approve` ? <Loader2 size={12} className="animate-spin" /> : <CheckCircle2 size={12} />}
@@ -2969,7 +3033,7 @@ export default function DocumentosPage() {
                                       type="button"
                                       onClick={() => handleDraftWorkflowAction(selectedCard.id, selectedDraftVersion.id, "publish")}
                                       data-testid={`documents-publish-version-${selectedDraftVersion.id}`}
-                                      disabled={selectedDraftVersionStale || selectedCurrentDraftHasUnsavedChanges || draftWorkflowBusyKey === `${selectedCard.id}:${selectedDraftVersion.id}:publish`}
+                                      disabled={selectedDraftVersionStale || selectedDraftVerificationBlocked || selectedCurrentDraftHasUnsavedChanges || draftWorkflowBusyKey === `${selectedCard.id}:${selectedDraftVersion.id}:publish`}
                                       className="inline-flex items-center justify-center gap-2 rounded-xl border border-sky-500/25 bg-sky-500/10 px-4 py-2.5 text-[10px] font-black uppercase tracking-[0.18em] text-sky-200 disabled:opacity-50"
                                     >
                                       {draftWorkflowBusyKey === `${selectedCard.id}:${selectedDraftVersion.id}:publish` ? <Loader2 size={12} className="animate-spin" /> : <ExternalLink size={12} />}
@@ -2994,7 +3058,7 @@ export default function DocumentosPage() {
                                         versionId: selectedDraftVersion.id,
                                       })}
                                       data-testid={`documents-download-pdf-${selectedDraftVersion.id}`}
-                                      disabled={downloadBusyTaskId === selectedCard.id || selectedCurrentDraftHasUnsavedChanges}
+                                      disabled={downloadBusyTaskId === selectedCard.id || selectedDraftVerificationBlocked || selectedCurrentDraftHasUnsavedChanges}
                                       className="inline-flex items-center justify-center gap-2 rounded-xl border border-violet-500/25 bg-violet-500/10 px-4 py-2.5 text-[10px] font-black uppercase tracking-[0.18em] text-violet-100 disabled:opacity-50"
                                     >
                                       {downloadBusyTaskId === selectedCard.id ? <Loader2 size={12} className="animate-spin" /> : <Download size={12} />}
@@ -3007,7 +3071,7 @@ export default function DocumentosPage() {
                                       type="button"
                                       onClick={() => handlePublishPremiumArtifact(selectedCard.id, selectedDraftVersion)}
                                       data-testid={`documents-publish-premium-${selectedDraftVersion.id}`}
-                                      disabled={selectedCurrentDraftHasUnsavedChanges || premiumPublishBusyKey === `${selectedCard.id}:${selectedDraftVersion.id}`}
+                                      disabled={selectedDraftVerificationBlocked || selectedCurrentDraftHasUnsavedChanges || premiumPublishBusyKey === `${selectedCard.id}:${selectedDraftVersion.id}`}
                                       className="inline-flex items-center justify-center gap-2 rounded-xl border border-[#CCA761]/25 bg-[#CCA761]/10 px-4 py-2.5 text-[10px] font-black uppercase tracking-[0.18em] text-[#e9d5a7] disabled:opacity-50"
                                     >
                                       {premiumPublishBusyKey === `${selectedCard.id}:${selectedDraftVersion.id}` ? <Loader2 size={12} className="animate-spin" /> : <Upload size={12} />}
@@ -3130,7 +3194,7 @@ export default function DocumentosPage() {
                                 versionId: selectedDraftVersion.id,
                               } : undefined)}
                               data-testid={`documents-export-piece-${selectedCard.id}`}
-                              disabled={downloadBusyTaskId === selectedCard.id || Boolean(selectedDraftVersion && selectedCurrentDraftHasUnsavedChanges)}
+                              disabled={downloadBusyTaskId === selectedCard.id || !selectedDraftVersion || Boolean(selectedDraftVersion && (selectedDraftVerificationBlocked || selectedCurrentDraftHasUnsavedChanges))}
                               className={`inline-flex items-center justify-center gap-2 rounded-xl px-4 py-2.5 text-[10px] font-black uppercase tracking-[0.18em] transition-colors disabled:opacity-50 ${selectedCardDraftStale ? "border border-amber-500/25 bg-amber-500/10 hover:bg-amber-500/15 text-amber-100" : "border border-emerald-500/25 bg-emerald-500/10 hover:bg-emerald-500/15 text-emerald-200"}`}
                             >
                               {downloadBusyTaskId === selectedCard.id ? <Loader2 size={12} className="animate-spin" /> : <Download size={12} />}
@@ -3245,7 +3309,18 @@ export default function DocumentosPage() {
                               </p>
                             </div>
                           )}
-                           
+
+                          {generatedPieceByTask[selectedCard.id]!.verifiedPiece && (
+                            <div className={`mb-4 rounded-xl border px-4 py-3 text-xs leading-relaxed relative z-10 ${generatedPieceByTask[selectedCard.id]!.verifiedPiece?.ready ? "border-emerald-500/20 bg-emerald-500/10 text-emerald-100" : "border-amber-500/20 bg-amber-500/10 text-amber-100"}`}>
+                              <p className="font-semibold uppercase tracking-[0.18em] text-[10px] mb-2">Controle de fontes verificáveis</p>
+                              <p>
+                                {generatedPieceByTask[selectedCard.id]!.verifiedPiece?.ready
+                                  ? `Minuta amarrada ao Pacote de Evidencias com ${generatedPieceByTask[selectedCard.id]!.verifiedPiece?.factBasis.length || 0} fonte(s) factual(is).`
+                                  : generatedPieceByTask[selectedCard.id]!.verifiedPiece?.blockReasons?.[0] || "Minuta exige revisão factual antes de uso oficial."}
+                              </p>
+                            </div>
+                          )}
+
                           <p className="text-[13px] text-gray-300 leading-relaxed italic mb-5 relative z-10">
                             &ldquo;{generatedPieceByTask[selectedCard.id]!.confidenceNote}&rdquo;
                           </p>
@@ -3483,7 +3558,7 @@ export default function DocumentosPage() {
                               draftMarkdown: selectedDraftVersion.draft_markdown,
                               versionId: selectedDraftVersion.id,
                             } : undefined)}
-                            disabled={downloadBusyTaskId === selectedCard.id || Boolean(selectedDraftVersion && selectedCurrentDraftHasUnsavedChanges)}
+                            disabled={downloadBusyTaskId === selectedCard.id || !selectedDraftVersion || Boolean(selectedDraftVersion && (selectedDraftVerificationBlocked || selectedCurrentDraftHasUnsavedChanges))}
                             className="px-4 py-2.5 rounded-xl border border-[#4285F4]/30 bg-[#4285F4]/10 hover:bg-[#4285F4]/20 text-[10px] font-black uppercase tracking-[0.2em] text-[#8ab4ff] flex items-center justify-center gap-2 disabled:opacity-50 transition-colors shadow-[0_0_15px_rgba(66,133,244,0.1)]"
                           >
                             {downloadBusyTaskId === selectedCard.id ? <Loader2 size={14} className="animate-spin" /> : <Download size={14} />}

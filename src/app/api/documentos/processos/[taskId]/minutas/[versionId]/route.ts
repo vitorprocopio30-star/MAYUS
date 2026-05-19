@@ -45,6 +45,7 @@ export async function PATCH(request: NextRequest, { params }: { params: { taskId
     if (
       error?.message === "A versao precisa ser aprovada antes da publicacao."
       || error?.message === "A versao da minuta esta desatualizada em relacao ao Case Brain atual."
+      || /Pacote de Evidencias|verificavel|snapshot verificavel|outro Pacote|citacao factual|sincronizacao documental|volume atual de documentos/i.test(String(error?.message || ""))
     ) {
       return NextResponse.json({ error: error.message }, { status: 409 });
     }

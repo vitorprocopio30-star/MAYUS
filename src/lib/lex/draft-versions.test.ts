@@ -12,6 +12,29 @@ vi.mock("@/lib/supabase/admin", () => ({
   },
 }));
 
+vi.mock("@/lib/juridico/verified-piece", () => ({
+  evaluateVerifiedPieceReadiness: vi.fn(async () => ({
+    status: "ready",
+    ready: true,
+    requiresHumanReview: false,
+    evidencePackArtifactId: "evidence-artifact-1",
+    evidencePackGeneratedAt: "2026-05-18T12:00:00.000Z",
+    summary: "Pacote pronto.",
+    factBasis: [],
+    pendingValidations: [],
+    warnings: [],
+    blockReasons: [],
+    gaps: [],
+    risks: [],
+    documentMemory: null,
+  })),
+  assertDraftVerifiedAgainstCurrent: vi.fn(({ draftMetadata, currentSnapshot }: any) => {
+    if (!currentSnapshot?.ready) throw new Error(currentSnapshot?.blockReasons?.[0] || "Peca nao verificavel.");
+    if (draftMetadata?.verified_piece?.ready !== true) throw new Error("A versao da minuta nao possui snapshot verificavel pronto.");
+    if (draftMetadata?.evidence_pack_artifact_id !== currentSnapshot?.evidencePackArtifactId) throw new Error("A versao da minuta foi validada com outro Pacote de Evidencias.");
+  }),
+}));
+
 import {
   buildDraftPromotionCandidate,
   buildDraftTextMetrics,
@@ -124,6 +147,15 @@ describe("draft-versions", () => {
   });
 
   it("usa a RPC atomica para aprovar ou publicar versao", async () => {
+    const maybeSingleMock = vi.fn().mockResolvedValue({
+      data: { id: "version-1", metadata: { verified_piece: { ready: true, status: "ready" }, evidence_pack_artifact_id: "evidence-artifact-1" } },
+      error: null,
+    });
+    const eqVersionMock = vi.fn(() => ({ maybeSingle: maybeSingleMock }));
+    const eqTaskMock = vi.fn(() => ({ eq: eqVersionMock }));
+    const eqTenantMock = vi.fn(() => ({ eq: eqTaskMock }));
+    const selectMock = vi.fn(() => ({ eq: eqTenantMock }));
+    fromMock.mockReturnValue({ select: selectMock });
     rpcMock.mockReturnValue({
       single: vi.fn().mockResolvedValue({
         data: { id: "version-1", workflow_status: "published" },
@@ -150,6 +182,15 @@ describe("draft-versions", () => {
   });
 
   it("preserva erro semantico de stale draft ao transicionar workflow", async () => {
+    const maybeSingleMock = vi.fn().mockResolvedValue({
+      data: { id: "version-1", metadata: { verified_piece: { ready: true, status: "ready" }, evidence_pack_artifact_id: "evidence-artifact-1" } },
+      error: null,
+    });
+    const eqVersionMock = vi.fn(() => ({ maybeSingle: maybeSingleMock }));
+    const eqTaskMock = vi.fn(() => ({ eq: eqVersionMock }));
+    const eqTenantMock = vi.fn(() => ({ eq: eqTaskMock }));
+    const selectMock = vi.fn(() => ({ eq: eqTenantMock }));
+    fromMock.mockReturnValue({ select: selectMock });
     rpcMock.mockReturnValue({
       single: vi.fn().mockResolvedValue({
         data: null,

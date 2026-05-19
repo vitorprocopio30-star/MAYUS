@@ -1,6 +1,7 @@
 import { supabaseAdmin } from "@/lib/supabase/admin";
 import { exportLegalPieceToDocx, type ExportLegalPieceParams } from "@/lib/juridico/export-piece-docx";
 import { exportLegalPieceToPdf } from "@/lib/juridico/export-piece-pdf";
+import { assertDraftVerifiedAgainstCurrent, evaluateVerifiedPieceReadiness } from "@/lib/juridico/verified-piece";
 import { getProcessDraftVersionById, loadDraftLearningLoopDelta, type DraftLearningLoopDelta } from "@/lib/lex/draft-versions";
 import { uploadGoogleDriveFile, type GoogleDriveFolderStructure, buildGoogleDriveFolderUrl } from "@/lib/services/google-drive";
 
@@ -255,12 +256,29 @@ export async function publishLegalPiecePremium(params: {
   draftMarkdown: string;
   versionId?: string | null;
 }) {
-  const version = params.versionId
-    ? await getProcessDraftVersionById({
-      tenantId: params.tenantId,
-      versionId: params.versionId,
-    })
-    : null;
+  if (!params.versionId) {
+    throw new Error("Informe uma versao formal verificavel antes de publicar o artifact premium.");
+  }
+
+  const verifiedPiece = await evaluateVerifiedPieceReadiness({
+    tenantId: params.tenantId,
+    processTaskId: params.taskId,
+  });
+
+  const version = await getProcessDraftVersionById({
+    tenantId: params.tenantId,
+    versionId: params.versionId,
+  });
+  if (!version) {
+    throw new Error("Versao da minuta nao encontrada.");
+  }
+  if (version.process_task_id !== params.taskId) {
+    throw new Error("A versao da minuta nao pertence ao processo informado.");
+  }
+  assertDraftVerifiedAgainstCurrent({
+    draftMetadata: version.metadata,
+    currentSnapshot: verifiedPiece,
+  });
   const learningLoopCapture = version
     ? await loadDraftLearningLoopDelta({
       tenantId: params.tenantId,

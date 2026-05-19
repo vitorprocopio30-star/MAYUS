@@ -2,6 +2,7 @@ import { NextRequest, NextResponse } from 'next/server';
 import { getTenantSession } from '@/lib/auth/get-tenant-session';
 import { buildTenantGoogleDriveServiceRequest, getTenantGoogleDriveContext } from '@/lib/services/google-drive-tenant';
 import { exportLegalPieceBinary, publishLegalPiecePremium, type LegalPieceExportFormat } from '@/lib/juridico/publish-piece-premium';
+import { assertDraftVerifiedAgainstCurrent, evaluateVerifiedPieceReadiness } from '@/lib/juridico/verified-piece';
 import { getProcessDraftVersionForTask } from '@/lib/lex/draft-versions';
 
 export const runtime = 'nodejs';
@@ -37,15 +38,21 @@ export async function POST(request: NextRequest, { params }: { params: { taskId:
       return NextResponse.json({ error: 'Versao da minuta nao encontrada para este processo.' }, { status: 404 });
     }
 
+    if (!storedVersion) {
+      return NextResponse.json({ error: 'Informe uma versao formal verificavel antes de exportar a peca oficial.' }, { status: 400 });
+    }
+
     if (!draftMarkdown) {
       return NextResponse.json({ error: 'Nao ha rascunho para exportar.' }, { status: 400 });
     }
 
-    if (publishToDrive) {
-      if (!storedVersion) {
-        return NextResponse.json({ error: 'Informe uma versao formal salva antes de publicar o artifact premium.' }, { status: 400 });
-      }
+    const verifiedPiece = await evaluateVerifiedPieceReadiness({ tenantId, processTaskId: taskId });
+    assertDraftVerifiedAgainstCurrent({
+      draftMetadata: storedVersion.metadata,
+      currentSnapshot: verifiedPiece,
+    });
 
+    if (publishToDrive) {
       if (storedVersion.workflow_status !== 'published') {
         return NextResponse.json({ error: 'A versao formal precisa estar publicada antes do artifact premium.' }, { status: 409 });
       }
@@ -96,6 +103,10 @@ export async function POST(request: NextRequest, { params }: { params: { taskId:
 
     if (error?.message === 'GoogleDriveDisconnected' || error?.message === 'GoogleDriveNotConfigured') {
       return NextResponse.json({ error: 'Google Drive não conectado para este escritório.' }, { status: 400 });
+    }
+
+    if (/Pacote de Evidencias|verificavel|snapshot verificavel|outro Pacote|citacao factual|sincronizacao documental|volume atual de documentos/i.test(String(error?.message || ''))) {
+      return NextResponse.json({ error: error.message }, { status: 409 });
     }
 
     return NextResponse.json(
