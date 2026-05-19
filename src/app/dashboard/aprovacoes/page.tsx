@@ -17,7 +17,7 @@ import {
 import { toast } from "sonner";
 import { useUserProfile } from "@/hooks/useUserProfile";
 import { isBrainExecutiveRole } from "@/lib/brain/roles";
-import type { BrainInboxApprovalItem, BrainInboxArtifactItem, BrainInboxEventItem, BrainInboxResponse, BrainInboxTaskItem } from "@/lib/brain/inbox-types";
+import type { BrainInboxApprovalItem, BrainInboxArtifactItem, BrainInboxEventItem, BrainInboxOperationalSummary, BrainInboxResponse, BrainInboxTaskItem } from "@/lib/brain/inbox-types";
 
 dayjs.extend(relativeTime);
 dayjs.locale("pt-br");
@@ -881,6 +881,105 @@ function EventCard({ event }: { event: BrainInboxEventItem }) {
   );
 }
 
+function formatSummaryCount(value: number | null | undefined) {
+  return typeof value === "number" && Number.isFinite(value) ? String(value) : "0";
+}
+
+function OperationalSummaryPanel({ summary }: { summary: BrainInboxOperationalSummary | null | undefined }) {
+  const counts = summary?.correction_counts;
+  const correctionTotal = counts?.total || 0;
+  const blockedTotal = (counts?.blocked || 0) + (counts?.requires_approval || 0);
+  const failedTotal = counts?.failed || 0;
+  const appliedMemoryTotal = summary?.memory_applications.total_applied || 0;
+  const modules = summary?.modules || [];
+  const memoryKeys = summary?.memory_applications.keys || [];
+  const recentBlocked = summary?.recent_blocked || [];
+
+  return (
+    <section
+      data-testid="brain-operational-summary"
+      className="rounded-2xl border border-sky-400/15 bg-[#0f0f0f] p-5"
+    >
+      <div className="flex flex-col gap-3 md:flex-row md:items-start md:justify-between">
+        <div>
+          <p className="text-[10px] uppercase tracking-[0.2em] text-sky-300">Observe - Aprende - Corrige - Aplica</p>
+          <h2 className="mt-1 text-lg font-semibold text-white">Resumo operacional MAYUS</h2>
+        </div>
+        <ShieldCheck className="text-sky-300" size={18} />
+      </div>
+
+      <div className="mt-5 grid gap-4 md:grid-cols-4">
+        <div className="border-t border-white/10 pt-3">
+          <p className="text-[10px] uppercase tracking-[0.16em] text-gray-500">Correcoes</p>
+          <p className="mt-2 text-2xl font-semibold text-white">{formatSummaryCount(correctionTotal)}</p>
+        </div>
+        <div className="border-t border-white/10 pt-3">
+          <p className="text-[10px] uppercase tracking-[0.16em] text-gray-500">Bloqueios</p>
+          <p className="mt-2 text-2xl font-semibold text-orange-200">{formatSummaryCount(blockedTotal)}</p>
+        </div>
+        <div className="border-t border-white/10 pt-3">
+          <p className="text-[10px] uppercase tracking-[0.16em] text-gray-500">Falhas</p>
+          <p className="mt-2 text-2xl font-semibold text-red-200">{formatSummaryCount(failedTotal)}</p>
+        </div>
+        <div className="border-t border-white/10 pt-3">
+          <p className="text-[10px] uppercase tracking-[0.16em] text-gray-500">Memorias aplicadas</p>
+          <p className="mt-2 text-2xl font-semibold text-[#CCA761]">{formatSummaryCount(appliedMemoryTotal)}</p>
+        </div>
+      </div>
+
+      <div className="mt-5 grid gap-4 lg:grid-cols-2">
+        <div className="space-y-2">
+          <p className="text-[10px] uppercase tracking-[0.18em] text-gray-500">Modulos afetados</p>
+          {modules.length ? (
+            <div data-testid="brain-operational-modules" className="flex flex-wrap gap-2">
+              {modules.slice(0, 5).map((item) => (
+                <span key={item.module} className="rounded-full border border-white/10 bg-white/[0.03] px-3 py-1 text-xs text-gray-300">
+                  {item.module} ({item.count})
+                </span>
+              ))}
+            </div>
+          ) : (
+            <p className="text-xs text-gray-500">Sem sinal operacional recente.</p>
+          )}
+        </div>
+
+        <div className="space-y-2">
+          <p className="text-[10px] uppercase tracking-[0.18em] text-gray-500">Memorias que influenciaram decisoes</p>
+          {memoryKeys.length ? (
+            <div data-testid="brain-operational-memory-keys" className="flex flex-wrap gap-2">
+              {memoryKeys.slice(0, 5).map((item) => (
+                <span key={item.key} className="rounded-full border border-[#CCA761]/20 bg-[#CCA761]/10 px-3 py-1 text-xs text-[#CCA761]">
+                  {item.key} ({item.count})
+                </span>
+              ))}
+            </div>
+          ) : (
+            <p className="text-xs text-gray-500">Nenhuma memoria aplicada nos eventos recentes.</p>
+          )}
+        </div>
+      </div>
+
+      {recentBlocked.length > 0 && (
+        <div className="mt-5 border-t border-white/10 pt-4">
+          <p className="text-[10px] uppercase tracking-[0.18em] text-gray-500">Bloqueios e revisoes recentes</p>
+          <div className="mt-3 space-y-2">
+            {recentBlocked.slice(0, 3).map((item) => (
+              <div key={item.id} className="flex flex-col gap-1 text-xs text-gray-400 md:flex-row md:items-center md:justify-between">
+                <span className="text-gray-300">
+                  {item.source_module || "core"} - {item.correction_kind || item.event_type}
+                </span>
+                <span className="text-gray-500">
+                  {item.reason || item.recommended_action || dayjs(item.created_at).fromNow()}
+                </span>
+              </div>
+            ))}
+          </div>
+        </div>
+      )}
+    </section>
+  );
+}
+
 export default function BrainApprovalsPage() {
   const { role, isLoading: profileLoading } = useUserProfile();
   const [inbox, setInbox] = useState<BrainInboxResponse | null>(null);
@@ -895,6 +994,7 @@ export default function BrainApprovalsPage() {
   const recentApprovals = inbox?.recent_approvals || [];
   const recentArtifacts = inbox?.recent_artifacts || [];
   const recentEvents = inbox?.recent_events || [];
+  const operationalSummary = inbox?.operational_summary;
   const correctionArtifactCount = recentArtifacts.filter(isMayusCorrectionArtifact).length;
   const correctionEventCount = recentEvents.filter(isMayusCorrectionEvent).length;
   const correctionActivityCount = correctionArtifactCount + correctionEventCount;
@@ -1088,6 +1188,8 @@ export default function BrainApprovalsPage() {
           </span>
         </button>
       </div>
+
+      <OperationalSummaryPanel summary={operationalSummary} />
 
       <section className="space-y-4">
         <div className="flex items-center justify-between gap-3">

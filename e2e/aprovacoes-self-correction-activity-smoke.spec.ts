@@ -114,6 +114,43 @@ function brainInboxResponse() {
         step: null,
       },
     ],
+    operational_summary: {
+      correction_counts: {
+        total: 4,
+        attempted: 0,
+        applied: 0,
+        requires_approval: 0,
+        blocked: 0,
+        failed: 1,
+        not_available: 1,
+        repair_patterns: 1,
+        improvement_proposals: 1,
+      },
+      modules: [
+        { module: "mayus_operating_partner", count: 3 },
+        { module: "self_improvement_loop", count: 1 },
+        { module: "agent_policy", count: 1 },
+      ],
+      memory_applications: {
+        total_events: 1,
+        total_applied: 2,
+        keys: [
+          { key: "tom_consultivo", count: 1 },
+          { key: "self_improvement:financeiro_cobranca", count: 1 },
+        ],
+      },
+      recent_blocked: [
+        {
+          id: "event-correction",
+          event_type: "self_correction_failed",
+          source_module: "mayus_operating_partner",
+          correction_kind: "operating_partner_reply_repair",
+          reason: "timeout",
+          recommended_action: "Escalar para revisao humana antes de nova aplicacao automatica.",
+          created_at: createdAt,
+        },
+      ],
+    },
   };
 }
 
@@ -152,10 +189,18 @@ test.describe("Aprovacoes > atividade de auto-correcao", () => {
     await expect(page.getByText("Cobranca supervisionada")).toBeVisible();
     await expect(page.getByText("Turno do chat processado")).toBeVisible();
 
+    const operationalSummary = page.getByTestId("brain-operational-summary");
+    await expect(operationalSummary).toContainText("Resumo operacional MAYUS");
+    await expect(operationalSummary).toContainText("Correcoes");
+    await expect(operationalSummary).toContainText("Falhas");
+    await expect(operationalSummary).toContainText("Memorias aplicadas");
+    await expect(operationalSummary).toContainText("mayus_operating_partner (3)");
+    await expect(operationalSummary).toContainText("tom_consultivo (1)");
+
     await expect(page.getByText("Auto-correcao falhou")).toBeVisible();
     await expect(page.getByText(/operating_partner_reply_repair: failed/)).toBeVisible();
     await expect(page.getByText(/memorias aplicadas: 2/)).toBeVisible();
-    await expect(page.getByText(/tom_consultivo/)).toBeVisible();
+    await expect(page.getByText(/tom_consultivo/).first()).toBeVisible();
     await expect(page.getByText("Auto-correcao indisponivel")).toBeVisible();
     await expect(page.getByText(/policy_preflight: no_correction_available/)).toBeVisible();
     await expect(page.getByText("MAYUS propos memoria aprendida")).toBeVisible();

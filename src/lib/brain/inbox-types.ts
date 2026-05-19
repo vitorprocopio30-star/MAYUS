@@ -71,6 +71,41 @@ export interface BrainInboxApprovalItem {
   step: BrainInboxStepItem | null;
 }
 
+export interface BrainInboxOperationalSummary {
+  correction_counts: {
+    total: number;
+    attempted: number;
+    applied: number;
+    requires_approval: number;
+    blocked: number;
+    failed: number;
+    not_available: number;
+    repair_patterns: number;
+    improvement_proposals: number;
+  };
+  modules: Array<{
+    module: string;
+    count: number;
+  }>;
+  memory_applications: {
+    total_events: number;
+    total_applied: number;
+    keys: Array<{
+      key: string;
+      count: number;
+    }>;
+  };
+  recent_blocked: Array<{
+    id: string;
+    event_type: string;
+    source_module?: string | null;
+    correction_kind?: string | null;
+    reason?: string | null;
+    recommended_action?: string | null;
+    created_at: string;
+  }>;
+}
+
 export interface BrainInboxResponse {
   pending_count: number;
   pending_approvals: BrainInboxApprovalItem[];
@@ -78,4 +113,5 @@ export interface BrainInboxResponse {
   recent_tasks: BrainInboxTaskItem[];
   recent_artifacts: BrainInboxArtifactItem[];
   recent_events: BrainInboxEventItem[];
+  operational_summary: BrainInboxOperationalSummary;
 }
