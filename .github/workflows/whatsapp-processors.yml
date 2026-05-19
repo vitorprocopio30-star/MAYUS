@@ -38,3 +38,17 @@ jobs:
             "https://mayus-premium-pro.vercel.app/api/whatsapp/replies/process?limit=10"
         env:
           CRON_SECRET: ${{ secrets.CRON_SECRET }}
+
+      - name: Process MAYUS agent routines
+        run: |
+          curl --fail --show-error --silent \
+            --max-time 120 \
+            --retry 2 \
+            --retry-delay 5 \
+            --request POST \
+            --header "Authorization: Bearer $CRON_SECRET" \
+            --header "Content-Type: application/json" \
+            --data '{"limit":5}' \
+            "https://mayus-premium-pro.vercel.app/api/agent/routines"
+        env:
+          CRON_SECRET: ${{ secrets.CRON_SECRET }}

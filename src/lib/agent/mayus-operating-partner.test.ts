@@ -217,6 +217,21 @@ describe("mayus-operating-partner", () => {
         pricingPolicy: "nao informar honorarios no WhatsApp sem humano",
         responseSla: "ate 5 minutos",
         departments: ["Comercial", "Juridico"],
+        permissionPolicy: "socio aprova contrato, cobranca e envio externo",
+        calendarPolicy: "confirmar consulta externa so com humano",
+        financePolicy: "cobrancas e renegociacoes ficam supervisionadas",
+        playbookNotes: "roteiro consultivo curto com proximo passo claro",
+        practiceAreaPlaybooks: [{
+          area: "bancario",
+          intake_questions: ["qual desconto aparece no documento?"],
+          required_documents: ["contracheque"],
+          handoff_triggers: ["contrato exige humano"],
+          default_pipeline: ["Triagem do desconto/contrato", "Coleta documental", "Analise juridica humana"],
+          document_structure: ["00-bancario-intake-e-resumo"],
+          owner_team: "Juridico",
+          validation_status: "needs_area_review",
+          next_review_question: "Validar playbook bancario?",
+        }],
       },
       crmContext: { crm_task_id: "crm-1", title: "Vitor", stage_name: "Qualificacao" },
       previousMayusEvent: { next_action: "tratar objecao de valor" },
@@ -231,10 +246,175 @@ describe("mayus-operating-partner", () => {
     expect(prompt).toContain("Credcesta");
     expect(prompt).toContain("Dutra Advocacia");
     expect(prompt).toContain("preco e contrato exigem humano");
+    expect(prompt).toContain("socio aprova contrato");
+    expect(prompt).toContain("roteiro consultivo curto");
+    expect(prompt).toContain("Playbooks por area juridica");
+    expect(prompt).toContain("Triagem do desconto/contrato");
     expect(prompt).toContain("Se faltar configuracao do escritorio");
     expect(decision.conversation_state.stage).toBe("objection");
     expect(decision.reply).not.toContain("Aqui e o MAYUS");
     expect(decision.reasoning_summary_for_team).toContain("objecao");
+  });
+
+  it("injeta bloco de memoria institucional aprovada no prompt quando passada", async () => {
+    let prompt = "";
+    const fetcher = vi.fn(async (_url: string, init: RequestInit) => {
+      const body = JSON.parse(String(init.body || "{}"));
+      prompt = body.messages[1].content;
+      return {
+        ok: true,
+        json: async () => ({
+          choices: [{
+            message: {
+              content: JSON.stringify({
+                reply: "Sigo apenas dentro da politica do escritorio.",
+                intent: "client_support",
+                confidence: 0.8,
+                risk_flags: [],
+                next_action: "responder dentro da politica",
+                conversation_state: {
+                  conversation_role: "support",
+                  conversation_goal: "responder dentro da politica",
+                  customer_temperature: "interested",
+                  stage: "client_support",
+                  facts_known: [],
+                  missing_information: [],
+                  objections: [],
+                  urgency: "none",
+                  decision_maker: "unknown",
+                  documents_requested: [],
+                  last_customer_message: "ola",
+                  last_mayus_message: null,
+                  last_commitment: null,
+                  next_action: "responder dentro da politica",
+                  has_mayus_introduced: true,
+                  conversation_summary: "saudacao",
+                },
+                closing_readiness: { score: 20, status: "not_ready", reasons: ["sem demanda"] },
+                support_summary: { is_existing_client: false, issue_type: "none", verified_case_reference: false, summary: "sem suporte" },
+                reasoning_summary_for_team: "memoria institucional aplicada",
+                actions_to_execute: [],
+                requires_approval: false,
+                should_auto_send: true,
+                expected_outcome: "ok",
+              }),
+            },
+          }],
+        }),
+      };
+    }) as any;
+
+    await buildMayusOperatingPartnerDecision({
+      supabase: {} as any,
+      tenantId: "tenant-1",
+      channel: "whatsapp",
+      contactName: "Cliente",
+      phoneNumber: "5511999999999",
+      messages: [{ direction: "inbound", content: "Estou avaliando uma proposta de honorarios mas tenho duvida se o valor cobre o caso." }],
+      institutionalMemory: [
+        {
+          id: "m1",
+          key: "tom",
+          text: "Atender sempre com tom cordial e curto.",
+          category: "atendimento",
+          source: "office_institutional_memory",
+          sourceLabel: null,
+          confidence: null,
+        },
+        {
+          id: "m2",
+          key: "promessa_proibida",
+          text: "Nunca prometer vitoria juridica.",
+          category: "compliance",
+          source: "brain_memory_promoted",
+          sourceLabel: "office_setup",
+          confidence: 0.95,
+        },
+        {
+          id: "m3",
+          key: "self_improvement:correction_failed_operating_partner_reply_repair_timeout",
+          text: "Quando a auto-correcao operating_partner_reply_repair falhar por timeout, bloquear autoenvio e pedir revisao humana.",
+          category: "compliance",
+          source: "brain_memory_promoted",
+          sourceLabel: "MAYUS detectou padrao",
+          confidence: 0.6,
+        },
+      ],
+      operatingPartner: { enabled: true, autonomy_mode: "high_supervised" },
+      fetcher,
+    });
+
+    expect(prompt).toContain("Memoria institucional aprovada");
+    expect(prompt).toContain("[ATENDIMENTO]");
+    expect(prompt).toContain("[COMPLIANCE]");
+    expect(prompt).toContain("Atender sempre com tom cordial");
+    expect(prompt).toContain("promessa_proibida (office_setup): Nunca prometer vitoria juridica.");
+    expect(prompt).toContain("self_improvement:correction_failed_operating_partner_reply_repair_timeout (MAYUS detectou padrao)");
+    expect(prompt).toContain("bloquear autoenvio e pedir revisao humana");
+  });
+
+  it("nao adiciona bloco de memoria institucional quando lista estiver vazia ou ausente", async () => {
+    let prompt = "";
+    const fetcher = vi.fn(async (_url: string, init: RequestInit) => {
+      const body = JSON.parse(String(init.body || "{}"));
+      prompt = body.messages[1].content;
+      return {
+        ok: true,
+        json: async () => ({
+          choices: [{
+            message: {
+              content: JSON.stringify({
+                reply: "Ok.",
+                intent: "client_support",
+                confidence: 0.7,
+                risk_flags: [],
+                next_action: "responder",
+                conversation_state: {
+                  conversation_role: "support",
+                  conversation_goal: "responder",
+                  customer_temperature: "interested",
+                  stage: "client_support",
+                  facts_known: [],
+                  missing_information: [],
+                  objections: [],
+                  urgency: "none",
+                  decision_maker: "unknown",
+                  documents_requested: [],
+                  last_customer_message: "ola",
+                  last_mayus_message: null,
+                  last_commitment: null,
+                  next_action: "responder",
+                  has_mayus_introduced: true,
+                  conversation_summary: "saudacao",
+                },
+                closing_readiness: { score: 20, status: "not_ready", reasons: [] },
+                support_summary: { is_existing_client: false, issue_type: "none", verified_case_reference: false, summary: "sem suporte" },
+                reasoning_summary_for_team: "ok",
+                actions_to_execute: [],
+                requires_approval: false,
+                should_auto_send: true,
+                expected_outcome: "ok",
+              }),
+            },
+          }],
+        }),
+      };
+    }) as any;
+
+    await buildMayusOperatingPartnerDecision({
+      supabase: {} as any,
+      tenantId: "tenant-1",
+      channel: "whatsapp",
+      contactName: "Cliente",
+      phoneNumber: "5511999999999",
+      messages: [{ direction: "inbound", content: "Estou pensando em fechar mas preciso entender o escopo de honorarios e prazo." }],
+      institutionalMemory: [],
+      operatingPartner: { enabled: true, autonomy_mode: "high_supervised" },
+      fetcher,
+    });
+
+    expect(prompt).not.toContain("Memoria institucional aprovada");
+    expect(prompt.length).toBeGreaterThan(0);
   });
 
   it("autoenvia pedido seguro de identificacao para status sem base confirmada", async () => {
@@ -1541,6 +1721,48 @@ describe("mayus-operating-partner", () => {
         }),
       }),
     }));
+    expect(inserts).toContainEqual(expect.objectContaining({
+      table: "learning_events",
+      payload: expect.objectContaining({
+        event_type: "mayus_operating_partner_repair_pattern",
+        source_module: "mayus_operating_partner",
+        payload: expect.objectContaining({
+          original_risk_flags: expect.arrayContaining(["foreign_language_leak"]),
+          repaired_should_auto_send: true,
+          repair_succeeded: true,
+        }),
+      }),
+    }));
+    expect(inserts).toContainEqual(expect.objectContaining({
+      table: "learning_events",
+      payload: expect.objectContaining({
+        event_type: "self_correction_attempted",
+        source_module: "mayus_operating_partner",
+        payload: expect.objectContaining({
+          correction_status: "attempted",
+          correction_kind: "operating_partner_reply_repair",
+          metadata: expect.objectContaining({
+            original_risk_flags: expect.arrayContaining(["foreign_language_leak"]),
+          }),
+        }),
+      }),
+    }));
+    expect(inserts).toContainEqual(expect.objectContaining({
+      table: "learning_events",
+      payload: expect.objectContaining({
+        event_type: "self_correction_applied",
+        source_module: "mayus_operating_partner",
+        payload: expect.objectContaining({
+          correction_status: "corrected",
+          correction_kind: "operating_partner_reply_repair",
+          metadata: expect.objectContaining({
+            original_risk_flags: expect.arrayContaining(["foreign_language_leak"]),
+            repaired_should_auto_send: true,
+            repair_succeeded: true,
+          }),
+        }),
+      }),
+    }));
   });
 
   it("mantem decisao invalida e audita falha quando reparo quebra", async () => {
@@ -1604,6 +1826,7 @@ describe("mayus-operating-partner", () => {
     expect(fetcher).toHaveBeenCalledTimes(2);
     expect(decision.should_auto_send).toBe(false);
     expect(decision.risk_flags).toEqual(expect.arrayContaining(["foreign_language_leak"]));
+    expect(decision.risk_flags).toEqual(expect.arrayContaining(["reply_repair_failed"]));
     expect(inserts).toContainEqual(expect.objectContaining({
       table: "system_event_logs",
       payload: expect.objectContaining({
@@ -1611,6 +1834,21 @@ describe("mayus-operating-partner", () => {
         status: "error",
         payload: expect.objectContaining({
           error: expect.stringContaining("repair provider timeout"),
+        }),
+      }),
+    }));
+    expect(inserts).toContainEqual(expect.objectContaining({
+      table: "learning_events",
+      payload: expect.objectContaining({
+        event_type: "self_correction_failed",
+        source_module: "mayus_operating_partner",
+        payload: expect.objectContaining({
+          correction_status: "failed",
+          correction_kind: "operating_partner_reply_repair",
+          external_side_effects_blocked: true,
+          metadata: expect.objectContaining({
+            repair_succeeded: false,
+          }),
         }),
       }),
     }));

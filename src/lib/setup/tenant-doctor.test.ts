@@ -6,6 +6,7 @@ import {
   summarizeTenantDoctorChecks,
   type TenantDoctorCheck,
 } from "./tenant-doctor";
+import { buildAgenticReadinessReport } from "@/lib/agent/runtime/readiness";
 
 describe("tenant doctor", () => {
   it("marks integrations with secure credentials as ok", () => {
@@ -55,30 +56,37 @@ describe("tenant doctor", () => {
   });
 
   it("builds a safe artifact payload without credentials", () => {
+    const checks: TenantDoctorCheck[] = [
+      { id: "tenant:record", category: "tenant", status: "ok", title: "Tenant encontrado", detail: "Tenant acessivel.", autoFixable: false },
+      { id: "crm:pipeline", category: "crm", status: "fixed", title: "Pipeline criado", detail: "Pipeline Comercial criado automaticamente.", autoFixable: true, fixed: true },
+      {
+        id: "integration:openrouter",
+        category: "integrations",
+        status: "blocked",
+        title: "Integracao openrouter pendente",
+        detail: "Nao ha credencial segura ou conexao ativa para este provider.",
+        autoFixable: false,
+        nextAction: "Cadastrar credencial pelo painel de integracoes ou fluxo OAuth correspondente.",
+      },
+    ];
+    const agenticReadiness = buildAgenticReadinessReport({ checks });
     const metadata = buildTenantDoctorArtifactMetadata({
       tenantId: "tenant-1",
       ready: false,
       autoFixApplied: true,
       summary: { ok: 1, fixed: 1, warning: 0, blocked: 1 },
-      checks: [
-        { id: "tenant:record", category: "tenant", status: "ok", title: "Tenant encontrado", detail: "Tenant acessivel.", autoFixable: false },
-        { id: "crm:pipeline", category: "crm", status: "fixed", title: "Pipeline criado", detail: "Pipeline Comercial criado automaticamente.", autoFixable: true, fixed: true },
-        {
-          id: "integration:openrouter",
-          category: "integrations",
-          status: "blocked",
-          title: "Integracao openrouter pendente",
-          detail: "Nao ha credencial segura ou conexao ativa para este provider.",
-          autoFixable: false,
-          nextAction: "Cadastrar credencial pelo painel de integracoes ou fluxo OAuth correspondente.",
-        },
-      ],
+      checks,
+      agenticReadiness,
+      nextBestAction: agenticReadiness.nextBestAction,
+      pendingQuestions: agenticReadiness.pendingQuestions,
+      applicablePlan: agenticReadiness.applicablePlan,
     });
 
     expect(metadata.fixed_count).toBe(1);
     expect(metadata.blocked_count).toBe(1);
     expect(metadata.requires_human_action).toBe(true);
     expect(JSON.stringify(metadata)).not.toMatch(/api_key|webhook_secret|sk-/i);
+    expect(metadata.agentic_readiness.overall_score).toBeGreaterThan(0);
   });
 
   it("warns when the commercial sales profile is incomplete", async () => {
@@ -141,6 +149,10 @@ describe("tenant doctor", () => {
     const officeProfile = report.checks.find((item) => item.id === "office:knowledge_profile");
     expect(officeProfile?.status).toBe("warning");
     expect(officeProfile?.nextAction).toContain("Auto Setup Doctor");
+    expect(report.agenticReadiness.status).toBe("warning");
+    expect(report.agenticReadiness.modules.find((item) => item.id === "security")?.status).toBe("warning");
+    expect(report.pendingQuestions.length).toBeGreaterThan(0);
+    expect(report.nextBestAction).toBeTruthy();
   });
 
   it("auto-configures the sales LLM testbench and owner playbook questions", async () => {
@@ -256,6 +268,36 @@ describe("tenant doctor", () => {
           human_handoff_rules: expect.arrayContaining([expect.stringContaining("Escalar")]),
           forbidden_claims: expect.arrayContaining(["causa ganha"]),
           pricing_policy: expect.stringContaining("Nao informar preco fechado"),
+          permission_policy: expect.stringContaining("Acoes externas"),
+          calendar_policy: expect.stringContaining("confirmacao externa"),
+          finance_policy: expect.stringContaining("Cobrancas"),
+          playbook_notes: expect.stringContaining("Sem playbook especifico"),
+        }),
+      }),
+    })]));
+    const agenticPolicy = report.checks.find((item) => item.id === "agent:autonomy_policy");
+    expect(agenticPolicy?.status).toBe("fixed");
+    expect(upserts).toEqual(expect.arrayContaining([expect.objectContaining({
+      tenant_id: "tenant-1",
+      ai_features: expect.objectContaining({
+        mayus_agentic_policy: expect.objectContaining({
+          autonomy_mode: "supervised",
+          module_modes: expect.objectContaining({
+            setup: "auto_low_risk",
+            finance: "supervised",
+          }),
+        }),
+      }),
+    })]));
+    const escavadorBudget = report.checks.find((item) => item.id === "agent:escavador_budget_policy");
+    expect(escavadorBudget?.status).toBe("fixed");
+    expect(upserts).toEqual(expect.arrayContaining([expect.objectContaining({
+      tenant_id: "tenant-1",
+      ai_features: expect.objectContaining({
+        escavador_budget_policy: expect.objectContaining({
+          cache_first: true,
+          require_paid_search_confirmation: true,
+          monthly_limit_cents: 0,
         }),
       }),
     })]));

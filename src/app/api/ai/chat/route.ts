@@ -37,6 +37,10 @@ import {
   withMayusOrbEvent,
   type MayusOrbEvent,
 } from "@/lib/brain/orb-events";
+import {
+  loadEnforcedInstitutionalMemory,
+  summarizeInstitutionalMemoryForPrompt,
+} from "@/lib/agent/memory/institutional";
 
 export const dynamic = "force-dynamic";
 
@@ -52,6 +56,7 @@ const MAX_CHAT_HISTORY_ITEMS = 100;
 const DETERMINISTIC_ROUTER_INTENTS = new Set([
   "support_case_status",
   "collections_followup",
+  "office_setup_conversation",
   "legal_process_mission_plan",
   "legal_process_mission_execute_next",
   "legal_case_brain_insights",
@@ -100,6 +105,7 @@ REGRAS DE EXECUÇÃO DE SKILLS:
 - Quando tiver todas as informações mínimas (nome + valor + vencimento), execute a skill diretamente sem fazer perguntas.
 - Para investigar o lead em bate-papo comercial, gravar sinais e adaptar atendimento consultivo de alta performance pelo metodo DEF (descoberta, encantamento, fechamento), use a skill sales_consultation.
 - Para auto-configurar a base comercial do escritorio com cliente ideal, solucao central, PUV, pilares e anti-cliente, conversando com o usuario e gravando o perfil para reduzir configuracoes manuais, use a skill sales_profile_setup.
+- Para conduzir onboarding operacional do escritorio com areas, tom, triagem, handoff humano, documentos, promessas proibidas, SLA, departamentos, permissoes, agenda, financeiro, playbooks e defaults por area, gravando respostas aprovadas em tenant_settings.ai_features, use a skill office_setup_conversation.
 - Para criar ou adaptar playbook comercial premium do escritorio a partir de documento/modelo, com menu diario, primeiro atendimento MAYUS, SDR/closer, objecoes e analise de call, use a skill commercial_playbook_setup.
 - Para registrar ou qualificar um novo lead, indicado ou indicacao comercial no CRM, use a skill lead_intake.
 - Para montar roteiro de qualificacao, documentos minimos, objecoes e proximo melhor movimento de um lead ja registrado, use a skill lead_qualify.
@@ -252,31 +258,21 @@ async function precheckSkillPermission(_supabase: SupabaseClient, params: {
 // Cache em módulo para Memória Institucional
 const memoryCache = new Map<string, { data: string; expiresAt: number }>();
 
-/** Busca Memória Institucional - Usa USER CLIENT */
+/** Busca Memória Institucional - usa helper compartilhado com WhatsApp Operating Partner */
 async function fetchInstitutionalMemory(supabase: SupabaseClient, tenantId: string): Promise<string> {
   const cached = memoryCache.get(tenantId);
   if (cached && Date.now() < cached.expiresAt) return cached.data;
 
-  const { data } = await supabase
-    .from("office_institutional_memory")
-    .select("category, key, value")
-    .eq("tenant_id", tenantId)
-    .eq("enforced", true)
-    .order("category", { ascending: true })
-    .limit(50);
+  const entries = await loadEnforcedInstitutionalMemory(supabase, tenantId, { limit: 50 });
+  if (!entries.length) {
+    memoryCache.set(tenantId, { data: "", expiresAt: Date.now() + 5 * 60 * 1000 });
+    return "";
+  }
 
-  if (!data || data.length === 0) return "";
-
-  const grouped = data.reduce((acc, entry) => {
-    const cat = (entry.category || "geral").toUpperCase();
-    if (!acc[cat]) acc[cat] = [];
-    const text = typeof entry.value === "object" && entry.value?.text ? entry.value.text : String(entry.value ?? "");
-    acc[cat].push(`- ${entry.key}: ${text}`);
-    return acc;
-  }, {} as Record<string, string[]>);
-
-  const result = `\n\nCONHECIMENTO INSTITUCIONAL DO ESCRITÓRIO (seguir obrigatoriamente):\n${Object.entries(grouped)
-    .map(([cat, rules]) => `[${cat}]\n${rules.join("\n")}`).join("\n\n")}`;
+  const summary = summarizeInstitutionalMemoryForPrompt(entries, 50);
+  const result = summary
+    ? `\n\nCONHECIMENTO INSTITUCIONAL DO ESCRITÓRIO (seguir obrigatoriamente):\n${summary}`
+    : "";
 
   memoryCache.set(tenantId, { data: result, expiresAt: Date.now() + 5 * 60 * 1000 });
   return result;

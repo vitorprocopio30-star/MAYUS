@@ -16,6 +16,7 @@ const {
   syncProcessDocumentsMock,
   publishLegalPiecePremiumMock,
   createAgentAuditLogMock,
+  runSelfImprovementReviewMock,
 } = vi.hoisted(() => ({
   ...(() => {
     const localFromMock = vi.fn();
@@ -35,6 +36,7 @@ const {
       syncProcessDocumentsMock: vi.fn(),
       publishLegalPiecePremiumMock: vi.fn(),
       createAgentAuditLogMock: vi.fn(),
+      runSelfImprovementReviewMock: vi.fn(),
     };
   })(),
 }));
@@ -78,6 +80,10 @@ vi.mock("@/lib/juridico/publish-piece-premium", () => ({
 
 vi.mock("@/lib/agent/audit", () => ({
   createAgentAuditLog: createAgentAuditLogMock,
+}));
+
+vi.mock("@/lib/agent/runtime/self-improvement-review", () => ({
+  runSelfImprovementReview: runSelfImprovementReviewMock,
 }));
 
 vi.mock("@/lib/services/zapsign", () => ({
@@ -280,6 +286,7 @@ describe("dispatchCapabilityExecution - juridico", () => {
     syncProcessDocumentsMock.mockReset();
     publishLegalPiecePremiumMock.mockReset();
     createAgentAuditLogMock.mockReset();
+    runSelfImprovementReviewMock.mockReset();
     vi.mocked(executarCobranca).mockReset();
 
     insertMock.mockResolvedValue({ error: null });
@@ -304,6 +311,54 @@ describe("dispatchCapabilityExecution - juridico", () => {
       accessToken: "access-token-1",
       metadata: {},
     });
+  });
+
+  it("executa self_improvement_review e retorna resumo supervisionado", async () => {
+    const review = {
+      proposalsCreated: 1,
+      patternsDetected: [{
+        patternKind: "repair_foreign_language_leak",
+        category: "compliance",
+        eventType: "mayus_operating_partner_repair_pattern",
+        count: 3,
+        evidenceEventIds: ["evt-1", "evt-2", "evt-3"],
+        suggestedText: "Revisar vazamento de idioma antes do envio.",
+      }],
+    };
+    runSelfImprovementReviewMock.mockResolvedValue(review);
+
+    const result = await dispatchCapabilityExecution({
+      handlerType: "core_self_improvement_review",
+      capabilityName: "self_improvement_review",
+      tenantId: "tenant-1",
+      userId: "user-1",
+      entities: { lookback_days: "14" },
+      auditLogId: "audit-self-improvement-1",
+      brainContext: {
+        taskId: "task-1",
+        runId: "run-1",
+        stepId: "step-1",
+        sourceModule: "mayus",
+      },
+    });
+
+    expect(runSelfImprovementReviewMock).toHaveBeenCalledWith(expect.objectContaining({
+      tenantId: "tenant-1",
+      actorId: "user-1",
+      lookbackDays: 14,
+      brainContext: expect.objectContaining({
+        taskId: "task-1",
+        runId: "run-1",
+        stepId: "step-1",
+      }),
+    }));
+    expect(result.status).toBe("executed");
+    expect(result.reply).toContain("criou 1 proposta");
+    expect(result.outputPayload).toEqual(expect.objectContaining({
+      proposals_created: 1,
+      patterns_detected: review.patternsDetected,
+      external_side_effects_blocked: true,
+    }));
   });
 
   it("executa lead_intake pelo chat, cria CRM task e artifact da missao", async () => {
@@ -1297,6 +1352,139 @@ describe("dispatchCapabilityExecution - juridico", () => {
       }),
     }));
     expect(inserts.some((item) => item.table === "learning_events" && item.payload.event_type === "sales_profile_configured")).toBe(true);
+  });
+
+  it("executa office_setup_conversation e grava respostas aprovadas no perfil operacional", async () => {
+    const inserts: Array<{ table: string; payload: any }> = [];
+    const upserts: Array<{ table: string; payload: any }> = [];
+    fromMock.mockImplementation((table: string) => {
+      if (table === "tenant_settings") {
+        const query: any = {
+          select: vi.fn(() => query),
+          eq: vi.fn(() => query),
+          maybeSingle: vi.fn(async () => ({ data: { ai_features: { existing_flag: true } }, error: null })),
+          upsert: vi.fn((payload: any) => {
+            upserts.push({ table, payload });
+            return { error: null };
+          }),
+        };
+        return query;
+      }
+
+      return makeGrowthQuery(table, inserts);
+    });
+
+    const result = await dispatchCapabilityExecution({
+      handlerType: "setup_office_profile_conversation",
+      capabilityName: "office_setup_conversation",
+      tenantId: "tenant-1",
+      userId: "user-1",
+      entities: {
+        office_name: "Dutra Advocacia",
+        practice_areas: "Direito Bancario | Previdenciario",
+        communication_tone: "curto, humano e consultivo",
+        triage_rules: "separar lead novo de cliente atual",
+        human_handoff_rules: "urgencia juridica chama advogado",
+        required_documents_by_case: "contracheque | CNJ",
+        forbidden_claims: "resultado garantido",
+        pricing_policy: "nao falar preco sem aprovacao",
+        response_sla: "5 minutos",
+        departments: "Comercial | Juridico",
+        permission_policy: "socio aprova contrato cobranca e envio externo",
+        calendar_policy: "consulta pode ser sugerida mas confirmacao externa exige humano",
+        finance_policy: "cobrancas e renegociacoes ficam supervisionadas",
+        playbook_notes: "roteiro consultivo curto com proximo passo claro",
+        confirmation: "pode salvar",
+      },
+      auditLogId: "audit-office-setup-1",
+      brainContext: {
+        taskId: "brain-task-office-setup-1",
+        runId: "brain-run-office-setup-1",
+        stepId: "brain-step-office-setup-1",
+        sourceModule: "mayus",
+      },
+    });
+
+    expect(result.status).toBe("executed");
+    expect(result.reply).toContain("Onboarding operacional");
+    expect(result.outputPayload).toEqual(expect.objectContaining({
+      setup_status: "validated",
+      office_setup_persisted: true,
+      memory_proposals_created: 12,
+      external_side_effects_blocked: true,
+    }));
+    expect(upserts).toHaveLength(1);
+    expect(upserts[0].payload.ai_features).toEqual(expect.objectContaining({
+      existing_flag: true,
+      office_knowledge_profile: expect.objectContaining({
+        office_name: "Dutra Advocacia",
+        practice_areas: ["Direito Bancario", "Previdenciario"],
+        communication_tone: "curto, humano e consultivo",
+        permission_policy: "socio aprova contrato cobranca e envio externo",
+        calendar_policy: "consulta pode ser sugerida mas confirmacao externa exige humano",
+        finance_policy: "cobrancas e renegociacoes ficam supervisionadas",
+        playbook_notes: "roteiro consultivo curto com proximo passo claro",
+        practice_area_playbooks: expect.arrayContaining([
+          expect.objectContaining({
+            area: "Direito Bancario",
+            validation_status: "needs_area_review",
+          }),
+          expect.objectContaining({
+            area: "Previdenciario",
+            required_documents: expect.arrayContaining(["CNIS"]),
+          }),
+        ]),
+        status: "validated",
+      }),
+    }));
+    expect(createBrainArtifactMock).toHaveBeenCalledWith(expect.objectContaining({
+      tenantId: "tenant-1",
+      taskId: "brain-task-office-setup-1",
+      artifactType: "office_setup_conversation",
+      metadata: expect.objectContaining({
+        setup_status: "validated",
+        persisted: true,
+        profile: expect.objectContaining({
+          office_name: "Dutra Advocacia",
+        }),
+      }),
+    }));
+    expect(inserts.some((item) => item.table === "learning_events" && item.payload.event_type === "office_setup_profile_configured")).toBe(true);
+    const memoryInsert = inserts.find((item) => item.table === "brain_memories");
+    expect(memoryInsert?.payload).toEqual(expect.arrayContaining([
+      expect.objectContaining({
+        memory_type: "institutional_memory_proposal",
+        memory_key: "tom_de_atendimento",
+        source: "office_setup_conversation",
+        promoted: false,
+      }),
+      expect.objectContaining({
+        memory_type: "institutional_memory_proposal",
+        memory_key: "politica_de_preco",
+        source: "office_setup_conversation",
+        promoted: false,
+      }),
+      expect.objectContaining({
+        memory_type: "institutional_memory_proposal",
+        memory_key: "politica_de_permissoes",
+        source: "office_setup_conversation",
+        promoted: false,
+      }),
+      expect.objectContaining({
+        memory_type: "institutional_memory_proposal",
+        memory_key: "notas_de_playbook",
+        source: "office_setup_conversation",
+        promoted: false,
+      }),
+      expect.objectContaining({
+        memory_type: "institutional_memory_proposal",
+        memory_key: "playbooks_por_area",
+        source: "office_setup_conversation",
+        promoted: false,
+      }),
+    ]));
+    expect(inserts.some((item) => item.table === "learning_events" && item.payload.event_type === "memory_promotion_proposed")).toBe(true);
+    expect(JSON.stringify(createBrainArtifactMock.mock.calls[0][0].metadata)).not.toMatch(/api_key|webhook_secret|sk_live|sk_test|sk-or-v1/i);
   });
 
   it("registra artifact de contexto juridico para a missao do MAYUS", async () => {
