@@ -1,5 +1,5 @@
 import { supabaseAdmin } from "@/lib/supabase/admin";
-import { assertDraftVerifiedAgainstCurrent, evaluateVerifiedPieceReadiness } from "@/lib/juridico/verified-piece";
+import { assertDraftVerifiedAgainstCurrent, evaluateVerifiedPieceReadiness, type VerifiedPieceSnapshot } from "@/lib/juridico/verified-piece";
 
 export type ProcessDraftVersionRecord = {
   id: string;
@@ -175,6 +175,27 @@ function buildDraftPromotionCandidateConfidence(candidateTypes: DraftPromotionCa
   if (candidateTypes.length >= 3) return "high" as const;
   if (candidateTypes.length === 2) return "medium" as const;
   return "low" as const;
+}
+
+function applyVerifiedPieceMetadata(params: {
+  metadata: Record<string, unknown> | null | undefined;
+  verifiedPiece: VerifiedPieceSnapshot;
+  refreshedAt?: string;
+  refreshedBy?: string | null;
+}) {
+  return {
+    ...(isRecord(params.metadata) ? params.metadata : {}),
+    verified_piece: params.verifiedPiece,
+    evidence_pack_artifact_id: params.verifiedPiece.evidencePackArtifactId,
+    fact_basis: params.verifiedPiece.factBasis,
+    pending_validations: params.verifiedPiece.pendingValidations,
+    warnings: params.verifiedPiece.warnings,
+    requires_human_review: params.verifiedPiece.requiresHumanReview,
+    ...(params.refreshedAt ? {
+      verification_refreshed_at: params.refreshedAt,
+      verification_refreshed_by: params.refreshedBy || null,
+    } : {}),
+  };
 }
 
 export function buildDraftPromotionCandidate(params: {
@@ -438,19 +459,18 @@ export async function createHumanReviewedProcessDraftVersion(params: {
     draftMarkdown: nextDraftMarkdown,
     parentVersionId: baseVersion.id,
     metadata: {
-      ...baseMetadata,
-      edit_source: "human_editor",
-      edited_from_version_id: baseVersion.id,
-      edited_from_version_number: baseVersion.version_number,
-      edited_at: nowIso,
-      edited_by: params.actorId,
-      edited_in_surface: params.surface || "documentos",
-      verified_piece: verifiedPiece,
-      evidence_pack_artifact_id: verifiedPiece.evidencePackArtifactId,
-      fact_basis: verifiedPiece.factBasis,
-      pending_validations: verifiedPiece.pendingValidations,
-      warnings: [],
-      requires_human_review: verifiedPiece.requiresHumanReview,
+      ...applyVerifiedPieceMetadata({
+        metadata: {
+          ...baseMetadata,
+          edit_source: "human_editor",
+          edited_from_version_id: baseVersion.id,
+          edited_from_version_number: baseVersion.version_number,
+          edited_at: nowIso,
+          edited_by: params.actorId,
+          edited_in_surface: params.surface || "documentos",
+        },
+        verifiedPiece,
+      }),
       learning_loop_capture: learningLoopCapture,
       promotion_candidate: promotionCandidate,
       quality_metrics: {
@@ -617,6 +637,55 @@ export async function updateProcessDraftVersionWorkflow(params: {
 
   if (updateError || !updatedVersion) {
     throw new Error(getErrorMessage(updateError, "Nao foi possivel atualizar o workflow da minuta."));
+  }
+
+  return updatedVersion;
+}
+
+export async function refreshProcessDraftVersionVerification(params: {
+  tenantId: string;
+  processTaskId: string;
+  versionId: string;
+  actorId: string;
+}) {
+  const version = await getProcessDraftVersionForTask({
+    tenantId: params.tenantId,
+    processTaskId: params.processTaskId,
+    versionId: params.versionId,
+  });
+  if (!version) throw new Error("Versao da minuta nao encontrada.");
+
+  if (!version.is_current) {
+    throw new Error("Selecione a versao atual da minuta antes de atualizar o snapshot verificavel.");
+  }
+
+  if (version.workflow_status !== "draft") {
+    throw new Error("Apenas minutas em rascunho podem atualizar o snapshot verificavel sem nova aprovacao.");
+  }
+
+  const verifiedPiece = await evaluateVerifiedPieceReadiness({
+    tenantId: params.tenantId,
+    processTaskId: params.processTaskId,
+  });
+  const refreshedAt = new Date().toISOString();
+  const metadata = applyVerifiedPieceMetadata({
+    metadata: version.metadata,
+    verifiedPiece,
+    refreshedAt,
+    refreshedBy: params.actorId,
+  });
+
+  const { data: updatedVersion, error } = await supabaseAdmin
+    .from("process_draft_versions")
+    .update({ metadata, updated_at: refreshedAt })
+    .eq("tenant_id", params.tenantId)
+    .eq("process_task_id", params.processTaskId)
+    .eq("id", params.versionId)
+    .select("*")
+    .single<ProcessDraftVersionRecord>();
+
+  if (error || !updatedVersion) {
+    throw new Error(getErrorMessage(error, "Nao foi possivel atualizar o snapshot verificavel da minuta."));
   }
 
   return updatedVersion;

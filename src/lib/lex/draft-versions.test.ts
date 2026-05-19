@@ -44,6 +44,7 @@ import {
   getProcessDraftVersionForTask,
   loadDraftLearningLoopDelta,
   listProcessDraftVersions,
+  refreshProcessDraftVersionVerification,
   updateProcessDraftVersionWorkflow,
 } from "./draft-versions";
 
@@ -179,6 +180,95 @@ describe("draft-versions", () => {
       p_actor_id: "user-1",
     });
     expect(result).toEqual({ id: "version-1", workflow_status: "published" });
+  });
+
+  it("atualiza apenas metadados verificaveis da versao draft atual", async () => {
+    const version = {
+      id: "version-1",
+      tenant_id: "tenant-1",
+      process_task_id: "task-1",
+      source_artifact_id: null,
+      source_task_id: null,
+      source_case_brain_task_id: null,
+      parent_version_id: null,
+      version_number: 1,
+      workflow_status: "draft",
+      is_current: true,
+      piece_type: "contestacao",
+      piece_label: "Contestacao",
+      practice_area: null,
+      summary: null,
+      draft_markdown: "# Texto sem alteracao",
+      metadata: { foo: "bar", evidence_pack_artifact_id: "old-pack" },
+      approved_by: null,
+      approved_at: null,
+      published_by: null,
+      published_at: null,
+      created_by: null,
+      created_at: "2026-05-19T00:00:00.000Z",
+      updated_at: "2026-05-19T00:00:00.000Z",
+    } as any;
+
+    const getMaybeSingleMock = vi.fn().mockResolvedValue({ data: version, error: null });
+    const getEqVersionMock = vi.fn(() => ({ maybeSingle: getMaybeSingleMock }));
+    const getEqTaskMock = vi.fn(() => ({ eq: getEqVersionMock }));
+    const getEqTenantMock = vi.fn(() => ({ eq: getEqTaskMock }));
+    const getSelectMock = vi.fn(() => ({ eq: getEqTenantMock }));
+
+    const updateSingleMock = vi.fn().mockResolvedValue({
+      data: { ...version, metadata: { foo: "bar", evidence_pack_artifact_id: "evidence-artifact-1" } },
+      error: null,
+    });
+    const updateSelectMock = vi.fn(() => ({ single: updateSingleMock }));
+    const updateEqIdMock = vi.fn(() => ({ select: updateSelectMock }));
+    const updateEqTaskMock = vi.fn(() => ({ eq: updateEqIdMock }));
+    const updateEqTenantMock = vi.fn(() => ({ eq: updateEqTaskMock }));
+    const updateMock = vi.fn(() => ({ eq: updateEqTenantMock }));
+
+    fromMock
+      .mockReturnValueOnce({ select: getSelectMock })
+      .mockReturnValueOnce({ update: updateMock });
+
+    const result = await refreshProcessDraftVersionVerification({
+      tenantId: "tenant-1",
+      processTaskId: "task-1",
+      versionId: "version-1",
+      actorId: "user-1",
+    });
+
+    expect(updateMock).toHaveBeenCalledWith(expect.objectContaining({
+      metadata: expect.objectContaining({
+        foo: "bar",
+        verified_piece: expect.objectContaining({ ready: true, evidencePackArtifactId: "evidence-artifact-1" }),
+        evidence_pack_artifact_id: "evidence-artifact-1",
+        fact_basis: [],
+        pending_validations: [],
+        warnings: [],
+        requires_human_review: false,
+        verification_refreshed_by: "user-1",
+      }),
+      updated_at: expect.any(String),
+    }));
+    expect(result.metadata).toEqual({ foo: "bar", evidence_pack_artifact_id: "evidence-artifact-1" });
+  });
+
+  it("bloqueia refresh verificavel em versao ja aprovada", async () => {
+    const maybeSingleMock = vi.fn().mockResolvedValue({
+      data: { id: "version-1", workflow_status: "approved", is_current: true, metadata: {} },
+      error: null,
+    });
+    const eqVersionMock = vi.fn(() => ({ maybeSingle: maybeSingleMock }));
+    const eqTaskMock = vi.fn(() => ({ eq: eqVersionMock }));
+    const eqTenantMock = vi.fn(() => ({ eq: eqTaskMock }));
+    const selectMock = vi.fn(() => ({ eq: eqTenantMock }));
+    fromMock.mockReturnValue({ select: selectMock });
+
+    await expect(refreshProcessDraftVersionVerification({
+      tenantId: "tenant-1",
+      processTaskId: "task-1",
+      versionId: "version-1",
+      actorId: "user-1",
+    })).rejects.toThrow("Apenas minutas em rascunho podem atualizar o snapshot verificavel sem nova aprovacao.");
   });
 
   it("preserva erro semantico de stale draft ao transicionar workflow", async () => {
