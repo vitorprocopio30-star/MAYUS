@@ -1339,6 +1339,41 @@ export default function DocumentosPage() {
     }
   }, [loadDraftQueueHealth, loadDraftVersions, loadRepository]);
 
+  const handleRefreshDraftVerification = useCallback(async (taskId: string, versionId: string) => {
+    const busyKey = `${taskId}:${versionId}:refresh_verification`;
+    setDraftWorkflowBusyKey(busyKey);
+
+    try {
+      const response = await fetch(`/api/documentos/processos/${taskId}/minutas/${versionId}`, {
+        method: "PATCH",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ action: "refresh_verification" }),
+      });
+      const data = await response.json().catch(() => null);
+
+      if (!response.ok) {
+        throw new Error(data?.error || "Não foi possível atualizar o snapshot verificável da minuta.");
+      }
+
+      const nextVersion = data?.version as ProcessDraftVersion | undefined;
+      await Promise.all([
+        loadDraftVersions(taskId, { selectCurrent: true }),
+        loadRepository(),
+        loadDraftQueueHealth(),
+      ]);
+
+      if (nextVersion) {
+        setSelectedDraftVersionIdByTask((current) => ({ ...current, [taskId]: nextVersion.id }));
+      }
+
+      toast.success("Snapshot verificável atualizado sem alterar o texto da minuta.");
+    } catch (error: any) {
+      toast.error(error?.message || "Não foi possível atualizar o snapshot verificável da minuta.");
+    } finally {
+      setDraftWorkflowBusyKey((current) => (current === busyKey ? null : current));
+    }
+  }, [loadDraftQueueHealth, loadDraftVersions, loadRepository]);
+
   const handleResetDraftEditor = useCallback((version: ProcessDraftVersion) => {
     setDraftEditorContentByVersionId((current) => ({
       ...current,
@@ -3000,19 +3035,31 @@ export default function DocumentosPage() {
                                    </div>
                                  )}
 
-                                {selectedDraftVersion && (
-                                  <div className={`rounded-xl border px-4 py-3 text-xs leading-relaxed ${selectedDraftVerifiedPiece?.ready ? "border-emerald-500/20 bg-emerald-500/10 text-emerald-100" : "border-amber-500/20 bg-amber-500/10 text-amber-100"}`}>
-                                    <p className="font-semibold uppercase tracking-[0.18em] text-[10px] mb-2">Peça verificável</p>
-                                    <p>
-                                      {selectedDraftVerifiedPiece?.ready
-                                        ? `Pronta para uso oficial com ${selectedDraftVerifiedPiece.factBasis.length} fonte(s) factual(is).`
-                                        : selectedDraftVerificationReason}
-                                    </p>
-                                    {selectedDraftVerifiedPiece?.evidencePackGeneratedAt && (
-                                      <p className="mt-2 opacity-80">Pacote salvo em {formatDateTime(selectedDraftVerifiedPiece.evidencePackGeneratedAt)}</p>
-                                    )}
-                                  </div>
-                                )}
+                                 {selectedDraftVersion && (
+                                   <div className={`rounded-xl border px-4 py-3 text-xs leading-relaxed ${selectedDraftVerifiedPiece?.ready ? "border-emerald-500/20 bg-emerald-500/10 text-emerald-100" : "border-amber-500/20 bg-amber-500/10 text-amber-100"}`}>
+                                     <p className="font-semibold uppercase tracking-[0.18em] text-[10px] mb-2">Peça verificável</p>
+                                     <p>
+                                       {selectedDraftVerifiedPiece?.ready
+                                         ? `Pronta para uso oficial com ${selectedDraftVerifiedPiece.factBasis.length} fonte(s) factual(is).`
+                                         : selectedDraftVerificationReason}
+                                     </p>
+                                     {selectedDraftVerifiedPiece?.evidencePackGeneratedAt && (
+                                       <p className="mt-2 opacity-80">Pacote salvo em {formatDateTime(selectedDraftVerifiedPiece.evidencePackGeneratedAt)}</p>
+                                     )}
+                                     {canFormallyReviewDraft && selectedDraftVersion.workflow_status === "draft" && selectedDraftVerificationBlocked && !selectedCurrentDraftHasUnsavedChanges && !selectedDraftVersionStale && (
+                                       <button
+                                         type="button"
+                                         onClick={() => handleRefreshDraftVerification(selectedCard.id, selectedDraftVersion.id)}
+                                         data-testid={`documents-refresh-verification-${selectedDraftVersion.id}`}
+                                         disabled={draftWorkflowBusyKey === `${selectedCard.id}:${selectedDraftVersion.id}:refresh_verification`}
+                                         className="mt-3 inline-flex items-center justify-center gap-2 rounded-xl border border-amber-300/30 bg-black/20 px-3 py-2 text-[10px] font-black uppercase tracking-[0.18em] text-amber-100 disabled:opacity-50"
+                                       >
+                                         {draftWorkflowBusyKey === `${selectedCard.id}:${selectedDraftVersion.id}:refresh_verification` ? <Loader2 size={12} className="animate-spin" /> : <RefreshCw size={12} />}
+                                         Atualizar snapshot sem alterar texto
+                                       </button>
+                                     )}
+                                   </div>
+                                 )}
 
                                  <div className="flex flex-wrap gap-2">
                                   {canFormallyReviewDraft && selectedDraftVersion.workflow_status === "draft" && (

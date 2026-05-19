@@ -1,6 +1,6 @@
 import { NextRequest, NextResponse } from "next/server";
 import { getTenantSession } from "@/lib/auth/get-tenant-session";
-import { updateProcessDraftVersionWorkflow } from "@/lib/lex/draft-versions";
+import { refreshProcessDraftVersionVerification, updateProcessDraftVersionWorkflow } from "@/lib/lex/draft-versions";
 
 export const runtime = "nodejs";
 
@@ -10,7 +10,13 @@ export async function PATCH(request: NextRequest, { params }: { params: { taskId
     const taskId = String(params?.taskId || "").trim();
     const versionId = String(params?.versionId || "").trim();
     const body = await request.json().catch(() => null);
-    const action = body?.action === "publish" ? "publish" : body?.action === "approve" ? "approve" : null;
+    const action = body?.action === "publish"
+      ? "publish"
+      : body?.action === "approve"
+        ? "approve"
+        : body?.action === "refresh_verification"
+          ? "refresh_verification"
+          : null;
 
     if (!taskId || !versionId) {
       return NextResponse.json({ error: "Referencia invalida da minuta." }, { status: 400 });
@@ -20,13 +26,20 @@ export async function PATCH(request: NextRequest, { params }: { params: { taskId
       return NextResponse.json({ error: "Acao invalida para workflow da minuta." }, { status: 400 });
     }
 
-    const version = await updateProcessDraftVersionWorkflow({
-      tenantId,
-      processTaskId: taskId,
-      versionId,
-      action,
-      actorId: userId,
-    });
+    const version = action === "refresh_verification"
+      ? await refreshProcessDraftVersionVerification({
+        tenantId,
+        processTaskId: taskId,
+        versionId,
+        actorId: userId,
+      })
+      : await updateProcessDraftVersionWorkflow({
+        tenantId,
+        processTaskId: taskId,
+        versionId,
+        action,
+        actorId: userId,
+      });
 
     return NextResponse.json({ success: true, version });
   } catch (error: any) {
@@ -45,6 +58,8 @@ export async function PATCH(request: NextRequest, { params }: { params: { taskId
     if (
       error?.message === "A versao precisa ser aprovada antes da publicacao."
       || error?.message === "A versao da minuta esta desatualizada em relacao ao Case Brain atual."
+      || error?.message === "Selecione a versao atual da minuta antes de atualizar o snapshot verificavel."
+      || error?.message === "Apenas minutas em rascunho podem atualizar o snapshot verificavel sem nova aprovacao."
       || /Pacote de Evidencias|verificavel|snapshot verificavel|outro Pacote|citacao factual|sincronizacao documental|volume atual de documentos/i.test(String(error?.message || ""))
     ) {
       return NextResponse.json({ error: error.message }, { status: 409 });

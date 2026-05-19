@@ -6,14 +6,16 @@ vi.mock("@/lib/auth/get-tenant-session", () => ({
 }));
 
 vi.mock("@/lib/lex/draft-versions", () => ({
+  refreshProcessDraftVersionVerification: vi.fn(),
   updateProcessDraftVersionWorkflow: vi.fn(),
 }));
 
 import { PATCH } from "./route";
 import { getTenantSession } from "@/lib/auth/get-tenant-session";
-import { updateProcessDraftVersionWorkflow } from "@/lib/lex/draft-versions";
+import { refreshProcessDraftVersionVerification, updateProcessDraftVersionWorkflow } from "@/lib/lex/draft-versions";
 
 const getTenantSessionMock = vi.mocked(getTenantSession);
+const refreshProcessDraftVersionVerificationMock = vi.mocked(refreshProcessDraftVersionVerification);
 const updateProcessDraftVersionWorkflowMock = vi.mocked(updateProcessDraftVersionWorkflow);
 
 function buildRequest(body: Record<string, unknown>) {
@@ -70,6 +72,35 @@ describe("PATCH /api/documentos/processos/[taskId]/minutas/[versionId]", () => {
       action: "approve",
       actorId: "user-1",
     });
+    expect(response.status).toBe(200);
+    await expect(response.json()).resolves.toMatchObject({ success: true });
+  });
+
+  it("retorna 200 quando atualiza o snapshot verificável sem workflow", async () => {
+    getTenantSessionMock.mockResolvedValueOnce({
+      userId: "user-1",
+      tenantId: "tenant-1",
+      role: "admin",
+      isSuperadmin: false,
+      hasFullAccess: true,
+    });
+    refreshProcessDraftVersionVerificationMock.mockResolvedValueOnce({
+      id: "version-1",
+      workflow_status: "draft",
+      metadata: { verified_piece: { ready: true } },
+    } as any);
+
+    const response = await PATCH(buildRequest({ action: "refresh_verification" }), {
+      params: { taskId: "task-1", versionId: "version-1" },
+    });
+
+    expect(refreshProcessDraftVersionVerificationMock).toHaveBeenCalledWith({
+      tenantId: "tenant-1",
+      processTaskId: "task-1",
+      versionId: "version-1",
+      actorId: "user-1",
+    });
+    expect(updateProcessDraftVersionWorkflowMock).not.toHaveBeenCalled();
     expect(response.status).toBe(200);
     await expect(response.json()).resolves.toMatchObject({ success: true });
   });
