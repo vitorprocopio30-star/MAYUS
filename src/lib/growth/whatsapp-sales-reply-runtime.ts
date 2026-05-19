@@ -37,6 +37,11 @@ import {
 import { normalizeOfficePlaybookProfile, summarizeOfficePlaybookForPrompt } from "@/lib/growth/office-playbook-profile";
 import { fetchWhatsAppProcessStatusContext } from "@/lib/whatsapp/process-status-context";
 import { isAuthorizedWhatsAppCommandSender } from "@/lib/mayus/whatsapp-command-center";
+import {
+  buildInstitutionalMemoryPromptBlock,
+  DEFAULT_INSTITUTIONAL_MEMORY_PROMPT_CAP,
+  loadEnforcedInstitutionalMemory,
+} from "@/lib/agent/memory/institutional";
 
 function getStringValue(value: unknown) {
   return typeof value === "string" && value.trim().length > 0 ? value.trim() : null;
@@ -166,6 +171,15 @@ async function loadSalesRuntimeSettings(params: {
         pricingPolicy: getStringValue(officeProfile?.pricing_policy) || getStringValue(officeProfile?.pricingPolicy),
         responseSla: getStringValue(officeProfile?.response_sla) || getStringValue(officeProfile?.responseSla),
         departments: getStringArray(officeProfile?.departments),
+        permissionPolicy: getStringValue(officeProfile?.permission_policy) || getStringValue(officeProfile?.permissionPolicy),
+        calendarPolicy: getStringValue(officeProfile?.calendar_policy) || getStringValue(officeProfile?.calendarPolicy),
+        financePolicy: getStringValue(officeProfile?.finance_policy) || getStringValue(officeProfile?.financePolicy),
+        playbookNotes: getStringValue(officeProfile?.playbook_notes) || getStringValue(officeProfile?.playbookNotes),
+        practiceAreaPlaybooks: Array.isArray(officeProfile?.practice_area_playbooks)
+          ? officeProfile.practice_area_playbooks
+          : Array.isArray(officeProfile?.practiceAreaPlaybooks)
+            ? officeProfile.practiceAreaPlaybooks
+            : [],
       } satisfies MayusOfficeKnowledgeProfile
       : null,
     salesLlmTestbench: isExplicitlyEnabled(testbench)
@@ -513,7 +527,7 @@ export async function prepareWhatsAppSalesReplyForContact(params: {
     senderPhone: contact.phone_number || "",
     aiFeatures: runtimeSettings.aiFeatures,
   });
-  const [crmContext, previousMayusEvent, processStatusContext] = await Promise.all([
+  const [crmContext, previousMayusEvent, processStatusContext, institutionalMemory] = await Promise.all([
     loadCrmContext({
       supabase: params.supabase,
       tenantId: params.tenantId,
@@ -531,7 +545,12 @@ export async function prepareWhatsAppSalesReplyForContact(params: {
       messages: orderedMessages,
       senderPhoneAuthorized,
     }),
+    loadEnforcedInstitutionalMemory(params.supabase, params.tenantId, { limit: 12 }),
   ]);
+  const institutionalMemoryPrompt = buildInstitutionalMemoryPromptBlock(
+    institutionalMemory,
+    DEFAULT_INSTITUTIONAL_MEMORY_PROMPT_CAP,
+  );
   const reply = buildWhatsAppSalesReply({
     contactName: contact.name,
     phoneNumber: contact.phone_number,
@@ -566,6 +585,7 @@ export async function prepareWhatsAppSalesReplyForContact(params: {
         salesProfile: runtimeSettings.salesProfile,
         officeKnowledgeProfile: runtimeSettings.officeKnowledgeProfile,
         officePlaybookProfile: runtimeSettings.officePlaybookProfile,
+        institutionalMemory,
         crmContext,
         processStatusContext,
         previousMayusEvent,
@@ -587,6 +607,8 @@ export async function prepareWhatsAppSalesReplyForContact(params: {
         risk_flags: normalizedRiskFlags,
         may_auto_send: operatingPartnerDecision.should_auto_send,
         requires_human_review: operatingPartnerDecision.requires_approval || !operatingPartnerDecision.should_auto_send || operatingPartnerDecision.risk_flags.length > 0,
+        institutional_memory_loaded: institutionalMemoryPrompt.totalAvailable,
+        institutional_memory_applied: institutionalMemoryPrompt.appliedCount,
         mayus_operating_partner: {
           enabled: true,
           provider: operatingPartnerDecision.provider,
@@ -603,6 +625,8 @@ export async function prepareWhatsAppSalesReplyForContact(params: {
           process_status_context: processStatusContext,
           reasoning_summary_for_team: operatingPartnerDecision.reasoning_summary_for_team,
           expected_outcome: operatingPartnerDecision.expected_outcome,
+          institutional_memory_loaded: institutionalMemoryPrompt.totalAvailable,
+          institutional_memory_applied: institutionalMemoryPrompt.appliedCount,
         },
         conversation_state: operatingPartnerDecision.conversation_state,
         closing_readiness: operatingPartnerDecision.closing_readiness,

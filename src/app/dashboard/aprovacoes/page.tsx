@@ -23,6 +23,7 @@ dayjs.extend(relativeTime);
 dayjs.locale("pt-br");
 
 type ApprovalFilterId = "all" | "setup" | "legal" | "finance" | "escavador" | "external_messages";
+type ActivityFilterId = "all" | "mayus_corrections";
 
 type LegalMovementReviewItem = {
   id: string;
@@ -52,6 +53,27 @@ const APPROVAL_FILTERS: Array<{ id: ApprovalFilterId; label: string }> = [
   { id: "escavador", label: "Escavador" },
   { id: "external_messages", label: "Mensagens externas" },
 ];
+
+const SELF_CORRECTION_EVENT_TYPES = new Set([
+  "mayus_operating_partner_repair_pattern",
+  "self_correction_attempted",
+  "self_correction_applied",
+  "self_correction_requires_approval",
+  "self_correction_blocked",
+  "self_correction_failed",
+  "self_correction_not_available",
+  "self_correction_no_correction_available",
+  "self_improvement_proposals_created",
+]);
+
+function isMayusCorrectionEvent(event: BrainInboxEventItem) {
+  return SELF_CORRECTION_EVENT_TYPES.has(event.event_type);
+}
+
+function isMayusCorrectionArtifact(artifact: BrainInboxArtifactItem) {
+  return artifact.artifact_type === "self_improvement_report"
+    || artifact.source_module === "self_improvement_loop";
+}
 
 function toDateInputValue(value: string | null | undefined) {
   if (!value) return "";
@@ -576,11 +598,38 @@ function ActivityCard({ task }: { task: BrainInboxTaskItem }) {
   );
 }
 
+function buildSelfImprovementArtifactPreview(metadata: Record<string, unknown> | null | undefined) {
+  if (!metadata) return null;
+  const proposalsCreated = typeof metadata.proposals_created === "number"
+    ? metadata.proposals_created
+    : Number(metadata.proposals_created);
+  const patterns = Array.isArray(metadata.patterns_detected)
+    ? metadata.patterns_detected
+      .map((pattern) => {
+        if (!pattern || typeof pattern !== "object" || Array.isArray(pattern)) return null;
+        const record = pattern as Record<string, unknown>;
+        return typeof record.patternKind === "string" ? record.patternKind : null;
+      })
+      .filter((value): value is string => Boolean(value))
+    : [];
+
+  const proposalLabel = Number.isFinite(proposalsCreated)
+    ? `${proposalsCreated} proposta${proposalsCreated === 1 ? "" : "s"} de memoria`
+    : "Relatorio de auto-aprendizado";
+  const patternLabel = patterns.length
+    ? `Padroes: ${patterns.slice(0, 3).join(", ")}${patterns.length > 3 ? "..." : ""}`
+    : "Sem padrao novo promovivel neste ciclo.";
+
+  return `${proposalLabel}. ${patternLabel}`;
+}
+
 function ArtifactCard({ artifact }: { artifact: BrainInboxArtifactItem }) {
   const contentPreview = typeof artifact.metadata?.reply === "string"
     ? artifact.metadata.reply
     : typeof artifact.metadata?.sign_url === "string"
       ? artifact.metadata.sign_url
+      : artifact.artifact_type === "self_improvement_report"
+        ? buildSelfImprovementArtifactPreview(artifact.metadata)
       : null;
 
   return (
@@ -663,12 +712,93 @@ function getEventTitle(event: BrainInboxEventItem) {
       return "Proposta de memoria rejeitada";
     case "memory_promotion_revoked":
       return "Memoria revogada";
+    case "mayus_operating_partner_repair_pattern":
+      return "Padrao de reparo do Operating Partner";
+    case "self_correction_attempted":
+      return "Auto-correcao tentada";
+    case "self_correction_applied":
+      return "Auto-correcao aplicada";
+    case "self_correction_requires_approval":
+      return "Auto-correcao pediu aprovacao";
+    case "self_correction_blocked":
+      return "Auto-correcao bloqueou execucao";
+    case "self_correction_failed":
+      return "Auto-correcao falhou";
+    case "self_correction_not_available":
+    case "self_correction_no_correction_available":
+      return "Auto-correcao indisponivel";
+    case "self_improvement_proposals_created":
+      return "MAYUS propos memoria aprendida";
+    case "billing_payment_confirmed":
+      return "Pagamento confirmado aprendido";
+    case "billing_payment_overdue":
+      return "Cobranca vencida aprendida";
+    case "lead_outcome_recorded":
+      return "Resultado de lead aprendido";
     default:
       return event.event_type.replaceAll("_", " ");
   }
 }
 
+function getPayloadArray(payload: Record<string, unknown> | null | undefined, key: string) {
+  const value = payload?.[key];
+  return Array.isArray(value)
+    ? value.map((item) => String(item)).filter(Boolean)
+    : [];
+}
+
 function getEventDescription(event: BrainInboxEventItem) {
+  if (event.event_type.startsWith("self_correction_")) {
+    const correctionKind = typeof event.payload?.correction_kind === "string" ? event.payload.correction_kind : "correcao";
+    const status = typeof event.payload?.correction_status === "string" ? event.payload.correction_status : event.event_type.replace("self_correction_", "");
+    const reason = typeof event.payload?.reason === "string" ? event.payload.reason : null;
+    const action = typeof event.payload?.recommended_action === "string" ? event.payload.recommended_action : null;
+    return [
+      `${correctionKind}: ${status}`,
+      reason ? `motivo: ${reason}` : null,
+      action,
+    ].filter(Boolean).join(" · ");
+  }
+
+  if (event.event_type === "self_improvement_proposals_created") {
+    const proposalsCreated = typeof event.payload?.proposals_created === "number"
+      ? event.payload.proposals_created
+      : Number(event.payload?.proposals_created);
+    const patternKinds = getPayloadArray(event.payload, "pattern_kinds");
+    const correctionKinds = getPayloadArray(event.payload, "correction_kinds");
+    return [
+      Number.isFinite(proposalsCreated) ? `${proposalsCreated} proposta${proposalsCreated === 1 ? "" : "s"} criada${proposalsCreated === 1 ? "" : "s"}` : "Propostas criadas",
+      patternKinds.length ? `padroes: ${patternKinds.slice(0, 3).join(", ")}` : null,
+      correctionKinds.length ? `correcoes: ${correctionKinds.slice(0, 3).join(", ")}` : null,
+    ].filter(Boolean).join(" · ");
+  }
+
+  if (event.event_type === "mayus_operating_partner_repair_pattern") {
+    const originalFlags = getPayloadArray(event.payload, "original_risk_flags");
+    const repairedFlags = getPayloadArray(event.payload, "repaired_risk_flags");
+    const succeeded = event.payload?.repair_succeeded === true ? "reparo aplicado" : "reparo pendente";
+    return [
+      succeeded,
+      originalFlags.length ? `flags: ${originalFlags.join(", ")}` : null,
+      repairedFlags.length ? `apos reparo: ${repairedFlags.join(", ")}` : null,
+    ].filter(Boolean).join(" · ");
+  }
+
+  if (event.event_type === "lead_outcome_recorded") {
+    const outcome = typeof event.payload?.outcome === "string" ? event.payload.outcome : "resultado";
+    const motivo = typeof event.payload?.motivo === "string" ? event.payload.motivo : null;
+    return motivo ? `${outcome} · motivo: ${motivo}` : outcome;
+  }
+
+  if (event.event_type === "billing_payment_confirmed" || event.event_type === "billing_payment_overdue") {
+    const paymentId = typeof event.payload?.payment_id === "string" ? event.payload.payment_id : null;
+    const delayDays = typeof event.payload?.delay_days_estimate === "number" ? event.payload.delay_days_estimate : null;
+    return [
+      paymentId ? `Pagamento ${paymentId}` : "Evento financeiro",
+      delayDays !== null ? `atraso estimado: ${delayDays} dia${delayDays === 1 ? "" : "s"}` : null,
+    ].filter(Boolean).join(" · ");
+  }
+
   if (typeof event.payload?.reply === "string" && event.payload.reply.trim()) {
     return event.payload.reply;
   }
@@ -731,9 +861,21 @@ export default function BrainApprovalsPage() {
   const [isLoading, setIsLoading] = useState(true);
   const [reviewsLoading, setReviewsLoading] = useState(true);
   const [approvalFilter, setApprovalFilter] = useState<ApprovalFilterId>("all");
+  const [activityFilter, setActivityFilter] = useState<ActivityFilterId>("all");
   const isExecutive = isBrainExecutiveRole(role);
   const pendingApprovals = inbox?.pending_approvals || [];
   const recentApprovals = inbox?.recent_approvals || [];
+  const recentArtifacts = inbox?.recent_artifacts || [];
+  const recentEvents = inbox?.recent_events || [];
+  const correctionArtifactCount = recentArtifacts.filter(isMayusCorrectionArtifact).length;
+  const correctionEventCount = recentEvents.filter(isMayusCorrectionEvent).length;
+  const correctionActivityCount = correctionArtifactCount + correctionEventCount;
+  const filteredRecentArtifacts = activityFilter === "mayus_corrections"
+    ? recentArtifacts.filter(isMayusCorrectionArtifact)
+    : recentArtifacts;
+  const filteredRecentEvents = activityFilter === "mayus_corrections"
+    ? recentEvents.filter(isMayusCorrectionEvent)
+    : recentEvents;
   const filteredPendingApprovals = pendingApprovals.filter((approval) => matchesApprovalFilter(approval, approvalFilter));
   const filteredRecentApprovals = recentApprovals.filter((approval) => matchesApprovalFilter(approval, approvalFilter));
   const filterCounts = Object.fromEntries(
@@ -881,6 +1023,44 @@ export default function BrainApprovalsPage() {
         })}
       </div>
 
+      <div className="flex flex-wrap items-center gap-2">
+        <span className="text-[10px] uppercase tracking-[0.2em] text-gray-500">Atividade</span>
+        <button
+          type="button"
+          onClick={() => setActivityFilter("all")}
+          aria-pressed={activityFilter === "all"}
+          className={`inline-flex items-center gap-2 rounded-xl border px-3 py-2 text-xs font-bold uppercase tracking-widest transition-colors ${
+            activityFilter === "all"
+              ? "border-[#CCA761]/60 bg-[#CCA761]/15 text-[#CCA761]"
+              : "border-white/10 bg-[#0f0f0f] text-gray-400 hover:border-[#CCA761]/30 hover:text-[#CCA761]"
+          }`}
+        >
+          Tudo
+          <span className="rounded-full border border-white/10 bg-black/20 px-2 py-0.5 text-[10px] text-gray-300">
+            {recentArtifacts.length + recentEvents.length}
+          </span>
+        </button>
+        <button
+          type="button"
+          onClick={() => setActivityFilter("mayus_corrections")}
+          aria-pressed={activityFilter === "mayus_corrections"}
+          data-testid="brain-activity-filter-corrections"
+          className={`inline-flex items-center gap-2 rounded-xl border px-3 py-2 text-xs font-bold uppercase tracking-widest transition-colors ${
+            activityFilter === "mayus_corrections"
+              ? "border-sky-400/50 bg-sky-400/10 text-sky-300"
+              : "border-white/10 bg-[#0f0f0f] text-gray-400 hover:border-sky-400/30 hover:text-sky-300"
+          }`}
+        >
+          Correcoes MAYUS
+          <span
+            data-testid="brain-corrections-count"
+            className="rounded-full border border-white/10 bg-black/20 px-2 py-0.5 text-[10px] text-gray-300"
+          >
+            {correctionActivityCount}
+          </span>
+        </button>
+      </div>
+
       <section className="space-y-4">
         <div className="flex items-center justify-between gap-3">
           <div>
@@ -996,11 +1176,13 @@ export default function BrainApprovalsPage() {
             <div>
               <h2 className="text-lg text-white font-semibold">Artifacts recentes</h2>
               <div className="mt-3 space-y-3">
-                {inbox?.recent_artifacts.length ? (
-                  inbox.recent_artifacts.map((artifact) => <ArtifactCard key={artifact.id} artifact={artifact} />)
+                {filteredRecentArtifacts.length ? (
+                  filteredRecentArtifacts.map((artifact) => <ArtifactCard key={artifact.id} artifact={artifact} />)
                 ) : (
                   <div className="rounded-xl border border-white/8 bg-[#0f0f0f] p-4 text-sm text-gray-400">
-                    Nenhum artifact recente registrado.
+                    {activityFilter === "mayus_corrections"
+                      ? "Nenhum artifact de correcao registrado."
+                      : "Nenhum artifact recente registrado."}
                   </div>
                 )}
               </div>
@@ -1009,11 +1191,13 @@ export default function BrainApprovalsPage() {
             <div>
               <h2 className="text-lg text-white font-semibold">Feed canônico do cérebro</h2>
               <div className="mt-3 space-y-3">
-                {inbox?.recent_events.length ? (
-                  inbox.recent_events.map((event) => <EventCard key={event.id} event={event} />)
+                {filteredRecentEvents.length ? (
+                  filteredRecentEvents.map((event) => <EventCard key={event.id} event={event} />)
                 ) : (
                   <div className="rounded-xl border border-white/8 bg-[#0f0f0f] p-4 text-sm text-gray-400">
-                    Nenhum learning event recente registrado.
+                    {activityFilter === "mayus_corrections"
+                      ? "Nenhum evento de correcao registrado."
+                      : "Nenhum learning event recente registrado."}
                   </div>
                 )}
               </div>

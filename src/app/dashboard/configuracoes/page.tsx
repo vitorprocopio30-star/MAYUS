@@ -63,6 +63,35 @@ type SetupDoctorReport = {
   autoFixApplied: boolean;
   summary: Record<SetupDoctorStatus, number>;
   checks: SetupDoctorCheck[];
+  agenticReadiness?: {
+    label: string;
+    overallScore: number;
+    status: "ready" | "warning" | "blocked";
+    nextBestAction: string | null;
+    modules: Array<{
+      id: string;
+      label: string;
+      status: "ready" | "warning" | "blocked";
+      score: number;
+      summary: string;
+      nextAction: string | null;
+    }>;
+  };
+  nextBestAction?: string | null;
+  pendingQuestions?: Array<{
+    id: string;
+    module: string;
+    question: string;
+    required: boolean;
+  }>;
+  applicablePlan?: Array<{
+    id: string;
+    module: string;
+    title: string;
+    action: string;
+    requiresApproval: boolean;
+    status: string;
+  }>;
   brainTrace?: {
     taskId: string;
     runId: string;
@@ -435,6 +464,17 @@ function SetupDoctorPanel({
     warning: { label: "Aviso", className: "text-amber-300 bg-amber-400/10 border-amber-400/20", icon: AlertTriangle },
     blocked: { label: "Bloqueio", className: "text-red-300 bg-red-400/10 border-red-400/20", icon: AlertTriangle },
   };
+  const readiness = report?.agenticReadiness;
+  const readinessTone = readiness?.status === "ready"
+    ? "text-[#4ade80] border-[#4ade80]/20 bg-[#4ade80]/10"
+    : readiness?.status === "blocked"
+      ? "text-red-300 border-red-400/20 bg-red-400/10"
+      : "text-amber-300 border-amber-400/20 bg-amber-400/10";
+  const priorityModules = readiness?.modules
+    ?.filter((module) => module.status !== "ready")
+    .slice(0, 4) || readiness?.modules?.slice(0, 4) || [];
+  const pendingQuestions = report?.pendingQuestions || [];
+  const approvalItems = report?.applicablePlan?.filter((item) => item.requiresApproval && item.status !== "ready") || [];
 
   return (
     <section className={`border rounded-3xl p-6 sm:p-7 mb-10 transition-colors ${statusTone}`}>
@@ -508,6 +548,61 @@ function SetupDoctorPanel({
           </div>
         ))}
       </div>
+
+      {readiness && (
+        <div data-testid="agentic-readiness-panel" className="mt-5 border border-white/10 rounded-2xl bg-white/70 dark:bg-black/20 p-4">
+          <div className="flex flex-col lg:flex-row lg:items-center justify-between gap-4">
+            <div className="min-w-0">
+              <div className="flex flex-wrap items-center gap-2">
+                <span className={`inline-flex items-center gap-1.5 rounded-full border px-2.5 py-1 text-[9px] font-black uppercase tracking-widest ${readinessTone}`}>
+                  <BrainCircuit size={12} />
+                  {readiness.status === "ready" ? "AI First pronto" : readiness.status === "blocked" ? "AI First bloqueado" : "AI First em preparo"}
+                </span>
+                <span data-testid="agentic-readiness-score" className="text-xl font-black text-white">
+                  {readiness.overallScore}%
+                </span>
+              </div>
+              <p className="mt-2 text-[11px] text-gray-500 leading-relaxed">
+                Operating Partner, auto-configuracao, BYOK, Escavador, aprovacoes e artifacts em um unico plano de beta supervisionado.
+              </p>
+              {(report.nextBestAction || readiness.nextBestAction) && (
+                <p data-testid="agentic-next-best-action" className="mt-2 text-[10px] text-[#CCA761] font-bold uppercase tracking-wider leading-relaxed">
+                  {report.nextBestAction || readiness.nextBestAction}
+                </p>
+              )}
+            </div>
+
+            <div className="grid grid-cols-2 gap-2 min-w-[220px]">
+              <div className="rounded-xl border border-white/10 bg-black/10 px-3 py-2">
+                <div className="text-lg font-black text-white">{pendingQuestions.length}</div>
+                <div className="text-[8px] font-black uppercase tracking-widest text-gray-500">Perguntas</div>
+              </div>
+              <div data-testid="agentic-pending-approval" className="rounded-xl border border-white/10 bg-black/10 px-3 py-2">
+                <div className="text-lg font-black text-white">{approvalItems.length}</div>
+                <div className="text-[8px] font-black uppercase tracking-widest text-gray-500">Aprovacoes</div>
+              </div>
+            </div>
+          </div>
+
+          <div className="grid sm:grid-cols-2 lg:grid-cols-4 gap-2 mt-4">
+            {priorityModules.map((module) => (
+              <div
+                key={module.id}
+                data-testid={`agentic-readiness-module-${module.id}`}
+                className="rounded-xl border border-white/10 bg-black/10 px-3 py-3 min-w-0"
+              >
+                <div className="flex items-center justify-between gap-2">
+                  <span className="text-[9px] font-black uppercase tracking-widest text-gray-400 truncate">{module.label}</span>
+                  <span className={module.status === "ready" ? "text-[#4ade80]" : module.status === "blocked" ? "text-red-300" : "text-amber-300"}>
+                    {module.score}%
+                  </span>
+                </div>
+                <p className="mt-2 text-[10px] text-gray-500 leading-relaxed line-clamp-2">{module.nextAction || module.summary}</p>
+              </div>
+            ))}
+          </div>
+        </div>
+      )}
 
       <div className="mt-5 space-y-2">
         {isLoading && !report ? (

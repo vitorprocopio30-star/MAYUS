@@ -100,12 +100,14 @@ describe("/api/webhooks/asaas", () => {
       processTaskId: "task-1",
     });
     const logsQuery = makeInsertQuery();
+    const learningEventsQuery = makeInsertQuery();
     const platformEventsQuery = makeUpsertQuery();
     const tenantSelect = makeTenantSelectQuery({ id: "tenant-1", status: "trial", billing_cycle: "mensal" });
     const tenantUpdate = makeTenantUpdateQuery();
     let tenantsCalls = 0;
     fromMock.mockImplementation((table: string) => {
       if (table === "system_event_logs") return logsQuery;
+      if (table === "learning_events") return learningEventsQuery;
       if (table === "platform_billing_events") return platformEventsQuery;
       if (table === "tenants") {
         tenantsCalls++;
@@ -138,6 +140,18 @@ describe("/api/webhooks/asaas", () => {
       status: "received",
     }), expect.objectContaining({ onConflict: "provider,event_name,external_id" }));
     expect(tenantUpdate.update).toHaveBeenCalledWith(expect.objectContaining({ status: "ativo" }));
+    expect(learningEventsQuery.insert).toHaveBeenCalledWith(expect.objectContaining({
+      tenant_id: "tenant-1",
+      event_type: "billing_payment_confirmed",
+      source_module: "asaas_webhook",
+      payload: expect.objectContaining({
+        payment_id: "pay-1",
+        customer_id: "cus-1",
+        amount_cents: 39700,
+        platform_event_type: "received",
+        case_opened_via_revenue_to_case: true,
+      }),
+    }));
     expect(logsQuery.insert).toHaveBeenCalledWith(expect.objectContaining({ event_name: "asaas_webhook" }));
     expect(response.status).toBe(200);
   });
@@ -145,12 +159,14 @@ describe("/api/webhooks/asaas", () => {
   it("registra falha revenue-to-case sem vazar erro bruto", async () => {
     openCaseFromConfirmedBillingMock.mockRejectedValueOnce(new Error("service_role_key sk_test segredo bruto"));
     const logsQuery = makeInsertQuery();
+    const learningEventsQuery = makeInsertQuery();
     const platformEventsQuery = makeUpsertQuery();
     const tenantSelect = makeTenantSelectQuery({ id: "tenant-1", status: "trial", billing_cycle: "mensal" });
     const tenantUpdate = makeTenantUpdateQuery();
     let tenantsCalls = 0;
     fromMock.mockImplementation((table: string) => {
       if (table === "system_event_logs") return logsQuery;
+      if (table === "learning_events") return learningEventsQuery;
       if (table === "platform_billing_events") return platformEventsQuery;
       if (table === "tenants") {
         tenantsCalls++;
@@ -177,6 +193,44 @@ describe("/api/webhooks/asaas", () => {
     expect(JSON.stringify(errorLogPayload)).not.toMatch(/service_role_key|sk_test|segredo bruto/i);
     expect(response.status).toBe(200);
     await expect(response.json()).resolves.toEqual({ ok: true });
+  });
+
+  it("pagamento vencido grava learning event de inadimplencia", async () => {
+    const logsQuery = makeInsertQuery();
+    const learningEventsQuery = makeInsertQuery();
+    const platformEventsQuery = makeUpsertQuery();
+    const tenantSelect = makeTenantSelectQuery({ id: "tenant-1", status: "ativo", billing_cycle: "mensal" });
+    const tenantUpdate = makeTenantUpdateQuery();
+    let tenantsCalls = 0;
+    fromMock.mockImplementation((table: string) => {
+      if (table === "system_event_logs") return logsQuery;
+      if (table === "learning_events") return learningEventsQuery;
+      if (table === "platform_billing_events") return platformEventsQuery;
+      if (table === "tenants") {
+        tenantsCalls++;
+        return tenantsCalls === 1 ? tenantSelect : tenantUpdate;
+      }
+      throw new Error(`unexpected table ${table}`);
+    });
+
+    const response = await POST(buildRequest({
+      event: "PAYMENT_OVERDUE",
+      payment: { id: "pay-overdue", customer: "cus-1", value: 497, dueDate: "2026-05-01" },
+    }));
+
+    expect(learningEventsQuery.insert).toHaveBeenCalledWith(expect.objectContaining({
+      tenant_id: "tenant-1",
+      event_type: "billing_payment_overdue",
+      source_module: "asaas_webhook",
+      payload: expect.objectContaining({
+        payment_id: "pay-overdue",
+        customer_id: "cus-1",
+        amount_cents: 49700,
+        platform_event_type: "overdue",
+      }),
+    }));
+    expect(tenantUpdate.update).toHaveBeenCalledWith(expect.objectContaining({ status: "inadimplente" }));
+    expect(response.status).toBe(200);
   });
 
   it("registra evento SaaS pendente sem mudar status do tenant", async () => {

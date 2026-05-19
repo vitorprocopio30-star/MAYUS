@@ -89,6 +89,12 @@ function buildRequest(message: string) {
 
 const missionSkills = [
   {
+    name: "office_setup_conversation",
+    description: "Conduz onboarding operacional do escritorio.",
+    input_schema: { type: "object", properties: {} },
+    handler_type: "setup_office_profile_conversation",
+  },
+  {
     name: "legal_process_mission_plan",
     description: "Monta missao processual.",
     input_schema: { type: "object", properties: {} },
@@ -183,6 +189,68 @@ describe("POST /api/ai/chat deterministic process mission routing", () => {
       auditLogId: "audit-1",
       capabilityName: "legal_process_mission_execute_next",
       handlerType: "lex_process_mission_execute_next",
+    }));
+  });
+
+  it("executa onboarding operacional pelo router local sem chamar LLM", async () => {
+    dispatchCapabilityExecutionMock.mockResolvedValueOnce({
+      status: "executed",
+      reply: "## Perfil operacional configurado",
+      outputPayload: {
+        office_setup_persisted: true,
+        profile_status: "validated",
+        artifact_type: "office_setup_conversation",
+        event_type: "office_setup_profile_configured",
+        external_side_effects: [],
+      },
+      data: { ok: true },
+    });
+
+    const response = await POST(buildRequest(
+      "Mayus, configure o escritorio. Nome do escritorio: Dutra Advocacia. Areas de atuacao: Bancario | Previdenciario. Tom: curto e consultivo. Triagem: perguntar cidade e documentos. Handoff: urgencia juridica chama humano. Documentos: contrato e contracheque. Promessas proibidas: nunca prometer ganho. SLA: responder em ate 1 hora. Departamentos: comercial e juridico. Permissoes: socio aprova contrato, cobranca e envio externo. Agenda: consulta pode ser sugerida, confirmacao externa exige humano. Financeiro: cobrancas e renegociacoes ficam supervisionadas. Playbook: usar roteiro consultivo curto. Pode salvar."
+    ));
+    const json = await response.json();
+
+    expect(response.status).toBe(200);
+    expect(callLLMWithFallbackMock).not.toHaveBeenCalled();
+    expect(executeMock).toHaveBeenCalledWith(expect.objectContaining({
+      intent: "office_setup_conversation",
+      entities: expect.objectContaining({
+        office_name: "Dutra Advocacia",
+        practice_areas: "Bancario | Previdenciario",
+        communication_tone: "curto e consultivo",
+        triage_rules: "perguntar cidade e documentos",
+        human_handoff_rules: "urgencia juridica chama humano",
+        required_documents_by_case: "contrato e contracheque",
+        forbidden_claims: "nunca prometer ganho",
+        response_sla: "responder em ate 1 hora",
+        departments: "comercial e juridico",
+        permission_policy: "socio aprova contrato, cobranca e envio externo",
+        calendar_policy: "consulta pode ser sugerida, confirmacao externa exige humano",
+        finance_policy: "cobrancas e renegociacoes ficam supervisionadas",
+        playbook_notes: "usar roteiro consultivo curto",
+        confirmation: "Pode salvar",
+      }),
+    }), expect.objectContaining({ tenantId: "tenant-1", userId: "user-1" }));
+    expect(dispatchCapabilityExecutionMock).toHaveBeenCalledWith(expect.objectContaining({
+      handlerType: "setup_office_profile_conversation",
+      capabilityName: "office_setup_conversation",
+      tenantId: "tenant-1",
+      userId: "user-1",
+      auditLogId: "audit-1",
+    }));
+    expect(json.kernel).toEqual(expect.objectContaining({
+      status: "executed",
+      auditLogId: "audit-1",
+      capabilityName: "office_setup_conversation",
+      handlerType: "setup_office_profile_conversation",
+      outputPayload: expect.objectContaining({
+        office_setup_persisted: true,
+        profile_status: "validated",
+        artifact_type: "office_setup_conversation",
+        event_type: "office_setup_profile_configured",
+        external_side_effects: [],
+      }),
     }));
   });
 

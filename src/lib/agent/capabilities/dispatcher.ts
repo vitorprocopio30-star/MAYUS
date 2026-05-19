@@ -107,6 +107,18 @@ import {
   type SalesProfileSetupProfile,
 } from "@/lib/growth/sales-profile-setup";
 import {
+  buildOfficeSetupConversationArtifactMetadata,
+  buildOfficeSetupConversationPlan,
+  type OfficeKnowledgeProfile,
+  type OfficePracticeAreaPlaybook,
+  type OfficeSetupConversationInput,
+} from "@/lib/setup/office-setup-conversation";
+import {
+  buildMemoryPromotionEventPayload,
+  buildMemoryPromotionProposal,
+} from "@/lib/agent/memory/promotion";
+import { runSelfImprovementReview } from "@/lib/agent/runtime/self-improvement-review";
+import {
   buildCommercialPlaybookArtifactMetadata,
   buildCommercialPlaybookReply,
   buildCommercialPlaybookSetup,
@@ -549,6 +561,32 @@ async function registerLearningEvent(
   } catch (eventError) {
     console.error("[capability-dispatcher] learning event", eventError);
   }
+}
+
+async function runCoreSelfImprovementReview(input: DispatchCapabilityInput): Promise<DispatchCapabilityResult> {
+  const lookbackDays = Number(input.entities.lookback_days || input.entities.lookbackDays || 7);
+  const review = await runSelfImprovementReview({
+    supabase: serviceSupabase,
+    tenantId: input.tenantId,
+    actorId: input.userId || null,
+    lookbackDays: Number.isFinite(lookbackDays) ? lookbackDays : 7,
+    brainContext: input.brainContext || null,
+  });
+
+  return {
+    status: "executed",
+    reply: review.proposalsCreated > 0
+      ? `MAYUS detectou ${review.patternsDetected.length} padrao(oes) e criou ${review.proposalsCreated} proposta(s) de memoria para revisao.`
+      : `MAYUS revisou os learning_events recentes e nao criou novas propostas de memoria.`,
+    outputPayload: {
+      auditLogId: input.auditLogId || null,
+      handler_type: input.handlerType,
+      proposals_created: review.proposalsCreated,
+      patterns_detected: review.patternsDetected,
+      external_side_effects_blocked: true,
+    },
+    data: review,
+  };
 }
 
 function extractBillingNameFromHistory(history: Array<{ role: string; content: string }> = []) {
@@ -1735,6 +1773,27 @@ function buildSalesProfileSetupReply(params: {
   ].join("\n");
 }
 
+function buildOfficeSetupConversationReply(params: {
+  status: string;
+  completeness: number;
+  officeName: string | null;
+  practiceAreaCount: number;
+  missingSignalCount: number;
+  nextQuestion: string;
+  persisted: boolean;
+}) {
+  return [
+    "## Onboarding operacional do escritorio",
+    `- Status: ${params.status.replaceAll("_", " ")}`,
+    `- Perfil operacional: ${params.completeness}% completo`,
+    `- Escritorio: ${params.officeName || "ainda investigando"}`,
+    `- Areas cadastradas: ${params.practiceAreaCount}`,
+    `- Sinais faltantes: ${params.missingSignalCount}`,
+    `- Gravado nas configuracoes: ${params.persisted ? "sim" : "ainda nao"}`,
+    `- Proxima pergunta: ${params.nextQuestion}`,
+  ].join("\n");
+}
+
 function buildSalesConsultationInputFromEntities(entities: Record<string, string>): SalesConsultationInput {
   return {
     crmTaskId: getStringValue(entities.crm_task_id),
@@ -1957,6 +2016,220 @@ async function persistTenantSalesConsultationProfile(params: {
 
   if (error) throw error;
   return salesProfile;
+}
+
+async function loadTenantOfficeKnowledgeProfile(tenantId: string): Promise<OfficeKnowledgeProfile | null> {
+  try {
+    const { data, error } = await serviceSupabase
+      .from("tenant_settings")
+      .select("ai_features")
+      .eq("tenant_id", tenantId)
+      .maybeSingle();
+
+    if (error) return null;
+    const profile = data?.ai_features?.office_knowledge_profile;
+    if (!profile || typeof profile !== "object") return null;
+
+    const list = (value: unknown) => Array.isArray(value)
+      ? value.map((item) => getStringValue(item)).filter((item): item is string => Boolean(item))
+      : [];
+    const playbooks = (value: unknown): OfficePracticeAreaPlaybook[] => Array.isArray(value)
+      ? value.map((item) => {
+        const raw = item && typeof item === "object" ? item as Record<string, unknown> : {};
+        const area = getStringValue(raw.area);
+        if (!area) return null;
+        return {
+          area,
+          intake_questions: list(raw.intake_questions),
+          required_documents: list(raw.required_documents),
+          handoff_triggers: list(raw.handoff_triggers),
+          default_pipeline: list(raw.default_pipeline),
+          document_structure: list(raw.document_structure),
+          owner_team: getStringValue(raw.owner_team),
+          validation_status: getStringValue(raw.validation_status) === "validated" ? "validated" : "needs_area_review",
+          next_review_question: getStringValue(raw.next_review_question) || `Validar playbook da area ${area}.`,
+        } satisfies OfficePracticeAreaPlaybook;
+      }).filter((item): item is OfficePracticeAreaPlaybook => Boolean(item)).slice(0, 8)
+      : [];
+
+    return {
+      status: getStringValue(profile.status),
+      office_name: getStringValue(profile.office_name),
+      practice_areas: list(profile.practice_areas),
+      triage_rules: list(profile.triage_rules),
+      human_handoff_rules: list(profile.human_handoff_rules),
+      communication_tone: getStringValue(profile.communication_tone),
+      required_documents_by_case: list(profile.required_documents_by_case),
+      forbidden_claims: list(profile.forbidden_claims),
+      pricing_policy: getStringValue(profile.pricing_policy),
+      response_sla: getStringValue(profile.response_sla),
+      departments: list(profile.departments),
+      permission_policy: getStringValue(profile.permission_policy),
+      calendar_policy: getStringValue(profile.calendar_policy),
+      finance_policy: getStringValue(profile.finance_policy),
+      playbook_notes: getStringValue(profile.playbook_notes),
+      practice_area_playbooks: playbooks(profile.practice_area_playbooks),
+    };
+  } catch {
+    return null;
+  }
+}
+
+async function persistTenantOfficeKnowledgeProfile(params: {
+  tenantId: string;
+  profile: OfficeKnowledgeProfile & { status?: string | null };
+}) {
+  const { data } = await serviceSupabase
+    .from("tenant_settings")
+    .select("ai_features")
+    .eq("tenant_id", params.tenantId)
+    .maybeSingle<{ ai_features: Record<string, unknown> | null }>();
+
+  const aiFeatures = data?.ai_features && typeof data.ai_features === "object" && !Array.isArray(data.ai_features)
+    ? data.ai_features
+    : {};
+
+  const officeProfile = {
+    office_name: params.profile.office_name || null,
+    practice_areas: params.profile.practice_areas || [],
+    triage_rules: params.profile.triage_rules || [],
+    human_handoff_rules: params.profile.human_handoff_rules || [],
+    communication_tone: params.profile.communication_tone || null,
+    required_documents_by_case: params.profile.required_documents_by_case || [],
+    forbidden_claims: params.profile.forbidden_claims || [],
+    pricing_policy: params.profile.pricing_policy || null,
+    response_sla: params.profile.response_sla || null,
+    departments: params.profile.departments || [],
+    permission_policy: params.profile.permission_policy || null,
+    calendar_policy: params.profile.calendar_policy || null,
+    finance_policy: params.profile.finance_policy || null,
+    playbook_notes: params.profile.playbook_notes || null,
+    practice_area_playbooks: params.profile.practice_area_playbooks || [],
+    status: params.profile.status || "draft",
+    updated_at: new Date().toISOString(),
+  };
+
+  const { error } = await serviceSupabase
+    .from("tenant_settings")
+    .upsert({
+      tenant_id: params.tenantId,
+      ai_features: {
+        ...aiFeatures,
+        office_knowledge_profile: officeProfile,
+      },
+      updated_at: new Date().toISOString(),
+    }, { onConflict: "tenant_id" });
+
+  if (error) throw error;
+  return officeProfile;
+}
+
+function buildOfficeSetupMemoryCandidates(profile: OfficeKnowledgeProfile) {
+  const candidates: Array<{
+    key: string;
+    value: string;
+    category: string;
+    sourceLabel: string;
+    evidence: Record<string, unknown>;
+  }> = [];
+
+  const addText = (key: string, category: string, label: string, value?: string | null) => {
+    if (!value) return;
+    candidates.push({
+      key,
+      category,
+      value: `${label}: ${value}`,
+      sourceLabel: "Onboarding operacional validado",
+      evidence: { office_profile_key: key },
+    });
+  };
+
+  const addList = (key: string, category: string, label: string, values?: string[] | null) => {
+    if (!values?.length) return;
+    candidates.push({
+      key,
+      category,
+      value: `${label}: ${values.join("; ")}`,
+      sourceLabel: "Onboarding operacional validado",
+      evidence: { office_profile_key: key, item_count: values.length },
+    });
+  };
+
+  addText("tom_de_atendimento", "atendimento", "Tom de atendimento", profile.communication_tone);
+  addList("regras_de_triagem", "atendimento", "Regras de triagem", profile.triage_rules);
+  addList("handoff_humano", "atendimento", "Regras de handoff humano", profile.human_handoff_rules);
+  addList("documentos_por_caso", "juridico", "Documentos por tipo de caso", profile.required_documents_by_case);
+  addList("promessas_proibidas", "juridico", "Promessas proibidas", profile.forbidden_claims);
+  addText("politica_de_preco", "financeiro", "Politica de preco", profile.pricing_policy);
+  addText("sla_de_resposta", "atendimento", "SLA de resposta", profile.response_sla);
+  addText("politica_de_permissoes", "governanca", "Politica de permissoes", profile.permission_policy);
+  addText("politica_de_agenda", "operacao", "Politica de agenda", profile.calendar_policy);
+  addText("politica_financeira", "financeiro", "Politica financeira operacional", profile.finance_policy);
+  addText("notas_de_playbook", "playbook", "Playbooks operacionais", profile.playbook_notes);
+  if (profile.practice_area_playbooks?.length) {
+    candidates.push({
+      key: "playbooks_por_area",
+      category: "playbook",
+      value: `Playbooks por area: ${profile.practice_area_playbooks
+        .map((playbook) => `${playbook.area}: pipeline ${playbook.default_pipeline.join(" > ")}; documentos ${playbook.required_documents.join(", ")}`)
+        .join(" | ")}`,
+      sourceLabel: "Onboarding operacional validado",
+      evidence: {
+        office_profile_key: "practice_area_playbooks",
+        area_count: profile.practice_area_playbooks.length,
+      },
+    });
+  }
+
+  return candidates;
+}
+
+async function proposeOfficeSetupInstitutionalMemories(
+  input: DispatchCapabilityInput,
+  profile: OfficeKnowledgeProfile,
+) {
+  const proposals = buildOfficeSetupMemoryCandidates(profile)
+    .map((candidate) => buildMemoryPromotionProposal({
+      ...candidate,
+      source: "office_setup_conversation",
+      confidence: 0.82,
+      proposedBy: input.userId || null,
+    }));
+
+  if (proposals.length === 0) return 0;
+
+  const rows = proposals.map((proposal) => ({
+    tenant_id: input.tenantId,
+    scope: "tenant",
+    memory_type: proposal.memoryType,
+    memory_key: proposal.memoryKey,
+    value: proposal.value,
+    source: proposal.source,
+    confidence: proposal.confidence,
+    promoted: false,
+    created_by: input.userId || null,
+  }));
+
+  const { error } = await serviceSupabase
+    .from("brain_memories")
+    .insert(rows);
+
+  if (error) throw error;
+
+  await registerLearningEvent(input, "memory_promotion_proposed", {
+    ...buildMemoryPromotionEventPayload({
+      action: "proposed",
+      key: "office_setup_memory_batch",
+      category: "onboarding",
+      source: "office_setup_conversation",
+      confidence: 0.82,
+    }),
+    office_name: profile.office_name || null,
+    proposal_count: proposals.length,
+    keys: proposals.map((proposal) => proposal.memoryKey),
+  });
+
+  return proposals.length;
 }
 
 function buildColdLeadReactivationInputFromEntities(entities: Record<string, string>): ColdLeadReactivationInput {
@@ -2345,6 +2618,105 @@ async function runGrowthSalesProfileSetup(input: DispatchCapabilityInput): Promi
     data: {
       plan,
       persisted,
+    },
+  };
+}
+
+async function runSetupOfficeProfileConversation(input: DispatchCapabilityInput): Promise<DispatchCapabilityResult> {
+  const direct = buildOfficeSetupConversationInputFromEntities(input.entities);
+  const existingProfile = await loadTenantOfficeKnowledgeProfile(input.tenantId);
+  const plan = buildOfficeSetupConversationPlan({
+    ...direct,
+    existingProfile,
+    conversationSummary: getStringValue(input.entities.conversation_summary) || getStringValue(input.entities.notes),
+    conversationTurns: buildSalesConsultationConversationTurns(input.history),
+  });
+
+  let persisted = false;
+  let persistError: string | null = null;
+  let memoryProposalCount = 0;
+  let memoryProposalError: string | null = null;
+  if (plan.shouldPersist) {
+    try {
+      await persistTenantOfficeKnowledgeProfile({
+        tenantId: input.tenantId,
+        profile: plan.profile,
+      });
+      persisted = true;
+    } catch (error: any) {
+      persistError = error?.message || "Nao foi possivel gravar o perfil operacional agora.";
+    }
+  }
+
+  if (persisted) {
+    try {
+      memoryProposalCount = await proposeOfficeSetupInstitutionalMemories(input, plan.profile);
+    } catch (error: any) {
+      memoryProposalError = error?.message || "Nao foi possivel criar propostas de memoria agora.";
+    }
+  }
+
+  const metadata = {
+    ...buildOfficeSetupConversationArtifactMetadata(plan),
+    persisted,
+    persist_error: persistError,
+    memory_proposals_created: memoryProposalCount,
+    memory_proposal_error: memoryProposalError,
+  };
+
+  await registerArtifact(input, {
+    artifactType: "office_setup_conversation",
+    title: "Onboarding operacional do escritorio",
+    mimeType: "application/json",
+    dedupeKey: input.auditLogId
+      ? `office-setup-conversation:${input.auditLogId}`
+      : `office-setup-conversation:${input.tenantId}:${plan.status}`,
+    metadata,
+  });
+
+  await registerLearningEvent(input, persisted ? "office_setup_profile_configured" : "office_setup_conversation_created", {
+    summary: plan.summary,
+    office_name: plan.profile.office_name,
+    practice_area_count: plan.profile.practice_areas.length,
+    setup_status: plan.status,
+    setup_completeness: plan.completeness,
+    missing_signal_count: plan.missingSignals.length,
+    persisted,
+    memory_proposals_created: memoryProposalCount,
+    memory_proposal_error: memoryProposalError,
+    requires_human_review: plan.requiresHumanReview,
+    external_side_effects_blocked: plan.externalSideEffectsBlocked,
+  });
+
+  return {
+    status: persistError ? "failed" : "executed",
+    reply: buildOfficeSetupConversationReply({
+      status: plan.status,
+      completeness: plan.completeness,
+      officeName: plan.profile.office_name,
+      practiceAreaCount: plan.profile.practice_areas.length,
+      missingSignalCount: plan.missingSignals.length,
+      nextQuestion: plan.nextQuestion,
+      persisted,
+    }),
+    outputPayload: {
+      auditLogId: input.auditLogId || null,
+      handler_type: input.handlerType,
+      setup_status: plan.status,
+      setup_completeness: plan.completeness,
+      office_setup_persisted: persisted,
+      office_setup_persist_error: persistError,
+      memory_proposals_created: memoryProposalCount,
+      memory_proposal_error: memoryProposalError,
+      missing_signal_count: plan.missingSignals.length,
+      next_question: plan.nextQuestion,
+      requires_human_review: plan.requiresHumanReview,
+      external_side_effects_blocked: plan.externalSideEffectsBlocked,
+    },
+    data: {
+      plan,
+      persisted,
+      memoryProposalCount,
     },
   };
 }
@@ -3108,6 +3480,32 @@ async function runLegalCaseContext(input: DispatchCapabilityInput): Promise<Disp
       process_mission_goal: processMissionContext.missionGoal,
     },
     data: snapshot,
+  };
+}
+
+function splitEntityList(value: string | undefined | null) {
+  return getStringValue(value)
+    ? String(value).split(/[|,;]/).map((item) => item.trim()).filter(Boolean)
+    : null;
+}
+
+function buildOfficeSetupConversationInputFromEntities(entities: Record<string, string>): OfficeSetupConversationInput {
+  return {
+    officeName: getStringValue(entities.office_name) || getStringValue(entities.firm_name),
+    practiceAreas: splitEntityList(entities.practice_areas) || splitEntityList(entities.legal_areas),
+    communicationTone: getStringValue(entities.communication_tone) || getStringValue(entities.tone),
+    triageRules: splitEntityList(entities.triage_rules),
+    humanHandoffRules: splitEntityList(entities.human_handoff_rules) || splitEntityList(entities.handoff_rules),
+    requiredDocumentsByCase: splitEntityList(entities.required_documents_by_case) || splitEntityList(entities.required_documents),
+    forbiddenClaims: splitEntityList(entities.forbidden_claims),
+    pricingPolicy: getStringValue(entities.pricing_policy),
+    responseSla: getStringValue(entities.response_sla),
+    departments: splitEntityList(entities.departments),
+    permissionPolicy: getStringValue(entities.permission_policy),
+    calendarPolicy: getStringValue(entities.calendar_policy),
+    financePolicy: getStringValue(entities.finance_policy),
+    playbookNotes: getStringValue(entities.playbook_notes),
+    confirmationText: getStringValue(entities.confirmation) || getStringValue(entities.confirm_save),
   };
 }
 
@@ -5913,12 +6311,16 @@ export async function dispatchCapabilityExecution(input: DispatchCapabilityInput
   const handler = String(input.handlerType || "").trim();
 
   switch (handler) {
+    case "core_self_improvement_review":
+      return runCoreSelfImprovementReview(input);
     case "growth_marketing_copywriter":
       return runGrowthMarketingCopywriter(input);
     case "growth_marketing_ops_assistant":
       return runGrowthMarketingOpsAssistant(input);
     case "growth_sales_profile_setup":
       return runGrowthSalesProfileSetup(input);
+    case "setup_office_profile_conversation":
+      return runSetupOfficeProfileConversation(input);
     case "growth_sales_consultation":
       return runGrowthSalesConsultation(input);
     case "growth_commercial_playbook_setup":
