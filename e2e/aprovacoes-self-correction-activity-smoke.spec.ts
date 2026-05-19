@@ -50,6 +50,15 @@ function brainInboxResponse() {
           correction_kind: "operating_partner_reply_repair",
           reason: "timeout",
           recommended_action: "Escalar para revisao humana antes de nova aplicacao automatica.",
+          metadata: {
+            institutional_memory: {
+              applied_count: 2,
+              applied_entries: [
+                { key: "tom_consultivo", category: "atendimento" },
+                { key: "self_improvement:financeiro_cobranca", category: "financeiro" },
+              ],
+            },
+          },
         },
         task: null,
         step: null,
@@ -145,6 +154,8 @@ test.describe("Aprovacoes > atividade de auto-correcao", () => {
 
     await expect(page.getByText("Auto-correcao falhou")).toBeVisible();
     await expect(page.getByText(/operating_partner_reply_repair: failed/)).toBeVisible();
+    await expect(page.getByText(/memorias aplicadas: 2/)).toBeVisible();
+    await expect(page.getByText(/tom_consultivo/)).toBeVisible();
     await expect(page.getByText("Auto-correcao indisponivel")).toBeVisible();
     await expect(page.getByText(/policy_preflight: no_correction_available/)).toBeVisible();
     await expect(page.getByText("MAYUS propos memoria aprendida")).toBeVisible();

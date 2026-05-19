@@ -747,14 +747,42 @@ function getPayloadArray(payload: Record<string, unknown> | null | undefined, ke
     : [];
 }
 
+function getNestedRecord(value: unknown): Record<string, unknown> | null {
+  return value && typeof value === "object" && !Array.isArray(value)
+    ? value as Record<string, unknown>
+    : null;
+}
+
+function describeInstitutionalMemoryTrace(payload: Record<string, unknown> | null | undefined) {
+  const metadata = getNestedRecord(payload?.metadata);
+  const memory = getNestedRecord(metadata?.institutional_memory);
+  const appliedCount = typeof memory?.applied_count === "number"
+    ? memory.applied_count
+    : Number(memory?.applied_count);
+  if (!Number.isFinite(appliedCount) || appliedCount <= 0) return null;
+
+  const entries = Array.isArray(memory?.applied_entries)
+    ? memory.applied_entries
+      .map((entry) => getNestedRecord(entry)?.key)
+      .filter((key): key is string => typeof key === "string" && key.trim().length > 0)
+      .slice(0, 3)
+    : [];
+
+  return entries.length
+    ? `memorias aplicadas: ${appliedCount} (${entries.join(", ")})`
+    : `memorias aplicadas: ${appliedCount}`;
+}
+
 function getEventDescription(event: BrainInboxEventItem) {
   if (event.event_type.startsWith("self_correction_")) {
     const correctionKind = typeof event.payload?.correction_kind === "string" ? event.payload.correction_kind : "correcao";
     const status = typeof event.payload?.correction_status === "string" ? event.payload.correction_status : event.event_type.replace("self_correction_", "");
     const reason = typeof event.payload?.reason === "string" ? event.payload.reason : null;
     const action = typeof event.payload?.recommended_action === "string" ? event.payload.recommended_action : null;
+    const memoryTrace = describeInstitutionalMemoryTrace(event.payload);
     return [
       `${correctionKind}: ${status}`,
+      memoryTrace,
       reason ? `motivo: ${reason}` : null,
       action,
     ].filter(Boolean).join(" · ");

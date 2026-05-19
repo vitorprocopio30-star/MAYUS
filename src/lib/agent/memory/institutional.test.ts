@@ -1,5 +1,6 @@
 import { describe, expect, it } from "vitest";
 import {
+  buildInstitutionalMemoryAuditTrace,
   buildInstitutionalMemoryPromptBlock,
   loadEnforcedInstitutionalMemory,
   summarizeInstitutionalMemoryForPrompt,
@@ -237,6 +238,28 @@ describe("buildInstitutionalMemoryPromptBlock", () => {
     expect(result.totalAvailable).toBe(12);
     expect(result.appliedCount).toBe(5);
     expect(result.block.split("\n").filter((line) => line.startsWith("- ")).length).toBe(5);
+  });
+});
+
+describe("buildInstitutionalMemoryAuditTrace", () => {
+  it("expoe apenas metadados e contagem das memorias aplicadas", () => {
+    const entries: InstitutionalMemoryEntry[] = [
+      { id: "1", key: "tom", text: "Cordial.", category: "atendimento", source: "office_institutional_memory", sourceLabel: null, confidence: null },
+      { id: "2", key: "financas", text: "Nao enviar cobranca sem aprovacao.", category: "financeiro", source: "brain_memory_promoted", sourceLabel: "self_improvement_loop", confidence: 0.6 },
+      { id: "3", key: "juridico", text: "Manter revisao humana.", category: "juridico", source: "office_institutional_memory", sourceLabel: null, confidence: null },
+    ];
+
+    const trace = buildInstitutionalMemoryAuditTrace(entries, 2);
+
+    expect(trace).toEqual({
+      total_available: 3,
+      applied_count: 2,
+      applied_entries: [
+        { id: "1", key: "tom", category: "atendimento", source: "office_institutional_memory", source_label: null, confidence: null },
+        { id: "2", key: "financas", category: "financeiro", source: "brain_memory_promoted", source_label: "self_improvement_loop", confidence: 0.6 },
+      ],
+    });
+    expect(JSON.stringify(trace)).not.toContain("Nao enviar cobranca");
   });
 });
 
