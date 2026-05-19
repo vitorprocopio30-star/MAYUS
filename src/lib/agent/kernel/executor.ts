@@ -28,6 +28,11 @@ import {
 import type { MayusPolicyDecision } from '@/lib/agent/runtime/policy';
 import type { MayusAgentProfileRuntimeExplanation } from '@/lib/agent/runtime/agent-profiles';
 import { planSelfCorrectionForPolicy, recordSelfCorrectionEvent } from '@/lib/agent/runtime/self-correction';
+import {
+  buildInstitutionalMemoryAuditTrace,
+  loadEnforcedInstitutionalMemory,
+  type InstitutionalMemoryAuditTrace,
+} from '@/lib/agent/memory/institutional';
 import { supabaseAdmin } from '@/lib/supabase/admin';
 
 // ─── Cliente Supabase (singleton no módulo) ───────────────────────────────────
@@ -105,6 +110,7 @@ function buildPolicyAuditContext(policyDecision: MayusPolicyDecision & {
   autonomyMode: string;
   requiredCredentialProviders?: string[];
   profileExplanation?: MayusAgentProfileRuntimeExplanation | null;
+  institutionalMemory?: InstitutionalMemoryAuditTrace | null;
 }) {
   return {
     outcome: policyDecision.outcome,
@@ -116,7 +122,13 @@ function buildPolicyAuditContext(policyDecision: MayusPolicyDecision & {
     autonomy_mode: policyDecision.autonomyMode,
     required_credential_providers: policyDecision.requiredCredentialProviders ?? [],
     profile_explanation: policyDecision.profileExplanation ?? null,
+    institutional_memory: policyDecision.institutionalMemory ?? null,
   };
+}
+
+async function loadInstitutionalMemoryTrace(tenantId: string): Promise<InstitutionalMemoryAuditTrace> {
+  const entries = await loadEnforcedInstitutionalMemory(supabaseAdmin, tenantId, { limit: 30 });
+  return buildInstitutionalMemoryAuditTrace(entries);
 }
 
 // ─── Audit Log ────────────────────────────────────────────────────────────────
@@ -236,6 +248,7 @@ export async function execute(
     tenantId: context.tenantId,
     skill,
   });
+  const institutionalMemoryTrace = await loadInstitutionalMemoryTrace(context.tenantId);
   const policyDecision = decideMayusSkillAutonomy({
     policy: agenticPolicy,
     skill,
@@ -247,6 +260,7 @@ export async function execute(
     ...policyDecision,
     requiredCredentialProviders: credentialAvailability.requiredProviders,
     profileExplanation: policyDecision.profileExplanation,
+    institutionalMemory: institutionalMemoryTrace,
   });
   const selfCorrectionPlan = planSelfCorrectionForPolicy({
     riskLevel: skill.risk_level,
@@ -273,6 +287,7 @@ export async function execute(
       policy_outcome: policyDecision.outcome,
       requires_human_confirmation: skill.requires_human_confirmation,
       required_credential_providers: credentialAvailability.requiredProviders,
+      institutional_memory: institutionalMemoryTrace,
     },
   });
 
@@ -379,6 +394,7 @@ export async function execute(
       idempotencyKey,
       risk_level: skill.risk_level,
       policyDecision: policyAuditContext,
+      institutional_memory: institutionalMemoryTrace,
     },
     status: 'skill_executed',
     idempotencyKey,

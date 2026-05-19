@@ -23,6 +23,19 @@ export type InstitutionalMemoryPromptBlock = {
   totalAvailable: number;
 };
 
+export type InstitutionalMemoryAuditTrace = {
+  total_available: number;
+  applied_count: number;
+  applied_entries: Array<{
+    id: string;
+    key: string;
+    category: string;
+    source: InstitutionalMemoryEntry["source"];
+    source_label: string | null;
+    confidence: number | null;
+  }>;
+};
+
 const DEFAULT_LIMIT = 30;
 const MAX_KEY_CHARS = 120;
 const MAX_SOURCE_LABEL_CHARS = 60;
@@ -193,4 +206,25 @@ export function buildInstitutionalMemoryPromptBlock(
     ? `\n\nMemoria institucional aprovada (siga obrigatoriamente):\n${summary}`
     : "";
   return { block, appliedCount: summary ? appliedCount : 0, totalAvailable };
+}
+
+export function buildInstitutionalMemoryAuditTrace(
+  entries: InstitutionalMemoryEntry[],
+  maxItems = DEFAULT_INSTITUTIONAL_MEMORY_PROMPT_CAP,
+): InstitutionalMemoryAuditTrace {
+  const prompt = buildInstitutionalMemoryPromptBlock(entries, maxItems);
+  const appliedEntries = entries.slice(0, prompt.appliedCount).map((entry) => ({
+    id: entry.id,
+    key: entry.key,
+    category: entry.category,
+    source: entry.source,
+    source_label: entry.sourceLabel,
+    confidence: entry.confidence,
+  }));
+
+  return {
+    total_available: prompt.totalAvailable,
+    applied_count: prompt.appliedCount,
+    applied_entries: appliedEntries,
+  };
 }

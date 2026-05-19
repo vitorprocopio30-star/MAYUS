@@ -24,6 +24,8 @@ const {
 });
 
 let tenantAiFeatures: Record<string, unknown> = {};
+let officeMemoryRows: Array<Record<string, unknown>> = [];
+let brainMemoryRows: Array<Record<string, unknown>> = [];
 
 vi.mock("@supabase/supabase-js", () => ({
   createClient: createClientMock,
@@ -63,6 +65,17 @@ function makeSkill(overrides: Record<string, unknown> = {}) {
   };
 }
 
+function makeReadQuery(rows: Array<Record<string, unknown>>) {
+  const query: any = {
+    select: vi.fn(() => query),
+    eq: vi.fn(() => query),
+    order: vi.fn(() => query),
+    limit: vi.fn(async () => ({ data: rows, error: null })),
+    maybeSingle: vi.fn(async () => ({ data: rows[0] || null, error: null })),
+  };
+  return query;
+}
+
 describe("execute - authorization guards", () => {
   beforeEach(() => {
     createClientMock.mockReset();
@@ -73,6 +86,8 @@ describe("execute - authorization guards", () => {
     fetchAgentSkillByNameMock.mockReset();
     checkTenantLimitsMock.mockReset();
     listTenantIntegrationsSafeMock.mockReset();
+    officeMemoryRows = [];
+    brainMemoryRows = [];
 
     tenantAiFeatures = {
       mayus_agentic_policy: {
@@ -100,6 +115,8 @@ describe("execute - authorization guards", () => {
         };
         return query;
       }
+      if (table === "office_institutional_memory") return makeReadQuery(officeMemoryRows);
+      if (table === "brain_memories") return makeReadQuery(brainMemoryRows);
       return { insert: insertMock };
     });
     createClientMock.mockReturnValue({ from: fromMock });
@@ -356,5 +373,115 @@ describe("execute - authorization guards", () => {
       }),
     }));
     expect(fromMock).toHaveBeenCalledWith("agent_audit_logs");
+  });
+
+  it("anexa memoria institucional aplicada aos traces de suporte, juridico e financeiro", async () => {
+    officeMemoryRows = [
+      {
+        id: "office-memory-1",
+        category: "atendimento",
+        key: "tom",
+        value: "Responder com tom consultivo e sem prometer resultado.",
+        enforced: true,
+        created_at: "2026-05-19T10:00:00.000Z",
+      },
+    ];
+    brainMemoryRows = [
+      {
+        id: "brain-memory-1",
+        memory_key: "self_improvement:financeiro_cobranca",
+        value: {
+          text: "Follow-up financeiro deve ser rascunho supervisionado.",
+          category: "financeiro",
+          source_label: "MAYUS detectou padrao",
+          status: "approved",
+        },
+        source: "self_improvement_loop",
+        confidence: 0.6,
+        promoted: true,
+        created_at: "2026-05-19T10:01:00.000Z",
+      },
+    ];
+
+    const cases = [
+      makeSkill({
+        name: "support_case_status",
+        handler_type: "support_case_status",
+        risk_level: "low",
+      }),
+      makeSkill({
+        name: "legal_first_draft_generate",
+        handler_type: "legal_first_draft_generate",
+        risk_level: "high",
+      }),
+      makeSkill({
+        name: "collections_followup",
+        handler_type: "collections_followup",
+        risk_level: "medium",
+      }),
+    ];
+
+    for (const skill of cases) {
+      insertMock.mockClear();
+      fetchAgentSkillByNameMock.mockResolvedValueOnce(skill);
+
+      const result = await execute(
+        {
+          intent: String(skill.name),
+          entities: { client_name: "Cliente Teste" },
+          confidence: 0.95,
+          safeText: `executar ${skill.name}`,
+          ambiguous: false,
+        },
+        {
+          userId: "user-1",
+          tenantId: "tenant-1",
+          userRole: "Administrador",
+          channel: "chat",
+        }
+      );
+
+      expect(["success", "awaiting_approval"]).toContain(result.status);
+
+      const auditPayload = insertMock.mock.calls
+        .map((call) => call[0])
+        .find((payload) => payload?.skill_invoked === skill.name);
+      const correctionPayload = insertMock.mock.calls
+        .map((call) => call[0])
+        .find((payload) => payload?.event_type?.startsWith("self_correction_"));
+
+      expect(JSON.stringify(auditPayload)).not.toContain("Responder com tom consultivo");
+      expect(auditPayload).toEqual(expect.objectContaining({
+        skill_invoked: skill.name,
+      }));
+      const auditPolicyDecision =
+        auditPayload?.approval_context?.policy_decision ||
+        auditPayload?.payload_executed?.policyDecision;
+      expect(auditPolicyDecision).toEqual(expect.objectContaining({
+        institutional_memory: expect.objectContaining({
+          applied_count: 2,
+          total_available: 2,
+          applied_entries: expect.arrayContaining([
+            expect.objectContaining({ key: "tom", category: "atendimento" }),
+            expect.objectContaining({ key: "self_improvement:financeiro_cobranca", category: "financeiro" }),
+          ]),
+        }),
+      }));
+      expect(correctionPayload).toEqual(expect.objectContaining({
+        source_module: "agent_executor",
+        payload: expect.objectContaining({
+          metadata: expect.objectContaining({
+            skill_name: skill.name,
+            institutional_memory: expect.objectContaining({
+              applied_count: 2,
+              applied_entries: expect.arrayContaining([
+                expect.objectContaining({ key: "tom" }),
+              ]),
+            }),
+          }),
+        }),
+      }));
+      expect(JSON.stringify(correctionPayload)).not.toContain("Follow-up financeiro deve ser");
+    }
   });
 });
