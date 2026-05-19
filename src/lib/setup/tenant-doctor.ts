@@ -4,6 +4,10 @@ import {
   normalizeOfficePlaybookProfile,
   OFFICE_PLAYBOOK_OWNER_QUESTIONS,
 } from "@/lib/growth/office-playbook-profile";
+import { buildOfficePracticeAreaPlaybooks } from "./office-setup-conversation";
+import { DEFAULT_ESCAVADOR_BUDGET_POLICY } from "@/lib/agent/runtime/governance";
+import { DEFAULT_MAYUS_AGENTIC_POLICY } from "@/lib/agent/runtime/policy";
+import { buildAgenticReadinessReport, type AgenticReadinessReport } from "@/lib/agent/runtime/readiness";
 
 export type TenantDoctorStatus = "ok" | "fixed" | "warning" | "blocked";
 export type TenantDoctorCategory = "tenant" | "crm" | "skills" | "integrations" | "commercial" | "audit";
@@ -30,6 +34,10 @@ export type TenantDoctorReport = {
     blocked: number;
   };
   checks: TenantDoctorCheck[];
+  agenticReadiness: AgenticReadinessReport;
+  nextBestAction: string | null;
+  pendingQuestions: AgenticReadinessReport["pendingQuestions"];
+  applicablePlan: AgenticReadinessReport["applicablePlan"];
   brainTrace?: {
     taskId: string;
     runId: string;
@@ -129,6 +137,11 @@ const DEFAULT_OFFICE_KNOWLEDGE_PROFILE = {
   pricing_policy: "Nao informar preco fechado, contrato ou cobranca sem politica validada do escritorio e aprovacao humana.",
   response_sla: "Responder primeiro contato em ate 5 minutos quando o canal estiver ativo.",
   departments: [],
+  permission_policy: "Acoes externas, contrato, cobranca, mudanca de permissao, acesso a dados sensiveis e decisao juridica exigem aprovacao humana.",
+  calendar_policy: "O MAYUS pode preparar sugestoes de retorno e agenda, mas confirmacao externa de consulta, audiencia ou prazo exige aprovacao humana.",
+  finance_policy: "Cobrancas, renegociacoes, descontos, contratos e qualquer acao financeira externa ficam em modo supervisionado.",
+  playbook_notes: "Sem playbook especifico validado; usar tom, triagem e regras operacionais ate o dono aprovar roteiro por area.",
+  practice_area_playbooks: [],
   updated_at: null,
 };
 
@@ -183,6 +196,21 @@ export function buildTenantDoctorArtifactMetadata(report: TenantDoctorReport) {
     checks: report.checks.map(sanitizeDoctorCheckForArtifact),
     human_actions: humanActions,
     requires_human_action: humanActions.length > 0,
+    agentic_readiness: {
+      label: report.agenticReadiness.label,
+      status: report.agenticReadiness.status,
+      overall_score: report.agenticReadiness.overallScore,
+      next_best_action: report.agenticReadiness.nextBestAction,
+      modules: report.agenticReadiness.modules.map((module) => ({
+        id: module.id,
+        label: module.label,
+        status: module.status,
+        score: module.score,
+        next_action: module.nextAction,
+      })),
+      pending_questions_count: report.pendingQuestions.length,
+      applicable_plan_count: report.applicablePlan.length,
+    },
   };
 }
 
@@ -429,14 +457,21 @@ function getCommercialProfileMissingSignals(profile: Record<string, any> | null)
 }
 
 function getOfficeKnowledgeMissingSignals(profile: Record<string, any> | null) {
+  const hasPracticeAreas = Array.isArray(profile?.practice_areas) && profile.practice_areas.length > 0;
+  const hasPracticeAreaPlaybooks = Array.isArray(profile?.practice_area_playbooks) && profile.practice_area_playbooks.length > 0;
   const missing = [
     typeof profile?.office_name === "string" && profile.office_name.trim() ? null : "nome do escritorio",
-    Array.isArray(profile?.practice_areas) && profile.practice_areas.length > 0 ? null : "areas atendidas",
+    hasPracticeAreas ? null : "areas atendidas",
     Array.isArray(profile?.triage_rules) && profile.triage_rules.length > 0 ? null : "regras de triagem",
     Array.isArray(profile?.human_handoff_rules) && profile.human_handoff_rules.length > 0 ? null : "regras de handoff humano",
     typeof profile?.communication_tone === "string" && profile.communication_tone.trim() ? null : "tom de comunicacao",
     Array.isArray(profile?.forbidden_claims) && profile.forbidden_claims.length > 0 ? null : "promessas proibidas",
     typeof profile?.pricing_policy === "string" && profile.pricing_policy.trim() ? null : "politica de preco/cobranca",
+    typeof profile?.permission_policy === "string" && profile.permission_policy.trim() ? null : "politica de permissoes",
+    typeof profile?.calendar_policy === "string" && profile.calendar_policy.trim() ? null : "politica de agenda",
+    typeof profile?.finance_policy === "string" && profile.finance_policy.trim() ? null : "politica financeira operacional",
+    typeof profile?.playbook_notes === "string" && profile.playbook_notes.trim() ? null : "playbooks operacionais",
+    hasPracticeAreas && !hasPracticeAreaPlaybooks ? "playbooks por area juridica" : null,
   ].filter(Boolean) as string[];
 
   return missing;
@@ -563,7 +598,7 @@ async function ensureOfficeKnowledgeProfile(tenantId: string, supabase: DoctorSu
       category: "skills",
       status: "ok",
       title: "Perfil operacional do escritorio configurado",
-      detail: "Areas, triagem, handoff, tom, promessas proibidas e politica comercial estao disponiveis para o Operating Partner.",
+      detail: "Areas, triagem, handoff, tom, promessas proibidas, politica comercial, permissoes, agenda, financeiro e playbooks estao disponiveis para o Operating Partner.",
       autoFixable: true,
     });
   }
@@ -576,20 +611,25 @@ async function ensureOfficeKnowledgeProfile(tenantId: string, supabase: DoctorSu
       title: "Perfil operacional do escritorio incompleto",
       detail: `Faltam sinais para o MAYUS operar como socio virtual: ${missing.join(", ")}.`,
       autoFixable: true,
-      nextAction: "Rodar o Auto Setup Doctor para criar defaults seguros e depois validar areas, triagem, handoff, tom, documentos, preco e departamentos do escritorio.",
+      nextAction: "Rodar o Auto Setup Doctor para criar defaults seguros e depois validar areas, triagem, handoff, tom, documentos, preco, permissoes, agenda, financeiro, playbooks e departamentos do escritorio.",
     });
   }
 
   const existingProfile = profile && typeof profile === "object" ? profile : {};
+  const existingPracticeAreas = Array.isArray(existingProfile.practice_areas) ? existingProfile.practice_areas : [];
+  const existingRequiredDocuments = Array.isArray(existingProfile.required_documents_by_case) ? existingProfile.required_documents_by_case : [];
+  const existingDepartments = Array.isArray(existingProfile.departments) ? existingProfile.departments : [];
+  const existingTriageRules = Array.isArray(existingProfile.triage_rules) && existingProfile.triage_rules.length > 0
+    ? existingProfile.triage_rules
+    : DEFAULT_OFFICE_KNOWLEDGE_PROFILE.triage_rules;
+  const existingHandoffRules = Array.isArray(existingProfile.human_handoff_rules) && existingProfile.human_handoff_rules.length > 0
+    ? existingProfile.human_handoff_rules
+    : DEFAULT_OFFICE_KNOWLEDGE_PROFILE.human_handoff_rules;
   const nextProfile = {
     ...DEFAULT_OFFICE_KNOWLEDGE_PROFILE,
     ...existingProfile,
-    triage_rules: Array.isArray(existingProfile.triage_rules) && existingProfile.triage_rules.length > 0
-      ? existingProfile.triage_rules
-      : DEFAULT_OFFICE_KNOWLEDGE_PROFILE.triage_rules,
-    human_handoff_rules: Array.isArray(existingProfile.human_handoff_rules) && existingProfile.human_handoff_rules.length > 0
-      ? existingProfile.human_handoff_rules
-      : DEFAULT_OFFICE_KNOWLEDGE_PROFILE.human_handoff_rules,
+    triage_rules: existingTriageRules,
+    human_handoff_rules: existingHandoffRules,
     communication_tone: typeof existingProfile.communication_tone === "string" && existingProfile.communication_tone.trim()
       ? existingProfile.communication_tone
       : DEFAULT_OFFICE_KNOWLEDGE_PROFILE.communication_tone,
@@ -602,6 +642,27 @@ async function ensureOfficeKnowledgeProfile(tenantId: string, supabase: DoctorSu
     response_sla: typeof existingProfile.response_sla === "string" && existingProfile.response_sla.trim()
       ? existingProfile.response_sla
       : DEFAULT_OFFICE_KNOWLEDGE_PROFILE.response_sla,
+    permission_policy: typeof existingProfile.permission_policy === "string" && existingProfile.permission_policy.trim()
+      ? existingProfile.permission_policy
+      : DEFAULT_OFFICE_KNOWLEDGE_PROFILE.permission_policy,
+    calendar_policy: typeof existingProfile.calendar_policy === "string" && existingProfile.calendar_policy.trim()
+      ? existingProfile.calendar_policy
+      : DEFAULT_OFFICE_KNOWLEDGE_PROFILE.calendar_policy,
+    finance_policy: typeof existingProfile.finance_policy === "string" && existingProfile.finance_policy.trim()
+      ? existingProfile.finance_policy
+      : DEFAULT_OFFICE_KNOWLEDGE_PROFILE.finance_policy,
+    playbook_notes: typeof existingProfile.playbook_notes === "string" && existingProfile.playbook_notes.trim()
+      ? existingProfile.playbook_notes
+      : DEFAULT_OFFICE_KNOWLEDGE_PROFILE.playbook_notes,
+    practice_area_playbooks: Array.isArray(existingProfile.practice_area_playbooks) && existingProfile.practice_area_playbooks.length > 0
+      ? existingProfile.practice_area_playbooks
+      : buildOfficePracticeAreaPlaybooks({
+        practiceAreas: existingPracticeAreas,
+        requiredDocumentsByCase: existingRequiredDocuments,
+        triageRules: existingTriageRules,
+        humanHandoffRules: existingHandoffRules,
+        departments: existingDepartments,
+      }),
     updated_at: new Date().toISOString(),
   };
 
@@ -622,7 +683,7 @@ async function ensureOfficeKnowledgeProfile(tenantId: string, supabase: DoctorSu
     category: "skills",
     status: "fixed",
     title: "Perfil operacional do escritorio semeado",
-    detail: "Defaults seguros foram criados para triagem, handoff, tom, promessas proibidas, preco e SLA; faltam validar nome, areas, documentos e departamentos reais.",
+    detail: "Defaults seguros foram criados para triagem, handoff, tom, promessas proibidas, preco, SLA, permissoes, agenda, financeiro, playbooks e defaults por area quando as areas existem; faltam validar nome, areas, documentos e departamentos reais.",
     autoFixable: true,
     fixed: true,
   });
@@ -754,6 +815,131 @@ async function ensureMayusOperatingPartner(tenantId: string, supabase: DoctorSup
     detail: "MAYUS agora tem defaults para operar setup, vendas, suporte, triagem juridica, CRM e tarefas com autonomia supervisionada alta.",
     autoFixable: true,
     fixed: true,
+  });
+}
+
+async function ensureMayusAgenticPolicy(tenantId: string, supabase: DoctorSupabase, autoFix: boolean) {
+  const { data, error } = await supabase
+    .from("tenant_settings")
+    .select("ai_features")
+    .eq("tenant_id", tenantId)
+    .maybeSingle();
+
+  if (error) throw error;
+
+  const aiFeatures = data?.ai_features && typeof data.ai_features === "object" ? data.ai_features as Record<string, any> : {};
+  const policy = aiFeatures.mayus_agentic_policy && typeof aiFeatures.mayus_agentic_policy === "object"
+    ? aiFeatures.mayus_agentic_policy as Record<string, any>
+    : null;
+
+  if (policy?.autonomy_mode && policy?.tool_policy) {
+    return check({
+      id: "agent:autonomy_policy",
+      category: "skills",
+      status: "ok",
+      title: "Policy agentica configurada",
+      detail: `Modo central: ${policy.autonomy_mode}. Acoes sensiveis continuam atras de aprovacao humana.`,
+      autoFixable: true,
+    });
+  }
+
+  if (!autoFix) {
+    return check({
+      id: "agent:autonomy_policy",
+      category: "skills",
+      status: "warning",
+      title: "Policy agentica beta ausente",
+      detail: "O tenant ainda nao separa claramente autoexecucao, artifact, aprovacao e bloqueio por credencial.",
+      autoFixable: true,
+      nextAction: "Rodar o Auto Setup Doctor para ativar a policy beta do Operating Partner supervisionado.",
+    });
+  }
+
+  const { error: upsertError } = await supabase
+    .from("tenant_settings")
+    .upsert({
+      tenant_id: tenantId,
+      ai_features: {
+        ...aiFeatures,
+        mayus_agentic_policy: DEFAULT_MAYUS_AGENTIC_POLICY,
+      },
+    }, { onConflict: "tenant_id" });
+
+  if (upsertError) throw upsertError;
+
+  return check({
+    id: "agent:autonomy_policy",
+    category: "skills",
+    status: "fixed",
+    title: "Policy agentica beta ativada",
+    detail: "MAYUS agora tem modos draft_only, supervised, auto_low_risk e blocked para separar execucao segura, artifact e aprovacao.",
+    autoFixable: true,
+    fixed: true,
+  });
+}
+
+async function ensureEscavadorBudgetPolicy(tenantId: string, supabase: DoctorSupabase, autoFix: boolean) {
+  const { data, error } = await supabase
+    .from("tenant_settings")
+    .select("ai_features")
+    .eq("tenant_id", tenantId)
+    .maybeSingle();
+
+  if (error) throw error;
+
+  const aiFeatures = data?.ai_features && typeof data.ai_features === "object" ? data.ai_features as Record<string, any> : {};
+  const policy = aiFeatures.escavador_budget_policy && typeof aiFeatures.escavador_budget_policy === "object"
+    ? aiFeatures.escavador_budget_policy as Record<string, any>
+    : null;
+
+  if (
+    policy?.cache_first === true &&
+    policy?.require_paid_search_confirmation === true &&
+    typeof policy.monthly_limit_cents === "number"
+  ) {
+    return check({
+      id: "agent:escavador_budget_policy",
+      category: "integrations",
+      status: "ok",
+      title: "Escavador com policy de custo",
+      detail: `Cache-first ativo e limite mensal aprovado de R$ ${(policy.monthly_limit_cents / 100).toFixed(2)}.`,
+      autoFixable: true,
+    });
+  }
+
+  if (!autoFix) {
+    return check({
+      id: "agent:escavador_budget_policy",
+      category: "integrations",
+      status: "warning",
+      title: "Escavador sem budget beta",
+      detail: "O MAYUS ainda nao tem policy local para cache-first, confirmacao de busca paga e hard stop do Escavador.",
+      autoFixable: true,
+      nextAction: "Rodar o Auto Setup Doctor para ativar budget inicial seguro do Escavador; depois o socio define o limite mensal real.",
+    });
+  }
+
+  const { error: upsertError } = await supabase
+    .from("tenant_settings")
+    .upsert({
+      tenant_id: tenantId,
+      ai_features: {
+        ...aiFeatures,
+        escavador_budget_policy: DEFAULT_ESCAVADOR_BUDGET_POLICY,
+      },
+    }, { onConflict: "tenant_id" });
+
+  if (upsertError) throw upsertError;
+
+  return check({
+    id: "agent:escavador_budget_policy",
+    category: "integrations",
+    status: "fixed",
+    title: "Budget seguro do Escavador ativado",
+    detail: "Escavador ficou cache-first, com confirmacao obrigatoria para busca paga e limite inicial zero ate o socio aprovar valor real.",
+    autoFixable: true,
+    fixed: true,
+    nextAction: "Definir o limite mensal real do Escavador quando o escritorio autorizar custo recorrente.",
   });
 }
 
@@ -962,6 +1148,8 @@ export async function runTenantDoctor(params: {
   checks.push(await ensureOfficeKnowledgeProfile(params.tenantId, supabase, autoFix));
   checks.push(await ensureSalesLlmTestbench(params.tenantId, supabase, autoFix));
   checks.push(await ensureMayusOperatingPartner(params.tenantId, supabase, autoFix));
+  checks.push(await ensureMayusAgenticPolicy(params.tenantId, supabase, autoFix));
+  checks.push(await ensureEscavadorBudgetPolicy(params.tenantId, supabase, autoFix));
 
   const integrations = await listIntegrations(params.tenantId, [...REQUIRED_INTEGRATIONS]);
   checks.push(...buildIntegrationDoctorChecks({
@@ -970,12 +1158,17 @@ export async function runTenantDoctor(params: {
   }));
 
   const summary = summarizeTenantDoctorChecks(checks);
+  const agenticReadiness = buildAgenticReadinessReport({ checks });
   const report = {
     tenantId: params.tenantId,
     ready: summary.blocked === 0 && summary.warning === 0,
     autoFixApplied: autoFix,
     summary,
     checks,
+    agenticReadiness,
+    nextBestAction: agenticReadiness.nextBestAction,
+    pendingQuestions: agenticReadiness.pendingQuestions,
+    applicablePlan: agenticReadiness.applicablePlan,
     brainTrace: null,
   };
 

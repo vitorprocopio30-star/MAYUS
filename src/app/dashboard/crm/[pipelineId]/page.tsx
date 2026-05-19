@@ -270,6 +270,16 @@ export default function PipelinePage() {
         }
         return list;
       });
+      void fetch("/api/crm/lead-outcome", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          crmTaskId: taskId,
+          outcome: "won",
+          valor: value,
+          fonte: "crm_board",
+        }),
+      }).catch(() => null);
     } catch (err) {
       toast.error("Erro ao fechar oportunidade.");
     } finally {
@@ -298,6 +308,16 @@ export default function PipelinePage() {
         }
         return list;
       });
+      void fetch("/api/crm/lead-outcome", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          crmTaskId: taskId,
+          outcome: "lost",
+          motivo,
+          fonte: "crm_board",
+        }),
+      }).catch(() => null);
     } catch (err) {
       toast.error("Erro ao registrar perda.");
     } finally {

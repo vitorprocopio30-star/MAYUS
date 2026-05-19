@@ -145,6 +145,82 @@ const INTENT_PATTERNS: IntentDefinition[] = [
     baseConfidence: 0.93,
   },
   {
+    intent: 'office_setup_conversation',
+    patterns: [
+      /onboarding\s+(do\s+)?escrit[oÃ³]rio/i,
+      /configur(ar|e)\s+(o\s+)?escrit[oÃ³]rio/i,
+      /configur(ar|e)\s+(a\s+)?base\s+operacional/i,
+      /auto[-\s]?configur(ar|e|acao|a[cÃ§][aÃ£]o)\s+(do\s+)?escrit[oÃ³]rio/i,
+      /perfil\s+operacional\s+(do\s+)?escrit[oÃ³]rio/i,
+      /office_knowledge_profile/i,
+      /ensinar\s+(o\s+)?mayus\s+(sobre\s+)?(o\s+)?escrit[oÃ³]rio/i,
+      /mayus.*(tom\s+de\s+atendimento|triagem|handoff|documentos\s+por\s+caso|promessas\s+proibidas|permissoes?|permissao|agenda|financeiro)/i,
+    ],
+    entityExtractors: [
+      {
+        key: 'office_name',
+        pattern: /(?:nome\s+do\s+escrit[oÃ³]rio|escrit[oÃ³]rio|banca)\s*[:\-]?\s*([^,.;!?]+?)(?=\s*(?:areas?|tom|triagem|handoff|documentos|promessas|sla|departamentos|permissoes?|permissao|agenda|financeiro|playbook|,|\.|!|\?|$))/i,
+      },
+      {
+        key: 'practice_areas',
+        pattern: /(?:areas?\s+(?:juridicas?|de\s+atuacao)|atuamos\s+em|atuacao)\s*[:\-]?\s*([^\n.]{4,260})/i,
+      },
+      {
+        key: 'communication_tone',
+        pattern: /(?:tom|voz|linguagem|comunicacao)\s*[:\-]?\s*([^\n.]{4,220})/i,
+      },
+      {
+        key: 'triage_rules',
+        pattern: /(?:triagem|qualificacao|perguntas?\s+iniciais?)\s*[:\-]?\s*([^\n.]{8,260})/i,
+      },
+      {
+        key: 'human_handoff_rules',
+        pattern: /(?:handoff|escalar|passar\s+para\s+humano|advogado\s+humano)\s*[:\-]?\s*([^\n.]{8,260})/i,
+      },
+      {
+        key: 'required_documents_by_case',
+        pattern: /(?:documentos?(?:\s+(?:necessarios|obrigatorios|por\s+caso))?|\bdocs?\b)\s*[:\-]\s*([^\n.]{6,260})/i,
+      },
+      {
+        key: 'forbidden_claims',
+        pattern: /(?:promessas?\s+proibidas?|claims?\s+proibidos?|nunca\s+dizer)\s*[:\-]?\s*([^\n.]{6,260})/i,
+      },
+      {
+        key: 'pricing_policy',
+        pattern: /(?:politica\s+de\s+(?:preco|honorarios|cobranca)|preco|honorarios)\s*[:\-]?\s*([^\n.]{6,220})/i,
+      },
+      {
+        key: 'response_sla',
+        pattern: /(?:sla|prazo\s+de\s+resposta|tempo\s+de\s+resposta)\s*[:\-]?\s*([^\n.]{3,160})/i,
+      },
+      {
+        key: 'departments',
+        pattern: /(?:departamentos?|equipe|responsaveis?)\s*[:\-]?\s*([^\n.]{4,220})/i,
+      },
+      {
+        key: 'permission_policy',
+        pattern: /(?:permissoes?|permissao|politica\s+de\s+acesso|aprovacao|quem\s+pode\s+aprovar|roles?|alcadas?)\s*[:\-]?\s*([^\n.]{6,260})/i,
+      },
+      {
+        key: 'calendar_policy',
+        pattern: /(?:agenda|calendario|politica\s+de\s+agenda|agendamentos?|consultas?|retornos?)\s*[:\-]?\s*([^\n.]{6,260})/i,
+      },
+      {
+        key: 'finance_policy',
+        pattern: /(?:(?:financeiro(?:\s+operacional)?|politica\s+financeira)\s*[:\-]?|(?:cobrancas?|renegociacoes?|asaas|inadimplencia)\s*[:\-])\s*([^\n.]{6,260})/i,
+      },
+      {
+        key: 'playbook_notes',
+        pattern: /(?:playbook|roteiro|script|padrao\s+de\s+atendimento|procedimento\s+operacional)\s*[:\-]?\s*([^\n.]{6,300})/i,
+      },
+      {
+        key: 'confirmation',
+        pattern: /(confirmo|validado|pode\s+salvar|pode\s+gravar|salva|grava|aprovado|t[a\u00e1]\s+certo|tudo\s+certo)/i,
+      },
+    ],
+    baseConfidence: 0.92,
+  },
+  {
     intent: 'sales_consultation',
     patterns: [
       /atendimento\s+(consultivo|comercial|de\s+vendas)/i,

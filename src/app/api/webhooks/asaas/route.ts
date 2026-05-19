@@ -15,6 +15,7 @@ import {
   normalizePlatformBillingEvent,
   type NormalizedPlatformBillingEvent,
 } from '@/lib/finance/platform-billing-summary'
+import { recordLearningEvent } from '@/lib/agent/memory/learning-events'
 
 const supabase = createClient(
   process.env.NEXT_PUBLIC_SUPABASE_URL!,
@@ -165,6 +166,53 @@ async function recordPlatformBillingEvent(params: {
   }
 }
 
+function learningEventTypeFromAsaasEvent(event: string) {
+  if (event === 'PAYMENT_CONFIRMED' || event === 'PAYMENT_RECEIVED') return 'billing_payment_confirmed'
+  if (event === 'PAYMENT_OVERDUE') return 'billing_payment_overdue'
+  return null
+}
+
+function estimateDelayDays(dueDate: string | null, referenceIso: string) {
+  if (!dueDate) return null
+  const due = new Date(dueDate)
+  const reference = new Date(referenceIso)
+  if (Number.isNaN(due.getTime()) || Number.isNaN(reference.getTime())) return null
+  return Math.max(0, Math.floor((reference.getTime() - due.getTime()) / (24 * 60 * 60 * 1000)))
+}
+
+async function recordBillingLearningEvent(params: {
+  tenantId: string
+  customerId: string
+  paymentId: string | null
+  event: string
+  amountCents: number | null
+  platformEvent: NormalizedPlatformBillingEvent
+  paidAt: string | null
+  dueDate: string | null
+  occurredAt: string
+  revenueToCaseResult: Awaited<ReturnType<typeof openCaseFromConfirmedBilling>> | null
+}) {
+  const eventType = learningEventTypeFromAsaasEvent(params.event)
+  if (!eventType) return
+
+  await recordLearningEvent({
+    supabase,
+    tenantId: params.tenantId,
+    eventType,
+    sourceModule: 'asaas_webhook',
+    payload: {
+      payment_id: params.paymentId,
+      customer_id: params.customerId,
+      amount_cents: params.amountCents,
+      platform_event_type: params.platformEvent.eventType,
+      paid_at: params.paidAt,
+      due_date: params.dueDate,
+      delay_days_estimate: estimateDelayDays(params.dueDate, params.paidAt || params.occurredAt),
+      case_opened_via_revenue_to_case: params.revenueToCaseResult?.reason === 'case_opened',
+    },
+  })
+}
+
 export async function POST(req: NextRequest) {
   // 1. Validar token
   const token = req.headers.get('asaas-access-token')
@@ -255,7 +303,7 @@ export async function POST(req: NextRequest) {
   // 4. Buscar tenant
   const { data: tenant, error } = await supabase
     .from('tenants')
-    .select('id, status, billing_cycle, platform_billing_amount_cents')
+    .select('id, status, billing_cycle, platform_billing_amount_cents, monitoring_overage_terms_accepted_at')
     .eq('asaas_customer_id', customerId)
     .maybeSingle()
 
@@ -291,6 +339,19 @@ export async function POST(req: NextRequest) {
     body,
     platformEvent,
     occurredAt,
+  })
+
+  await recordBillingLearningEvent({
+    tenantId: tenant.id,
+    customerId,
+    paymentId,
+    event,
+    amountCents,
+    platformEvent,
+    paidAt: isoOrNull(extractPaidAt(body)),
+    dueDate: extractDueDate(body),
+    occurredAt,
+    revenueToCaseResult,
   })
 
   if (!newStatus) {
@@ -335,6 +396,23 @@ export async function POST(req: NextRequest) {
     update.last_payment_at = occurredAt
     update.last_payment_value = paymentValue
     update.last_payment_id = paymentId
+    update.monitoring_payment_method_status = 'metodo_valido'
+    if (tenant.monitoring_overage_terms_accepted_at) {
+      update.monitoring_overage_status = 'excedente_liberado'
+      update.monitoring_overage_blocked_reason = null
+    }
+  }
+
+  if (newStatus === 'inadimplente') {
+    update.monitoring_payment_method_status = 'inadimplente'
+    update.monitoring_overage_status = 'excedente_inadimplente'
+    update.monitoring_overage_blocked_reason = 'platform_payment_overdue'
+  }
+
+  if (newStatus === 'cancelado') {
+    update.monitoring_payment_method_status = 'metodo_invalido'
+    update.monitoring_overage_status = 'excedente_bloqueado'
+    update.monitoring_overage_blocked_reason = 'platform_subscription_cancelled'
   }
 
   await supabase.from('tenants').update(update).eq('id', tenant.id)

@@ -18,7 +18,7 @@ function errorResponse(error: unknown) {
   }
 
   console.error("[setup][doctor]", error);
-  return NextResponse.json({ error: message || "Nao foi possivel executar o doctor do tenant." }, { status: 500 });
+  return NextResponse.json({ error: "Nao foi possivel executar o doctor do tenant." }, { status: 500 });
 }
 
 export async function GET() {

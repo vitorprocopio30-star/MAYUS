@@ -5,7 +5,7 @@ const baseContext = {
   userId: "user-1",
   tenantId: "tenant-1",
   channel: "chat" as const,
-  availableSkills: ["marketing_copywriter", "marketing_ops_assistant", "sales_profile_setup", "sales_consultation", "commercial_playbook_setup", "billing_create", "collections_followup", "lead_reactivation", "client_acceptance_record", "external_action_preview", "revenue_flow_plan", "lead_schedule", "lead_followup", "lead_qualify", "lead_intake", "support_case_status", "legal_process_mission_plan", "legal_process_mission_execute_next", "legal_case_brain_insights", "legal_case_context", "legal_document_memory_refresh", "legal_first_draft_generate", "legal_draft_workflow", "legal_draft_review_guidance", "legal_draft_revision_loop", "legal_artifact_publish_premium", "query_process_status"],
+  availableSkills: ["marketing_copywriter", "marketing_ops_assistant", "sales_profile_setup", "office_setup_conversation", "sales_consultation", "commercial_playbook_setup", "billing_create", "collections_followup", "lead_reactivation", "client_acceptance_record", "external_action_preview", "revenue_flow_plan", "lead_schedule", "lead_followup", "lead_qualify", "lead_intake", "support_case_status", "legal_process_mission_plan", "legal_process_mission_execute_next", "legal_case_brain_insights", "legal_case_context", "legal_document_memory_refresh", "legal_first_draft_generate", "legal_draft_workflow", "legal_draft_review_guidance", "legal_draft_revision_loop", "legal_artifact_publish_premium", "query_process_status"],
 };
 
 describe("route - juridico MAYUS", () => {
@@ -76,6 +76,27 @@ describe("route - juridico MAYUS", () => {
       ideal_client: "empresarios com passivo trabalhista",
       core_solution: "reduzir risco em acordos",
       value_pillars: "Diagnostico | Prova | Negociacao",
+      confirmation: "Pode salvar",
+    }));
+    expect(result.confidence).toBeGreaterThanOrEqual(0.9);
+  });
+
+  it("detecta onboarding operacional do escritorio", () => {
+    const result = route(
+      "Mayus, configure o escritorio. Nome do escritorio: Dutra Advocacia. Areas de atuacao: Bancario | Previdenciario. Tom: curto e consultivo. Handoff: urgencia juridica chama humano. Permissoes: socio aprova contrato e cobranca. Agenda: confirmar consulta so com humano. Financeiro: renegociacao supervisionada. Playbook: roteiro consultivo curto. Pode salvar.",
+      baseContext
+    );
+
+    expect(result.intent).toBe("office_setup_conversation");
+    expect(result.entities).toEqual(expect.objectContaining({
+      office_name: "Dutra Advocacia",
+      practice_areas: "Bancario | Previdenciario",
+      communication_tone: "curto e consultivo",
+      human_handoff_rules: "urgencia juridica chama humano",
+      permission_policy: "socio aprova contrato e cobranca",
+      calendar_policy: "confirmar consulta so com humano",
+      finance_policy: "renegociacao supervisionada",
+      playbook_notes: "roteiro consultivo curto",
       confirmation: "Pode salvar",
     }));
     expect(result.confidence).toBeGreaterThanOrEqual(0.9);

@@ -4,11 +4,13 @@ const {
   buildSalesLlmReplyMock,
   buildMayusOperatingPartnerDecisionMock,
   executeMayusOperatingPartnerActionsMock,
+  loadEnforcedInstitutionalMemoryMock,
   sendWhatsAppMessageMock,
 } = vi.hoisted(() => ({
   buildSalesLlmReplyMock: vi.fn(),
   buildMayusOperatingPartnerDecisionMock: vi.fn(),
   executeMayusOperatingPartnerActionsMock: vi.fn(),
+  loadEnforcedInstitutionalMemoryMock: vi.fn(),
   sendWhatsAppMessageMock: vi.fn(),
 }));
 
@@ -47,6 +49,15 @@ vi.mock("@/lib/agent/mayus-operating-partner-actions", () => ({
   executeMayusOperatingPartnerActions: executeMayusOperatingPartnerActionsMock,
 }));
 
+vi.mock("@/lib/agent/memory/institutional", async (importOriginal) => {
+  const actual = await importOriginal<typeof import("@/lib/agent/memory/institutional")>();
+  return {
+    ...actual,
+    loadEnforcedInstitutionalMemory: loadEnforcedInstitutionalMemoryMock,
+  };
+});
+
+import { DEFAULT_INSTITUTIONAL_MEMORY_PROMPT_CAP } from "@/lib/agent/memory/institutional";
 import { prepareWhatsAppSalesReplyForContact } from "./whatsapp-sales-reply-runtime";
 
 function makeSelectQuery(result: any) {
@@ -62,12 +73,26 @@ function makeSelectQuery(result: any) {
   return query;
 }
 
+function makeInstitutionalMemoryEntries(count: number) {
+  return Array.from({ length: count }, (_, index) => ({
+    id: `memory-${index + 1}`,
+    key: `regra_${index + 1}`,
+    text: `Regra institucional aprovada ${index + 1}`,
+    category: "atendimento",
+    source: "office_institutional_memory" as const,
+    sourceLabel: null,
+    confidence: null,
+  }));
+}
+
 describe("prepareWhatsAppSalesReplyForContact", () => {
   beforeEach(() => {
     buildSalesLlmReplyMock.mockReset();
     buildMayusOperatingPartnerDecisionMock.mockReset();
     executeMayusOperatingPartnerActionsMock.mockReset();
     executeMayusOperatingPartnerActionsMock.mockResolvedValue([]);
+    loadEnforcedInstitutionalMemoryMock.mockReset();
+    loadEnforcedInstitutionalMemoryMock.mockResolvedValue([]);
     sendWhatsAppMessageMock.mockReset();
   });
 
@@ -600,6 +625,19 @@ describe("prepareWhatsAppSalesReplyForContact", () => {
 
   it("usa o socio virtual MAYUS para conduzir WhatsApp e executar acoes simples", async () => {
     const inserts: Array<{ table: string; payload: any }> = [];
+    const institutionalMemory = [
+      {
+        id: "memory-self-improvement",
+        key: "self_improvement:correction_failed_operating_partner_reply_repair_timeout",
+        text: "Quando a auto-correcao operating_partner_reply_repair falhar por timeout, bloquear autoenvio e pedir revisao humana.",
+        category: "compliance",
+        source: "brain_memory_promoted" as const,
+        sourceLabel: "MAYUS detectou padrao",
+        confidence: 0.6,
+      },
+      ...makeInstitutionalMemoryEntries(DEFAULT_INSTITUTIONAL_MEMORY_PROMPT_CAP + 1),
+    ];
+    loadEnforcedInstitutionalMemoryMock.mockResolvedValueOnce(institutionalMemory);
     buildMayusOperatingPartnerDecisionMock.mockResolvedValueOnce({
       provider: "openrouter",
       model_used: "deepseek/deepseek-v4-pro",
@@ -661,6 +699,21 @@ describe("prepareWhatsAppSalesReplyForContact", () => {
                   pricing_policy: "Nao informar honorarios sem humano.",
                   response_sla: "ate 5 minutos",
                   departments: ["Comercial"],
+                  permission_policy: "Socio aprova contrato, cobranca e envio externo.",
+                  calendar_policy: "Consulta pode ser sugerida, confirmacao externa exige humano.",
+                  finance_policy: "Cobrancas e renegociacoes ficam supervisionadas.",
+                  playbook_notes: "Usar roteiro consultivo curto.",
+                  practice_area_playbooks: [{
+                    area: "bancario",
+                    intake_questions: ["Qual desconto aparece no documento?"],
+                    required_documents: ["contracheque"],
+                    handoff_triggers: ["Contrato exige humano."],
+                    default_pipeline: ["Triagem do desconto/contrato", "Coleta documental"],
+                    document_structure: ["00-bancario-intake-e-resumo"],
+                    owner_team: "Comercial",
+                    validation_status: "needs_area_review",
+                    next_review_question: "Validar playbook bancario?",
+                  }],
                 },
                 office_playbook_profile: {
                   status: "active",
@@ -712,16 +765,43 @@ describe("prepareWhatsAppSalesReplyForContact", () => {
     expect(prepared.operatingPartnerDecision?.intent).toBe("legal_triage");
     expect(prepared.metadata.reply_source).toBe("operating_partner");
     expect(prepared.metadata.model_used).toBe("deepseek/deepseek-v4-pro");
+    expect(prepared.metadata.institutional_memory_loaded).toBe(DEFAULT_INSTITUTIONAL_MEMORY_PROMPT_CAP + 2);
+    expect(prepared.metadata.institutional_memory_applied).toBe(DEFAULT_INSTITUTIONAL_MEMORY_PROMPT_CAP);
+    expect(prepared.metadata.mayus_operating_partner).toEqual(expect.objectContaining({
+      institutional_memory_loaded: DEFAULT_INSTITUTIONAL_MEMORY_PROMPT_CAP + 2,
+      institutional_memory_applied: DEFAULT_INSTITUTIONAL_MEMORY_PROMPT_CAP,
+    }));
     expect(prepared.operatingPartnerActionResults).toEqual([
       { type: "create_crm_lead", status: "executed", detail: "Lead criado no CRM.", record_id: "crm-1" },
     ]);
     expect(buildSalesLlmReplyMock).not.toHaveBeenCalled();
+    expect(loadEnforcedInstitutionalMemoryMock).toHaveBeenCalledWith(supabase, "tenant-1", { limit: 12 });
     expect(buildMayusOperatingPartnerDecisionMock).toHaveBeenCalledWith(expect.objectContaining({
+      institutionalMemory,
+    }));
+    expect(buildMayusOperatingPartnerDecisionMock).toHaveBeenCalledWith(expect.objectContaining({
+      institutionalMemory: expect.arrayContaining([
+        expect.objectContaining({
+          key: "self_improvement:correction_failed_operating_partner_reply_repair_timeout",
+          source: "brain_memory_promoted",
+          sourceLabel: "MAYUS detectou padrao",
+        }),
+      ]),
       officeKnowledgeProfile: expect.objectContaining({
         assistantName: "Maya",
         officeName: "Dutra Advocacia",
         practiceAreas: ["bancario"],
         pricingPolicy: "Nao informar honorarios sem humano.",
+        permissionPolicy: "Socio aprova contrato, cobranca e envio externo.",
+        calendarPolicy: "Consulta pode ser sugerida, confirmacao externa exige humano.",
+        financePolicy: "Cobrancas e renegociacoes ficam supervisionadas.",
+        playbookNotes: "Usar roteiro consultivo curto.",
+        practiceAreaPlaybooks: expect.arrayContaining([
+          expect.objectContaining({
+            area: "bancario",
+            default_pipeline: ["Triagem do desconto/contrato", "Coleta documental"],
+          }),
+        ]),
       }),
       officePlaybookProfile: expect.objectContaining({
         main_legal_areas: ["bancario"],

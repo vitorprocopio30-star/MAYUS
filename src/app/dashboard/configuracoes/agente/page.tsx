@@ -8,6 +8,7 @@ import { toast } from "sonner";
 import {
   Bot, Shield, ShieldCheck, ShieldOff, Layers, Users,
   ChevronRight, AlertTriangle, Loader2, RefreshCw, Zap,
+  BrainCircuit, CalendarClock, PlayCircle,
 } from "lucide-react";
 
 const montserrat = Montserrat({ subsets: ["latin"], weight: ["300","400","500","600","700"] });
@@ -28,9 +29,48 @@ interface AgentSkill {
   created_at: string;
 }
 
+type AgenticReadinessReport = {
+  overallScore: number;
+  status: "ready" | "warning" | "blocked";
+  nextBestAction: string | null;
+  modules: Array<{
+    id: string;
+    label: string;
+    status: "ready" | "warning" | "blocked";
+    score: number;
+    summary: string;
+    nextAction: string | null;
+  }>;
+};
+
+type AgenticRoutineSummary = {
+  id: string;
+  label?: string;
+  module?: string;
+  enabled?: boolean;
+  paused?: boolean;
+  status?: "ready" | "paused" | "blocked" | "dry_run" | "created" | "awaiting_approval" | "skipped";
+  reason?: string | null;
+  nextAction?: string | null;
+  lastResult?: {
+    status?: string;
+    reason?: string | null;
+    taskId?: string | null;
+    approvalId?: string | null;
+  } | null;
+};
+
 // ─── Constantes ───────────────────────────────────────────────────────────────
 
-const ALLOWED_ROLES = ["admin", "socio", "Administrador", "Sócio"];
+const ALLOWED_ROLES = ["admin", "administrador", "socio", "mayus_admin"];
+
+function normalizeRole(role: string | undefined) {
+  return String(role || "")
+    .trim()
+    .toLowerCase()
+    .normalize("NFD")
+    .replace(/[\u0300-\u036f]/g, "");
+}
 
 const RISK_STYLES: Record<string, string> = {
   critical: "text-red-400 border-red-500/40 bg-red-500/10",
@@ -167,6 +207,11 @@ export default function AgentSkillRegistryPage() {
   const [loading,  setLoading]  = useState(true);
   const [toggling, setToggling] = useState<string | null>(null);
   const [error,    setError]    = useState<string | null>(null);
+  const [readiness, setReadiness] = useState<AgenticReadinessReport | null>(null);
+  const [readinessLoading, setReadinessLoading] = useState(false);
+  const [routines, setRoutines] = useState<AgenticRoutineSummary[]>([]);
+  const [routinesLoading, setRoutinesLoading] = useState(false);
+  const [runningRoutine, setRunningRoutine] = useState<string | null>(null);
 
   const router = useRouter();
   const { role, isLoading: profileLoading } = useUserProfile();
@@ -174,7 +219,7 @@ export default function AgentSkillRegistryPage() {
   // Redirect se não tiver permissão
   useEffect(() => {
     if (!profileLoading) {
-      if (!role || !ALLOWED_ROLES.includes(role)) {
+      if (!ALLOWED_ROLES.includes(normalizeRole(role))) {
         router.replace("/dashboard");
       }
     }
@@ -195,12 +240,42 @@ export default function AgentSkillRegistryPage() {
     }
   }, []);
 
+  const fetchReadiness = useCallback(async () => {
+    setReadinessLoading(true);
+    try {
+      const res = await fetch("/api/setup/doctor", { cache: "no-store" });
+      const data = await res.json().catch(() => null);
+      if (!res.ok) throw new Error(data?.error ?? "Erro ao buscar prontidao agentica.");
+      setReadiness(data?.report?.agenticReadiness ?? null);
+    } catch (err: any) {
+      toast.error(err?.message || "Nao foi possivel carregar a prontidao agentica.");
+    } finally {
+      setReadinessLoading(false);
+    }
+  }, []);
+
+  const fetchRoutines = useCallback(async () => {
+    setRoutinesLoading(true);
+    try {
+      const res = await fetch("/api/agent/routines", { cache: "no-store" });
+      const data = await res.json().catch(() => null);
+      if (!res.ok) throw new Error(data?.error ?? "Erro ao buscar rotinas agenticas.");
+      setRoutines(data?.routines ?? []);
+    } catch (err: any) {
+      toast.error(err?.message || "Nao foi possivel carregar rotinas agenticas.");
+    } finally {
+      setRoutinesLoading(false);
+    }
+  }, []);
+
   // Fetch inicial — só roda quando o perfil está carregado e tem permissão
   useEffect(() => {
     if (profileLoading) return;
-    if (!role || !ALLOWED_ROLES.includes(role)) return;
+    if (!ALLOWED_ROLES.includes(normalizeRole(role))) return;
     fetchSkills();
-  }, [role, profileLoading, fetchSkills]);
+    fetchReadiness();
+    fetchRoutines();
+  }, [role, profileLoading, fetchSkills, fetchReadiness, fetchRoutines]);
 
   const handleToggle = async (skillId: string, currentIsActive: boolean) => {
     setToggling(skillId);
@@ -242,6 +317,25 @@ export default function AgentSkillRegistryPage() {
     }
   };
 
+  const handleRunRoutine = async (routineId: string) => {
+    setRunningRoutine(routineId);
+    try {
+      const res = await fetch("/api/agent/routines", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ routineId, dryRun: true }),
+      });
+      const data = await res.json().catch(() => null);
+      if (!res.ok) throw new Error(data?.error ?? "Falha ao simular rotina.");
+      toast.success("Rotina agentica analisada em dry-run.");
+      await fetchRoutines();
+    } catch (err: any) {
+      toast.error(err?.message || "Nao foi possivel acionar rotina agentica.");
+    } finally {
+      setRunningRoutine(null);
+    }
+  };
+
   // Loading inicial
   if (profileLoading || (loading && skills.length === 0 && !error)) {
     return (
@@ -270,11 +364,15 @@ export default function AgentSkillRegistryPage() {
           </p>
         </div>
         <button
-          onClick={fetchSkills}
-          disabled={loading}
+          onClick={() => {
+            fetchSkills();
+            fetchReadiness();
+            fetchRoutines();
+          }}
+          disabled={loading || readinessLoading || routinesLoading}
           className="flex items-center gap-2 text-xs text-gray-500 hover:text-[#CCA761] transition-colors border border-white/10 hover:border-[#CCA761]/30 rounded-xl px-3 py-2"
         >
-          <RefreshCw size={13} className={loading ? "animate-spin" : ""} />
+          <RefreshCw size={13} className={loading || readinessLoading || routinesLoading ? "animate-spin" : ""} />
           Atualizar
         </button>
       </div>
@@ -295,6 +393,125 @@ export default function AgentSkillRegistryPage() {
           </div>
         ))}
       </div>
+
+      {readiness && (
+        <section data-testid="agentic-readiness-panel" className="border border-white/10 rounded-2xl bg-white dark:bg-[#0d0d0d] p-5 mb-8">
+          <div className="flex flex-col md:flex-row md:items-center justify-between gap-4">
+            <div className="min-w-0">
+              <div className="flex flex-wrap items-center gap-2">
+                <BrainCircuit size={16} className="text-[#CCA761]" />
+                <span className="text-[10px] font-black uppercase tracking-widest text-[#CCA761]">Operating Partner Beta</span>
+                <span data-testid="agentic-readiness-score" className="text-white font-black">{readiness.overallScore}%</span>
+              </div>
+              <p className="text-gray-500 text-xs mt-2 leading-relaxed">
+                Prontidao do MAYUS como escritorio juridico AI First supervisionado.
+              </p>
+              {readiness.nextBestAction && (
+                <p data-testid="agentic-next-best-action" className="text-[#CCA761] text-[10px] font-bold uppercase tracking-wider leading-relaxed mt-2">
+                  {readiness.nextBestAction}
+                </p>
+              )}
+            </div>
+            <span className={`w-fit rounded-full border px-3 py-1 text-[9px] font-black uppercase tracking-widest ${
+              readiness.status === "ready"
+                ? "text-emerald-400 border-emerald-500/30 bg-emerald-500/10"
+                : readiness.status === "blocked"
+                  ? "text-red-400 border-red-500/30 bg-red-500/10"
+                  : "text-yellow-400 border-yellow-500/30 bg-yellow-500/10"
+            }`}>
+              {readiness.status}
+            </span>
+          </div>
+
+          <div className="grid sm:grid-cols-2 lg:grid-cols-4 gap-2 mt-4">
+            {readiness.modules
+              .filter((module) => module.status !== "ready")
+              .slice(0, 4)
+              .map((module) => (
+                <div key={module.id} data-testid={`agentic-readiness-module-${module.id}`} className="rounded-xl border border-white/5 bg-black/10 p-3 min-w-0">
+                  <div className="flex items-center justify-between gap-2">
+                    <span className="text-[9px] font-black uppercase tracking-widest text-gray-500 truncate">{module.label}</span>
+                    <span className="text-white text-xs font-black">{module.score}%</span>
+                  </div>
+                  <p className="text-gray-500 text-[10px] leading-relaxed mt-2 line-clamp-2">{module.nextAction || module.summary}</p>
+                </div>
+              ))}
+          </div>
+        </section>
+      )}
+
+      <section data-testid="agentic-routines-panel" className="border border-white/10 rounded-2xl bg-white dark:bg-[#0d0d0d] p-5 mb-8">
+        <div className="flex flex-col md:flex-row md:items-center justify-between gap-4">
+          <div className="min-w-0">
+            <div className="flex flex-wrap items-center gap-2">
+              <CalendarClock size={16} className="text-[#CCA761]" />
+              <span className="text-[10px] font-black uppercase tracking-widest text-[#CCA761]">Rotinas agenticas</span>
+              <span className="text-white font-black">{routines.length}</span>
+            </div>
+            <p className="text-gray-500 text-xs mt-2 leading-relaxed">
+              Heartbeats internos do Operating Partner para organizar trabalho sem executar acoes externas.
+            </p>
+          </div>
+          {routinesLoading && <Loader2 size={16} className="animate-spin text-[#CCA761]" />}
+        </div>
+
+        <div className="grid gap-2 mt-4">
+          {routines.length === 0 && !routinesLoading && (
+            <div className="rounded-xl border border-white/5 bg-black/10 p-3 text-gray-500 text-xs">
+              Nenhuma rotina agentica ativa ainda. O MAYUS pode simular rotinas recomendadas sem gravar nada.
+            </div>
+          )}
+          {routines.slice(0, 5).map((routine) => {
+            const routineStatus = routine.status || (routine.paused ? "paused" : routine.enabled === false ? "skipped" : "ready");
+            const blocked = routineStatus === "blocked";
+            const loadingRoutine = runningRoutine === routine.id;
+
+            return (
+              <div
+                key={routine.id}
+                data-testid={`agentic-routine-row-${routine.id}`}
+                className="rounded-xl border border-white/5 bg-black/10 p-3 flex flex-col md:flex-row md:items-center justify-between gap-3"
+              >
+                <div className="min-w-0">
+                  <div className="flex flex-wrap items-center gap-2">
+                    <span className="text-white text-sm font-semibold truncate">{routine.label || routine.id}</span>
+                    <span
+                      data-testid="agentic-routine-status"
+                      className={`rounded-full border px-2 py-0.5 text-[9px] font-black uppercase tracking-widest ${
+                        blocked
+                          ? "text-red-400 border-red-500/30 bg-red-500/10"
+                          : routineStatus === "awaiting_approval"
+                            ? "text-violet-400 border-violet-500/30 bg-violet-500/10"
+                            : routineStatus === "created" || routineStatus === "ready"
+                              ? "text-emerald-400 border-emerald-500/30 bg-emerald-500/10"
+                              : "text-yellow-400 border-yellow-500/30 bg-yellow-500/10"
+                      }`}
+                    >
+                      {routineStatus}
+                    </span>
+                    {routine.module && (
+                      <span className="text-[9px] text-gray-600 uppercase tracking-widest">{routine.module}</span>
+                    )}
+                  </div>
+                  <p className="text-gray-500 text-[10px] leading-relaxed mt-1 line-clamp-2">
+                    {routine.lastResult?.reason || routine.reason || routine.nextAction || "Pronta para dry-run supervisionado."}
+                  </p>
+                </div>
+                <button
+                  type="button"
+                  data-testid="agentic-routine-run"
+                  disabled={loadingRoutine}
+                  onClick={() => handleRunRoutine(routine.id)}
+                  className="w-fit shrink-0 flex items-center gap-2 text-[10px] text-gray-400 hover:text-[#CCA761] transition-colors border border-white/10 hover:border-[#CCA761]/30 rounded-xl px-3 py-2 disabled:opacity-50"
+                >
+                  {loadingRoutine ? <Loader2 size={12} className="animate-spin" /> : <PlayCircle size={12} />}
+                  Dry-run
+                </button>
+              </div>
+            );
+          })}
+        </div>
+      </section>
 
       {/* Erro */}
       {error && (

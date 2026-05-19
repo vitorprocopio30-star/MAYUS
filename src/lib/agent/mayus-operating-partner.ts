@@ -3,7 +3,17 @@ import { buildHeaders, getLLMClient } from "@/lib/llm-router";
 import type { SalesLlmTestbenchConfig } from "@/lib/growth/sales-llm-reply";
 import type { WhatsAppSalesMessage } from "@/lib/growth/whatsapp-sales-reply";
 import { summarizeOfficePlaybookForPrompt, type OfficePlaybookProfile } from "@/lib/growth/office-playbook-profile";
+import type { OfficePracticeAreaPlaybook } from "@/lib/setup/office-setup-conversation";
 import type { WhatsAppProcessStatusContext } from "@/lib/whatsapp/process-status-context";
+import {
+  buildInstitutionalMemoryPromptBlock,
+  DEFAULT_INSTITUTIONAL_MEMORY_PROMPT_CAP,
+  type InstitutionalMemoryEntry,
+} from "@/lib/agent/memory/institutional";
+import { recordLearningEvent } from "@/lib/agent/memory/learning-events";
+import { recordSelfCorrectionEvent } from "@/lib/agent/runtime/self-correction";
+
+export const MAYUS_OPERATING_PARTNER_INSTITUTIONAL_MEMORY_CAP = DEFAULT_INSTITUTIONAL_MEMORY_PROMPT_CAP;
 
 export type MayusOperatingPartnerAutonomyMode = "draft_only" | "supervised" | "high_supervised";
 
@@ -134,6 +144,11 @@ export type MayusOfficeKnowledgeProfile = {
   pricingPolicy?: string | null;
   responseSla?: string | null;
   departments?: string[] | null;
+  permissionPolicy?: string | null;
+  calendarPolicy?: string | null;
+  financePolicy?: string | null;
+  playbookNotes?: string | null;
+  practiceAreaPlaybooks?: OfficePracticeAreaPlaybook[] | null;
 };
 
 export type MayusPreviousConversationEvent = {
@@ -186,6 +201,7 @@ export type MayusOperatingPartnerInput = {
   } | null;
   officeKnowledgeProfile?: MayusOfficeKnowledgeProfile | null;
   officePlaybookProfile?: OfficePlaybookProfile | null;
+  institutionalMemory?: InstitutionalMemoryEntry[] | null;
   crmContext?: MayusOperatingPartnerCrmContext | null;
   processStatusContext?: WhatsAppProcessStatusContext | null;
   previousMayusEvent?: MayusPreviousConversationEvent | null;
@@ -625,6 +641,21 @@ function chooseModel(input: MayusOperatingPartnerInput) {
   return defaultModel || "deepseek/deepseek-v4-pro";
 }
 
+function summarizePracticeAreaPlaybooks(playbooks?: OfficePracticeAreaPlaybook[] | null) {
+  if (!playbooks?.length) return "";
+
+  return playbooks
+    .slice(0, 4)
+    .map((playbook) => [
+      `${playbook.area}:`,
+      playbook.default_pipeline?.length ? `pipeline ${playbook.default_pipeline.join(" > ")}` : null,
+      playbook.required_documents?.length ? `documentos ${playbook.required_documents.slice(0, 5).join(", ")}` : null,
+      playbook.owner_team ? `responsavel ${playbook.owner_team}` : null,
+      `status ${playbook.validation_status}`,
+    ].filter(Boolean).join(" "))
+    .join(" | ");
+}
+
 function buildPrompt(input: MayusOperatingPartnerInput, config: MayusOperatingPartnerConfig, model: string, deterministicIntent: MayusOperatingPartnerIntent, state: MayusConversationState, closingReadiness: MayusClosingReadiness, supportSummary: MayusSupportSummary) {
   const profile = input.salesProfile || {};
   const officeProfile = input.officeKnowledgeProfile || {};
@@ -639,7 +670,13 @@ function buildPrompt(input: MayusOperatingPartnerInput, config: MayusOperatingPa
   const officeDocuments = Array.isArray(officeProfile.requiredDocumentsByCase) ? officeProfile.requiredDocumentsByCase.filter(Boolean).join("; ") : "";
   const officeForbiddenClaims = Array.isArray(officeProfile.forbiddenClaims) ? officeProfile.forbiddenClaims.filter(Boolean).join("; ") : "";
   const officeDepartments = Array.isArray(officeProfile.departments) ? officeProfile.departments.filter(Boolean).join(", ") : "";
+  const officePermissionPolicy = cleanText(officeProfile.permissionPolicy);
+  const officeCalendarPolicy = cleanText(officeProfile.calendarPolicy);
+  const officeFinancePolicy = cleanText(officeProfile.financePolicy);
+  const officePlaybookNotes = cleanText(officeProfile.playbookNotes);
+  const officeAreaPlaybooks = summarizePracticeAreaPlaybooks(officeProfile.practiceAreaPlaybooks);
   const assistantName = cleanText(officeProfile.assistantName) || "MAYUS";
+  const institutionalMemory = buildInstitutionalMemoryPromptBlock(input.institutionalMemory ?? [], MAYUS_OPERATING_PARTNER_INSTITUTIONAL_MEMORY_CAP);
 
   return [
     `Voce e ${assistantName}, assistente virtual operacional de um escritorio de advocacia brasileiro. O motor interno e o MAYUS, mas no WhatsApp use o nome configurado da assistente.`,
@@ -713,6 +750,12 @@ function buildPrompt(input: MayusOperatingPartnerInput, config: MayusOperatingPa
     `Politica de preco/cobranca: ${cleanText(officeProfile.pricingPolicy) || "nao configurada"}`,
     `SLA de resposta: ${cleanText(officeProfile.responseSla) || "nao configurado"}`,
     `Departamentos/responsaveis: ${officeDepartments || "nao configurados"}`,
+    `Politica de permissoes/aprovacoes: ${officePermissionPolicy || "nao configurada"}`,
+    `Politica de agenda: ${officeCalendarPolicy || "nao configurada"}`,
+    `Politica financeira operacional: ${officeFinancePolicy || "nao configurada"}`,
+    `Playbooks operacionais: ${officePlaybookNotes || "nao configurados"}`,
+    `Playbooks por area juridica: ${officeAreaPlaybooks || "nao configurados"}`,
+    institutionalMemory.block,
     "",
     "Estado conversacional MAYUS reconstruido:",
     JSON.stringify(state),
@@ -1489,6 +1532,15 @@ function needsReplyRepair(decision: MayusOperatingPartnerDecision) {
   return decision.risk_flags.some((flag) => REPAIRABLE_RISK_FLAGS.includes(flag));
 }
 
+function forceReplyManualReview(decision: MayusOperatingPartnerDecision, reasonFlag: string): MayusOperatingPartnerDecision {
+  return {
+    ...decision,
+    risk_flags: Array.from(new Set([...decision.risk_flags, reasonFlag])),
+    requires_approval: true,
+    should_auto_send: false,
+  };
+}
+
 async function callOperatingPartnerJson(params: {
   fetcher: typeof fetch;
   endpoint: string;
@@ -1560,30 +1612,97 @@ async function recordReplyRepairEvent(params: {
 }) {
   try {
     const query = params.supabase.from("system_event_logs");
-    if (typeof (query as any).insert !== "function") return;
+    if (typeof (query as any).insert === "function") {
+      await query.insert({
+        tenant_id: params.tenantId,
+        user_id: null,
+        source: "whatsapp",
+        provider: "mayus",
+        event_name: "mayus_operating_partner_reply_repaired",
+        status: params.status,
+        payload: {
+          original_risk_flags: params.invalidDecision.risk_flags,
+          repaired_risk_flags: params.repairedDecision?.risk_flags || null,
+          original_should_auto_send: params.invalidDecision.should_auto_send,
+          repaired_should_auto_send: params.repairedDecision?.should_auto_send ?? null,
+          original_requires_approval: params.invalidDecision.requires_approval,
+          repaired_requires_approval: params.repairedDecision?.requires_approval ?? null,
+          original_intent: params.invalidDecision.intent,
+          repaired_intent: params.repairedDecision?.intent || null,
+          original_model_used: params.invalidDecision.model_used,
+          repaired_model_used: params.repairedDecision?.model_used || null,
+          duration_ms: params.durationMs,
+          error: params.error ? String(params.error).slice(0, 500) : null,
+        },
+        created_at: new Date().toISOString(),
+      });
+    }
 
-    await query.insert({
-      tenant_id: params.tenantId,
-      user_id: null,
-      source: "whatsapp",
-      provider: "mayus",
-      event_name: "mayus_operating_partner_reply_repaired",
-      status: params.status,
+    const outcomeStatus = params.status === "ok"
+      ? "corrected"
+      : params.status === "warning"
+        ? "requires_approval"
+        : "failed";
+    const repairedRiskFlags = params.repairedDecision?.risk_flags || [];
+    const correctionMetadata = {
+      original_risk_flags: params.invalidDecision.risk_flags,
+      repaired_risk_flags: repairedRiskFlags,
+      repair_succeeded: params.status === "ok",
+      repaired_intent: params.repairedDecision?.intent || null,
+      repaired_should_auto_send: params.repairedDecision?.should_auto_send ?? null,
+      model_used: params.repairedDecision?.model_used || params.invalidDecision.model_used || null,
+      duration_ms: params.durationMs,
+    };
+
+    await recordSelfCorrectionEvent({
+      supabase: params.supabase,
+      tenantId: params.tenantId,
+      status: "attempted",
+      sourceModule: "mayus_operating_partner",
+      targetModule: "whatsapp_reply",
+      correctionKind: "operating_partner_reply_repair",
+      riskLevel: "low",
+      sourceEventType: "mayus_operating_partner_repair_pattern",
+      recommendedAction: "Regenerar a resposta antes de enviar; se o reparo continuar inseguro, exigir revisao humana.",
+      reason: params.invalidDecision.risk_flags.join(", "),
+      externalSideEffectsBlocked: true,
+      metadata: {
+        original_risk_flags: params.invalidDecision.risk_flags,
+        model_used: params.invalidDecision.model_used || null,
+      },
+    });
+
+    await recordSelfCorrectionEvent({
+      supabase: params.supabase,
+      tenantId: params.tenantId,
+      status: outcomeStatus,
+      sourceModule: "mayus_operating_partner",
+      targetModule: "whatsapp_reply",
+      correctionKind: "operating_partner_reply_repair",
+      riskLevel: "low",
+      sourceEventType: "mayus_operating_partner_repair_pattern",
+      recommendedAction: outcomeStatus === "corrected"
+        ? "Aplicar resposta reparada somente porque os validadores ficaram seguros."
+        : "Bloquear autoenvio e exigir revisao humana antes de responder o cliente.",
+      reason: params.error || (outcomeStatus === "corrected" ? "reply_repair_validated" : "reply_repair_still_unsafe"),
+      externalSideEffectsBlocked: outcomeStatus !== "corrected",
+      metadata: correctionMetadata,
+    });
+
+    await recordLearningEvent({
+      supabase: params.supabase,
+      tenantId: params.tenantId,
+      eventType: "mayus_operating_partner_repair_pattern",
+      sourceModule: "mayus_operating_partner",
       payload: {
         original_risk_flags: params.invalidDecision.risk_flags,
-        repaired_risk_flags: params.repairedDecision?.risk_flags || null,
-        original_should_auto_send: params.invalidDecision.should_auto_send,
-        repaired_should_auto_send: params.repairedDecision?.should_auto_send ?? null,
-        original_requires_approval: params.invalidDecision.requires_approval,
-        repaired_requires_approval: params.repairedDecision?.requires_approval ?? null,
-        original_intent: params.invalidDecision.intent,
+        repaired_risk_flags: params.repairedDecision?.risk_flags || [],
+        repair_succeeded: params.status === "ok",
         repaired_intent: params.repairedDecision?.intent || null,
-        original_model_used: params.invalidDecision.model_used,
-        repaired_model_used: params.repairedDecision?.model_used || null,
+        repaired_should_auto_send: params.repairedDecision?.should_auto_send ?? null,
+        model_used: params.repairedDecision?.model_used || params.invalidDecision.model_used || null,
         duration_ms: params.durationMs,
-        error: params.error ? String(params.error).slice(0, 500) : null,
       },
-      created_at: new Date().toISOString(),
     });
   } catch (error) {
     console.warn("[mayus-operating-partner][reply-repair-event]", error);
@@ -1651,15 +1770,16 @@ export async function buildMayusOperatingPartnerDecision(input: MayusOperatingPa
       prompt: buildRepairPrompt({ originalPrompt, invalidDecision: decision }),
     });
     repairedDecision = normalizeDecision(repairedParsed, normalizationParams);
+    const repairedStillUnsafe = needsReplyRepair(repairedDecision);
     await recordReplyRepairEvent({
       supabase: input.supabase,
       tenantId: input.tenantId,
-      status: needsReplyRepair(repairedDecision) ? "warning" : "ok",
+      status: repairedStillUnsafe ? "warning" : "ok",
       invalidDecision: decision,
       repairedDecision,
       durationMs: Date.now() - repairStartedAt,
     });
-    return repairedDecision;
+    return repairedStillUnsafe ? forceReplyManualReview(repairedDecision, "reply_repair_still_unsafe") : repairedDecision;
   } catch (error) {
     await recordReplyRepairEvent({
       supabase: input.supabase,
@@ -1670,6 +1790,6 @@ export async function buildMayusOperatingPartnerDecision(input: MayusOperatingPa
       durationMs: Date.now() - repairStartedAt,
       error: error instanceof Error ? error.message : String(error || "Falha no reparo"),
     });
-    return decision;
+    return forceReplyManualReview(decision, "reply_repair_failed");
   }
 }

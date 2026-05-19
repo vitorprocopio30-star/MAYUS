@@ -20,6 +20,15 @@ import { fetchAgentSkillByName } from '@/lib/agent/capabilities/registry';
 import { toCanonicalAccessRole } from '@/lib/permissions';
 import { createAgentAuditLog } from '@/lib/agent/audit';
 import { isBillingCapability, normalizeBillingEntities } from '@/lib/agent/capabilities/billing-normalization';
+import {
+  decideMayusSkillAutonomy,
+  getMayusSkillCredentialAvailability,
+  getTenantAgenticPolicy,
+} from '@/lib/agent/runtime/tenant-policy';
+import type { MayusPolicyDecision } from '@/lib/agent/runtime/policy';
+import type { MayusAgentProfileRuntimeExplanation } from '@/lib/agent/runtime/agent-profiles';
+import { planSelfCorrectionForPolicy, recordSelfCorrectionEvent } from '@/lib/agent/runtime/self-correction';
+import { supabaseAdmin } from '@/lib/supabase/admin';
 
 // ─── Cliente Supabase (singleton no módulo) ───────────────────────────────────
 
@@ -34,7 +43,8 @@ export type ExecutionStatus =
   | 'channel_not_allowed'
   | 'low_confidence'
   | 'fallback_triggered'
-  | 'limit_exceeded';
+  | 'limit_exceeded'
+  | 'policy_blocked';
 
 export interface ExecutorContext {
   userId: string;
@@ -87,6 +97,26 @@ function isRoleAllowed(userRole: string, allowedRoles: string[] | null | undefin
 
   const canonicalUserRole = toCanonicalAccessRole(userRole);
   return roles.some((role) => toCanonicalAccessRole(role) === canonicalUserRole);
+}
+
+function buildPolicyAuditContext(policyDecision: MayusPolicyDecision & {
+  surface: string;
+  module: string;
+  autonomyMode: string;
+  requiredCredentialProviders?: string[];
+  profileExplanation?: MayusAgentProfileRuntimeExplanation | null;
+}) {
+  return {
+    outcome: policyDecision.outcome,
+    requires_approval: policyDecision.requiresApproval,
+    can_execute_now: policyDecision.canExecuteNow,
+    reason: policyDecision.reason,
+    surface: policyDecision.surface,
+    module: policyDecision.module,
+    autonomy_mode: policyDecision.autonomyMode,
+    required_credential_providers: policyDecision.requiredCredentialProviders ?? [],
+    profile_explanation: policyDecision.profileExplanation ?? null,
+  };
 }
 
 // ─── Audit Log ────────────────────────────────────────────────────────────────
@@ -201,8 +231,89 @@ export async function execute(
     normalizedRouterResult.intent
   );
 
+  const agenticPolicy = await getTenantAgenticPolicy({ tenantId: context.tenantId });
+  const credentialAvailability = await getMayusSkillCredentialAvailability({
+    tenantId: context.tenantId,
+    skill,
+  });
+  const policyDecision = decideMayusSkillAutonomy({
+    policy: agenticPolicy,
+    skill,
+    channel: context.channel,
+    agentId: skill.handler_type || skill.name,
+    hasCredential: credentialAvailability.hasCredential,
+  });
+  const policyAuditContext = buildPolicyAuditContext({
+    ...policyDecision,
+    requiredCredentialProviders: credentialAvailability.requiredProviders,
+    profileExplanation: policyDecision.profileExplanation,
+  });
+  const selfCorrectionPlan = planSelfCorrectionForPolicy({
+    riskLevel: skill.risk_level,
+    policyOutcome: policyDecision.outcome,
+    requiresHumanConfirmation: skill.requires_human_confirmation,
+    missingConfiguration: policyDecision.outcome === 'blocked_needs_credentials',
+  });
+  const recordPolicySelfCorrection = () => recordSelfCorrectionEvent({
+    supabase: supabaseAdmin,
+    tenantId: context.tenantId,
+    status: selfCorrectionPlan.status,
+    sourceModule: 'agent_executor',
+    targetModule: skill.handler_type || skill.name,
+    correctionKind: selfCorrectionPlan.correctionKind,
+    riskLevel: skill.risk_level,
+    sourceEventType: 'agent_skill_policy_decision',
+    recommendedAction: selfCorrectionPlan.recommendedAction,
+    reason: policyDecision.reason,
+    externalSideEffectsBlocked: selfCorrectionPlan.externalSideEffectsBlocked,
+    createdBy: context.userId,
+    metadata: {
+      skill_name: skill.name,
+      channel: context.channel,
+      policy_outcome: policyDecision.outcome,
+      requires_human_confirmation: skill.requires_human_confirmation,
+      required_credential_providers: credentialAvailability.requiredProviders,
+    },
+  });
+
+  if (policyDecision.outcome === 'blocked_needs_credentials') {
+    await recordPolicySelfCorrection();
+
+    const auditLogId = await writeAuditLog({
+      tenantId: context.tenantId,
+      userId: context.userId,
+      skillInvoked: skill.name,
+      intentionRaw: normalizedRouterResult.safeText,
+      status: 'skill_blocked',
+      idempotencyKey,
+      approvalStatus: 'rejected',
+      approvalContext: {
+        risk_level: skill.risk_level,
+        policy_decision: policyAuditContext,
+        requested_at: new Date().toISOString(),
+      },
+      idempotencyExpiresAt: new Date(Date.now() + 24 * 60 * 60 * 1000).toISOString(),
+    });
+
+    if (!auditLogId) {
+      return {
+        status: 'failed',
+        message: 'Falha critica no sistema de auditoria. Acao abortada por seguranca.',
+      };
+    }
+
+    return {
+      status: 'policy_blocked',
+      message: policyDecision.reason,
+      skillName: skill.name,
+      auditLogId,
+    };
+  }
+
   // 6. Se requer confirmação humana
-  if (skill.requires_human_confirmation) {
+  if (skill.requires_human_confirmation || policyDecision.outcome === 'requires_approval') {
+    await recordPolicySelfCorrection();
+
     // banco: entidades sanitizadas (sem PII)
     const safeEntities = sanitizeEntities(normalizedRouterResult.entities);
     // UI: entidades reais para decisão informada do aprovador (não persiste)
@@ -219,6 +330,7 @@ export async function execute(
       approvalContext: {
         risk_level: skill.risk_level,
         entities: safeEntities,              // PII removida — seguro para banco
+        policy_decision: policyAuditContext,
         requested_at: new Date().toISOString(),
       },
       pendingExecutionPayload: {
@@ -226,6 +338,7 @@ export async function execute(
         idempotencyKey,
         skillName: skill.name,
         schemaVersion: skill.schema_version,
+        policyDecision: policyAuditContext,
       },
       idempotencyExpiresAt: new Date(Date.now() + 24 * 60 * 60 * 1000).toISOString(),
     });
@@ -248,11 +361,14 @@ export async function execute(
         skillName: skill.name,
         riskLevel: skill.risk_level,         // Badge colorido no ApprovalCard (low/medium/high/critical)
         schemaVersion: skill.schema_version,
+        policyDecision: policyAuditContext,
       },
     };
   }
 
   // 7. Skill autorizada — grava audit log antes de retornar ao orquestrador
+  await recordPolicySelfCorrection();
+
   const auditLogId = await writeAuditLog({
     tenantId: context.tenantId,
     userId: context.userId,
@@ -261,6 +377,8 @@ export async function execute(
     payloadExecuted: {
       entities: sanitizeEntities(normalizedRouterResult.entities), // Banco: sem PII
       idempotencyKey,
+      risk_level: skill.risk_level,
+      policyDecision: policyAuditContext,
     },
     status: 'skill_executed',
     idempotencyKey,
