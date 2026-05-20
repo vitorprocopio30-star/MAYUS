@@ -1,11 +1,13 @@
 "use client";
 
-import { useEffect, useRef } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import { X } from "lucide-react";
 import * as THREE from "three";
 import { useOrbState } from "./OrbStateProvider";
-import { OrbVisual } from "./OrbVisual";
 import { shouldShowWorkingOrb } from "./orb-state-core";
+import { useMayusPetPreference } from "@/hooks/useMayusPetPreference";
+import { resolveMayusOrbPetState, type MayusPetState } from "@/lib/mayus-pet";
+import { MayusPetSprite } from "./MayusPetSprite";
 
 export type OrbVoiceControls = {
   status: string;
@@ -19,12 +21,30 @@ export function OrbStage({ voice }: { voice: OrbVoiceControls }) {
   const mountRef = useRef<HTMLDivElement>(null);
   const orbAuraRef = useRef<HTMLDivElement>(null);
   const coreWaveformRef = useRef<HTMLDivElement>(null);
+  const { variant: petVariant } = useMayusPetPreference();
+  const ambientStates = useMemo<MayusPetState[]>(() => ["idle", "waving", "review", "waiting"], []);
+  const [ambientIndex, setAmbientIndex] = useState(0);
 
   const isVoiceSource = state.source === "voice";
   const isFaceToFace = isVoiceSource && (state.stage === "summoned" || state.stage === "presenting");
   const isWorking = shouldShowWorkingOrb(state);
   const isOpen = isFaceToFace;
   const isOrbActive = voice.status === "connected" || voice.status === "connecting" || voice.isSpeaking || isWorking;
+  const ambientState = ambientStates[ambientIndex % ambientStates.length];
+  const workingPetState = resolveMayusOrbPetState({ stage: state.stage, status: state.status });
+  const faceToFacePetState: MayusPetState = state.stage === "presenting"
+    ? "review"
+    : voice.isSpeaking
+      ? "waving"
+      : ambientState;
+
+  useEffect(() => {
+    const timer = window.setInterval(() => {
+      setAmbientIndex((current) => current + 1);
+    }, 7000);
+
+    return () => window.clearInterval(timer);
+  }, []);
 
   useEffect(() => {
     const prefersReducedMotion = window.matchMedia?.("(prefers-reduced-motion: reduce)").matches;
@@ -236,12 +256,23 @@ export function OrbStage({ voice }: { voice: OrbVoiceControls }) {
         <div className="absolute inset-0 bg-[radial-gradient(ellipse_at_center,_transparent_0%,_#000000_100%)] z-[5] pointer-events-none opacity-80" />
 
         <div className="mayus-orb-drift relative z-10 flex items-center justify-center motion-safe:animate-[mayusOrbDrift_7s_ease-in-out_infinite]">
-          <OrbVisual
-            variant="hero"
-            active={isOrbActive || state.stage === "presenting"}
-            auraRef={orbAuraRef}
-            waveformRef={coreWaveformRef}
-          />
+          <div className="relative flex items-center justify-center">
+            <div
+              ref={orbAuraRef}
+              className="absolute inset-4 rounded-full bg-transparent transition-all duration-700"
+            />
+            <MayusPetSprite
+              variant={petVariant}
+              state={faceToFacePetState}
+              size={180}
+              active={isOrbActive || state.stage === "presenting"}
+              className="relative z-10"
+            />
+            <div
+              ref={coreWaveformRef}
+              className="absolute left-1/2 top-1/2 z-0 h-24 w-1 -translate-x-1/2 -translate-y-1/2 rounded-full bg-[#CCA761]/50 opacity-0 blur-sm"
+            />
+          </div>
         </div>
 
         <button
@@ -255,8 +286,7 @@ export function OrbStage({ voice }: { voice: OrbVoiceControls }) {
 
       <div className={`fixed top-24 left-4 md:left-[calc(var(--mayus-dashboard-sidebar-offset,280px)+1.5rem)] z-[95] pointer-events-none transition-all duration-700 ease-out motion-reduce:transition-none ${isWorking ? "opacity-100 translate-y-0 scale-100" : "opacity-0 -translate-y-4 scale-90"}`}>
         <div className="relative">
-          <div className="absolute -inset-3 rounded-full bg-[#CCA761]/20 blur-xl motion-safe:animate-pulse" />
-          <OrbVisual variant="working" active />
+          <MayusPetSprite variant={petVariant} state={workingPetState} size={82} active />
           <div className="absolute -bottom-3 left-1/2 -translate-x-1/2 whitespace-nowrap rounded-full border border-[#CCA761]/30 bg-black/80 px-3 py-1 text-[9px] font-semibold uppercase tracking-[0.22em] text-[#f4d58a] shadow-[0_0_22px_rgba(204,167,97,0.22)]">
             executando
           </div>
@@ -270,7 +300,7 @@ export function OrbStage({ voice }: { voice: OrbVoiceControls }) {
           title="Ativar MAYUSOrb"
           aria-label="Ativar MAYUSOrb"
         >
-          <OrbVisual variant="idle" active={false} />
+          <MayusPetSprite variant={petVariant} state={ambientState} size={96} active={isOrbActive} />
         </button>
       </div>
     </>

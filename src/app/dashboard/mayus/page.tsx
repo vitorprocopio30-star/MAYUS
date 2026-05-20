@@ -4,12 +4,15 @@ import { useState, useEffect, useRef, useCallback, useMemo } from "react";
 import ReactMarkdown from 'react-markdown'
 import { Cormorant_Garamond, Montserrat } from "next/font/google";
 import {
-  Send, Bot, User, BrainCircuit, Sparkles, Loader2, KeyRound,
+  Send, User, Sparkles, Loader2, KeyRound,
   AlertCircle, CheckCircle, XCircle, ShieldAlert,
   History, Plus, Trash2, Menu, X, MessageSquare, ChevronLeft, Search,
   Mic, Volume2, Square, VolumeX, SlidersHorizontal, ChevronDown, Headphones
 } from "lucide-react";
 import { useUserProfile } from "@/hooks/useUserProfile";
+import { useMayusPetPreference } from "@/hooks/useMayusPetPreference";
+import { MayusPetSprite } from "@/components/dashboard/mayus-orb/MayusPetSprite";
+import { MAYUS_PET_VARIANTS, type MayusPetVariant } from "@/lib/mayus-pet";
 import {
   DEFAULT_MAYUS_REALTIME_MODEL,
   DEFAULT_MAYUS_REALTIME_VOICE,
@@ -34,8 +37,8 @@ dayjs.extend(relativeTime);
 dayjs.locale("pt-br");
 
 const CHAT_TURN_TIMEOUT_MS = 35_000;
-const cormorant = Cormorant_Garamond({ subsets: ["latin"], weight: ["400","500","600","700"], style: ["italic"] });
-const montserrat = Montserrat({ subsets: ["latin"], weight: ["300","400","500","600"] });
+const cormorant = Cormorant_Garamond({ subsets: ["latin"], weight: ["400","500","600","700"], style: ["italic"], fallback: ["Georgia", "Times New Roman", "serif"] });
+const montserrat = Montserrat({ subsets: ["latin"], weight: ["300","400","500","600","700"], fallback: ["system-ui", "-apple-system", "BlinkMacSystemFont", "Segoe UI", "Roboto", "Helvetica Neue", "Arial", "sans-serif"] });
 
 // ─── Types ────────────────────────────────────────────────────────────────────
 
@@ -521,6 +524,7 @@ export default function MAYUSPlayground() {
   const [currentConversationId, setCurrentConversationId] = useState<string | null>(null);
   const [isSidebarOpen, setIsSidebarOpen] = useState(true);
   const [isMobileMenuOpen, setIsMobileMenuOpen] = useState(false);
+  const [isPetSwitcherOpen, setIsPetSwitcherOpen] = useState(false);
   const [selectedRealtimeModel, setSelectedRealtimeModel] = useState<MayusRealtimeModel>(DEFAULT_MAYUS_REALTIME_MODEL);
   const [selectedRealtimeVoice, setSelectedRealtimeVoice] = useState<MayusRealtimeVoice>(DEFAULT_MAYUS_REALTIME_VOICE);
   const [isVoiceSwitcherOpen, setIsVoiceSwitcherOpen] = useState(false);
@@ -550,6 +554,11 @@ export default function MAYUSPlayground() {
   const [isConversationMode, setIsConversationMode] = useState(false);
   const [playingMessageId, setPlayingMessageId] = useState<number | string | null>(null);
   const { profile, isLoading: profileLoading } = useUserProfile();
+  const {
+    variant: petVariant,
+    setVariant: setPetVariant,
+    isSaving: isSavingPetVariant,
+  } = useMayusPetPreference();
   const canTuneMayusRealtime = Boolean(profile?.is_superadmin) || isMayusRealtimeTesterRole(profile?.role);
   const selectedRealtimeModelOption = REALTIME_MODEL_OPTIONS.find((option) => option.value === selectedRealtimeModel) || REALTIME_MODEL_OPTIONS[0];
   const activeRealtimeModelOption = REALTIME_MODEL_OPTIONS.find((option) => option.value === activeRealtimeModel) || REALTIME_MODEL_OPTIONS[0];
@@ -582,16 +591,40 @@ export default function MAYUSPlayground() {
     return options;
   }, [availableIntegrations]);
 
+  const selectedChatModelLabel = useMemo(() => {
+    if (!apiKeyData?.model) return "Modelo";
+    const readableModel = apiKeyData.model.split("/").pop()?.replace(/[-_]/g, " ") || apiKeyData.model;
+    const preset = modelOptions.find(
+      (option) => option.provider === apiKeyData.provider && option.model === apiKeyData.model
+    );
+    if (preset?.label && !preset.label.toLowerCase().includes(apiKeyData.provider.toLowerCase())) {
+      return preset.label;
+    }
+    return readableModel;
+  }, [apiKeyData?.model, apiKeyData?.provider, modelOptions]);
+
   const selectChatModel = (option: { provider: string; model: string }, announce = true) => {
     setApiKeyData({ provider: option.provider, model: option.model });
     setCustomModelInput(option.model);
     setIsModelSwitcherOpen(false);
+    setIsPetSwitcherOpen(false);
     if (announce) {
       setMessages((prev) => [
         ...prev,
         { role: "system", content: `Cortex ajustado para ${option.provider.toUpperCase()} / ${option.model}.` },
       ]);
     }
+  };
+
+  const handlePetVariantChange = (nextVariant: MayusPetVariant) => {
+    if (nextVariant === petVariant || isSavingPetVariant) {
+      setIsPetSwitcherOpen(false);
+      return;
+    }
+
+    void setPetVariant(nextVariant)
+      .catch(() => toast.error("Nao foi possivel salvar a cor do avatar."));
+    setIsPetSwitcherOpen(false);
   };
 
   const loadBrainStatus = useCallback(async () => {
@@ -1668,7 +1701,7 @@ export default function MAYUSPlayground() {
   }
 
   return (
-    <div className={`flex h-[calc(100vh-80px)] bg-gray-200 dark:bg-black overflow-hidden relative ${montserrat.className}`}>
+    <div data-mayus-chat-page="true" className={`flex h-[calc(100vh-80px)] flex-col bg-gray-200 dark:bg-black overflow-hidden relative ${montserrat.className}`}>
       
       {/* Botão Mobile Menu Toggle */}
       <button 
@@ -1678,6 +1711,274 @@ export default function MAYUSPlayground() {
         {isMobileMenuOpen ? <X size={20} /> : <Menu size={20} />}
       </button>
 
+      <div className="relative flex shrink-0 border-b border-[#CCA761]/10 bg-[#050505]/95 shadow-[0_12px_40px_rgba(0,0,0,0.28)]">
+        <div className={`
+          ${isSidebarOpen ? 'w-80' : 'w-0'}
+          ${isMobileMenuOpen ? 'translate-x-0 w-80' : '-translate-x-full md:translate-x-0'}
+          absolute z-40 h-full border-r border-[#CCA761]/20 bg-[#0a0a0a] transition-all duration-300 md:relative
+        `}>
+          {isSidebarOpen && (
+            <div className="flex h-full w-80 items-center p-4">
+              <button
+                onClick={createNewChat}
+                className="flex w-full items-center justify-center gap-2 rounded-xl border border-[#CCA761]/30 bg-[#CCA761]/10 px-4 py-3 text-sm font-semibold uppercase tracking-widest text-[#CCA761] transition-colors hover:bg-[#CCA761]/20"
+              >
+                <Plus size={16} /> Nova Conversa
+              </button>
+            </div>
+          )}
+        </div>
+
+        <header className="flex min-w-0 flex-1 flex-col justify-center gap-3 px-4 py-4">
+          <div className="flex min-w-0 items-center gap-3 pl-12 md:pl-0">
+            <button
+              onClick={() => setIsSidebarOpen(!isSidebarOpen)}
+              className="hidden h-9 w-9 shrink-0 items-center justify-center rounded-full border border-[#CCA761]/25 bg-[#0b0906] text-[#CCA761] shadow-[0_0_18px_rgba(204,167,97,0.12)] transition-colors hover:border-[#CCA761]/50 hover:bg-[#CCA761]/10 md:flex"
+              title={isSidebarOpen ? "Recolher Historico" : "Expandir Historico"}
+            >
+               {isSidebarOpen ? <ChevronLeft size={18} /> : <History size={18} />}
+            </button>
+            <h1 className={`truncate text-lg font-bold tracking-[0.08em] text-[#CCA761] ${cormorant.className}`}>
+              MAYUS AI
+            </h1>
+          </div>
+
+          <div className="flex flex-wrap items-center gap-1.5 pl-12 md:pl-12">
+            <button
+              onClick={toggleConversationMode}
+              disabled={realtimeStatus === "connecting"}
+              className={`inline-flex h-9 items-center gap-2 rounded-full border px-3 text-[10px] font-black uppercase tracking-[0.16em] transition-all ${
+                isConversationMode
+                  ? 'border-[#CCA761] bg-[#CCA761] text-black shadow-[0_0_20px_rgba(204,167,97,0.4)]'
+                  : 'border-[#CCA761]/25 bg-[#0b0906] text-[#CCA761] hover:border-[#CCA761]/50 hover:bg-[#CCA761]/10'
+              }`}
+            >
+              {realtimeStatus === "connecting" ? <Loader2 size={14} className="animate-spin" /> : <Sparkles size={14} />}
+              {isConversationMode ? REALTIME_STATUS_LABEL[realtimeStatus] : 'Ativar Modo Conversa'}
+            </button>
+
+            <div className="relative">
+              <button
+                type="button"
+                onClick={() => {
+                  setIsPetSwitcherOpen((value) => !value);
+                  setIsVoiceSwitcherOpen(false);
+                  setIsRealtimeModelSwitcherOpen(false);
+                  setIsModelSwitcherOpen(false);
+                }}
+                className="inline-flex h-9 items-center gap-1.5 rounded-full border border-[#CCA761]/25 bg-[#0b0906] px-2.5 text-[10px] font-black uppercase tracking-[0.16em] text-[#CCA761] shadow-[0_0_18px_rgba(204,167,97,0.10)] transition-colors hover:border-[#CCA761]/50 hover:bg-[#CCA761]/10"
+                title="Escolher avatar do MAYUS"
+              >
+                <span>Avatar</span>
+                <span
+                  aria-hidden="true"
+                  className={`h-3 w-3 rounded-full border ${
+                    petVariant === "black"
+                      ? "border-white/30 bg-[#111111]"
+                      : "border-[#CCA761]/40 bg-white"
+                  }`}
+                />
+                <ChevronDown size={12} />
+              </button>
+
+              {isPetSwitcherOpen && (
+                <div className="absolute left-0 top-full z-50 mt-3 w-[min(82vw,260px)] overflow-hidden rounded-2xl border border-[#CCA761]/25 bg-[#080808] shadow-2xl shadow-black/60 md:left-auto md:right-0">
+                  <div className="border-b border-white/10 p-4">
+                    <p className="text-[10px] font-black uppercase tracking-[0.25em] text-[#CCA761]">Avatar MAYUS</p>
+                  </div>
+                  <div className="space-y-1 p-2">
+                    {(Object.keys(MAYUS_PET_VARIANTS) as MayusPetVariant[]).map((variantKey) => {
+                      const option = MAYUS_PET_VARIANTS[variantKey];
+                      const active = petVariant === variantKey;
+                      return (
+                        <button
+                          key={variantKey}
+                          type="button"
+                          onClick={() => handlePetVariantChange(variantKey)}
+                          disabled={isSavingPetVariant}
+                          className={`flex w-full items-center justify-between gap-3 rounded-xl border px-3 py-3 transition-colors ${
+                            active
+                              ? "border-[#CCA761]/50 bg-[#CCA761]/10"
+                              : "border-transparent hover:border-white/10 hover:bg-white/[0.04]"
+                          }`}
+                        >
+                          <span className="flex min-w-0 items-center gap-3">
+                            <span
+                              aria-hidden="true"
+                              className={`h-4 w-4 rounded-full border ${
+                                variantKey === "black"
+                                  ? "border-white/30 bg-[#111111]"
+                                  : "border-[#CCA761]/40 bg-white"
+                              }`}
+                            />
+                            <span className="text-sm font-bold text-gray-100">{option.name}</span>
+                          </span>
+                          {active && <CheckCircle size={16} className="shrink-0 text-[#CCA761]" />}
+                        </button>
+                      );
+                    })}
+                  </div>
+                </div>
+              )}
+            </div>
+
+            <div className="relative">
+              <button
+                type="button"
+                onClick={() => {
+                  setIsVoiceSwitcherOpen((value) => !value);
+                  setIsRealtimeModelSwitcherOpen(false);
+                  setIsPetSwitcherOpen(false);
+                  setIsModelSwitcherOpen(false);
+                }}
+                className="inline-flex h-9 items-center gap-1 rounded-full border border-[#CCA761]/25 bg-[#0b0906] px-2.5 text-[10px] font-black uppercase tracking-[0.16em] text-[#CCA761] transition-colors hover:border-[#CCA761]/50 hover:bg-[#CCA761]/10"
+                title="Escolher voz Realtime"
+              >
+                <Headphones size={13} />
+                {selectedRealtimeVoice}
+                <ChevronDown size={12} />
+              </button>
+
+              {isVoiceSwitcherOpen && (
+                <div className="absolute left-0 top-full z-50 mt-3 w-[min(86vw,300px)] overflow-hidden rounded-2xl border border-[#CCA761]/25 bg-[#080808] shadow-2xl shadow-black/60 md:left-auto md:right-0">
+                  <div className="border-b border-white/10 p-4">
+                    <p className="text-[10px] font-black uppercase tracking-[0.25em] text-[#CCA761]">Voz Realtime</p>
+                    <p className="mt-1 text-[11px] normal-case tracking-normal text-gray-500">
+                      Trocar a voz exige reiniciar a sessao ativa.
+                    </p>
+                  </div>
+                  <div className="max-h-72 space-y-1 overflow-y-auto p-2">
+                    {REALTIME_VOICE_OPTIONS.map((voice) => {
+                      const active = selectedRealtimeVoice === voice.value;
+                      return (
+                        <button
+                          key={voice.value}
+                          type="button"
+                          onClick={() => {
+                            setSelectedRealtimeVoice(voice.value);
+                            setIsVoiceSwitcherOpen(false);
+                            if (isConversationMode) {
+                              stopConversationMode();
+                              toast.info("Voz alterada. Ative o modo conversa novamente para testar.");
+                            }
+                          }}
+                          className={`w-full rounded-xl border px-3 py-3 text-left transition-colors ${
+                            active
+                              ? "border-[#CCA761]/50 bg-[#CCA761]/10"
+                              : "border-transparent hover:border-white/10 hover:bg-white/[0.04]"
+                          }`}
+                        >
+                          <div className="flex items-start justify-between gap-3">
+                            <div>
+                              <p className="text-sm font-bold text-gray-100">{voice.label}</p>
+                              <p className="mt-1 text-[11px] text-gray-500">{voice.description}</p>
+                            </div>
+                            {active && <CheckCircle size={16} className="mt-0.5 shrink-0 text-[#CCA761]" />}
+                          </div>
+                        </button>
+                      );
+                    })}
+                    <div className="px-3 py-2 text-[10px] text-gray-600">
+                      Onyx continua no fallback TTS, nao no Realtime.
+                    </div>
+                  </div>
+                </div>
+              )}
+            </div>
+
+            <div className="relative">
+              <button
+                type="button"
+                onClick={() => {
+                  setIsModelSwitcherOpen((value) => !value);
+                  setIsPetSwitcherOpen(false);
+                  setIsVoiceSwitcherOpen(false);
+                  setIsRealtimeModelSwitcherOpen(false);
+                }}
+                className="inline-flex h-9 max-w-[210px] items-center gap-2 rounded-full border border-[#CCA761]/25 bg-[#0b0906] px-3 text-[10px] font-bold uppercase tracking-[0.16em] text-[#CCA761] transition-colors hover:border-[#CCA761]/50 hover:bg-[#CCA761]/10"
+                title="Trocar modelo do chat"
+              >
+                <SlidersHorizontal size={14} className="shrink-0" />
+                <span className="truncate">{selectedChatModelLabel}</span>
+                <ChevronDown size={12} className="shrink-0" />
+              </button>
+
+              {isModelSwitcherOpen && (
+                <div className="absolute left-0 top-full z-50 mt-3 w-[min(92vw,420px)] overflow-hidden rounded-2xl border border-[#CCA761]/25 bg-[#080808] shadow-2xl shadow-black/60 md:left-auto md:right-0">
+                  <div className="border-b border-white/10 p-4">
+                    <p className="text-[10px] font-black uppercase tracking-[0.25em] text-[#CCA761]">Modelo do chat</p>
+                    <p className="mt-1 text-[11px] normal-case tracking-normal text-gray-500">
+                      Troca apenas esta sessao de conversa para testar respostas.
+                    </p>
+                  </div>
+
+                  <div className="max-h-80 space-y-1 overflow-y-auto p-2">
+                    {modelOptions.length === 0 ? (
+                      <div className="p-4 text-xs text-gray-500">Nenhum provedor conectado encontrado.</div>
+                    ) : (
+                      modelOptions.map((option) => {
+                        const active = option.provider === apiKeyData.provider && option.model === apiKeyData.model;
+                        return (
+                          <button
+                            key={`${option.provider}:${option.model}`}
+                            type="button"
+                            onClick={() => selectChatModel(option)}
+                            className={`w-full rounded-xl border px-3 py-3 text-left transition-colors ${
+                              active
+                                ? "border-[#CCA761]/50 bg-[#CCA761]/10"
+                                : "border-transparent hover:border-white/10 hover:bg-white/[0.04]"
+                            }`}
+                          >
+                            <div className="flex items-start justify-between gap-3">
+                              <div className="min-w-0">
+                                <p className="truncate text-sm font-bold text-gray-100">{option.label}</p>
+                                <p className="mt-1 truncate text-[10px] uppercase tracking-[0.18em] text-[#CCA761]/80">
+                                  {option.provider} / {option.model}
+                                </p>
+                                <p className="mt-1 text-[11px] text-gray-500">{option.description}</p>
+                              </div>
+                              {active && <CheckCircle size={16} className="mt-0.5 shrink-0 text-[#CCA761]" />}
+                            </div>
+                          </button>
+                        );
+                      })
+                    )}
+                  </div>
+
+                  <div className="border-t border-white/10 bg-white/[0.02] p-3">
+                    <label className="mb-2 block text-[9px] font-black uppercase tracking-[0.22em] text-gray-500">
+                      Modelo customizado
+                    </label>
+                    <div className="flex gap-2">
+                      <input
+                        value={customModelInput}
+                        onChange={(event) => setCustomModelInput(event.target.value)}
+                        className="min-w-0 flex-1 rounded-xl border border-white/10 bg-black/40 px-3 py-2 text-xs text-gray-200 outline-none focus:border-[#CCA761]/60"
+                        placeholder="ex: qwen/qwen3.6-plus"
+                      />
+                      <button
+                        type="button"
+                        onClick={() => {
+                          const model = customModelInput.trim();
+                          if (!model || !apiKeyData) return;
+                          selectChatModel({ provider: apiKeyData.provider, model });
+                        }}
+                        disabled={!customModelInput.trim()}
+                        className="rounded-xl border border-[#CCA761]/30 px-3 py-2 text-[10px] font-black uppercase tracking-widest text-[#CCA761] disabled:opacity-40"
+                      >
+                        Usar
+                      </button>
+                    </div>
+                  </div>
+                </div>
+              )}
+            </div>
+          </div>
+        </header>
+      </div>
+
+      <div className="flex min-h-0 flex-1">
+
       {/* --- SIDEBAR DE HISTÓRICO --- */}
       <aside className={`
         ${isSidebarOpen ? 'w-80' : 'w-0'} 
@@ -1686,15 +1987,6 @@ export default function MAYUSPlayground() {
       `}>
         {isSidebarOpen && (
           <div className="flex flex-col h-full w-80">
-            <div className="p-4 border-b border-white/5">
-              <button 
-                onClick={createNewChat}
-                className="w-full flex items-center gap-2 bg-[#CCA761]/10 text-[#CCA761] hover:bg-[#CCA761]/20 border border-[#CCA761]/30 rounded-xl px-4 py-3 font-semibold text-sm transition-colors uppercase tracking-widest"
-              >
-                <Plus size={16} /> Nova Conversa
-              </button>
-            </div>
-
             <div className="flex-1 overflow-y-auto p-3 space-y-1 hide-scrollbar">
               {conversations.length === 0 ? (
                 <div className="text-center p-6 opacity-50">
@@ -1736,41 +2028,37 @@ export default function MAYUSPlayground() {
       </aside>
 
       {/* --- CHAT AREA CENTRAL --- */}
-      <main className="flex-1 flex flex-col relative h-full">
+      <main className="flex-1 flex flex-col relative h-full min-w-0">
 
         {/* HEADER DA TELA CENTRAL */}
-        <header className="flex items-center justify-between p-4 border-b border-[#CCA761]/10 bg-gradient-to-b from-[#111] to-transparent">
-          <div className="flex items-center gap-4 pl-12 md:pl-0">
+        <header className="hidden">
+          <div className="flex items-center gap-2 pl-12 md:pl-0">
             <button 
               onClick={() => setIsSidebarOpen(!isSidebarOpen)}
-              className="hidden md:flex p-2 hover:bg-white/5 text-gray-400 rounded-lg transition-colors border border-transparent hover:border-white/10"
+              className="hidden md:flex h-9 w-9 items-center justify-center rounded-full border border-[#CCA761]/25 bg-[#0b0906] text-[#CCA761] shadow-[0_0_18px_rgba(204,167,97,0.12)] transition-colors hover:border-[#CCA761]/50 hover:bg-[#CCA761]/10"
               title={isSidebarOpen ? "Recolher Histórico" : "Expandir Histórico"}
             >
                {isSidebarOpen ? <ChevronLeft size={18} /> : <History size={18} />}
             </button>
-            <div className="relative hidden sm:block">
-              <div className="w-10 h-10 rounded-full bg-gradient-to-tr from-[#CCA761] to-[#604c26] flex items-center justify-center p-[1px]">
-                <div className="w-full h-full bg-gray-200 dark:bg-black rounded-full flex items-center justify-center">
-                  <BrainCircuit size={18} className="text-[#CCA761]" />
-                </div>
-              </div>
+            <div className="relative hidden sm:flex">
+              <MayusPetSprite variant={petVariant} state="idle" size={36} />
             </div>
             <div>
-              <h1 className={`text-xl text-[#CCA761] font-bold ${cormorant.className}`}>MAYUS AI</h1>
+              <h1 className={`text-lg text-[#CCA761] font-bold tracking-[0.08em] ${cormorant.className}`}>MAYUS AI</h1>
               <p className="text-[10px] text-green-400 flex items-center gap-1 font-bold tracking-widest uppercase">
                 <Sparkles size={10} /> Córtex ({apiKeyData.provider})
               </p>
             </div>
           </div>
-          <div className="flex items-center gap-3">
-            <div className="relative flex items-stretch rounded-xl border border-white/10 bg-white/5">
+          <div className="flex flex-wrap items-center justify-end gap-1.5">
+            <div className="relative flex flex-wrap items-center gap-1.5">
               <button
                 onClick={toggleConversationMode}
                 disabled={realtimeStatus === "connecting"}
-                className={`flex items-center gap-2 px-4 py-2 transition-all text-[10px] font-black uppercase tracking-[0.2em] ${
+                className={`inline-flex h-9 items-center gap-2 rounded-full border px-3 transition-all text-[10px] font-black uppercase tracking-[0.16em] ${
                   isConversationMode
-                    ? 'bg-[#CCA761] text-black shadow-[0_0_20px_rgba(204,167,97,0.4)]'
-                    : 'text-gray-500 hover:text-[#CCA761] hover:bg-white/5'
+                    ? 'border-[#CCA761] bg-[#CCA761] text-black shadow-[0_0_20px_rgba(204,167,97,0.4)]'
+                    : 'border-[#CCA761]/25 bg-[#0b0906] text-[#CCA761] hover:border-[#CCA761]/50 hover:bg-[#CCA761]/10'
                 }`}
               >
                 {realtimeStatus === "connecting" ? <Loader2 size={14} className="animate-spin" /> : <Sparkles size={14} />}
@@ -1783,8 +2071,9 @@ export default function MAYUSPlayground() {
                     onClick={() => {
                       setIsRealtimeModelSwitcherOpen((value) => !value);
                       setIsVoiceSwitcherOpen(false);
+                      setIsPetSwitcherOpen(false);
                     }}
-                    className="flex items-center gap-1 border-l border-white/10 px-3 text-[10px] font-black uppercase tracking-[0.18em] text-[#CCA761] hover:bg-[#CCA761]/10 transition-colors"
+                    className="hidden h-9 items-center gap-1 rounded-full border border-[#CCA761]/25 bg-[#0b0906] px-2.5 text-[10px] font-black uppercase tracking-[0.16em] text-[#CCA761] transition-colors hover:border-[#CCA761]/50 hover:bg-[#CCA761]/10 2xl:inline-flex"
                     title="Escolher modelo Realtime"
                   >
                     <SlidersHorizontal size={13} />
@@ -1839,13 +2128,78 @@ export default function MAYUSPlayground() {
                   )}
                 </>
               )}
+              <div className="relative">
+                <button
+                  type="button"
+                  onClick={() => {
+                    setIsPetSwitcherOpen((value) => !value);
+                    setIsVoiceSwitcherOpen(false);
+                    setIsRealtimeModelSwitcherOpen(false);
+                    setIsModelSwitcherOpen(false);
+                  }}
+                  className="inline-flex h-9 items-center gap-1.5 rounded-full border border-[#CCA761]/25 bg-[#0b0906] px-2.5 text-[10px] font-black uppercase tracking-[0.16em] text-[#CCA761] shadow-[0_0_18px_rgba(204,167,97,0.10)] transition-colors hover:border-[#CCA761]/50 hover:bg-[#CCA761]/10"
+                  title="Escolher avatar do MAYUS"
+                >
+                  <span>Avatar</span>
+                  <span
+                    aria-hidden="true"
+                    className={`h-3 w-3 rounded-full border ${
+                      petVariant === "black"
+                        ? "border-white/30 bg-[#111111]"
+                        : "border-[#CCA761]/40 bg-white"
+                    }`}
+                  />
+                  <ChevronDown size={12} />
+                </button>
+
+                {isPetSwitcherOpen && (
+                  <div className="absolute right-0 top-full mt-3 w-[min(82vw,260px)] rounded-2xl border border-[#CCA761]/25 bg-[#080808] shadow-2xl shadow-black/60 z-50 overflow-hidden">
+                    <div className="p-4 border-b border-white/10">
+                      <p className="text-[10px] uppercase tracking-[0.25em] text-[#CCA761] font-black">Avatar MAYUS</p>
+                    </div>
+                    <div className="p-2 space-y-1">
+                      {(Object.keys(MAYUS_PET_VARIANTS) as MayusPetVariant[]).map((variantKey) => {
+                        const option = MAYUS_PET_VARIANTS[variantKey];
+                        const active = petVariant === variantKey;
+                        return (
+                          <button
+                            key={variantKey}
+                            type="button"
+                            onClick={() => handlePetVariantChange(variantKey)}
+                            disabled={isSavingPetVariant}
+                            className={`w-full rounded-xl px-3 py-3 border transition-colors flex items-center justify-between gap-3 ${
+                              active
+                                ? "border-[#CCA761]/50 bg-[#CCA761]/10"
+                                : "border-transparent hover:border-white/10 hover:bg-white/[0.04]"
+                            }`}
+                          >
+                            <span className="flex min-w-0 items-center gap-3">
+                              <span
+                                aria-hidden="true"
+                                className={`h-4 w-4 rounded-full border ${
+                                  variantKey === "black"
+                                    ? "border-white/30 bg-[#111111]"
+                                    : "border-[#CCA761]/40 bg-white"
+                                }`}
+                              />
+                              <span className="text-sm font-bold text-gray-100">{option.name}</span>
+                            </span>
+                            {active && <CheckCircle size={16} className="text-[#CCA761] shrink-0" />}
+                          </button>
+                        );
+                      })}
+                    </div>
+                  </div>
+                )}
+              </div>
               <button
                 type="button"
                 onClick={() => {
                   setIsVoiceSwitcherOpen((value) => !value);
                   setIsRealtimeModelSwitcherOpen(false);
+                  setIsPetSwitcherOpen(false);
                 }}
-                className="flex items-center gap-1 border-l border-white/10 px-3 text-[10px] font-black uppercase tracking-[0.18em] text-[#CCA761] hover:bg-[#CCA761]/10 transition-colors"
+                className="inline-flex h-9 items-center gap-1 rounded-full border border-[#CCA761]/25 bg-[#0b0906] px-2.5 text-[10px] font-black uppercase tracking-[0.16em] text-[#CCA761] transition-colors hover:border-[#CCA761]/50 hover:bg-[#CCA761]/10"
                 title="Escolher voz Realtime"
               >
                 <Headphones size={13} />
@@ -1902,14 +2256,19 @@ export default function MAYUSPlayground() {
             <div className="relative">
               <button
                 type="button"
-                onClick={() => setIsModelSwitcherOpen((value) => !value)}
-                className="bg-[#CCA761]/10 border border-[#CCA761]/20 px-3 py-1.5 flex items-center gap-3 rounded-lg text-xs tracking-widest text-[#CCA761] font-bold uppercase hover:border-[#CCA761]/50 hover:bg-[#CCA761]/15 transition-colors"
+                onClick={() => {
+                  setIsModelSwitcherOpen((value) => !value);
+                  setIsPetSwitcherOpen(false);
+                  setIsVoiceSwitcherOpen(false);
+                  setIsRealtimeModelSwitcherOpen(false);
+                }}
+                className="inline-flex h-9 items-center gap-2 rounded-full border border-[#CCA761]/25 bg-[#0b0906] px-2.5 text-[10px] tracking-[0.16em] text-[#CCA761] font-bold uppercase transition-colors hover:border-[#CCA761]/50 hover:bg-[#CCA761]/10"
                 title="Trocar modelo do chat"
               >
                 <SlidersHorizontal size={14} />
                 <span className="flex flex-col items-end">
                   <span>{apiKeyData.provider}</span>
-                  <span className="text-[9px] text-gray-500 lowercase opacity-80 mt-0.5 truncate max-w-[150px]">{apiKeyData.model}</span>
+                  <span className="text-[9px] text-gray-500 lowercase opacity-80 mt-0.5 truncate max-w-[115px]">{apiKeyData.model}</span>
                 </span>
               </button>
 
@@ -1991,7 +2350,7 @@ export default function MAYUSPlayground() {
           
           {messages.length === 0 && (
             <div className="h-full flex flex-col items-center justify-center text-center opacity-70">
-              <Bot size={50} className="text-[#CCA761] mb-5 animate-pulse" />
+              <MayusPetSprite variant={petVariant} state="review" size={78} active className="mb-5" />
               <p className={`text-3xl text-white ${cormorant.className}`}>Bem-vindo ao Córtex.</p>
               <p className="text-gray-400 mt-2 text-sm max-w-sm">Tudo o que for decidido e acordado aqui ficará gravado no seu banco de dados institucional.</p>
             </div>
@@ -2027,14 +2386,14 @@ export default function MAYUSPlayground() {
 
             return (
               <div key={idx} className={`flex gap-4 animate-in fade-in slide-in-from-bottom-2 ${msg.role === 'user' ? 'flex-row-reverse' : ''}`}>
-                <div className={`w-8 h-8 rounded-full flex items-center justify-center shrink-0 ${
+                <div className={`w-9 h-9 rounded-full flex items-center justify-center shrink-0 ${
                   msg.role === 'user'
                     ? 'bg-white/10 text-white'
-                    : msg.role === 'model'
-                    ? 'bg-[#CCA761]/20 text-[#CCA761] border border-[#CCA761]/30 shadow-[0_0_15px_rgba(204,167,97,0.2)]'
+                  : msg.role === 'model'
+                    ? 'bg-transparent text-[#CCA761]'
                     : 'bg-red-500/10 text-red-400'
                 }`}>
-                  {msg.role === 'user' ? <User size={16} /> : msg.role === 'model' ? <Bot size={16} /> : <AlertCircle size={16} />}
+                  {msg.role === 'user' ? <User size={16} /> : msg.role === 'model' ? <MayusPetSprite variant={petVariant} state="waving" size={36} /> : <AlertCircle size={16} />}
                 </div>
                 <div className={`p-4 rounded-2xl max-w-[85%] text-sm leading-relaxed whitespace-pre-wrap relative group/msg ${
                   msg.role === 'user'
@@ -2227,7 +2586,18 @@ export default function MAYUSPlayground() {
           )}
         </div>
 
+        <button
+          type="button"
+          onClick={toggleConversationMode}
+          className="absolute bottom-10 right-5 z-20 hidden items-center justify-center transition-transform hover:scale-105 sm:flex"
+          title={isConversationMode ? "Desativar modo conversa" : "Ativar modo conversa"}
+          aria-label={isConversationMode ? "Desativar modo conversa com MAYUS" : "Ativar modo conversa com MAYUS"}
+        >
+          <MayusPetSprite variant={petVariant} state={isConversationMode ? "waving" : "idle"} size={94} active={isConversationMode} />
+        </button>
+
       </main>
+      </div>
     </div>
   );
 }
