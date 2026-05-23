@@ -38,8 +38,7 @@ describe("POST /api/agent/voice/mayus-knowledge", () => {
 
     expect(response.status).toBe(200);
     expect(json.ok).toBe(true);
-    expect(json.answer).toContain("socio operacional de IA");
+    expect(json.answer).toContain("camada de inteligencia operacional e de gestao");
     expect(json.sources.length).toBeGreaterThan(0);
   });
 });
-

@@ -27,6 +27,24 @@ interface UseUserProfileReturn {
   error: string | null;
 }
 
+const MAYUS_LOCAL_PROFILE: UserProfile = {
+  id: "mayus-local-user",
+  tenant_id: "mayus-local-tenant",
+  full_name: "MAYUS Local",
+  role: "admin",
+  is_active: true,
+  avatar_url: null,
+  custom_permissions: ["*"],
+  email_corporativo: "local@mayus.dev",
+  oab_registro: null,
+  is_superadmin: true,
+};
+
+function isLocalNoLoginMode() {
+  if (typeof window === "undefined") return false;
+  return ["localhost", "127.0.0.1", "::1"].includes(window.location.hostname);
+}
+
 export function useUserProfile(): UseUserProfileReturn {
   const [user, setUser] = useState<User | null>(null);
   const [profile, setProfile] = useState<UserProfile | null>(null);
@@ -40,10 +58,26 @@ export function useUserProfile(): UseUserProfileReturn {
       try {
         setIsLoading(true);
 
+        if (isLocalNoLoginMode()) {
+          setUser(null);
+          setProfile(MAYUS_LOCAL_PROFILE);
+          setError(null);
+          setIsLoading(false);
+          return;
+        }
+
         // 1. Obtém o usuário autenticado
         const { data: { user: authUser }, error: authError } = await supabase.auth.getUser();
 
         if (authError || !authUser) {
+          if (isLocalNoLoginMode()) {
+            setUser(null);
+            setProfile(MAYUS_LOCAL_PROFILE);
+            setError(null);
+            setIsLoading(false);
+            return;
+          }
+
           setUser(null);
           setProfile(null);
           setIsLoading(false);
