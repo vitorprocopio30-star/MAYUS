@@ -727,7 +727,7 @@ describe("mayus-operating-partner", () => {
     expect(fetcher).toHaveBeenCalledTimes(1);
     expect(decision.reply).toBe("Boa noite, Vitor Procópio. Como posso ajudar?");
     expect(decision.conversation_frame?.resolution_type).toBe("greeting");
-    expect(decision.final_response_source).toBe("llm_natural");
+    expect(decision.final_response_source).toBe("deterministic_guardrail");
   });
 
   it("nao usa MAYUS como nome visivel do escritorio na apresentacao", async () => {
@@ -995,12 +995,12 @@ describe("mayus-operating-partner", () => {
 
   it("responde oi mayus sem puxar contexto antigo ou se reapresentar", async () => {
     const fetcher = operatingPartnerFetcher({
-      reply: "Oi, Vitor, tudo bem? Como posso ajudar?",
-      intent: "client_support",
-      next_action: "perguntar como ajudar sem retomar processo antigo",
+      reply: "Vitor, entendi: banco master é qual desses dois? Márcio contra o Banco Bradesco ou contra a Caixa?",
+      intent: "process_status",
+      next_action: "perguntar qual processo antigo",
       conversation_state: {
         last_customer_message: "Oi mayus",
-        next_action: "perguntar como ajudar sem retomar processo antigo",
+        next_action: "perguntar qual processo antigo",
         conversation_summary: "Operador interno apenas saudou o MAYUS.",
       },
     });
@@ -1045,10 +1045,47 @@ describe("mayus-operating-partner", () => {
     expect(fetcher).toHaveBeenCalledTimes(1);
     expect(decision.reply).toBe("Oi, Vitor, tudo bem? Como posso ajudar?");
     expect(decision.reply).not.toMatch(/custas|processo|Maya|assistente|Dutra/i);
-    expect(decision.next_action).toBe("perguntar como ajudar sem retomar processo antigo");
+    expect(decision.next_action).toBe("abrir conversa limpa sem puxar contexto antigo");
     expect(decision.requires_approval).toBe(false);
     expect(decision.conversation_frame?.resolution_type).toBe("greeting");
     expect(decision.quality_check?.status).toBe("pass");
+    expect(decision.final_response_source).toBe("deterministic_guardrail");
+  });
+
+  it("reconhece reclamacao sem repetir contexto antigo ou alternativas erradas", async () => {
+    const fetcher = operatingPartnerFetcher({
+      reply: "Vitor, entendi sua situação. Pra eu localizar com segurança: no banco master é Bradesco (TJRJ) ou Caixa (TRF2)?",
+      intent: "process_status",
+      next_action: "perguntar qual processo antigo",
+      conversation_state: {
+        last_customer_message: "Que merda hein",
+        next_action: "perguntar qual processo antigo",
+        conversation_summary: "Operador reclamou de resposta ruim.",
+      },
+    });
+
+    const decision = await buildMayusOperatingPartnerDecision({
+      supabase: {} as any,
+      tenantId: "tenant-1",
+      channel: "whatsapp",
+      contactName: "Vitor",
+      messages: [
+        { direction: "inbound", content: "Oi mayus" },
+        { direction: "outbound", content: "Vitor, entendi: banco master é qual desses dois? Márcio contra o Banco Bradesco (TJRJ) ou contra a Caixa (TRF2)?" },
+        { direction: "inbound", content: "Que merda hein" },
+      ],
+      whatsappActorContext: { role: "office_operator", sender_phone_authorized: true, reason: "daily_playbook_authorized_phone" },
+      officeKnowledgeProfile: { assistantName: "Maya", officeName: "Dutra Advocacia" },
+      operatingPartner: { enabled: true, autonomy_mode: "high_supervised" },
+      fetcher,
+    });
+
+    expect(decision.reply).toContain("você tem razão");
+    expect(decision.reply).toContain("me confundi");
+    expect(decision.reply).not.toMatch(/Bradesco|Caixa|Banco Master|TJRJ|TRF2|qual desses/i);
+    expect(decision.conversation_frame?.resolution_type).toBe("complaint");
+    expect(decision.final_response_source).toBe("deterministic_guardrail");
+    expect(decision.should_auto_send).toBe(true);
   });
 
   it("remove reapresentacao robotica quando operador envia nome do cliente", async () => {
@@ -1537,6 +1574,83 @@ describe("mayus-operating-partner", () => {
     expect(decision.should_auto_send).toBe(true);
     expect(decision.conversation_frame?.resolution_type).toBe("referenced_process");
     expect(decision.conversation_frame?.resolved_reference?.opposingParty).toBe("Banco Master");
+  });
+
+  it("nao forca Banco Master em Bradesco ou Caixa quando a referencia nao esta nos candidatos", async () => {
+    const fetcher = operatingPartnerFetcher({
+      reply: "Vitor, entendi. Só pra eu localizar com segurança: esse banco master é qual banco (Bradesco/TJRJ ou Caixa/TRF2)? E o assunto é indenização ou correção/FGTS?",
+      intent: "process_status",
+      next_action: "perguntar alternativa antiga",
+      conversation_state: {
+        conversation_role: "case_status",
+        conversation_goal: "localizar processo",
+        last_customer_message: "Banco master é banco master",
+        next_action: "perguntar alternativa antiga",
+        conversation_summary: "Operador corrigiu que a referencia e Banco Master.",
+        facts_known: ["referencia ao Banco Master"],
+        missing_information: [],
+      },
+      support_summary: { is_existing_client: true, issue_type: "process_status", verified_case_reference: false, summary: "referencia nao encontrada nos candidatos" },
+    });
+
+    const decision = await buildMayusOperatingPartnerDecision({
+      supabase: {} as any,
+      tenantId: "tenant-1",
+      channel: "whatsapp",
+      contactName: "Vitor",
+      messages: [
+        { direction: "inbound", content: "Marcio da Silva Machado" },
+        { direction: "outbound", content: "Márcio, localizei dois processos: Bradesco (TJRJ) e Caixa (TRF2)." },
+        { direction: "inbound", content: "Banco master é banco master" },
+      ],
+      whatsappActorContext: { role: "office_operator", sender_phone_authorized: true, reason: "daily_playbook_authorized_phone" },
+      previousMayusEvent: {
+        intent: "process_status",
+        conversation_state: {
+          conversation_role: "case_status",
+          conversation_goal: "acompanhar processos do cliente",
+          last_process_candidates: [
+            { processTaskId: "bradesco", clientName: "Márcio da Silva Machado", processNumber: "3000141-95.2026.8.19.0213", title: "Márcio x Bradesco", opposingParty: "Bradesco", summary: "ação de indenização", currentStage: "Conhecimento", lastMovementAt: "2026-06-21" },
+            { processTaskId: "caixa", clientName: "Márcio da Silva Machado", processNumber: "5006349-29.2023.4.02.5110", title: "Márcio x Caixa", opposingParty: "Caixa", summary: "FGTS/atualização", currentStage: "Conhecimento", lastMovementAt: "2023-06-10" },
+          ],
+          has_mayus_introduced: true,
+        },
+      },
+      processStatusContext: {
+        verified: true,
+        confidence: "medium",
+        accessScope: "tenant_authorized",
+        senderPhoneAuthorized: true,
+        processTaskId: null,
+        clientName: "Márcio da Silva Machado",
+        processNumber: null,
+        title: "Dossiê processual do cliente",
+        currentStage: null,
+        detectedPhase: "sem_fase_confiavel",
+        detectedPhaseLabel: null,
+        lastMovementAt: null,
+        lastMovementText: null,
+        deadlineAt: null,
+        pendingItems: [],
+        nextStep: null,
+        riskFlags: [],
+        clientReply: null,
+        candidateProcesses: [
+          { processTaskId: "bradesco", clientName: "Márcio da Silva Machado", processNumber: "3000141-95.2026.8.19.0213", title: "Márcio x Bradesco", opposingParty: "Bradesco", summary: "ação de indenização", currentStage: "Conhecimento", lastMovementAt: "2026-06-21" },
+          { processTaskId: "caixa", clientName: "Márcio da Silva Machado", processNumber: "5006349-29.2023.4.02.5110", title: "Márcio x Caixa", opposingParty: "Caixa", summary: "FGTS/atualização", currentStage: "Conhecimento", lastMovementAt: "2023-06-10" },
+        ],
+        grounding: { factualSources: ["processos monitorados"], inferenceNotes: [], missingSignals: ["Banco Master nao retornou nos candidatos atuais"] },
+      },
+      operatingPartner: { enabled: true, autonomy_mode: "high_supervised" },
+      fetcher,
+    });
+
+    expect(decision.reply).toContain("Banco Master");
+    expect(decision.reply).toContain("sem confundir com outro banco");
+    expect(decision.reply).not.toMatch(/Bradesco|\bCaixa\b|TJRJ|TRF2|indeniza[cç][aã]o|FGTS|qual banco|qual desses|assunto/i);
+    expect(decision.conversation_frame?.resolution_type).toBe("unmatched_process_reference");
+    expect(decision.final_response_source).toBe("deterministic_guardrail");
+    expect(decision.should_auto_send).toBe(true);
   });
 
   it("repara resposta roteirizada que pede escolha apesar de haver processos verificados", async () => {

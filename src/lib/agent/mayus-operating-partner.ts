@@ -145,7 +145,9 @@ export type MayusWhatsAppActorContext = {
 
 export type MayusWhatsAppConversationResolutionType =
   | "greeting"
+  | "complaint"
   | "referenced_process"
+  | "unmatched_process_reference"
   | "generic_process_request"
   | "short_process_nudge"
   | "commercial_triage"
@@ -533,6 +535,32 @@ function findReferencedProcessCandidate(message: string | null | undefined, cand
   return scored[0].candidate;
 }
 
+function isConversationComplaint(message: string | null | undefined) {
+  const text = normalizeText(message);
+  return /\b(merda|ruim|pior|errado|nada a ver|nao foi isso|não foi isso|voce se confundiu|você se confundiu|que resposta|rob[oô]|burro|horrivel|horrível)\b/.test(text);
+}
+
+function extractExplicitProcessReference(message: string | null | undefined) {
+  const text = normalizeText(message);
+  if (!text) return null;
+  const bankReference = text.match(/\b(?:banco\s+)?(?:master|bradesco|itau|ita[uú]|santander|pan|bmg|c6|safra|mercantil|daycoval|ole|ol[eé]|caixa)\b/);
+  if (bankReference?.[0]) {
+    const value = bankReference[0].replace(/^banco\s+/, "").trim();
+    if (value === "caixa") return "Caixa";
+    return `Banco ${value.split(/\s+/).map((part) => `${part.charAt(0).toUpperCase()}${part.slice(1)}`).join(" ")}`;
+  }
+  const entityReference = text.match(/\b(?:inss|fgts|previdencia|previdência)\b/);
+  return entityReference?.[0] ? entityReference[0].toUpperCase() : null;
+}
+
+function hasRecentProcessContext(input: MayusOperatingPartnerInput, state: MayusConversationState, candidates: ProcessCandidateMemory[]) {
+  return candidates.length > 0
+    || input.processStatusContext?.verified === true
+    || input.previousMayusEvent?.intent === "process_status"
+    || state.conversation_role === "case_status"
+    || /processo|banco|bradesco|caixa|master|cnj/.test(normalizeText(state.conversation_summary));
+}
+
 function buildReferencedProcessCandidateReply(candidate: ProcessCandidateMemory) {
   const label = cleanText(candidate.opposingParty) || cleanText(candidate.title) || cleanText(candidate.processNumber) || "esse processo";
   const ref = cleanText(candidate.processNumber) ? ` (${candidate.processNumber})` : "";
@@ -596,11 +624,15 @@ function buildWhatsAppConversationFrame(input: MayusOperatingPartnerInput, param
   const lastMessage = cleanText(getLastInbound(input.messages)?.content);
   const candidates = collectProcessCandidates(input, params.fallbackState);
   const referencedCandidate = findReferencedProcessCandidate(lastMessage, candidates);
+  const explicitProcessReference = extractExplicitProcessReference(lastMessage);
   const genericProcessRequest = isGenericProcessStatusRequestWithoutReference(lastMessage);
   const shortProcessNudge = isShortProcessNudge(input.messages, input.processStatusContext);
   const commercialTriage = isCommercialTriageMessage(lastMessage) && (input.processStatusContext || previousAskedForProcessIdentifier(input.messages));
   const unverifiedProcessStatus = (params.deterministicIntent === "process_status" || genericProcessRequest)
     && input.processStatusContext?.verified !== true;
+  const unmatchedProcessReference = !referencedCandidate
+    && Boolean(explicitProcessReference)
+    && hasRecentProcessContext(input, params.fallbackState, candidates);
 
   let resolutionType: MayusWhatsAppConversationResolutionType = "open_llm";
   let recommendedIntent = params.deterministicIntent;
@@ -634,6 +666,14 @@ function buildWhatsAppConversationFrame(input: MayusOperatingPartnerInput, param
     responseGuidance.add("apenas cumprimentar e perguntar como pode ajudar");
     forbiddenMoves.add("nao se reapresentar se a conversa ja existe");
     safeFallbackReply = buildNaturalGreetingReply(lastMessage, input.contactName);
+  } else if (isConversationComplaint(lastMessage)) {
+    resolutionType = "complaint";
+    recommendedIntent = "client_support";
+    conversationGoal = "reconhecer erro de contexto e pedir o ponto atual sem insistir na resposta anterior";
+    responseGuidance.add("pedir desculpa de forma curta e nao repetir a pergunta errada");
+    forbiddenMoves.add("nao defender a resposta anterior");
+    forbiddenMoves.add("nao retomar alternativas processuais antigas");
+    safeFallbackReply = `${cleanText(input.contactName) || "Entendi"}, você tem razão. Eu me confundi no contexto. Me diga só o ponto que você quer ver agora que eu sigo por ele.`;
   } else if (referencedCandidate) {
     resolutionType = "referenced_process";
     recommendedIntent = "process_status";
@@ -647,6 +687,18 @@ function buildWhatsAppConversationFrame(input: MayusOperatingPartnerInput, param
     responseGuidance.add("nao perguntar assunto principal nem oferecer outros processos");
     forbiddenMoves.add("nao misturar outros candidatos processuais na resposta");
     safeFallbackReply = buildReferencedProcessCandidateReply(referencedCandidate);
+  } else if (unmatchedProcessReference) {
+    resolutionType = "unmatched_process_reference";
+    recommendedIntent = "process_status";
+    conversationGoal = "aceitar a referencia explicita do usuario e nao encaixar em candidatos errados";
+    knownFacts.add(`referencia explicita informada: ${explicitProcessReference}`);
+    responseGuidance.add("reconhecer a correcao do usuario");
+    responseGuidance.add("tratar a referencia como uma nova busca/conferencia");
+    forbiddenMoves.add("nao perguntar se a referencia e algum candidato antigo");
+    forbiddenMoves.add("nao oferecer Bradesco/Caixa se o usuario disse Banco Master");
+    safeFallbackReply = isOfficeOperatorActor(params.actorContext, input.processStatusContext)
+      ? `${cleanText(input.contactName) || "Entendi"}, você tem razão. Vou tratar como ${explicitProcessReference} mesmo, sem confundir com outro banco. Na base carregada agora eu não encontrei esse processo com segurança; deixei como conferência por ${explicitProcessReference}.`
+      : `Entendi. Vou tratar como ${explicitProcessReference} mesmo. Para não te passar informação errada, vou conferir esse processo na base antes de afirmar o andamento.`;
   } else if (genericProcessRequest) {
     resolutionType = "generic_process_request";
     recommendedIntent = "process_status";
@@ -1964,6 +2016,17 @@ function buildReplyQualityCheck(params: {
     }
   }
 
+  if (params.frame.resolution_type === "complaint") {
+    if (/bradesco|caixa|master|qual desses|qual deles|assunto principal|indenizacao|indenização|fgts/.test(text)) {
+      flags.push("complaint_repeated_stale_context");
+      reasons.push("Resposta a reclamacao repetiu o contexto antigo em vez de reconhecer o erro.");
+    }
+    if (!/desculp|razao|razão|me confundi|entendi/.test(text)) {
+      flags.push("complaint_without_recovery");
+      reasons.push("Resposta a reclamacao nao reconheceu a falha de contexto.");
+    }
+  }
+
   if (params.frame.resolution_type === "referenced_process" && params.frame.resolved_reference) {
     const targetLabel = params.frame.resolved_reference.label || params.frame.resolved_reference.opposingParty || params.frame.resolved_reference.processNumber;
     if (includesAnyProcessCandidate(reply, params.frame.candidate_summaries || [], targetLabel)) {
@@ -1973,6 +2036,17 @@ function buildReplyQualityCheck(params: {
     if (/qual .*assunto principal|assunto principal|e .*bradesco.*ou.*caixa|e .*caixa.*ou.*bradesco|qual desses|qual deles/.test(text)) {
       flags.push("asks_unneeded_process_choice");
       reasons.push("Resposta pediu escolha/assunto apesar de a referencia ja estar resolvida.");
+    }
+  }
+
+  if (params.frame.resolution_type === "unmatched_process_reference") {
+    if (/\bbradesco\b|\bcaixa\b|qual desses|qual deles|assunto principal|indenizacao|indenização|\bfgts\b|\btjrj\b|\btrf2\b/.test(text)) {
+      flags.push("forces_wrong_process_alternatives");
+      reasons.push("Resposta tentou encaixar uma referencia explicita em candidatos errados.");
+    }
+    if (/banco master/.test(normalizeText(params.frame.known_facts.join(" "))) && !/master/.test(text)) {
+      flags.push("missing_explicit_reference");
+      reasons.push("Resposta ignorou a referencia explicita do usuario.");
     }
   }
 
@@ -2027,7 +2101,10 @@ function normalizeDecision(parsed: any, params: {
     riskFlags.push("low_confidence");
   }
 
-  let intent = normalizeIntent(parsed?.intent, params.deterministicIntent);
+  const useFrameGuardrailReply = ["greeting", "complaint", "unmatched_process_reference"].includes(params.conversationFrame.resolution_type);
+  let intent = useFrameGuardrailReply
+    ? params.conversationFrame.recommended_intent
+    : normalizeIntent(parsed?.intent, params.deterministicIntent);
   if (params.deterministicIntent === "legal_triage" && intent === "sales_qualification") {
     intent = "legal_triage";
   }
@@ -2036,7 +2113,9 @@ function normalizeDecision(parsed: any, params: {
   const supportSummary = normalizeSupportSummary(parsed?.support_summary, params.fallbackSupportSummary);
   const modelReplyBlocks = normalizeReplyBlocks(parsed?.reply_blocks);
   const modelReply = modelReplyBlocks.length ? modelReplyBlocks.join("\n\n") : parsed?.reply;
-  const provisionalReply = cleanText(modelReply) || params.conversationFrame.safe_fallback_reply;
+  const provisionalReply = useFrameGuardrailReply
+    ? params.conversationFrame.safe_fallback_reply
+    : cleanText(modelReply) || params.conversationFrame.safe_fallback_reply;
   const sanitizedReply = sanitizeReplyForConversation(provisionalReply, conversationState, {
     assistantName: params.assistantName,
     officeName: params.officeName,
@@ -2130,6 +2209,9 @@ function normalizeDecision(parsed: any, params: {
     && confidence >= params.config.confidence_thresholds.auto_send
     && !requiresApproval
     && parsed?.should_auto_send !== false;
+  const effectiveNextAction = useFrameGuardrailReply
+    ? params.conversationFrame.conversation_goal
+    : cleanText(parsed?.next_action) || "organizar proximo passo com seguranca";
 
   const sanitizedBlocks = modelReplyBlocks.length
     ? (cleanText(modelReply) === cleanText(sanitizedReply)
@@ -2143,7 +2225,7 @@ function normalizeDecision(parsed: any, params: {
     intent,
     confidence,
     risk_flags: Array.from(new Set(effectiveRiskFlags)),
-    next_action: cleanText(parsed?.next_action) || "organizar proximo passo com seguranca",
+    next_action: effectiveNextAction,
     conversation_state: conversationState,
     closing_readiness: closingReadiness,
     support_summary: supportSummary,
@@ -2157,7 +2239,7 @@ function normalizeDecision(parsed: any, params: {
     whatsapp_actor_context: params.whatsappActorContext,
     conversation_frame: params.conversationFrame,
     quality_check: qualityCheck,
-    final_response_source: "llm_natural",
+    final_response_source: useFrameGuardrailReply ? "deterministic_guardrail" : "llm_natural",
   });
 }
 
@@ -2171,6 +2253,10 @@ const REPAIRABLE_RISK_FLAGS = [
   "stale_context_leak",
   "unnecessary_reintroduction",
   "mixed_process_candidates",
+  "complaint_repeated_stale_context",
+  "complaint_without_recovery",
+  "forces_wrong_process_alternatives",
+  "missing_explicit_reference",
   "asks_unneeded_process_choice",
   "asks_unneeded_process_subject",
   "robotic_self_reference",
