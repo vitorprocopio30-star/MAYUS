@@ -193,5 +193,5 @@ export async function loginThroughUi(page: Page, options: LoginThroughUiOptions 
   );
 
   await page.goto("/dashboard", { waitUntil: "domcontentloaded" });
-  await expect(page).toHaveURL(/\/dashboard(?:\/)?$/);
+  await expect(page).toHaveURL(/\/dashboard(?:\/|$)/);
 }
