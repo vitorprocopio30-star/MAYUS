@@ -307,6 +307,73 @@ describe("drive-document-scanner", () => {
     });
   });
 
+  it("promotes legacy client folders with name and initial only when they match an existing MAYUS client", () => {
+    const plan = buildDriveScanPreviewPlan({
+      processes: [process],
+      items: [file({
+        name: "inicial.pdf",
+        parentPath: ["Acervo antigo", "Maria S"],
+      })],
+    });
+
+    expect(plan.counters.proposedActions).toBe(1);
+    expect(plan.actions[0]).toMatchObject({
+      actionType: "move_to_process_folder",
+      targetProcessTaskId: "process-1",
+      targetFolderLabel: "02-Inicial",
+      confidence: "high",
+      status: "proposed",
+      beforePayload: expect.objectContaining({
+        parent_path: ["Acervo antigo", "Maria S"],
+        source_folder_name: "Maria S",
+        source_path_label: "Acervo antigo / Maria S / inicial.pdf",
+      }),
+      afterPayload: expect.objectContaining({
+        mayus_model_folder_label: "02-Inicial",
+        process_client_name: "Maria Silva",
+        legacy_source: expect.objectContaining({
+          legacy_client_folder_match: "client_folder_name_initial",
+        }),
+      }),
+    });
+    expect(plan.items[0].detectedSignals).toMatchObject({
+      source_folder_name: "Maria S",
+      legacy_client_folder_match: "client_folder_name_initial",
+    });
+  });
+
+  it("keeps ambiguous legacy name-initial folders in human review", () => {
+    const plan = buildDriveScanPreviewPlan({
+      processes: [
+        process,
+        {
+          ...process,
+          id: "process-2",
+          client_name: "Maria Santos",
+          process_number: "9999999-99.2024.8.26.0100",
+          drive_folder_id: "process-folder-2",
+        },
+      ],
+      items: [file({
+        name: "inicial.pdf",
+        parentPath: ["Acervo antigo", "Maria S"],
+      })],
+    });
+
+    expect(plan.counters.proposedActions).toBe(0);
+    expect(plan.counters.needsReview).toBe(1);
+    expect(plan.actions[0]).toMatchObject({
+      actionType: "move_to_process_folder",
+      status: "review_required",
+      confidence: "medium",
+      reason: "Arquivo encontrado, mas precisa de revisao antes de movimentacao.",
+    });
+    expect(plan.items[0].detectedSignals).toMatchObject({
+      ambiguous_legacy_client_folder: true,
+      legacy_client_folder_match: "client_folder_name_initial",
+    });
+  });
+
   it("requires review when no process can be matched", () => {
     const plan = buildDriveScanPreviewPlan({
       processes: [process],
