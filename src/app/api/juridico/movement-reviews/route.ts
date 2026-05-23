@@ -11,6 +11,7 @@ import {
   chooseSemanticLegalStage,
   resolveProcessPipelineContext,
 } from '@/lib/juridico/process-pipeline-resolver'
+import { prepareProactiveMovementDraft } from '@/lib/lex/proactive-movement-draft'
 import { supabaseAdmin } from '@/lib/supabase/admin'
 
 type AuthResult =
@@ -27,9 +28,31 @@ type ReviewPayload = {
   prazo_extraido_dias?: number | null
   data_vencimento_extraida?: string | null
   confianca_analise?: string | null
+  confidence?: string | null
   origem?: string | null
   motivo?: string | null
+  polo_representado?: string | null
+  obrigacao_de_quem?: string | null
+  confidence_reason?: string | null
   evidencia?: string | null
+  review_required?: boolean | null
+  agentic_governance?: unknown
+}
+
+type AgenticGovernanceSummary = {
+  openclaw: {
+    surface: string | null
+    outcome: string | null
+    requires_approval: boolean | null
+    can_execute_now: boolean | null
+    reason: string | null
+  }
+  hermes: {
+    status: string | null
+    events_count: number
+    last_event_type: string | null
+    last_event_summary: string | null
+  }
 }
 
 type ReviewOverrides = {
@@ -92,6 +115,75 @@ function parseDueDate(value: unknown) {
 function optionalText(value: unknown) {
   const raw = typeof value === 'string' ? value.trim() : ''
   return raw || null
+}
+
+function optionalSummaryText(value: unknown) {
+  const raw = optionalText(value)
+  return raw
+    ? raw
+        .replace(/(token|apikey|api_key|authorization|password|secret)[:=]\s*[^\s,;]+/gi, '$1=[redacted]')
+        .slice(0, 280)
+    : null
+}
+
+function optionalBoolean(value: unknown) {
+  return typeof value === 'boolean' ? value : null
+}
+
+function summarizeOpenClawPolicy(policy: Record<string, unknown>) {
+  const subject = isRecord(policy.subject) ? policy.subject : {}
+  const surfaceMatrix = isRecord(policy.surface_matrix) ? policy.surface_matrix : {}
+  const requiresApproval = optionalBoolean(policy.requires_approval)
+  const canExecuteNow = optionalBoolean(policy.can_execute_now)
+  const allowed = optionalBoolean(policy.allowed)
+  const outcome = optionalSummaryText(policy.outcome)
+    || (allowed === false ? 'blocked' : requiresApproval ? 'requires_approval' : canExecuteNow ? 'can_execute_now' : null)
+  const reason = optionalSummaryText(policy.reason)
+    || (requiresApproval
+      ? 'Politica OpenClaw exige aprovacao humana para esta superficie.'
+      : canExecuteNow
+        ? 'Politica OpenClaw permite execucao nesta superficie.'
+        : allowed === false
+          ? 'Politica OpenClaw bloqueou esta acao.'
+        : null)
+
+  return {
+    surface: optionalSummaryText(subject.surface) || optionalSummaryText(surfaceMatrix.surface),
+    outcome,
+    requires_approval: requiresApproval,
+    can_execute_now: canExecuteNow,
+    reason,
+  }
+}
+
+function summarizeHermesTrajectory(trajectory: Record<string, unknown>) {
+  const events = Array.isArray(trajectory.events) ? trajectory.events.filter(isRecord) : []
+  const lastEvent = events.length > 0 ? events[events.length - 1] : null
+
+  return {
+    status: optionalSummaryText(trajectory.status),
+    events_count: events.length,
+    last_event_type: lastEvent ? optionalSummaryText(lastEvent.type) : null,
+    last_event_summary: lastEvent ? optionalSummaryText(lastEvent.summary) : null,
+  }
+}
+
+function summarizeAgenticGovernance(payload: ReviewPayload, analysis: ReviewPayload): AgenticGovernanceSummary | null {
+  const governance = isRecord(payload.agentic_governance)
+    ? payload.agentic_governance
+    : isRecord(analysis.agentic_governance)
+      ? analysis.agentic_governance
+      : null
+
+  if (!governance) return null
+
+  const openclawPolicy = isRecord(governance.openclaw_policy) ? governance.openclaw_policy : {}
+  const hermesTrajectory = isRecord(governance.hermes_trajectory) ? governance.hermes_trajectory : {}
+
+  return {
+    openclaw: summarizeOpenClawPolicy(openclawPolicy),
+    hermes: summarizeHermesTrajectory(hermesTrajectory),
+  }
 }
 
 function parseReviewOverrides(body: Record<string, unknown>): ReviewOverrides {
@@ -224,6 +316,7 @@ async function listPendingReviews(tenantId: string) {
     const payload = normalizePayload(review.payload)
     const { movement, process } = await loadReviewContext(tenantId, payload)
     const analysis = normalizePayload(movement?.analise_json)
+    const agenticGovernance = summarizeAgenticGovernance(payload, analysis)
     items.push({
       id: review.id,
       created_at: review.created_at,
@@ -235,9 +328,15 @@ async function listPendingReviews(tenantId: string) {
       acao_sugerida: payload.acao_sugerida || movement?.acao_sugerida || null,
       data_vencimento_extraida: payload.data_vencimento_extraida || movement?.data_vencimento_extraida || null,
       confianca_analise: payload.confianca_analise || movement?.confianca_analise || null,
+      confidence: payload.confidence || analysis.confidence || payload.confianca_analise || movement?.confianca_analise || null,
       origem: payload.origem || analysis.origem || null,
       motivo: payload.motivo || String(analysis.motivo || ''),
+      polo_representado: payload.polo_representado || analysis.polo_representado || null,
+      obrigacao_de_quem: payload.obrigacao_de_quem || analysis.obrigacao_de_quem || null,
+      confidence_reason: payload.confidence_reason || String(analysis.confidence_reason || analysis.motivo || ''),
       evidencia: payload.evidencia || String(analysis.evidencia || ''),
+      review_required: payload.review_required ?? (typeof analysis.review_required === 'boolean' ? analysis.review_required : true),
+      agentic_governance: agenticGovernance,
       movimentacao_data: movement?.data || null,
       movimentacao_conteudo: movementContent(movement, payload),
       cliente_nome: process?.cliente_nome || null,
@@ -265,6 +364,7 @@ async function listStuckReviews(tenantId: string) {
     const payload = normalizePayload(review.payload)
     const { movement, process } = await loadReviewContext(tenantId, payload)
     const analysis = normalizePayload(movement?.analise_json)
+    const agenticGovernance = summarizeAgenticGovernance(payload, analysis)
     items.push({
       id: review.id,
       created_at: review.created_at,
@@ -276,9 +376,15 @@ async function listStuckReviews(tenantId: string) {
       acao_sugerida: payload.acao_sugerida || movement?.acao_sugerida || null,
       data_vencimento_extraida: payload.data_vencimento_extraida || movement?.data_vencimento_extraida || null,
       confianca_analise: payload.confianca_analise || movement?.confianca_analise || null,
+      confidence: payload.confidence || analysis.confidence || payload.confianca_analise || movement?.confianca_analise || null,
       origem: payload.origem || analysis.origem || null,
       motivo: payload.motivo || String(analysis.motivo || ''),
+      polo_representado: payload.polo_representado || analysis.polo_representado || null,
+      obrigacao_de_quem: payload.obrigacao_de_quem || analysis.obrigacao_de_quem || null,
+      confidence_reason: payload.confidence_reason || String(analysis.confidence_reason || analysis.motivo || ''),
       evidencia: payload.evidencia || String(analysis.evidencia || ''),
+      review_required: payload.review_required ?? (typeof analysis.review_required === 'boolean' ? analysis.review_required : true),
+      agentic_governance: agenticGovernance,
       movimentacao_data: movement?.data || null,
       movimentacao_conteudo: movementContent(movement, payload),
       cliente_nome: process?.cliente_nome || null,
@@ -458,6 +564,12 @@ async function approveReview(params: { tenantId: string; userId: string; review:
         reviewed_action: descricao,
         reviewed_due_date: dueDateIso,
         process_task_id: taskId,
+        polo_representado: reviewedPayload.polo_representado ?? analysis.polo_representado ?? null,
+        obrigacao_de_quem: reviewedPayload.obrigacao_de_quem ?? analysis.obrigacao_de_quem ?? null,
+        confidence: reviewedPayload.confidence || reviewedPayload.confianca_analise || analysis.confidence || analysis.confianca_analise || null,
+        confidence_reason: reviewedPayload.confidence_reason ?? analysis.confidence_reason ?? null,
+        evidencia: reviewedPayload.evidencia ?? analysis.evidencia ?? null,
+        review_required: false,
       },
     })
       .eq('id', movement.id)
@@ -465,13 +577,47 @@ async function approveReview(params: { tenantId: string; userId: string; review:
     if (movementUpdateError) throw new Error(`Falha ao atualizar movimentacao revisada: ${movementUpdateError.message}`)
   }
 
+  let proactiveMovement: unknown = null
+  try {
+    proactiveMovement = await prepareProactiveMovementDraft({
+      tenantId: params.tenantId,
+      processTaskId: taskId,
+      processNumber: String(process.numero_processo || payload.numero_cnj || movement?.numero_cnj || ''),
+      movementText: movementContent(movement, payload) || descricao,
+      movementDate: movement?.data || null,
+      movementId: movement?.id || escavadorMovimentacaoId || payload.process_movimentacao_id || null,
+      eventType: tipoEvento,
+      deadlineDescription: descricao,
+      responsibleUserId: process.advogado_responsavel_id || params.userId,
+      metadata: {
+        ...normalizePayload(movement?.analise_json),
+        ...reviewedPayload,
+        review_source: 'human_approved_movement_review',
+        review_note: params.note || null,
+        process_task_id: taskId,
+        due_date: dueDateIso,
+      },
+    })
+  } catch (error: any) {
+    proactiveMovement = {
+      status: 'failed',
+      reason: error?.message || 'Falha ao preparar missao Lex proativa apos revisao humana.',
+    }
+  }
+
   return {
     taskId,
     prazoCreated: true,
+    proactive_movement: proactiveMovement,
     reviewed_payload: {
       tipo_evento: tipoEvento,
       acao_sugerida: descricao,
       data_vencimento_extraida: dueDateIso,
+      polo_representado: reviewedPayload.polo_representado ?? null,
+      obrigacao_de_quem: reviewedPayload.obrigacao_de_quem ?? null,
+      confidence: reviewedPayload.confidence || reviewedPayload.confianca_analise || null,
+      confidence_reason: reviewedPayload.confidence_reason ?? null,
+      evidencia: reviewedPayload.evidencia ?? null,
     },
   }
 }
@@ -536,8 +682,10 @@ async function decideReview(params: {
 
   const reviewedPayload = isRecord(actionResult.reviewed_payload) ? actionResult.reviewed_payload : {}
 
+  const basePayload = normalizePayload(review.payload)
   const nextPayload = {
-    ...(normalizePayload(review.payload) as Record<string, unknown>),
+    ...(basePayload as Record<string, unknown>),
+    agentic_governance: summarizeAgenticGovernance(basePayload, basePayload),
     ...reviewedPayload,
     review_decision: params.decision,
     reviewed_by: params.userId,
@@ -584,8 +732,10 @@ async function recoverReview(params: {
   if (!isProcessingReviewStatus(review.status)) throw new Error('Apenas revisoes em processamento podem ser recuperadas.')
 
   const now = new Date().toISOString()
+  const basePayload = normalizePayload(review.payload)
   const nextPayload = {
-    ...(normalizePayload(review.payload) as Record<string, unknown>),
+    ...(basePayload as Record<string, unknown>),
+    agentic_governance: summarizeAgenticGovernance(basePayload, basePayload),
     review_decision: null,
     recovered_by: params.userId,
     recovered_at: now,

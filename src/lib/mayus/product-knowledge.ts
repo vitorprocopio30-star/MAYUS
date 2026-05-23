@@ -8,7 +8,7 @@ type MayusKnowledgeChunk = {
 const CHUNKS: MayusKnowledgeChunk[] = [
   {
     title: "Identidade",
-    keywords: ["mayus", "produto", "sistema", "operacional", "socio", "virtual", "ia"],
+    keywords: ["mayus", "produto", "sistema", "operacional", "inteligencia", "gestao", "ia"],
     source: "docs/architecture/system-overview.md",
     content:
       "MAYUS e um sistema operacional de IA para escritorios de advocacia. Ele centraliza atendimento, processos, documentos, agenda, comercial, financeiro e operacao juridica em uma camada supervisionada.",
@@ -67,7 +67,7 @@ export function answerMayusProductQuestion(question: unknown) {
     : CHUNKS.slice(0, 4);
 
   const answer = [
-    "O MAYUS e o socio operacional de IA do escritorio: ele organiza, consulta, executa com supervisao e mostra o proximo passo com base nos dados reais do ambiente.",
+    "O MAYUS e uma camada de inteligencia operacional e de gestao para o escritorio: ele organiza, consulta, executa com supervisao e mostra o proximo passo com base nos dados reais do ambiente.",
     ...selected.map((chunk) => `${chunk.title}: ${chunk.content}`),
     "Limite importante: quando a acao envolve risco juridico, financeiro, envio externo ou mudanca sensivel, o MAYUS deve preparar e pedir aprovacao antes de executar.",
   ].join("\n\n");

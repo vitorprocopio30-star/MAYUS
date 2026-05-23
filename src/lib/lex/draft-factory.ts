@@ -1,6 +1,7 @@
 import { createBrainArtifact } from "@/lib/brain/artifacts";
 import { generateLegalPiece, type GeneratedLegalPiece } from "@/lib/juridico/generate-piece";
 import { createProcessDraftVersion } from "@/lib/lex/draft-versions";
+import type { ProcessMissionMethodologyContext } from "@/lib/lex/process-mission-context";
 import { supabaseAdmin } from "@/lib/supabase/admin";
 
 type BrainTaskRefRow = {
@@ -746,6 +747,7 @@ function buildObjective(params: {
 function buildInstructions(params: {
   caseBrain: CaseBrainContext;
   processTask: ProcessTaskDraftRow;
+  operationalMethodology?: ProcessMissionMethodologyContext | null;
 }) {
   const validatedSources = (params.caseBrain.sourcePack.validated_internal_sources || []).map((source) => {
     const sourceLabel = source.title || "Documento interno";
@@ -767,6 +769,30 @@ function buildInstructions(params: {
     ...(params.caseBrain.citationChecklist.pending_validations || []),
   ]);
   const researchQueries = getStringArray(params.caseBrain.researchPack.queries).slice(0, 6);
+  const methodology = params.operationalMethodology?.provided ? params.operationalMethodology : null;
+  const methodologyLines = methodology ? [
+    "METODOLOGIA OPERACIONAL DO ESCRITORIO (somente deste tenant):",
+    `- Status: ${methodology.status}; ativacao: ${methodology.activation}.`,
+    methodology.areaMethod ? `- Area aplicada: ${methodology.areaMethod.area}.` : null,
+    methodology.canGuideInternalDecisions
+      ? "- Pode orientar decisoes internas da minuta."
+      : "- Usar apenas como sugestao supervisionada; nao transformar em regra sensivel.",
+    methodology.expectedDocuments.length > 0
+      ? `- Documentos esperados: ${methodology.expectedDocuments.join("; ")}.`
+      : null,
+    methodology.expectedPhases.length > 0
+      ? `- Fases do fluxo do escritorio: ${methodology.expectedPhases.join(" > ")}.`
+      : null,
+    methodology.expectedDocumentStructure.length > 0
+      ? `- Estrutura documental esperada: ${methodology.expectedDocumentStructure.join("; ")}.`
+      : null,
+    methodology.reviewReasons.length > 0
+      ? `- Revisoes pendentes da metodologia: ${methodology.reviewReasons.join("; ")}.`
+      : null,
+    methodology.blockers.length > 0
+      ? `- Bloqueios metodologicos: ${methodology.blockers.join("; ")}.`
+      : null,
+  ].filter(Boolean).join("\n") : null;
 
   return [
     "REGRAS DA DRAFT FACTORY JURIDICA:",
@@ -795,6 +821,7 @@ function buildInstructions(params: {
     researchQueries.length > 0
       ? `- Trilhas de pesquisa a respeitar: ${researchQueries.join("; ")}.`
       : null,
+    methodologyLines,
     params.caseBrain.citationChecklist.ready_for_fact_citations
       ? `- Base fatica pode citar documentos internos sincronizados. Fundamento atual: ${getStringArray(params.caseBrain.citationChecklist.fact_citation_basis).join("; ") || "documentos internos validados"}.`
       : "- Base fatica ainda exige cautela porque nao ha sustentacao documental suficiente para citacao segura.",
@@ -823,6 +850,7 @@ export async function executeDraftFactoryForProcessTask(params: {
   trigger?: DraftFactoryTrigger;
   draftPlanOverride?: DraftPlanOverride | null;
   forceNewDraft?: boolean;
+  operationalMethodology?: ProcessMissionMethodologyContext | null;
 }): Promise<DraftFactoryExecutionResult> {
   const processTask = await loadProcessTask({ tenantId: params.tenantId, processTaskId: params.processTaskId });
   const loadedCaseBrain = await loadCaseBrainContext({ tenantId: params.tenantId, processTaskId: params.processTaskId });
@@ -934,7 +962,11 @@ export async function executeDraftFactoryForProcessTask(params: {
       pieceType: caseBrain.draftPlan.recommended_piece_input || "Peticao Inicial",
       practiceArea: caseBrain.legalArea || processTask.demanda || "",
       objective: buildObjective({ processTask, caseBrain }),
-      instructions: buildInstructions({ caseBrain, processTask }),
+      instructions: buildInstructions({
+        caseBrain,
+        processTask,
+        operationalMethodology: params.operationalMethodology || null,
+      }),
       documentIds: uniqueStrings((caseBrain.sourcePack.validated_internal_sources || []).map((source) => source.id || null)),
     });
 
@@ -978,6 +1010,7 @@ export async function executeDraftFactoryForProcessTask(params: {
         quality_metrics: result.qualityMetrics,
         provider: result.provider,
         model: result.model,
+        operational_methodology: params.operationalMethodology || null,
         memory_refs: caseBrain.memoryRefs,
       },
     });

@@ -42,6 +42,7 @@ export function classifyProactiveLegalDraftTrigger(params: {
   eventType: string | null | undefined;
   movementText?: string | null;
   deadlineDescription?: string | null;
+  metadata?: Record<string, unknown>;
 }): ProactiveMovementDraftTrigger | null {
   return resolveProactiveEventPlaybook({
     domain: "lex",
@@ -49,6 +50,7 @@ export function classifyProactiveLegalDraftTrigger(params: {
     eventType: params.eventType,
     text: params.movementText,
     description: params.deadlineDescription,
+    metadata: params.metadata,
   });
 }
 
@@ -201,6 +203,7 @@ export async function prepareProactiveMovementDraft(params: {
   eventType: string | null;
   deadlineDescription?: string | null;
   responsibleUserId?: string | null;
+  metadata?: Record<string, unknown>;
 }): Promise<PrepareProactiveMovementDraftResult> {
   if (!params.processTaskId) {
     return { status: "not_applicable", reason: "Movimentacao sem card de processo vinculado." };
@@ -210,6 +213,7 @@ export async function prepareProactiveMovementDraft(params: {
     eventType: params.eventType,
     movementText: params.movementText,
     deadlineDescription: params.deadlineDescription,
+    metadata: params.metadata,
   });
 
   if (!trigger) {

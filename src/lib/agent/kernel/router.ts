@@ -104,6 +104,30 @@ const INTENT_PATTERNS: IntentDefinition[] = [
     baseConfidence: 0.9,
   },
   {
+    intent: 'management_intelligence_brief',
+    patterns: [
+      /intelig[eÃª]ncia\s+de\s+gest[aÃ£]o/i,
+      /camada\s+anal[iÃ­]tica\s+(de\s+)?gest[aÃ£]o/i,
+      /analise\s+(meu|nosso|o)\s+escrit[oÃ³]rio\s+(como\s+)?(ceo|gestor|empresa)/i,
+      /gest[aÃ£]o\s+(do\s+)?escrit[oÃ³]rio/i,
+      /diagn[oÃ³]stico\s+(de\s+)?gest[aÃ£]o/i,
+      /\b(CAC|LTV|ROI|CPL)\b/i,
+      /(ticket\s+m[eÃ©]dio|margem|pipeline|forecast|convers[aÃ£]o|inadimpl[eÃª]ncia|produtividade|tese\s+lucrativa|capacidade\s+operacional)/i,
+      /(financeiro|comercial|marketing|vendas).*(dados|indicadores|m[eÃ©]tricas|gest[aÃ£]o)/i,
+    ],
+    entityExtractors: [
+      {
+        key: 'focus_terms',
+        pattern: /\b(CAC|LTV|ROI|CPL|ticket\s+m[eÃ©]dio|margem|pipeline|forecast|convers[aÃ£]o|inadimpl[eÃª]ncia|produtividade|tese\s+lucrativa|capacidade\s+operacional)\b/i,
+      },
+      {
+        key: 'request',
+        pattern: /^([\s\S]{1,700})$/i,
+      },
+    ],
+    baseConfidence: 0.91,
+  },
+  {
     intent: 'sales_profile_setup',
     patterns: [
       /auto[-\s]?configur(ar|e|acao|a[cç][aã]o)\s+(comercial|vendas|atendimento)/i,
@@ -152,9 +176,15 @@ const INTENT_PATTERNS: IntentDefinition[] = [
       /configur(ar|e)\s+(a\s+)?base\s+operacional/i,
       /auto[-\s]?configur(ar|e|acao|a[cÃ§][aÃ£]o)\s+(do\s+)?escrit[oÃ³]rio/i,
       /perfil\s+operacional\s+(do\s+)?escrit[oÃ³]rio/i,
+      /metodologia\s+operacional\s+(do\s+)?escrit[oó]rio/i,
+      /mont(ar|e)\s+(a\s+)?metodologia\s+(do\s+)?escrit[oó]rio/i,
+      /metodologia\s+base\s+mayus/i,
+      /n(?:ao|ã)o\s+tenho\s+(processo|metodo|m[eé]todo|metodologia)\s+definid[oa]/i,
+      /sem\s+(processo|metodo|m[eé]todo|metodologia)\s+definid[oa]/i,
+      /configur(ar|e)\s+(trabalhista|previdenci[aá]rio|banc[aá]rio|rmc|rcc|credcesta)/i,
       /office_knowledge_profile/i,
       /ensinar\s+(o\s+)?mayus\s+(sobre\s+)?(o\s+)?escrit[oÃ³]rio/i,
-      /mayus.*(tom\s+de\s+atendimento|triagem|handoff|documentos\s+por\s+caso|promessas\s+proibidas|permissoes?|permissao|agenda|financeiro)/i,
+      /mayus.*(tom\s+de\s+atendimento|triagem|handoff|documentos\s+por\s+caso|promessas\s+proibidas|permissoes?|permissao|agenda|financeiro|metodologia)/i,
     ],
     entityExtractors: [
       {
@@ -164,6 +194,26 @@ const INTENT_PATTERNS: IntentDefinition[] = [
       {
         key: 'practice_areas',
         pattern: /(?:areas?\s+(?:juridicas?|de\s+atuacao)|atuamos\s+em|atuacao)\s*[:\-]?\s*([^\n.]{4,260})/i,
+      },
+      {
+        key: 'practice_areas',
+        pattern: /(?:configur(?:ar|e)|metodologia\s+(?:de|para))\s+((?:trabalhista|previdenci[aá]rio|banc[aá]rio|rmc|rcc|credcesta)(?:\s*(?:,|\/|\||e)\s*(?:trabalhista|previdenci[aá]rio|banc[aá]rio|rmc|rcc|credcesta)){0,5})/i,
+      },
+      {
+        key: 'ideal_client',
+        pattern: /(?:cliente\s+ideal|publico\s+alvo|p[uú]blico\s+alvo)\s*[:\-]?\s*([^\n.]{8,240})/i,
+      },
+      {
+        key: 'unique_value_proposition',
+        pattern: /(?:puv|proposta\s+unica\s+de\s+valor|proposta\s+\u00fanica\s+de\s+valor|diferencial)\s*[:\-]?\s*([^\n.]{8,280})/i,
+      },
+      {
+        key: 'value_pillars',
+        pattern: /(?:pilares?)\s*[:\-]?\s*([^\n.]{8,220})/i,
+      },
+      {
+        key: 'anti_client_signals',
+        pattern: /(?:anti[-\s]?cliente|n(?:ao|ã)o\s+queremos\s+atender)\s*[:\-]?\s*([^\n.]{8,220})/i,
       },
       {
         key: 'communication_tone',
@@ -858,6 +908,7 @@ const INTENT_PATTERNS: IntentDefinition[] = [
       /pr[oó]xim[ao]\s+(decis[aã]o|a[cç][aã]o|passo)\s+(segur[ao]\s+)?(do\s+)?(caso|processo)/i,
       /(vej(a|e)|verifique)\s+(o\s+)?pr[oó]xim[ao]\s+(passo|a[cç][aã]o)(\s+segur[ao])?\s+(d[eo]s?s[ea]|do|da)\s+(caso|processo)/i,
       /o\s+que\s+(o\s+)?mayus\s+deve\s+fazer\s+(nesse|neste)\s+(caso|processo)/i,
+      /(?:mont(e|ar)|elabor(e|ar)|prepar(e|ar)|fa(?:c|\u00e7)a)\s+(a\s+|uma\s+)?(pe(?:c|\u00e7)a|peti(?:c|\u00e7)(?:a|ao|\u00e3o))\s+(d[eo]s?s[ea]|deste|desta|do|da|de|para\s+o|para\s+a)\s+(caso|processo)/i,
     ],
     entityExtractors: [
       {

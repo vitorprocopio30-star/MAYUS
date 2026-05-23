@@ -2,6 +2,16 @@ import { createClient } from '@supabase/supabase-js'
 import { callLLMWithFallback } from '@/lib/llm-fallback'
 import { prepareProactiveMovementDraft } from '@/lib/lex/proactive-movement-draft'
 import {
+  buildMayusAgentProfileExplanation,
+  evaluateMayusAgentProfile,
+} from '@/lib/agent/runtime/agent-profiles'
+import {
+  createHermesMissionTrajectory,
+  recordHermesMissionApproval,
+  recordHermesMissionDecision,
+  recordHermesMissionResult,
+} from '@/lib/agent/runtime/trajectory'
+import {
   buildProcessCardClientName,
   buildProcessCardDescription,
   buildProcessCardTitle,
@@ -103,6 +113,9 @@ type PrazoExplicito = {
   evidencia: string
 }
 
+type PoloRepresentado = 'autor' | 'reu' | 'indeterminado'
+type ObrigacaoMovimentacao = 'escritorio' | 'cliente' | 'parte_contraria' | 'indeterminada'
+
 type AnaliseMovimentacaoPayload = {
   tipo_evento: string | null
   requer_acao: boolean
@@ -110,8 +123,22 @@ type AnaliseMovimentacaoPayload = {
   prazo_extraido_dias: number | null
   data_vencimento_extraida: string | null
   confianca_analise: 'alta' | 'media' | 'baixa'
+  confidence?: 'alta' | 'media' | 'baixa'
   origem: 'deterministica' | 'llm' | 'heuristica' | 'ignorada'
   motivo: string
+  polo_representado?: PoloRepresentado | null
+  obrigacao_de_quem?: ObrigacaoMovimentacao | null
+  confidence_reason?: string | null
+  evidencia?: string | null
+  review_required?: boolean
+  agentic_governance?: Record<string, unknown> | null
+}
+
+type MovementDutyAssessment = {
+  polo_representado: PoloRepresentado
+  obrigacao_de_quem: ObrigacaoMovimentacao
+  confidence: AnaliseMovimentacaoPayload['confianca_analise']
+  confidence_reason: string
   evidencia?: string | null
 }
 
@@ -134,12 +161,100 @@ function buildAnaliseResult(
   automationStatus: AnaliseMovimentacaoResult['automation_status'],
   processTaskId?: string | null
 ): AnaliseMovimentacaoResult {
+  const normalizedPayload = normalizeAnalysisPayload(payload, automationStatus === 'review_required')
   return {
-    ...payload,
+    ...normalizedPayload,
     automation_status: automationStatus,
     requires_human_review: automationStatus === 'review_required',
-    paid_summary_recommended: shouldRecommendPaidSummary(payload),
+    paid_summary_recommended: shouldRecommendPaidSummary(normalizedPayload),
     process_task_id: processTaskId ?? null,
+  }
+}
+
+function normalizeAnalysisPayload(
+  payload: AnaliseMovimentacaoPayload,
+  reviewRequired = payload.review_required ?? false
+): AnaliseMovimentacaoPayload {
+  const basePayload = {
+    ...payload,
+    confidence: payload.confidence ?? payload.confianca_analise,
+    confidence_reason: payload.confidence_reason ?? payload.motivo,
+    review_required: reviewRequired,
+  }
+
+  return {
+    ...basePayload,
+    agentic_governance: payload.agentic_governance ?? buildMovementAgenticGovernance(basePayload),
+  }
+}
+
+function buildMovementAgenticGovernance(payload: AnaliseMovimentacaoPayload): Record<string, unknown> {
+  const reviewRequired = payload.review_required === true
+  const tool = reviewRequired ? 'legal_movement_review_required' : 'legal_movement_internal_analysis'
+  const surface = reviewRequired ? 'legal_decision' : 'internal'
+  const openclawDecision = evaluateMayusAgentProfile({
+    agentId: 'lex',
+    module: 'legal_ops',
+    channel: 'juridico',
+    tool,
+    surface,
+  })
+  const openclawExplanation = buildMayusAgentProfileExplanation(openclawDecision)
+  const missionId = `lex:movement:${payload.tipo_evento || 'unknown'}:${payload.origem}`
+
+  let trajectory = createHermesMissionTrajectory({
+    missionId,
+    objective: 'Classificar movimentacao processual com governanca supervisionada.',
+    payload: {
+      tipo_evento: payload.tipo_evento,
+      origem: payload.origem,
+      polo_representado: payload.polo_representado ?? null,
+      obrigacao_de_quem: payload.obrigacao_de_quem ?? null,
+    },
+    actor: { id: 'lex', role: 'agent' },
+  })
+
+  trajectory = recordHermesMissionDecision(trajectory, {
+    summary: payload.motivo,
+    payload: {
+      confidence: payload.confidence ?? payload.confianca_analise,
+      confidence_reason: payload.confidence_reason ?? payload.motivo,
+      openclaw_policy: openclawExplanation,
+      review_required: reviewRequired,
+    },
+    actor: { id: 'lex', role: 'agent' },
+  })
+
+  trajectory = reviewRequired
+    ? recordHermesMissionApproval(trajectory, {
+        summary: 'Movimentacao juridica enviada para supervisao humana.',
+        decision: 'requested',
+        payload: {
+          reason: payload.confidence_reason ?? payload.motivo,
+        },
+        actor: { id: 'lex', role: 'agent' },
+      })
+    : recordHermesMissionResult(trajectory, {
+        summary: 'Movimentacao juridica classificada sem aprovacao humana obrigatoria.',
+        payload: {
+          automation_safe: payload.requer_acao === false || payload.confianca_analise === 'alta',
+        },
+        actor: { id: 'lex', role: 'agent' },
+      })
+
+  return {
+    version: 1,
+    openclaw_policy: openclawExplanation,
+    hermes_trajectory: {
+      mission_id: trajectory.missionId,
+      status: trajectory.status,
+      events: trajectory.events.map((event) => ({
+        type: event.type,
+        label: event.label,
+        summary: event.summary,
+        payload: event.payload,
+      })),
+    },
   }
 }
 
@@ -362,6 +477,246 @@ function inferirPoloPorAdvogado(partes: PartesProcesso, advogadoNome: string | n
   return 'INDETERMINADO'
 }
 
+function normalizarPoloRepresentado(value: string | null | undefined): PoloRepresentado {
+  const polo = normalizarTexto(value)
+  if (polo.includes('autor') || polo.includes('ativo')) return 'autor'
+  if (polo.includes('reu') || polo.includes('passivo')) return 'reu'
+  return 'indeterminado'
+}
+
+function detectarAlvoObrigacao(textoOriginal: string | null | undefined): PoloRepresentado {
+  const texto = normalizarTexto(textoOriginal)
+  if (!texto) return 'indeterminado'
+
+  const authorDirectedPatterns = [
+    /(?:intime-se|intimacao|intimada|intimado)[^.;\n]{0,100}(?:parte autora|autor|requerente|exequente)/,
+    /(?:parte autora|autor|requerente|exequente)[^.;\n]{0,120}(?:prazo|manifest|apresent|emend|regulariz|replica|cumpr|comprov)/,
+  ]
+  const defendantDirectedPatterns = [
+    /(?:cite-se|citacao|citado|citada|citados)[^.;\n]{0,100}(?:parte re|reu|requerid|executad)/,
+    /(?:parte re|reu|requerid|executad)[^.;\n]{0,120}(?:prazo|contest|manifest|apresent|contrarrazo|cumpr|comprov)/,
+  ]
+
+  const authorIndex = authorDirectedPatterns
+    .map((pattern) => texto.search(pattern))
+    .filter((index) => index >= 0)
+    .sort((a, b) => a - b)[0]
+  const defendantIndex = defendantDirectedPatterns
+    .map((pattern) => texto.search(pattern))
+    .filter((index) => index >= 0)
+    .sort((a, b) => a - b)[0]
+
+  if (authorIndex === undefined && defendantIndex === undefined) return 'indeterminado'
+  if (authorIndex === undefined) return 'reu'
+  if (defendantIndex === undefined) return 'autor'
+  return authorIndex <= defendantIndex ? 'autor' : 'reu'
+}
+
+function detectarPoloQueInterposRecurso(textoOriginal: string | null | undefined): PoloRepresentado {
+  const texto = normalizarTexto(textoOriginal)
+  if (!texto || !/(recurso|apelac|agravo|embargos?|contrarrazo)/.test(texto)) return 'indeterminado'
+  if (!/(interpos|interp|apresent|protocol|opos|manejado|manejou|recorrent|apelant|agravant|embargant)/.test(texto)) return 'indeterminado'
+
+  const authorActorPatterns = [
+    /(?:recurso|apelac|agravo|embargos?)[^.;\n]{0,160}(?:interpos|interp|apresent|protocol|opos|manejado|manejou)[^.;\n]{0,160}(?:parte autora|autor|autora|requerente|exequente)/,
+    /(?:parte autora|autor|autora|requerente|exequente)[^.;\n]{0,160}(?:interpos|interp|apresent|protocol|opos|manejado|manejou)[^.;\n]{0,160}(?:recurso|apelac|agravo|embargos?)/,
+    /(?:recorrent|apelant|agravant|embargant)[^.;\n]{0,120}(?:parte autora|autor|autora|requerente|exequente)/,
+    /(?:parte autora|autor|autora|requerente|exequente)[^.;\n]{0,120}(?:recorrent|apelant|agravant|embargant)/,
+  ]
+  const defendantActorPatterns = [
+    /(?:recurso|apelac|agravo|embargos?)[^.;\n]{0,160}(?:interpos|interp|apresent|protocol|opos|manejado|manejou)[^.;\n]{0,160}(?:parte re|\breu\b|\bre\b|requerid|executad)/,
+    /(?:parte re|\breu\b|\bre\b|requerid|executad)[^.;\n]{0,160}(?:interpos|interp|apresent|protocol|opos|manejado|manejou)[^.;\n]{0,160}(?:recurso|apelac|agravo|embargos?)/,
+    /(?:recorrent|apelant|agravant|embargant)[^.;\n]{0,120}(?:parte re|\breu\b|\bre\b|requerid|executad)/,
+    /(?:parte re|\breu\b|\bre\b|requerid|executad)[^.;\n]{0,120}(?:recorrent|apelant|agravant|embargant)/,
+  ]
+
+  const authorIndex = authorActorPatterns
+    .map((pattern) => texto.search(pattern))
+    .filter((index) => index >= 0)
+    .sort((a, b) => a - b)[0]
+  const defendantIndex = defendantActorPatterns
+    .map((pattern) => texto.search(pattern))
+    .filter((index) => index >= 0)
+    .sort((a, b) => a - b)[0]
+
+  if (authorIndex === undefined && defendantIndex === undefined) return 'indeterminado'
+  if (authorIndex === undefined) return 'reu'
+  if (defendantIndex === undefined) return 'autor'
+  return authorIndex <= defendantIndex ? 'autor' : 'reu'
+}
+
+function detectarPoloRecursalPassivo(textoOriginal: string | null | undefined): PoloRepresentado {
+  const texto = normalizarTexto(textoOriginal)
+  if (!texto || !/(recurso|apelac|agravo|embargos?|contrarrazo)/.test(texto)) return 'indeterminado'
+  if (!/(apelad|agravad|embargad|recorrid)/.test(texto)) return 'indeterminado'
+
+  const passiveRole = /(?:apelad|agravad|embargad|recorrid)/
+  const authorActorPatterns = [
+    new RegExp(`${passiveRole.source}[^.;\\n]{0,120}(?:parte autora|autor|autora|requerente|exequente)`),
+    new RegExp(`(?:parte autora|autor|autora|requerente|exequente)[^.;\\n]{0,120}${passiveRole.source}`),
+  ]
+  const defendantActorPatterns = [
+    new RegExp(`${passiveRole.source}[^.;\\n]{0,120}(?:parte re|\\breu\\b|\\bre\\b|requerid|executad)`),
+    new RegExp(`(?:parte re|\\breu\\b|\\bre\\b|requerid|executad)[^.;\\n]{0,120}${passiveRole.source}`),
+  ]
+
+  const authorIndex = authorActorPatterns
+    .map((pattern) => texto.search(pattern))
+    .filter((index) => index >= 0)
+    .sort((a, b) => a - b)[0]
+  const defendantIndex = defendantActorPatterns
+    .map((pattern) => texto.search(pattern))
+    .filter((index) => index >= 0)
+    .sort((a, b) => a - b)[0]
+
+  if (authorIndex === undefined && defendantIndex === undefined) return 'indeterminado'
+  if (authorIndex === undefined) return 'reu'
+  if (defendantIndex === undefined) return 'autor'
+  return authorIndex <= defendantIndex ? 'autor' : 'reu'
+}
+
+function isObrigacaoPessoalCliente(textoOriginal: string | null | undefined): boolean {
+  const texto = normalizarTexto(textoOriginal)
+  return /depoimento pessoal|comparecimento pessoal|comparecer pessoalmente|depositar pessoalmente/.test(texto)
+}
+
+function avaliarObrigacaoRecursal(params: {
+  processo: MonitoredProcessContext | null | undefined
+  textoOriginal: string | null | undefined
+  tipoEvento: string | null
+  evidencia?: string | null
+}): MovementDutyAssessment | null {
+  const texto = normalizarTexto(params.textoOriginal)
+  if (!params.processo || (params.tipoEvento !== 'RECURSO' && !/(recurso|apelac|agravo|embargos?|contrarrazo)/.test(texto))) {
+    return null
+  }
+
+  const poloRepresentado = normalizarPoloRepresentado(
+    inferirPoloEscritorio(params.processo.cliente_nome, params.processo.partes)
+  )
+  if (poloRepresentado === 'indeterminado') return null
+
+  const poloQueRecorreu = detectarPoloQueInterposRecurso(params.textoOriginal)
+  if (poloQueRecorreu !== 'indeterminado' && poloQueRecorreu === poloRepresentado) {
+    return {
+      polo_representado: poloRepresentado,
+      obrigacao_de_quem: 'parte_contraria',
+      confidence: 'alta',
+      confidence_reason: 'Recurso interposto pelo polo representado; eventual resposta recursal e da parte contraria.',
+      evidencia: params.evidencia ?? null,
+    }
+  }
+
+  if (poloQueRecorreu !== 'indeterminado') {
+    return {
+      polo_representado: poloRepresentado,
+      obrigacao_de_quem: 'escritorio',
+      confidence: 'alta',
+      confidence_reason: 'Recurso interposto pela parte contraria; resposta recursal deve ser avaliada pelo escritorio.',
+      evidencia: params.evidencia ?? null,
+    }
+  }
+
+  const poloRecursalPassivo = detectarPoloRecursalPassivo(params.textoOriginal)
+  if (poloRecursalPassivo === 'indeterminado') return null
+
+  if (poloRecursalPassivo === poloRepresentado) {
+    return {
+      polo_representado: poloRepresentado,
+      obrigacao_de_quem: 'escritorio',
+      confidence: 'alta',
+      confidence_reason: 'Polo representado consta como parte recorrida/apelada/agravada; resposta recursal pode ser obrigacao do escritorio.',
+      evidencia: params.evidencia ?? null,
+    }
+  }
+
+  return {
+    polo_representado: poloRepresentado,
+    obrigacao_de_quem: 'parte_contraria',
+    confidence: 'alta',
+    confidence_reason: 'Polo contrario consta como parte recorrida/apelada/agravada; eventual resposta recursal nao e do escritorio.',
+    evidencia: params.evidencia ?? null,
+  }
+}
+
+function avaliarObrigacaoMovimentacao(params: {
+  processo: MonitoredProcessContext | null | undefined
+  textoOriginal: string | null | undefined
+  acaoSugerida?: string | null
+  evidencia?: string | null
+}): MovementDutyAssessment | null {
+  if (!params.processo) return null
+
+  const poloRepresentado = normalizarPoloRepresentado(
+    inferirPoloEscritorio(params.processo.cliente_nome, params.processo.partes)
+  )
+  const alvoObrigacao = detectarAlvoObrigacao([
+    params.textoOriginal,
+    params.acaoSugerida,
+    params.evidencia,
+  ].filter(Boolean).join(' '))
+
+  if (poloRepresentado === 'indeterminado') {
+    return {
+      polo_representado: 'indeterminado',
+      obrigacao_de_quem: 'indeterminada',
+      confidence: 'baixa',
+      confidence_reason: 'Polo representado nao foi inferido com seguranca a partir do cliente e das partes do processo.',
+      evidencia: params.evidencia ?? null,
+    }
+  }
+
+  if (alvoObrigacao === 'indeterminado') {
+    return {
+      polo_representado: poloRepresentado,
+      obrigacao_de_quem: 'indeterminada',
+      confidence: 'media',
+      confidence_reason: 'A movimentacao contem sinal juridico, mas nao explicita qual polo deve cumprir o ato.',
+      evidencia: params.evidencia ?? null,
+    }
+  }
+
+  const alvoRepresentado = alvoObrigacao === poloRepresentado
+  if (!alvoRepresentado) {
+    return {
+      polo_representado: poloRepresentado,
+      obrigacao_de_quem: 'parte_contraria',
+      confidence: 'alta',
+      confidence_reason: 'A movimentacao direciona o ato ao polo contrario ao cliente representado.',
+      evidencia: params.evidencia ?? null,
+    }
+  }
+
+  const obrigacaoRepresentado: ObrigacaoMovimentacao = isObrigacaoPessoalCliente(params.textoOriginal)
+    ? 'cliente'
+    : 'escritorio'
+
+  return {
+    polo_representado: poloRepresentado,
+    obrigacao_de_quem: obrigacaoRepresentado,
+    confidence: 'alta',
+    confidence_reason: obrigacaoRepresentado === 'cliente'
+      ? 'A movimentacao indica ato pessoal do cliente representado.'
+      : 'A movimentacao direciona o ato ao polo representado pelo escritorio.',
+    evidencia: params.evidencia ?? null,
+  }
+}
+
+function aplicarObrigacaoMovimentacao(
+  payload: AnaliseMovimentacaoPayload,
+  assessment: MovementDutyAssessment | null
+): AnaliseMovimentacaoPayload {
+  if (!assessment) return payload
+  return {
+    ...payload,
+    polo_representado: assessment.polo_representado,
+    obrigacao_de_quem: assessment.obrigacao_de_quem,
+    confidence: payload.confidence ?? payload.confianca_analise,
+    confidence_reason: payload.confidence_reason ?? assessment.confidence_reason,
+    evidencia: payload.evidencia ?? assessment.evidencia ?? null,
+  }
+}
+
 function montarHistoricoTexto(movimentacoes: MovimentacaoHistorica[] | null | undefined): string {
   const sorted = [...(movimentacoes ?? [])]
     .sort((a, b) => {
@@ -456,14 +811,15 @@ async function persistirAnaliseMovimentacao(params: {
   escavadorMovimentacaoId?: string | null
   payload: AnaliseMovimentacaoPayload
 }) {
+  const payload = normalizeAnalysisPayload(params.payload)
   const updatePayload = {
-    tipo_evento: params.payload.tipo_evento,
-    requer_acao: params.payload.requer_acao,
-    acao_sugerida: params.payload.acao_sugerida,
-    prazo_extraido_dias: params.payload.prazo_extraido_dias,
-    data_vencimento_extraida: params.payload.data_vencimento_extraida,
-    confianca_analise: params.payload.confianca_analise,
-    analise_json: params.payload,
+    tipo_evento: payload.tipo_evento,
+    requer_acao: payload.requer_acao,
+    acao_sugerida: payload.acao_sugerida,
+    prazo_extraido_dias: payload.prazo_extraido_dias,
+    data_vencimento_extraida: payload.data_vencimento_extraida,
+    confianca_analise: payload.confianca_analise,
+    analise_json: payload,
     analisado_em: new Date().toISOString(),
   }
 
@@ -502,6 +858,7 @@ async function registrarRevisaoHumanaMovimentacao(params: {
   payload: AnaliseMovimentacaoPayload
 }) {
   try {
+    const payload = normalizeAnalysisPayload(params.payload, true)
     await adminSupabase.from('system_event_logs').insert({
       tenant_id: params.tenantId,
       source: 'juridico',
@@ -513,15 +870,20 @@ async function registrarRevisaoHumanaMovimentacao(params: {
         processo_id: params.processoId ?? null,
         process_movimentacao_id: params.processMovimentacaoId ?? null,
         escavador_movimentacao_id: params.escavadorMovimentacaoId ?? null,
-        tipo_evento: params.payload.tipo_evento,
-        requer_acao: params.payload.requer_acao,
-        acao_sugerida: params.payload.acao_sugerida,
-        prazo_extraido_dias: params.payload.prazo_extraido_dias,
-        data_vencimento_extraida: params.payload.data_vencimento_extraida,
-        confianca_analise: params.payload.confianca_analise,
-        origem: params.payload.origem,
-        motivo: params.payload.motivo,
-        evidencia: params.payload.evidencia ?? null,
+        tipo_evento: payload.tipo_evento,
+        requer_acao: payload.requer_acao,
+        acao_sugerida: payload.acao_sugerida,
+        prazo_extraido_dias: payload.prazo_extraido_dias,
+        data_vencimento_extraida: payload.data_vencimento_extraida,
+        confianca_analise: payload.confianca_analise,
+        confidence: payload.confidence ?? payload.confianca_analise,
+        origem: payload.origem,
+        motivo: payload.motivo,
+        polo_representado: payload.polo_representado ?? null,
+        obrigacao_de_quem: payload.obrigacao_de_quem ?? null,
+        confidence_reason: payload.confidence_reason ?? payload.motivo,
+        evidencia: payload.evidencia ?? null,
+        review_required: payload.review_required ?? true,
       },
       created_at: new Date().toISOString(),
     })
@@ -545,6 +907,7 @@ async function registrarFalhaAutomacaoMovimentacao(params: {
   payload: AnaliseMovimentacaoPayload
 }) {
   try {
+    const payload = normalizeAnalysisPayload(params.payload)
     await adminSupabase.from('system_event_logs').insert({
       tenant_id: params.tenantId,
       source: 'juridico',
@@ -557,9 +920,13 @@ async function registrarFalhaAutomacaoMovimentacao(params: {
         process_movimentacao_id: params.processMovimentacaoId ?? null,
         escavador_movimentacao_id: params.escavadorMovimentacaoId ?? null,
         error: params.errorMessage,
-        tipo_evento: params.payload.tipo_evento,
-        acao_sugerida: params.payload.acao_sugerida,
-        data_vencimento_extraida: params.payload.data_vencimento_extraida,
+        tipo_evento: payload.tipo_evento,
+        acao_sugerida: payload.acao_sugerida,
+        data_vencimento_extraida: payload.data_vencimento_extraida,
+        polo_representado: payload.polo_representado ?? null,
+        obrigacao_de_quem: payload.obrigacao_de_quem ?? null,
+        confidence: payload.confidence ?? payload.confianca_analise,
+        confidence_reason: payload.confidence_reason ?? payload.motivo,
       },
       created_at: new Date().toISOString(),
     })
@@ -576,9 +943,10 @@ async function persistirRevisaoMovimentacao(params: {
   processoId?: string | null
   payload: AnaliseMovimentacaoPayload
 }): Promise<AnaliseMovimentacaoResult> {
-  await persistirAnaliseMovimentacao(params)
-  await registrarRevisaoHumanaMovimentacao(params)
-  return buildAnaliseResult(params.payload, 'review_required')
+  const payload = normalizeAnalysisPayload(params.payload, true)
+  await persistirAnaliseMovimentacao({ ...params, payload })
+  await registrarRevisaoHumanaMovimentacao({ ...params, payload })
+  return buildAnaliseResult(payload, 'review_required')
 }
 
 async function analisarComLLM(params: {
@@ -754,6 +1122,21 @@ export async function analisarMovimentacao(params: {
     .single()
   if (processoError) console.warn(`[ANALISADOR] Falha ao carregar contexto do processo ${params.numero_cnj}: ${processoError.message}`)
 
+  const movementDutyAssessment = processo
+    ? avaliarObrigacaoRecursal({
+        processo: processo as MonitoredProcessContext,
+        textoOriginal: params.movimentacao.conteudo ?? '',
+        tipoEvento: null,
+        evidencia: prazoExplicito?.evidencia ?? null,
+      }) ?? avaliarObrigacaoMovimentacao({
+        processo: processo as MonitoredProcessContext,
+        textoOriginal: params.movimentacao.conteudo ?? '',
+        evidencia: prazoExplicito?.evidencia ?? null,
+      })
+    : null
+  const withMovementDuty = (payload: AnaliseMovimentacaoPayload) =>
+    aplicarObrigacaoMovimentacao(payload, movementDutyAssessment)
+
   const analiseLLM = processo
     ? await analisarComLLM({
         tenantId: params.tenant_id,
@@ -762,8 +1145,9 @@ export async function analisarMovimentacao(params: {
       })
     : null
 
-  if (analiseLLM && !analiseLLM.gerar && !prazoExplicito) {
-    const payload: AnaliseMovimentacaoPayload = {
+  const hasRecursalSignal = /(recurso|apelac|agravo|embargos?|contrarrazo)/.test(texto)
+  if (analiseLLM && !analiseLLM.gerar && !prazoExplicito && !hasRecursalSignal) {
+    const payload = withMovementDuty({
       tipo_evento: null,
       requer_acao: false,
       acao_sugerida: null,
@@ -772,7 +1156,7 @@ export async function analisarMovimentacao(params: {
       confianca_analise: 'media',
       origem: 'llm',
       motivo: analiseLLM.motivo,
-    }
+    })
     await persistirAnaliseMovimentacao({
       tenantId: params.tenant_id,
       numeroCnj: params.numero_cnj,
@@ -811,7 +1195,7 @@ export async function analisarMovimentacao(params: {
   }
 
   if (!tipoEvento) {
-    const payload: AnaliseMovimentacaoPayload = {
+    const payload = withMovementDuty({
       tipo_evento: null,
       requer_acao: false,
       acao_sugerida: null,
@@ -820,7 +1204,7 @@ export async function analisarMovimentacao(params: {
       confianca_analise: 'baixa',
       origem: 'heuristica',
       motivo: 'Nao foi possivel classificar a movimentacao em um evento juridico acionavel.',
-    }
+    })
     await persistirAnaliseMovimentacao({
       tenantId: params.tenant_id,
       numeroCnj: params.numero_cnj,
@@ -851,7 +1235,7 @@ export async function analisarMovimentacao(params: {
   const regraPrazo = prazo ?? prazoGenerico
 
   if (tipoEvento === 'PRAZO' && !prazoExplicito && !analiseTemVencimentoConfiavel(analiseLLM)) {
-    const payload: AnaliseMovimentacaoPayload = {
+    const payload = withMovementDuty({
       tipo_evento: tipoEvento,
       requer_acao: true,
       acao_sugerida: analiseLLM?.gerar ? analiseLLM.descricao : 'Revisar possivel prazo processual',
@@ -860,7 +1244,7 @@ export async function analisarMovimentacao(params: {
       confianca_analise: 'baixa',
       origem: analiseLLM ? 'llm' : 'heuristica',
       motivo: 'Possivel prazo identificado sem vencimento confiavel; prazo automatico nao foi criado.',
-    }
+    })
     return persistirRevisaoMovimentacao({
       tenantId: params.tenant_id,
       numeroCnj: params.numero_cnj,
@@ -872,16 +1256,19 @@ export async function analisarMovimentacao(params: {
   }
 
   if (!regraPrazo) {
-    const payload: AnaliseMovimentacaoPayload = {
+    const confidenceWithoutRule = movementDutyAssessment?.obrigacao_de_quem === 'parte_contraria'
+      ? movementDutyAssessment.confidence
+      : 'baixa'
+    const payload = withMovementDuty({
       tipo_evento: tipoEvento,
       requer_acao: false,
       acao_sugerida: null,
       prazo_extraido_dias: null,
       data_vencimento_extraida: null,
-      confianca_analise: 'baixa',
+      confianca_analise: confidenceWithoutRule,
       origem: 'heuristica',
       motivo: 'Evento classificado, mas sem regra de prazo configurada.',
-    }
+    })
     await persistirAnaliseMovimentacao({
       tenantId: params.tenant_id,
       numeroCnj: params.numero_cnj,
@@ -894,7 +1281,7 @@ export async function analisarMovimentacao(params: {
 
   // Arquivamento/extinção: encerra processo
   if (tipoEvento === 'ARQUIVAMENTO' || tipoEvento === 'EXTINCAO') {
-    const payload: AnaliseMovimentacaoPayload = {
+    const payload = withMovementDuty({
       tipo_evento: tipoEvento,
       requer_acao: true,
       acao_sugerida: 'Revisar encerramento/arquivamento antes de inativar o processo ou cancelar monitoramento.',
@@ -903,7 +1290,7 @@ export async function analisarMovimentacao(params: {
       confianca_analise: analiseLLM ? 'media' : 'baixa',
       origem: analiseLLM ? 'llm' : 'heuristica',
       motivo: 'Movimentacao indica possivel encerramento/arquivamento; em beta, a inativacao automatica exige revisao humana.',
-    }
+    })
     const result = await persistirRevisaoMovimentacao({
       tenantId: params.tenant_id,
       numeroCnj: params.numero_cnj,
@@ -921,10 +1308,70 @@ export async function analisarMovimentacao(params: {
     ?? calcularDiasUteis(dataBase, regraPrazo.dias_uteis)
   const descricaoPrazo = String(prazoExplicito?.descricao || (analiseLLM?.gerar ? analiseLLM.descricao : regraPrazo.descricao) || '').trim()
   const prioridadePrazo = mapearPrioridade(analiseLLM) ?? String(regraPrazo.prioridade || 'MEDIA').toLowerCase()
+  const prazoDutyAssessment = processo
+    ? avaliarObrigacaoRecursal({
+        processo: processo as MonitoredProcessContext,
+        textoOriginal: params.movimentacao.conteudo ?? '',
+        tipoEvento,
+        evidencia: prazoExplicito?.evidencia ?? null,
+      }) ?? avaliarObrigacaoMovimentacao({
+        processo: processo as MonitoredProcessContext,
+        textoOriginal: params.movimentacao.conteudo ?? '',
+        acaoSugerida: descricaoPrazo,
+        evidencia: prazoExplicito?.evidencia ?? null,
+      })
+    : movementDutyAssessment
+  const withPrazoDuty = (payload: AnaliseMovimentacaoPayload) =>
+    aplicarObrigacaoMovimentacao(payload, prazoDutyAssessment)
+
+  if (prazoDutyAssessment?.obrigacao_de_quem === 'parte_contraria') {
+    const payload = withPrazoDuty({
+      tipo_evento: tipoEvento,
+      requer_acao: false,
+      acao_sugerida: null,
+      prazo_extraido_dias: prazoExplicito?.dias ?? null,
+      data_vencimento_extraida: prazoExplicito ? vencimento.toISOString() : null,
+      confianca_analise: 'alta',
+      origem: prazoExplicito ? 'deterministica' : analiseLLM ? 'llm' : 'heuristica',
+      motivo: 'Movimentacao direcionada a parte contraria; prazo/card do escritorio nao foi criado.',
+      evidencia: prazoExplicito?.evidencia ?? prazoDutyAssessment.evidencia ?? null,
+    })
+    await persistirAnaliseMovimentacao({
+      tenantId: params.tenant_id,
+      numeroCnj: params.numero_cnj,
+      processMovimentacaoId: params.process_movimentacao_id,
+      escavadorMovimentacaoId,
+      payload,
+    })
+    console.log(`[ANALISADOR] Obrigacao da parte contraria ignorada para ${params.numero_cnj}.`)
+    return buildAnaliseResult(payload, 'none')
+  }
+
+  if (prazoDutyAssessment?.polo_representado === 'indeterminado') {
+    const payload = withPrazoDuty({
+      tipo_evento: tipoEvento,
+      requer_acao: true,
+      acao_sugerida: descricaoPrazo,
+      prazo_extraido_dias: prazoExplicito?.dias ?? null,
+      data_vencimento_extraida: vencimento.toISOString(),
+      confianca_analise: 'baixa',
+      origem: prazoExplicito ? 'deterministica' : analiseLLM ? 'llm' : 'heuristica',
+      motivo: 'Polo representado indeterminado; prazo/card automatico exige revisao humana.',
+      evidencia: prazoExplicito?.evidencia ?? null,
+    })
+    return persistirRevisaoMovimentacao({
+      tenantId: params.tenant_id,
+      numeroCnj: params.numero_cnj,
+      processMovimentacaoId: params.process_movimentacao_id,
+      escavadorMovimentacaoId,
+      processoId: params.processo_id,
+      payload,
+    })
+  }
 
   // Nao gerar prazo para despachos genericos
   if (descricaoPrazo.toLowerCase().includes('despacho')) {
-    const payload: AnaliseMovimentacaoPayload = {
+    const payload = withPrazoDuty({
       tipo_evento: tipoEvento,
       requer_acao: false,
       acao_sugerida: null,
@@ -933,7 +1380,7 @@ export async function analisarMovimentacao(params: {
       confianca_analise: 'alta',
       origem: prazoExplicito ? 'deterministica' : analiseLLM ? 'llm' : 'heuristica',
       motivo: 'Despacho generico ignorado para evitar criacao indevida de prazo.',
-    }
+    })
     await persistirAnaliseMovimentacao({
       tenantId: params.tenant_id,
       numeroCnj: params.numero_cnj,
@@ -955,7 +1402,7 @@ export async function analisarMovimentacao(params: {
       .limit(1)
 
     if (prazosDuplicados && prazosDuplicados.length > 0) {
-      const payload: AnaliseMovimentacaoPayload = {
+      const payload = withPrazoDuty({
         tipo_evento: tipoEvento,
         requer_acao: true,
         acao_sugerida: descricaoPrazo,
@@ -965,7 +1412,7 @@ export async function analisarMovimentacao(params: {
         origem: prazoExplicito ? 'deterministica' : analiseLLM ? 'llm' : 'heuristica',
         motivo: 'Movimentacao ja processada anteriormente; prazo duplicado nao foi recriado.',
         evidencia: prazoExplicito?.evidencia ?? null,
-      }
+      })
       await persistirAnaliseMovimentacao({
         tenantId: params.tenant_id,
         numeroCnj: params.numero_cnj,
@@ -1009,7 +1456,7 @@ export async function analisarMovimentacao(params: {
     : false
 
   if (duplicadoSemantico) {
-    const payload: AnaliseMovimentacaoPayload = {
+    const payload = withPrazoDuty({
       tipo_evento: tipoEvento,
       requer_acao: true,
       acao_sugerida: descricaoPrazo,
@@ -1019,7 +1466,7 @@ export async function analisarMovimentacao(params: {
       origem: prazoExplicito ? 'deterministica' : analiseLLM ? 'llm' : 'heuristica',
       motivo: 'Prazo semanticamente semelhante ja existe; novo prazo nao foi recriado.',
       evidencia: prazoExplicito?.evidencia ?? null,
-    }
+    })
     await persistirAnaliseMovimentacao({
       tenantId: params.tenant_id,
       numeroCnj: params.numero_cnj,
@@ -1040,7 +1487,7 @@ export async function analisarMovimentacao(params: {
       : 'baixa'
 
   if (confiancaAcaoAutomatica !== 'alta') {
-    const payload: AnaliseMovimentacaoPayload = {
+    const payload = withPrazoDuty({
       tipo_evento: tipoEvento,
       requer_acao: true,
       acao_sugerida: descricaoPrazo,
@@ -1052,7 +1499,7 @@ export async function analisarMovimentacao(params: {
         ? `${analiseLLM.motivo} Em beta, a criacao automatica de prazo/card exige evidencia deterministica de alta confianca.`
         : 'Evento juridico acionavel detectado por heuristica; em beta, exige revisao humana antes de criar prazo/card.',
       evidencia: prazoExplicito?.evidencia ?? null,
-    }
+    })
 
     return persistirRevisaoMovimentacao({
       tenantId: params.tenant_id,
@@ -1218,7 +1665,7 @@ export async function analisarMovimentacao(params: {
   )
   if (prazoError) throw new Error(`Falha ao registrar prazo processual: ${prazoError.message}`)
 
-  const payloadFinal: AnaliseMovimentacaoPayload = {
+  const payloadFinal = withPrazoDuty({
     tipo_evento: tipoEvento,
     requer_acao: true,
     acao_sugerida: descricaoPrazo,
@@ -1230,7 +1677,7 @@ export async function analisarMovimentacao(params: {
       ? `Prazo explicito identificado na movimentacao: ${prazoExplicito.evidencia}`
       : 'Prazo criado por regra deterministica de alta confianca.',
     evidencia: prazoExplicito?.evidencia ?? null,
-  }
+  })
 
   await persistirAnaliseMovimentacao({
     tenantId: params.tenant_id,
@@ -1250,6 +1697,12 @@ export async function analisarMovimentacao(params: {
     eventType: tipoEvento,
     deadlineDescription: descricaoPrazo,
     responsibleUserId: params.advogado_id ?? processo?.advogado_responsavel_id ?? null,
+    metadata: {
+      requer_acao: payloadFinal.requer_acao,
+      obrigacao_de_quem: payloadFinal.obrigacao_de_quem ?? null,
+      polo_representado: payloadFinal.polo_representado ?? null,
+      confidence: payloadFinal.confidence ?? payloadFinal.confianca_analise,
+    },
   })
 
   if (proactiveDraft.status === 'prepared') {
@@ -1264,7 +1717,7 @@ export async function analisarMovimentacao(params: {
   return buildAnaliseResult(payloadFinal, 'deadline_card_created', taskId)
   } catch (error) {
     const errorMessage = sanitizeAutomationError(error)
-    const payloadFalha: AnaliseMovimentacaoPayload = {
+    const payloadFalha = withPrazoDuty({
       tipo_evento: tipoEvento,
       requer_acao: true,
       acao_sugerida: descricaoPrazo,
@@ -1274,7 +1727,7 @@ export async function analisarMovimentacao(params: {
       origem: 'deterministica',
       motivo: `Prazo de alta confianca nao foi criado por falha operacional: ${errorMessage}`,
       evidencia: prazoExplicito?.evidencia ?? null,
-    }
+    })
 
     await registrarFalhaAutomacaoMovimentacao({
       tenantId: params.tenant_id,

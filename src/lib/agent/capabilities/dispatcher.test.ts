@@ -17,6 +17,7 @@ const {
   publishLegalPiecePremiumMock,
   createAgentAuditLogMock,
   runSelfImprovementReviewMock,
+  loadTenantFinanceSummaryMock,
 } = vi.hoisted(() => ({
   ...(() => {
     const localFromMock = vi.fn();
@@ -37,6 +38,7 @@ const {
       publishLegalPiecePremiumMock: vi.fn(),
       createAgentAuditLogMock: vi.fn(),
       runSelfImprovementReviewMock: vi.fn(),
+      loadTenantFinanceSummaryMock: vi.fn(),
     };
   })(),
 }));
@@ -86,6 +88,10 @@ vi.mock("@/lib/agent/runtime/self-improvement-review", () => ({
   runSelfImprovementReview: runSelfImprovementReviewMock,
 }));
 
+vi.mock("@/lib/finance/tenant-finance-summary", () => ({
+  loadTenantFinanceSummary: loadTenantFinanceSummaryMock,
+}));
+
 vi.mock("@/lib/services/zapsign", () => ({
   ZapSignService: {},
 }));
@@ -114,7 +120,7 @@ vi.mock("@/lib/skills/consulta-processo-whatsapp", () => ({
 import { dispatchCapabilityExecution } from "./dispatcher";
 import { executarCobranca } from "@/lib/agent/skills/asaas-cobrar";
 
-function makeSnapshot(overrides?: Record<string, any>) {
+function makeSnapshot(overrides: Record<string, any> = {}) {
   return {
     processTask: {
       id: "process-task-1",
@@ -175,7 +181,7 @@ function makeSnapshot(overrides?: Record<string, any>) {
   };
 }
 
-function makeDraftVersion(overrides?: Record<string, any>) {
+function makeDraftVersion(overrides: Record<string, any> = {}) {
   return {
     id: "draft-version-1",
     tenant_id: "tenant-1",
@@ -200,6 +206,44 @@ function makeDraftVersion(overrides?: Record<string, any>) {
     created_by: "user-1",
     created_at: "2026-04-20T21:00:00.000Z",
     updated_at: "2026-04-20T21:00:00.000Z",
+    ...overrides,
+  };
+}
+
+function makeOperationalMethodology(overrides: Record<string, any> = {}) {
+  return {
+    status: "approved",
+    identity: {
+      office_name: "Dutra Advocacia",
+      practice_areas: ["Previdenciario"],
+    },
+    intake: {
+      required_documents_by_case: ["procuração", "documento pessoal"],
+      methodology_base_used: false,
+    },
+    case_flow: {
+      phases: ["Triagem documental", "Analise juridica", "Minuta"],
+      owners: ["Juridico"],
+      advancement_criteria: ["documentos minimos conferidos"],
+      blocking_criteria: ["ausencia de CNIS"],
+    },
+    area_methods: [{
+      area: "Previdenciario",
+      intake_questions: ["Qual beneficio foi indeferido"],
+      required_documents: ["CNIS", "indeferimento administrativo", "PPP/LTCAT"],
+      phases: ["Triagem previdenciaria", "Analise CNIS", "Minuta"],
+      document_structure: ["01 Documentos pessoais", "02 CNIS", "03 Provas tecnicas"],
+      owner_team: "Juridico previdenciario",
+      validation_status: "validated",
+      next_review_question: null,
+    }],
+    improvement_rules: [],
+    internet_policy: {
+      enabled: true,
+      no_auto_activation: true,
+      usage: "somente atualizar contexto e sugerir revisao auditavel",
+      allowed_sources: ["gov.br", "inss.gov.br"],
+    },
     ...overrides,
   };
 }
@@ -287,6 +331,7 @@ describe("dispatchCapabilityExecution - juridico", () => {
     publishLegalPiecePremiumMock.mockReset();
     createAgentAuditLogMock.mockReset();
     runSelfImprovementReviewMock.mockReset();
+    loadTenantFinanceSummaryMock.mockReset();
     vi.mocked(executarCobranca).mockReset();
 
     insertMock.mockResolvedValue({ error: null });
@@ -603,7 +648,7 @@ describe("dispatchCapabilityExecution - juridico", () => {
       requires_human_approval: true,
     }));
     expect(inserts.some((item) => item.table === "user_tasks" && item.payload.source_table === "growth_lead_schedule")).toBe(true);
-    expect(inserts.find((item) => item.table === "user_tasks")?.payload).toEqual(expect.objectContaining({
+    expect(inserts.find((item) => item.table === "user_tasks").payload).toEqual(expect.objectContaining({
       source_id: "crm:crm-task-1",
       assigned_to: "sdr-1",
       created_by_agent: "mayus",
@@ -690,7 +735,7 @@ describe("dispatchCapabilityExecution - juridico", () => {
       entities: {
         nome_cliente: "Maria Silva",
         valor: "1500",
-        vencimento: "2026-05-20",
+        vencimento: "2099-05-20",
         billing_type: "PIX",
         descricao: "Entrada contrato previdenciario",
       },
@@ -708,16 +753,16 @@ describe("dispatchCapabilityExecution - juridico", () => {
       tenantId: "tenant-1",
       nome_cliente: "Maria Silva",
       valor: 1500,
-      vencimento: "2026-05-20",
+      vencimento: "2099-05-20",
       billing_type: "PIX",
     }));
     expect(createBrainArtifactMock).toHaveBeenCalledWith(expect.objectContaining({
       tenantId: "tenant-1",
       taskId: "brain-task-billing-1",
       artifactType: "asaas_billing",
-      dedupeKey: "asaas_billing:tenant-1:maria silva:1500.00:2026-05-20:brain-task-billing-1",
+      dedupeKey: "asaas_billing:tenant-1:maria silva:1500.00:2099-05-20:brain-task-billing-1",
       metadata: expect.objectContaining({
-        billing_idempotency_key: "asaas_billing:tenant-1:maria silva:1500.00:2026-05-20:brain-task-billing-1",
+        billing_idempotency_key: "asaas_billing:tenant-1:maria silva:1500.00:2099-05-20:brain-task-billing-1",
         billing_status: "created",
         cobranca_id: "pay-1",
         invoice_url: "https://asaas.test/i/pay-1",
@@ -725,7 +770,7 @@ describe("dispatchCapabilityExecution - juridico", () => {
         nome_cliente: "Maria Silva",
         asaas_customer_id: "cus-1",
         valor: 1500,
-        vencimento: "2026-05-20",
+        vencimento: "2099-05-20",
         billing_type: "PIX",
       }),
     }));
@@ -749,7 +794,7 @@ describe("dispatchCapabilityExecution - juridico", () => {
               storage_url: "https://asaas.test/p/pay-existing",
               created_at: "2026-05-12T12:00:00.000Z",
               metadata: {
-                billing_idempotency_key: "asaas_billing:tenant-1:maria silva:1500.00:approval-billing-duplicate",
+                billing_idempotency_key: "asaas_billing:tenant-1:maria silva:1500.00:2099-05-20:approval-billing-duplicate",
               },
             },
             error: null,
@@ -768,7 +813,7 @@ describe("dispatchCapabilityExecution - juridico", () => {
       entities: {
         nome_cliente: "Maria Silva",
         valor: "1500",
-        vencimento: "2026-05-20",
+        vencimento: "2099-05-20",
       },
       auditLogId: "approval-billing-duplicate",
     });
@@ -839,6 +884,116 @@ describe("dispatchCapabilityExecution - juridico", () => {
     expect(inserts.some((item) => item.table === "learning_events" && item.payload.event_type === "collections_followup_plan_created")).toBe(true);
     expect(executarCobranca).not.toHaveBeenCalled();
     expect(JSON.stringify(createBrainArtifactMock.mock.calls[0][0].metadata)).not.toMatch(/api_key|webhook_secret|sk_live|sk_test|sk-or-v1/i);
+  });
+
+  it("executa management_intelligence_brief com readiness e sem decisao automatica", async () => {
+    loadTenantFinanceSummaryMock.mockResolvedValue({
+      tenantId: "tenant-1",
+      generatedAt: "2026-05-22T12:00:00.000Z",
+      financials: {
+        received: { amount: 10000, count: 2 },
+        forecast: { amount: 3000, count: 1 },
+        overdue: { amount: 1500, count: 1 },
+        delinquency: { amount: 1500, count: 1, rate: 15 },
+        openCharges: { amount: 4500, count: 2 },
+        forecastBuckets: {
+          dueIn7Days: { amount: 3000, count: 1 },
+          dueIn30Days: { amount: 0, count: 0 },
+          future: { amount: 0, count: 0 },
+          noDueDate: { amount: 0, count: 0 },
+        },
+        overdueAging: {
+          days1To7: { amount: 1500, count: 1 },
+          days8To14: { amount: 0, count: 0 },
+          days15To30: { amount: 0, count: 0 },
+          days31Plus: { amount: 0, count: 0 },
+        },
+        riskItems: [],
+        expenses: {
+          fixed: { amount: 2000, count: 1 },
+          marketing: { amount: 500, count: 1 },
+        },
+      },
+      commercialForecast: {
+        source: "sales+crm_tasks",
+        available: true,
+        pipelineAmount: 7000,
+        pendingContracts: { amount: 3000, count: 1 },
+        closedContracts: { amount: 10000, count: 2 },
+        lostAmount: 0,
+        byStage: [{ stageId: "stage-1", stageName: "Proposta", amount: 7000, count: 1, isWin: false, isLoss: false }],
+        topOpportunities: [{ kind: "crm", id: "crm-1", label: "Lead RMC", amount: 7000, stage: "Proposta", source: "indicacao", nextBestAction: "Confirmar proximo compromisso." }],
+      },
+      collectionsFollowup: {
+        source: "brain_artifacts",
+        available: true,
+        totalPlans: 1,
+        highPriorityPlans: 0,
+        recentPlans: [],
+      },
+      revenueReconciliation: {
+        source: "financials+brain_artifacts+process_tasks",
+        available: true,
+        report: {
+          generatedAt: "2026-05-22T12:00:00.000Z",
+          totals: { matched: 1, needsReview: 0, missingFinancial: 0, missingArtifact: 0, missingProcessTask: 0 },
+          items: [{ status: "matched" }],
+        },
+      },
+      unitEconomics: {
+        grossRevenue: 10000,
+        directCosts: 1000,
+        commissions: 500,
+        estimatedProfit: 8500,
+        estimatedMarginRate: 85,
+        byCase: [{ label: "Caso RMC", amount: 10000, revenue: 10000, count: 1 }],
+        byLegalArea: [{ legalArea: "Bancario", amount: 10000, revenue: 10000, count: 1 }],
+        commissionsBreakdown: { byOwner: [], byOrigin: [] },
+      },
+    });
+
+    const result = await dispatchCapabilityExecution({
+      handlerType: "management_intelligence_brief",
+      capabilityName: "management_intelligence_brief",
+      tenantId: "tenant-1",
+      userId: "user-1",
+      entities: {
+        request: "Analise meu escritorio como CEO, com CAC, pipeline e margem.",
+      },
+      auditLogId: "audit-management-1",
+      brainContext: {
+        taskId: "brain-task-management-1",
+        runId: "brain-run-management-1",
+        stepId: "brain-step-management-1",
+        sourceModule: "mayus",
+      },
+    });
+
+    expect(result.status).toBe("executed");
+    expect(result.reply).toContain("Inteligencia de gestao");
+    expect(result.reply).toContain("Limite: nao executei decisao empresarial");
+    expect(result.outputPayload).toEqual(expect.objectContaining({
+      artifact_type: "management_intelligence_brief",
+      readiness_status: "ready",
+      external_side_effects_blocked: true,
+      strategic_decision_blocked: true,
+    }));
+    expect(createBrainArtifactMock).toHaveBeenCalledWith(expect.objectContaining({
+      artifactType: "management_intelligence_brief",
+      metadata: expect.objectContaining({
+        artifactType: "management_intelligence_brief",
+        readiness: expect.objectContaining({
+          status: "ready",
+        }),
+      }),
+    }));
+    expect(insertMock).toHaveBeenCalledWith(expect.objectContaining({
+      event_type: "management_intelligence_brief_created",
+      payload: expect.objectContaining({
+        tenant_only: true,
+        strategic_decision_blocked: true,
+      }),
+    }));
   });
 
   it("executa external_action_preview pelo chat sem executar integracao externa", async () => {
@@ -1118,7 +1273,7 @@ describe("dispatchCapabilityExecution - juridico", () => {
       tenantId: "tenant-1",
       userId: "user-1",
       entities: {
-        request: "Mayus, o que eu devo publicar esta semana?",
+        request: "Mayus, o que eu devo publicar esta semana",
         legal_area: "Previdenciario",
         channel: "linkedin",
       },
@@ -1406,10 +1561,15 @@ describe("dispatchCapabilityExecution - juridico", () => {
     });
 
     expect(result.status).toBe("executed");
-    expect(result.reply).toContain("Onboarding operacional");
+    expect(result.reply).toContain("Metodologia operacional");
     expect(result.outputPayload).toEqual(expect.objectContaining({
       setup_status: "validated",
+      methodology_status: "approved",
       office_setup_persisted: true,
+      operational_methodology_persisted: true,
+      artifact_type: "office_operational_methodology",
+      legacy_artifact_type: "office_setup_conversation",
+      event_type: "office_operational_methodology_approved",
       memory_proposals_created: 12,
       external_side_effects_blocked: true,
     }));
@@ -1436,6 +1596,38 @@ describe("dispatchCapabilityExecution - juridico", () => {
         ]),
         status: "validated",
       }),
+      operational_methodology: expect.objectContaining({
+        status: "approved",
+        identity: expect.objectContaining({
+          office_name: "Dutra Advocacia",
+          practice_areas: ["Direito Bancario", "Previdenciario"],
+        }),
+        area_methods: expect.arrayContaining([
+          expect.objectContaining({
+            area: "Direito Bancario",
+            phases: expect.arrayContaining(["Triagem do desconto/contrato"]),
+          }),
+          expect.objectContaining({
+            area: "Previdenciario",
+            required_documents: expect.arrayContaining(["CNIS"]),
+          }),
+        ]),
+        internet_policy: expect.objectContaining({
+          no_auto_activation: true,
+        }),
+      }),
+    }));
+    expect(createBrainArtifactMock).toHaveBeenCalledWith(expect.objectContaining({
+      tenantId: "tenant-1",
+      taskId: "brain-task-office-setup-1",
+      artifactType: "office_operational_methodology",
+      metadata: expect.objectContaining({
+        methodology_status: "approved",
+        persisted: true,
+        operational_methodology: expect.objectContaining({
+          status: "approved",
+        }),
+      }),
     }));
     expect(createBrainArtifactMock).toHaveBeenCalledWith(expect.objectContaining({
       tenantId: "tenant-1",
@@ -1449,9 +1641,10 @@ describe("dispatchCapabilityExecution - juridico", () => {
         }),
       }),
     }));
+    expect(inserts.some((item) => item.table === "learning_events" && item.payload.event_type === "office_operational_methodology_approved")).toBe(true);
     expect(inserts.some((item) => item.table === "learning_events" && item.payload.event_type === "office_setup_profile_configured")).toBe(true);
     const memoryInsert = inserts.find((item) => item.table === "brain_memories");
-    expect(memoryInsert?.payload).toEqual(expect.arrayContaining([
+    expect(memoryInsert.payload).toEqual(expect.arrayContaining([
       expect.objectContaining({
         memory_type: "institutional_memory_proposal",
         memory_key: "tom_de_atendimento",
@@ -1485,6 +1678,81 @@ describe("dispatchCapabilityExecution - juridico", () => {
     ]));
     expect(inserts.some((item) => item.table === "learning_events" && item.payload.event_type === "memory_promotion_proposed")).toBe(true);
     expect(JSON.stringify(createBrainArtifactMock.mock.calls[0][0].metadata)).not.toMatch(/api_key|webhook_secret|sk_live|sk_test|sk-or-v1/i);
+  });
+
+  it("persiste metodologia recomendada sem gravar perfil operacional sem confirmacao", async () => {
+    const inserts: Array<{ table: string; payload: any }> = [];
+    const upserts: Array<{ table: string; payload: any }> = [];
+    fromMock.mockImplementation((table: string) => {
+      if (table === "tenant_settings") {
+        const query: any = {
+          select: vi.fn(() => query),
+          eq: vi.fn(() => query),
+          maybeSingle: vi.fn(async () => ({ data: { ai_features: { existing_flag: true } }, error: null })),
+          upsert: vi.fn((payload: any) => {
+            upserts.push({ table, payload });
+            return { error: null };
+          }),
+        };
+        return query;
+      }
+
+      return makeGrowthQuery(table, inserts);
+    });
+
+    const result = await dispatchCapabilityExecution({
+      handlerType: "setup_office_profile_conversation",
+      capabilityName: "office_setup_conversation",
+      tenantId: "tenant-1",
+      userId: "user-1",
+      entities: {
+        notes: "Nao tenho processo definido. Monte a metodologia do meu escritorio para trabalhista, previdenciario e bancario/RMC.",
+      },
+      auditLogId: "audit-office-methodology-1",
+      brainContext: {
+        taskId: "brain-task-office-methodology-1",
+        runId: "brain-run-office-methodology-1",
+        stepId: "brain-step-office-methodology-1",
+        sourceModule: "mayus",
+      },
+    });
+
+    expect(result.status).toBe("executed");
+    expect(result.outputPayload).toEqual(expect.objectContaining({
+      setup_status: "collecting",
+      methodology_status: "recommended",
+      office_setup_persisted: false,
+      operational_methodology_persisted: true,
+      methodology_base_used: true,
+      area_method_count: 3,
+      requires_human_review: true,
+    }));
+    expect(upserts).toHaveLength(1);
+    expect(upserts[0].payload.ai_features).toEqual(expect.objectContaining({
+      existing_flag: true,
+      operational_methodology: expect.objectContaining({
+        status: "recommended",
+        intake: expect.objectContaining({
+          methodology_base_used: true,
+        }),
+        area_methods: expect.arrayContaining([
+          expect.objectContaining({ area: "Trabalhista" }),
+          expect.objectContaining({ area: "Previdenciario" }),
+          expect.objectContaining({ area: "Bancario/RMC" }),
+        ]),
+      }),
+    }));
+    expect(upserts[0].payload.ai_features.office_knowledge_profile).toBeUndefined();
+    expect(createBrainArtifactMock).toHaveBeenCalledWith(expect.objectContaining({
+      artifactType: "office_operational_methodology",
+      metadata: expect.objectContaining({
+        methodology_status: "recommended",
+        persisted: true,
+        profile_persisted: false,
+      }),
+    }));
+    expect(inserts.some((item) => item.table === "learning_events" && item.payload.event_type === "office_operational_methodology_recommended")).toBe(true);
+    expect(inserts.some((item) => item.table === "brain_memories")).toBe(false);
   });
 
   it("registra artifact de contexto juridico para a missao do MAYUS", async () => {
@@ -1581,6 +1849,13 @@ describe("dispatchCapabilityExecution - juridico", () => {
       process_task_id: "process-task-1",
       process_mission_confidence: "high",
       process_mission_recommended_action: "generate_first_draft",
+      legal_operator_state: expect.objectContaining({
+        status: "awaiting_human_approval",
+        safeNextAction: expect.objectContaining({
+          action: "generate_first_draft",
+          requiresApproval: true,
+        }),
+      }),
       external_side_effects_blocked: true,
     }));
     expect(createBrainArtifactMock).toHaveBeenCalledWith(expect.objectContaining({
@@ -1591,6 +1866,34 @@ describe("dispatchCapabilityExecution - juridico", () => {
       metadata: expect.objectContaining({
         process_task_id: "process-task-1",
         process_mission_recommended_action: "generate_first_draft",
+        processMissionContext: expect.objectContaining({
+          recommendedAction: "generate_first_draft",
+        }),
+        methodology: expect.any(Object),
+        sources: expect.objectContaining({
+          factual: expect.any(Array),
+        }),
+        gaps: expect.objectContaining({
+          all: expect.any(Array),
+        }),
+        recommendedAction: "generate_first_draft",
+        sideEffectGuardrail: expect.objectContaining({
+          approvalGate: "humanGate",
+        }),
+        agentic_governance: expect.objectContaining({
+          openclaw_policy: expect.objectContaining({
+            surface: "legal_decision",
+            outcome: "requires_approval",
+            requires_approval: true,
+          }),
+          hermes_trajectory: expect.objectContaining({
+            events: expect.any(Array),
+          }),
+        }),
+        legal_operator_state: expect.objectContaining({
+          status: "awaiting_human_approval",
+          safeNextAction: expect.objectContaining({ action: "generate_first_draft" }),
+        }),
         external_side_effects_blocked: true,
       }),
     }));
@@ -1601,7 +1904,98 @@ describe("dispatchCapabilityExecution - juridico", () => {
       payload: expect.objectContaining({
         process_task_id: "process-task-1",
         recommended_action: "generate_first_draft",
+        legal_operator_state: expect.objectContaining({
+          status: "awaiting_human_approval",
+          safeNextAction: expect.objectContaining({ action: "generate_first_draft" }),
+        }),
         external_side_effects_blocked: true,
+      }),
+    }));
+  });
+
+  it("injeta metodologia operacional aprovada do tenant no contexto juridico", async () => {
+    const inserts: Array<{ table: string; payload: any }> = [];
+    getLegalCaseContextSnapshotMock.mockResolvedValue(makeSnapshot({
+      processTask: {
+        ...makeSnapshot().processTask,
+        legalArea: "Previdenciário",
+        stageName: null,
+      },
+      documentMemory: {
+        ...makeSnapshot().documentMemory,
+        freshness: "fresh",
+        currentPhase: null,
+        missingDocuments: ["CNIS"],
+      },
+      caseBrain: {
+        ...makeSnapshot().caseBrain,
+        currentPhase: null,
+        firstActions: [],
+        missingDocuments: ["CNIS"],
+      },
+      firstDraft: {
+        ...makeSnapshot().firstDraft,
+        status: "idle",
+      },
+    }));
+    fromMock.mockImplementation((table: string) => {
+      if (table === "tenant_settings") {
+        return makeMaybeSingleQuery({
+          data: {
+            ai_features: {
+              operational_methodology: makeOperationalMethodology(),
+            },
+          },
+          error: null,
+        });
+      }
+
+      return makeGrowthQuery(table, inserts);
+    });
+
+    const result = await dispatchCapabilityExecution({
+      handlerType: "lex_process_mission_plan",
+      capabilityName: "legal_process_mission_plan",
+      tenantId: "tenant-1",
+      userId: "user-1",
+      entities: { process_number: "E2E-2026-0001" },
+      auditLogId: "audit-process-mission-methodology-1",
+      brainContext: {
+        taskId: "brain-task-mission-methodology-1",
+        runId: "brain-run-mission-methodology-1",
+        stepId: "brain-step-mission-methodology-1",
+        sourceModule: "mayus",
+      },
+    });
+
+    expect(result.status).toBe("executed");
+    expect(result.reply).toContain("Metodologia do escritorio");
+    expect(result.reply).toContain("CNIS");
+    expect(result.outputPayload).toEqual(expect.objectContaining({
+      operational_methodology_provided: true,
+      operational_methodology_status: "approved",
+      operational_methodology_activation: "active_internal",
+      operational_methodology_area: "Previdenciario",
+      operational_methodology_expected_documents: expect.arrayContaining(["CNIS", "PPP/LTCAT"]),
+      legal_operator_state: expect.objectContaining({
+        evidenceSummary: expect.objectContaining({
+          methodologyStatus: "approved",
+          methodologyActivation: "active_internal",
+        }),
+      }),
+    }));
+    expect(JSON.stringify(result.outputPayload)).not.toMatch(/global|waze/i);
+    expect(createBrainArtifactMock).toHaveBeenCalledWith(expect.objectContaining({
+      artifactType: "process_mission_plan",
+      metadata: expect.objectContaining({
+        operational_methodology_status: "approved",
+        operational_methodology_area: "Previdenciario",
+        process_mission_context: expect.objectContaining({
+          methodology: expect.objectContaining({
+            status: "approved",
+            expectedDocuments: expect.arrayContaining(["CNIS", "indeferimento administrativo"]),
+          }),
+        }),
       }),
     }));
   });
@@ -1678,6 +2072,13 @@ describe("dispatchCapabilityExecution - juridico", () => {
       process_mission_recommended_action: "refresh_document_memory",
       executed_capability: "legal_document_memory_refresh",
       step_status: "executed",
+      legal_operator_state: expect.objectContaining({
+        status: "ready_internal_action",
+        safeNextAction: expect.objectContaining({
+          action: "refresh_document_memory",
+          canAutoExecute: true,
+        }),
+      }),
     }));
     expect(syncProcessDocumentsMock).toHaveBeenCalledTimes(1);
     expect(createBrainArtifactMock).toHaveBeenCalledWith(expect.objectContaining({
@@ -1686,6 +2087,10 @@ describe("dispatchCapabilityExecution - juridico", () => {
         process_task_id: "process-task-1",
         result_status: "executed",
         executed_capability: "legal_document_memory_refresh",
+        legal_operator_state: expect.objectContaining({
+          status: "ready_internal_action",
+          safeNextAction: expect.objectContaining({ action: "refresh_document_memory" }),
+        }),
       }),
     }));
     expect(insertMock).toHaveBeenCalledWith(expect.objectContaining({
@@ -1694,6 +2099,10 @@ describe("dispatchCapabilityExecution - juridico", () => {
         process_task_id: "process-task-1",
         recommended_action: "refresh_document_memory",
         executed_capability: "legal_document_memory_refresh",
+        legal_operator_state: expect.objectContaining({
+          status: "ready_internal_action",
+          safeNextAction: expect.objectContaining({ action: "refresh_document_memory" }),
+        }),
       }),
     }));
   });
@@ -1821,6 +2230,10 @@ describe("dispatchCapabilityExecution - juridico", () => {
     expect(result.outputPayload).toEqual(expect.objectContaining({
       process_mission_confidence: "low",
       blocked_reason: "low_confidence_process_mission",
+      legal_operator_state: expect.objectContaining({
+        status: "blocked",
+        blockers: expect.arrayContaining(["low_confidence_process_mission"]),
+      }),
       external_side_effects_blocked: true,
     }));
     expect(syncProcessDocumentsMock).not.toHaveBeenCalled();
@@ -1961,10 +2374,43 @@ describe("dispatchCapabilityExecution - juridico", () => {
       proposed_capability: "legal_first_draft_generate",
       proposed_handler_type: "lex_first_draft_generate",
       approval_required: true,
+      legal_operator_state: expect.objectContaining({
+        status: "awaiting_human_approval",
+        safeNextAction: expect.objectContaining({
+          action: "generate_first_draft",
+          requiresApproval: true,
+        }),
+      }),
       external_side_effects_blocked: true,
       awaitingPayload: expect.objectContaining({
         skillName: "legal_first_draft_generate",
         riskLevel: "high",
+        processMissionContext: expect.objectContaining({
+          recommendedAction: "generate_first_draft",
+        }),
+        methodology: expect.any(Object),
+        sources: expect.objectContaining({
+          factual: expect.any(Array),
+        }),
+        gaps: expect.objectContaining({
+          all: expect.any(Array),
+        }),
+        recommendedAction: "generate_first_draft",
+        sideEffectGuardrail: expect.objectContaining({
+          approvalGate: "humanGate",
+        }),
+        openclawPolicy: expect.objectContaining({
+          surface: "legal_decision",
+          outcome: "requires_approval",
+          requires_approval: true,
+        }),
+        hermesTrajectory: expect.objectContaining({
+          events: expect.any(Array),
+        }),
+        legalOperatorState: expect.objectContaining({
+          status: "awaiting_human_approval",
+          safeNextAction: expect.objectContaining({ action: "generate_first_draft" }),
+        }),
         entities: expect.objectContaining({
           process_task_id: "process-task-1",
           process_number: "E2E-2026-0001",
@@ -1984,10 +2430,48 @@ describe("dispatchCapabilityExecution - juridico", () => {
         case_brain_high_risk_count: 0,
         case_brain_contradiction_count: 0,
         case_brain_high_contradiction_count: 0,
+        piece_context: expect.objectContaining({
+          piece_label: expect.any(String),
+          draft_verification_checklist: expect.any(Array),
+        }),
+        draft_verification_checklist: expect.any(Array),
+        processMissionContext: expect.objectContaining({
+          recommendedAction: "generate_first_draft",
+        }),
+        openclaw_policy: expect.objectContaining({
+          surface: "legal_decision",
+          outcome: "requires_approval",
+        }),
+        hermes_trajectory: expect.objectContaining({
+          events: expect.any(Array),
+        }),
+        legal_operator_state: expect.objectContaining({
+          status: "awaiting_human_approval",
+          safeNextAction: expect.objectContaining({ action: "generate_first_draft" }),
+        }),
       }),
       pendingExecutionPayload: expect.objectContaining({
         skillName: "legal_first_draft_generate",
         entities: expect.objectContaining({ process_task_id: "process-task-1" }),
+        pieceContext: expect.objectContaining({
+          piece_label: expect.any(String),
+          draft_verification_checklist: expect.any(Array),
+        }),
+        draftVerificationChecklist: expect.any(Array),
+        processMissionContext: expect.objectContaining({
+          recommendedAction: "generate_first_draft",
+        }),
+        sideEffectGuardrail: expect.objectContaining({
+          approvalGate: "humanGate",
+        }),
+        openclaw_policy: expect.objectContaining({
+          surface: "legal_decision",
+          outcome: "requires_approval",
+        }),
+        legal_operator_state: expect.objectContaining({
+          status: "awaiting_human_approval",
+          safeNextAction: expect.objectContaining({ action: "generate_first_draft" }),
+        }),
       }),
     }));
     expect(createBrainArtifactMock).toHaveBeenCalledWith(expect.objectContaining({
@@ -1998,6 +2482,10 @@ describe("dispatchCapabilityExecution - juridico", () => {
         step_output_payload: expect.objectContaining({
           approval_audit_log_id: "approval-audit-draft-1",
           proposed_capability: "legal_first_draft_generate",
+          legal_operator_state: expect.objectContaining({
+            status: "awaiting_human_approval",
+            safeNextAction: expect.objectContaining({ action: "generate_first_draft" }),
+          }),
         }),
       }),
     }));
@@ -2059,6 +2547,10 @@ describe("dispatchCapabilityExecution - juridico", () => {
       support_status_inference_count: 0,
       support_status_missing_signal_count: 1,
       support_status_handoff_reason: null,
+      legal_operator_state: expect.objectContaining({
+        status: "ready_internal_action",
+        safeNextAction: expect.objectContaining({ action: "refresh_document_memory" }),
+      }),
     }));
     expect(createBrainArtifactMock).toHaveBeenCalledWith(expect.objectContaining({
       tenantId: "tenant-1",
@@ -2075,6 +2567,10 @@ describe("dispatchCapabilityExecution - juridico", () => {
         support_status_factual_sources: ["resumo do Case Brain", "fase do Case Brain"],
         support_status_inference_notes: [],
         support_status_missing_signals: ["pendencias documentais registradas"],
+        legal_operator_state: expect.objectContaining({
+          status: "ready_internal_action",
+          safeNextAction: expect.objectContaining({ action: "refresh_document_memory" }),
+        }),
       }),
     }));
     expect(fromMock).toHaveBeenCalledWith("learning_events");
@@ -2089,6 +2585,10 @@ describe("dispatchCapabilityExecution - juridico", () => {
         factual_sources: ["resumo do Case Brain", "fase do Case Brain"],
         inference_notes: [],
         missing_signals: ["pendencias documentais registradas"],
+        legal_operator_state: expect.objectContaining({
+          status: "ready_internal_action",
+          safeNextAction: expect.objectContaining({ action: "refresh_document_memory" }),
+        }),
       }),
     }));
   });
@@ -2260,6 +2760,89 @@ describe("dispatchCapabilityExecution - juridico", () => {
         process_task_id: "process-task-1",
         draft_factory_task_id: "draft-factory-task-1",
         piece_label: "Contestação Previdenciária",
+      }),
+    }));
+  });
+
+  it("bloqueia Draft Factory direta quando metodologia do tenant ainda nao foi aprovada", async () => {
+    const recommendedMethodology = makeOperationalMethodology({
+      status: "recommended",
+      intake: {
+        required_documents_by_case: ["procuração"],
+        methodology_base_used: true,
+      },
+      area_methods: [{
+        area: "Previdenciario",
+        intake_questions: ["Qual beneficio foi indeferido"],
+        required_documents: ["CNIS", "indeferimento administrativo"],
+        phases: ["Triagem previdenciaria", "Analise CNIS"],
+        document_structure: ["01 Documentos pessoais", "02 CNIS"],
+        owner_team: "Juridico previdenciario",
+        validation_status: "needs_area_review",
+        next_review_question: "Validar fluxo previdenciario com o socio.",
+      }],
+    });
+
+    getLegalCaseContextSnapshotMock.mockResolvedValue(makeSnapshot({
+      documentMemory: {
+        ...makeSnapshot().documentMemory,
+        freshness: "fresh",
+      },
+      firstDraft: {
+        ...makeSnapshot().firstDraft,
+        status: "idle",
+      },
+    }));
+    fromMock.mockImplementation((table: string) => {
+      if (table === "tenant_settings") {
+        return makeMaybeSingleQuery({
+          data: {
+            ai_features: {
+              operational_methodology: recommendedMethodology,
+            },
+          },
+          error: null,
+        });
+      }
+
+      return { insert: insertMock };
+    });
+
+    const result = await dispatchCapabilityExecution({
+      handlerType: "lex_first_draft_generate",
+      capabilityName: "legal_first_draft_generate",
+      tenantId: "tenant-1",
+      userId: "user-1",
+      entities: { process_number: "E2E-2026-0001" },
+      auditLogId: "audit-draft-methodology-block",
+      brainContext: {
+        taskId: "brain-task-draft-methodology-block",
+        runId: "brain-run-draft-methodology-block",
+        stepId: "brain-step-draft-methodology-block",
+        sourceModule: "mayus",
+      },
+    });
+
+    expect(result.status).toBe("blocked");
+    expect(result.outputPayload).toEqual(expect.objectContaining({
+      blocked_reason: "operational_methodology_requires_review",
+      operational_methodology_status: "recommended",
+      operational_methodology_activation: "supervised_suggestion",
+      operational_methodology_requires_human_review: true,
+    }));
+    expect(executeDraftFactoryForProcessTaskMock).not.toHaveBeenCalled();
+    expect(createBrainArtifactMock).toHaveBeenCalledWith(expect.objectContaining({
+      artifactType: "legal_first_draft_result",
+      metadata: expect.objectContaining({
+        result_status: "failed",
+        operational_methodology_status: "recommended",
+        operational_methodology_blockers: expect.arrayContaining(["methodology_not_approved"]),
+        process_mission_context: expect.objectContaining({
+          methodology: expect.objectContaining({
+            status: "recommended",
+            activation: "supervised_suggestion",
+          }),
+        }),
       }),
     }));
   });
@@ -2744,6 +3327,10 @@ describe("dispatchCapabilityExecution - juridico", () => {
       contradiction_count: expect.any(Number),
       evidence_document_count: 2,
       evidence_movement_count: 1,
+      legal_operator_state: expect.objectContaining({
+        status: "ready_internal_action",
+        safeNextAction: expect.objectContaining({ action: "refresh_document_memory" }),
+      }),
       external_side_effects_blocked: true,
     }));
     expect(createBrainArtifactMock).toHaveBeenCalledWith(expect.objectContaining({
@@ -2756,6 +3343,10 @@ describe("dispatchCapabilityExecution - juridico", () => {
         contradiction_count: expect.any(Number),
         evidence_document_count: 2,
         evidence_movement_count: 1,
+        legal_operator_state: expect.objectContaining({
+          status: "ready_internal_action",
+          safeNextAction: expect.objectContaining({ action: "refresh_document_memory" }),
+        }),
         external_side_effects_blocked: true,
       }),
     }));
@@ -2766,6 +3357,10 @@ describe("dispatchCapabilityExecution - juridico", () => {
         process_task_id: "process-task-1",
         risk_count: expect.any(Number),
         contradiction_count: expect.any(Number),
+        legal_operator_state: expect.objectContaining({
+          status: "ready_internal_action",
+          safeNextAction: expect.objectContaining({ action: "refresh_document_memory" }),
+        }),
       }),
     }));
   });

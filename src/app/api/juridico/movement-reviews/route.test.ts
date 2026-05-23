@@ -7,6 +7,7 @@ const {
   getUserMock,
   inserts,
   pipelineContextMock,
+  prepareProactiveMovementDraftMock,
   upserts,
   updates,
 } = vi.hoisted(() => ({
@@ -24,6 +25,7 @@ const {
       fallbackStageId: "stage-1",
     } as any,
   },
+  prepareProactiveMovementDraftMock: vi.fn(),
   upserts: [] as Array<{ table: string; payload: any }>,
   updates: [] as Array<{ table: string; payload: any }>,
 }));
@@ -49,6 +51,10 @@ vi.mock("@/lib/juridico/process-pipeline-resolver", () => ({
   resolveProcessPipelineContext: vi.fn(async () => pipelineContextMock.value),
 }));
 
+vi.mock("@/lib/lex/proactive-movement-draft", () => ({
+  prepareProactiveMovementDraft: prepareProactiveMovementDraftMock,
+}));
+
 import { GET, POST } from "./route";
 
 const reviewRow = {
@@ -65,8 +71,13 @@ const reviewRow = {
     acao_sugerida: "Manifestar-se sobre peticao",
     data_vencimento_extraida: "2026-05-20T00:00:00.000Z",
     confianca_analise: "media",
+    confidence: "media",
     origem: "llm",
     motivo: "Exige revisao humana em beta.",
+    polo_representado: "autor",
+    obrigacao_de_quem: "escritorio",
+    confidence_reason: "Movimentacao direcionada ao polo representado.",
+    review_required: true,
   },
 };
 
@@ -78,6 +89,26 @@ const stuckReviewRow = {
     ...reviewRow.payload,
     review_note: "Tentativa anterior",
     review_error: "Falha ao finalizar revisao juridica.",
+  },
+};
+
+const agenticGovernance = {
+  version: 1,
+  openclaw_policy: {
+    allowed: true,
+    requires_approval: true,
+    can_execute_now: false,
+    subject: { surface: "legal_decision", tool: "legal_movement_review_required" },
+    blocked_reason: { message: "segredo interno que nao deve aparecer se houver motivo explicito" },
+    reason: "Politica OpenClaw exige aprovacao humana para revisao juridica.",
+  },
+  hermes_trajectory: {
+    mission_id: "lex:movement:PRAZO:llm",
+    status: "waiting_approval",
+    events: [
+      { type: "mission_started", summary: "Classificacao juridica iniciada.", payload: { raw: "nao expor" } },
+      { type: "approval_requested", summary: "Movimentacao juridica enviada para supervisao humana." },
+    ],
   },
 };
 
@@ -172,10 +203,21 @@ describe("/api/juridico/movement-reviews", () => {
     cookiesMock.mockResolvedValue({ getAll: () => [], set: vi.fn() });
     createServerClientMock.mockReturnValue({ auth: { getUser: getUserMock } });
     getUserMock.mockResolvedValue({ data: { user: { id: "user-1" } }, error: null });
+    prepareProactiveMovementDraftMock.mockResolvedValue({
+      status: "prepared",
+      artifactId: "lex-proactive-artifact-1",
+      draftFactoryTaskId: null,
+      draftArtifactId: "lex-proactive-artifact-1",
+      recommendedPieceInput: null,
+      recommendedPieceLabel: "Manifestacao",
+    });
 
     adminFromMock.mockImplementation((table: string) => {
       if (table === "profiles") return chain(table, { tenant_id: "tenant-1", role: "administrador" });
-      if (table === "system_event_logs") return chain(table, [reviewRow]);
+      if (table === "system_event_logs") return chain(table, [{
+        ...reviewRow,
+        payload: { ...reviewRow.payload, agentic_governance: agenticGovernance },
+      }]);
       if (table === "process_movimentacoes") return chain(table, {
         id: "movement-1",
         numero_cnj: "0000001-11.2026.8.26.0100",
@@ -185,7 +227,15 @@ describe("/api/juridico/movement-reviews", () => {
         acao_sugerida: "Manifestar-se sobre peticao",
         data_vencimento_extraida: "2026-05-20T00:00:00.000Z",
         confianca_analise: "media",
-        analise_json: { motivo: "Exige revisao humana em beta." },
+        analise_json: {
+          motivo: "Exige revisao humana em beta.",
+          polo_representado: "autor",
+          obrigacao_de_quem: "escritorio",
+          confidence: "media",
+          confidence_reason: "Movimentacao direcionada ao polo representado.",
+          review_required: true,
+          agentic_governance: agenticGovernance,
+        },
       });
       if (table === "monitored_processes") return chain(table, {
         id: "process-1",
@@ -208,9 +258,73 @@ describe("/api/juridico/movement-reviews", () => {
         tipo_evento: "PRAZO",
         cliente_nome: "Cliente Teste",
         movimentacao_conteudo: "Intimacao para manifestacao sobre peticao.",
+        polo_representado: "autor",
+        obrigacao_de_quem: "escritorio",
+        confidence: "media",
+        confidence_reason: "Movimentacao direcionada ao polo representado.",
+        review_required: true,
+        agentic_governance: expect.objectContaining({
+          openclaw: {
+            surface: "legal_decision",
+            outcome: "requires_approval",
+            requires_approval: true,
+            can_execute_now: false,
+            reason: "Politica OpenClaw exige aprovacao humana para revisao juridica.",
+          },
+          hermes: {
+            status: "waiting_approval",
+            events_count: 2,
+            last_event_type: "approval_requested",
+            last_event_summary: "Movimentacao juridica enviada para supervisao humana.",
+          },
+        }),
       }),
     ]));
+    const serialized = JSON.stringify(payload);
+    expect(serialized).not.toContain("openclaw_policy");
+    expect(serialized).not.toContain("hermes_trajectory");
+    expect(serialized).not.toContain("blocked_reason");
+    expect(serialized).not.toContain("mission_id");
+    expect(serialized).not.toContain("nao expor");
     expect(payload.stuck_reviews).toEqual([]);
+  });
+
+  it("mantem governance nula para revisoes antigas sem envelope agentico", async () => {
+    adminFromMock.mockImplementation((table: string) => {
+      if (table === "profiles") return chain(table, { tenant_id: "tenant-1", role: "administrador" });
+      if (table === "system_event_logs") return chain(table, [reviewRow]);
+      if (table === "process_movimentacoes") return chain(table, {
+        id: "movement-1",
+        numero_cnj: "0000001-11.2026.8.26.0100",
+        data: "2026-05-16",
+        conteudo: "Intimacao para manifestacao sobre peticao.",
+        tipo_evento: "PRAZO",
+        acao_sugerida: "Manifestar-se sobre peticao",
+        data_vencimento_extraida: "2026-05-20T00:00:00.000Z",
+        confianca_analise: "media",
+        analise_json: {
+          motivo: "Exige revisao humana em beta.",
+          confidence: "media",
+          review_required: true,
+        },
+      });
+      if (table === "monitored_processes") return chain(table, {
+        id: "process-1",
+        numero_processo: "0000001-11.2026.8.26.0100",
+        cliente_nome: "Cliente Teste",
+        tribunal: "TJSP",
+      });
+      return chain(table, null);
+    });
+
+    const response = await GET();
+    const payload = await response.json();
+
+    expect(response.status).toBe(200);
+    expect(payload.reviews).toEqual([expect.objectContaining({
+      id: "review-1",
+      agentic_governance: null,
+    })]);
   });
 
   it("lista revisoes travadas separadas das pendentes", async () => {
@@ -250,9 +364,17 @@ describe("/api/juridico/movement-reviews", () => {
   });
 
   it("recupera revisao travada com nota e auditoria", async () => {
+    const stuckReviewWithGovernance = {
+      ...stuckReviewRow,
+      payload: {
+        ...stuckReviewRow.payload,
+        agentic_governance: agenticGovernance,
+      },
+    };
+
     adminFromMock.mockImplementation((table: string) => {
       if (table === "profiles") return chain(table, { tenant_id: "tenant-1", role: "administrador" });
-      if (table === "system_event_logs") return chain(table, [stuckReviewRow]);
+      if (table === "system_event_logs") return chain(table, [stuckReviewWithGovernance]);
       if (table === "process_movimentacoes") return chain(table, null);
       if (table === "monitored_processes") return chain(table, null);
       return chain(table, null);
@@ -280,6 +402,24 @@ describe("/api/juridico/movement-reviews", () => {
         }),
       }),
     ]));
+    const recovered = updates.find((item) => item.table === "system_event_logs" && item.payload.status === "review_required");
+    expect(recovered?.payload.payload.agentic_governance).toEqual(expect.objectContaining({
+      openclaw: expect.objectContaining({
+        surface: "legal_decision",
+        outcome: "requires_approval",
+        reason: "Politica OpenClaw exige aprovacao humana para revisao juridica.",
+      }),
+      hermes: expect.objectContaining({
+        status: "waiting_approval",
+        last_event_type: "approval_requested",
+      }),
+    }));
+    const serializedRecovered = JSON.stringify(recovered?.payload.payload);
+    expect(serializedRecovered).not.toContain("openclaw_policy");
+    expect(serializedRecovered).not.toContain("hermes_trajectory");
+    expect(serializedRecovered).not.toContain("blocked_reason");
+    expect(serializedRecovered).not.toContain("mission_id");
+    expect(serializedRecovered).not.toContain("nao expor");
     expect(inserts).toEqual(expect.arrayContaining([
       expect.objectContaining({
         table: "system_event_logs",
@@ -317,6 +457,15 @@ describe("/api/juridico/movement-reviews", () => {
         payload: expect.objectContaining({ event_name: "legal_movement_review_ignored" }),
       }),
     ]));
+    const finalized = updates.find((item) => item.table === "system_event_logs" && item.payload.status === "ignored");
+    expect(finalized?.payload.payload.agentic_governance).toEqual(expect.objectContaining({
+      openclaw: expect.objectContaining({ surface: "legal_decision" }),
+      hermes: expect.objectContaining({ status: "waiting_approval" }),
+    }));
+    const serializedFinalized = JSON.stringify(finalized?.payload.payload);
+    expect(serializedFinalized).not.toContain("openclaw_policy");
+    expect(serializedFinalized).not.toContain("hermes_trajectory");
+    expect(serializedFinalized).not.toContain("nao expor");
   });
 
   it("aprova revisao criando card, prazo e auditoria", async () => {
@@ -325,6 +474,11 @@ describe("/api/juridico/movement-reviews", () => {
 
     expect(response.status).toBe(200);
     expect(payload.ok).toBe(true);
+    expect(payload.result.proactive_movement).toEqual(expect.objectContaining({
+      status: "prepared",
+      artifactId: "lex-proactive-artifact-1",
+      recommendedPieceLabel: "Manifestacao",
+    }));
     expect(inserts).toEqual(expect.arrayContaining([
       expect.objectContaining({
         table: "process_tasks",
@@ -341,6 +495,22 @@ describe("/api/juridico/movement-reviews", () => {
         payload: expect.objectContaining({ event_name: "legal_movement_review_approved" }),
       }),
     ]));
+    expect(prepareProactiveMovementDraftMock).toHaveBeenCalledWith(expect.objectContaining({
+      tenantId: "tenant-1",
+      processTaskId: "task-created-1",
+      processNumber: "0000001-11.2026.8.26.0100",
+      movementText: "Intimacao para manifestacao sobre peticao.",
+      movementDate: "2026-05-16",
+      movementId: "movement-1",
+      eventType: "PRAZO",
+      deadlineDescription: "Manifestar-se sobre peticao",
+      responsibleUserId: "user-1",
+      metadata: expect.objectContaining({
+        review_source: "human_approved_movement_review",
+        process_task_id: "task-created-1",
+        due_date: "2026-05-20T00:00:00.000Z",
+      }),
+    }));
     expect(upserts).toEqual(expect.arrayContaining([
       expect.objectContaining({
         table: "process_prazos",
@@ -363,6 +533,61 @@ describe("/api/juridico/movement-reviews", () => {
         payload: expect.objectContaining({ status: "approved" }),
       }),
     ]));
+    const finalized = updates.find((item) => item.table === "system_event_logs" && item.payload.status === "approved");
+    expect(finalized?.payload.payload.agentic_governance).toEqual(expect.objectContaining({
+      openclaw: expect.objectContaining({ requires_approval: true }),
+      hermes: expect.objectContaining({ last_event_type: "approval_requested" }),
+    }));
+    expect(finalized?.payload.payload.action_result).toEqual(expect.objectContaining({
+      proactive_movement: expect.objectContaining({
+        status: "prepared",
+        artifactId: "lex-proactive-artifact-1",
+      }),
+    }));
+    expect(JSON.stringify(finalized?.payload.payload)).not.toContain("blocked_reason");
+  });
+
+  it("mantem aprovacao quando Lex proativo falha apos card e prazo", async () => {
+    prepareProactiveMovementDraftMock.mockRejectedValueOnce(new Error("draft queue offline"));
+
+    const response = await POST(request({ review_id: "review-1", decision: "approved" }) as any);
+    const payload = await response.json();
+
+    expect(response.status).toBe(200);
+    expect(payload.ok).toBe(true);
+    expect(payload.result.proactive_movement).toEqual({
+      status: "failed",
+      reason: "draft queue offline",
+    });
+    expect(inserts).toEqual(expect.arrayContaining([
+      expect.objectContaining({
+        table: "process_tasks",
+        payload: expect.objectContaining({
+          tenant_id: "tenant-1",
+          prazo_fatal: "2026-05-20T00:00:00.000Z",
+        }),
+      }),
+      expect.objectContaining({
+        table: "system_event_logs",
+        payload: expect.objectContaining({ event_name: "legal_movement_review_approved" }),
+      }),
+    ]));
+    expect(upserts).toEqual(expect.arrayContaining([
+      expect.objectContaining({
+        table: "process_prazos",
+        payload: expect.objectContaining({
+          process_task_id: "task-created-1",
+          descricao: "Manifestar-se sobre peticao",
+        }),
+      }),
+    ]));
+    const finalized = updates.find((item) => item.table === "system_event_logs" && item.payload.status === "approved");
+    expect(finalized?.payload.payload.action_result).toEqual(expect.objectContaining({
+      proactive_movement: {
+        status: "failed",
+        reason: "draft queue offline",
+      },
+    }));
   });
 
   it("aprova revisao usando acao, vencimento e nota revisados", async () => {
@@ -449,6 +674,7 @@ describe("/api/juridico/movement-reviews", () => {
     ]));
     expect(inserts.filter((item) => item.table === "process_tasks")).toHaveLength(0);
     expect(upserts.filter((item) => item.table === "process_prazos")).toHaveLength(0);
+    expect(prepareProactiveMovementDraftMock).not.toHaveBeenCalled();
   });
 
   it("bloqueia aprovacao com acao revisada vazia", async () => {
@@ -477,6 +703,7 @@ describe("/api/juridico/movement-reviews", () => {
     ]));
     expect(inserts.filter((item) => item.table === "process_tasks")).toHaveLength(0);
     expect(upserts.filter((item) => item.table === "process_prazos")).toHaveLength(0);
+    expect(prepareProactiveMovementDraftMock).not.toHaveBeenCalled();
   });
 
   it("restaura pendencia quando criacao de card falha", async () => {
@@ -522,6 +749,7 @@ describe("/api/juridico/movement-reviews", () => {
       }),
     ]));
     expect(upserts.filter((item) => item.table === "process_prazos")).toHaveLength(0);
+    expect(prepareProactiveMovementDraftMock).not.toHaveBeenCalled();
   });
 
   it("bloqueia aprovacao quando pipeline juridica nao foi encontrada", async () => {
@@ -540,6 +768,7 @@ describe("/api/juridico/movement-reviews", () => {
     expect(payload.error).toContain("Pipeline juridica");
     expect(inserts.filter((item) => item.table === "process_tasks")).toHaveLength(0);
     expect(upserts.filter((item) => item.table === "process_prazos")).toHaveLength(0);
+    expect(prepareProactiveMovementDraftMock).not.toHaveBeenCalled();
     expect(updates).toEqual(expect.arrayContaining([
       expect.objectContaining({
         table: "system_event_logs",
@@ -615,6 +844,7 @@ describe("/api/juridico/movement-reviews", () => {
       }),
     ]));
     expect(upserts.filter((item) => item.table === "process_prazos")).toHaveLength(0);
+    expect(prepareProactiveMovementDraftMock).not.toHaveBeenCalled();
   });
 
   it("bloqueia arquivamento/extincao no beta", async () => {

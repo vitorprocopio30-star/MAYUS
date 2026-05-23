@@ -145,7 +145,7 @@ describe("tenant doctor", () => {
     expect(testbench?.nextAction).toContain("GPT-5.4 nano");
     const operatingPartner = report.checks.find((item) => item.id === "agent:mayus_operating_partner");
     expect(operatingPartner?.status).toBe("warning");
-    expect(operatingPartner?.nextAction).toContain("socio virtual");
+    expect(operatingPartner?.nextAction).toContain("Operating Partner supervisionado");
     const officeProfile = report.checks.find((item) => item.id === "office:knowledge_profile");
     expect(officeProfile?.status).toBe("warning");
     expect(officeProfile?.nextAction).toContain("Auto Setup Doctor");

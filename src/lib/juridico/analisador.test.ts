@@ -1,6 +1,6 @@
 import { beforeEach, describe, expect, it, vi } from "vitest";
 
-const { createClientMock, callLLMWithFallbackMock, prepareProactiveMovementDraftMock, inserts, upserts, updates, duplicatePrazoByMovement, processTaskInsertError, pipelineContextMock } = vi.hoisted(() => {
+const { createClientMock, callLLMWithFallbackMock, prepareProactiveMovementDraftMock, inserts, upserts, updates, duplicatePrazoByMovement, processTaskInsertError, missingPrazoRuleForEvent, pipelineContextMock } = vi.hoisted(() => {
   return {
     createClientMock: vi.fn(),
     callLLMWithFallbackMock: vi.fn(),
@@ -10,6 +10,7 @@ const { createClientMock, callLLMWithFallbackMock, prepareProactiveMovementDraft
     updates: [] as Array<{ table: string; payload: any }>,
     duplicatePrazoByMovement: { value: false },
     processTaskInsertError: { value: null as Error | null },
+    missingPrazoRuleForEvent: { value: null as string | null },
     pipelineContextMock: {
       value: {
         pipelineId: "pipeline-1",
@@ -78,6 +79,9 @@ function createChain(table: string): any {
         if (filters.tipo_evento === "PRAZO") {
           return { data: null, error: null };
         }
+        if (missingPrazoRuleForEvent.value === filters.tipo_evento) {
+          return { data: null, error: null };
+        }
 
         return {
           data: {
@@ -125,6 +129,7 @@ describe("analisarMovimentacao", () => {
     updates.length = 0;
     duplicatePrazoByMovement.value = false;
     processTaskInsertError.value = null;
+    missingPrazoRuleForEvent.value = null;
     pipelineContextMock.value = {
       pipelineId: "pipeline-1",
       linkedTaskContext: null,
@@ -180,6 +185,17 @@ describe("analisarMovimentacao", () => {
           tipo_evento: "SENTENCA",
           requer_acao: true,
           confianca_analise: "baixa",
+          analise_json: expect.objectContaining({
+            agentic_governance: expect.objectContaining({
+              openclaw_policy: expect.objectContaining({
+                requires_approval: true,
+                subject: expect.objectContaining({ surface: "legal_decision" }),
+              }),
+              hermes_trajectory: expect.objectContaining({
+                status: "waiting_approval",
+              }),
+            }),
+          }),
         }),
       }),
     ]));
@@ -242,7 +258,342 @@ describe("analisarMovimentacao", () => {
           acao_sugerida: "Cumprir determinação: Apresentar documentos",
           prazo_extraido_dias: 5,
           confianca_analise: "alta",
-          analise_json: expect.objectContaining({ origem: "deterministica" }),
+          analise_json: expect.objectContaining({
+            origem: "deterministica",
+            polo_representado: "autor",
+            obrigacao_de_quem: "escritorio",
+            confidence: "alta",
+            confidence_reason: expect.stringContaining("polo representado"),
+            review_required: false,
+            agentic_governance: expect.objectContaining({
+              openclaw_policy: expect.objectContaining({
+                can_execute_now: true,
+                subject: expect.objectContaining({ surface: "internal" }),
+              }),
+              hermes_trajectory: expect.objectContaining({
+                status: "completed",
+              }),
+            }),
+          }),
+        }),
+      }),
+    ]));
+  });
+
+  it("nao cria prazo de contestacao quando o escritorio representa o autor e a citacao e do reu", async () => {
+    callLLMWithFallbackMock.mockResolvedValue({
+      ok: true,
+      data: {
+        choices: [{ message: { content: JSON.stringify({ gerar: false, motivo: "Obrigacao da parte contraria" }) } }],
+      },
+      usedClient: { provider: "openai", model: "test", endpoint: "https://example.test", source: "env" },
+      fallbackTrace: [],
+    });
+    const { analisarMovimentacao } = await import("./analisador");
+
+    const result = await analisarMovimentacao({
+      processo_id: "process-1",
+      numero_cnj: "0000001-11.2026.8.26.0100",
+      tenant_id: "tenant-1",
+      movimentacao: {
+        id: "mov-citacao-reu",
+        conteudo: "Cite-se a parte re para apresentar contestacao no prazo de 15 dias uteis.",
+        data: "2026-05-13",
+      },
+      advogado_id: "lawyer-1",
+      escavador_movimentacao_id: "mov-citacao-reu",
+      process_movimentacao_id: "pm-citacao-reu",
+    });
+
+    expect(upserts.filter((item) => item.table === "process_prazos")).toHaveLength(0);
+    expect(result).toEqual(expect.objectContaining({
+      automation_status: "none",
+      requires_human_review: false,
+      requer_acao: false,
+      polo_representado: "autor",
+      obrigacao_de_quem: "parte_contraria",
+      review_required: false,
+    }));
+    expect(updates).toEqual(expect.arrayContaining([
+      expect.objectContaining({
+        table: "process_movimentacoes",
+        payload: expect.objectContaining({
+          tipo_evento: "PRAZO",
+          requer_acao: false,
+          analise_json: expect.objectContaining({
+            polo_representado: "autor",
+            obrigacao_de_quem: "parte_contraria",
+            confidence: "alta",
+            confidence_reason: expect.stringContaining("polo contrario"),
+            evidencia: expect.stringContaining("prazo de 15 dias"),
+            review_required: false,
+          }),
+        }),
+      }),
+    ]));
+  });
+
+  it("nao cria prazo de contrarrazoes quando o recurso foi interposto pelo proprio polo representado", async () => {
+    callLLMWithFallbackMock.mockResolvedValue({
+      ok: true,
+      data: {
+        choices: [{ message: { content: JSON.stringify({ gerar: false, motivo: "Recurso ja interposto pelo cliente" }) } }],
+      },
+      usedClient: { provider: "openai", model: "test", endpoint: "https://example.test", source: "env" },
+      fallbackTrace: [],
+    });
+    const { analisarMovimentacao } = await import("./analisador");
+
+    const result = await analisarMovimentacao({
+      processo_id: "process-1",
+      numero_cnj: "0000001-11.2026.8.26.0100",
+      tenant_id: "tenant-1",
+      movimentacao: {
+        id: "mov-recurso-proprio",
+        conteudo: "Recurso de apelacao interposto pela parte autora.",
+        data: "2026-05-13",
+      },
+      advogado_id: "lawyer-1",
+      escavador_movimentacao_id: "mov-recurso-proprio",
+      process_movimentacao_id: "pm-recurso-proprio",
+    });
+
+    expect(upserts.filter((item) => item.table === "process_prazos")).toHaveLength(0);
+    expect(inserts.filter((item) => item.table === "process_tasks")).toHaveLength(0);
+    expect(inserts.filter((item) => item.table === "system_event_logs")).toHaveLength(0);
+    expect(prepareProactiveMovementDraftMock).not.toHaveBeenCalled();
+    expect(result).toEqual(expect.objectContaining({
+      automation_status: "none",
+      requires_human_review: false,
+      tipo_evento: "RECURSO",
+      requer_acao: false,
+      polo_representado: "autor",
+      obrigacao_de_quem: "parte_contraria",
+      review_required: false,
+    }));
+    expect(updates).toEqual(expect.arrayContaining([
+      expect.objectContaining({
+        table: "process_movimentacoes",
+        payload: expect.objectContaining({
+          tipo_evento: "RECURSO",
+          requer_acao: false,
+          analise_json: expect.objectContaining({
+            motivo: expect.stringContaining("parte contraria"),
+            polo_representado: "autor",
+            obrigacao_de_quem: "parte_contraria",
+            confidence: "alta",
+            review_required: false,
+          }),
+        }),
+      }),
+    ]));
+  });
+
+  it("nao cria card ou draft para agravo proprio mesmo sem regra de prazo recursal", async () => {
+    missingPrazoRuleForEvent.value = "RECURSO";
+    callLLMWithFallbackMock.mockResolvedValue({
+      ok: true,
+      data: {
+        choices: [{ message: { content: JSON.stringify({ gerar: false, motivo: "Agravo ja interposto pelo cliente" }) } }],
+      },
+      usedClient: { provider: "openai", model: "test", endpoint: "https://example.test", source: "env" },
+      fallbackTrace: [],
+    });
+    const { analisarMovimentacao } = await import("./analisador");
+
+    const result = await analisarMovimentacao({
+      processo_id: "process-1",
+      numero_cnj: "0000001-11.2026.8.26.0100",
+      tenant_id: "tenant-1",
+      movimentacao: {
+        id: "mov-agravo-proprio",
+        conteudo: "Agravo de instrumento interposto pela parte autora.",
+        data: "2026-05-13",
+      },
+      advogado_id: "lawyer-1",
+      escavador_movimentacao_id: "mov-agravo-proprio",
+      process_movimentacao_id: "pm-agravo-proprio",
+    });
+
+    expect(upserts.filter((item) => item.table === "process_prazos")).toHaveLength(0);
+    expect(inserts.filter((item) => item.table === "process_tasks")).toHaveLength(0);
+    expect(prepareProactiveMovementDraftMock).not.toHaveBeenCalled();
+    expect(result).toEqual(expect.objectContaining({
+      automation_status: "none",
+      tipo_evento: "RECURSO",
+      requer_acao: false,
+      polo_representado: "autor",
+      obrigacao_de_quem: "parte_contraria",
+    }));
+    expect(updates).toEqual(expect.arrayContaining([
+      expect.objectContaining({
+        table: "process_movimentacoes",
+        payload: expect.objectContaining({
+          tipo_evento: "RECURSO",
+          requer_acao: false,
+          analise_json: expect.objectContaining({
+            polo_representado: "autor",
+            obrigacao_de_quem: "parte_contraria",
+            confidence: "alta",
+            review_required: false,
+          }),
+        }),
+      }),
+    ]));
+  });
+
+  it("reconhece papel recursal apelante do polo representado como ato proprio", async () => {
+    callLLMWithFallbackMock.mockResolvedValue({
+      ok: true,
+      data: {
+        choices: [{ message: { content: JSON.stringify({ gerar: false, motivo: "Autor consta como apelante" }) } }],
+      },
+      usedClient: { provider: "openai", model: "test", endpoint: "https://example.test", source: "env" },
+      fallbackTrace: [],
+    });
+    const { analisarMovimentacao } = await import("./analisador");
+
+    const result = await analisarMovimentacao({
+      processo_id: "process-1",
+      numero_cnj: "0000001-11.2026.8.26.0100",
+      tenant_id: "tenant-1",
+      movimentacao: {
+        id: "mov-apelante-proprio",
+        conteudo: "Classe alterada para Apelacao. Parte autora apelante. Vista a parte apelada para contrarrazoes.",
+        data: "2026-05-13",
+      },
+      advogado_id: "lawyer-1",
+      escavador_movimentacao_id: "mov-apelante-proprio",
+      process_movimentacao_id: "pm-apelante-proprio",
+    });
+
+    expect(upserts.filter((item) => item.table === "process_prazos")).toHaveLength(0);
+    expect(inserts.filter((item) => item.table === "process_tasks")).toHaveLength(0);
+    expect(prepareProactiveMovementDraftMock).not.toHaveBeenCalled();
+    expect(result).toEqual(expect.objectContaining({
+      automation_status: "none",
+      tipo_evento: "RECURSO",
+      requer_acao: false,
+      obrigacao_de_quem: "parte_contraria",
+      confidence: "alta",
+    }));
+  });
+
+  it("mantem prazo de contrarrazoes quando o polo representado aparece como apelado", async () => {
+    callLLMWithFallbackMock.mockResolvedValue({
+      ok: true,
+      data: {
+        choices: [{ message: { content: JSON.stringify({ gerar: false, motivo: "Autor consta como apelado" }) } }],
+      },
+      usedClient: { provider: "openai", model: "test", endpoint: "https://example.test", source: "env" },
+      fallbackTrace: [],
+    });
+    const { analisarMovimentacao } = await import("./analisador");
+
+    const result = await analisarMovimentacao({
+      processo_id: "process-1",
+      numero_cnj: "0000001-11.2026.8.26.0100",
+      tenant_id: "tenant-1",
+      movimentacao: {
+        id: "mov-apelado-proprio",
+        conteudo: "Classe alterada para Apelacao. Parte autora apelada. Prazo de 15 dias uteis para apresentar contrarrazoes.",
+        data: "2026-05-13",
+      },
+      advogado_id: "lawyer-1",
+      escavador_movimentacao_id: "mov-apelado-proprio",
+      process_movimentacao_id: "pm-apelado-proprio",
+    });
+
+    expect(result).toEqual(expect.objectContaining({
+      automation_status: "deadline_card_created",
+      tipo_evento: "PRAZO",
+      requer_acao: true,
+      polo_representado: "autor",
+      obrigacao_de_quem: "escritorio",
+      confidence: "alta",
+    }));
+    expect(upserts).toEqual(expect.arrayContaining([
+      expect.objectContaining({
+        table: "process_prazos",
+        payload: expect.objectContaining({
+          descricao: expect.stringContaining("Apresentar contrarrazoes"),
+          escavador_movimentacao_id: "mov-apelado-proprio",
+        }),
+      }),
+    ]));
+    expect(prepareProactiveMovementDraftMock).toHaveBeenCalledWith(expect.objectContaining({
+      eventType: "PRAZO",
+      metadata: expect.objectContaining({
+        obrigacao_de_quem: "escritorio",
+        polo_representado: "autor",
+        confidence: "alta",
+      }),
+    }));
+    expect(updates).toEqual(expect.arrayContaining([
+      expect.objectContaining({
+        table: "process_movimentacoes",
+        payload: expect.objectContaining({
+          tipo_evento: "PRAZO",
+          requer_acao: true,
+          analise_json: expect.objectContaining({
+            polo_representado: "autor",
+            obrigacao_de_quem: "escritorio",
+            confidence_reason: expect.stringContaining("parte recorrida"),
+            review_required: false,
+          }),
+        }),
+      }),
+    ]));
+  });
+
+  it("mantem prazo de contrarrazoes quando o recurso foi interposto pela parte contraria", async () => {
+    callLLMWithFallbackMock.mockResolvedValue({
+      ok: true,
+      data: {
+        choices: [{ message: { content: JSON.stringify({ gerar: false, motivo: "Recurso da parte contraria" }) } }],
+      },
+      usedClient: { provider: "openai", model: "test", endpoint: "https://example.test", source: "env" },
+      fallbackTrace: [],
+    });
+    const { analisarMovimentacao } = await import("./analisador");
+
+    await analisarMovimentacao({
+      processo_id: "process-1",
+      numero_cnj: "0000001-11.2026.8.26.0100",
+      tenant_id: "tenant-1",
+      movimentacao: {
+        id: "mov-recurso-contrario",
+        conteudo: "Recurso de apelacao interposto pela parte re. Prazo de 15 dias uteis para apresentar contrarrazoes.",
+        data: "2026-05-13",
+      },
+      advogado_id: "lawyer-1",
+      escavador_movimentacao_id: "mov-recurso-contrario",
+      process_movimentacao_id: "pm-recurso-contrario",
+    });
+
+    expect(upserts).toEqual(expect.arrayContaining([
+      expect.objectContaining({
+        table: "process_prazos",
+        payload: expect.objectContaining({
+          tipo: "prazo",
+          descricao: expect.stringContaining("Apresentar contrarrazoes"),
+          escavador_movimentacao_id: "mov-recurso-contrario",
+          criado_por_ia: true,
+        }),
+      }),
+    ]));
+    expect(updates).toEqual(expect.arrayContaining([
+      expect.objectContaining({
+        table: "process_movimentacoes",
+        payload: expect.objectContaining({
+          tipo_evento: "PRAZO",
+          requer_acao: true,
+          analise_json: expect.objectContaining({
+            polo_representado: "autor",
+            obrigacao_de_quem: "escritorio",
+            confidence: "alta",
+            review_required: false,
+          }),
         }),
       }),
     ]));

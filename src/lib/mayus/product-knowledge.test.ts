@@ -5,9 +5,8 @@ describe("answerMayusProductQuestion", () => {
   it("responde sobre o MAYUS com base interna e fontes", () => {
     const result = answerMayusProductQuestion("O que e o MAYUS e o que ele executa?");
 
-    expect(result.answer).toContain("socio operacional de IA");
+    expect(result.answer).toContain("camada de inteligencia operacional e de gestao");
     expect(result.answer).toContain("Brain");
     expect(result.sources.length).toBeGreaterThan(0);
   });
 });
-
