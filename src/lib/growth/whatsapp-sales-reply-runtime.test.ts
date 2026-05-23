@@ -1316,10 +1316,19 @@ describe("prepareWhatsAppSalesReplyForContact", () => {
         senderPhoneAuthorized: true,
         processTaskId: "process-owner-1",
       }),
+      whatsappActorContext: expect.objectContaining({
+        role: "office_operator",
+        sender_phone_authorized: true,
+        reason: "daily_playbook_authorized_phone",
+      }),
     }));
     expect(prepared.metadata.process_status_context).toEqual(expect.objectContaining({
       accessScope: "tenant_authorized",
       senderPhoneAuthorized: true,
+    }));
+    expect(prepared.metadata.whatsapp_actor_context).toEqual(expect.objectContaining({
+      role: "office_operator",
+      sender_phone_authorized: true,
     }));
   });
 

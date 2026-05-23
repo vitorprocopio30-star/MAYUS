@@ -32,6 +32,61 @@ describe("mayus-operating-partner", () => {
     });
   });
 
+  function operatingPartnerPayload(overrides: Record<string, any> = {}) {
+    const conversationState = {
+      conversation_role: "support",
+      conversation_goal: "atender no WhatsApp com naturalidade e seguranca",
+      customer_temperature: "existing_client",
+      stage: "client_support",
+      facts_known: [],
+      missing_information: [],
+      objections: [],
+      urgency: "none",
+      decision_maker: "unknown",
+      documents_requested: [],
+      last_customer_message: "",
+      last_mayus_message: null,
+      last_commitment: null,
+      next_action: "responder com seguranca",
+      has_mayus_introduced: true,
+      conversation_summary: "Atendimento em andamento.",
+      ...(overrides.conversation_state || {}),
+    };
+
+    return {
+      reply: "Oi, tudo bem? Como posso ajudar?",
+      intent: "client_support",
+      confidence: 0.9,
+      risk_flags: [],
+      next_action: conversationState.next_action,
+      closing_readiness: { score: 0, status: "not_ready", reasons: [] },
+      support_summary: { is_existing_client: true, issue_type: "support", verified_case_reference: false, summary: "atendimento" },
+      reasoning_summary_for_team: "Resposta natural gerada com contexto do Conversation Brain.",
+      actions_to_execute: [],
+      requires_approval: false,
+      should_auto_send: true,
+      expected_outcome: "avancar a conversa sem inventar informacao",
+      ...overrides,
+      conversation_state: {
+        ...conversationState,
+        ...(overrides.conversation_state || {}),
+      },
+    };
+  }
+
+  function operatingPartnerFetcher(payload: Record<string, any>) {
+    return vi.fn(async () => ({
+      ok: true,
+      json: async () => ({
+        choices: [{
+          message: {
+            content: JSON.stringify(operatingPartnerPayload(payload)),
+          },
+        }],
+      }),
+    })) as any;
+  }
+
   it("normaliza a configuracao do Operating Partner com autonomia alta supervisionada", () => {
     const config = normalizeMayusOperatingPartnerConfig({
       enabled: true,
@@ -572,7 +627,8 @@ describe("mayus-operating-partner", () => {
 
     expect(prompt).toContain("Nome da assistente no WhatsApp: Maya");
     expect(prompt).toContain("Nem todo cliente pergunta apenas de processo");
-    expect(decision.reply).toContain("Maya");
+    expect(decision.reply).toContain("me adianta em poucas palavras");
+    expect(decision.reply).not.toMatch(/Aqui é a Maya|assistente do Dutra/i);
     expect(decision.actions_to_execute).toEqual(expect.arrayContaining([
       expect.objectContaining({ type: "create_task", requires_approval: false }),
     ]));
@@ -637,14 +693,21 @@ describe("mayus-operating-partner", () => {
       fetcher,
     });
 
-    expect(decision.reply).toBe("Boa noite, Vitor. Aqui é a Maya, assistente do Dutra. Como posso te ajudar?");
+    expect(decision.reply).toBe("Boa noite, Vitor. Como posso ajudar?");
     expect(decision.reply).not.toMatch(/cnj|processo|nome completo/i);
   });
 
   it("apresenta Maya mesmo se evento anterior dizia introduzido mas historico recente nao mostra apresentacao", async () => {
-    const fetcher = vi.fn(async () => {
-      throw new Error("LLM nao deveria ser chamada");
-    }) as any;
+    const fetcher = operatingPartnerFetcher({
+      reply: "Boa noite, Vitor Procópio. Como posso ajudar?",
+      intent: "client_support",
+      next_action: "perguntar como ajudar sem retomar processo antigo",
+      conversation_state: {
+        last_customer_message: "Boa noite",
+        next_action: "perguntar como ajudar sem retomar processo antigo",
+        conversation_summary: "Saudacao pura.",
+      },
+    });
 
     const decision = await buildMayusOperatingPartnerDecision({
       supabase: {} as any,
@@ -661,8 +724,10 @@ describe("mayus-operating-partner", () => {
       fetcher,
     });
 
-    expect(fetcher).not.toHaveBeenCalled();
-    expect(decision.reply).toBe("Boa noite, Vitor Procópio. Aqui é a Maya, assistente do Dutra. Como posso te ajudar?");
+    expect(fetcher).toHaveBeenCalledTimes(1);
+    expect(decision.reply).toBe("Boa noite, Vitor Procópio. Como posso ajudar?");
+    expect(decision.conversation_frame?.resolution_type).toBe("greeting");
+    expect(decision.final_response_source).toBe("llm_natural");
   });
 
   it("nao usa MAYUS como nome visivel do escritorio na apresentacao", async () => {
@@ -681,7 +746,7 @@ describe("mayus-operating-partner", () => {
       fetcher,
     });
 
-    expect(decision.reply).toBe("Boa noite, Vitor Procópio. Aqui é a Maya, assistente do escritório. Como posso te ajudar?");
+    expect(decision.reply).toBe("Boa noite, Vitor Procópio. Como posso ajudar?");
     expect(decision.reply).not.toContain("assistente do MAYUS");
   });
 
@@ -692,7 +757,7 @@ describe("mayus-operating-partner", () => {
         choices: [{
           message: {
             content: JSON.stringify({
-              reply: "Boa noite, Vitor. Esse processo do Márcio é sobre benefício, consignado ou execução?",
+              reply: "Claro. Para eu localizar com segurança, me mande o nome completo do cliente ou o número do processo.",
               intent: "process_status",
               confidence: 0.9,
               risk_flags: [],
@@ -744,16 +809,26 @@ describe("mayus-operating-partner", () => {
       fetcher,
     });
 
-    expect(decision.reply).toBe("Vitor, aqui é a Maya, assistente do Dutra. Claro. Para eu localizar com segurança, me mande o nome completo do cliente ou o número do processo.");
+    expect(decision.reply).toBe("Claro. Para eu localizar com segurança, me mande o nome completo do cliente ou o número do processo.");
     expect(decision.reply).not.toContain("Márcio");
     expect(decision.should_auto_send).toBe(true);
     expect(decision.requires_approval).toBe(false);
   });
 
-  it("pedido generico de um processo sem contexto nao pergunta tema nem reutiliza processo antigo", async () => {
-    const fetcher = vi.fn(async () => {
-      throw new Error("LLM nao deveria ser chamada");
-    }) as any;
+  it("pedido generico de um processo sem contexto pede identificador sem roteiro nem contexto antigo", async () => {
+    const fetcher = operatingPartnerFetcher({
+      reply: "Claro. Para eu localizar com segurança, me confirme seu nome completo ou o número do processo.",
+      intent: "process_status",
+      next_action: "pedir identificador minimo",
+      conversation_state: {
+        conversation_role: "case_status",
+        conversation_goal: "localizar processo com identificador minimo",
+        last_customer_message: "Gostaria de saber sobre um processo",
+        next_action: "pedir identificador minimo",
+        conversation_summary: "Pedido generico de processo sem referencia atual.",
+      },
+      support_summary: { is_existing_client: true, issue_type: "process_status", verified_case_reference: false, summary: "sem identificador" },
+    });
 
     const decision = await buildMayusOperatingPartnerDecision({
       supabase: {} as any,
@@ -772,17 +847,28 @@ describe("mayus-operating-partner", () => {
       fetcher,
     });
 
-    expect(fetcher).not.toHaveBeenCalled();
-    expect(decision.reply).toBe("Vitor Procópio, aqui é a Maya, assistente do Dutra. Claro. Para eu localizar com segurança, me confirme seu nome completo ou o número do processo.");
+    expect(fetcher).toHaveBeenCalledTimes(1);
+    expect(decision.reply).toBe("Claro. Para eu localizar com segurança, me confirme seu nome completo ou o número do processo.");
     expect(decision.reply).not.toMatch(/M[áa]rcio|tema|assunto|banco|RMC|benef[ií]cio|execu[cç][aã]o|fam[ií]lia/i);
     expect(decision.should_auto_send).toBe(true);
     expect(decision.requires_approval).toBe(false);
+    expect(decision.conversation_frame?.resolution_type).toBe("generic_process_request");
   });
 
-  it("responde cobranca curta de status sem chamar LLM", async () => {
-    const fetcher = vi.fn(async () => {
-      throw new Error("LLM nao deveria ser chamada");
-    }) as any;
+  it("responde cobranca curta de status com LLM guiado pelo frame", async () => {
+    const fetcher = operatingPartnerFetcher({
+      reply: "Estou localizando com segurança. Me manda o número do processo/CNJ ou o nome completo para eu conferir certinho.",
+      intent: "process_status",
+      next_action: "pedir identificador minimo",
+      conversation_state: {
+        conversation_role: "case_status",
+        conversation_goal: "localizar processo com identificador minimo",
+        last_customer_message: "Cadê?",
+        next_action: "pedir identificador minimo",
+        conversation_summary: "Cliente cobrou retorno depois de pedido generico de processo.",
+      },
+      support_summary: { is_existing_client: true, issue_type: "process_status", verified_case_reference: false, summary: "sem identificador" },
+    });
 
     const decision = await buildMayusOperatingPartnerDecision({
       supabase: {} as any,
@@ -799,7 +885,7 @@ describe("mayus-operating-partner", () => {
       fetcher,
     });
 
-    expect(fetcher).not.toHaveBeenCalled();
+    expect(fetcher).toHaveBeenCalledTimes(1);
     expect(decision.reply).toContain("Estou localizando com segurança");
     expect(decision.reply).toContain("número do processo/CNJ");
     expect(decision.reply).not.toMatch(/tema|assunto|banco|rmc/i);
@@ -807,9 +893,19 @@ describe("mayus-operating-partner", () => {
   });
 
   it("pede CNJ ou documento quando nome completo nao localiza processo", async () => {
-    const fetcher = vi.fn(async () => {
-      throw new Error("LLM nao deveria ser chamada");
-    }) as any;
+    const fetcher = operatingPartnerFetcher({
+      reply: "Não localizei com segurança por esse nome. Me manda o número do processo/CNJ ou CPF/CNPJ para eu conferir na base.",
+      intent: "process_status",
+      next_action: "pedir identificador adicional",
+      conversation_state: {
+        conversation_role: "case_status",
+        conversation_goal: "localizar processo sem inventar status",
+        last_customer_message: "Márcio da Silva Machado",
+        next_action: "pedir identificador adicional",
+        conversation_summary: "Nome informado nao localizou processo com seguranca.",
+      },
+      support_summary: { is_existing_client: true, issue_type: "process_status", verified_case_reference: false, summary: "nome sem match confiavel" },
+    });
 
     const decision = await buildMayusOperatingPartnerDecision({
       supabase: {} as any,
@@ -827,7 +923,7 @@ describe("mayus-operating-partner", () => {
       fetcher,
     });
 
-    expect(fetcher).not.toHaveBeenCalled();
+    expect(fetcher).toHaveBeenCalledTimes(1);
     expect(decision.reply).toContain("Não localizei com segurança");
     expect(decision.reply).toMatch(/processo\/CNJ|CPF\/CNPJ/);
     expect(decision.reply).not.toMatch(/tema|assunto|banco|rmc/i);
@@ -836,9 +932,19 @@ describe("mayus-operating-partner", () => {
   });
 
   it("lista processos encontrados em vez de dizer que nao localizou quando ha mais de um candidato", async () => {
-    const fetcher = vi.fn(async () => {
-      throw new Error("LLM nao deveria ser chamada");
-    }) as any;
+    const fetcher = operatingPartnerFetcher({
+      reply: "Achei mais de um processo para Márcio da Silva Machado: 3333333-33.2024.8.26.0100, em réplica, e 4444444-44.2024.8.26.0100, em conhecimento. Qual deles você quer que eu detalhe primeiro?",
+      intent: "process_status",
+      next_action: "pedir escolha entre candidatos encontrados",
+      conversation_state: {
+        conversation_role: "case_status",
+        conversation_goal: "desambiguar processos encontrados",
+        last_customer_message: "Márcio da Silva Machado",
+        next_action: "pedir escolha entre candidatos encontrados",
+        conversation_summary: "Mais de um processo encontrado para o cliente.",
+      },
+      support_summary: { is_existing_client: true, issue_type: "process_status", verified_case_reference: false, summary: "mais de um candidato" },
+    });
 
     const decision = await buildMayusOperatingPartnerDecision({
       supabase: {} as any,
@@ -880,17 +986,173 @@ describe("mayus-operating-partner", () => {
       fetcher,
     });
 
-    expect(fetcher).not.toHaveBeenCalled();
-    expect(decision.reply).toContain("Encontrei mais de um processo para Márcio da Silva Machado");
+    expect(fetcher).toHaveBeenCalledTimes(1);
+    expect(decision.reply).toContain("Achei mais de um processo para Márcio da Silva Machado");
     expect(decision.reply).toContain("3333333-33.2024.8.26.0100");
     expect(decision.reply).toContain("4444444-44.2024.8.26.0100");
     expect(decision.reply).not.toContain("Não localizei");
   });
 
-  it("troca contexto de processo para triagem de desconto sem chamar LLM", async () => {
-    const fetcher = vi.fn(async () => {
-      throw new Error("LLM nao deveria ser chamada");
-    }) as any;
+  it("responde oi mayus sem puxar contexto antigo ou se reapresentar", async () => {
+    const fetcher = operatingPartnerFetcher({
+      reply: "Oi, Vitor, tudo bem? Como posso ajudar?",
+      intent: "client_support",
+      next_action: "perguntar como ajudar sem retomar processo antigo",
+      conversation_state: {
+        last_customer_message: "Oi mayus",
+        next_action: "perguntar como ajudar sem retomar processo antigo",
+        conversation_summary: "Operador interno apenas saudou o MAYUS.",
+      },
+    });
+
+    const decision = await buildMayusOperatingPartnerDecision({
+      supabase: {} as any,
+      tenantId: "tenant-1",
+      channel: "whatsapp",
+      contactName: "Vitor",
+      messages: [
+        { direction: "inbound", content: "E as custas?" },
+        { direction: "outbound", content: "Não vi confirmação de custas na base. Deixei como ponto de conferência." },
+        { direction: "inbound", content: "Oi mayus" },
+      ],
+      whatsappActorContext: { role: "office_operator", sender_phone_authorized: true, reason: "daily_playbook_authorized_phone" },
+      processStatusContext: {
+        verified: true,
+        confidence: "medium",
+        accessScope: "tenant_authorized",
+        senderPhoneAuthorized: true,
+        processTaskId: "process-1",
+        clientName: "Maria Silva",
+        processNumber: "1234567-89.2024.8.26.0100",
+        title: "Maria x Banco",
+        currentStage: "Recurso",
+        detectedPhase: "recurso",
+        detectedPhaseLabel: "recurso",
+        lastMovementAt: "2026-05-20",
+        lastMovementText: "Intimacao sobre custas/preparo",
+        deadlineAt: null,
+        pendingItems: ["confirmar custas/preparo"],
+        nextStep: "conferir custas/preparo",
+        riskFlags: [],
+        clientReply: null,
+        grounding: { factualSources: ["processo monitorado"], inferenceNotes: [], missingSignals: ["confirmacao de custas/preparo"] },
+      },
+      officeKnowledgeProfile: { assistantName: "Maya", officeName: "Dutra Advocacia" },
+      operatingPartner: { enabled: true, autonomy_mode: "high_supervised" },
+      fetcher,
+    });
+
+    expect(fetcher).toHaveBeenCalledTimes(1);
+    expect(decision.reply).toBe("Oi, Vitor, tudo bem? Como posso ajudar?");
+    expect(decision.reply).not.toMatch(/custas|processo|Maya|assistente|Dutra/i);
+    expect(decision.next_action).toBe("perguntar como ajudar sem retomar processo antigo");
+    expect(decision.requires_approval).toBe(false);
+    expect(decision.conversation_frame?.resolution_type).toBe("greeting");
+    expect(decision.quality_check?.status).toBe("pass");
+  });
+
+  it("remove reapresentacao robotica quando operador envia nome do cliente", async () => {
+    const fetcher = vi.fn(async () => ({
+      ok: true,
+      json: async () => ({
+        choices: [{
+          message: {
+            content: JSON.stringify({
+              reply: "Oi, Vitor! Aqui é a Maya, assistente do Dutra Advocacia. Localizei o processo do cliente Marcio contra o Banco Bradesco. Ele está em fase de conhecimento e sem prazo crítico na base.",
+              intent: "process_status",
+              confidence: 0.91,
+              risk_flags: [],
+              next_action: "responder processo localizado",
+              conversation_state: {
+                conversation_role: "case_status",
+                conversation_goal: "responder status processual para operador interno",
+                customer_temperature: "existing_client",
+                stage: "client_support",
+                facts_known: ["operador informou nome do cliente", "processo verificado"],
+                missing_information: [],
+                objections: [],
+                urgency: "none",
+                decision_maker: "unknown",
+                documents_requested: [],
+                last_customer_message: "Marcio da Silva Machado",
+                last_mayus_message: "Claro. Para eu localizar com segurança, me mande o nome completo do cliente ou o número do processo.",
+                last_commitment: null,
+                next_action: "responder processo localizado",
+                has_mayus_introduced: true,
+                conversation_summary: "Operador interno pediu processo por nome.",
+              },
+              closing_readiness: { score: 0, status: "not_ready", reasons: [] },
+              support_summary: { is_existing_client: true, issue_type: "process_status", verified_case_reference: true, summary: "status processual" },
+              reasoning_summary_for_team: "Processo verificado para operador autorizado.",
+              actions_to_execute: [{ type: "answer_support", title: "Responder status processual", requires_approval: false }],
+              requires_approval: false,
+              should_auto_send: true,
+              expected_outcome: "operador entende status",
+            }),
+          },
+        }],
+      }),
+    })) as any;
+
+    const decision = await buildMayusOperatingPartnerDecision({
+      supabase: {} as any,
+      tenantId: "tenant-1",
+      channel: "whatsapp",
+      contactName: "Vitor",
+      messages: [
+        { direction: "inbound", content: "Quero saber sobre um processo" },
+        { direction: "outbound", content: "Claro. Para eu localizar com segurança, me mande o nome completo do cliente ou o número do processo." },
+        { direction: "inbound", content: "Marcio da Silva Machado" },
+      ],
+      whatsappActorContext: { role: "office_operator", sender_phone_authorized: true, reason: "daily_playbook_authorized_phone" },
+      processStatusContext: {
+        verified: true,
+        confidence: "high",
+        accessScope: "tenant_authorized",
+        senderPhoneAuthorized: true,
+        processTaskId: "process-marcio-1",
+        clientName: "Marcio da Silva Machado",
+        processNumber: "3333333-33.2024.8.26.0100",
+        title: "Marcio x Banco Bradesco",
+        currentStage: "Conhecimento",
+        detectedPhase: "sem_fase_confiavel",
+        detectedPhaseLabel: null,
+        lastMovementAt: "2026-05-20",
+        lastMovementText: "Aguardando movimentacao",
+        deadlineAt: null,
+        pendingItems: [],
+        nextStep: "acompanhar movimentacao",
+        riskFlags: [],
+        clientReply: null,
+        grounding: { factualSources: ["processo monitorado"], inferenceNotes: [], missingSignals: [] },
+      },
+      operatingPartner: { enabled: true, autonomy_mode: "high_supervised" },
+      fetcher,
+    });
+
+    expect(fetcher).toHaveBeenCalledTimes(1);
+    expect(decision.reply).toContain("Localizei o processo do cliente Marcio");
+    expect(decision.reply).not.toMatch(/Aqui é a Maya|assistente do Dutra|Oi, Vitor/i);
+    expect(decision.should_auto_send).toBe(true);
+  });
+
+  it("troca contexto de processo para triagem de desconto com conversa natural", async () => {
+    const fetcher = operatingPartnerFetcher({
+      reply: "Entendi. Agora é sobre o desconto no contracheque. Ele aparece com qual nome no documento?",
+      intent: "legal_triage",
+      next_action: "qualificar desconto no contracheque",
+      conversation_state: {
+        conversation_role: "legal_triage",
+        conversation_goal: "qualificar nova demanda sem contaminar com processo antigo",
+        last_customer_message: "Tenho desconto no contracheque",
+        next_action: "qualificar desconto no contracheque",
+        conversation_summary: "Interlocutor mudou de processo para triagem de desconto.",
+        facts_known: ["desconto no contracheque"],
+        missing_information: ["nome do desconto"],
+      },
+      support_summary: { is_existing_client: true, issue_type: "none", verified_case_reference: false, summary: "triagem comercial/juridica" },
+      actions_to_execute: [{ type: "create_crm_lead", title: "Registrar triagem de desconto", requires_approval: false }],
+    });
 
     const decision = await buildMayusOperatingPartnerDecision({
       supabase: {} as any,
@@ -908,7 +1170,7 @@ describe("mayus-operating-partner", () => {
       fetcher,
     });
 
-    expect(fetcher).not.toHaveBeenCalled();
+    expect(fetcher).toHaveBeenCalledTimes(1);
     expect(decision.intent).toBe("legal_triage");
     expect(decision.reply).toContain("desconto no contracheque");
     expect(decision.reply).toContain("aparece com qual nome");
@@ -1017,7 +1279,7 @@ describe("mayus-operating-partner", () => {
           choices: [{
             message: {
               content: JSON.stringify({
-                reply: "Oi, Marcio. Verifiquei aqui com segurança. Seu processo está na fase de réplica. Última movimentação: contestação juntada. Próximo passo: a equipe revisar a defesa da outra parte.",
+                reply: "Localizei o processo do cliente Marcio com seguranca. Ele esta na fase de replica. Ultima movimentacao: contestacao juntada. Proximo passo: a equipe revisar a defesa da outra parte.",
                 intent: "process_status",
                 confidence: 0.9,
                 risk_flags: [],
@@ -1194,6 +1456,89 @@ describe("mayus-operating-partner", () => {
     expect(decision.should_auto_send).toBe(true);
   });
 
+  it("responde referencia curta ao Banco Master sem perguntar assunto nem misturar outros processos", async () => {
+    const fetcher = operatingPartnerFetcher({
+      reply: "A do Banco Master está em Recurso. O ponto atual é gratuidade/custas em recurso e o último registro na base é: Sem decisão nova registrada.",
+      intent: "process_status",
+      next_action: "responder o candidato processual referenciado",
+      conversation_state: {
+        conversation_role: "case_status",
+        conversation_goal: "acompanhar processos do cliente",
+        last_customer_message: "E a do banco master ?",
+        next_action: "responder o candidato processual referenciado",
+        conversation_summary: "Operador pediu detalhe do candidato Banco Master.",
+        facts_known: ["referencia ao Banco Master", "fase Recurso", "gratuidade/custas em recurso"],
+        missing_information: [],
+      },
+      support_summary: { is_existing_client: true, issue_type: "process_status", verified_case_reference: true, summary: "referencia curta resolvida" },
+      actions_to_execute: [{ type: "answer_support", title: "Responder processo referenciado", requires_approval: false }],
+    });
+
+    const lastProcessCandidates = [
+      { processTaskId: "master", clientName: "Márcio da Silva Machado", processNumber: "3000144-50.2026.8.19.0213", title: "Márcio x Banco Master", opposingParty: "Banco Master", summary: "gratuidade/custas em recurso", currentStage: "Recurso", lastMovementAt: "2026-04-30", lastMovementText: "Sem decisão nova registrada" },
+      { processTaskId: "bradesco", clientName: "Márcio da Silva Machado", processNumber: "3000141-95.2026.8.19.0213", title: "Márcio x Bradesco", opposingParty: "Bradesco", summary: "ação de indenização", currentStage: "Conhecimento", lastMovementAt: "2026-06-21", lastMovementText: "Aguardando andamento do juízo" },
+      { processTaskId: "caixa", clientName: "Márcio da Silva Machado", processNumber: "5006349-29.2023.4.02.5110", title: "Márcio x Caixa", opposingParty: "Caixa", summary: "FGTS/atualização", currentStage: "Conhecimento", lastMovementAt: "2023-06-10", lastMovementText: null },
+    ];
+
+    const decision = await buildMayusOperatingPartnerDecision({
+      supabase: {} as any,
+      tenantId: "tenant-1",
+      channel: "whatsapp",
+      contactName: "Vitor",
+      messages: [
+        { direction: "inbound", content: "Marcio da Silva Machado" },
+        { direction: "outbound", content: "Márcio, localizei três processos principais: Banco Master, Bradesco e Caixa." },
+        { direction: "inbound", content: "E a do banco master ?" },
+      ],
+      whatsappActorContext: { role: "office_operator", sender_phone_authorized: true, reason: "daily_playbook_authorized_phone" },
+      previousMayusEvent: {
+        intent: "process_status",
+        next_action: "responder detalhes quando operador escolher um processo",
+        conversation_state: {
+          conversation_role: "case_status",
+          conversation_goal: "acompanhar processos do cliente",
+          last_process_candidates: lastProcessCandidates,
+          has_mayus_introduced: true,
+        },
+      },
+      processStatusContext: {
+        verified: true,
+        confidence: "high",
+        accessScope: "tenant_authorized",
+        senderPhoneAuthorized: true,
+        processTaskId: null,
+        clientName: "Márcio da Silva Machado",
+        processNumber: null,
+        title: "Dossiê processual do cliente",
+        currentStage: null,
+        detectedPhase: "sem_fase_confiavel",
+        detectedPhaseLabel: null,
+        lastMovementAt: null,
+        lastMovementText: null,
+        deadlineAt: null,
+        pendingItems: [],
+        nextStep: null,
+        riskFlags: [],
+        clientReply: null,
+        candidateProcesses: lastProcessCandidates.slice(1),
+        grounding: { factualSources: ["processos monitorados"], inferenceNotes: [], missingSignals: [] },
+      },
+      operatingPartner: { enabled: true, autonomy_mode: "high_supervised" },
+      fetcher,
+    });
+
+    expect(fetcher).toHaveBeenCalledTimes(1);
+    expect(decision.reply).toContain("A do Banco Master");
+    expect(decision.reply).toContain("Recurso");
+    expect(decision.reply).toContain("gratuidade/custas em recurso");
+    expect(decision.reply).toContain("Sem decisão nova registrada");
+    expect(decision.reply).not.toMatch(/Bradesco|Caixa|indeniza[cç][aã]o|FGTS|qual .*assunto principal|localizar com seguran[cç]a/i);
+    expect(decision.next_action).toBe("responder o candidato processual referenciado");
+    expect(decision.should_auto_send).toBe(true);
+    expect(decision.conversation_frame?.resolution_type).toBe("referenced_process");
+    expect(decision.conversation_frame?.resolved_reference?.opposingParty).toBe("Banco Master");
+  });
+
   it("repara resposta roteirizada que pede escolha apesar de haver processos verificados", async () => {
     const fetcher = vi.fn()
       .mockResolvedValueOnce({
@@ -1275,6 +1620,301 @@ describe("mayus-operating-partner", () => {
     expect(decision.risk_flags).not.toContain("scripted_process_followup_question");
     expect(decision.reply).not.toMatch(/quer.*resumo|prefere ver|quer que eu detalhe|qual desses|qual deles|quer acompanhar|se .*nao souber/i);
     expect(decision.reply_blocks).toHaveLength(3);
+    expect(decision.should_auto_send).toBe(true);
+  });
+
+  it("repara pergunta obvia sobre identidade quando o telefone e do escritorio", async () => {
+    let repairPrompt = "";
+    const fetcher = vi.fn()
+      .mockResolvedValueOnce({
+        ok: true,
+        json: async () => ({ choices: [{ message: { content: JSON.stringify({
+          reply: "Voce e cliente ou e do escritorio? Assim eu vejo como posso consultar esse processo.",
+          intent: "process_status",
+          confidence: 0.9,
+          risk_flags: [],
+          next_action: "confirmar identidade do interlocutor",
+          conversation_state: {
+            conversation_role: "case_status",
+            conversation_goal: "localizar processo para operador interno",
+            customer_temperature: "existing_client",
+            stage: "client_support",
+            facts_known: ["telefone autorizado do escritorio"],
+            missing_information: ["cliente ou processo"],
+            objections: [],
+            urgency: "none",
+            decision_maker: "unknown",
+            documents_requested: [],
+            last_customer_message: "Maya, veja o processo da Maria",
+            last_mayus_message: null,
+            last_commitment: null,
+            next_action: "confirmar identidade do interlocutor",
+            has_mayus_introduced: true,
+            conversation_summary: "Operador autorizado pediu consulta de processo.",
+          },
+          closing_readiness: { score: 0, status: "not_ready", reasons: [] },
+          support_summary: { is_existing_client: true, issue_type: "process_status", verified_case_reference: false, summary: "consulta interna de processo" },
+          reasoning_summary_for_team: "Perguntou identidade mesmo com telefone autorizado.",
+          actions_to_execute: [{ type: "ask_discovery_question", title: "Confirmar identidade", requires_approval: false }],
+          requires_approval: false,
+          should_auto_send: true,
+          expected_outcome: "interlocutor confirma identidade",
+        }) } }] }),
+      })
+      .mockImplementationOnce(async (_url: string, init: RequestInit) => {
+        const body = JSON.parse(String(init.body || "{}"));
+        repairPrompt = body.messages[1].content;
+        return {
+          ok: true,
+          json: async () => ({ choices: [{ message: { content: JSON.stringify({
+            reply: "Claro. Como esse numero e autorizado do escritorio, vou tratar como pedido interno. Me mande o nome completo da cliente ou o CNJ para eu localizar na base com seguranca.",
+            intent: "process_status",
+            confidence: 0.91,
+            risk_flags: [],
+            next_action: "pedir identificador do cliente/processo",
+            conversation_state: {
+              conversation_role: "case_status",
+              conversation_goal: "localizar processo para operador interno",
+              customer_temperature: "existing_client",
+              stage: "client_support",
+              facts_known: ["telefone autorizado do escritorio"],
+              missing_information: ["nome completo da cliente ou CNJ"],
+              objections: [],
+              urgency: "none",
+              decision_maker: "unknown",
+              documents_requested: [],
+              last_customer_message: "Maya, veja o processo da Maria",
+              last_mayus_message: null,
+              last_commitment: null,
+              next_action: "pedir identificador do cliente/processo",
+              has_mayus_introduced: true,
+              conversation_summary: "Operador autorizado pediu consulta de processo.",
+            },
+            closing_readiness: { score: 0, status: "not_ready", reasons: [] },
+            support_summary: { is_existing_client: true, issue_type: "process_status", verified_case_reference: false, summary: "consulta interna de processo" },
+            reasoning_summary_for_team: "Corrigiu a pergunta obvia e tratou como operador interno.",
+            actions_to_execute: [{ type: "ask_discovery_question", title: "Pedir cliente ou CNJ", requires_approval: false }],
+            requires_approval: false,
+            should_auto_send: true,
+            expected_outcome: "operador envia identificador seguro",
+          }) } }] }),
+        };
+      }) as any;
+
+    const decision = await buildMayusOperatingPartnerDecision({
+      supabase: { from: () => ({ insert: vi.fn(async () => ({ error: null })) }) } as any,
+      tenantId: "tenant-1",
+      channel: "whatsapp",
+      contactName: "Vitor",
+      messages: [{ direction: "inbound", content: "Maya, veja o processo da Maria" }],
+      whatsappActorContext: { role: "office_operator", sender_phone_authorized: true, reason: "daily_playbook_authorized_phone" },
+      processStatusContext: {
+        verified: true,
+        confidence: "high",
+        accessScope: "tenant_authorized",
+        senderPhoneAuthorized: true,
+        processTaskId: "process-maria",
+        clientName: "Maria Silva",
+        processNumber: "1234567-89.2024.8.26.0100",
+        title: "Maria x Banco",
+        currentStage: "Aguardando andamento",
+        detectedPhase: "sem_fase_confiavel",
+        detectedPhaseLabel: null,
+        lastMovementAt: null,
+        lastMovementText: null,
+        deadlineAt: null,
+        pendingItems: [],
+        nextStep: null,
+        riskFlags: [],
+        clientReply: null,
+        grounding: { factualSources: ["processo monitorado"], inferenceNotes: [], missingSignals: [] },
+      },
+      operatingPartner: { enabled: true, autonomy_mode: "high_supervised" },
+      fetcher,
+    });
+
+    expect(fetcher).toHaveBeenCalledTimes(2);
+    expect(repairPrompt).toContain("office_operator");
+    expect(decision.risk_flags).not.toContain("asks_known_office_identity");
+    expect(decision.reply).not.toMatch(/cliente ou.*escrit[oó]rio|escrit[oó]rio ou cliente|voce e cliente/i);
+    expect(decision.whatsapp_actor_context).toEqual(expect.objectContaining({ role: "office_operator", sender_phone_authorized: true }));
+    expect(decision.agentic_governance?.hermes_trajectory.events[0].payload).toEqual(expect.objectContaining({
+      whatsapp_actor_role: "office_operator",
+      sender_phone_authorized: true,
+    }));
+    expect(decision.should_auto_send).toBe(true);
+  });
+
+  it("transforma lacuna de custas em ponto interno de conferencia para operador", async () => {
+    const fetcher = vi.fn()
+      .mockResolvedValueOnce({
+        ok: true,
+        json: async () => ({ choices: [{ message: { content: JSON.stringify({
+          reply: "Vitor, no seu processo, voce pagou as custas? Preciso saber para seguir.",
+          intent: "process_status",
+          confidence: 0.9,
+          risk_flags: [],
+          next_action: "perguntar pagamento de custas",
+          conversation_state: {
+            conversation_role: "case_status",
+            conversation_goal: "informar status interno do processo",
+            customer_temperature: "existing_client",
+            stage: "client_support",
+            facts_known: ["processo localizado", "custas aparecem como lacuna"],
+            missing_information: ["confirmacao de custas"],
+            objections: [],
+            urgency: "none",
+            decision_maker: "unknown",
+            documents_requested: [],
+            last_customer_message: "E as custas da Maria?",
+            last_mayus_message: null,
+            last_commitment: null,
+            next_action: "perguntar pagamento de custas",
+            has_mayus_introduced: true,
+            conversation_summary: "Operador interno perguntou sobre custas.",
+          },
+          closing_readiness: { score: 0, status: "not_ready", reasons: [] },
+          support_summary: { is_existing_client: true, issue_type: "process_status", verified_case_reference: true, summary: "status interno de custas" },
+          reasoning_summary_for_team: "Perguntou ao operador se ele pagou custas.",
+          actions_to_execute: [{ type: "answer_support", title: "Responder status interno", requires_approval: false }],
+          requires_approval: false,
+          should_auto_send: true,
+          expected_outcome: "operador confirma pagamento",
+        }) } }] }),
+      })
+      .mockResolvedValueOnce({
+        ok: true,
+        json: async () => ({ choices: [{ message: { content: JSON.stringify({
+          reply: "No processo da cliente Maria, nao vi confirmacao de pagamento de custas na base. Deixei esse ponto marcado para conferencia interna antes de qualquer proximo passo.",
+          intent: "process_status",
+          confidence: 0.91,
+          risk_flags: [],
+          next_action: "marcar custas como ponto de conferencia",
+          conversation_state: {
+            conversation_role: "case_status",
+            conversation_goal: "informar status interno do processo",
+            customer_temperature: "existing_client",
+            stage: "client_support",
+            facts_known: ["processo localizado", "custas sem confirmacao na base"],
+            missing_information: ["confirmacao de custas"],
+            objections: [],
+            urgency: "none",
+            decision_maker: "unknown",
+            documents_requested: [],
+            last_customer_message: "E as custas da Maria?",
+            last_mayus_message: null,
+            last_commitment: null,
+            next_action: "marcar custas como ponto de conferencia",
+            has_mayus_introduced: true,
+            conversation_summary: "Operador interno perguntou sobre custas.",
+          },
+          closing_readiness: { score: 0, status: "not_ready", reasons: [] },
+          support_summary: { is_existing_client: true, issue_type: "process_status", verified_case_reference: true, summary: "status interno de custas" },
+          reasoning_summary_for_team: "Tratou custas como lacuna de base e ponto interno.",
+          actions_to_execute: [{ type: "add_internal_note", title: "Marcar custas para conferencia", requires_approval: false }],
+          requires_approval: false,
+          should_auto_send: true,
+          expected_outcome: "equipe confere custas na base",
+        }) } }] }),
+      }) as any;
+
+    const decision = await buildMayusOperatingPartnerDecision({
+      supabase: { from: () => ({ insert: vi.fn(async () => ({ error: null })) }) } as any,
+      tenantId: "tenant-1",
+      channel: "whatsapp",
+      contactName: "Vitor",
+      messages: [{ direction: "inbound", content: "E as custas da Maria?" }],
+      whatsappActorContext: { role: "office_operator", sender_phone_authorized: true, reason: "daily_playbook_authorized_phone" },
+      processStatusContext: {
+        verified: true,
+        confidence: "medium",
+        accessScope: "tenant_authorized",
+        senderPhoneAuthorized: true,
+        processTaskId: "process-1",
+        clientName: "Maria Silva",
+        processNumber: "1234567-89.2024.8.26.0100",
+        title: "Maria x Banco",
+        currentStage: "Recurso",
+        detectedPhase: "recurso",
+        detectedPhaseLabel: "recurso",
+        lastMovementAt: "2026-05-20",
+        lastMovementText: "Intimacao para recolhimento de custas/preparo",
+        deadlineAt: null,
+        pendingItems: ["confirmar custas/preparo"],
+        nextStep: "conferir custas/preparo na base",
+        riskFlags: [],
+        clientReply: null,
+        grounding: { factualSources: ["processo monitorado"], inferenceNotes: [], missingSignals: ["confirmacao de custas/preparo"] },
+      },
+      operatingPartner: { enabled: true, autonomy_mode: "high_supervised" },
+      fetcher,
+    });
+
+    expect(fetcher).toHaveBeenCalledTimes(2);
+    expect(decision.risk_flags).not.toContain("asks_internal_cost_payment");
+    expect(decision.risk_flags).not.toContain("external_possessive_for_internal_actor");
+    expect(decision.reply).toMatch(/nao vi confirmacao|base/i);
+    expect(decision.reply).toMatch(/ponto.*conferencia|conferencia interna/i);
+    expect(decision.reply).not.toMatch(/voce pagou|pagou as custas|as custas foram pagas\?|seu processo/i);
+    expect(decision.should_auto_send).toBe(true);
+  });
+
+  it("mantem triagem normal para lead externo sem contexto interno", async () => {
+    const fetcher = vi.fn(async () => ({
+      ok: true,
+      json: async () => ({
+        choices: [{
+          message: {
+            content: JSON.stringify({
+              reply: "Entendi. Para eu organizar melhor, esse desconto aparece com qual nome no contracheque?",
+              intent: "legal_triage",
+              confidence: 0.9,
+              risk_flags: [],
+              next_action: "qualificar desconto do lead",
+              conversation_state: {
+                conversation_role: "seller",
+                conversation_goal: "qualificar lead com desconto em folha",
+                customer_temperature: "interested",
+                stage: "discovery",
+                facts_known: ["lead perguntou sobre desconto"],
+                missing_information: ["nome do desconto"],
+                objections: [],
+                urgency: "none",
+                decision_maker: "unknown",
+                documents_requested: ["trecho do contracheque"],
+                last_customer_message: "Tenho desconto no beneficio",
+                last_mayus_message: null,
+                last_commitment: null,
+                next_action: "qualificar desconto do lead",
+                has_mayus_introduced: true,
+                conversation_summary: "Lead externo quer entender desconto.",
+              },
+              closing_readiness: { score: 30, status: "not_ready", reasons: ["descoberta incompleta"] },
+              support_summary: { is_existing_client: false, issue_type: "documents", verified_case_reference: false, summary: "triagem comercial" },
+              reasoning_summary_for_team: "Lead externo deve receber triagem normal.",
+              actions_to_execute: [{ type: "create_crm_lead", title: "Registrar lead", requires_approval: false }],
+              requires_approval: false,
+              should_auto_send: true,
+              expected_outcome: "lead informa nome do desconto",
+            }),
+          },
+        }],
+      }),
+    })) as any;
+
+    const decision = await buildMayusOperatingPartnerDecision({
+      supabase: {} as any,
+      tenantId: "tenant-1",
+      channel: "whatsapp",
+      messages: [{ direction: "inbound", content: "Tenho desconto no beneficio" }],
+      whatsappActorContext: { role: "lead", sender_phone_authorized: false, reason: "crm_context" },
+      operatingPartner: { enabled: true, autonomy_mode: "high_supervised" },
+      fetcher,
+    });
+
+    expect(fetcher).toHaveBeenCalledTimes(1);
+    expect(decision.whatsapp_actor_context).toEqual(expect.objectContaining({ role: "lead", sender_phone_authorized: false }));
+    expect(decision.reply).toContain("desconto");
     expect(decision.should_auto_send).toBe(true);
   });
 

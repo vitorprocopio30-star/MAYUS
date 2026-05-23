@@ -17,6 +17,7 @@ import {
   type MayusOperatingPartnerConfig,
   type MayusOperatingPartnerCrmContext,
   type MayusOperatingPartnerDecision,
+  type MayusWhatsAppActorContext,
   type MayusOfficeKnowledgeProfile,
   type MayusPreviousConversationEvent,
 } from "@/lib/agent/mayus-operating-partner";
@@ -35,7 +36,7 @@ import {
   RMC_SALES_RULES,
 } from "@/lib/growth/rmc-playbook";
 import { normalizeOfficePlaybookProfile, summarizeOfficePlaybookForPrompt } from "@/lib/growth/office-playbook-profile";
-import { fetchWhatsAppProcessStatusContext } from "@/lib/whatsapp/process-status-context";
+import { fetchWhatsAppProcessStatusContext, type WhatsAppProcessStatusContext } from "@/lib/whatsapp/process-status-context";
 import { isAuthorizedWhatsAppCommandSender } from "@/lib/mayus/whatsapp-command-center";
 import {
   buildInstitutionalMemoryPromptBlock,
@@ -80,6 +81,42 @@ function getPlainRecord(value: unknown) {
   return value && typeof value === "object" && !Array.isArray(value)
     ? value as Record<string, any>
     : null;
+}
+
+function buildWhatsAppActorContext(params: {
+  senderPhoneAuthorized: boolean;
+  processStatusContext?: WhatsAppProcessStatusContext | null;
+  crmContext?: MayusOperatingPartnerCrmContext | null;
+}): MayusWhatsAppActorContext {
+  if (params.senderPhoneAuthorized) {
+    return {
+      role: "office_operator",
+      sender_phone_authorized: true,
+      reason: "daily_playbook_authorized_phone",
+    };
+  }
+
+  if (params.processStatusContext?.verified === true) {
+    return {
+      role: "external_client",
+      sender_phone_authorized: false,
+      reason: "verified_process_contact",
+    };
+  }
+
+  if (params.crmContext?.crm_task_id) {
+    return {
+      role: "lead",
+      sender_phone_authorized: false,
+      reason: "crm_context",
+    };
+  }
+
+  return {
+    role: "unknown",
+    sender_phone_authorized: false,
+    reason: "no_actor_signal",
+  };
 }
 
 function mapOperationalMethodologyAreaMethods(context: TenantOperationalMethodologyContext) {
@@ -595,6 +632,11 @@ export async function prepareWhatsAppSalesReplyForContact(params: {
     }),
     loadEnforcedInstitutionalMemory(params.supabase, params.tenantId, { limit: 12 }),
   ]);
+  const whatsappActorContext = buildWhatsAppActorContext({
+    senderPhoneAuthorized,
+    processStatusContext,
+    crmContext,
+  });
   const institutionalMemoryPrompt = buildInstitutionalMemoryPromptBlock(
     institutionalMemory,
     DEFAULT_INSTITUTIONAL_MEMORY_PROMPT_CAP,
@@ -612,6 +654,7 @@ export async function prepareWhatsAppSalesReplyForContact(params: {
     reply_source: "deterministic_fallback",
     model_used: "deterministic",
     fallback_reason: null,
+    whatsapp_actor_context: whatsappActorContext,
   };
   let llmReply: SalesLlmReply | null = null;
   let operatingPartnerDecision: MayusOperatingPartnerDecision | null = null;
@@ -636,6 +679,7 @@ export async function prepareWhatsAppSalesReplyForContact(params: {
         institutionalMemory,
         crmContext,
         processStatusContext,
+        whatsappActorContext,
         previousMayusEvent,
         salesTestbench: runtimeSettings.salesLlmTestbench,
         operatingPartner: runtimeSettings.mayusOperatingPartner,
@@ -670,7 +714,11 @@ export async function prepareWhatsAppSalesReplyForContact(params: {
           conversation_state: operatingPartnerDecision.conversation_state,
           closing_readiness: operatingPartnerDecision.closing_readiness,
           support_summary: operatingPartnerDecision.support_summary,
+          whatsapp_actor_context: operatingPartnerDecision.whatsapp_actor_context || whatsappActorContext,
           process_status_context: processStatusContext,
+          conversation_frame: operatingPartnerDecision.conversation_frame,
+          quality_check: operatingPartnerDecision.quality_check,
+          final_response_source: operatingPartnerDecision.final_response_source,
           conversation_classification: operatingPartnerDecision.conversation_classification,
           agentic_governance: operatingPartnerDecision.agentic_governance,
           openclaw_policy: operatingPartnerDecision.agentic_governance?.openclaw_policy,
@@ -691,6 +739,10 @@ export async function prepareWhatsAppSalesReplyForContact(params: {
         paperclip_mission: operatingPartnerDecision.agentic_governance?.paperclip_mission,
         reasoning_summary_for_team: operatingPartnerDecision.reasoning_summary_for_team,
         process_status_context: processStatusContext,
+        whatsapp_actor_context: whatsappActorContext,
+        conversation_frame: operatingPartnerDecision.conversation_frame,
+        quality_check: operatingPartnerDecision.quality_check,
+        final_response_source: operatingPartnerDecision.final_response_source,
       };
     } catch (error) {
       const reason = sanitizeFallbackReason(error);
@@ -701,6 +753,7 @@ export async function prepareWhatsAppSalesReplyForContact(params: {
         reply_source: "deterministic_fallback",
         model_used: "deterministic",
         fallback_reason: fallbackReasons.join("|"),
+        whatsapp_actor_context: whatsappActorContext,
         mayus_operating_partner: {
           enabled: true,
           failed: true,
