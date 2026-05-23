@@ -623,7 +623,7 @@ describe("prepareWhatsAppSalesReplyForContact", () => {
     expect(inserts.filter((insert) => insert.table === "system_event_logs")).toHaveLength(1);
   });
 
-  it("usa o socio virtual MAYUS para conduzir WhatsApp e executar acoes simples", async () => {
+  it("usa o Operating Partner MAYUS para conduzir WhatsApp e executar acoes simples", async () => {
     const inserts: Array<{ table: string; payload: any }> = [];
     const institutionalMemory = [
       {
@@ -652,6 +652,40 @@ describe("prepareWhatsAppSalesReplyForContact", () => {
       requires_approval: false,
       should_auto_send: true,
       expected_outcome: "cliente informa origem do desconto",
+      conversation_classification: {
+        class: "commercial",
+        surface: "external_message",
+        owner: "MAYUS Operating Partner",
+        confidence: 0.91,
+        requires_human_review: false,
+        next_action: "qualificar dor do desconto",
+        reason: "conversa comercial/triagem deve conduzir proxima pergunta sem promessa de fechamento",
+      },
+      agentic_governance: {
+        paperclip_mission: {
+          mission: "whatsapp_conversation",
+          owner: "MAYUS Operating Partner",
+          routine: "whatsapp_agentic_beta",
+          budget: "single_message",
+          next_action: "qualificar dor do desconto",
+          pending_approval: false,
+          reconstructable: true,
+          trace_required: true,
+        },
+        openclaw_policy: {
+          surface: "external_message",
+          outcome: "allowed",
+          requires_approval: false,
+          can_execute_now: true,
+          blocked_layer: null,
+          reason: "conversa comercial/triagem deve conduzir proxima pergunta sem promessa de fechamento",
+        },
+        hermes_trajectory: {
+          status: "ready",
+          tenant_learning_scope: "tenant_only",
+          events: [{ type: "decision", summary: "qualificar dor do desconto" }],
+        },
+      },
     });
     executeMayusOperatingPartnerActionsMock.mockResolvedValueOnce([
       { type: "create_crm_lead", status: "executed", detail: "Lead criado no CRM.", record_id: "crm-1" },
@@ -715,6 +749,38 @@ describe("prepareWhatsAppSalesReplyForContact", () => {
                     next_review_question: "Validar playbook bancario?",
                   }],
                 },
+                operational_methodology: {
+                  status: "approved",
+                  identity: {
+                    office_name: "Dutra Advocacia",
+                    practice_areas: ["bancario"],
+                    unique_value_proposition: "prova organizada antes da promessa",
+                    forbidden_claims: ["resultado garantido"],
+                  },
+                  intake: {
+                    methodology_base_used: false,
+                    rules: ["Perguntar nome do desconto antes de falar em acao."],
+                    required_documents_by_case: ["contracheque com trecho do desconto"],
+                    human_handoff_rules: ["Preco, contrato e urgencia juridica exigem humano."],
+                  },
+                  case_flow: {
+                    phases: [{ name: "Triagem do desconto/contrato" }, { name: "Coleta documental" }],
+                    departments: ["Comercial"],
+                    permission_policy: "Socio aprova contrato, cobranca e envio externo.",
+                    calendar_policy: "Consulta pode ser sugerida, confirmacao externa exige humano.",
+                    finance_policy: "Cobrancas e renegociacoes ficam supervisionadas.",
+                  },
+                  area_methods: [{
+                    area: "bancario",
+                    intake_questions: ["Qual desconto aparece no documento?"],
+                    required_documents: ["contracheque"],
+                    phases: ["Triagem do desconto/contrato", "Coleta documental"],
+                    document_structure: ["00-bancario-intake-e-resumo"],
+                    owner_team: "Comercial",
+                    validation_status: "needs_area_review",
+                  }],
+                  internet_policy: { no_auto_activation: true },
+                },
                 office_playbook_profile: {
                   status: "active",
                   office_name: "Dutra Advocacia",
@@ -770,6 +836,28 @@ describe("prepareWhatsAppSalesReplyForContact", () => {
     expect(prepared.metadata.mayus_operating_partner).toEqual(expect.objectContaining({
       institutional_memory_loaded: DEFAULT_INSTITUTIONAL_MEMORY_PROMPT_CAP + 2,
       institutional_memory_applied: DEFAULT_INSTITUTIONAL_MEMORY_PROMPT_CAP,
+      conversation_classification: expect.objectContaining({
+        class: "commercial",
+        surface: "external_message",
+      }),
+      openclaw_policy: expect.objectContaining({
+        surface: "external_message",
+        outcome: "allowed",
+      }),
+      hermes_trajectory: expect.objectContaining({
+        tenant_learning_scope: "tenant_only",
+      }),
+      paperclip_mission: expect.objectContaining({
+        mission: "whatsapp_conversation",
+        owner: "MAYUS Operating Partner",
+      }),
+    }));
+    expect(prepared.metadata.conversation_classification).toEqual(expect.objectContaining({
+      class: "commercial",
+      surface: "external_message",
+    }));
+    expect(prepared.metadata.agentic_governance?.openclaw_policy).toEqual(expect.objectContaining({
+      outcome: "allowed",
     }));
     expect(prepared.operatingPartnerActionResults).toEqual([
       { type: "create_crm_lead", status: "executed", detail: "Lead criado no CRM.", record_id: "crm-1" },
@@ -795,6 +883,8 @@ describe("prepareWhatsAppSalesReplyForContact", () => {
         permissionPolicy: "Socio aprova contrato, cobranca e envio externo.",
         calendarPolicy: "Consulta pode ser sugerida, confirmacao externa exige humano.",
         financePolicy: "Cobrancas e renegociacoes ficam supervisionadas.",
+        operationalMethodologyStatus: "approved",
+        operationalMethodologySummary: expect.stringContaining("internet apenas auditavel"),
         playbookNotes: "Usar roteiro consultivo curto.",
         practiceAreaPlaybooks: expect.arrayContaining([
           expect.objectContaining({
@@ -831,7 +921,7 @@ describe("prepareWhatsAppSalesReplyForContact", () => {
     ]));
   });
 
-  it("nao autoenvia fallback quando o socio virtual expira em desconto no contracheque", async () => {
+  it("nao autoenvia fallback quando o Operating Partner expira em desconto no contracheque", async () => {
     const inserts: Array<{ table: string; payload: any }> = [];
     buildMayusOperatingPartnerDecisionMock.mockRejectedValueOnce(new Error("Timeout em MAYUS Operating Partner."));
     sendWhatsAppMessageMock.mockResolvedValueOnce({

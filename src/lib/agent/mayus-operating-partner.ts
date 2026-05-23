@@ -119,6 +119,62 @@ export type MayusSupportSummary = {
   summary: string;
 };
 
+export type MayusOperatingPartnerConversationClass =
+  | "commercial"
+  | "support"
+  | "process_status"
+  | "documents"
+  | "billing"
+  | "owner_command"
+  | "unclear";
+
+export type MayusOperatingPartnerPolicySurface =
+  | "external_message"
+  | "crm_write"
+  | "support_response"
+  | "billing"
+  | "legal_decision";
+
+export type MayusOperatingPartnerConversationClassification = {
+  class: MayusOperatingPartnerConversationClass;
+  surface: MayusOperatingPartnerPolicySurface;
+  owner: "MAYUS Operating Partner";
+  confidence: number;
+  requires_human_review: boolean;
+  next_action: string;
+  reason: string;
+};
+
+export type MayusOperatingPartnerAgenticGovernance = {
+  paperclip_mission: {
+    mission: "whatsapp_conversation";
+    owner: "MAYUS Operating Partner";
+    routine: "whatsapp_agentic_beta";
+    budget: "single_message";
+    next_action: string;
+    pending_approval: boolean;
+    reconstructable: true;
+    trace_required: true;
+  };
+  openclaw_policy: {
+    surface: MayusOperatingPartnerPolicySurface;
+    outcome: "allowed" | "draft_only" | "requires_approval";
+    requires_approval: boolean;
+    can_execute_now: boolean;
+    blocked_layer: string | null;
+    reason: string;
+  };
+  hermes_trajectory: {
+    status: "ready" | "drafted" | "awaiting_approval";
+    tenant_learning_scope: "tenant_only";
+    events: Array<{
+      type: "objective" | "step" | "decision" | "block" | "artifact" | "result";
+      summary: string;
+      payload?: Record<string, unknown>;
+    }>;
+  };
+};
+
 export type MayusOperatingPartnerCrmContext = {
   crm_task_id?: string | null;
   title?: string | null;
@@ -148,6 +204,8 @@ export type MayusOfficeKnowledgeProfile = {
   calendarPolicy?: string | null;
   financePolicy?: string | null;
   playbookNotes?: string | null;
+  operationalMethodologyStatus?: string | null;
+  operationalMethodologySummary?: string | null;
   practiceAreaPlaybooks?: OfficePracticeAreaPlaybook[] | null;
 };
 
@@ -177,6 +235,8 @@ export type MayusOperatingPartnerDecision = {
   model_used: string;
   provider: string;
   expected_outcome: string;
+  conversation_classification?: MayusOperatingPartnerConversationClassification;
+  agentic_governance?: MayusOperatingPartnerAgenticGovernance;
 };
 
 export type MayusOperatingPartnerInput = {
@@ -674,6 +734,8 @@ function buildPrompt(input: MayusOperatingPartnerInput, config: MayusOperatingPa
   const officeCalendarPolicy = cleanText(officeProfile.calendarPolicy);
   const officeFinancePolicy = cleanText(officeProfile.financePolicy);
   const officePlaybookNotes = cleanText(officeProfile.playbookNotes);
+  const operationalMethodologyStatus = cleanText(officeProfile.operationalMethodologyStatus);
+  const operationalMethodologySummary = cleanText(officeProfile.operationalMethodologySummary);
   const officeAreaPlaybooks = summarizePracticeAreaPlaybooks(officeProfile.practiceAreaPlaybooks);
   const assistantName = cleanText(officeProfile.assistantName) || "MAYUS";
   const institutionalMemory = buildInstitutionalMemoryPromptBlock(input.institutionalMemory ?? [], MAYUS_OPERATING_PARTNER_INSTITUTIONAL_MEMORY_CAP);
@@ -753,6 +815,8 @@ function buildPrompt(input: MayusOperatingPartnerInput, config: MayusOperatingPa
     `Politica de permissoes/aprovacoes: ${officePermissionPolicy || "nao configurada"}`,
     `Politica de agenda: ${officeCalendarPolicy || "nao configurada"}`,
     `Politica financeira operacional: ${officeFinancePolicy || "nao configurada"}`,
+    `Metodologia operacional: ${operationalMethodologySummary || "nao configurada"}`,
+    `Status da metodologia operacional: ${operationalMethodologyStatus || "nao configurado"}`,
     `Playbooks operacionais: ${officePlaybookNotes || "nao configurados"}`,
     `Playbooks por area juridica: ${officeAreaPlaybooks || "nao configurados"}`,
     institutionalMemory.block,
@@ -1180,6 +1244,154 @@ function buildDefaultActions(params: {
   return [{ type: "add_internal_note" as const, title: "Registrar proximo passo MAYUS", requires_approval: false }];
 }
 
+function detectOwnerCommandSignal(message: string | null | undefined) {
+  const normalized = normalizeText(message);
+  if (!normalized) return false;
+  return /\b(mayus|maya)\b/.test(normalized)
+    && /\b(comando|relatorio|painel|dashboard|rotina|agente|configur|organize|resuma|analise)\b/.test(normalized);
+}
+
+function classifyOperatingPartnerConversation(decision: MayusOperatingPartnerDecision): MayusOperatingPartnerConversationClassification {
+  const hasHighRisk = decision.risk_flags.some((flag) => HIGH_RISK_FLAGS.includes(flag));
+  const lastMessage = decision.conversation_state.last_customer_message;
+  const hasDocumentIntent = decision.support_summary.issue_type === "documents"
+    || decision.actions_to_execute.some((action) => action.type === "request_document")
+    || decision.conversation_state.documents_requested.length > 0;
+
+  let conversationClass: MayusOperatingPartnerConversationClass = "unclear";
+  if (detectOwnerCommandSignal(lastMessage)) {
+    conversationClass = "owner_command";
+  } else if (decision.intent === "billing" || decision.support_summary.issue_type === "billing") {
+    conversationClass = "billing";
+  } else if (decision.intent === "process_status" || decision.support_summary.issue_type === "process_status" || decision.conversation_state.conversation_role === "case_status") {
+    conversationClass = "process_status";
+  } else if (decision.intent === "sales_qualification" || decision.intent === "sales_closing" || decision.intent === "legal_triage") {
+    conversationClass = "commercial";
+  } else if (hasDocumentIntent) {
+    conversationClass = "documents";
+  } else if (decision.intent === "client_support" || decision.intent === "setup_help" || decision.conversation_state.conversation_role === "support") {
+    conversationClass = "support";
+  }
+
+  const surface: MayusOperatingPartnerPolicySurface = conversationClass === "billing"
+    ? "billing"
+    : conversationClass === "support" || conversationClass === "process_status" || conversationClass === "documents" || conversationClass === "owner_command"
+      ? "support_response"
+      : "external_message";
+
+  const requiresReview = decision.requires_approval || !decision.should_auto_send || hasHighRisk;
+  const reasonByClass: Record<MayusOperatingPartnerConversationClass, string> = {
+    commercial: "conversa comercial/triagem deve conduzir proxima pergunta sem promessa de fechamento",
+    support: "atendimento de suporte precisa responder curto e manter handoff quando faltar base",
+    process_status: "status processual exige processo verificado antes de informar andamento",
+    documents: "pedido/documento precisa virar coleta segura sem conclusao juridica automatica",
+    billing: "cobranca ou contrato fica supervisionado por politica financeira",
+    owner_command: "comando do dono precisa deixar rastro operacional antes de agir",
+    unclear: "classificacao incerta deve ficar como rascunho supervisionado",
+  };
+
+  return {
+    class: conversationClass,
+    surface,
+    owner: "MAYUS Operating Partner",
+    confidence: decision.confidence,
+    requires_human_review: requiresReview,
+    next_action: decision.next_action,
+    reason: reasonByClass[conversationClass],
+  };
+}
+
+function buildOperatingPartnerAgenticGovernance(
+  decision: MayusOperatingPartnerDecision,
+  classification: MayusOperatingPartnerConversationClassification,
+): MayusOperatingPartnerAgenticGovernance {
+  const outcome = decision.requires_approval
+    ? "requires_approval"
+    : decision.should_auto_send
+      ? "allowed"
+      : "draft_only";
+  const blockedLayer = outcome === "requires_approval"
+    ? "human_review"
+    : outcome === "draft_only"
+      ? "operator_review"
+      : null;
+  const status = outcome === "requires_approval"
+    ? "awaiting_approval"
+    : outcome === "allowed"
+      ? "ready"
+      : "drafted";
+
+  return {
+    paperclip_mission: {
+      mission: "whatsapp_conversation",
+      owner: "MAYUS Operating Partner",
+      routine: "whatsapp_agentic_beta",
+      budget: "single_message",
+      next_action: decision.next_action,
+      pending_approval: decision.requires_approval,
+      reconstructable: true,
+      trace_required: true,
+    },
+    openclaw_policy: {
+      surface: classification.surface,
+      outcome,
+      requires_approval: decision.requires_approval,
+      can_execute_now: decision.should_auto_send,
+      blocked_layer: blockedLayer,
+      reason: classification.reason,
+    },
+    hermes_trajectory: {
+      status,
+      tenant_learning_scope: "tenant_only",
+      events: [
+        {
+          type: "objective",
+          summary: `Conduzir conversa WhatsApp classificada como ${classification.class}.`,
+          payload: {
+            intent: decision.intent,
+            surface: classification.surface,
+          },
+        },
+        {
+          type: "decision",
+          summary: decision.next_action,
+          payload: {
+            confidence: decision.confidence,
+            should_auto_send: decision.should_auto_send,
+            requires_approval: decision.requires_approval,
+          },
+        },
+        decision.requires_approval
+          ? {
+            type: "block",
+            summary: "Resposta fica aguardando revisao humana antes de envio externo.",
+            payload: {
+              risk_flags: decision.risk_flags,
+              external_side_effects_blocked: true,
+            },
+          }
+          : {
+            type: "artifact",
+            summary: "Rastro do rascunho/resposta registrado em system_event_logs.",
+            payload: {
+              trace_required: true,
+              tenant_learning_scope: "tenant_only",
+            },
+          },
+      ],
+    },
+  };
+}
+
+function withOperatingPartnerAgenticContext(decision: MayusOperatingPartnerDecision): MayusOperatingPartnerDecision {
+  const classification = classifyOperatingPartnerConversation(decision);
+  return {
+    ...decision,
+    conversation_classification: classification,
+    agentic_governance: buildOperatingPartnerAgenticGovernance(decision, classification),
+  };
+}
+
 function buildDeterministicDecision(params: {
   config: MayusOperatingPartnerConfig;
   reply: string;
@@ -1215,7 +1427,7 @@ function buildDeterministicDecision(params: {
     })
     : params.reply;
 
-  return {
+  return withOperatingPartnerAgenticContext({
     reply: sanitizeReplyForConversation(rawReply, conversationState, {
       assistantName: params.assistantName,
       officeName: params.officeName,
@@ -1244,7 +1456,7 @@ function buildDeterministicDecision(params: {
     model_used: "deterministic",
     provider: "mayus",
     expected_outcome: params.expectedOutcome,
-  };
+  });
 }
 
 function buildFastPathDecision(input: MayusOperatingPartnerInput, params: {
@@ -1506,7 +1718,7 @@ function normalizeDecision(parsed: any, params: {
     ? modelReplyBlocks.map((block) => cleanText(block)).filter(Boolean) as string[]
     : undefined;
 
-  return {
+  return withOperatingPartnerAgenticContext({
     reply: sanitizedReply,
     reply_blocks: sanitizedBlocks,
     intent,
@@ -1523,7 +1735,7 @@ function normalizeDecision(parsed: any, params: {
     model_used: params.model,
     provider: params.provider,
     expected_outcome: cleanText(parsed?.expected_outcome) || "avancar atendimento sem inventar informacao",
-  };
+  });
 }
 
 const REPAIRABLE_RISK_FLAGS = ["foreign_language_leak", "asks_already_known_payment_status", "scripted_process_followup_question"];
@@ -1533,12 +1745,12 @@ function needsReplyRepair(decision: MayusOperatingPartnerDecision) {
 }
 
 function forceReplyManualReview(decision: MayusOperatingPartnerDecision, reasonFlag: string): MayusOperatingPartnerDecision {
-  return {
+  return withOperatingPartnerAgenticContext({
     ...decision,
     risk_flags: Array.from(new Set([...decision.risk_flags, reasonFlag])),
     requires_approval: true,
     should_auto_send: false,
-  };
+  });
 }
 
 async function callOperatingPartnerJson(params: {
@@ -1556,7 +1768,7 @@ async function callOperatingPartnerJson(params: {
       temperature: 0.24,
       response_format: { type: "json_object" },
       messages: [
-        { role: "system", content: "Voce e o MAYUS socio virtual. Retorne apenas JSON valido e respeite os limites juridicos/comerciais." },
+        { role: "system", content: "Voce e o MAYUS Operating Partner supervisionado. Retorne apenas JSON valido e respeite os limites juridicos/comerciais." },
         { role: "user", content: params.prompt },
       ],
     }),
@@ -1564,7 +1776,7 @@ async function callOperatingPartnerJson(params: {
 
   if (!response.ok) {
     const text = await response.text().catch(() => "");
-    throw new Error(`Falha ao chamar MAYUS socio virtual: ${response.status} ${text.slice(0, 200)}`);
+    throw new Error(`Falha ao chamar MAYUS Operating Partner supervisionado: ${response.status} ${text.slice(0, 200)}`);
   }
 
   const data = await response.json();

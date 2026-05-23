@@ -42,6 +42,12 @@ import {
   DEFAULT_INSTITUTIONAL_MEMORY_PROMPT_CAP,
   loadEnforcedInstitutionalMemory,
 } from "@/lib/agent/memory/institutional";
+import {
+  buildTenantOperationalMethodologyContext,
+  summarizeTenantOperationalMethodologyContext,
+  type TenantOperationalMethodologyContext,
+} from "@/lib/setup/tenant-operational-methodology";
+import type { OfficeOperationalMethodology } from "@/lib/setup/office-setup-conversation";
 
 function getStringValue(value: unknown) {
   return typeof value === "string" && value.trim().length > 0 ? value.trim() : null;
@@ -70,6 +76,26 @@ function shouldUseDefaultRmcPlaybook(features: Record<string, any>) {
   return getStringValue(features.sales_playbook_template) === "rmc_dutra";
 }
 
+function getPlainRecord(value: unknown) {
+  return value && typeof value === "object" && !Array.isArray(value)
+    ? value as Record<string, any>
+    : null;
+}
+
+function mapOperationalMethodologyAreaMethods(context: TenantOperationalMethodologyContext) {
+  return context.areaMethods.map((method) => ({
+    area: method.area,
+    intake_questions: method.intakeQuestions,
+    required_documents: method.requiredDocuments,
+    handoff_triggers: [],
+    default_pipeline: method.phases,
+    document_structure: method.documentStructure,
+    owner_team: method.ownerTeam,
+    validation_status: method.validationStatus,
+    next_review_question: method.nextReviewQuestion || `Validar metodologia de ${method.area}.`,
+  })).slice(0, 8);
+}
+
 async function loadSalesRuntimeSettings(params: {
   supabase: SupabaseClient;
   tenantId: string;
@@ -86,11 +112,18 @@ async function loadSalesRuntimeSettings(params: {
   const whatsappAgent = features.whatsapp_agent;
   const operatingPartner = features.mayus_operating_partner;
   const officeKnowledge = features.office_knowledge_profile;
+  const operationalMethodology = getPlainRecord(features.operational_methodology);
+  const methodologyContext = buildTenantOperationalMethodologyContext(
+    operationalMethodology as OfficeOperationalMethodology | null,
+  );
+  const methodologyIdentity = getPlainRecord(operationalMethodology?.identity);
+  const methodologyIntake = getPlainRecord(operationalMethodology?.intake);
+  const methodologyCaseFlow = getPlainRecord(operationalMethodology?.case_flow);
+  const methodologyAreaPlaybooks = mapOperationalMethodologyAreaMethods(methodologyContext);
+  const methodologySummary = summarizeTenantOperationalMethodologyContext(methodologyContext) || null;
   const officePlaybook = normalizeOfficePlaybookProfile(features.office_playbook_profile);
   const officePlaybookSummary = summarizeOfficePlaybookForPrompt(officePlaybook);
-  const officeProfile = officeKnowledge && typeof officeKnowledge === "object" && !Array.isArray(officeKnowledge)
-    ? officeKnowledge as Record<string, any>
-    : null;
+  const officeProfile = getPlainRecord(officeKnowledge);
   const assistantName = getStringValue(officeProfile?.assistant_name)
     || getStringValue(officeProfile?.assistantName)
     || getStringValue(whatsappAgent?.assistant_name)
@@ -145,41 +178,56 @@ async function loadSalesRuntimeSettings(params: {
       }
       : null,
     officePlaybookProfile: officePlaybook,
-    officeKnowledgeProfile: officeProfile || assistantName
+    officeKnowledgeProfile: officeProfile || assistantName || operationalMethodology
       ? {
         assistantName,
         officeName: getOfficeNameValue(officeProfile?.office_name)
           || getOfficeNameValue(officeProfile?.officeName)
+          || getOfficeNameValue(methodologyIdentity?.office_name)
           || getOfficeNameValue(features.firm_name)
           || getOfficeNameValue(officePlaybook?.office_name),
         practiceAreas: getStringArray(officeProfile?.practice_areas).length
           ? getStringArray(officeProfile?.practice_areas)
-          : getStringArray(officeProfile?.practiceAreas),
+          : getStringArray(officeProfile?.practiceAreas).length
+            ? getStringArray(officeProfile?.practiceAreas)
+            : getStringArray(methodologyIdentity?.practice_areas).length
+              ? getStringArray(methodologyIdentity?.practice_areas)
+              : methodologyAreaPlaybooks.map((method) => method.area),
         triageRules: getStringArray(officeProfile?.triage_rules).length
           ? getStringArray(officeProfile?.triage_rules)
-          : getStringArray(officeProfile?.triageRules),
+          : getStringArray(officeProfile?.triageRules).length
+            ? getStringArray(officeProfile?.triageRules)
+            : getStringArray(methodologyIntake?.rules),
         humanHandoffRules: getStringArray(officeProfile?.human_handoff_rules).length
           ? getStringArray(officeProfile?.human_handoff_rules)
-          : getStringArray(officeProfile?.humanHandoffRules),
-        communicationTone: getStringValue(officeProfile?.communication_tone) || getStringValue(officeProfile?.communicationTone),
+          : getStringArray(officeProfile?.humanHandoffRules).length
+            ? getStringArray(officeProfile?.humanHandoffRules)
+            : getStringArray(methodologyIntake?.human_handoff_rules),
+        communicationTone: getStringValue(officeProfile?.communication_tone) || getStringValue(officeProfile?.communicationTone) || getStringValue(methodologyIdentity?.communication_tone),
         requiredDocumentsByCase: getStringArray(officeProfile?.required_documents_by_case).length
           ? getStringArray(officeProfile?.required_documents_by_case)
-          : getStringArray(officeProfile?.requiredDocumentsByCase),
+          : getStringArray(officeProfile?.requiredDocumentsByCase).length
+            ? getStringArray(officeProfile?.requiredDocumentsByCase)
+            : getStringArray(methodologyIntake?.required_documents_by_case),
         forbiddenClaims: getStringArray(officeProfile?.forbidden_claims).length
           ? getStringArray(officeProfile?.forbidden_claims)
-          : getStringArray(officeProfile?.forbiddenClaims),
+          : getStringArray(officeProfile?.forbiddenClaims).length
+            ? getStringArray(officeProfile?.forbiddenClaims)
+            : getStringArray(methodologyIdentity?.forbidden_claims),
         pricingPolicy: getStringValue(officeProfile?.pricing_policy) || getStringValue(officeProfile?.pricingPolicy),
         responseSla: getStringValue(officeProfile?.response_sla) || getStringValue(officeProfile?.responseSla),
-        departments: getStringArray(officeProfile?.departments),
-        permissionPolicy: getStringValue(officeProfile?.permission_policy) || getStringValue(officeProfile?.permissionPolicy),
-        calendarPolicy: getStringValue(officeProfile?.calendar_policy) || getStringValue(officeProfile?.calendarPolicy),
-        financePolicy: getStringValue(officeProfile?.finance_policy) || getStringValue(officeProfile?.financePolicy),
+        departments: getStringArray(officeProfile?.departments).length ? getStringArray(officeProfile?.departments) : getStringArray(methodologyCaseFlow?.departments),
+        permissionPolicy: getStringValue(officeProfile?.permission_policy) || getStringValue(officeProfile?.permissionPolicy) || getStringValue(methodologyCaseFlow?.permission_policy),
+        calendarPolicy: getStringValue(officeProfile?.calendar_policy) || getStringValue(officeProfile?.calendarPolicy) || getStringValue(methodologyCaseFlow?.calendar_policy),
+        financePolicy: getStringValue(officeProfile?.finance_policy) || getStringValue(officeProfile?.financePolicy) || getStringValue(methodologyCaseFlow?.finance_policy),
         playbookNotes: getStringValue(officeProfile?.playbook_notes) || getStringValue(officeProfile?.playbookNotes),
+        operationalMethodologyStatus: getStringValue(operationalMethodology?.status),
+        operationalMethodologySummary: methodologySummary,
         practiceAreaPlaybooks: Array.isArray(officeProfile?.practice_area_playbooks)
           ? officeProfile.practice_area_playbooks
           : Array.isArray(officeProfile?.practiceAreaPlaybooks)
             ? officeProfile.practiceAreaPlaybooks
-            : [],
+            : methodologyAreaPlaybooks,
       } satisfies MayusOfficeKnowledgeProfile
       : null,
     salesLlmTestbench: isExplicitlyEnabled(testbench)
@@ -603,7 +651,7 @@ export async function prepareWhatsAppSalesReplyForContact(params: {
         fallback_reason: null,
         mode: operatingPartnerDecision.should_auto_send ? "suggested_reply" : "human_review_required",
         suggested_reply: operatingPartnerDecision.reply,
-        internal_note: `MAYUS socio virtual: ${operatingPartnerDecision.next_action}`,
+        internal_note: `MAYUS Operating Partner supervisionado: ${operatingPartnerDecision.next_action}`,
         risk_flags: normalizedRiskFlags,
         may_auto_send: operatingPartnerDecision.should_auto_send,
         requires_human_review: operatingPartnerDecision.requires_approval || !operatingPartnerDecision.should_auto_send || operatingPartnerDecision.risk_flags.length > 0,
@@ -623,6 +671,11 @@ export async function prepareWhatsAppSalesReplyForContact(params: {
           closing_readiness: operatingPartnerDecision.closing_readiness,
           support_summary: operatingPartnerDecision.support_summary,
           process_status_context: processStatusContext,
+          conversation_classification: operatingPartnerDecision.conversation_classification,
+          agentic_governance: operatingPartnerDecision.agentic_governance,
+          openclaw_policy: operatingPartnerDecision.agentic_governance?.openclaw_policy,
+          hermes_trajectory: operatingPartnerDecision.agentic_governance?.hermes_trajectory,
+          paperclip_mission: operatingPartnerDecision.agentic_governance?.paperclip_mission,
           reasoning_summary_for_team: operatingPartnerDecision.reasoning_summary_for_team,
           expected_outcome: operatingPartnerDecision.expected_outcome,
           institutional_memory_loaded: institutionalMemoryPrompt.totalAvailable,
@@ -631,6 +684,11 @@ export async function prepareWhatsAppSalesReplyForContact(params: {
         conversation_state: operatingPartnerDecision.conversation_state,
         closing_readiness: operatingPartnerDecision.closing_readiness,
         support_summary: operatingPartnerDecision.support_summary,
+        conversation_classification: operatingPartnerDecision.conversation_classification,
+        agentic_governance: operatingPartnerDecision.agentic_governance,
+        openclaw_policy: operatingPartnerDecision.agentic_governance?.openclaw_policy,
+        hermes_trajectory: operatingPartnerDecision.agentic_governance?.hermes_trajectory,
+        paperclip_mission: operatingPartnerDecision.agentic_governance?.paperclip_mission,
         reasoning_summary_for_team: operatingPartnerDecision.reasoning_summary_for_team,
         process_status_context: processStatusContext,
       };

@@ -10,6 +10,7 @@ const mocks = vi.hoisted(() => {
     listTenantIntegrationsResolved: vi.fn(),
     getUser: vi.fn(),
     messageInserts: [] as unknown[],
+    learningEventInserts: [] as unknown[],
   };
 });
 
@@ -53,6 +54,7 @@ describe("/api/whatsapp/send", () => {
     vi.resetModules();
     vi.clearAllMocks();
     mocks.messageInserts.length = 0;
+    mocks.learningEventInserts.length = 0;
     mocks.getUser.mockResolvedValue({ data: { user: { id: "user-1" } }, error: null });
     mocks.createServerClient.mockReturnValue({ auth: { getUser: mocks.getUser } });
     mocks.listTenantIntegrationsResolved.mockResolvedValue([
@@ -70,6 +72,14 @@ describe("/api/whatsapp/send", () => {
         return {
           insert: vi.fn(async (rows: unknown[]) => {
             mocks.messageInserts.push(...rows);
+            return { error: null };
+          }),
+        };
+      }
+      if (table === "learning_events") {
+        return {
+          insert: vi.fn(async (payload: unknown) => {
+            mocks.learningEventInserts.push(payload);
             return { error: null };
           }),
         };
@@ -111,6 +121,58 @@ describe("/api/whatsapp/send", () => {
         status: "sent",
       }),
     ]);
+    expect(mocks.learningEventInserts).toHaveLength(0);
+  });
+
+  it("registra delta humano sanitizado quando o envio manual parte de rascunho MAYUS", async () => {
+    const { POST } = await import("./route");
+    const response = await POST(buildRequest({
+      contact_id: "contact-1",
+      text: "*Equipe MAYUS*\n\nMensagem final humana mais objetiva sobre valor e proximo passo.",
+      mayus_draft_context: {
+        suggested_reply: "Texto sugerido completo do MAYUS sobre valor, contrato e diagnostico inicial.",
+        reply_source: "operating_partner",
+        model_used: "deepseek/deepseek-v4-pro",
+        mode: "human_review_required",
+        intent: "sales_objection",
+        risk_flags: ["billing_or_contract"],
+        may_auto_send: false,
+        requires_human_review: true,
+        conversation_state: {
+          stage: "objection",
+          conversation_role: "sales",
+        },
+        support_summary: {
+          issue_type: "none",
+        },
+      },
+    }));
+
+    expect(response.status).toBe(200);
+    expect(mocks.learningEventInserts).toHaveLength(1);
+    expect(mocks.learningEventInserts[0]).toEqual(expect.objectContaining({
+      tenant_id: "tenant-1",
+      event_type: "whatsapp_human_reply_delta_recorded",
+      source_module: "whatsapp_manual_send",
+      created_by: "user-1",
+      payload: expect.objectContaining({
+        contact_id: "contact-1",
+        reply_source: "operating_partner",
+        model_used: "deepseek/deepseek-v4-pro",
+        intent: "sales_objection",
+        conversation_stage: "objection",
+        risk_flags: ["billing_or_contract"],
+        requires_human_review: true,
+        edit_categories: expect.arrayContaining(["human_edited", "objection_handled", "risk_reviewed"]),
+        suggested_char_count: expect.any(Number),
+        sent_char_count: expect.any(Number),
+        token_similarity: expect.any(Number),
+      }),
+    }));
+    const serialized = JSON.stringify(mocks.learningEventInserts[0]);
+    expect(serialized).not.toContain("Texto sugerido completo");
+    expect(serialized).not.toContain("Mensagem final humana");
+    expect(serialized).not.toContain("Equipe MAYUS");
   });
 
   it("bloqueia usuario sem sessao", async () => {

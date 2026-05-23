@@ -32,7 +32,7 @@ describe("mayus-operating-partner", () => {
     });
   });
 
-  it("normaliza a configuracao do socio virtual com autonomia alta supervisionada", () => {
+  it("normaliza a configuracao do Operating Partner com autonomia alta supervisionada", () => {
     const config = normalizeMayusOperatingPartnerConfig({
       enabled: true,
       autonomy_mode: "high_supervised",
@@ -133,6 +133,27 @@ describe("mayus-operating-partner", () => {
     }));
     expect(decision.support_summary.issue_type).toBe("none");
     expect(decision.actions_to_execute[0].type).toBe("create_crm_lead");
+    expect(decision.conversation_classification).toEqual(expect.objectContaining({
+      class: "commercial",
+      surface: "external_message",
+      owner: "MAYUS Operating Partner",
+    }));
+    expect(decision.agentic_governance).toEqual(expect.objectContaining({
+      paperclip_mission: expect.objectContaining({
+        mission: "whatsapp_conversation",
+        owner: "MAYUS Operating Partner",
+        next_action: "qualificar dor do desconto",
+      }),
+      openclaw_policy: expect.objectContaining({
+        surface: "external_message",
+        outcome: "allowed",
+        can_execute_now: true,
+      }),
+      hermes_trajectory: expect.objectContaining({
+        tenant_learning_scope: "tenant_only",
+        events: expect.any(Array),
+      }),
+    }));
   });
 
   it("envia estado conversacional para a LLM e normaliza objecao sem texto gravado", async () => {
@@ -220,6 +241,8 @@ describe("mayus-operating-partner", () => {
         permissionPolicy: "socio aprova contrato, cobranca e envio externo",
         calendarPolicy: "confirmar consulta externa so com humano",
         financePolicy: "cobrancas e renegociacoes ficam supervisionadas",
+        operationalMethodologyStatus: "approved",
+        operationalMethodologySummary: "status approved | areas bancario, previdenciario | fases Triagem > Coleta documental > Analise juridica humana | internet apenas auditavel",
         playbookNotes: "roteiro consultivo curto com proximo passo claro",
         practiceAreaPlaybooks: [{
           area: "bancario",
@@ -247,6 +270,9 @@ describe("mayus-operating-partner", () => {
     expect(prompt).toContain("Dutra Advocacia");
     expect(prompt).toContain("preco e contrato exigem humano");
     expect(prompt).toContain("socio aprova contrato");
+    expect(prompt).toContain("Metodologia operacional");
+    expect(prompt).toContain("status approved");
+    expect(prompt).toContain("Status da metodologia operacional: approved");
     expect(prompt).toContain("roteiro consultivo curto");
     expect(prompt).toContain("Playbooks por area juridica");
     expect(prompt).toContain("Triagem do desconto/contrato");
@@ -474,6 +500,15 @@ describe("mayus-operating-partner", () => {
     expect(decision.should_auto_send).toBe(true);
     expect(decision.requires_approval).toBe(false);
     expect(decision.risk_flags).not.toContain("case_status_unverified");
+    expect(decision.conversation_classification).toEqual(expect.objectContaining({
+      class: "process_status",
+      surface: "support_response",
+    }));
+    expect(decision.agentic_governance?.openclaw_policy).toEqual(expect.objectContaining({
+      surface: "support_response",
+      outcome: "allowed",
+      can_execute_now: true,
+    }));
   });
 
   it("usa nome configuravel da assistente e cria tarefa para outra demanda de suporte", async () => {
