@@ -175,6 +175,43 @@ describe("whatsapp reply processor", () => {
     }));
   });
 
+  it("descarta resposta pendente quando ja chegou mensagem mais nova", async () => {
+    const row = {
+      id: "message-superseded",
+      tenant_id: "tenant-1",
+      contact_id: "contact-1",
+      direction: "inbound",
+      media_processing_status: "none",
+      created_at: new Date(Date.now() - 60_000).toISOString(),
+      metadata: { reply_processing_status: "pending", reply_trigger: "evolution_webhook" },
+    };
+    const { supabase, updates, inserts } = makeSupabase(row, { newerMessage: true });
+
+    const result = await processPendingWhatsAppRepliesBatch({ supabase, limit: 1 });
+
+    expect(result).toMatchObject({ picked: 1, processed: 1, failed: 0, auto_sent: 0 });
+    expect(result.results[0]).toEqual(expect.objectContaining({
+      message_id: "message-superseded",
+      status: "processed",
+      skipped_reason: "newer_message_exists",
+    }));
+    expect(mocks.prepareWhatsAppSalesReplyForContact).not.toHaveBeenCalled();
+    expect(mocks.sendEvolutionPresenceForContact).not.toHaveBeenCalled();
+    expect(updates.some((item) => item.payload.metadata?.reply_processing_status === "processed")).toBe(true);
+    expect(updates.some((item) => item.payload.metadata?.reply_skipped_reason === "newer_message_exists")).toBe(true);
+    expect(updates.some((item) => Boolean(item.payload.metadata?.reply_superseded_at))).toBe(true);
+    expect(inserts).toContainEqual(expect.objectContaining({
+      table: "system_event_logs",
+      payload: expect.objectContaining({
+        event_name: "whatsapp_reply_superseded_by_newer_message",
+        status: "warning",
+        payload: expect.objectContaining({
+          reason: "newer_message_exists",
+        }),
+      }),
+    }));
+  });
+
   it("registra falha sanitizada ao preparar resposta", async () => {
     const row = {
       id: "message-failed",

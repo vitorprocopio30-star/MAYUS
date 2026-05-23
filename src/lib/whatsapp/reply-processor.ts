@@ -126,7 +126,7 @@ export async function enqueueWhatsAppReply(params: {
 async function recordReplyEvent(params: {
   supabase: SupabaseClient;
   row: PendingWhatsAppReplyMessage;
-  eventName: "whatsapp_reply_processed" | "whatsapp_reply_failed" | "whatsapp_reply_stale_pending" | "whatsapp_reply_stale_processing_recovered" | "whatsapp_reply_stale_processing_suppressed";
+  eventName: "whatsapp_reply_processed" | "whatsapp_reply_failed" | "whatsapp_reply_stale_pending" | "whatsapp_reply_stale_processing_recovered" | "whatsapp_reply_stale_processing_suppressed" | "whatsapp_reply_superseded_by_newer_message";
   status: "ok" | "error" | "warning";
   durationMs?: number;
   error?: string | null;
@@ -365,6 +365,40 @@ async function processOneReply(params: {
         durationMs: Date.now() - startedAt,
         extraPayload: { recovery_attempt: getRecoveryAttempts(params.row) + 1 },
       });
+    }
+
+    if (currentStatus !== "processing" && await hasNewerMessageThan({ supabase: params.supabase, row: params.row })) {
+      const supersededAt = new Date().toISOString();
+      await params.supabase
+        .from("whatsapp_messages")
+        .update({
+          metadata: mergeMetadata(params.row, {
+            reply_processing_status: "processed",
+            reply_processed_at: supersededAt,
+            reply_auto_sent: false,
+            reply_skipped_reason: "newer_message_exists",
+            reply_superseded_at: supersededAt,
+          }),
+        })
+        .eq("id", params.row.id)
+        .eq("metadata->>reply_processing_status", "pending");
+
+      await recordReplyEvent({
+        supabase: params.supabase,
+        row: params.row,
+        eventName: "whatsapp_reply_superseded_by_newer_message",
+        status: "warning",
+        durationMs: Date.now() - startedAt,
+        extraPayload: { reason: "newer_message_exists" },
+      });
+
+      return {
+        message_id: params.row.id,
+        status: "processed" as const,
+        auto_sent: false,
+        duration_ms: Date.now() - startedAt,
+        skipped_reason: "newer_message_exists",
+      };
     }
 
     const claimed = await claimReply({
