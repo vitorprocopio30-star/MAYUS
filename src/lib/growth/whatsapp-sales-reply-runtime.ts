@@ -560,6 +560,74 @@ type SalesAutoSendResult =
     status: "skipped";
   };
 
+type WhatsAppInboundMessageMarker = {
+  id: string | null;
+  created_at: string | null;
+};
+
+function normalizeInboundMessageMarker(row: any): WhatsAppInboundMessageMarker {
+  return {
+    id: getStringValue(row?.id),
+    created_at: getStringValue(row?.created_at),
+  };
+}
+
+function getLatestInboundMessageMarker(messages: any[]): WhatsAppInboundMessageMarker {
+  const latestInbound = [...messages]
+    .reverse()
+    .find((message) => message?.direction === "inbound");
+  return normalizeInboundMessageMarker(latestInbound);
+}
+
+function buildReplyTargetMarker(params: {
+  replyTargetMessageId?: string | null;
+  replyTargetCreatedAt?: string | null;
+  latestInboundAtDecision: WhatsAppInboundMessageMarker;
+}): WhatsAppInboundMessageMarker {
+  return {
+    id: getStringValue(params.replyTargetMessageId) || params.latestInboundAtDecision.id,
+    created_at: getStringValue(params.replyTargetCreatedAt) || params.latestInboundAtDecision.created_at,
+  };
+}
+
+async function loadLatestInboundMessageMarker(params: {
+  supabase: SupabaseClient;
+  tenantId: string;
+  contactId: string;
+}): Promise<WhatsAppInboundMessageMarker> {
+  const { data, error } = await params.supabase
+    .from("whatsapp_messages")
+    .select("id, created_at")
+    .eq("tenant_id", params.tenantId)
+    .eq("contact_id", params.contactId)
+    .eq("direction", "inbound")
+    .order("created_at", { ascending: false })
+    .limit(1);
+
+  if (error) throw error;
+  return normalizeInboundMessageMarker(data?.[0]);
+}
+
+function parseDateMs(value: string | null) {
+  if (!value) return null;
+  const ms = new Date(value).getTime();
+  return Number.isFinite(ms) ? ms : null;
+}
+
+function isReplyTargetStillLatest(params: {
+  target: WhatsAppInboundMessageMarker;
+  latest: WhatsAppInboundMessageMarker;
+}) {
+  if (!params.target.id && !params.target.created_at) return true;
+  if (!params.latest.id && !params.latest.created_at) return true;
+  if (params.target.id && params.latest.id) return params.target.id === params.latest.id;
+
+  const targetMs = parseDateMs(params.target.created_at);
+  const latestMs = parseDateMs(params.latest.created_at);
+  if (targetMs !== null && latestMs !== null) return latestMs <= targetMs;
+  return true;
+}
+
 function canAutoRespondAssignedSafely(params: {
   decision: MayusOperatingPartnerDecision | null;
   processStatusContext: Awaited<ReturnType<typeof fetchWhatsAppProcessStatusContext>>;
@@ -583,6 +651,8 @@ export async function prepareWhatsAppSalesReplyForContact(params: {
   notify?: boolean;
   autoSendFirstResponse?: boolean;
   preferredProvider?: WhatsAppSendProvider | null;
+  replyTargetMessageId?: string | null;
+  replyTargetCreatedAt?: string | null;
 }) {
   const { data: contact, error: contactError } = await params.supabase
     .from("whatsapp_contacts")
@@ -597,7 +667,7 @@ export async function prepareWhatsAppSalesReplyForContact(params: {
 
   const { data: messages } = await params.supabase
     .from("whatsapp_messages")
-    .select("direction, content, message_type, media_url, media_filename, media_mime_type, media_text, media_summary, created_at")
+    .select("id, direction, content, message_type, media_url, media_filename, media_mime_type, media_text, media_summary, created_at")
     .eq("tenant_id", params.tenantId)
     .eq("contact_id", contact.id)
     .order("created_at", { ascending: false })
@@ -608,6 +678,12 @@ export async function prepareWhatsAppSalesReplyForContact(params: {
     tenantId: params.tenantId,
   });
   const orderedMessages = (messages || []).reverse();
+  const latestInboundAtDecision = getLatestInboundMessageMarker(orderedMessages);
+  const replyTarget = buildReplyTargetMarker({
+    replyTargetMessageId: params.replyTargetMessageId,
+    replyTargetCreatedAt: params.replyTargetCreatedAt,
+    latestInboundAtDecision,
+  });
   const senderPhoneAuthorized = isAuthorizedWhatsAppCommandSender({
     senderPhone: contact.phone_number || "",
     aiFeatures: runtimeSettings.aiFeatures,
@@ -872,7 +948,7 @@ export async function prepareWhatsAppSalesReplyForContact(params: {
         : null;
   const canAutoRespondAssigned = runtimeSettings.autonomyMode === "auto_respond_assigned";
   const assignedSafeAutoReply = canAutoRespondAssignedSafely({ decision: operatingPartnerDecision, processStatusContext });
-  const blockedReason = getAutoSendBlockedReason({
+  let blockedReason = getAutoSendBlockedReason({
     autoReply,
     metadata,
     autoSendFirstResponse: params.autoSendFirstResponse,
@@ -882,7 +958,7 @@ export async function prepareWhatsAppSalesReplyForContact(params: {
     canAutoRespondAssignedSafely: assignedSafeAutoReply,
     phoneNumber: contact.phone_number,
   });
-  const canAutoSend = Boolean(
+  let canAutoSend = Boolean(
     autoReply?.shouldAutoSend
     && autoReply.source === "mayus_operating_partner_auto_reply"
     && metadata.may_auto_send === true
@@ -891,6 +967,45 @@ export async function prepareWhatsAppSalesReplyForContact(params: {
     && (!contact.assigned_user_id || canAutoRespondAssigned || assignedSafeAutoReply)
     && contact.phone_number
   );
+  const latestInboundAtSend = await loadLatestInboundMessageMarker({
+    supabase: params.supabase,
+    tenantId: params.tenantId,
+    contactId: contact.id,
+  });
+  const replyAbortedReason = canAutoSend && !isReplyTargetStillLatest({
+    target: replyTarget,
+    latest: latestInboundAtSend,
+  })
+    ? "newer_message_arrived_during_generation"
+    : null;
+
+  if (replyAbortedReason) {
+    canAutoSend = false;
+    blockedReason = replyAbortedReason;
+  }
+
+  metadata = {
+    ...metadata,
+    mode: replyAbortedReason ? "human_review_required" : metadata.mode,
+    may_auto_send: replyAbortedReason ? false : metadata.may_auto_send,
+    requires_human_review: replyAbortedReason ? true : metadata.requires_human_review,
+    reply_target_message_id: replyTarget.id,
+    reply_target_created_at: replyTarget.created_at,
+    latest_inbound_message_id_at_decision: latestInboundAtDecision.id,
+    latest_inbound_created_at_at_decision: latestInboundAtDecision.created_at,
+    latest_inbound_message_id_at_send: latestInboundAtSend.id,
+    latest_inbound_created_at_at_send: latestInboundAtSend.created_at,
+    reply_aborted_reason: replyAbortedReason,
+    freshness_guardrail: {
+      target_message_id: replyTarget.id,
+      target_created_at: replyTarget.created_at,
+      latest_inbound_message_id_at_decision: latestInboundAtDecision.id,
+      latest_inbound_message_id_at_send: latestInboundAtSend.id,
+      latest_inbound_created_at_at_send: latestInboundAtSend.created_at,
+      outcome: replyAbortedReason ? "aborted" : "current",
+      reason: replyAbortedReason,
+    },
+  };
   const firstResponsePolicy = {
     enabled: params.autoSendFirstResponse === true,
     sla_minutes: reply.firstResponseSlaMinutes,
@@ -918,7 +1033,29 @@ export async function prepareWhatsAppSalesReplyForContact(params: {
     created_at: new Date().toISOString(),
   });
 
-  if (operatingPartnerDecision) {
+  if (replyAbortedReason) {
+    await params.supabase.from("system_event_logs").insert({
+      tenant_id: params.tenantId,
+      user_id: params.actorUserId || null,
+      source: "whatsapp",
+      provider: "mayus",
+      event_name: "whatsapp_reply_aborted_by_newer_message",
+      status: "warning",
+      payload: {
+        contact_id: contact.id,
+        trigger: params.trigger,
+        reason: replyAbortedReason,
+        reply_target_message_id: replyTarget.id,
+        reply_target_created_at: replyTarget.created_at,
+        latest_inbound_message_id_at_decision: latestInboundAtDecision.id,
+        latest_inbound_message_id_at_send: latestInboundAtSend.id,
+        latest_inbound_created_at_at_send: latestInboundAtSend.created_at,
+      },
+      created_at: new Date().toISOString(),
+    });
+  }
+
+  if (operatingPartnerDecision && !replyAbortedReason) {
     operatingPartnerActionResults = await executeMayusOperatingPartnerActions({
       supabase: params.supabase,
       tenantId: params.tenantId,

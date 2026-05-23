@@ -1332,6 +1332,120 @@ describe("prepareWhatsAppSalesReplyForContact", () => {
     }));
   });
 
+  it("aborta autoenvio quando uma nova mensagem chega durante a geracao", async () => {
+    const inserts: Array<{ table: string; payload: any }> = [];
+    buildMayusOperatingPartnerDecisionMock.mockResolvedValueOnce({
+      provider: "openrouter",
+      model_used: "openai/gpt-5.4-nano",
+      reply: "Oi, Vitor. Tudo bem? Como posso ajudar?",
+      intent: "client_support",
+      confidence: 0.93,
+      risk_flags: [],
+      next_action: "responder saudacao",
+      actions_to_execute: [{ type: "create_task", title: "Organizar atendimento", requires_approval: false }],
+      requires_approval: false,
+      should_auto_send: true,
+      conversation_state: { stage: "client_support", conversation_role: "support", conversation_goal: "abrir conversa limpa" },
+      closing_readiness: { score: 0, status: "not_ready", reasons: [] },
+      support_summary: { is_existing_client: true, issue_type: "support", verified_case_reference: false, summary: "saudacao" },
+      reasoning_summary_for_team: "Saudacao limpa.",
+      expected_outcome: "usuario informa o que precisa",
+    });
+
+    const supabase: any = {
+      from: vi.fn((table: string) => {
+        if (table === "whatsapp_contacts") {
+          return makeSelectQuery({ data: { id: "contact-1", name: "Vitor", phone_number: "5521999990000", assigned_user_id: null }, error: null });
+        }
+        if (table === "tenant_settings") {
+          return makeSelectQuery({ data: { ai_features: { mayus_operating_partner: { enabled: true }, whatsapp_agent: { assistant_name: "Maya", autonomy_mode: "auto_respond" } } }, error: null });
+        }
+        if (table === "whatsapp_messages") {
+          return {
+            select: vi.fn((columns?: string) => {
+              if (String(columns || "").startsWith("id, direction")) {
+                return makeSelectQuery({
+                  data: [{
+                    id: "message-old",
+                    direction: "inbound",
+                    content: "Oi mayus",
+                    message_type: "text",
+                    created_at: "2026-05-23T18:00:00.000Z",
+                  }],
+                  error: null,
+                });
+              }
+              return makeSelectQuery({
+                data: [{ id: "message-new", created_at: "2026-05-23T18:00:03.000Z" }],
+                error: null,
+              });
+            }),
+          };
+        }
+        if (table === "clients") return makeSelectQuery({ data: null, error: null });
+        if (table === "process_tasks") return makeSelectQuery({ data: [], error: null });
+        if (table === "system_event_logs" || table === "notifications") {
+          return {
+            insert: vi.fn(async (payload: any) => {
+              inserts.push({ table, payload });
+              return { error: null };
+            }),
+          };
+        }
+        return {
+          insert: vi.fn(async (payload: any) => {
+            inserts.push({ table, payload });
+            return { error: null };
+          }),
+        };
+      }),
+    };
+
+    const prepared = await prepareWhatsAppSalesReplyForContact({
+      supabase,
+      tenantId: "tenant-1",
+      contactId: "contact-1",
+      trigger: "evolution_webhook",
+      autoSendFirstResponse: true,
+      preferredProvider: "evolution",
+      replyTargetMessageId: "message-old",
+      replyTargetCreatedAt: "2026-05-23T18:00:00.000Z",
+    });
+
+    expect(sendWhatsAppMessageMock).not.toHaveBeenCalled();
+    expect(executeMayusOperatingPartnerActionsMock).not.toHaveBeenCalled();
+    expect(prepared.autoSendResult).toEqual({ attempted: false, status: "skipped" });
+    expect(prepared.metadata).toEqual(expect.objectContaining({
+      reply_target_message_id: "message-old",
+      latest_inbound_message_id_at_decision: "message-old",
+      latest_inbound_message_id_at_send: "message-new",
+      reply_aborted_reason: "newer_message_arrived_during_generation",
+      auto_sent: false,
+      may_auto_send: false,
+      requires_human_review: true,
+      freshness_guardrail: expect.objectContaining({
+        outcome: "aborted",
+        reason: "newer_message_arrived_during_generation",
+      }),
+    }));
+    expect(prepared.metadata.first_response_policy).toEqual(expect.objectContaining({
+      can_auto_send: false,
+      blocked_reason: "newer_message_arrived_during_generation",
+    }));
+    expect(inserts).toContainEqual(expect.objectContaining({
+      table: "system_event_logs",
+      payload: expect.objectContaining({
+        event_name: "whatsapp_reply_aborted_by_newer_message",
+        status: "warning",
+        payload: expect.objectContaining({
+          reason: "newer_message_arrived_during_generation",
+          reply_target_message_id: "message-old",
+          latest_inbound_message_id_at_send: "message-new",
+        }),
+      }),
+    }));
+  });
+
   it("autoenvia resposta segura em contato atribuido quando cria tarefa para advogado", async () => {
     const inserts: Array<{ table: string; payload: any }> = [];
     buildMayusOperatingPartnerDecisionMock.mockResolvedValueOnce({

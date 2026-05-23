@@ -435,6 +435,8 @@ async function processOneReply(params: {
         notify: true,
         autoSendFirstResponse: true,
         preferredProvider,
+        replyTargetMessageId: params.row.id,
+        replyTargetCreatedAt: params.row.created_at,
       }),
     });
     const durationMs = Date.now() - startedAt;
@@ -463,6 +465,11 @@ async function processOneReply(params: {
           reply_agent_timeout_attempts: agenticRetryReason === "operating_partner_timeout_no_agentic_answer" ? agentTimeoutAttempts : params.row.metadata?.reply_agent_timeout_attempts || null,
           reply_non_agentic_attempts: agenticRetryReason && agenticRetryReason !== "operating_partner_timeout_no_agentic_answer" ? nonAgenticAttempts : params.row.metadata?.reply_non_agentic_attempts || null,
           reply_blocked_reason: prepared.metadata?.first_response_policy?.blocked_reason || null,
+          reply_target_message_id: prepared.metadata?.reply_target_message_id || params.row.id,
+          reply_target_created_at: prepared.metadata?.reply_target_created_at || params.row.created_at || null,
+          latest_inbound_message_id_at_decision: prepared.metadata?.latest_inbound_message_id_at_decision || null,
+          latest_inbound_message_id_at_send: prepared.metadata?.latest_inbound_message_id_at_send || null,
+          reply_aborted_reason: prepared.metadata?.reply_aborted_reason || null,
         }),
       })
       .eq("id", params.row.id);

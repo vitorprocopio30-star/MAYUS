@@ -152,6 +152,8 @@ describe("whatsapp reply processor", () => {
       trigger: "evolution_webhook",
       preferredProvider: "evolution",
       autoSendFirstResponse: true,
+      replyTargetMessageId: "message-1",
+      replyTargetCreatedAt: row.created_at,
     }));
     expect(mocks.sendEvolutionPresenceForContact).toHaveBeenCalledWith(expect.objectContaining({
       tenantId: "tenant-1",
@@ -210,6 +212,39 @@ describe("whatsapp reply processor", () => {
         }),
       }),
     }));
+  });
+
+  it("registra abort de autoenvio quando mensagem nova chega durante a geracao", async () => {
+    const row = {
+      id: "message-generation-stale",
+      tenant_id: "tenant-1",
+      contact_id: "contact-1",
+      direction: "inbound",
+      media_processing_status: "none",
+      created_at: new Date().toISOString(),
+      metadata: { reply_processing_status: "pending", reply_trigger: "evolution_webhook", reply_preferred_provider: "evolution" },
+    };
+    const { supabase, updates } = makeSupabase(row, { newerMessage: false });
+    mocks.prepareWhatsAppSalesReplyForContact.mockResolvedValueOnce({
+      autoSendResult: { status: "skipped" },
+      metadata: {
+        reply_target_message_id: "message-generation-stale",
+        reply_target_created_at: row.created_at,
+        latest_inbound_message_id_at_decision: "message-generation-stale",
+        latest_inbound_message_id_at_send: "message-newer",
+        reply_aborted_reason: "newer_message_arrived_during_generation",
+        first_response_policy: {
+          blocked_reason: "newer_message_arrived_during_generation",
+        },
+      },
+    });
+
+    const result = await processPendingWhatsAppRepliesBatch({ supabase, limit: 1 });
+
+    expect(result).toMatchObject({ picked: 1, processed: 1, failed: 0, auto_sent: 0 });
+    expect(updates.some((item) => item.payload.metadata?.reply_aborted_reason === "newer_message_arrived_during_generation")).toBe(true);
+    expect(updates.some((item) => item.payload.metadata?.latest_inbound_message_id_at_send === "message-newer")).toBe(true);
+    expect(updates.some((item) => item.payload.metadata?.reply_blocked_reason === "newer_message_arrived_during_generation")).toBe(true);
   });
 
   it("registra falha sanitizada ao preparar resposta", async () => {
