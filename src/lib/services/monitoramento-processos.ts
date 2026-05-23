@@ -20,6 +20,12 @@ type ResultadoMonitoramento = {
   error?: string
 }
 
+type CancelarMonitoramentoParams = {
+  tenantId: string
+  apiKey: string
+  monitoramentoId: string
+}
+
 function normalizarNumeroProcesso(valor?: string | null): string {
   return String(valor ?? '').replace(/\D/g, '')
 }
@@ -296,5 +302,29 @@ export async function solicitarResumoProcesso(
     return true
   } catch {
     return false
+  }
+}
+
+export async function cancelarMonitoramentoProcesso({
+  tenantId,
+  apiKey,
+  monitoramentoId,
+}: CancelarMonitoramentoParams): Promise<{ ok: boolean; payload?: any; error?: string }> {
+  const id = String(monitoramentoId || '').trim()
+  if (!id) return { ok: false, error: 'monitoramento_id vazio para cancelamento' }
+
+  try {
+    const payload = await escavadorFetch(
+      `/monitoramentos/processos/${encodeURIComponent(id)}`,
+      apiKey,
+      tenantId,
+      { method: 'DELETE' }
+    )
+    return { ok: true, payload }
+  } catch (error: any) {
+    return {
+      ok: false,
+      error: error?.message || 'Falha ao cancelar monitoramento no Escavador',
+    }
   }
 }

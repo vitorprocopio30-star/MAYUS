@@ -2,6 +2,8 @@ import { NextRequest, NextResponse } from 'next/server'
 import { createClient } from '@supabase/supabase-js'
 import { createServerClient } from '@supabase/ssr'
 import { cookies } from 'next/headers'
+import { requireTenantApiKey } from '@/lib/integrations/server'
+import { cancelarMonitoramentoProcesso } from '@/lib/services/monitoramento-processos'
 
 const adminSupabase = createClient(
   process.env.NEXT_PUBLIC_SUPABASE_URL!,
@@ -39,24 +41,79 @@ export async function DELETE(req: NextRequest) {
   if (!profile?.tenant_id) return NextResponse.json({ error: 'No tenant' }, { status: 400 })
   const tenantId = profile.tenant_id
 
-  let query = adminSupabase
+  let lookupQuery = adminSupabase
     .from('monitored_processes')
-    .update({ ativo: false })
+    .select('id, numero_processo, escavador_monitoramento_id, monitoramento_ativo')
     .eq('tenant_id', tenantId)
 
   // Verifica se é UUID
   if (processo_id.includes('-') && processo_id.length === 36) {
-    query = query.eq('id', processo_id)
+    lookupQuery = lookupQuery.eq('id', processo_id)
   } else {
-    query = query.eq('numero_processo', processo_id)
+    lookupQuery = lookupQuery.eq('numero_processo', processo_id)
   }
 
-  const { error } = await query
+  const { data: processo, error: lookupError } = await lookupQuery.maybeSingle()
+  if (lookupError) return NextResponse.json({ error: lookupError.message }, { status: 500 })
+  if (!processo) return NextResponse.json({ error: 'Processo monitorado não encontrado' }, { status: 404 })
+
+  const monitoramentoId = processo.escavador_monitoramento_id
+  if (monitoramentoId && processo.monitoramento_ativo) {
+    let cancelamento: { ok: boolean; error?: string }
+    try {
+      const { apiKey } = await requireTenantApiKey(tenantId, 'escavador')
+      if (!apiKey) {
+        cancelamento = { ok: false, error: 'Integracao Escavador nao configurada ou inativa.' }
+      } else {
+        cancelamento = await cancelarMonitoramentoProcesso({
+          tenantId,
+          apiKey,
+          monitoramentoId: String(monitoramentoId),
+        })
+      }
+    } catch (error: any) {
+      cancelamento = {
+        ok: false,
+        error: error?.message || 'Falha ao preparar cancelamento no Escavador',
+      }
+    }
+
+    if (!cancelamento.ok) {
+      await adminSupabase.from('system_event_logs').insert({
+        tenant_id: tenantId,
+        user_id: user.id,
+        source: 'monitoramento',
+        provider: 'escavador',
+        event_name: 'escavador_monitoring_cancel_failed',
+        status: 'error',
+        payload: {
+          action: 'remover_monitoramento',
+          processo_id: processo.id,
+          numero_processo: processo.numero_processo,
+          escavador_monitoramento_id: monitoramentoId,
+          error: cancelamento.error,
+        },
+        created_at: new Date().toISOString(),
+      })
+      return NextResponse.json({ error: 'Falha ao cancelar monitoramento no Escavador.' }, { status: 502 })
+    }
+  }
+
+  const { error } = await adminSupabase
+    .from('monitored_processes')
+    .update({
+      ativo: false,
+      monitoramento_ativo: false,
+      escavador_monitoramento_id: null,
+      updated_at: new Date().toISOString(),
+    })
+    .eq('tenant_id', tenantId)
+    .eq('id', processo.id)
 
   if (error) {
     console.error('[remover-monitoramento]', error)
     return NextResponse.json({ error: error.message }, { status: 500 })
   }
 
-  return NextResponse.json({ success: true, mensagem: 'Processo removido (inativado) com sucesso.' })
+  return NextResponse.json({ success: true, mensagem: 'Processo removido e monitoramento externo cancelado com sucesso.' })
 }

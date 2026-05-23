@@ -5,13 +5,16 @@ import { cookies } from 'next/headers'
 import { criarMonitoramentoProcesso, solicitarResumoProcesso } from '@/lib/services/monitoramento-processos'
 import { requireTenantApiKey } from '@/lib/integrations/server'
 import { pickExplicitClientName } from '@/lib/juridico/process-card-context'
-
-interface MonitoramentoCapacity {
-  total_monitorados: number
-  gratuitos: number
-  disponivel_sem_custo: number
-  preco_extra: number
-}
+import {
+  buildEscavadorBudgetBlockedPayload,
+  evaluateEscavadorBudget,
+  registerEscavadorBudgetEvent,
+} from '@/lib/agent/runtime/escavador-budget'
+import {
+  buildMonitoringOverageBlockedPayload,
+  buildMonitoringOverageQuote,
+  recordMonitoringUsageSnapshot,
+} from '@/lib/finance/monitoring-overage'
 
 const adminSupabase = createClient(
   process.env.NEXT_PUBLIC_SUPABASE_URL!,
@@ -48,14 +51,6 @@ export async function POST(req: NextRequest) {
   if (!profile?.tenant_id) return NextResponse.json({ error: 'No tenant' }, { status: 400 })
   const tenantId = profile.tenant_id
 
-  const { data: capacity } = await adminSupabase
-    .rpc('check_monitoramento_capacity', { p_tenant_id: tenantId }).single() as { data: MonitoramentoCapacity | null; error: unknown }
-
-  const gratuitos = capacity?.gratuitos ?? 100
-  const jaMonitorados = capacity?.total_monitorados ?? 0
-  const disponivelSemCusto = Math.max(0, gratuitos - jaMonitorados)
-  const precoExtra = capacity?.preco_extra ?? 0.97
-
   // Filtrar duplicatas: só ignorar quem já tem monitoramento remoto ativo
   const numeros = processos.map((p: Record<string, string>) => p.numero_processo)
   const { data: existentes } = await adminSupabase
@@ -88,20 +83,91 @@ export async function POST(req: NextRequest) {
       mensagem: 'Todos já estavam monitorados no Escavador.'
     })
 
-  const excedente = Math.max(0, novos.length - disponivelSemCusto)
-  const custoMensal = excedente * precoExtra
+  const overageQuote = await buildMonitoringOverageQuote({
+    tenantId,
+    incomingCount: novos.length,
+    client: adminSupabase,
+  })
+  const overagePayload = buildMonitoringOverageBlockedPayload(overageQuote).monitoring_overage
+  const excedente = overageQuote.overageCount
+  const custoMensal = overageQuote.projectedAmount
+  const precoExtra = overageQuote.unitPriceCents / 100
 
   if (excedente > 0 && !confirmar_custo) {
     return NextResponse.json({
       requer_confirmacao: true,
       novos: novos.length,
-      gratuitos_disponiveis: disponivelSemCusto,
+      gratuitos_disponiveis: overageQuote.freeSlots,
       excedente,
       custo_mensal: custoMensal,
+      custo_mensal_centavos: overageQuote.projectedAmountCents,
       preco_por_extra: precoExtra,
-      mensagem: `${disponivelSemCusto} entram no plano. Os outros ${excedente} custam R$${custoMensal.toFixed(2)}/mês.`
+      preco_por_extra_centavos: overageQuote.unitPriceCents,
+      pagamento_excedente_ok: overageQuote.paymentReady,
+      bloqueio_excedente: overageQuote.blockedReason,
+      monitoring_overage: overagePayload,
+      mensagem: `${overageQuote.freeSlots} entram no plano. Os outros ${excedente} custam R$${custoMensal.toFixed(2)}/mês.`
     })
   }
+
+  if (excedente > 0 && !overageQuote.paymentReady) {
+    const blockedPayload = buildMonitoringOverageBlockedPayload(overageQuote)
+    await adminSupabase.from('system_event_logs').insert({
+      tenant_id: tenantId,
+      user_id: user.id,
+      source: 'monitoramento',
+      provider: 'mayus',
+      event_name: 'monitoring_overage_blocked',
+      status: 'blocked',
+      payload: blockedPayload,
+      created_at: new Date().toISOString(),
+    })
+    if (overageQuote.blockedReason === 'monitoring_overage_terms_required') {
+      await adminSupabase.from('system_event_logs').insert({
+        tenant_id: tenantId,
+        user_id: user.id,
+        source: 'monitoramento',
+        provider: 'mayus',
+        event_name: 'monitoring_overage_terms_required',
+        status: 'blocked',
+        payload: blockedPayload,
+        created_at: new Date().toISOString(),
+      })
+    }
+    return NextResponse.json(blockedPayload, { status: 402 })
+  }
+
+  const estimatedCostCents = Math.max(novos.length * 100, overageQuote.projectedAmountCents)
+  const budgetCheck = await evaluateEscavadorBudget({
+    tenantId,
+    estimatedCostCents,
+    client: adminSupabase,
+  })
+
+  if (!budgetCheck.allowed) {
+    await registerEscavadorBudgetEvent({
+      tenantId,
+      userId: user.id,
+      action: 'importar_lote_monitoramento',
+      source: 'monitoramento_import_batch',
+      status: 'blocked',
+      estimatedCostCents,
+      decision: budgetCheck.decision,
+      client: adminSupabase,
+    })
+    return NextResponse.json(buildEscavadorBudgetBlockedPayload(budgetCheck), { status: 402 })
+  }
+
+  await registerEscavadorBudgetEvent({
+    tenantId,
+    userId: user.id,
+    action: 'importar_lote_monitoramento',
+    source: 'monitoramento_import_batch',
+    status: budgetCheck.decision.status,
+    estimatedCostCents,
+    decision: budgetCheck.decision,
+    client: adminSupabase,
+  })
 
   // Buscar API Key do Escavador para sincronização
   const { apiKey } = await requireTenantApiKey(tenantId, 'escavador')
@@ -198,6 +264,18 @@ export async function POST(req: NextRequest) {
 
   const importados = rows.length
   await adminSupabase.rpc('increment_processos_monitorados', { p_tenant_id: tenantId, p_quantidade: importados })
+  await recordMonitoringUsageSnapshot({
+    tenantId,
+    currentQuantity: overageQuote.currentMonitored + importados,
+    includedLimit: overageQuote.includedLimit,
+    unitPriceCents: overageQuote.unitPriceCents,
+    client: adminSupabase,
+    metadata: {
+      imported_count: importados,
+      ignored_count: processosJaMonitorados.length,
+      failed_monitoring_count: falhasMonitoramento.length,
+    },
+  })
 
   const numerosParaLimparInbox = Array.from(new Set([
     ...rows.map((r) => String(r.numero_processo ?? '')).filter(Boolean),

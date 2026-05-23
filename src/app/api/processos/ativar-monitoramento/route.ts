@@ -3,6 +3,16 @@ import { createClient } from '@supabase/supabase-js'
 import { escavadorFetch } from '@/lib/services/escavador-client'
 import { criarMonitoramentoProcesso, solicitarResumoProcesso } from '@/lib/services/monitoramento-processos'
 import { requireTenantApiKey } from '@/lib/integrations/server'
+import {
+  buildEscavadorBudgetBlockedPayload,
+  evaluateEscavadorBudget,
+  registerEscavadorBudgetEvent,
+} from '@/lib/agent/runtime/escavador-budget'
+import {
+  buildMonitoringOverageBlockedPayload,
+  buildMonitoringOverageQuote,
+  recordMonitoringUsageSnapshot,
+} from '@/lib/finance/monitoring-overage'
 
 const adminSupabase = createClient(
   process.env.NEXT_PUBLIC_SUPABASE_URL!,
@@ -35,15 +45,7 @@ export async function POST(req: NextRequest) {
   if (!tenantId)
     return NextResponse.json({ error: 'Tenant not found' }, { status: 400 })
 
-  const { apiKey } = await requireTenantApiKey(tenantId, 'escavador')
-
-  if (!apiKey)
-    return NextResponse.json(
-      { error: 'Escavador não configurado' },
-      { status: 400 }
-    )
-
-  const { numero_cnj } = await req.json()
+  const { numero_cnj, confirmar_custo } = await req.json()
   if (!numero_cnj)
     return NextResponse.json(
       { error: 'numero_cnj obrigatório' },
@@ -51,6 +53,104 @@ export async function POST(req: NextRequest) {
     )
 
   const cnj_encoded = encodeURIComponent(numero_cnj)
+
+  const { data: existente } = await adminSupabase
+    .from('monitored_processes')
+    .select('id, escavador_monitoramento_id, monitoramento_ativo, ativo')
+    .eq('tenant_id', tenantId)
+    .eq('numero_processo', numero_cnj)
+    .maybeSingle()
+
+  if (existente?.ativo !== false && existente?.monitoramento_ativo && existente?.escavador_monitoramento_id) {
+    return NextResponse.json({
+      ok: true,
+      ja_monitorado: true,
+      monitoramento_id: existente.escavador_monitoramento_id,
+      monitoramento_ativo: true,
+    })
+  }
+
+  const overageQuote = await buildMonitoringOverageQuote({
+    tenantId,
+    incomingCount: 1,
+    client: adminSupabase,
+  })
+
+  if (overageQuote.overageCount > 0 && confirmar_custo !== true) {
+    return NextResponse.json({
+      requer_confirmacao: true,
+      monitoring_overage: buildMonitoringOverageBlockedPayload(overageQuote).monitoring_overage,
+      mensagem: `${overageQuote.freeSlots} entram no plano. Este monitoramento custara R$${overageQuote.projectedAmount.toFixed(2)}/mes.`,
+    })
+  }
+
+  if (overageQuote.overageCount > 0 && !overageQuote.paymentReady) {
+    const blockedPayload = buildMonitoringOverageBlockedPayload(overageQuote)
+    const now = new Date().toISOString()
+    await adminSupabase.from('system_event_logs').insert({
+      tenant_id: tenantId,
+      user_id: user.id,
+      source: 'monitoramento',
+      provider: 'mayus',
+      event_name: 'monitoring_overage_blocked',
+      status: 'blocked',
+      payload: blockedPayload,
+      created_at: now,
+    })
+    if (overageQuote.blockedReason === 'monitoring_overage_terms_required') {
+      await adminSupabase.from('system_event_logs').insert({
+        tenant_id: tenantId,
+        user_id: user.id,
+        source: 'monitoramento',
+        provider: 'mayus',
+        event_name: 'monitoring_overage_terms_required',
+        status: 'blocked',
+        payload: blockedPayload,
+        created_at: now,
+      })
+    }
+    return NextResponse.json(blockedPayload, { status: 402 })
+  }
+
+  const estimatedCostCents = 100
+  const budgetCheck = await evaluateEscavadorBudget({
+    tenantId,
+    estimatedCostCents,
+    client: adminSupabase,
+  })
+
+  if (!budgetCheck.allowed) {
+    await registerEscavadorBudgetEvent({
+      tenantId,
+      userId: user.id,
+      action: 'ativar_monitoramento_processo',
+      source: 'processos_ativar_monitoramento',
+      status: 'blocked',
+      estimatedCostCents,
+      decision: budgetCheck.decision,
+      client: adminSupabase,
+    })
+    return NextResponse.json(buildEscavadorBudgetBlockedPayload(budgetCheck), { status: 402 })
+  }
+
+  await registerEscavadorBudgetEvent({
+    tenantId,
+    userId: user.id,
+    action: 'ativar_monitoramento_processo',
+    source: 'processos_ativar_monitoramento',
+    status: budgetCheck.decision.status,
+    estimatedCostCents,
+    decision: budgetCheck.decision,
+    client: adminSupabase,
+  })
+
+  const { apiKey } = await requireTenantApiKey(tenantId, 'escavador')
+
+  if (!apiKey)
+    return NextResponse.json(
+      { error: 'Escavador nÃ£o configurado' },
+      { status: 400 }
+    )
 
   // 1. Busca dados completos do processo via API V2
   let dadosCompletos: any = null
@@ -137,6 +237,20 @@ export async function POST(req: NextRequest) {
   const resumoSolicitado = monitoramentoId
     ? await solicitarResumoProcesso(tenantId, apiKey, numero_cnj)
     : false
+
+  if (monitoramentoId) {
+    await recordMonitoringUsageSnapshot({
+      tenantId,
+      currentQuantity: overageQuote.currentMonitored + 1,
+      includedLimit: overageQuote.includedLimit,
+      unitPriceCents: overageQuote.unitPriceCents,
+      client: adminSupabase,
+      metadata: {
+        source: 'processos_ativar_monitoramento',
+        numero_processo: numero_cnj,
+      },
+    })
+  }
 
   // Dispara organizador IA em background
   if (processoSalvo?.id && token) {

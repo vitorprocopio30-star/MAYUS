@@ -3,6 +3,11 @@ import { createClient } from '@supabase/supabase-js'
 import { createServerClient } from '@supabase/ssr'
 import { cookies } from 'next/headers'
 import { getTenantIntegrationResolved } from '@/lib/integrations/server'
+import {
+  buildEscavadorBudgetBlockedPayload,
+  evaluateEscavadorBudget,
+  registerEscavadorBudgetEvent,
+} from '@/lib/agent/runtime/escavador-budget'
 
 const adminSupabase = createClient(
   process.env.NEXT_PUBLIC_SUPABASE_URL!,
@@ -37,9 +42,14 @@ export async function POST(req: NextRequest) {
   const { data: { user } } = await supabase.auth.getUser()
   if (!user) return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
 
-  const { oab_numero, oab_estado, advogado_nome } = await req.json()
+  const { oab_numero, oab_estado, advogado_nome, allow_paid_search, source } = await req.json()
   if (!oab_numero || !oab_estado) {
     return NextResponse.json({ error: 'Parâmetros obrigatórios: oab_numero, oab_estado' }, { status: 400 })
+  }
+
+  const requestSource = String(source || 'unknown')
+  if (!allow_paid_search || !['monitoramento_oab_setup', 'monitoramento_ui_sync_button'].includes(requestSource)) {
+    return NextResponse.json({ error: 'Monitoramento externo de OAB bloqueado sem confirmacao operacional.' }, { status: 400 })
   }
 
   const normalizedEstado = normalizeOabEstado(oab_estado)
@@ -58,6 +68,37 @@ export async function POST(req: NextRequest) {
   if (!profile?.tenant_id) return NextResponse.json({ error: 'Tenant não encontrado' }, { status: 400 })
 
   const tenant_id = profile.tenant_id
+  const estimatedCostCents = 100
+  const budgetCheck = await evaluateEscavadorBudget({
+    tenantId: tenant_id,
+    estimatedCostCents,
+    client: adminSupabase,
+  })
+
+  if (!budgetCheck.allowed) {
+    await registerEscavadorBudgetEvent({
+      tenantId: tenant_id,
+      userId: user.id,
+      action: 'criar_monitoramento_oab',
+      source: requestSource,
+      status: 'blocked',
+      estimatedCostCents,
+      decision: budgetCheck.decision,
+      client: adminSupabase,
+    })
+    return NextResponse.json(buildEscavadorBudgetBlockedPayload(budgetCheck), { status: 402 })
+  }
+
+  await registerEscavadorBudgetEvent({
+    tenantId: tenant_id,
+    userId: user.id,
+    action: 'criar_monitoramento_oab',
+    source: requestSource,
+    status: budgetCheck.decision.status,
+    estimatedCostCents,
+    decision: budgetCheck.decision,
+    client: adminSupabase,
+  })
 
   const integ = await getTenantIntegrationResolved(tenant_id, 'escavador')
 

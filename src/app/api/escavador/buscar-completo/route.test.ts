@@ -86,6 +86,20 @@ function makeUpsertQuery() {
   };
 }
 
+function makeUsageQuery(data: any[] = []) {
+  const query: any = {
+    insert: vi.fn(async () => ({ error: null })),
+    select: vi.fn(() => query),
+    eq: vi.fn(() => query),
+    gte: vi.fn(() => query),
+    ilike: vi.fn(() => query),
+    then(resolve: (value: any) => void) {
+      resolve({ data, error: null });
+    },
+  };
+  return query;
+}
+
 function makeMonitoradosQuery(data: any[] = []) {
   const query: any = {
     select: vi.fn(() => query),
@@ -98,10 +112,30 @@ function makeMonitoradosQuery(data: any[] = []) {
 function mockCommonDb(cache: any = null) {
   const profileQuery = makeSingleQuery({ tenant_id: "tenant-1" });
   const cacheQuery = makeCacheQuery(cache);
-  const usageQuery = makeUpsertQuery();
+  const usageQuery = makeUsageQuery();
   const oabsQuery = makeUpsertQuery();
   const monitoramentosQuery = makeUpsertQuery();
   const monitoradosQuery = makeMonitoradosQuery();
+  const eventsQuery = makeUpsertQuery();
+  const tenantSettingsQuery = {
+    select: vi.fn(function (this: any) { return this; }),
+    eq: vi.fn(function (this: any) { return this; }),
+    maybeSingle: vi.fn(async () => ({
+      data: {
+        ai_features: {
+          escavador_budget_policy: {
+            enabled: true,
+            cache_first: true,
+            require_paid_search_confirmation: true,
+            monthly_limit_cents: 10000,
+            warn_at_ratio: 0.8,
+            hard_stop: true,
+          },
+        },
+      },
+      error: null,
+    })),
+  };
 
   adminRpcMock.mockReturnValue({
     single: vi.fn(async () => ({
@@ -114,13 +148,15 @@ function mockCommonDb(cache: any = null) {
     if (table === "profiles") return profileQuery;
     if (table === "processos_cache") return cacheQuery;
     if (table === "api_usage_log") return usageQuery;
+    if (table === "tenant_settings") return tenantSettingsQuery;
+    if (table === "system_event_logs") return eventsQuery;
     if (table === "oabs_salvas") return oabsQuery;
     if (table === "tenant_oab_monitoramentos") return monitoramentosQuery;
     if (table === "monitored_processes") return monitoradosQuery;
     throw new Error(`unexpected table ${table}`);
   });
 
-  return { cacheQuery, monitoradosQuery, usageQuery };
+  return { cacheQuery, monitoradosQuery, usageQuery, tenantSettingsQuery, eventsQuery };
 }
 
 describe("POST /api/escavador/buscar-completo", () => {
@@ -175,9 +211,10 @@ describe("POST /api/escavador/buscar-completo", () => {
       updated_at: new Date().toISOString(),
     });
 
-    const response = await POST(buildRequest(validBody()));
+    const response = await POST(buildRequest(validBody({ allow_paid_search: false })));
 
     expect(global.fetch).not.toHaveBeenCalled();
+    expect(requireTenantApiKeyMock).not.toHaveBeenCalled();
     expect(response.status).toBe(200);
     await expect(response.json()).resolves.toEqual(expect.objectContaining({
       cached: true,
@@ -186,8 +223,35 @@ describe("POST /api/escavador/buscar-completo", () => {
     }));
   });
 
-  it("chama Escavador com api key resolvida e persiste cache", async () => {
-    const { cacheQuery, usageQuery } = mockCommonDb(null);
+  it("bloqueia busca paga sem budget antes de chamar Escavador", async () => {
+    const { tenantSettingsQuery } = mockCommonDb(null);
+    tenantSettingsQuery.maybeSingle.mockResolvedValueOnce({
+      data: {
+        ai_features: {
+          escavador_budget_policy: {
+            enabled: true,
+            cache_first: true,
+            require_paid_search_confirmation: true,
+            monthly_limit_cents: 0,
+            warn_at_ratio: 0.8,
+            hard_stop: true,
+          },
+        },
+      },
+      error: null,
+    });
+
+    const response = await POST(buildRequest(validBody()));
+    const payload = await response.json();
+
+    expect(response.status).toBe(402);
+    expect(payload.error).toContain("budget");
+    expect(global.fetch).not.toHaveBeenCalled();
+    expect(requireTenantApiKeyMock).not.toHaveBeenCalled();
+  });
+
+  it("chama Escavador com api key resolvida, registra budget sanitizado e persiste cache", async () => {
+    const { cacheQuery, usageQuery, eventsQuery } = mockCommonDb(null);
     vi.mocked(global.fetch).mockResolvedValueOnce(new Response(JSON.stringify({
       items: [{
         id: 123,
@@ -213,6 +277,16 @@ describe("POST /api/escavador/buscar-completo", () => {
       })
     );
     expect(usageQuery.insert).toHaveBeenCalledWith(expect.objectContaining({ creditos: 1 }));
+    expect(eventsQuery.insert).toHaveBeenCalledWith(expect.objectContaining({
+      source: "escavador",
+      provider: "mayus",
+      event_name: "escavador_budget_ok",
+      payload: expect.objectContaining({
+        action: "buscar_completo_oab",
+        source: "monitoramento_ui_sync_button",
+      }),
+    }));
+    expect(JSON.stringify(eventsQuery.insert.mock.calls)).not.toContain("escavador-key");
     expect(cacheQuery.upsert).toHaveBeenCalledWith(expect.objectContaining({ tenant_id: "tenant-1" }), { onConflict: "tenant_id,cache_key" });
     expect(response.status).toBe(200);
     await expect(response.json()).resolves.toEqual(expect.objectContaining({

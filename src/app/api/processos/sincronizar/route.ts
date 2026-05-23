@@ -3,6 +3,11 @@ import { createClient } from '@supabase/supabase-js'
 import { EscavadorService } from '@/lib/services/escavador'
 import { requireTenantApiKey } from '@/lib/integrations/server'
 import { pickExplicitClientName } from '@/lib/juridico/process-card-context'
+import {
+  buildEscavadorBudgetBlockedPayload,
+  evaluateEscavadorBudget,
+  registerEscavadorBudgetEvent,
+} from '@/lib/agent/runtime/escavador-budget'
 
 export const maxDuration = 60
 
@@ -37,10 +42,6 @@ export async function POST(req: NextRequest) {
   if (!tenantId)
     return NextResponse.json({ error: 'Tenant not found' }, { status: 400 })
 
-  const { apiKey } = await requireTenantApiKey(tenantId, 'escavador')
-  if (!apiKey)
-    return NextResponse.json({ error: 'Escavador não configurado' }, { status: 400 })
-
   const { cache_key, query, pagina_inicio = 2, allow_paid_search, source } = await req.json()
 
   if (!allow_paid_search || source !== 'monitoramento_ui_sync_button') {
@@ -61,6 +62,42 @@ export async function POST(req: NextRequest) {
   let todos = cache.processos as any[]
 
   const pageFim = Math.min(pagina_inicio + 3, cache.total_paginas)
+  const paginasExternas = Math.max(0, pageFim - pagina_inicio + 1)
+  const estimatedCostCents = paginasExternas * 200
+  const budgetCheck = await evaluateEscavadorBudget({
+    tenantId,
+    estimatedCostCents,
+    client: adminSupabase,
+  })
+
+  if (!budgetCheck.allowed) {
+    await registerEscavadorBudgetEvent({
+      tenantId,
+      userId: user.id,
+      action: 'sincronizar_processos_cache',
+      source: String(source || 'unknown'),
+      status: 'blocked',
+      estimatedCostCents,
+      decision: budgetCheck.decision,
+      client: adminSupabase,
+    })
+    return NextResponse.json(buildEscavadorBudgetBlockedPayload(budgetCheck), { status: 402 })
+  }
+
+  await registerEscavadorBudgetEvent({
+    tenantId,
+    userId: user.id,
+    action: 'sincronizar_processos_cache',
+    source: String(source || 'unknown'),
+    status: budgetCheck.decision.status,
+    estimatedCostCents,
+    decision: budgetCheck.decision,
+    client: adminSupabase,
+  })
+
+  const { apiKey } = await requireTenantApiKey(tenantId, 'escavador')
+  if (!apiKey)
+    return NextResponse.json({ error: 'Escavador não configurado' }, { status: 400 })
 
   for (let page = pagina_inicio; page <= pageFim; page++) {
     const [resE, resF] = await Promise.all([

@@ -10,6 +10,7 @@ export type EscavadorBudgetPolicy = {
   cache_first?: boolean;
   require_paid_search_confirmation?: boolean;
   monthly_limit_cents?: number;
+  credit_cost_cents?: number;
   warn_at_ratio?: number;
   hard_stop?: boolean;
 };
@@ -18,6 +19,8 @@ export type EscavadorBudgetCheck = {
   allowed: boolean;
   policy: Required<EscavadorBudgetPolicy>;
   decision: ReturnType<typeof evaluateMayusBudget>;
+  spentCredits: number;
+  spentCostCents: number;
 };
 
 function normalizePolicy(value: unknown): Required<EscavadorBudgetPolicy> {
@@ -29,6 +32,9 @@ function normalizePolicy(value: unknown): Required<EscavadorBudgetPolicy> {
     monthly_limit_cents: typeof policy.monthly_limit_cents === "number"
       ? policy.monthly_limit_cents
       : DEFAULT_ESCAVADOR_BUDGET_POLICY.monthly_limit_cents,
+    credit_cost_cents: typeof policy.credit_cost_cents === "number"
+      ? Math.max(1, Math.round(policy.credit_cost_cents))
+      : 100,
     warn_at_ratio: typeof policy.warn_at_ratio === "number"
       ? policy.warn_at_ratio
       : DEFAULT_ESCAVADOR_BUDGET_POLICY.warn_at_ratio,
@@ -57,9 +63,10 @@ export async function getEscavadorBudgetPolicy(params: {
   }
 }
 
-async function getCurrentMonthSpentCents(params: {
+async function getCurrentMonthEscavadorUsage(params: {
   tenantId: string;
   client: EscavadorBudgetClient;
+  creditCostCents: number;
 }) {
   const start = new Date();
   start.setUTCDate(1);
@@ -79,13 +86,20 @@ async function getCurrentMonthSpentCents(params: {
     const { data, error } = await query;
     if (error) throw error;
 
-    return (data || []).reduce((sum: number, row: { creditos?: number | string | null }) => {
+    const spentCredits = (data || []).reduce((sum: number, row: { creditos?: number | string | null }) => {
       const credits = Number(row.creditos || 0);
       return sum + Math.max(0, Math.round(credits));
     }, 0);
+    return {
+      spentCredits,
+      spentCostCents: spentCredits * params.creditCostCents,
+    };
   } catch (error) {
     console.error("[escavador-budget] usage", error);
-    return 0;
+    return {
+      spentCredits: 0,
+      spentCostCents: 0,
+    };
   }
 }
 
@@ -96,7 +110,11 @@ export async function evaluateEscavadorBudget(params: {
 }): Promise<EscavadorBudgetCheck> {
   const client = params.client || supabaseAdmin;
   const policy = await getEscavadorBudgetPolicy({ tenantId: params.tenantId, client });
-  const spentCents = await getCurrentMonthSpentCents({ tenantId: params.tenantId, client });
+  const usage = await getCurrentMonthEscavadorUsage({
+    tenantId: params.tenantId,
+    client,
+    creditCostCents: policy.credit_cost_cents,
+  });
   const decision = evaluateMayusBudget({
     estimatedCostCents: params.estimatedCostCents,
     policies: [{
@@ -104,7 +122,7 @@ export async function evaluateEscavadorBudget(params: {
       scope: "escavador",
       label: "Escavador",
       limitCents: policy.enabled ? policy.monthly_limit_cents : 0,
-      spentCents,
+      spentCents: usage.spentCostCents,
       warnAtRatio: policy.warn_at_ratio,
       hardStop: policy.hard_stop,
     }],
@@ -114,6 +132,8 @@ export async function evaluateEscavadorBudget(params: {
     allowed: policy.enabled && decision.status !== "blocked",
     policy,
     decision,
+    spentCredits: usage.spentCredits,
+    spentCostCents: usage.spentCostCents,
   };
 }
 
@@ -141,6 +161,12 @@ export async function registerEscavadorBudgetEvent(params: {
       projected_cents: params.decision.projectedCents,
       remaining_cents: params.decision.remainingCents,
       reasons: params.decision.reasons,
+      agent_control: {
+        primary_agent_id: "monitoring_agent",
+        billing_agent_id: "finance_agent",
+        approval_required: true,
+        paid_external_action: true,
+      },
     },
   });
 
@@ -167,7 +193,16 @@ export function buildEscavadorBudgetBlockedPayload(check: EscavadorBudgetCheck) 
       status: check.decision.status,
       remaining_cents: check.decision.remainingCents,
       projected_cents: check.decision.projectedCents,
+      spent_credits: check.spentCredits,
+      spent_cost_cents: check.spentCostCents,
+      credit_cost_cents: check.policy.credit_cost_cents,
       reasons: check.decision.reasons,
+    },
+    agent_control: {
+      primary_agent_id: "monitoring_agent",
+      billing_agent_id: "finance_agent",
+      approval_required: true,
+      paid_external_action: true,
     },
   };
 }

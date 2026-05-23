@@ -4,6 +4,11 @@ import { createServerClient } from '@supabase/ssr'
 import { cookies } from 'next/headers'
 import { requireTenantApiKey } from '@/lib/integrations/server'
 import { pickExplicitClientName } from '@/lib/juridico/process-card-context'
+import {
+  buildEscavadorBudgetBlockedPayload,
+  evaluateEscavadorBudget,
+  registerEscavadorBudgetEvent,
+} from '@/lib/agent/runtime/escavador-budget'
 
 interface MonitoramentoCapacity {
   total_monitorados: number
@@ -123,9 +128,9 @@ export async function POST(req: NextRequest) {
   if (!oab_estado || !oab_numero) return NextResponse.json({ error: 'OAB inválida' }, { status: 400 })
   const requestSource = String(source || 'unknown')
 
-  if (!allow_paid_search || requestSource !== 'monitoramento_ui_sync_button') {
+  if (requestSource !== 'monitoramento_ui_sync_button') {
     return NextResponse.json(
-      { error: 'Busca completa de OAB bloqueada sem confirmação explícita.' },
+      { error: 'Busca completa de OAB bloqueada sem origem operacional valida.' },
       { status: 400 }
     )
   }
@@ -137,9 +142,6 @@ export async function POST(req: NextRequest) {
 
   const { data: capacity } = await adminSupabase
     .rpc('check_monitoramento_capacity', { p_tenant_id: tenantId }).single() as { data: MonitoramentoCapacity | null; error: unknown }
-
-  const { apiKey } = await requireTenantApiKey(tenantId, 'escavador')
-  if (!apiKey) return NextResponse.json({ error: 'Escavador não configurado' }, { status: 400 })
 
   console.log(`[buscar-completo] Iniciando busca GET: OAB ${oab_numero}/${oab_estado} ${next_url ? 'COM NEXT_URL' : ''}`)
 
@@ -176,6 +178,48 @@ export async function POST(req: NextRequest) {
       }, { status: 200 })
     }
   }
+
+  if (!allow_paid_search) {
+    return NextResponse.json(
+      { error: 'Busca completa de OAB bloqueada sem confirmação explícita.' },
+      { status: 400 }
+    )
+  }
+
+  const estimatedCostCents = 100
+  const budgetCheck = await evaluateEscavadorBudget({
+    tenantId,
+    estimatedCostCents,
+    client: adminSupabase,
+  })
+
+  if (!budgetCheck.allowed) {
+    await registerEscavadorBudgetEvent({
+      tenantId,
+      userId: user.id,
+      action: 'buscar_completo_oab',
+      source: requestSource,
+      status: 'blocked',
+      estimatedCostCents,
+      decision: budgetCheck.decision,
+      client: adminSupabase,
+    })
+    return NextResponse.json(buildEscavadorBudgetBlockedPayload(budgetCheck), { status: 402 })
+  }
+
+  await registerEscavadorBudgetEvent({
+    tenantId,
+    userId: user.id,
+    action: 'buscar_completo_oab',
+    source: requestSource,
+    status: budgetCheck.decision.status,
+    estimatedCostCents,
+    decision: budgetCheck.decision,
+    client: adminSupabase,
+  })
+
+  const { apiKey } = await requireTenantApiKey(tenantId, 'escavador')
+  if (!apiKey) return NextResponse.json({ error: 'Escavador não configurado' }, { status: 400 })
 
   try {
     // Montar URL com query params (GET)

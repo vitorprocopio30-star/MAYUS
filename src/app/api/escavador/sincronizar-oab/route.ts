@@ -4,6 +4,11 @@ import { createServerClient } from '@supabase/ssr'
 import { cookies } from 'next/headers'
 import { requireTenantApiKey } from '@/lib/integrations/server'
 import { pickExplicitClientName } from '@/lib/juridico/process-card-context'
+import {
+  buildEscavadorBudgetBlockedPayload,
+  evaluateEscavadorBudget,
+  registerEscavadorBudgetEvent,
+} from '@/lib/agent/runtime/escavador-budget'
 
 interface MonitoramentoCapacity {
   total_monitorados: number
@@ -92,9 +97,9 @@ export async function POST(req: NextRequest) {
   if (!oab_estado || !oab_numero) return NextResponse.json({ error: 'OAB inválida' }, { status: 400 })
   const requestSource = String(source || 'unknown')
 
-  if (!allow_paid_search || requestSource !== 'monitoramento_ui_sync_button') {
+  if (requestSource !== 'monitoramento_ui_sync_button') {
     return NextResponse.json(
-      { error: 'Busca externa de OAB bloqueada sem confirmação explícita.' },
+      { error: 'Busca externa de OAB bloqueada sem origem operacional valida.' },
       { status: 400 }
     )
   }
@@ -110,6 +115,81 @@ export async function POST(req: NextRequest) {
   const { data: capacity } = await adminSupabase
     .rpc('check_monitoramento_capacity', { p_tenant_id: tenantId })
     .single() as { data: MonitoramentoCapacity | null; error: unknown }
+
+  const cacheKey = `OAB_FULL:${String(oab_estado).toUpperCase()}:${String(oab_numero)}`
+  const { data: cache } = await adminSupabase
+    .from('processos_cache')
+    .select('processos, total, advogado, total_paginas, updated_at')
+    .eq('tenant_id', tenantId)
+    .eq('cache_key', cacheKey)
+    .single()
+
+  if (cache?.updated_at) {
+    const horasDesdeBusca = (Date.now() - new Date(cache.updated_at).getTime()) / (1000 * 60 * 60)
+    if (horasDesdeBusca < 24) {
+      const processos = Array.isArray(cache.processos) ? cache.processos : []
+      return NextResponse.json({
+        cached: true,
+        fonte: 'cache',
+        processos,
+        total: cache.total ?? processos.length,
+        total_retornado: processos.length,
+        advogado_nome: (cache.advogado as any)?.nome || '',
+        next_url: null,
+        paginas_buscadas: cache.total_paginas ?? 0,
+        ultima_sincronizacao: cache.updated_at,
+        billing: {
+          total_ja_monitorados: capacity?.total_monitorados ?? 0,
+          gratuitos: capacity?.gratuitos ?? 100,
+          disponivel_sem_custo: capacity?.disponivel_sem_custo ?? 0,
+          ativos_nao_monitorados: 0,
+          ja_monitorados_desta_oab: 0,
+          excedente_se_prosseguir: 0,
+          custo_estimado_mes: 0,
+          preco_por_extra: capacity?.preco_extra ?? 0.97,
+        }
+      })
+    }
+  }
+
+  if (!allow_paid_search) {
+    return NextResponse.json(
+      { error: 'Busca externa de OAB bloqueada sem confirmação explícita.' },
+      { status: 400 }
+    )
+  }
+
+  const estimatedCostCents = 100
+  const budgetCheck = await evaluateEscavadorBudget({
+    tenantId,
+    estimatedCostCents,
+    client: adminSupabase,
+  })
+
+  if (!budgetCheck.allowed) {
+    await registerEscavadorBudgetEvent({
+      tenantId,
+      userId: user.id,
+      action: 'sincronizar_oab',
+      source: requestSource,
+      status: 'blocked',
+      estimatedCostCents,
+      decision: budgetCheck.decision,
+      client: adminSupabase,
+    })
+    return NextResponse.json(buildEscavadorBudgetBlockedPayload(budgetCheck), { status: 402 })
+  }
+
+  await registerEscavadorBudgetEvent({
+    tenantId,
+    userId: user.id,
+    action: 'sincronizar_oab',
+    source: requestSource,
+    status: budgetCheck.decision.status,
+    estimatedCostCents,
+    decision: budgetCheck.decision,
+    client: adminSupabase,
+  })
 
   const { apiKey } = await requireTenantApiKey(tenantId, 'escavador')
 
@@ -196,7 +276,6 @@ export async function POST(req: NextRequest) {
   const precoExtra = capacity?.preco_extra ?? 0.97
   const excedenteSeProsseguir = Math.max(0, ativosNaoMonitorados - disponivelSemCusto)
 
-  const cacheKey = `OAB_FULL:${String(oab_estado).toUpperCase()}:${String(oab_numero)}`
   await adminSupabase.from('processos_cache').upsert({
     tenant_id: tenantId,
     cache_key: cacheKey,
