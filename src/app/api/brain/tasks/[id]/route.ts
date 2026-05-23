@@ -1,5 +1,7 @@
 import { NextRequest, NextResponse } from "next/server";
 import { brainAdminSupabase, getBrainAuthContext } from "@/lib/brain/server";
+import { buildLegalOperatorMissionSnapshots } from "@/lib/brain/legal-operator-missions";
+import { buildBrainMissionControlSnapshots } from "@/lib/brain/mission-control";
 
 export const dynamic = "force-dynamic";
 
@@ -76,6 +78,22 @@ export async function GET(req: NextRequest, { params }: { params: { id: string }
       return NextResponse.json({ error: "Nao foi possivel carregar a missao." }, { status: 500 });
     }
 
+    const legalOperatorMissions = buildLegalOperatorMissionSnapshots({
+      approvals: approvals ?? [],
+      artifacts: artifacts ?? [],
+      events: learningEvents ?? [],
+    });
+    const missionControlSnapshots = buildBrainMissionControlSnapshots({
+      tasks: [task],
+      runs: runs ?? [],
+      steps: steps ?? [],
+      approvals: approvals ?? [],
+      artifacts: artifacts ?? [],
+      events: learningEvents ?? [],
+      memories: memories ?? [],
+      legalOperatorMissions,
+    });
+
     return NextResponse.json({
       task,
       runs: runs ?? [],
@@ -84,6 +102,8 @@ export async function GET(req: NextRequest, { params }: { params: { id: string }
       artifacts: artifacts ?? [],
       memories: memories ?? [],
       learning_events: learningEvents ?? [],
+      legal_operator_mission: legalOperatorMissions[0] ?? null,
+      mission_control: missionControlSnapshots[0] ?? null,
     });
   } catch (error) {
     console.error("[brain/tasks/:id] fatal", error);

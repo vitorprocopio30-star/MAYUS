@@ -7,6 +7,9 @@ import {
   type MayusAgenticRoutine,
   type MayusRoutineHeartbeatResult,
 } from "@/lib/agent/runtime/routines";
+import { buildMayusAgentControlPlane } from "@/lib/agent/runtime/control-plane";
+import { buildLegalOperatorMissionSnapshots } from "@/lib/brain/legal-operator-missions";
+import { buildBrainMissionControlSnapshots } from "@/lib/brain/mission-control";
 
 export const dynamic = "force-dynamic";
 export const maxDuration = 60;
@@ -46,6 +49,12 @@ type RoutineEventRow = {
   event_name?: string | null;
   status?: string | null;
   payload?: Record<string, unknown> | null;
+};
+
+type BrainRelationRow = Record<string, unknown> & {
+  id?: string | null;
+  task_id?: string | null;
+  step_id?: string | null;
 };
 
 const ROUTINE_EVENT_NAMES = [
@@ -228,6 +237,146 @@ function getRoutineIdFromEvent(event: RoutineEventRow) {
   const payload = getRecord(event.payload);
   const routineId = payload.routine_id || payload.routineId;
   return typeof routineId === "string" ? routineId : "";
+}
+
+function uniqueIds(values: Array<string | null | undefined>) {
+  return Array.from(new Set(values.filter((value): value is string => typeof value === "string" && value.trim().length > 0)));
+}
+
+async function loadAgentControlMissionSnapshots(params: {
+  client: RoutineClient;
+  tenantId: string;
+}) {
+  try {
+    const [
+      { data: pendingApprovals, error: pendingError },
+      { data: recentApprovals, error: recentApprovalsError },
+      { data: recentTasks, error: recentTasksError },
+      { data: recentArtifacts, error: recentArtifactsError },
+      { data: recentEvents, error: recentEventsError },
+    ] = await Promise.all([
+      params.client
+        .from("brain_approvals")
+        .select("id, task_id, step_id, status, risk_level, created_at, updated_at, approved_at, decision_notes, approval_context")
+        .eq("tenant_id", params.tenantId)
+        .eq("status", "pending")
+        .order("created_at", { ascending: true })
+        .limit(20),
+      params.client
+        .from("brain_approvals")
+        .select("id, task_id, step_id, status, risk_level, created_at, updated_at, approved_at, decision_notes, approval_context")
+        .eq("tenant_id", params.tenantId)
+        .neq("status", "pending")
+        .order("updated_at", { ascending: false })
+        .limit(8),
+      params.client
+        .from("brain_tasks")
+        .select("id, title, goal, module, channel, status, created_at, updated_at, started_at, result_summary, error_message, task_input, task_context, policy_snapshot")
+        .eq("tenant_id", params.tenantId)
+        .order("updated_at", { ascending: false })
+        .limit(12),
+      params.client
+        .from("brain_artifacts")
+        .select("id, task_id, artifact_type, title, source_module, metadata, created_at")
+        .eq("tenant_id", params.tenantId)
+        .order("created_at", { ascending: false })
+        .limit(16),
+      params.client
+        .from("learning_events")
+        .select("id, task_id, step_id, event_type, source_module, payload, created_at")
+        .eq("tenant_id", params.tenantId)
+        .order("created_at", { ascending: false })
+        .limit(20),
+    ]);
+
+    if (pendingError || recentApprovalsError || recentTasksError || recentArtifactsError || recentEventsError) {
+      throw pendingError || recentApprovalsError || recentTasksError || recentArtifactsError || recentEventsError;
+    }
+
+    const approvals = [
+      ...((pendingApprovals || []) as BrainRelationRow[]),
+      ...((recentApprovals || []) as BrainRelationRow[]),
+    ];
+    const artifacts = (recentArtifacts || []) as BrainRelationRow[];
+    const events = (recentEvents || []) as BrainRelationRow[];
+    const tasks = (recentTasks || []) as BrainRelationRow[];
+    const taskIds = uniqueIds([
+      ...tasks.map((task) => task.id),
+      ...approvals.map((approval) => approval.task_id),
+      ...artifacts.map((artifact) => artifact.task_id),
+      ...events.map((event) => event.task_id),
+    ]);
+    const stepIds = uniqueIds([
+      ...approvals.map((approval) => approval.step_id),
+      ...events.map((event) => event.step_id),
+    ]);
+
+    const [
+      { data: taskRows, error: taskRowsError },
+      { data: runRows, error: runRowsError },
+      { data: stepRows, error: stepRowsError },
+      { data: memoryRows, error: memoryRowsError },
+    ] = await Promise.all([
+      taskIds.length > 0
+        ? params.client
+            .from("brain_tasks")
+            .select("id, title, goal, module, channel, status, created_at, updated_at, started_at, result_summary, error_message, task_input, task_context, policy_snapshot")
+            .eq("tenant_id", params.tenantId)
+            .in("id", taskIds)
+        : Promise.resolve({ data: [], error: null }),
+      taskIds.length > 0
+        ? params.client
+            .from("brain_runs")
+            .select("id, task_id, status, attempt_number, created_at, updated_at, started_at, completed_at, error_message, output_payload")
+            .eq("tenant_id", params.tenantId)
+            .in("task_id", taskIds)
+        : Promise.resolve({ data: [], error: null }),
+      taskIds.length > 0
+        ? params.client
+            .from("brain_steps")
+            .select("id, task_id, run_id, order_index, step_key, title, status, step_type, capability_name, handler_type, input_payload, output_payload, error_message, created_at, updated_at, started_at, completed_at")
+            .eq("tenant_id", params.tenantId)
+            .in("task_id", taskIds)
+        : stepIds.length > 0
+          ? params.client
+              .from("brain_steps")
+              .select("id, task_id, run_id, order_index, step_key, title, status, step_type, capability_name, handler_type, input_payload, output_payload, error_message, created_at, updated_at, started_at, completed_at")
+              .eq("tenant_id", params.tenantId)
+              .in("id", stepIds)
+          : Promise.resolve({ data: [], error: null }),
+      taskIds.length > 0
+        ? params.client
+            .from("brain_memories")
+            .select("id, task_id, memory_key, value, source, confidence, promoted, created_at, updated_at")
+            .eq("tenant_id", params.tenantId)
+            .in("task_id", taskIds)
+        : Promise.resolve({ data: [], error: null }),
+    ]);
+
+    if (taskRowsError || runRowsError || stepRowsError || memoryRowsError) {
+      throw taskRowsError || runRowsError || stepRowsError || memoryRowsError;
+    }
+
+    const legalOperatorMissions = buildLegalOperatorMissionSnapshots({
+      approvals: approvals as any,
+      artifacts: artifacts as any,
+      events: events as any,
+    });
+
+    return buildBrainMissionControlSnapshots({
+      tasks: [...((taskRows || []) as any[]), ...(tasks as any[])],
+      runs: (runRows || []) as any[],
+      steps: (stepRows || []) as any[],
+      approvals: approvals as any[],
+      artifacts: artifacts as any[],
+      events: events as any[],
+      memories: (memoryRows || []) as any[],
+      legalOperatorMissions,
+    }).slice(0, 12);
+  } catch (error) {
+    console.warn("[agent/routines] mission snapshots unavailable", sanitizeError(error));
+    return [];
+  }
 }
 
 function getLastRoutineEventAt(events: RoutineEventRow[], routineId: string) {
@@ -497,8 +646,22 @@ export async function GET() {
       tenantId: auth.context!.tenantId,
       client: brainAdminSupabase,
     });
+    const missionControlSnapshots = await loadAgentControlMissionSnapshots({
+      tenantId: auth.context!.tenantId,
+      client: brainAdminSupabase,
+    });
+    const controlPlane = buildMayusAgentControlPlane({
+      routines,
+      missionSnapshots: missionControlSnapshots,
+    });
 
-    return NextResponse.json({ routines });
+    return NextResponse.json({
+      routines,
+      agents: controlPlane.agents,
+      summary: controlPlane.summary,
+      control_plane: controlPlane,
+      mission_control_snapshots: missionControlSnapshots,
+    });
   } catch (error) {
     console.error("[agent/routines] GET", sanitizeError(error));
     return NextResponse.json({ error: "Nao foi possivel carregar rotinas agenticas." }, { status: 500 });

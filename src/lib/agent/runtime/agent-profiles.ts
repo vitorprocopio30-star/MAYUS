@@ -112,6 +112,15 @@ export type NormalizedMayusAgentProfileSubject = {
 
 export type MayusAgentProfileLayerScope = "global" | "tenant" | "module" | "agent" | "tool" | "channel";
 
+export const MAYUS_AGENT_PROFILE_POLICY_PRECEDENCE = [
+  "global",
+  "tenant",
+  "module",
+  "agent",
+  "tool",
+  "channel",
+] as const satisfies readonly MayusAgentProfileLayerScope[];
+
 export type MayusAgentProfileAppliedLayer = {
   precedence: number;
   scope: MayusAgentProfileLayerScope;
@@ -170,6 +179,15 @@ export type MayusAgentProfileDecision = MayusAgentProfileResolution & {
   surfaceMatrix: MayusAgentProfileSurfaceMatrixEntry;
 };
 
+export type MayusOpenClawPolicyDebugger = {
+  precedence: readonly MayusAgentProfileLayerScope[];
+  outcome: "allowed" | "requires_approval" | "blocked";
+  blocked_layer: MayusAgentProfileLayerScope | "surface_matrix" | null;
+  blocked_reason_code: MayusAgentProfileBlockCode | null;
+  lower_layers_cannot_reopen: true;
+  applied_layers: MayusAgentProfileAppliedLayer[];
+};
+
 export type MayusAgentProfileRuntimeExplanation = {
   allowed: boolean;
   requires_approval: boolean;
@@ -184,6 +202,7 @@ export type MayusAgentProfileRuntimeExplanation = {
     default_requires_approval: boolean;
     default_deny_tools: string[];
   };
+  debugger: MayusOpenClawPolicyDebugger;
   source: "tenant_settings.ai_features.agent_profiles";
 };
 
@@ -733,6 +752,21 @@ export function evaluateMayusAgentProfile(params: {
   };
 }
 
+export function buildMayusOpenClawPolicyDebugger(
+  decision: MayusAgentProfileDecision,
+): MayusOpenClawPolicyDebugger {
+  return {
+    precedence: MAYUS_AGENT_PROFILE_POLICY_PRECEDENCE,
+    outcome: decision.allowed
+      ? decision.requiresApproval ? "requires_approval" : "allowed"
+      : "blocked",
+    blocked_layer: decision.blockedReason?.layer ?? null,
+    blocked_reason_code: decision.blockedReason?.code ?? null,
+    lower_layers_cannot_reopen: true,
+    applied_layers: decision.appliedLayers,
+  };
+}
+
 export function buildMayusAgentProfileExplanation(
   decision: MayusAgentProfileDecision,
 ): MayusAgentProfileRuntimeExplanation {
@@ -750,6 +784,7 @@ export function buildMayusAgentProfileExplanation(
       default_requires_approval: decision.surfaceMatrix.defaultRequiresApproval,
       default_deny_tools: decision.surfaceMatrix.defaultDenyTools,
     },
+    debugger: buildMayusOpenClawPolicyDebugger(decision),
     source: "tenant_settings.ai_features.agent_profiles",
   };
 }

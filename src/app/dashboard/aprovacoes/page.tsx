@@ -5,12 +5,14 @@ import dayjs from "dayjs";
 import relativeTime from "dayjs/plugin/relativeTime";
 import "dayjs/locale/pt-br";
 import {
+  Ban,
   CheckCircle2,
   Clock3,
   Cpu,
   FileText,
   Loader2,
   Link2,
+  RotateCcw,
   ShieldAlert,
   ShieldCheck,
 } from "lucide-react";
@@ -36,7 +38,26 @@ type LegalMovementReviewItem = {
   confianca_analise: string | null;
   origem: string | null;
   motivo: string | null;
+  polo_representado?: string | null;
+  obrigacao_de_quem?: string | null;
+  confidence?: string | null;
+  confidence_reason?: string | null;
   evidencia: string | null;
+  agentic_governance?: {
+    openclaw: {
+      surface: string | null;
+      outcome: string | null;
+      requires_approval: boolean | null;
+      can_execute_now: boolean | null;
+      reason: string | null;
+    };
+    hermes: {
+      status: string | null;
+      events_count: number;
+      last_event_type: string | null;
+      last_event_summary: string | null;
+    };
+  } | null;
   movimentacao_data: string | null;
   movimentacao_conteudo: string | null;
   cliente_nome: string | null;
@@ -138,6 +159,419 @@ function getStringEntity(approval: BrainInboxApprovalItem, key: string) {
   return typeof value === "string" && value.trim() ? value.trim() : null;
 }
 
+function formatReviewSignal(value: string | number | boolean | null | undefined) {
+  if (typeof value === "boolean") return value ? "sim" : "nao";
+  if (typeof value === "number") return String(value);
+  const raw = typeof value === "string" ? value.trim() : "";
+  return raw || "nao informado";
+}
+
+type LegalOperatorSummary = {
+  phase: string | null;
+  status: string;
+  action: string;
+  gate: string;
+  blockers: string[];
+  confidence: string | null;
+  owner: string | null;
+  handoff: string | null;
+  guardrail: string | null;
+};
+
+function asRecordValue(value: unknown): Record<string, unknown> | null {
+  return value && typeof value === "object" && !Array.isArray(value)
+    ? value as Record<string, unknown>
+    : null;
+}
+
+function getRecordText(record: Record<string, unknown> | null | undefined, key: string) {
+  const value = record?.[key];
+  if (typeof value === "string" && value.trim()) return value.trim();
+  if (typeof value === "number" && Number.isFinite(value)) return String(value);
+  if (typeof value === "boolean") return value ? "sim" : "nao";
+  return null;
+}
+
+function getRecordList(value: unknown) {
+  return Array.isArray(value)
+    ? value.map((item) => String(item || "").trim()).filter(Boolean)
+    : [];
+}
+
+function buildLegalOperatorSummary(value: unknown): LegalOperatorSummary | null {
+  const state = asRecordValue(value);
+  if (!state) return null;
+
+  const safeNextAction = asRecordValue(state.safeNextAction);
+  const humanGate = asRecordValue(state.humanGate);
+  const evidenceSummary = asRecordValue(state.evidenceSummary);
+  const coordination = asRecordValue(state.coordination);
+  const owner = asRecordValue(coordination?.owner);
+  const crossFrontBoundary = asRecordValue(coordination?.crossFrontBoundary);
+  const sideEffectGuardrail = asRecordValue(coordination?.sideEffectGuardrail);
+  const action = getRecordText(safeNextAction, "label")
+    || getRecordText(safeNextAction, "action")
+    || "Proxima acao segura";
+  const gateRequired = humanGate?.required === true;
+  const gateReason = getRecordText(humanGate, "reason");
+  const handoffTargets = getRecordList(crossFrontBoundary?.handoffRequiredFor).slice(0, 4);
+
+  return {
+    phase: getRecordText(state, "phase"),
+    status: getRecordText(state, "status") || "ativo",
+    action,
+    gate: gateRequired ? (gateReason || "approval humano requerido") : "sem approval pendente",
+    blockers: getRecordList(state.blockers).slice(0, 3),
+    confidence: getRecordText(evidenceSummary, "confidence"),
+    owner: getRecordText(owner, "label"),
+    handoff: handoffTargets.length > 0 ? `Handoff: ${handoffTargets.join(", ")}` : getRecordText(crossFrontBoundary, "rule"),
+    guardrail: getRecordText(sideEffectGuardrail, "approvalGate"),
+  };
+}
+
+function LegalOperatorStateSummary({ state }: { state: unknown }) {
+  const summary = buildLegalOperatorSummary(state);
+  if (!summary) return null;
+
+  return (
+    <div className="rounded-xl border border-[#CCA761]/20 bg-[#CCA761]/10 p-3 space-y-2">
+      <div className="flex flex-wrap items-center gap-2">
+        <span className="rounded-full border border-[#CCA761]/30 bg-[#CCA761]/10 px-2.5 py-1 text-[10px] font-bold uppercase tracking-[0.18em] text-[#E2C37A]">
+          Operador juridico
+        </span>
+        <span className="text-[10px] uppercase tracking-[0.16em] text-gray-500">{summary.status}</span>
+        {summary.confidence && (
+          <span className="text-[10px] uppercase tracking-[0.16em] text-gray-500">confianca {summary.confidence}</span>
+        )}
+      </div>
+      <div className="space-y-1 text-xs leading-relaxed text-gray-300">
+        {summary.phase && <p>Missao: {summary.phase}</p>}
+        <p>Proxima acao: {summary.action}</p>
+        <p>Approval: {summary.gate}</p>
+        {summary.owner && <p>Dono: {summary.owner}</p>}
+        {summary.handoff && <p>{summary.handoff}</p>}
+        {summary.guardrail && <p>Guardrail: {summary.guardrail}</p>}
+        {summary.blockers.length > 0 && <p>Bloqueios: {summary.blockers.join(", ")}</p>}
+      </div>
+    </div>
+  );
+}
+
+type LegalOperatorMissionItem = NonNullable<BrainInboxResponse["legal_operator_missions"]>[number];
+type MissionControlItem = NonNullable<BrainInboxResponse["mission_control_snapshots"]>[number];
+
+function getMissionAgentId(mission: MissionControlItem) {
+  return mission.routine?.internalAgentId
+    || mission.routine?.agentId
+    || mission.agentSource
+    || "mayus_operating_partner";
+}
+
+function getMissionAgentLabel(mission: MissionControlItem) {
+  return mission.routine?.internalAgentLabel
+    || mission.routine?.owner
+    || mission.routine?.agentId
+    || mission.agentSource
+    || "MAYUS Operating Partner";
+}
+
+function canRetryMissionStep(mission: MissionControlItem) {
+  const status = mission.currentStep?.status;
+  return !mission.pendingApproval && (status === "failed" || status === "cancelled");
+}
+
+function canCancelMissionStep(mission: MissionControlItem) {
+  const status = mission.currentStep?.status;
+  return !mission.pendingApproval && (status === "queued" || status === "planning" || status === "failed");
+}
+
+function LegalOperatorMissionCard({ mission }: { mission: LegalOperatorMissionItem }) {
+  const summary = buildLegalOperatorSummary(mission.currentState);
+  const processLabel = mission.processNumber || mission.processLabel || mission.processTaskId || "Processo sem identificador";
+  const approvalLabel = mission.pendingApproval
+    ? `approval pendente: ${mission.pendingApproval.skillName || mission.pendingApproval.id}`
+    : "sem approval pendente";
+
+  return (
+    <div className="rounded-2xl border border-[#CCA761]/20 bg-[#0f0f0f] p-4 space-y-3">
+      <div className="flex items-start justify-between gap-3">
+        <div>
+          <p className="text-[10px] uppercase tracking-[0.18em] text-[#CCA761]">Missao juridica viva</p>
+          <h3 className="mt-1 text-sm font-semibold text-white break-words">{processLabel}</h3>
+          <p className="mt-1 text-[11px] text-gray-500">
+            {dayjs(mission.lastUpdatedAt).fromNow()} · fonte {mission.currentSource}
+          </p>
+        </div>
+        <span className={`shrink-0 rounded-full border px-2.5 py-1 text-[10px] font-bold uppercase tracking-widest ${mission.pendingApproval ? "border-orange-400/30 bg-orange-400/10 text-orange-200" : "border-emerald-400/30 bg-emerald-400/10 text-emerald-200"}`}>
+          {mission.pendingApproval ? "approval" : "ativa"}
+        </span>
+      </div>
+
+      {summary ? (
+        <div className="space-y-1 text-xs leading-relaxed text-gray-300">
+          <p>Status: {summary.status}</p>
+          <p>Proxima acao: {summary.action}</p>
+          <p>Approval: {approvalLabel}</p>
+          {summary.blockers.length > 0 && <p>Bloqueios: {summary.blockers.join(", ")}</p>}
+        </div>
+      ) : (
+        <p className="text-xs text-gray-400">Estado juridico registrado, mas sem resumo renderizavel.</p>
+      )}
+
+      <div className="flex flex-wrap gap-1.5">
+        {mission.latestArtifactId && (
+          <span className="rounded-full border border-white/10 bg-black/30 px-2 py-1 text-[10px] text-gray-400">
+            artifact {mission.latestArtifactId}
+          </span>
+        )}
+        {mission.latestEventId && (
+          <span className="rounded-full border border-white/10 bg-black/30 px-2 py-1 text-[10px] text-gray-400">
+            evento {mission.latestEventId}
+          </span>
+        )}
+        <span className="rounded-full border border-white/10 bg-black/30 px-2 py-1 text-[10px] text-gray-400">
+          {mission.timeline.length} marco{mission.timeline.length === 1 ? "" : "s"}
+        </span>
+      </div>
+
+    </div>
+  );
+}
+
+function MissionControlCard({ mission, onRefresh }: { mission: MissionControlItem; onRefresh: () => Promise<void> | void }) {
+  const [stepActionLoading, setStepActionLoading] = useState<"retry" | "cancel" | null>(null);
+  const approvalLabel = mission.pendingApproval
+    ? `approval: ${mission.pendingApproval.skillName || mission.pendingApproval.id}`
+    : "sem approval pendente";
+  const policyLabel = mission.policy
+    ? `${mission.policy.surface || "surface"} / ${mission.policy.outcome || "policy"}`
+    : "policy nao registrada";
+  const policyDebugger = mission.policy?.debugger;
+  const policyDebuggerLabel = policyDebugger
+    ? `${policyDebugger.blockedLayer ? `bloqueio ${policyDebugger.blockedLayer}` : "sem bloqueio superior"} · ${policyDebugger.appliedLayers.length} camada${policyDebugger.appliedLayers.length === 1 ? "" : "s"}`
+    : null;
+  const trajectoryLabel = mission.trajectory
+    ? `${mission.trajectory.status || "sem status"} · ${mission.trajectory.eventsCount} evento${mission.trajectory.eventsCount === 1 ? "" : "s"}`
+    : "trajectory nao registrada";
+  const trajectoryCompletionLabel = mission.trajectory
+    ? `${Math.round((mission.trajectory.completionRatio || 0) * 100)}% completo`
+    : null;
+  const missingHermesEvents = mission.trajectory?.missingEventTypes || [];
+  const hermesLifecycleLabel = mission.trajectory?.lifecycleStatus || mission.trajectory?.lifecycleKind
+    ? `${mission.trajectory.lifecycleStatus || "sem status"}${mission.trajectory.lifecycleKind ? ` / ${mission.trajectory.lifecycleKind}` : ""}`
+    : null;
+  const routineLabel = mission.routine?.routineId
+    ? `${mission.routine.source || "paperclip"} · ${mission.routine.routineId}`
+    : "sem rotina vinculada";
+  const responsibleAgentLabel = mission.routine?.internalAgentLabel
+    || mission.routine?.owner
+    || mission.routine?.agentId
+    || mission.agentSource
+    || "MAYUS Operating Partner";
+  const canRetry = canRetryMissionStep(mission);
+  const canCancel = canCancelMissionStep(mission);
+
+  async function handleStepAction(action: "retry" | "cancel") {
+    if (!mission.currentStep) return;
+    const label = action === "retry" ? "reabrir" : "cancelar";
+    const reason = window.prompt(`Motivo para ${label} esta etapa:`);
+    if (reason === null) return;
+    const trimmedReason = reason.trim();
+    if (trimmedReason.length < 3) {
+      toast.error("Informe um motivo com pelo menos 3 caracteres.");
+      return;
+    }
+
+    setStepActionLoading(action);
+    try {
+      const response = await fetch(`/api/brain/tasks/${mission.taskId}/steps/${mission.currentStep.id}/${action}`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ reason: trimmedReason }),
+      });
+      const data = await response.json().catch(() => ({}));
+      if (!response.ok) {
+        throw new Error(data?.error || "Nao foi possivel atualizar a etapa.");
+      }
+      toast.success(action === "retry" ? "Retry solicitado com auditoria." : "Step cancelado com auditoria.");
+      await onRefresh();
+    } catch (error: any) {
+      toast.error(error?.message || "Falha ao atualizar a etapa.");
+    } finally {
+      setStepActionLoading(null);
+    }
+  }
+
+  return (
+    <div className="rounded-2xl border border-white/10 bg-[#0f0f0f] p-4 space-y-3">
+      <div className="flex items-start justify-between gap-3">
+        <div className="min-w-0">
+          <p className="text-[10px] uppercase tracking-[0.18em] text-[#CCA761]">Controle agentico</p>
+          <h3 className="mt-1 text-sm font-semibold text-white break-words">{mission.goal || mission.missionId}</h3>
+          <p className="mt-1 text-[11px] text-gray-500">
+            {mission.module || "core"} · {mission.agentSource || "mayus"} · {dayjs(mission.lastUpdatedAt).fromNow()}
+          </p>
+        </div>
+        <span className={`shrink-0 rounded-full border px-2.5 py-1 text-[10px] font-bold uppercase tracking-widest ${mission.pendingApproval ? "border-orange-400/30 bg-orange-400/10 text-orange-200" : "border-emerald-400/30 bg-emerald-400/10 text-emerald-200"}`}>
+          {mission.status || "ativa"}
+        </span>
+      </div>
+
+      <div className="grid gap-2 md:grid-cols-2">
+        <div className="rounded-xl border border-white/5 bg-black/25 p-3">
+          <p className="text-[9px] uppercase tracking-[0.16em] text-gray-500">Etapa atual</p>
+          <p className="mt-1 text-xs font-semibold text-gray-100 break-words">
+            {mission.currentStep?.title || mission.currentStep?.capabilityName || "sem step ativo"}
+          </p>
+          {mission.currentStep?.status && (
+            <p className="mt-1 text-[10px] uppercase tracking-[0.14em] text-gray-500">{mission.currentStep.status}</p>
+          )}
+        </div>
+        <div className="rounded-xl border border-white/5 bg-black/25 p-3">
+          <p className="text-[9px] uppercase tracking-[0.16em] text-gray-500">Approval</p>
+          <p className="mt-1 text-xs font-semibold text-gray-100 break-words">{approvalLabel}</p>
+        </div>
+        <div className="rounded-xl border border-white/5 bg-black/25 p-3">
+          <p className="text-[9px] uppercase tracking-[0.16em] text-gray-500">OpenClaw</p>
+          <p className="mt-1 text-xs font-semibold text-gray-100 break-words">{policyLabel}</p>
+          {policyDebuggerLabel && (
+            <p className="mt-1 text-[10px] uppercase tracking-[0.14em] text-gray-500">
+              {policyDebuggerLabel}
+            </p>
+          )}
+          {policyDebugger?.lowerLayersCannotReopen && (
+            <p className="mt-1 text-[10px] leading-relaxed text-gray-500">
+              Camada inferior nao reabre permissao negada acima.
+            </p>
+          )}
+        </div>
+        <div className="rounded-xl border border-white/5 bg-black/25 p-3">
+          <p className="text-[9px] uppercase tracking-[0.16em] text-gray-500">Hermes</p>
+          <p className="mt-1 text-xs font-semibold text-gray-100 break-words">{trajectoryLabel}</p>
+          {trajectoryCompletionLabel && (
+            <p className="mt-1 text-[10px] uppercase tracking-[0.14em] text-gray-500">
+              {trajectoryCompletionLabel} - approval {mission.trajectory?.approvalStatus || "sem status"}
+            </p>
+          )}
+          {hermesLifecycleLabel && (
+            <p className="mt-1 text-[10px] leading-relaxed text-gray-500">
+              Lifecycle: {hermesLifecycleLabel}
+            </p>
+          )}
+          {missingHermesEvents.length > 0 && (
+            <p className="mt-1 text-[10px] leading-relaxed text-orange-100">
+              Faltam: {missingHermesEvents.join(", ")}
+            </p>
+          )}
+          {mission.trajectory?.nextSafeAction && (
+            <p className="mt-1 text-[10px] leading-relaxed text-[#CCA761]">
+              Hermes: {mission.trajectory.nextSafeAction}
+            </p>
+          )}
+        </div>
+        <div className="rounded-xl border border-white/5 bg-black/25 p-3 md:col-span-2">
+          <p className="text-[9px] uppercase tracking-[0.16em] text-gray-500">Paperclip</p>
+          <p className="mt-1 text-xs font-semibold text-gray-100 break-words">{routineLabel}</p>
+          <p className="mt-1 text-[10px] uppercase tracking-[0.14em] text-[#CCA761]">{responsibleAgentLabel}</p>
+        </div>
+      </div>
+
+      {mission.nextSafeAction && (
+        <p className="text-xs leading-relaxed text-gray-300">Proxima acao: {mission.nextSafeAction}</p>
+      )}
+      {mission.blockers.length > 0 && (
+        <p className="text-xs leading-relaxed text-orange-100">Bloqueios: {mission.blockers.join(", ")}</p>
+      )}
+
+      <div className="flex flex-wrap gap-1.5">
+        {mission.latestArtifactId && (
+          <span className="rounded-full border border-white/10 bg-black/30 px-2 py-1 text-[10px] text-gray-400">
+            artifact {mission.latestArtifactId}
+          </span>
+        )}
+        {mission.latestEventId && (
+          <span className="rounded-full border border-white/10 bg-black/30 px-2 py-1 text-[10px] text-gray-400">
+            evento {mission.latestEventId}
+          </span>
+        )}
+        {mission.legalOperatorMission && (
+          <span className="rounded-full border border-[#CCA761]/20 bg-[#CCA761]/10 px-2 py-1 text-[10px] text-[#E2C37A]">
+            operador juridico
+          </span>
+        )}
+        <span className="rounded-full border border-white/10 bg-black/30 px-2 py-1 text-[10px] text-gray-400">
+          {mission.timeline.length} marco{mission.timeline.length === 1 ? "" : "s"}
+        </span>
+      </div>
+
+      {(canRetry || canCancel) && (
+        <div className="flex flex-wrap gap-2 border-t border-white/5 pt-3">
+          {canRetry && (
+            <button
+              type="button"
+              disabled={stepActionLoading !== null}
+              onClick={() => void handleStepAction("retry")}
+              className="inline-flex items-center gap-2 rounded-xl border border-[#CCA761]/30 bg-[#CCA761]/10 px-3 py-2 text-[10px] font-bold uppercase tracking-widest text-[#E2C37A] transition-colors hover:bg-[#CCA761]/20 disabled:cursor-not-allowed disabled:opacity-60"
+            >
+              {stepActionLoading === "retry" ? <Loader2 size={13} className="animate-spin" /> : <RotateCcw size={13} />}
+              Retry
+            </button>
+          )}
+          {canCancel && (
+            <button
+              type="button"
+              disabled={stepActionLoading !== null}
+              onClick={() => void handleStepAction("cancel")}
+              className="inline-flex items-center gap-2 rounded-xl border border-red-400/30 bg-red-400/10 px-3 py-2 text-[10px] font-bold uppercase tracking-widest text-red-200 transition-colors hover:bg-red-400/15 disabled:cursor-not-allowed disabled:opacity-60"
+            >
+              {stepActionLoading === "cancel" ? <Loader2 size={13} className="animate-spin" /> : <Ban size={13} />}
+              Cancelar step
+            </button>
+          )}
+        </div>
+      )}
+    </div>
+  );
+}
+
+function ReviewSignalGrid({ review }: { review: LegalMovementReviewItem }) {
+  const governance = review.agentic_governance;
+  const openclaw = governance?.openclaw;
+  const hermes = governance?.hermes;
+  const signals = [
+    { label: "Polo", value: review.polo_representado },
+    { label: "Obrigacao", value: review.obrigacao_de_quem },
+    { label: "Confidence", value: review.confidence || review.confianca_analise },
+    { label: "Confidence reason", value: review.confidence_reason },
+    { label: "OpenClaw surface", value: openclaw?.surface },
+    { label: "OpenClaw outcome", value: openclaw?.outcome },
+    { label: "OpenClaw approval", value: openclaw?.requires_approval },
+    { label: "OpenClaw executar", value: openclaw?.can_execute_now },
+    { label: "Hermes status", value: hermes?.status },
+    { label: "Hermes ultimo evento", value: hermes?.last_event_type },
+    { label: "Hermes eventos", value: hermes?.events_count },
+  ];
+
+  return (
+    <div className="rounded-xl border border-white/10 bg-black/25 p-3 space-y-3">
+      <div className="grid gap-2 md:grid-cols-3">
+        {signals.map((signal) => (
+          <div key={signal.label} className="rounded-lg border border-white/5 bg-white/[0.02] p-2">
+            <p className="text-[9px] uppercase tracking-[0.16em] text-gray-500">{signal.label}</p>
+            <p className="mt-1 text-xs font-semibold text-gray-100 break-words">{formatReviewSignal(signal.value)}</p>
+          </div>
+        ))}
+      </div>
+      {(openclaw?.reason || hermes?.last_event_summary) && (
+        <div className="space-y-2 text-xs leading-relaxed text-gray-300">
+          {openclaw?.reason && <p><span className="font-semibold text-[#CCA761]">OpenClaw:</span> {openclaw.reason}</p>}
+          {hermes?.last_event_summary && <p><span className="font-semibold text-[#CCA761]">Hermes:</span> {hermes.last_event_summary}</p>}
+        </div>
+      )}
+    </div>
+  );
+}
+
 function isLegalDraftApproval(approval: BrainInboxApprovalItem) {
   return approval.awaiting_payload?.skillName === "legal_first_draft_generate";
 }
@@ -165,7 +599,7 @@ function buildApprovalSignal(approval: BrainInboxApprovalItem) {
 function classifyApproval(approval: BrainInboxApprovalItem): ApprovalFilterId {
   const signal = buildApprovalSignal(approval);
 
-  if (/\b(setup|office_setup|tenant_setup|doctor|autoconfig|office_profile)\b/.test(signal)) return "setup";
+  if (/\b(setup|office_setup|tenant_setup|doctor|autoconfig|office_profile|operational_methodology|office_operational_methodology)\b/.test(signal)) return "setup";
   if (/\b(escavador|paid_search|monitoramento)\b/.test(signal)) return "escavador";
   if (/\b(billing|asaas|finance|financial|cobranca|collections|revenue)\b/.test(signal)) return "finance";
   if (/\b(whatsapp|external_message|zapsign|contract|publish|publicacao|filing|protocol)\b/.test(signal)) return "external_messages";
@@ -180,8 +614,34 @@ function matchesApprovalFilter(approval: BrainInboxApprovalItem, filter: Approva
 
 function LegalDraftApprovalDetails({ approval }: { approval: BrainInboxApprovalItem }) {
   const payload = approval.awaiting_payload;
+  const payloadExtras = payload as Record<string, unknown> | null | undefined;
   const processLabel = payload?.processLabel || getStringEntity(approval, "process_number") || getStringEntity(approval, "process_task_id");
   const pieceLabel = getStringEntity(approval, "recommended_piece_label") || getStringEntity(approval, "recommended_piece_input");
+  const methodology = asRecordValue(payload?.methodology);
+  const sources = asRecordValue(payload?.sources);
+  const gaps = asRecordValue(payload?.gaps);
+  const pieceContext = asRecordValue(payloadExtras?.pieceContext) || asRecordValue(payloadExtras?.piece_context);
+  const agenticGovernance = asRecordValue(payload?.agenticGovernance);
+  const openclawPolicy = asRecordValue(payload?.openclawPolicy) || asRecordValue(agenticGovernance?.openclaw_policy);
+  const sideEffectGuardrail = asRecordValue(payload?.sideEffectGuardrail);
+  const expectedDocuments = getRecordList(methodology?.expectedDocuments).slice(0, 6);
+  const factualSources = getRecordList(sources?.factual).slice(0, 5);
+  const gapItems = getRecordList(gaps?.all).slice(0, 6);
+  const pieceDocumentsUsed = (getRecordList(pieceContext?.documentsUsed).length > 0
+    ? getRecordList(pieceContext?.documentsUsed)
+    : getRecordList(pieceContext?.documents_used)).slice(0, 6);
+  const pieceChecklist = (getRecordList(payloadExtras?.draftVerificationChecklist).length > 0
+    ? getRecordList(payloadExtras?.draftVerificationChecklist)
+    : getRecordList(payloadExtras?.draft_verification_checklist).length > 0
+      ? getRecordList(payloadExtras?.draft_verification_checklist)
+      : getRecordList(pieceContext?.draftVerificationChecklist).length > 0
+        ? getRecordList(pieceContext?.draftVerificationChecklist)
+        : getRecordList(pieceContext?.draft_verification_checklist)).slice(0, 6);
+  const piecePhase = getRecordText(pieceContext, "phase");
+  const caseBrain = asRecordValue(pieceContext?.case_brain);
+  const protectedSideEffects = getRecordList(sideEffectGuardrail?.protectedSideEffects).slice(0, 6);
+  const openclawReason = getRecordText(openclawPolicy, "reason");
+  const openclawOutcome = getRecordText(openclawPolicy, "outcome");
 
   return (
     <div className="rounded-2xl border border-[#CCA761]/20 bg-[#CCA761]/10 p-4 space-y-4">
@@ -220,12 +680,87 @@ function LegalDraftApprovalDetails({ approval }: { approval: BrainInboxApprovalI
         </div>
       )}
 
+      {(piecePhase || caseBrain) && (
+        <div className="grid gap-3 md:grid-cols-2">
+          <div className="rounded-xl border border-white/10 bg-black/20 p-3">
+            <p className="text-[10px] uppercase tracking-[0.18em] text-gray-500">Fase da peca</p>
+            <p className="mt-1 text-sm text-gray-200">{piecePhase || "Fase nao consolidada"}</p>
+          </div>
+          <div className="rounded-xl border border-white/10 bg-black/20 p-3">
+            <p className="text-[10px] uppercase tracking-[0.18em] text-gray-500">Case Brain</p>
+            <p className="mt-1 text-sm text-gray-200">
+              {caseBrain
+                ? `${getRecordText(caseBrain, "high_risk_count") || "0"} risco(s) alto(s), ${getRecordText(caseBrain, "high_contradiction_count") || "0"} contradicao(oes) alta(s), ${getRecordText(caseBrain, "grounding_gap_count") || "0"} lacuna(s).`
+                : "Sem leitura adicional do Case Brain."}
+            </p>
+          </div>
+        </div>
+      )}
+
       {payload?.reason && (
         <div className="rounded-xl border border-orange-500/20 bg-orange-500/10 p-3">
           <p className="text-[10px] uppercase tracking-[0.18em] text-orange-300">Motivo da aprovacao</p>
           <p className="mt-1 text-sm text-orange-100">{payload.reason}</p>
         </div>
       )}
+
+      {(openclawReason || openclawOutcome) && (
+        <div className="rounded-xl border border-orange-500/20 bg-orange-500/10 p-3">
+          <p className="text-[10px] uppercase tracking-[0.18em] text-orange-300">OpenClaw</p>
+          <p className="mt-1 text-sm text-orange-100">
+            {openclawOutcome ? `Resultado: ${openclawOutcome}. ` : ""}
+            {openclawReason || "Policy juridica exige supervisao antes de efeito sensivel."}
+          </p>
+        </div>
+      )}
+
+      {(expectedDocuments.length > 0 || factualSources.length > 0 || gapItems.length > 0) && (
+        <div className="grid gap-3 md:grid-cols-3">
+          <div className="rounded-xl border border-white/10 bg-black/20 p-3">
+            <p className="text-[10px] uppercase tracking-[0.18em] text-gray-500">Documentos esperados</p>
+            <p className="mt-1 text-xs text-gray-200 leading-relaxed">
+              {expectedDocuments.length > 0 ? expectedDocuments.join("; ") : "Sem lista metodologica registrada"}
+            </p>
+          </div>
+          <div className="rounded-xl border border-white/10 bg-black/20 p-3">
+            <p className="text-[10px] uppercase tracking-[0.18em] text-gray-500">Fontes usadas</p>
+            <p className="mt-1 text-xs text-gray-200 leading-relaxed">
+              {pieceDocumentsUsed.length > 0
+                ? pieceDocumentsUsed.join("; ")
+                : factualSources.length > 0 ? factualSources.join("; ") : "Sem fonte factual adicional"}
+            </p>
+          </div>
+          <div className="rounded-xl border border-white/10 bg-black/20 p-3">
+            <p className="text-[10px] uppercase tracking-[0.18em] text-gray-500">Lacunas</p>
+            <p className="mt-1 text-xs text-gray-200 leading-relaxed">
+              {gapItems.length > 0 ? gapItems.join("; ") : "Nenhuma lacuna critica registrada"}
+            </p>
+          </div>
+        </div>
+      )}
+
+      {pieceChecklist.length > 0 && (
+        <div className="rounded-xl border border-white/10 bg-black/20 p-3">
+          <p className="text-[10px] uppercase tracking-[0.18em] text-gray-500">Checklist da minuta</p>
+          <ul className="mt-2 space-y-1 text-xs text-gray-200">
+            {pieceChecklist.map((item, index) => (
+              <li key={`${item}-${index}`} className="flex gap-2">
+                <CheckCircle2 size={12} className="mt-0.5 shrink-0 text-[#CCA761]" />
+                <span>{item}</span>
+              </li>
+            ))}
+          </ul>
+        </div>
+      )}
+
+      <div className="rounded-xl border border-white/10 bg-black/20 p-3">
+        <p className="text-[10px] uppercase tracking-[0.18em] text-gray-500">Guardrails de beta</p>
+        <p className="mt-1 text-xs text-gray-200 leading-relaxed">
+          {protectedSideEffects.length > 0
+            ? protectedSideEffects.join("; ")
+            : "Sem protocolo, envio externo, publicacao ou alteracao processual automatica antes de aprovacao humana."}
+        </p>
+      </div>
     </div>
   );
 }
@@ -317,6 +852,8 @@ function ApprovalCard({ approval, onRefresh }: { approval: BrainInboxApprovalIte
       )}
 
       {isLegalDraftApproval(approval) && <LegalDraftApprovalDetails approval={approval} />}
+
+      <LegalOperatorStateSummary state={approval.awaiting_payload?.legalOperatorState} />
 
       {approval.awaiting_payload?.entities && Object.keys(approval.awaiting_payload.entities).length > 0 && (
         <div className="rounded-xl border border-white/5 bg-gray-200 dark:bg-black/30 p-3 space-y-2">
@@ -419,6 +956,8 @@ function LegalMovementReviewCard({ review, onRefresh }: { review: LegalMovementR
         <p className="mt-2 line-clamp-4">{review.movimentacao_conteudo || "Sem conteudo textual salvo."}</p>
         {review.movimentacao_data && <p className="mt-2 text-[11px] text-gray-500">Data: {review.movimentacao_data}</p>}
       </div>
+
+      <ReviewSignalGrid review={review} />
 
       <div className="grid gap-3 md:grid-cols-2">
         <div className="rounded-xl border border-white/10 bg-black/20 p-3">
@@ -544,6 +1083,8 @@ function StuckMovementReviewCard({ review, onRefresh }: { review: LegalMovementR
         <p className="mt-2 line-clamp-3">{review.movimentacao_conteudo || "Sem conteudo textual salvo."}</p>
       </div>
 
+      <ReviewSignalGrid review={review} />
+
       {(review.review_error || review.review_note) && (
         <div className="rounded-xl border border-red-500/20 bg-red-500/10 p-3 text-xs text-red-100 leading-relaxed">
           {review.review_error && <p><span className="font-semibold text-red-300">Erro:</span> {review.review_error}</p>}
@@ -623,6 +1164,30 @@ function buildSelfImprovementArtifactPreview(metadata: Record<string, unknown> |
   return `${proposalLabel}. ${patternLabel}`;
 }
 
+function buildManagementArtifactPreview(metadata: Record<string, unknown> | null | undefined) {
+  if (!metadata || typeof metadata !== "object") {
+    return "Brief de inteligencia de gestao criado para revisao.";
+  }
+
+  const readiness = metadata.readiness && typeof metadata.readiness === "object"
+    ? metadata.readiness as Record<string, unknown>
+    : {};
+  const summary = typeof metadata.summary === "string" ? metadata.summary : "Brief de inteligencia de gestao criado.";
+  const status = typeof readiness.status === "string" ? readiness.status : null;
+  const confidence = typeof readiness.confidence === "string" ? readiness.confidence : null;
+  const nextAction = typeof metadata.nextAction === "string" ? metadata.nextAction : null;
+  const gaps = Array.isArray(metadata.gaps)
+    ? metadata.gaps.map((item) => String(item || "").trim()).filter(Boolean).slice(0, 2)
+    : [];
+
+  return [
+    summary,
+    status ? `Readiness: ${status}${confidence ? `/${confidence}` : ""}.` : null,
+    gaps.length ? `Lacunas: ${gaps.join("; ")}.` : null,
+    nextAction ? `Proxima acao: ${nextAction}` : null,
+  ].filter(Boolean).join(" ");
+}
+
 function ArtifactCard({ artifact }: { artifact: BrainInboxArtifactItem }) {
   const contentPreview = typeof artifact.metadata?.reply === "string"
     ? artifact.metadata.reply
@@ -630,6 +1195,8 @@ function ArtifactCard({ artifact }: { artifact: BrainInboxArtifactItem }) {
       ? artifact.metadata.sign_url
       : artifact.artifact_type === "self_improvement_report"
         ? buildSelfImprovementArtifactPreview(artifact.metadata)
+      : artifact.artifact_type === "management_intelligence_brief"
+        ? buildManagementArtifactPreview(artifact.metadata)
       : null;
 
   return (
@@ -645,6 +1212,10 @@ function ArtifactCard({ artifact }: { artifact: BrainInboxArtifactItem }) {
       {artifact.task && (
         <p className="text-xs text-gray-500 mt-2 truncate">{artifact.task.title || artifact.task.goal}</p>
       )}
+
+      <div className="mt-3">
+        <LegalOperatorStateSummary state={artifact.metadata?.legal_operator_state} />
+      </div>
 
       {contentPreview && (
         <p className="text-xs text-gray-400 mt-3 line-clamp-3">{contentPreview}</p>
@@ -846,6 +1417,10 @@ function EventCard({ event }: { event: BrainInboxEventItem }) {
 
       <p className="text-xs text-gray-400 mt-3 line-clamp-3">{getEventDescription(event)}</p>
 
+      <div className="mt-3">
+        <LegalOperatorStateSummary state={event.payload?.legal_operator_state} />
+      </div>
+
       {event.step?.title && (
         <p className="text-[10px] uppercase tracking-widest text-gray-500 mt-3">Step: {event.step.title}</p>
       )}
@@ -862,11 +1437,24 @@ export default function BrainApprovalsPage() {
   const [reviewsLoading, setReviewsLoading] = useState(true);
   const [approvalFilter, setApprovalFilter] = useState<ApprovalFilterId>("all");
   const [activityFilter, setActivityFilter] = useState<ActivityFilterId>("all");
+  const [missionAgentFilter, setMissionAgentFilter] = useState("all");
   const isExecutive = isBrainExecutiveRole(role);
   const pendingApprovals = inbox?.pending_approvals || [];
   const recentApprovals = inbox?.recent_approvals || [];
   const recentArtifacts = inbox?.recent_artifacts || [];
   const recentEvents = inbox?.recent_events || [];
+  const legalOperatorMissions = inbox?.legal_operator_missions || [];
+  const missionControlSnapshots = inbox?.mission_control_snapshots || [];
+  const missionAgentFilters = Array.from(
+    missionControlSnapshots.reduce((acc, mission) => {
+      const id = getMissionAgentId(mission);
+      if (!acc.has(id)) acc.set(id, getMissionAgentLabel(mission));
+      return acc;
+    }, new Map<string, string>())
+  );
+  const filteredMissionControlSnapshots = missionAgentFilter === "all"
+    ? missionControlSnapshots
+    : missionControlSnapshots.filter((mission) => getMissionAgentId(mission) === missionAgentFilter);
   const correctionArtifactCount = recentArtifacts.filter(isMayusCorrectionArtifact).length;
   const correctionEventCount = recentEvents.filter(isMayusCorrectionEvent).length;
   const correctionActivityCount = correctionArtifactCount + correctionEventCount;
@@ -978,28 +1566,28 @@ export default function BrainApprovalsPage() {
             <CheckCircle2 className="text-emerald-300 mb-1" size={18} />
           </div>
         </div>
-          <div className="rounded-2xl border border-white/10 bg-[#0f0f0f] p-5">
-            <p className="text-[10px] uppercase tracking-[0.18em] text-gray-500">Atividade recente</p>
-            <div className="mt-3 flex items-end gap-2">
-              <span className="text-3xl font-semibold text-white">{inbox?.recent_tasks.length ?? 0}</span>
-              <ShieldCheck className="text-[#CCA761] mb-1" size={18} />
-            </div>
-          </div>
-          <div className="rounded-2xl border border-white/10 bg-[#0f0f0f] p-5">
-            <p className="text-[10px] uppercase tracking-[0.18em] text-gray-500">Artifacts recentes</p>
-            <div className="mt-3 flex items-end gap-2">
-              <span className="text-3xl font-semibold text-white">{inbox?.recent_artifacts.length ?? 0}</span>
-              <FileText className="text-[#CCA761] mb-1" size={18} />
-            </div>
-          </div>
-          <div className="rounded-2xl border border-white/10 bg-[#0f0f0f] p-5">
-            <p className="text-[10px] uppercase tracking-[0.18em] text-gray-500">Eventos recentes</p>
-            <div className="mt-3 flex items-end gap-2">
-              <span className="text-3xl font-semibold text-white">{inbox?.recent_events.length ?? 0}</span>
-              <Cpu className="text-[#CCA761] mb-1" size={18} />
-            </div>
+        <div className="rounded-2xl border border-white/10 bg-[#0f0f0f] p-5">
+          <p className="text-[10px] uppercase tracking-[0.18em] text-gray-500">Atividade recente</p>
+          <div className="mt-3 flex items-end gap-2">
+            <span className="text-3xl font-semibold text-white">{inbox?.recent_tasks.length ?? 0}</span>
+            <ShieldCheck className="text-[#CCA761] mb-1" size={18} />
           </div>
         </div>
+        <div className="rounded-2xl border border-white/10 bg-[#0f0f0f] p-5">
+          <p className="text-[10px] uppercase tracking-[0.18em] text-gray-500">Artifacts recentes</p>
+          <div className="mt-3 flex items-end gap-2">
+            <span className="text-3xl font-semibold text-white">{inbox?.recent_artifacts.length ?? 0}</span>
+            <FileText className="text-[#CCA761] mb-1" size={18} />
+          </div>
+        </div>
+        <div className="rounded-2xl border border-white/10 bg-[#0f0f0f] p-5">
+          <p className="text-[10px] uppercase tracking-[0.18em] text-gray-500">Eventos recentes</p>
+          <div className="mt-3 flex items-end gap-2">
+            <span className="text-3xl font-semibold text-white">{inbox?.recent_events.length ?? 0}</span>
+            <Cpu className="text-[#CCA761] mb-1" size={18} />
+          </div>
+        </div>
+      </div>
 
       <div className="flex flex-wrap gap-2">
         {APPROVAL_FILTERS.map((filter) => {
@@ -1060,6 +1648,101 @@ export default function BrainApprovalsPage() {
           </span>
         </button>
       </div>
+
+      {!isLoading && (
+        <section className="space-y-4">
+          <div className="flex items-center justify-between gap-3">
+            <div>
+              <h2 className="text-lg text-white font-semibold">Controle agentico</h2>
+              <p className="mt-1 text-xs text-gray-500">
+                Read-model comum de missao, policy OpenClaw, trajectory Hermes, rotinas Paperclip e approvals.
+              </p>
+            </div>
+            <span className="text-xs uppercase tracking-widest text-gray-500">
+              {filteredMissionControlSnapshots.length}/{missionControlSnapshots.length} missao{missionControlSnapshots.length === 1 ? "" : "es"}
+            </span>
+          </div>
+
+          {missionControlSnapshots.length > 0 && (
+            <div className="flex flex-wrap items-center gap-2">
+              <span className="text-[10px] uppercase tracking-[0.2em] text-gray-500">Agente</span>
+              <button
+                type="button"
+                onClick={() => setMissionAgentFilter("all")}
+                aria-pressed={missionAgentFilter === "all"}
+                className={`inline-flex items-center gap-2 rounded-xl border px-3 py-2 text-xs font-bold uppercase tracking-widest transition-colors ${
+                  missionAgentFilter === "all"
+                    ? "border-[#CCA761]/60 bg-[#CCA761]/15 text-[#CCA761]"
+                    : "border-white/10 bg-[#0f0f0f] text-gray-400 hover:border-[#CCA761]/30 hover:text-[#CCA761]"
+                }`}
+              >
+                Todos
+                <span className="rounded-full border border-white/10 bg-black/20 px-2 py-0.5 text-[10px] text-gray-300">
+                  {missionControlSnapshots.length}
+                </span>
+              </button>
+              {missionAgentFilters.map(([id, label]) => (
+                <button
+                  key={id}
+                  type="button"
+                  onClick={() => setMissionAgentFilter(id)}
+                  aria-pressed={missionAgentFilter === id}
+                  className={`inline-flex items-center gap-2 rounded-xl border px-3 py-2 text-xs font-bold uppercase tracking-widest transition-colors ${
+                    missionAgentFilter === id
+                      ? "border-[#CCA761]/60 bg-[#CCA761]/15 text-[#CCA761]"
+                      : "border-white/10 bg-[#0f0f0f] text-gray-400 hover:border-[#CCA761]/30 hover:text-[#CCA761]"
+                  }`}
+                >
+                  {label}
+                  <span className="rounded-full border border-white/10 bg-black/20 px-2 py-0.5 text-[10px] text-gray-300">
+                    {missionControlSnapshots.filter((mission) => getMissionAgentId(mission) === id).length}
+                  </span>
+                </button>
+              ))}
+            </div>
+          )}
+
+          {filteredMissionControlSnapshots.length > 0 ? (
+            <div className="grid gap-4 xl:grid-cols-2">
+              {filteredMissionControlSnapshots.map((mission) => (
+                <MissionControlCard key={mission.missionId} mission={mission} onRefresh={loadInbox} />
+              ))}
+            </div>
+          ) : (
+            <div className="rounded-2xl border border-white/10 bg-[#0f0f0f] p-6 text-center text-gray-500">
+              Nenhuma missao agentica reconstruida no Brain.
+            </div>
+          )}
+        </section>
+      )}
+
+      {!isLoading && (
+        <section className="space-y-4">
+          <div className="flex items-center justify-between gap-3">
+            <div>
+              <h2 className="text-lg text-white font-semibold">Missoes juridicas vivas</h2>
+              <p className="mt-1 text-xs text-gray-500">
+                Estado reconstruido a partir de approvals, artifacts e eventos do Brain.
+              </p>
+            </div>
+            <span className="text-xs uppercase tracking-widest text-gray-500">
+              {legalOperatorMissions.length} ativa{legalOperatorMissions.length === 1 ? "" : "s"}
+            </span>
+          </div>
+
+          {legalOperatorMissions.length > 0 ? (
+            <div className="grid gap-4 xl:grid-cols-2">
+              {legalOperatorMissions.map((mission) => (
+                <LegalOperatorMissionCard key={mission.key} mission={mission} />
+              ))}
+            </div>
+          ) : (
+            <div className="rounded-2xl border border-white/10 bg-[#0f0f0f] p-6 text-center text-gray-500">
+              Nenhuma missao juridica viva reconstruida no Brain.
+            </div>
+          )}
+        </section>
+      )}
 
       <section className="space-y-4">
         <div className="flex items-center justify-between gap-3">

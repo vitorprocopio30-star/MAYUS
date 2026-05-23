@@ -1,6 +1,7 @@
 import { describe, expect, it } from "vitest";
 import {
   createHermesMissionTrajectory,
+  evaluateHermesMissionTrajectory,
   getMissingHermesMissionTrajectoryTypes,
   hasHermesMinimumMissionTrajectory,
   recordHermesMissionApproval,
@@ -86,5 +87,43 @@ describe("Hermes mission trajectory", () => {
     expect(persisted).not.toContain("cliente@mayus.test");
     expect(persisted).not.toContain("123.456.789-10");
     expect(persisted).not.toContain("99999-8888");
+  });
+
+  it("avalia completude, approval e proxima acao segura sem autoaprovar", () => {
+    const trajectory = recordHermesMissionApproval(
+      recordHermesMissionStep(
+        createHermesMissionTrajectory({
+          missionId: "mission-evaluation",
+          objective: "Transformar aprendizado em memoria supervisionada.",
+          at: "2026-05-21T10:00:00.000Z",
+        }),
+        {
+          summary: "Etapa identificou aprendizado reutilizavel.",
+          at: "2026-05-21T10:01:00.000Z",
+        },
+      ),
+      {
+        summary: "Approval solicitado ao socio.",
+        decision: "requested",
+        at: "2026-05-21T10:02:00.000Z",
+      },
+    );
+
+    const evaluation = evaluateHermesMissionTrajectory(trajectory);
+
+    expect(evaluation).toEqual(expect.objectContaining({
+      minimumComplete: false,
+      completionRatio: 0.43,
+      approvalStatus: "requested",
+      nextSafeAction:
+        "Aguardar approval humano antes de promover memoria, skill ou procedimento.",
+    }));
+    expect(evaluation.missingEventTypes).toEqual([
+      "decision",
+      "block",
+      "artifact",
+      "result",
+    ]);
+    expect(JSON.stringify(evaluation)).not.toContain("\"approved\"");
   });
 });

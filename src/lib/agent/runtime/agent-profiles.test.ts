@@ -13,6 +13,7 @@ import {
   classifyMayusAgentProfileSurface,
   evaluateMayusAgentProfile,
   buildMayusAgentProfileExplanation,
+  buildMayusOpenClawPolicyDebugger,
 } from "./agent-profiles";
 import { decideMayusSkillAutonomy } from "./tenant-policy";
 
@@ -76,6 +77,46 @@ describe("MAYUS agent profiles", () => {
       code: "tool_denied",
       layer: "tenant",
     }));
+  });
+
+  it("explica precedencia OpenClaw sem reabrir deny superior em camada inferior", () => {
+    const decision = evaluateMayusAgentProfile({
+      profiles: {
+        tenant: {
+          deny: { tools: ["escavador_paid_search"] },
+        },
+        channels: {
+          whatsapp: {
+            allow: {
+              agents: ["*"],
+              modules: ["*"],
+              channels: ["*"],
+              tools: ["escavador_paid_search"],
+              surfaces: ["*"],
+            },
+          },
+        },
+      },
+      agentId: "monitoring_agent",
+      module: "monitoring",
+      channel: "whatsapp",
+      tool: "escavador_paid_search",
+      surface: "escavador_paid_search",
+    });
+    const debuggerInfo = buildMayusOpenClawPolicyDebugger(decision);
+    const explanation = buildMayusAgentProfileExplanation(decision);
+
+    expect(decision.allowed).toBe(false);
+    expect(debuggerInfo).toEqual(expect.objectContaining({
+      outcome: "blocked",
+      blocked_layer: "tenant",
+      blocked_reason_code: "tool_denied",
+      lower_layers_cannot_reopen: true,
+      precedence: ["global", "tenant", "module", "agent", "tool", "channel"],
+    }));
+    expect(debuggerInfo.applied_layers.map((layer) => layer.scope)).toEqual(["tenant", "channel"]);
+    expect(explanation.debugger.blocked_layer).toBe("tenant");
+    expect(JSON.stringify(explanation)).not.toContain("service_role");
   });
 
   it("does not leak secrets in blocked reasons or explanations", () => {

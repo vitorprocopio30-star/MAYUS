@@ -46,6 +46,17 @@ function makeSystemEventsQuery(rows: Array<Record<string, unknown>> = []) {
   return query;
 }
 
+function makeEmptyBrainReadQuery() {
+  const query: Record<string, any> = {};
+  query.select = vi.fn(() => query);
+  query.eq = vi.fn(() => query);
+  query.neq = vi.fn(() => query);
+  query.order = vi.fn(() => query);
+  query.limit = vi.fn().mockResolvedValue({ data: [], error: null });
+  query.in = vi.fn().mockResolvedValue({ data: [], error: null });
+  return query;
+}
+
 function mockSchedulerSupabase(params: {
   settingsRows: Array<Record<string, unknown>>;
   eventRows?: Array<Record<string, unknown>>;
@@ -97,7 +108,7 @@ describe("/api/agent/routines", () => {
       },
     });
     listMayusAgenticRoutinesMock.mockResolvedValue([
-      { id: "finance-daily-review", status: "ready" },
+      enabledRoutine(),
     ]);
     runMayusRoutineHeartbeatMock.mockResolvedValue({
       status: "dry_run",
@@ -107,6 +118,7 @@ describe("/api/agent/routines", () => {
       eventName: "agentic_routine_dry_run",
       trajectory: [],
     });
+    brainAdminSupabaseMock.from.mockImplementation(() => makeEmptyBrainReadQuery());
   });
 
   it("GET exige perfil executivo", async () => {
@@ -133,6 +145,19 @@ describe("/api/agent/routines", () => {
 
     expect(response.status).toBe(200);
     expect(body.routines).toHaveLength(1);
+    expect(body.agents).toEqual(expect.arrayContaining([
+      expect.objectContaining({
+        id: "finance_agent",
+        health: expect.objectContaining({ status: "ready" }),
+      }),
+    ]));
+    expect(body.summary).toEqual(expect.objectContaining({
+      totalAgents: 7,
+      readyAgents: 1,
+      policyPrecedence: ["global", "tenant", "module", "agent", "tool", "channel"],
+    }));
+    expect(body.mission_control_snapshots).toEqual([]);
+    expect(body.control_plane.agents).toEqual(body.agents);
     expect(listMayusAgenticRoutinesMock).toHaveBeenCalledWith(expect.objectContaining({
       tenantId: "tenant-session",
     }));

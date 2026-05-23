@@ -8,7 +8,7 @@ vi.mock("@/lib/agent/runtime/self-improvement-review", () => ({
   runSelfImprovementReview: runSelfImprovementReviewMock,
 }));
 
-import { RECOMMENDED_MAYUS_AGENTIC_ROUTINES, runMayusRoutineHeartbeat } from "./routines";
+import { RECOMMENDED_MAYUS_AGENTIC_ROUTINES, listMayusAgenticRoutines, runMayusRoutineHeartbeat } from "./routines";
 
 const ROUTINE_ID = "paperclip_daily_playbook_review";
 const SELF_IMPROVEMENT_ROUTINE_ID = "mayus-self-improvement-review";
@@ -107,6 +107,26 @@ describe("Paperclip routine heartbeat", () => {
     }));
   });
 
+  it("anexa o agente interno responsavel em cada rotina listada", async () => {
+    const { client } = createSupabaseMock(routineSettings({ paused: false }));
+
+    const routines = await listMayusAgenticRoutines({
+      tenantId: "tenant-1",
+      client,
+    });
+    const legalRoutine = routines.find((item) => item.id === ROUTINE_ID);
+    const growthRoutine = routines.find((item) => item.id === "paperclip_crm_next_step_sweep");
+
+    expect(legalRoutine?.internalAgent).toEqual(expect.objectContaining({
+      id: "legal_operations_agent",
+      label: "Legal Operations Agent",
+    }));
+    expect(growthRoutine?.internalAgent).toEqual(expect.objectContaining({
+      id: "growth_agent",
+      label: "Growth Agent",
+    }));
+  });
+
   it("nao acorda rotina pausada", async () => {
     const { client, inserts } = createSupabaseMock(routineSettings({ paused: true }));
 
@@ -174,6 +194,10 @@ describe("Paperclip routine heartbeat", () => {
 
     expect(result.status).toBe("woken");
     expect(result.missionCreated).toBe(true);
+    expect(result.agentControl).toEqual(expect.objectContaining({
+      id: "legal_operations_agent",
+      label: "Legal Operations Agent",
+    }));
     expect(result.brainTrace).toEqual(expect.objectContaining({
       taskId: "task-1",
       runId: "run-1",
@@ -199,6 +223,7 @@ describe("Paperclip routine heartbeat", () => {
     expect(inserts.find((item) => item.table === "system_event_logs")?.payload).toEqual(expect.objectContaining({
       event_name: "agentic_routine_woken",
     }));
+    expect(JSON.stringify(inserts)).toContain("legal_operations_agent");
   });
 
   it("executa o review de auto-aprendizado quando a rotina dedicada acorda", async () => {

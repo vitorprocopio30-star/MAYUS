@@ -24,6 +24,11 @@ import {
   type HermesMissionTrajectory,
 } from "@/lib/agent/runtime/trajectory";
 import { runSelfImprovementReview } from "@/lib/agent/runtime/self-improvement-review";
+import {
+  resolveMayusInternalAgentForRoutine,
+  summarizeMayusInternalAgent,
+  type MayusInternalAgentSummary,
+} from "@/lib/agent/runtime/control-plane";
 
 type RoutineClient = {
   from: (table: string) => any;
@@ -60,6 +65,7 @@ export type MayusAgenticRoutine = {
   label: string;
   source: "paperclip" | "hermes" | "mayus";
   agentId: string;
+  internalAgent?: MayusInternalAgentSummary;
   module: MayusRoutineModule;
   capabilityName: string;
   goalTemplate: string;
@@ -100,6 +106,7 @@ export type MayusRoutineHeartbeatResult = {
   eventName?: "agentic_routine_woken" | "agentic_routine_blocked" | "agentic_routine_dry_run" | null;
   policyDecision?: (MayusPolicyDecision & { surface?: string; module?: string; autonomyMode?: string }) | null;
   budgetDecision?: MayusBudgetDecision | null;
+  agentControl?: MayusInternalAgentSummary | null;
   trajectory: MayusRoutineTrajectoryStep[];
   hermesTrajectory?: HermesMissionTrajectory | null;
   brainTrace?: {
@@ -341,6 +348,13 @@ function mergeRoutine(base: MayusAgenticRoutine, override?: Partial<MayusAgentic
   };
 }
 
+function attachInternalAgent(routine: MayusAgenticRoutine): MayusAgenticRoutine {
+  return {
+    ...routine,
+    internalAgent: summarizeMayusInternalAgent(resolveMayusInternalAgentForRoutine(routine)),
+  };
+}
+
 async function loadTenantRoutineOverrides(params: {
   tenantId: string;
   client: RoutineClient;
@@ -400,12 +414,12 @@ export async function listMayusAgenticRoutines(params: {
   for (const base of DEFAULT_MAYUS_AGENTIC_ROUTINES) {
     ids.add(base.id);
     const routine = mergeRoutine(base, overrideById.get(base.id));
-    routines.push({
+    routines.push(attachInternalAgent({
       ...routine,
       status: routine.paused ? "skipped" : routine.enabled ? "ready" : "skipped",
       reason: routine.enabled ? routine.wakeReason : "Rotina recomendada, aguardando ativacao do tenant.",
       nextAction: routine.enabled ? "Pode rodar dry-run ou heartbeat manual." : "Ative a rotina para permitir heartbeat auditado.",
-    });
+    }));
   }
 
   for (const override of overrides) {
@@ -425,12 +439,12 @@ export async function listMayusAgenticRoutines(params: {
       executionMode: override.executionMode || "plan_only",
       wakeReason: override.wakeReason || "Rotina operacional do MAYUS.",
     }, override);
-    routines.push({
+    routines.push(attachInternalAgent({
       ...routine,
       status: routine.paused ? "skipped" : routine.enabled ? "ready" : "skipped",
       reason: routine.enabled ? routine.wakeReason : "Rotina configurada, mas desativada.",
       nextAction: routine.enabled ? "Pode rodar dry-run ou heartbeat manual." : "Ative a rotina para permitir heartbeat auditado.",
-    });
+    }));
   }
 
   return routines;
@@ -490,6 +504,7 @@ async function insertBlockedEvent(params: {
     payload: {
       routine_id: params.routine.id,
       module: params.routine.module,
+      agent_control: params.result.agentControl,
       reason: params.result.reason,
       status: params.result.status,
       trajectory: params.result.trajectory,
@@ -520,13 +535,16 @@ export async function runMayusRoutineHeartbeat(params: {
       reason: "Rotina agentica nao encontrada para este tenant.",
       missionCreated: false,
       eventName: null,
+      agentControl: null,
       trajectory,
       hermesTrajectory: null,
       results: [],
     };
   }
 
+  const agentControl = summarizeMayusInternalAgent(resolveMayusInternalAgentForRoutine(routine));
   appendTrajectory(trajectory, "routine_loaded", "ok", routine.wakeReason);
+  appendTrajectory(trajectory, "agent_resolved", "ok", `${agentControl.label} responsavel pela rotina.`);
 
   const budgetDecision = evaluateMayusBudget({
     estimatedCostCents: routine.estimatedCostCents || 0,
@@ -559,6 +577,7 @@ export async function runMayusRoutineHeartbeat(params: {
       missionCreated: false,
       eventName: status === "blocked" && params.dryRun ? "agentic_routine_dry_run" : status === "blocked" ? "agentic_routine_blocked" : null,
       budgetDecision,
+      agentControl,
       trajectory,
       hermesTrajectory: null,
       results: status === "blocked"
@@ -600,6 +619,7 @@ export async function runMayusRoutineHeartbeat(params: {
       eventName: params.dryRun ? "agentic_routine_dry_run" : "agentic_routine_blocked",
       policyDecision,
       budgetDecision,
+      agentControl,
       trajectory,
       hermesTrajectory: null,
       results: [{ routineId: routine.id, eventName: params.dryRun ? "agentic_routine_dry_run" : "agentic_routine_blocked" }],
@@ -620,6 +640,7 @@ export async function runMayusRoutineHeartbeat(params: {
       eventName: "agentic_routine_dry_run",
       policyDecision,
       budgetDecision,
+      agentControl,
       trajectory,
       hermesTrajectory: null,
       results: [{ routineId: routine.id, eventName: "agentic_routine_dry_run" }],
@@ -638,12 +659,17 @@ export async function runMayusRoutineHeartbeat(params: {
     task_input: sanitizeValue({
       routine_id: routine.id,
       source: routine.source,
+      internal_agent_id: agentControl.id,
+      internal_agent_label: agentControl.label,
       capability_name: routine.capabilityName,
       payload: routine.payload || {},
     }),
     task_context: sanitizeValue({
       source: "agentic_routine",
       agent_id: routine.agentId,
+      internal_agent_id: agentControl.id,
+      internal_agent_label: agentControl.label,
+      agent_control: agentControl,
       schedule: routine.schedule,
       wake_reason: routine.wakeReason,
     }),
@@ -667,6 +693,8 @@ export async function runMayusRoutineHeartbeat(params: {
       routine_id: routine.id,
       source: routine.source,
       agent_id: routine.agentId,
+      internal_agent_id: agentControl.id,
+      internal_agent_label: agentControl.label,
     },
   });
   hermesTrajectory = recordHermesMissionStep(hermesTrajectory, {
@@ -710,6 +738,7 @@ export async function runMayusRoutineHeartbeat(params: {
       status: policyDecision.outcome === "requires_approval" ? "awaiting_approval" : "queued",
       input_payload: sanitizeValue({
         routine,
+        agent_control: agentControl,
         policy_decision: policyDecision,
         budget_decision: budgetDecision,
         trajectory,
@@ -732,6 +761,9 @@ export async function runMayusRoutineHeartbeat(params: {
       mime_type: "application/json",
       metadata: sanitizeValue({
         routine_id: routine.id,
+        internal_agent_id: agentControl.id,
+        internal_agent_label: agentControl.label,
+        agent_control: agentControl,
         goal: routine.goalTemplate,
         wake_reason: routine.wakeReason,
         policy_decision: policyDecision,
@@ -766,6 +798,9 @@ export async function runMayusRoutineHeartbeat(params: {
         approval_context: sanitizeValue({
           source: "agentic_routine",
           routine_id: routine.id,
+          internal_agent_id: agentControl.id,
+          internal_agent_label: agentControl.label,
+          agent_control: agentControl,
           policy_decision: policyDecision,
         }),
       })
@@ -822,6 +857,7 @@ export async function runMayusRoutineHeartbeat(params: {
     eventName: "agentic_routine_woken",
     policyDecision,
     budgetDecision,
+    agentControl,
     trajectory,
     hermesTrajectory,
     executionResult,
