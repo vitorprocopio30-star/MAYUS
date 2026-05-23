@@ -2,7 +2,7 @@
 
 Fonte oficial atual para decidir o que falta para o MAYUS chegar a 100%.
 
-Atualizado em: 2026-05-13
+Atualizado em: 2026-05-23
 
 Este documento substitui os checklists espalhados como fonte principal de execucao. Os arquivos antigos continuam como historico tecnico, evidencias e detalhes de implementacao.
 
@@ -22,16 +22,17 @@ Legenda:
 
 | Frente | Percentual | Leitura honesta |
 | --- | ---: | --- |
-| MAYUS geral | 78% | Produto forte, WhatsApp multimodal, bloqueio de grupos, recuperacao de locks, observabilidade, fila de resposta, ACK de midia e politica de qualidade agentica evoluiram, mas ainda nao e o socio virtual completo. |
+| MAYUS geral | 81% | Produto forte, WhatsApp multimodal, bloqueio de grupos, recuperacao de locks, observabilidade, fila de resposta, ACK de midia, politica de qualidade agentica, Configuracoes > Agente com smoke real autenticado e onboarding operacional pelo Chat MAYUS evoluiram, mas ainda falta fechar o Operating Partner supervisionado em todos os modulos. |
 | Produto juridico/base SaaS | 78% | Dashboard, CRM, documentos, juridico, agenda, marketing e permissoes ja existem. |
-| Maturidade agentica | 54% | Ha runtime, artifacts, skills, Operating Partner ativo em WhatsApp, perfil operacional do escritorio no prompt e auditoria, mas ainda falta um operador central continuo em todos os modulos. |
+| Maturidade agentica | 65% | Ha runtime, artifacts, skills, Operating Partner ativo em WhatsApp, perfil operacional do escritorio no prompt, metodologia tenant-scoped, defaults por area em modo supervisionado, auditoria, onboarding operacional deterministico e Agent Control Plane v1.2 com health, approvals, snapshots, handoff Metodologia -> Lex -> Core, OpenClaw debugger e Hermes lifecycle por agente; o corte beta processual agora carrega envelope Paperclip/OpenClaw/Hermes em artifacts/aprovacoes. Ainda falta um operador central continuo em todos os modulos. |
 | WhatsApp vendas/suporte | 92% | Evolution passou smoke multimodal anterior, ACK de midia deployado, bloqueio de grupos, filas zeradas, recuperacao de locks, audio autorizado do dono roteado por transcricao antes do ACK e autoenvio conversacional restrito ao Operating Partner; respostas agora usam digitando/delay humanizado no envio Evolution agentico. Faltam smoke privado fechado com conversa longa real e Meta Cloud. |
 | Growth/vendas | 72% | Intake, qualificacao, follow-up, reativacao, sales profile e uso do documento de vendas como playbook existem; falta fechar execucao real ponta a ponta. |
-| Juridico/Lex | 82% | Base juridica e documental esta forte; faltam contradicoes, cronologia, riscos e mais automacao segura. |
+| Juridico/Lex | 87% | Base juridica e documental esta forte; movimentacoes agora tem beta seguro com fila humana, recovery, prazos/cards auditaveis, guard de recurso do proprio polo, metodologia do tenant em `ProcessMissionContext`, envelope beta em `process_mission_plan`/`process_mission_step_result` e sinais Hermes/OpenClaw no inbox; faltam polo/obrigacao completos, contradicoes, cronologia, riscos e pecas verificaveis com smoke real. |
 | Financeiro | 72% | Financeiro Beta separa receita SaaS do MAYUS em `platform_billing_events`, entrega painel superadmin com MRR/ARR/receita/risco por escritorio, resumo financeiro do tenant, `collections_followup`, labels financeiros no Chat/Brain, reconciliacao leve, forecast por prazo, aging de vencidos, riscos por cliente/caso, forecast comercial por funil/proposta/contrato, unidade economica estimada e politica segura de revenue-to-case. A aba Financeiro do escritorio passou smoke autenticado com fixture controlada cobrindo forecast de cobrancas, aging, riscos, collections, reconciliacao, forecast comercial, unidade economica e geracao de plano supervisionado a partir de risco financeiro; ainda faltam smoke real Asaas, dados reais de custo/comissao, migration remota do billing SaaS e superadmin E2E. Dry-run remoto esta bloqueado nesta sessao porque o Supabase CLI nao tem `SUPABASE_ACCESS_TOKEN`. |
-| Auto-configuracao | 48% | Setup Doctor, sales profile e `office_knowledge_profile` inicial existem; falta onboarding completo do escritorio e validacao real das politicas por area/equipe. |
-| UX sem curso | 60% | WhatsApp ganhou controles melhores, mas o usuario ainda precisa entender demais o sistema. |
-| Integracoes e operacao real | 77% | WhatsApp Evolution tem smoke, observabilidade, alerta de falha, job assincrono validado manualmente, ACK de midia deployado, bloqueio de grupos, filas zeradas, audio de comando interno tratado antes do ACK e autoenvio agentico endurecido. Faltam smoke privado fechado com audio real do dono, PDF novo, Meta Cloud e scheduler automatico observado. |
+| Auto-configuracao | 66% | Setup Doctor, sales profile, `office_knowledge_profile`, `operational_methodology`, `TenantOperationalMethodologyContext`, Configuracoes > Agente com readiness/rotinas e `office_setup_conversation` pelo fast-path do Chat MAYUS cobrem Metodologia Operacional v0, permissoes, agenda, financeiro, playbooks secundarios, pipelines e estrutura documental por area com defaults supervisionados; falta validacao real das politicas por area/equipe, aprovacao visual completa e uso cross-module final. |
+| Reaproveitamento de agentes publicos | 63% | Paperclip, OpenClaw e Hermes viraram trilha documentada e ja entregam routines/heartbeat interno, Agent Control Plane v1.2, scheduler protegido, agent profiles restritivos com debugger, trajectory, lifecycle supervisionado/persistivel, metodologia tenant-only em mission snapshots, route wiring de lifecycle para `brain_memories`/`learning_events`, smoke real de Configuracoes > Agente e verificador seguro do scheduler. O corte processual beta agora usa OpenClaw para `legal_decision`, Hermes para trajectory e Paperclip para owner/next action. Faltam deploy/merge para observar workflow em producao, portability e uso cross-module continuo. |
+| UX sem curso | 68% | WhatsApp ganhou controles melhores, a tela de Agente/Skills passa smoke real com readiness/rotinas/dry-run e o Chat MAYUS agora monta Metodologia Operacional v0 sem depender do LLM, com artifact/eventos/memorias propostas, politicas operacionais e defaults por area; o usuario ainda precisa entender demais o sistema. |
+| Integracoes e operacao real | 78% | WhatsApp Evolution tem smoke, observabilidade, alerta de falha, job assincrono validado manualmente, ACK de midia deployado, bloqueio de grupos, filas zeradas, audio de comando interno tratado antes do ACK, autoenvio agentico endurecido e scheduler de rotinas versionado localmente no workflow. O verificador protegido ja classifica 404/401/403 sem expor segredo, mas a rota `/api/agent/routines` ainda nao esta no alias publico atual. Faltam smoke privado fechado com audio real do dono, PDF novo, Meta Cloud e observar scheduler automatico em producao apos deploy. |
 
 ### O que ja e usavel
 
@@ -43,8 +44,12 @@ Legenda:
 - [~] Suporte WhatsApp de cliente atual para status de processo com contexto verificado, linguagem simples, fase atual, proximo passo, pendencias e bloqueio contra status inventado; falta smoke real com processo controlado.
 - [x] Document Brain, Draft Factory, publicacao, export e learning loop juridico.
 - [x] Auto Setup Doctor inicial com artifact e defaults seguros.
+- [~] Agent Control Plane v1.2 em Configuracoes > Agente: lista agentes internos, health, owner, budget, approvals reais, ultima missao, bloqueio, artifact/evento, metodologia tenant-scoped, OpenClaw debugger, Hermes lifecycle, memoria e proxima acao usando `/api/agent/routines`; tambem reconstrui `Missao processual Lex` quando existe artifact juridico com envelope beta. Falta smoke real autenticado apos deploy.
+- [~] Coordenacao Metodologia + Juridico + Agentic formalizada: Frente 0 Metodologia Individual, Frente A Juridico/Lex e Frente B Agentic Core agora tem ownership, bloqueios de colisao, handoff e proximo passo coordenado documentados e expostos no runtime; `/dashboard/aprovacoes` mostra motivo OpenClaw, lacunas, fontes e guardrails para approval juridico. Falta smoke real autenticado mostrando a supervisao com dados vivos em `/dashboard/aprovacoes` e Configuracoes > Agente.
+- [~] Hermes + agentes publicos expostos como matriz operacional: Mission Control avalia completude Hermes, eventos faltantes, approval e proxima acao segura; Agent Control Plane mostra Paperclip/OpenClaw/Hermes como primitivas internas reaproveitadas, incluindo bloqueio `tenant_methodology`, superficie `legal_decision` e aprendizado tenant-only; falta smoke autenticado real pos-deploy.
 - [~] Cobranca agentica pelo Chat MAYUS: `billing_create` prepara cobranca com aprovacao obrigatoria, valor/vencimento/tipo normalizados, idempotencia e artifact `asaas_billing`; falta smoke real Asaas.
 - [~] Visibilidade financeira no Chat/Brain: respostas do MAYUS destacam `asaas_billing`, `collections_followup_plan` e revenue-to-case quando o kernel retorna essas capabilities/artifacts; painel superadmin, summary do tenant, forecast por prazo, aging de vencidos, riscos por cliente/caso e forecast comercial ja estao implementados. A aba Financeiro do dashboard passou smoke autenticado com fixture controlada incluindo faixa comercial e botao de gerar plano de cobranca supervisionado; falta smoke visual do `/admin` apos aplicar migration remota de billing SaaS e usar usuario E2E superadmin.
+- [~] Inteligencia de gestao: base curada Gestao Juridica BR, readiness financeiro/CRM e artifact `management_intelligence_brief` ja estruturam conceitos, lacunas, dados usados, perguntas e cenarios sem decisao automatica; falta smoke real com dados Asaas/CRM completos.
 - [x] Marketing OS com perfil, referencias, calendario, aprovados, copy supervisionada e maquina de narrativa AI-native para Instagram.
 - [x] Auditoria e eventos em `agent_audit_logs` / `system_event_logs` em varios fluxos.
 
@@ -54,20 +59,30 @@ Legenda:
 - [~] WhatsApp ganhou base de vendedor/suporte real com papel conversacional, objetivo, temperatura, estado e bloqueio de resposta generica; ainda precisa smoke longo real.
 - [ ] WhatsApp multimodal ainda precisa smoke real Meta Cloud, scheduler frequente e validacao em conversa longa.
 - [ ] Acoes reais supervisionadas ainda nao cobrem todo o ciclo CRM -> contrato -> cobranca -> caso.
-- [ ] Auto-configuracao ainda nao cobre juridico, documentos, equipe, permissoes, agenda, financeiro e playbooks.
-- [ ] Memoria e aprendizado ainda nao governam a proxima decisao em todos os fluxos.
+- [~] Auto-configuracao agora cobre Metodologia Operacional v0 pelo Chat MAYUS em caminho deterministico, incluindo rascunho/recomendacao/aprovacao em `tenant_settings.ai_features.operational_methodology`, contrato `TenantOperationalMethodologyContext`, permissoes, agenda, financeiro, playbooks secundarios, pipelines e estrutura documental por area; ainda falta aprovacao visual completa, validacao por area/equipe e uso cross-module em rotina completa.
+- [~] Reaproveitamento dos agentes publicos agora tem matriz Paperclip/OpenClaw/Hermes no Agent Control Plane, com heartbeat/rotinas, approvals, budget/hard stops, policy coverage, lifecycle Hermes, metodologia tenant-only, superficie `legal_decision` e proxima acao segura; faltam deploy/merge para observar workflow em producao, portability real e smoke autenticado do corte novo.
+- [~] Memoria e aprendizado ganharam promocao supervisionada: propostas entram em `brain_memories` com fonte/confianca, a tela de Memoria permite promover/rejeitar/revogar com auditoria, a Inbox do Brain rotula auto-correcao/self-improvement no feed canonico e tem filtro `Correcoes MAYUS`, o onboarding operacional validado gera propostas, e o ciclo de auto-correcao passou smoke autenticado real evento -> rotina -> proposta -> aprovacao -> memoria institucional; ainda falta governar a proxima decisao em todos os fluxos.
 - [ ] Smokes reais de integracoes sensiveis ainda faltam para producao confiavel.
 - [ ] Experiencia ainda tem inconsistencias visuais e operacionais entre modulos.
+- [~] Monitoramento juridico premium ganhou backend de excedente Escavador com 100 inclusos, R$ 0,97/processo, gates e auditoria; ainda faltam checkout/cobranca Asaas real, dashboard completo, Kanban automatico seguro e pecas com fontes verificaveis.
 
 ---
 
 ## 2. Tese do Produto
 
-O MAYUS nao deve ser apenas um software juridico com IA. O produto final e um `Revenue-to-Case OS`: um socio operacional de IA que conecta captacao, atendimento, venda, contrato, cobranca, abertura do caso, execucao juridica, comunicacao com cliente, documentos, agenda, metricas e aprendizado.
+O MAYUS nao deve ser apenas um software juridico com IA. O produto final e um `Revenue-to-Case OS`: uma camada de inteligencia operacional e de gestao supervisionada que conecta captacao, atendimento, venda, contrato, cobranca, abertura do caso, execucao juridica, comunicacao com cliente, documentos, agenda, metricas e aprendizado. O MAYUS estrutura decisoes com dados reais, mas o dono do escritorio decide.
 
 Frase mae:
 
 **Para o advogado iniciante, o MAYUS e a estrutura que ele ainda nao tem. Para o escritorio grande, e o controle que ele esta perdendo.**
+
+Tese beta da Metodologia Operacional:
+
+**Se o escritorio ja tem metodo, o MAYUS aprende. Se ainda nao tem, ajuda a construir.**
+
+No plano real do produto, "playbook" deixa de ser o conceito principal e passa a ser artefato secundario. A fonte central vira `operational_methodology`: identidade/PUV, cliente ideal, areas, intake, documentos, fases, responsaveis, criterios de avanco/trava, regras de melhoria e politica de internet auditavel.
+
+Regra de isolamento: o MAYUS aprende metodo, memoria, estilo e melhoria por escritorio/tenant. A Metodologia Base MAYUS e apenas default de produto para quando o escritorio ainda nao tem processo definido; ela nao carrega aprendizado de outros escritorios.
 
 Comando futuro ideal:
 
@@ -91,11 +106,11 @@ O MAYUS pode agir, mas acoes juridicas, financeiras ou externas sensiveis exigem
 - [x] Registry de skills, roteamento e dispatcher para varios fluxos.
 - [x] Auditoria agentica separada de eventos operacionais em parte relevante do sistema.
 - [~] `mayus_operating_partner` existe e ja atua em vendas/suporte, mas ainda nao e o centro unico de toda conversa.
-- [~] Operating Partner ja consome `office_knowledge_profile` no WhatsApp quando configurado: areas, triagem, handoff, tom, documentos, promessas proibidas, preco/SLA e departamentos entram no prompt.
+- [~] Operating Partner ja consome `office_knowledge_profile` e `operational_methodology` no WhatsApp quando configurados: areas, triagem, handoff, tom, documentos, promessas proibidas, preco/SLA, departamentos, permissoes, agenda, financeiro, playbooks secundarios e criterios de metodologia entram no prompt.
 - [ ] Fazer o Operating Partner ser o motor padrao de decisao nos modulos criticos.
-- [ ] Criar estado de missao reconstruivel: objetivo, contexto, etapa, ferramentas usadas, bloqueios, fontes e proxima acao.
+- [~] Criar estado de missao reconstruivel: Mission Control ja reconstrui missao por `brain_tasks`, `brain_runs`, `brain_steps`, approvals, artifacts e `learning_events`, anexando Legal Operator quando existir; ainda falta streaming incremental e health por skill.
 - [ ] Criar streaming/status incremental de missao na UI.
-- [ ] Criar retry/cancelamento por step com motivo e ator.
+- [~] Criar retry/cancelamento por step com motivo e ator: v1 adiciona rotas seguras por step, exige perfil executivo, usa ator da sessao, registra learning events e reabre apenas fila `queued` sem executar side effects externos.
 - [ ] Criar health por skill: uso, falha, custo, tempo medio, aprovacao e fallback.
 
 ### 3.2 WhatsApp vendedor e suporte
@@ -171,12 +186,22 @@ O MAYUS pode agir, mas acoes juridicas, financeiras ou externas sensiveis exigem
 - [x] Revisao juridica orientada e learning loop capture.
 - [x] Support case status cobre andamento, fase, proximo passo, pendencias, inferencias e handoff.
 - [~] Mapa de teses e auditor ainda estao parciais.
-- [~] Timeline estruturada do caso iniciada via `legal_case_brain_insights`, ainda pendente smoke real e persistencia propria.
-- [~] Mapa de riscos e proximos atos provaveis iniciado via `legal_case_brain_insights`; riscos/contradicoes criticos agora bloqueiam `legal_process_mission_execute_next` em testes focados, ainda pendente smoke real.
+- [~] Timeline estruturada do caso iniciada via `legal_case_brain_insights`; smoke autenticado em producao passou em 2026-05-15 com `E2E-2026-0001`, criando resposta, artifact `legal_case_brain_insights` e event `legal_case_brain_insights_created`; ainda falta persistencia propria.
+- [~] Mapa de riscos e proximos atos provaveis iniciado via `legal_case_brain_insights`; riscos/contradicoes criticos agora bloqueiam `legal_process_mission_execute_next` em testes focados. Smoke autenticado em producao passou em 2026-05-15: missao criou `process_mission_step_result` e `process_mission_step_executed` com falha segura da memoria documental (`Bad Request`) sem protocolo/publicacao/envio externo; ainda falta detector documental profundo e validacao de falhas Drive por tipo.
 - [~] Apontar contradicoes nos documentos e na narrativa iniciado com divergencia de fase, minuta stale, duplicidade e arquivo fora da estrutura; falta detector documental profundo.
 - [~] Gerar cronologia do caso iniciado com snapshot, documentos e movimentacoes; falta cronologia persistente completa.
-- [ ] Promover padroes aprovados para memoria institucional supervisionada.
+- [~] Promover padroes aprovados para memoria institucional supervisionada: fluxo inicial de proposta/aprovacao/rejeicao/revogacao existe para memoria institucional e onboarding operacional, mas falta smoke autenticado e aplicacao uniforme nos padroes juridicos.
 - [ ] Protocolo externo nunca executa sem aprovacao humana.
+- [~] Classificar movimentacao processual com contexto de polo, fase, historico e obrigacao real: Lex agora enriquece a analise com polo/obrigacao antes de criar prazo/card, incluindo recurso interposto pelo proprio polo representado e papel passivo `apelado`/`agravado`/`recorrido`; falta fase/historico mais profundos e matriz completa.
+- [~] Identificar se a obrigacao da movimentacao e do escritorio, do cliente, da parte contraria ou indeterminada: heuristica inicial cobre polo representado, ato pessoal do cliente e parte contraria; falta matriz ampla por classe processual.
+- [~] Persistir em cada movimentacao analisada: `polo_representado`, `obrigacao_de_quem`, `confidence`, `confidence_reason`, `evidencia` e `review_required`: salvo em `analise_json` e payload da fila beta; falta coluna/index proprio se virar contrato de consulta.
+- [~] Criar prazo/card automaticamente apenas quando a confianca juridica for alta: beta cria com evidencia/auditoria, exige pipeline/card Kanban e volta para revisao se falhar; falta classificador completo de polo/obrigacao do escritorio/cliente representado.
+- [~] Enviar movimentacoes de confianca media/baixa, polo incerto ou obrigacao ambigua para fila de revisao humana: fila `/api/juridico/movement-reviews` e UI em `/dashboard/aprovacoes` passaram testes focados e smoke Playwright autenticado; falta persistencia propria alem de `system_event_logs`.
+- [~] Evitar prazo indevido de contestacao quando o escritorio representa o autor e a movimentacao e citacao do reu: coberto por guard deterministico e teste focado em `analisador`; falta smoke com dados reais Escavador.
+- [~] Evitar prazo indevido de contrarrazoes quando o recurso foi interposto pelo proprio escritorio: guard deterministico grava `requer_acao = false`, `obrigacao_de_quem = parte_contraria`, nao cria prazo/card e bloqueia Draft Factory proativa para ato proprio; quando o polo representado aparece como recorrida/apelada, o prazo seguro de resposta continua permitido; validado em testes focados, falta smoke com movimentacao real Escavador.
+- [~] Detectar prazo explicito em dias uteis e vincular evidencia textual da movimentacao: parser/testes cobrem prazo explicito e evidencia em `analise_json`; falta validar mais formatos reais por tribunal.
+- [~] Criar Kanban juridico automatico com etapa, prazo, responsavel, fonte, evidencia e motivo da IA: beta cria/atualiza `process_tasks` e `process_prazos` em alta confianca ou aprovacao humana, sem aprovar prazo novo quando a pipeline juridica nao existe; falta etapa/motivo mais ricos por classificador.
+- [~] Permitir aprovacao/rejeicao humana de movimentacoes incertas com motivo auditavel: aprovar, ignorar e recuperar travadas existem com auditoria; arquivamento/extincao seguem bloqueados para acao manual no beta.
 
 ### 3.6 Documentos / Drive
 
@@ -188,6 +213,24 @@ O MAYUS pode agir, mas acoes juridicas, financeiras ou externas sensiveis exigem
 - [ ] Criar cronologia documental.
 - [ ] Organizar Drive legado com fila auditavel de revisao e revert seguro.
 - [ ] Criar estrutura documental padrao por area e tipo de processo via auto-configuracao.
+- [ ] Relacionar cada fato importante ao documento e trecho de origem.
+- [ ] Identificar documentos relevantes nao usados na minuta.
+- [ ] Identificar documentos faltantes para o proximo ato processual.
+- [ ] Enriquecer Case Brain com evidencias documentais profundas, nao apenas resumo por arquivo.
+- [ ] Manter preview, aprovacao, aplicacao, auditoria e reversao segura para qualquer organizacao do Drive legado.
+
+### 3.6A Pecas juridicas verificaveis
+
+- [~] Draft Factory ja carrega documentos internos, fontes externas validadas e checklist de citacoes em parte do fluxo; falta UI de verificacao e bloqueio forte de publicacao.
+- [ ] Exibir documentos usados em cada minuta com link para o Drive.
+- [ ] Exibir leis, sumulas, temas e jurisprudencias usadas com fonte verificavel.
+- [ ] Criar botao de verificacao humana rapida para cada fonte externa.
+- [ ] Impedir que a IA invente jurisprudencia ou cite precedente nao validado.
+- [ ] Bloquear ou alertar publicacao premium quando houver citacao externa pendente.
+- [ ] Permitir override de fonte pendente apenas com aprovacao humana explicita.
+- [ ] Registrar fonte, validacao, modelo, versao, documentos usados, lacunas e alertas no artifact da peca.
+- [ ] Exportar PDF/DOCX preservando rastreabilidade no metadata da versao.
+- [ ] Exigir revisao humana antes de qualquer protocolo externo ou envio de peca final.
 
 ### 3.7 Financeiro
 
@@ -206,6 +249,57 @@ O MAYUS pode agir, mas acoes juridicas, financeiras ou externas sensiveis exigem
 - [~] Criar forecast por funil, proposta, contrato, cobranca e inadimplencia: summary financeiro ja separa cobrancas a vencer em 7 dias, 30 dias, futuro e sem vencimento, e agora adiciona `commercialForecast` separado de caixa recebido usando `sales`, `crm_tasks` e `crm_stages` para funil/proposta/contrato. A faixa passou smoke visual/autenticado na aba Financeiro com fixture controlada; ainda falta smoke real Asaas e superadmin SaaS autenticado.
 - [~] Unidade economica do escritorio implementada tecnicamente: `unitEconomics` calcula margem estimada por caso, receita por area juridica e comissoes por origem/responsavel; a aba Financeiro mostra Margem, Receita por area, Casos mais rentaveis e Comissoes sem redesign. Permanece estimada/baixa confianca quando faltam custos diretos reais por caso.
 - [~] Mostrar risco financeiro por tenant e por cliente: superadmin ja mostra risco por escritorio/tenant em codigo, e o summary do tenant lista riscos por cliente/caso agrupados a partir de `financials`; risco por cliente/caso passou smoke autenticado no dashboard, mas o `/admin` segue pendente porque a migration remota de billing SaaS ainda nao esta aplicada e o usuario E2E nao e superadmin. Tentativa de `supabase db push --dry-run` em 2026-05-13 foi bloqueada por CLI sem `SUPABASE_ACCESS_TOKEN` apos corrigir bytes NUL locais em `.env.local`.
+
+### 3.7A Monitoramento juridico premium / Escavador
+
+- [~] Formalizar o monitoramento processual como produto premium de contencioso do MAYUS: regras backend de capacidade, gates e cobranca interna foram iniciadas; falta dashboard completo, checkout Asaas da plataforma e smoke real.
+- [~] Incluir 100 processos monitorados por tenant/escritorio no plano base: migration/helper usam limite default 100 por tenant, pendente aplicar migration remota.
+- [~] Cobrar excedente de monitoramento a `R$ 0,97` por processo/mes: helper usa 97 centavos e cria cobranca interna `mayus_platform`; cobranca Asaas real fica para proximo corte.
+- [~] Calcular excedente pelo maior pico mensal de processos monitorados ativos acima de 100: snapshot mensal registra pico no uso de importacao/ativacao individual e fechamento usa o pico salvo mesmo se o tenant cancelar excedentes antes do fechamento; falta aplicar migration remota e reconciliar Asaas real.
+- [~] Considerar monitorado apenas processo com `ativo = true`, `monitoramento_ativo = true` e `escavador_monitoramento_id IS NOT NULL`: RPC/migration e testes focados cobrem a regra, pendente migration remota/smoke.
+- [~] Ordenar processos inclusos/excedentes de forma estavel por data de ativacao do monitoramento: helper testado classifica inclusos e excedentes por ativacao/criacao/id, pendente plugar no dashboard de consumo.
+- [~] Bloquear criacao de monitoramento excedente sem aceite explicito de custo: importacao em lote e ativacao individual retornam preview/bloqueio antes da chave Escavador e antes de criar monitoramento externo; quando o bloqueio exige termos, o payload aponta `terms_acceptance_endpoint = /api/monitoramento/overage-terms`; `POST /api/monitoramento/overage-terms` grava aceite explicito auditado.
+- [~] Bloquear criacao de monitoramento excedente sem metodo de pagamento valido quando cobranca automatica estiver ativada: gate exige termos, metodo valido e customer/subscription da plataforma MAYUS.
+- [~] Cancelar monitoramento externo no Escavador ao remover, arquivar ou encerrar processo: remover/arquivar bloqueiam a operacao local se o cancelamento externo falhar e preservam `escavador_monitoramento_id`; falta plugar encerramento juridico real.
+- [~] Registrar auditoria para ativacao, aceite de custo, cobranca, pausa e cancelamento de monitoramentos excedentes: eventos `monitoring_overage_blocked`, `monitoring_overage_terms_required`, `monitoring_overage_terms_accepted`, `escavador_budget_blocked`, `escavador_monitoring_cancel_failed` e `monitoring_overage_close_executed` existem e agora declaram `Monitoring Agent` + `Finance Agent`; falta pausa/checkout real.
+- [x] Corrigir budget Escavador para usar corretamente `Creditos-Utilizados`: o budget soma creditos do mes e converte por `credit_cost_cents`, expondo credito, custo, bloqueio e agentes responsaveis sem vazar chave.
+- [~] Criar migrations versionadas para `api_usage_log`, capacidade de monitoramento e incremento de contadores: migration local `20260515183000_monitoring_overage_billing.sql` cobre base e RPC, mas nao foi aplicada remotamente neste corte.
+- [~] Solicitar resumo IA pago apenas para processos efetivamente monitorados e movimentacoes juridicamente relevantes: webhook usa `paid_summary_recommended === true` e mantem guard de monitoramento/cooldown; falta budget unificado final para todos os fluxos Escavador.
+- [~] Aplicar cooldown, budget e auditoria antes de qualquer resumo pago recorrente: cooldown e trilha existem no caminho de movimentacao; falta dashboard/limite operacional completo.
+- [~] Separar a decisao de gasto em regra deterministica; IA pode recomendar relevancia juridica, mas nao autorizar custo sozinha: beta usa recomendacao deterministica do analisador e nao dispara custo sem flag explicita.
+- [ ] Auto-pausar ou bloquear novas chamadas Escavador em anomalia de custo, erro ou comportamento.
+- [ ] Criar dashboard de consumo Escavador com inclusos, excedentes, custo previsto, gasto real e risco de bloqueio.
+
+### 3.7B Billing MAYUS / excedentes Asaas
+
+- [~] Billing SaaS/plataforma ja possui base separada em `platform_billing_events`, campos em `tenants`, criacao de customer/assinatura e webhook Asaas; falta fluxo completo de excedente e metodo de pagamento.
+- [~] Usar a conta Asaas da MAYUS para cobranca da plataforma, nunca a integracao Asaas do escritorio: fechamento mensal agora cria cobranca interna `mayus_platform` sem chamar Asaas do escritorio; checkout/cobranca real da conta MAYUS fica para proximo corte.
+- [ ] Criar fluxo seguro para cadastro de cartao do tenant via checkout/link hospedado pelo Asaas.
+- [ ] Nunca armazenar numero de cartao, CVV ou dados sensiveis no MAYUS.
+- [ ] Guardar apenas IDs e status do Asaas: customer, subscription, payment, metodo valido e eventos.
+- [~] Separar assinatura base da cobranca variavel de excedentes: tabelas `platform_usage_snapshots`/`platform_overage_charges` separam uso variavel da assinatura, pendente cobranca real.
+- [~] Criar ledger mensal de uso de monitoramento por tenant: snapshot local versionado registra ciclo, inclusos, pico, excedente e valor projetado; falta aplicar migration remota.
+- [~] Criar snapshot de pico mensal de processos monitorados ativos: importacao atualiza pico no ciclo; falta consolidar todos os caminhos de ativacao para pico historico perfeito.
+- [~] Calcular excedente mensal como `max(0, pico_monitorado - 100)`: helper usa o maior pico mensal salvo em `platform_usage_snapshots` e cria draft interno; falta reconciliacao Asaas real.
+- [ ] Criar cobranca mensal agregada de excedente no Asaas: `excedente * 0.97`.
+- [ ] Descrever cobranca como `MAYUS - Excedente de monitoramento - ciclo - quantidade x R$ 0,97`.
+- [ ] Reconciliar cobranca de excedente pelo webhook Asaas em `platform_billing_events`.
+- [~] Criar status de excedente por tenant: `excedente_liberado`, `cartao_pendente`, `pagamento_excedente_pendente`, `excedente_inadimplente`, `excedente_bloqueado` e `excedente_pausado`: migration local adiciona campos/status; falta aplicar e expor no dashboard.
+- [~] Bloquear novos excedentes quando cobranca estiver pendente, inadimplente ou sem metodo valido: importacao em lote bloqueia sem termos/metodo/status validos antes de chamada externa; falta pausar excedentes existentes.
+- [ ] Apos tolerancia configuravel, pausar/cancelar monitoramentos excedentes inadimplentes, preservando os 100 inclusos.
+- [ ] Mostrar no dashboard: inclusos, usados, excedentes, valor previsto, cartao/metodo, ciclo e cobrancas.
+- [~] Registrar todo aceite de custo, checkout gerado, pagamento confirmado, falha, bloqueio e pausa em auditoria: bloqueios, aceite explicito de termos e fechamento mensal ja geram eventos; checkout, pagamento e pausa reais ficam para proximo corte.
+
+### 3.7C Kanban processual premium
+
+- [~] Criar ou atualizar card automaticamente quando movimentacao exigir acao e a confianca for alta: implementado no beta com rollback para revisao humana em falha operacional.
+- [ ] Mover etapa do processo com base no tipo de ato, fase e pipeline juridico.
+- [~] Criar prazo vinculado a movimentacao, processo, responsavel e fonte: prazo fica vinculado a `monitored_process_id`, `process_task_id` e `escavador_movimentacao_id`; UI de prazos mostra origem e alerta `Sem card`.
+- [~] Registrar timeline com data, conteudo, tipo de evento, evidencia, origem e `escavador_movimentacao_id`: beta grava timeline no card e badges `Revisado por humano`, `IA alta confiança` e `Manual`; falta timeline persistente propria mais rica.
+- [~] Evitar duplicidade por `escavador_movimentacao_id` e por semantica do prazo: upsert agora usa conflito por movimentacao quando ha ID do Escavador e timeline do card deduplica a entrada; falta constraint/fluxo proprio de review persistente.
+- [~] Enviar para revisao quando houver conflito, baixa confianca, polo incerto ou obrigacao ambigua: fila humana, estados `review_required`/processing, recovery e smoke Playwright autenticado cobrem o caminho beta; falta enriquecer conflito de polo/obrigacao.
+- [ ] Exibir no card motivo da movimentacao, prazo, fonte, evidencia e confianca da IA.
+- [ ] Permitir rollback logico de movimentacao/prazo/card criado por erro de classificacao.
 
 ### 3.8 Marketing
 
@@ -227,13 +321,13 @@ O MAYUS pode agir, mas acoes juridicas, financeiras ou externas sensiveis exigem
 - [x] Doctor aplica defaults seguros quando nao envolve credenciais/sensibilidade.
 - [x] Doctor cria artifact agentico e learning event.
 - [x] Sales profile setup auto-configura perfil comercial por chat.
-- [~] `office_knowledge_profile` inicial foi adicionado em `tenant_settings.ai_features`: Setup Doctor diagnostica/auto-semeia defaults seguros, e o Operating Partner usa o perfil no WhatsApp; ainda falta entrevista/onboarding para preencher dados reais do escritorio.
+- [~] `tenant_settings.ai_features` agora tem dois blocos complementares: `office_knowledge_profile` para compatibilidade/perfil confirmado e `operational_methodology` para a Metodologia Operacional v0. Setup Doctor diagnostica/auto-semeia defaults seguros, o Chat grava metodologia como rascunho/recomendacao/aprovada, e `TenantOperationalMethodologyContext` normaliza status, ativacao, documentos, area methods, review reasons e politica de internet auditavel; ainda falta validacao real por area/equipe.
 - [~] Doctor identifica perfil comercial incompleto e orienta acao humana.
-- [ ] Onboarding conversacional completo: areas, equipe, tom, permissoes, objetivos e rotina.
-- [ ] Pipeline juridico padrao por area de atuacao e objetivo do escritorio.
-- [ ] Estrutura documental padrao por area/tipo de processo.
-- [ ] Playbooks de atendimento, marketing, agenda e cobranca sugeridos pelo MAYUS.
-- [ ] Score de prontidao do escritorio com proximo melhor passo.
+- [~] Onboarding conversacional com `office_setup_conversation`: coleta nome do escritorio, PUV, cliente ideal, areas, anti-cliente, tom, triagem, handoff humano, documentos, promessas proibidas, politica de preco, SLA, departamentos, permissoes, agenda, financeiro e metodologia; persiste `operational_methodology` como draft/recommended/approved, grava `office_knowledge_profile` apenas quando confirmado, cria artifact `office_operational_methodology`, mantem artifact legado de onboarding, registra learning events de metodologia, propoe memorias institucionais quando validado e bloqueia side effects externos. O Chat MAYUS executa a intencao pelo fast-path deterministico sem depender do LLM, sempre isolado por tenant; ainda falta rotina completa por area/equipe.
+- [~] Pipeline juridico padrao por area de atuacao e objetivo do escritorio: `practice_area_playbooks` gera etapas por area em modo `needs_area_review`, sem executar acao externa.
+- [~] Estrutura documental padrao por area/tipo de processo: `practice_area_playbooks.document_structure` sugere pastas por area para orientar Drive/Document Brain, pendente validacao humana e conexao com criacao real de pastas.
+- [~] Playbooks de atendimento, marketing, agenda e cobranca sugeridos pelo MAYUS viraram artefatos secundarios da Metodologia Operacional: o onboarding grava fases, criterios e playbooks por area como draft/recommended; falta fluxo de aprovacao/edicao por equipe.
+- [~] Score de prontidao do escritorio com proximo melhor passo existe no Doctor AI First/Configuracoes e aponta pendencias por modulo; Configuracoes > Agente passou smoke autenticado com backend real cobrindo readiness, rotinas e dry-run; falta onboarding conversacional completo e validacao real das politicas por area/equipe.
 - [ ] Aprovar/rejeitar configuracoes sugeridas em lote.
 
 ### 3.10 Memoria e aprendizado
@@ -241,13 +335,13 @@ O MAYUS pode agir, mas acoes juridicas, financeiras ou externas sensiveis exigem
 - [x] Memoria institucional entra no prompt do chat.
 - [x] Learning events existem para varios artifacts.
 - [x] Delta entre minuta e artifact final ja e capturado em parte.
-- [~] Aprendizado ainda nao governa todas as proximas decisoes.
+- [~] Aprendizado agora governa decisao do MAYUS Operating Partner no WhatsApp e mantem o caminho do chat: novo helper `src/lib/agent/memory/institutional.ts` une `office_institutional_memory.enforced=true` com `brain_memories` `institutional_memory_proposal` `promoted=true` (dedup por categoria/key/texto), expoe `summarizeInstitutionalMemoryForPrompt` e `buildInstitutionalMemoryPromptBlock`; Operating Partner recebe `institutionalMemory` no input e insere bloco `Memoria institucional aprovada` antes do estado conversacional; runtime WhatsApp carrega 12 entradas no Promise.all e registra `mayus_operating_partner.institutional_memory_applied`; `fetchInstitutionalMemory` do chat passa a reusar o helper sem mudar resultado externo. O loop Observa -> Aprende -> Corrige -> Aplica ganhou captura de repair/billing/lead outcome em `learning_events`, rotina `mayus-self-improvement-review` para propor memoria institucional supervisionada quando padroes se repetem e painel de auto-correcao na tela de memoria.
 - [ ] Memoria por usuario com consentimento e revogacao.
 - [ ] Memoria procedural para passos recorrentes.
-- [ ] Memoria de falhas para evitar erro repetido.
+- [~] Memoria de falhas para evitar erro repetido: reparos do Operating Partner agora viram `mayus_operating_partner_repair_pattern` e eventos `self_correction_*` em `learning_events`; a rotina de auto-aprendizado cria proposta quando a mesma falha/correcao aparece 3+ vezes e o smoke real validou evento -> proposta -> promocao -> memoria institucional aplicada; falta ampliar a taxonomia para outros erros operacionais.
 - [ ] Registrar origem, confianca, escopo e motivo de cada memoria.
-- [ ] Promocao supervisionada: sugestao -> aprovacao -> ativa.
-- [ ] Aprender com lead ganho/perdido, objecao, suporte, peca aprovada e cobranca.
+- [~] Promocao supervisionada: sugestao -> correcao -> aprovacao -> ativa. MAYUS detecta padroes diariamente, grava propostas `institutional_memory_proposal` com `source=self_improvement_loop`, inclui `correction_kind`/`recommended_action`, exibe badges `Detectado pelo MAYUS` e `Correcao sugerida pelo MAYUS`, mostra contadores/recentes de `self_correction_*` na tela de memoria, permite acionar `mayus-self-improvement-review` manualmente pela memoria, e mantem aprovacao/rejeicao humana pela tela de memoria. A Inbox do Brain tambem exibe eventos `self_correction_*`, `self_improvement_proposals_created` e artifacts `self_improvement_report` com rotulos humanos e filtro dedicado `Correcoes MAYUS`. Validado por smoke real autenticado com cleanup em `e2e/configuracoes-memoria-self-correction-real-smoke.spec.ts` e smoke UI mockado da Inbox em `e2e/aprovacoes-self-correction-activity-smoke.spec.ts`.
+- [~] Aprender com lead ganho/perdido, objecao, suporte, peca aprovada e cobranca: entregues repair pattern, billing payment confirmed/overdue, lead won/lost, delta humano de minuta, peca aprovada/publicada, delta humano de atendimento WhatsApp e suporte de status do caso; pendente expandir delta humano para canais fora WhatsApp e provar governanca cross-module em conversas reais longas.
 
 ### 3.11 Governanca e aprovacoes
 
@@ -255,13 +349,14 @@ O MAYUS pode agir, mas acoes juridicas, financeiras ou externas sensiveis exigem
 - [x] Side effects externos ficam bloqueados em varios planos/artifacts.
 - [x] Eventos e artifacts carregam fontes e sinais em fluxos importantes.
 - [~] Runtime WhatsApp agora exige `enabled: true` explicito para ativar LLM/MAYUS e bloqueia side effects CRM/tarefa abaixo de `auto_execute`.
-- [~] Politicas por risco ainda nao estao uniformes em todos os modulos.
+- [~] Policy agentica uniforme agora passa pelo executor de skills com `policyDecision`, risco, superficie, motivo sanitizado e gate de credencial sem leitura de segredo; executor passa `channel` e `agentId` (handler_type/skill name) para `decideMayusSkillAutonomy`, ativando a precedencia OpenClaw `platform_default -> tenant -> module -> agent -> tool -> channel` ja modelada em `agent-profiles.ts`, e persiste `profile_explanation` completa (subject, applied_layers, surface_matrix, source) no `approval_context.policy_decision` do audit log para base de UI de debugger; Lex registra envelope OpenClaw em `analise_json.agentic_governance`, e `/api/juridico/movement-reviews` agora expoe resumo sanitizado para a UI; validado em testes focados, ainda falta smoke real, debugger completo e fechamento de todos os modulos criticos.
+- [~] Centro de aprovacoes ganhou filtros operacionais em `/dashboard/aprovacoes` para setup, juridico, financeiro, Escavador e mensagens externas, classificados por skill, handler, modulo e superficie da policy; a revisao juridica agora mostra sinais de polo, obrigacao, confianca, OpenClaw e Hermes sem tabela nova; falta smoke visual autenticado e filtros server-side/metricas antes de chamar de approval center completo.
 - [ ] Nenhuma rota server-side de envio externo pode aceitar `tenant_id` do body sem autenticar sessao e conferir permissao.
 - [ ] Buckets com dados juridicos/WhatsApp devem ser privados por padrao; acesso por signed URL/proxy autenticado.
 - [ ] Separar politicas por risco: low, medium, high, critical.
 - [ ] Bloquear critical sem aprovador executivo e MFA/sessao recente.
 - [ ] Registrar motivo de rejeicao de approval.
-- [ ] Criar budget por tenant, skill e dia.
+- [~] Escavador pago agora passa por budget compartilhado cache-first antes de busca externa em OAB completa, sincronizacao OAB, paginacao de processos, monitoramento OAB, importacao em lote e ativacao individual; validado por testes focados cobrindo cache hit, bloqueio antes do `fetch`, confirmacao de custo e evento sanitizado, mas falta smoke real e budget diario/por skill para todos os provedores.
 - [ ] Auto-pausar tenant/skill em anomalia de custo, erro ou comportamento.
 - [ ] Nenhuma acao juridica/financeira/externa sem auditabilidade.
 
@@ -302,6 +397,19 @@ O MAYUS pode agir, mas acoes juridicas, financeiras ou externas sensiveis exigem
 - [~] Alertas de falha de webhook e provider: midia WhatsApp ja alerta falha de processamento/batch; ainda faltam webhooks/providers gerais.
 - [ ] Checklist de release com build, typecheck, testes focados, E2E essencial e diff-check.
 - [ ] Deploy estavel com variaveis verificadas sem expor segredos.
+
+### 3.15 Reaproveitamento de agentes publicos
+
+Fonte de verdade detalhada: `docs/brain/MAYUS_AGENTIC_BETA_MASTER_PLAN.md`, secao `Public Agent Extraction Matrix`.
+
+- [~] Paperclip e a base principal para operar agentes como organizacao: governance, approvals, budget, hard stops, activity log, ownership, heartbeat/routines internas, scheduler global protegido e matriz `publicAgents` ja aparecem no Control Plane; faltam observar workflow em producao, portability e timeline unificada.
+- [~] OpenClaw e a base de seguranca/config/policy: executor ja usa policy por tenant, profiles restritivos, surfaces, gates de credencial/budget e blocked reasons sanitizados; Control Plane expoe precedencia, outcome, camada bloqueada, motivo e proximos modulos; falta matriz completa aplicada a todos os modulos e smoke real.
+- [~] Hermes e a base de memoria/skills/scheduler/aprendizado: Doctor, readiness, setup conversation, memory proposals, trajectory, lifecycle helpers e `POST /api/agent/memory` ja propoe lifecycle Hermes em `brain_memories`/`learning_events` sem auto-aprovar; Mission Control agora avalia completude, eventos faltantes, approval, lifecycle/memoria e proxima acao segura; falta uso cross-module real em producao.
+- [~] Paperclip heartbeat/routines: `runMayusRoutineHeartbeat` cria rotinas reconstruiveis com objetivo, owner, budget, blocker, approval id, artifact `routine_wakeup_plan`, learning event e system event; `/api/agent/routines` agora tambem roda scheduler global por `CRON_SECRET`, o workflow local chama essa rota e `npm run verify:agent-routines` testa dry-run protegido. A rotina `mayus-self-improvement-review` entra como daily/low-risk/desabilitada por padrao e executa a revisao de auto-aprendizado depois dos gates de policy/budget. Observacao 2026-05-15: o workflow remoto de `main` ainda nao tem o step novo e o alias publico retorna `404` para a rota, entao falta deploy/merge antes de observar execucao real em producao.
+- [ ] Paperclip portability: export/import de configuracao do escritorio com secret scrubbing, colisao de tenant e revisao humana.
+- [~] Hermes skill lifecycle: criar, versionar, propor, aprovar, revogar e preparar persistencia de skills/memorias como procedimentos operacionais por tenant; `POST /api/agent/memory` aceita `propose_hermes_lifecycle`, normaliza role `admin`/`administrador`/`socio`, grava proposta supervisionada em `brain_memories` e evento em `learning_events`, e passou smoke autenticado real com cleanup sem auto-aprovar; falta conectar o uso cross-module antes de governar execucao.
+- [~] Hermes trajectory: registrar trajetoria de missao para aprendizado supervisionado e avaliacao, sem virar verdade automatica; Mission Control e `/dashboard/aprovacoes` exibem completude, eventos faltantes, approval/lifecycle e proxima acao segura; falta persistencia/query propria e uso cross-module mais amplo em ambiente real.
+- [~] Smoke real/documental antes de marcar qualquer reaproveitamento como `[x]`: `e2e/configuracoes-agente-real-smoke.spec.ts` passou com backend real em Configuracoes > Agente, cobrindo readiness, rotinas e dry-run; o gate da tela agora normaliza `admin`/`administrador`/`socio` como o backend; `npm run verify:agent-routines` classifica o alias publico atual como `route_not_deployed_or_wrong_endpoint`; ainda falta observar scheduler no workflow de producao apos deploy.
 
 ---
 
@@ -348,11 +456,29 @@ Foco: revenue loop real.
 
 Foco: auto-configuracao completa.
 
-- [ ] Onboarding conversacional do escritorio.
-- [ ] Defaults por area juridica.
-- [ ] Playbooks de atendimento, marketing, agenda, documentos e financeiro.
-- [ ] Score de prontidao por modulo.
+- [~] Onboarding conversacional do escritorio via `office_setup_conversation`; grava perfil operacional confirmado com permissoes, agenda, financeiro, playbooks e defaults por area, cria artifact/eventos/memorias propostas e passou smoke autenticado real com cleanup, mas ainda falta fluxo completo por area/equipe.
+- [~] Defaults por area juridica: `practice_area_playbooks` gera perguntas, documentos, pipeline e estrutura documental por area em modo `needs_area_review`.
+- [~] Playbooks de atendimento, marketing, agenda, documentos e financeiro: notas/playbooks operacionais entram no perfil e nas memorias propostas; falta UI de revisao e aprovacao por equipe.
+- [~] Score de prontidao por modulo existe no runtime/Doctor e aparece na configuracao do Agente; falta smoke autenticado amplo antes de marcar como concluido.
 - [ ] Aprovar/rejeitar sugestoes em lote.
+
+### Fase 3A - Produto juridico premium e billing de excedentes
+
+Foco: transformar monitoramento processual, Drive e pecas em produto premium rentavel e seguro.
+
+- [~] Criar schema de uso/excedente: snapshot mensal, pico monitorado, cobranca gerada e status por tenant existe em migration local; falta aplicar migration remota e smoke real.
+- [~] Implementar calculo de capacidade: 100 inclusos, excedente, valor previsto e bloqueios existem em helper/rotas/testes; falta consolidar todos os caminhos de ativacao e dashboard.
+- [ ] Criar fluxo Asaas para metodo de pagamento do tenant via checkout seguro, sem armazenar cartao no MAYUS.
+- [~] Bloquear excedente sem aceite explicito e sem metodo de pagamento valido: importacao em lote e ativacao individual bloqueiam antes da chave Escavador e da criacao externa, com endpoint de aceite no payload quando termos faltam; falta checkout real.
+- [ ] Gerar cobranca mensal agregada de excedente e reconciliar webhook Asaas.
+- [~] Cancelar monitoramento externo no Escavador ao remover, arquivar ou encerrar processo: remover/arquivar bloqueiam localmente se o cancelamento externo falha; falta encerramento juridico/smoke Escavador real.
+- [ ] Corrigir budget Escavador, ledger de `Creditos-Utilizados` e migrations faltantes.
+- [ ] Criar gate deterministico para resumo IA pago por relevancia juridica, cooldown e budget.
+- [ ] Evoluir classificador juridico com polo representado, obrigacao real, confianca, evidencia e fila de revisao.
+- [ ] Criar Kanban processual automatico apenas para alta confianca, com revisao humana para casos ambiguos.
+- [ ] Criar cronologia documental e detector de contradicoes/duplicidades/documentos fora do processo.
+- [ ] Expor fontes verificaveis em minutas e bloquear publicacao premium sem validacao adequada.
+- [ ] Rodar smoke real controlado de Asaas, Escavador, Drive, Kanban e Draft Factory antes de marcar como `[x]`.
 
 ### Fase 4 - Subir de 92% para 97%
 
@@ -388,6 +514,9 @@ O MAYUS so deve ser considerado 100% quando:
 - [ ] Opera sem exigir configuracao manual pesada.
 - [ ] Funciona em WhatsApp, chat, dashboard e voz com a mesma politica.
 - [ ] Nunca inventa status de processo, resultado juridico, preco, contrato ou cobranca.
+- [ ] Cobra excedentes de monitoramento com aceite, metodo valido, auditoria e reconciliacao financeira.
+- [ ] Cria prazos/cards juridicos automaticamente apenas com fonte, evidencia e confianca alta.
+- [ ] Gera pecas juridicas com documentos e fontes externas verificaveis antes de publicar.
 - [ ] Tem smokes reais e observabilidade para integracoes sensiveis.
 - [ ] Um usuario novo consegue obter valor sem fazer curso.
 
@@ -497,12 +626,17 @@ Validacoes executadas:
 - [~] Recepcao WhatsApp Maya/MAYUS: runtime agora aceita nome configuravel da assistente em `ai_features.whatsapp_agent.assistant_name` ou `office_knowledge_profile.assistant_name` (Dutra pode usar `Maya`), prompt orienta apresentacao breve apenas na primeira resposta, tom simpatico/prestativo, pedido de nome completo/CNJ quando o contato nao for identificado e cuidado para nao assumir que toda conversa e status de processo. Para suporte/outra demanda, o Operating Partner deve pedir o assunto, avisar que vai organizar retorno do advogado responsavel e criar `create_task` com resumo, proximo passo e ideias de encaminhamento. Contatos atribuidos podem receber autoenvio seguro quando nao houver risco e houver tarefa/resposta de suporte ou status verificado, evitando o bloqueio `assigned_contact_blocked` em recepcao segura. Validado com `npm.cmd test -- src/lib/agent/mayus-operating-partner.test.ts src/lib/growth/whatsapp-sales-reply-runtime.test.ts src/lib/whatsapp/process-status-context.test.ts src/lib/agent/mayus-operating-partner-actions.test.ts src/lib/whatsapp/reply-processor.test.ts src/lib/whatsapp/send-message.test.ts src/lib/whatsapp/evolution-presence.test.ts src/app/api/evolution-webhook/route.test.ts` (69 testes), `npx.cmd tsc --noEmit --pretty false`, `npm.cmd run build` com warnings preexistentes e deploy Vercel `dpl_5DpdNcKgkEh7QWq6rdBdVmZ6CUg8` (`https://mayus-premium-obt4qfgje-vitorprocopio30-stars-projects.vercel.app`) em `Ready`, aliasado em `https://mayus-premium-pro.vercel.app`; tenant Dutra `a0000000-0000-0000-0000-000000000001` configurado com `whatsapp_agent.assistant_name = Maya` e `autonomy_mode = auto_respond_assigned`; falta smoke real Evolution com saudacao, processo sem identificacao e outra demanda.
 - [~] Correcao pos-smoke Maya: saudacao pura (`Boa noite`, `Bom dia`, `Oi`) agora e normalizada sem retomar processo pelo historico; a primeira resposta apresenta `Maya` e pergunta como ajudar. Se o cliente enviar apenas o nome completo ou `O nome completo e ...` depois de a assistente pedir identificador, o contexto processual trata como continuacao do pedido, extrai a referencia e busca o processo por nome/titulo, inclusive com fallback sem acento (`Márcio` -> `Marcio`), em vez de pedir o mesmo dado de novo. O payload de `sendPresence` Evolution mudou para formato direto `{ number, presence: "composing", delay }`, o delay humanizado minimo subiu para disfarcar melhor o agente e cada presence com Supabase registra evento sanitizado `evolution_presence_sent`. Validado com `npm.cmd test -- src/lib/whatsapp/process-status-context.test.ts src/lib/whatsapp/evolution-presence.test.ts src/lib/whatsapp/send-message.test.ts src/lib/agent/mayus-operating-partner.test.ts src/lib/growth/whatsapp-sales-reply-runtime.test.ts src/lib/whatsapp/reply-processor.test.ts src/app/api/evolution-webhook/route.test.ts` (69 testes), `npx.cmd tsc --noEmit --pretty false`, `npm.cmd run build` com warnings preexistentes e deploy Vercel `dpl_5MKqpyR1PaNaBRNKqiNgH8S6JUV5` (`https://mayus-premium-kkw8q0nmb-vitorprocopio30-stars-projects.vercel.app`) em `Ready`, aliasado em `https://mayus-premium-pro.vercel.app`; falta novo smoke real observando `digitando...` e resposta ao nome completo.
 - [~] Correcao pos-smoke 2 Maya/painel WhatsApp: apresentacao da Maya agora considera janela recente (12h) em vez de qualquer apresentacao antiga do historico, evitando suprimir `Aqui e a Maya` em nova sessao; pedido generico como `Gostaria de saber sobre um processo` sem nome/CNJ/CPF e sem contexto verificado e sobrescrito para pedir identificador seguro, impedindo o modelo de reutilizar `Marcio` ou outro nome antigo do historico. A tela `/dashboard/conversas/whatsapp` passou a escutar `INSERT` e `UPDATE`, atualizar/mesclar mensagens recebidas, refazer contatos e usar polling leve a cada 4s + refetch no foco da janela para quando o Realtime perder evento. Validado com `npm.cmd test -- src/lib/agent/mayus-operating-partner.test.ts src/lib/growth/whatsapp-sales-reply-runtime.test.ts src/lib/whatsapp/process-status-context.test.ts src/lib/whatsapp/reply-processor.test.ts src/lib/whatsapp/send-message.test.ts src/lib/whatsapp/evolution-presence.test.ts src/app/api/evolution-webhook/route.test.ts` (70 testes), `npx.cmd tsc --noEmit --pretty false`, `npm.cmd run build` com warnings preexistentes e deploy Vercel `dpl_62cc6Xi2V92vpaNqFFTERhBRAzNq` (`https://mayus-premium-j5kvzxfy5-vitorprocopio30-stars-projects.vercel.app`) em `Ready`, aliasado em `https://mayus-premium-pro.vercel.app`; falta novo smoke real.
-- [~] Base de missao agentica processual iniciada: criado `ProcessMissionContext` canonico em `src/lib/lex/process-mission-context.ts`, derivado do snapshot juridico existente, consolidando processo, fase, resumo, pendencias, memoria documental, minuta, fontes, confianca, acao recomendada e objetivo da missao. `legal_case_context` e `support_case_status` agora registram esse contexto nos artifacts/learning/output para preparar a virada de processos para missoes persistentes sem mudar a resposta externa. Validado com `npm.cmd test -- src/lib/lex/process-mission-context.test.ts src/lib/lex/case-context.test.ts`, foco do dispatcher juridico (`npx.cmd vitest run src/lib/agent/capabilities/dispatcher.test.ts -t "contexto juridico|status do caso"`) e `npx.cmd tsc --noEmit --pretty false`; suite completa do dispatcher ainda tem falha preexistente em `marketing_ops_assistant` por contagem semanal esperada `1` vs atual `0`.
-- [~] Capability `legal_process_mission_plan` adicionada: o router, registry, prompt de chat e dispatcher agora permitem pedir uma missao agentica supervisionada de processo. O handler usa `getLegalCaseContextSnapshot` + `ProcessMissionContext`, cria artifact `process_mission_plan`, registra learning event `process_mission_plan_created`, retorna confianca, acao recomendada, objetivo, fontes e lacunas, e bloqueia side effects externos por padrao. Validado com foco dispatcher (`npx.cmd vitest run src/lib/agent/capabilities/dispatcher.test.ts -t "missao agentica|contexto juridico|status do caso"`), foco router (`npx.cmd vitest run src/lib/agent/kernel/router.test.ts -t "missao agentica|contexto juridico|primeira minuta"`), `npm.cmd test -- src/lib/lex/process-mission-context.test.ts src/lib/lex/case-context.test.ts`, `npx.cmd tsc --noEmit --pretty false` e `git diff --check` nos arquivos tocados; ainda falta plugar execucao supervisionada de acoes recomendadas.
-- [~] Capability `legal_process_mission_execute_next` adicionada: o router, registry, prompt de chat e dispatcher agora permitem executar o proximo passo seguro de uma missao processual. Nesta fase, `refresh_document_memory` roda automaticamente via `legal_document_memory_refresh`; baixa confianca bloqueia a missao; e `generate_first_draft` nao chama a Draft Factory diretamente, abrindo approval humano supervisionado para `legal_first_draft_generate` com risco alto, processo, peca sugerida, objetivo, fontes e lacunas. O handler registra artifact `process_mission_step_result` e learning event `process_mission_step_executed`. Validado em 2026-05-12 com suite focada Lex/Brain (`npx.cmd vitest run "src/lib/lex/process-mission-context.test.ts" "src/lib/lex/case-context.test.ts" "src/lib/agent/kernel/router.test.ts" "src/lib/agent/capabilities/dispatcher.test.ts" "src/app/api/ai/chat/route.test.ts" "src/app/api/ai/approve/route.test.ts" "src/lib/brain/turn.test.ts" "src/app/api/brain/chat-turn/route.test.ts"`, 8 arquivos, 82 testes), `npx.cmd tsc --noEmit --pretty false` e `npm.cmd run build`; falta smoke real autenticado em processo controlado antes de marcar como `[x]`.
+- [~] Base de missao agentica processual consolidada para beta: `ProcessMissionContext` canonico em `src/lib/lex/process-mission-context.ts` consolida processo, fase, resumo, pendencias, memoria documental, minuta, fontes, confianca, acao recomendada, objetivo da missao e metodologia operacional do tenant quando existir. Em 2026-05-23, artifacts e approvals juridicos passaram a carregar o envelope beta com `processMissionContext`, `legalOperatorState`, `methodology`, `sources`, `gaps`, `recommendedAction`, `sideEffectGuardrail` e `agentic_governance` para preparar a virada de processos para missoes persistentes sem mudar a resposta externa. Validado com foco Lex/dispatcher/control-plane/typecheck; falta smoke real autenticado com dados do Brain.
+- [~] Capability `legal_process_mission_plan` adicionada: o router, registry, prompt de chat e dispatcher agora permitem pedir uma missao agentica supervisionada de processo. O handler usa `getLegalCaseContextSnapshot` + `ProcessMissionContext`, cria artifact `process_mission_plan`, registra learning event `process_mission_plan_created`, retorna confianca, acao recomendada, objetivo, fontes, lacunas, proxima acao segura e motivo de bloqueio/liberacao, e bloqueia side effects externos por padrao. Validado com suite beta focada em 2026-05-23; ainda falta smoke autenticado pelo dashboard com tenant/processo controlado.
+- [~] Capability `legal_process_mission_execute_next` adicionada: o router, registry, prompt de chat e dispatcher agora permitem executar o proximo passo seguro de uma missao processual. Nesta fase, `refresh_document_memory` roda automaticamente via `legal_document_memory_refresh` apenas quando a metodologia existente nao exige revisao; baixa confianca bloqueia a missao; e `generate_first_draft` nao chama a Draft Factory diretamente, abrindo approval humano supervisionado para `legal_first_draft_generate` com risco alto, processo, peca sugerida, objetivo, fontes, lacunas, contexto metodologico e motivo OpenClaw. O handler registra artifact `process_mission_step_result` e learning event `process_mission_step_executed`; falta smoke real autenticado em processo controlado antes de marcar como `[x]`.
 - [~] Execucao deterministica da missao processual no chat e no Brain adicionada: `/api/ai/chat` agora executa diretamente `legal_process_mission_plan` e `legal_process_mission_execute_next` quando o router local identifica alta confianca sem ambiguidade, antes de depender do LLM chamar ferramenta. O router tambem passou a aceitar `proximo/proxima/acao` com acento e referencia textual como `processo da Maria da Silva`. `executeBrainTurn` propaga `taskId/runId/stepId`, atualiza `brain_tasks`/`brain_runs`/`brain_steps`, registra learning event, artifact `mission_result` quando conclui e `brain_approvals` quando o kernel retorna `awaiting_approval`. Validado em 2026-05-12 pela mesma suite focada Lex/Brain (82 testes), typecheck e build; falta smoke real pelo dashboard com processo controlado.
-- [~] Inbox de aprovacoes juridicas supervisionadas enriquecido: `/dashboard/aprovacoes` agora destaca approvals de `legal_first_draft_generate` com processo, peca sugerida, acao proposta, objetivo juridico e motivo da aprovacao, alem dos dados que serao executados. `/api/ai/approve` foi protegido para nao marcar como executada uma approval que cria nova approval supervisionada aninhada; nesse caso retorna `202 awaiting_approval` e mantem a missao aguardando decisao humana. Validado em 2026-05-12 com testes de approval juridico e approval aninhado dentro da suite focada Lex/Brain (82 testes), typecheck e build; falta confirmar visualmente no smoke autenticado que a nova approval aparece no inbox e que a Draft Factory so roda apos aprovar.
+- [~] Inbox de aprovacoes juridicas supervisionadas enriquecido: `/dashboard/aprovacoes` agora destaca approvals de `legal_first_draft_generate` com processo, peca sugerida, acao proposta, objetivo juridico, motivo da aprovacao, motivo OpenClaw, fontes, lacunas e guardrails de beta que impedem protocolo/envio/publicacao. `/api/ai/approve` foi protegido para nao marcar como executada uma approval que cria nova approval supervisionada aninhada; nesse caso retorna `202 awaiting_approval` e mantem a missao aguardando decisao humana. Validado em suite beta focada e HTTP smoke local; falta confirmar visualmente em smoke autenticado que a nova approval aparece no inbox e que a Draft Factory so roda apos aprovar.
+- [~] Coordenacao paralela Metodologia Individual + Juridico/Lex + Agentic Core atualizada em 2026-05-23: `LegalOperatorState` declara a Frente A como dona da missao processual, a Frente 0 como dona da metodologia do tenant e a Frente B como leitora/coordenadora via Paperclip/OpenClaw/Hermes. O Agent Control Plane expoe tres frentes, blockers de colisao, handoff Metodologia -> Lex -> Core, sinal `tenant_methodology`, superficie `legal_decision`, Hermes tenant-only e proximo passo coordenado; Configuracoes > Agente reconstrui `Missao processual Lex` a partir de artifact beta. Validado com testes focados de Lex, dispatcher e Control Plane; falta smoke visual autenticado nas superficies de supervisao.
+- [x] Corte Beta Juridico + WhatsApp Agentic fechado em 2026-05-23: o router envia "monte a peca desse processo" para `legal_process_mission_plan`; `legal_process_mission_execute_next` abre approval `legal_first_draft_generate` sem chamar Draft Factory direto; approvals carregam `piece_context`, documentos, lacunas, checklist da minuta, guardrails e motivo OpenClaw; o WhatsApp Operating Partner classifica conversas em comercial/suporte/status/documentos/cobranca/comando/incerto e persiste `conversation_classification`, Paperclip, OpenClaw e Hermes no metadata/evento/rascunho. Validado com 159 testes focados, `npx.cmd tsc --noEmit --pretty false`, `git diff --check` nos arquivos do corte e HTTP smoke local de `/dashboard/aprovacoes` e `/dashboard/conversas/whatsapp`.
+- [~] Smoke beta autenticado pendente: falta provar com tenant/processo controlado que Chat cria `process_mission_plan`, aprovar aciona apenas minuta interna da Draft Factory, e Evolution/WhatsApp real mostra resposta curta + rastro agentic. Nesta sessao, Configuracoes > Agente passou smoke real autenticado via API e o card de Aprovações passou smoke visual com fixture controlada; seguem pendentes o Chat/Lex ponta a ponta real e Evolution/WhatsApp real com canal controlado.
+- [~] Tentativa de prova beta real em 2026-05-23: `npx.cmd vitest` focado passou com 159 testes e `npx.cmd tsc --noEmit --pretty false` passou; o HTTP smoke de `/dashboard/mayus`, `/dashboard/aprovacoes`, `/dashboard/conversas/whatsapp` e `/dashboard/configuracoes/agente` em dev server local retornou timeout, e `e2e/lex-approval-smoke.spec.ts` com `PLAYWRIGHT_BASE_URL=http://127.0.0.1:3001` tambem estourou timeout. Classificacao: bloqueio de ambiente/dev-server local antes de servir HTTP, nao bug comprovado do fluxo beta. Evolution/WhatsApp real segue bloqueado por ausencia de `EVOLUTION_API_URL`, `EVOLUTION_API_KEY` e `EVOLUTION_INSTANCE` visiveis nesta sessao.
 - [~] Case Brain 2.0 inicial implementado: nova capability `legal_case_brain_insights` gera cronologia estruturada, mapa de riscos, contradicoes/divergencias, fatos documentados, inferencias, hipoteses, proximos atos provaveis e lacunas de grounding sem side effects externos. O router, registry, prompt do chat, dispatcher e highlight do MAYUS foram conectados; a execucao cria artifact `legal_case_brain_insights` e learning event `legal_case_brain_insights_created`. Atualizacao: o dispatcher agora carrega evidencias reais tolerantes a falha de `process_documents`, `process_document_contents`, `process_movimentacoes` e `process_movimentacoes_inbox`, usando documentos extraidos, documentos sem extracao, arquivos fora da estrutura e movimentacoes que exigem acao para enriquecer cronologia, riscos, fatos e proximos atos. Atualizacao operacional: `legal_process_mission_execute_next` passou a consultar o Case Brain 2.0 antes de executar, bloqueando contradicao critica, movimentacao que exige acao e risco alto nao compativel com simples refresh documental; aprovacoes de minuta carregam contadores de risco/contradicao do Case Brain. Validado com `npm.cmd test -- src/lib/lex/case-brain-insights.test.ts src/lib/agent/capabilities/dispatcher.test.ts src/lib/agent/kernel/router.test.ts src/app/api/ai/chat/route.test.ts` (80 testes) e `npx.cmd tsc --noEmit --pretty false`; falta smoke autenticado com processo controlado e dados reais para marcar como `[x]`.
+- [~] Corte Hermes + Agentes Publicos atualizado em 2026-05-23: Mission Control/Control Plane mostram avaliacao Hermes de completude minima, eventos faltantes, approval/lifecycle/memoria, metodologia tenant-only e proxima acao segura; Configuracoes > Agente mostra matriz `publicAgents` com Paperclip, OpenClaw e Hermes como primitivas internas e reconstrucao de missao processual Lex; Aprovacoes consome Mission Control/OpenClaw sem autoaprovar acao sensivel. Mantem `[~]` porque smoke com dados reais do Brain ainda depende de schema/ambiente real.
 
 Bloqueios antes de marcar como `[x]`:
 

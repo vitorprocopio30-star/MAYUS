@@ -753,6 +753,14 @@ Camada juridica hoje validada:
 - `[x]` `legal_draft_review_guidance`
 - `[x]` `legal_draft_workflow`
 
+Camada processual beta implementada, aguardando smoke real:
+- `[x]` `legal_process_mission_plan`
+- `[x]` `legal_process_mission_execute_next`
+- `[x]` envelope Paperclip/OpenClaw/Hermes para missao processual, com side effects externos bloqueados por padrao
+- `[x]` approval de minuta com `piece_context`, documentos, lacunas, checklist e motivo OpenClaw
+- `[x]` WhatsApp Agentic com classificacao da conversa e metadata Paperclip/OpenClaw/Hermes
+- `[~]` smoke autenticado com tenant/processo controlado e Evolution real
+
 Fluxos juridicos hoje validados:
 - `[x]` contexto juridico do processo via chat
 - `[x]` geracao da primeira minuta
@@ -894,7 +902,7 @@ Sempre continuar a partir desta ordem:
 
 ### Tese central
 
-O MAYUS deve ser apresentado como o socio operacional de IA do escritorio juridico.
+O MAYUS deve ser apresentado como um Operating System juridico com camada de inteligencia operacional e de gestao supervisionada para o escritorio.
 
 Frase-mae:
 
@@ -902,7 +910,7 @@ Frase-mae:
 
 ### Posicionamento
 
-O MAYUS nao e apenas um software juridico com IA. E o primeiro socio operacional de IA para escritorios de advocacia brasileiros: organiza a rotina, acompanha a operacao, apoia o crescimento e conecta juridico, comercial, marketing, agenda, atendimento, cobranca, documentos, equipe e metricas em um unico cerebro.
+O MAYUS nao e apenas um software juridico com IA. Ele organiza a rotina, acompanha a operacao, apoia o crescimento e conecta juridico, comercial, marketing, agenda, atendimento, cobranca, documentos, equipe e metricas em um unico cerebro supervisionado. Como camada de gestao, estrutura decisoes com dados reais; quem assume o risco e decide continua sendo o dono do escritorio.
 
 Categoria principal:
 - `MAYUS Operating System`
@@ -912,7 +920,7 @@ Frente de crescimento:
 
 ### Checklist marcavel
 
-- `[ ]` posicionar MAYUS como socio operacional de IA da banca
+- `[ ]` posicionar MAYUS como Operating System juridico com inteligencia operacional e de gestao supervisionada
 - `[~]` transformar auto-configuracao em promessa central do produto
 Evidencia 2026-04-29: a base ja existe em `Auto Setup Doctor` e `sales_profile_setup`: o MAYUS diagnostica tenant, aplica defaults seguros, bloqueia credenciais externas ausentes, cria artifact agentico e auto-configura o perfil comercial por chat. Falta expandir para onboarding guiado completo de juridico, marketing, agenda, financeiro, documentos e permissoes.
 - `[x]` adicionar Google Agenda opcional por usuario
@@ -983,6 +991,14 @@ Frase de produto:
 
 **Voce nao configura o sistema. O MAYUS configura o escritorio digital com voce.**
 
+Tese beta:
+
+**Se o escritorio ja tem metodo, o MAYUS aprende. Se ainda nao tem, ajuda a construir.**
+
+O conceito principal desta frente passa a ser **Metodologia Operacional do Escritorio**. Playbook permanece como saida secundaria por canal, area ou rotina; a fonte da verdade do beta e `tenant_settings.ai_features.operational_methodology`, com status `draft`, `recommended`, `approved` ou `rejected`, artifact `office_operational_methodology`, learning event e aprovacao humana antes de qualquer regra sensivel virar comportamento ativo.
+
+Isolamento definitivo: metodologia, memoria, estilo, regras e melhorias aprendidas pertencem ao tenant. O MAYUS pode oferecer uma Metodologia Base MAYUS como default do produto quando o escritorio nao sabe responder, mas nao promove metodo de um escritorio para outro. Playbooks derivados tambem ficam no escopo do proprio escritorio.
+
 ### Escopo executavel
 
 1. `[x]` diagnosticar tenant, integracoes, CRM e skills com Auto Setup Doctor
@@ -990,10 +1006,14 @@ Frase de produto:
 3. `[x]` criar artifact agentico de setup e eventos de auditoria
 4. `[x]` auto-configurar perfil comercial por chat com `sales_profile_setup`
 5. `[~]` diagnosticar perfil comercial incompleto no Setup Doctor
-6. `[ ]` onboarding conversacional completo do escritorio: areas, equipe, tom, permissoes, objetivos e rotina
-7. `[ ]` criar pipeline juridico padrao por area de atuacao
-8. `[ ]` criar estrutura documental padrao por area e tipo de processo
-9. `[ ]` configurar playbooks de atendimento, marketing, agenda e cobranca a partir da entrevista
+6. `[~]` onboarding conversacional completo do escritorio: areas, equipe, tom, PUV, cliente ideal, anti-cliente, permissoes, objetivos, rotina e metodologia
+Evidencia 2026-05-22: `office_setup_conversation` reconhece pedidos de metodologia, persiste `operational_methodology` como rascunho/recomendacao/aprovada, cria artifact `office_operational_methodology`, preserva `office_knowledge_profile` confirmado e bloqueia side effects externos. `TenantOperationalMethodologyContext` consolida status, ativacao, documentos, areas, review reasons e regras de uso para outros modulos sem criar tabela nova.
+7. `[~]` criar pipeline juridico padrao por area de atuacao
+Evidencia 2026-05-23: `area_methods` e `practice_area_playbooks` sugerem fases por area, incluindo Trabalhista, Previdenciario e Bancario/RMC quando o escritorio nao tem processo definido. Lex injeta a metodologia aprovada/recomendada em `ProcessMissionContext`, aponta documentos/fases/lacunas e bloqueia execucao sensivel quando a metodologia existente exige revisao humana. O envelope beta processual agora viaja em artifacts/aprovacoes com contexto, metodologia, fontes, lacunas, guardrail, motivo OpenClaw e trajectory Hermes; falta aprovacao visual/equipe com smoke real completo no juridico.
+8. `[~]` criar estrutura documental padrao por area e tipo de processo
+Evidencia 2026-05-22: a metodologia gera `document_structure` e documentos minimos por area como rascunho supervisionado; falta aplicar na organizacao real de Drive/pastas.
+9. `[~]` configurar playbooks de atendimento, marketing, agenda e cobranca a partir da entrevista
+Evidencia 2026-05-22: playbooks viraram artefatos secundarios da Metodologia Operacional; atendimento WhatsApp/Operating Partner recebe a metodologia no prompt, mas revisao visual por equipe e conexao completa com marketing/agenda/cobranca ainda faltam.
 10. `[ ]` gerar checklist de credenciais externas pendentes sem expor codigo ou segredos
 11. `[ ]` permitir revisao/aprovacao em lote das configuracoes sugeridas
 12. `[ ]` criar score de prontidao do escritorio e proximo melhor passo
@@ -1003,8 +1023,9 @@ Frase de produto:
 1. Nunca inventar credenciais.
 2. Nunca conectar integracao externa sem OAuth/chave valida fornecida pelo usuario.
 3. Nunca mudar permissao, cobranca, mensagem externa ou dado sensivel sem aprovacao.
-4. Toda auto-configuracao deve gerar artifact, evento e resumo humano.
-5. O usuario deve ver resultado operacional, nao detalhes de codigo.
+4. Nunca transformar aprendizado operacional de um tenant em regra de outro tenant; defaults do produto sao base padrao MAYUS, nao memoria compartilhada de escritorios.
+5. Toda auto-configuracao deve gerar artifact, evento e resumo humano.
+6. O usuario deve ver resultado operacional, nao detalhes de codigo.
 
 ---
 

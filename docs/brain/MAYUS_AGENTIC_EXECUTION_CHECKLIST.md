@@ -171,7 +171,7 @@ Decisao tecnica recomendada:
 - [x] `brain_approvals`.
 - [x] `brain_memories`.
 - [x] `learning_events`.
-- [ ] Retry/cancel de missao como rotas de primeira classe.
+- [~] Retry/cancel por step como rotas de primeira classe: v1 em `/api/brain/tasks/[id]/steps/[stepId]/cancel` e `/retry`, com motivo, ator da sessao, auditoria e sem autoexecutar dispatcher.
 - [ ] Stream de status de missao.
 - [ ] Painel operacional de missoes.
 
@@ -298,6 +298,16 @@ Evidencia 2026-04-28: skill `lead_reactivation` gera artifact `lead_reactivation
 - [x] Contexto juridico enriquecido.
 - [x] Visibilidade no MAYUS.
 - [x] Tests principais.
+
+### 7.2 Beta Juridico + WhatsApp Agentic
+
+- [x] Chat roteia pedido de peca processual para `legal_process_mission_plan` antes de qualquer Draft Factory.
+- [x] `legal_process_mission_execute_next` abre approval `legal_first_draft_generate` para minuta sensivel e nao executa side effect juridico externo.
+- [x] Approval juridico carrega `piece_context`, documentos usados/esperados, lacunas, checklist da minuta, Case Brain, metodologia tenant-only e guardrails OpenClaw.
+- [x] WhatsApp Operating Partner classifica comercial, suporte, status de processo, documentos, cobranca, comando do dono ou incerto.
+- [x] Metadata WhatsApp persiste Paperclip, OpenClaw e Hermes para rascunho, evento e envio supervisionado.
+- [x] Validacao local: 159 testes focados, typecheck, diff-check e HTTP smoke local de Aprovacoes/WhatsApp.
+- [~] Smoke autenticado real com tenant/processo controlado e Evolution/WhatsApp real ainda pendente de credenciais/sessao/ambiente.
 - [x] `npm test`.
 - [x] `npm run build`.
 - [x] `npm run test:e2e`.
@@ -469,9 +479,9 @@ Evidencia 2026-04-27: `lead_schedule` cria tarefa de agenda interna e artifact `
 - [ ] Cobranca.
 - [ ] Abertura de caso.
 
-### 9.3 MAYUS Growth OS / Socio Operacional
+### 9.3 MAYUS Growth OS / Operating Partner Supervisionado
 
-- [ ] Posicionar MAYUS como socio operacional de IA para escritorios de advocacia.
+- [ ] Posicionar MAYUS como Operating System juridico com inteligencia operacional e de gestao supervisionada.
 - [ ] Registrar copy central: para o advogado iniciante, estrutura; para o escritorio grande, controle.
 - [x] Adicionar Google Agenda opcional por usuario.
 Evidencia 2026-04-28: `src/lib/services/google-calendar.ts` adiciona OAuth read-only por usuario com provider `google_calendar_user:{userId}`; rotas `/api/integrations/google-calendar`, `/connect` e `/callback` conectam, listam eventos diarios e desconectam; Agenda Diaria mostra botao/status e eventos externos sem gamificacao/edicao.
