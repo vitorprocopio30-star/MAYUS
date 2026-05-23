@@ -2,9 +2,9 @@
 
 import Image from "next/image";
 import Link from "next/link";
-import { useEffect, useState } from "react";
+import { type FormEvent, useEffect, useState } from "react";
 import { motion } from "framer-motion";
-import { Play, Plus } from "lucide-react";
+import { Loader2, Play, Plus } from "lucide-react";
 import { Cormorant_Garamond, Syncopate } from "next/font/google";
 import { Hero } from "@/components/sections/Hero";
 import { CinematicReveal } from "@/components/sections/CinematicReveal";
@@ -25,7 +25,7 @@ const syncopate = Syncopate({
 
 const tickerItems = [
   "PRIMEIRO MODELO AGÊNTICO DO DIREITO",
-  "100 VAGAS FUNDADORAS",
+  "BETA SUPERVISIONADO COM ACESSO CONTROLADO",
   "SOBERANIA DIGITAL PARA ESCRITÓRIOS JURÍDICOS",
   "MONITORAMENTO · PRAZOS · KANBAN · WHATSAPP · VOZ AGÊNTICA",
 ];
@@ -89,7 +89,7 @@ const modules = [
       "Alerta proativo via WhatsApp em tempo real",
       "Classificação automática de urgência por IA",
       "Linha do tempo completa de movimentações",
-      "100 processos incluídos no plano",
+      "100 processos no lote inicial",
     ],
   },
   {
@@ -199,22 +199,22 @@ const comparisonRows = [
   ["Agente autônomo que age sem ser chamado", "-", "-", "-", "Agêntico"],
   ["Memória institucional do escritório", "-", "-", "-", "RAG privado"],
   ["Interface por voz com contexto jurídico", "-", "-", "-", "MAYUSOrb"],
-  ["Usuários ilimitados no plano", "Por usuário", "Por usuário", "Por usuário", "Ilimitado"],
+  ["Usuários ilimitados no escritório", "Por usuário", "Por usuário", "Por usuário", "Ilimitado"],
   ["Dados 100% no Brasil e LGPD nativo", "-", "-", "-", "sa-east-1"],
   ["Gamificação de equipe", "-", "Básico", "-", "XP + ranking"],
 ];
 
-const plans = [
-  { name: "Entrada", badge: "Diagnóstico", desc: "Primeira leitura da operação e da dor mais urgente do escritório.", label: "Acesso sob convite", featured: false, feats: ["Mapeamento de gargalo operacional", "Demonstração supervisionada", "Indicação do primeiro fluxo", "Critérios de segurança e governança", "Próximo passo claro"] },
-  { name: "Beta", badge: "Supervisionado", desc: "Acompanhamento próximo para validar MAYUS em operação real.", label: "Lista beta", featured: true, feats: ["Produto real em uso acompanhado", "Acesso antecipado a módulos em evolução", "Feedback direto no roadmap", "Decisão humana preservada", "Canal direto com o fundador"] },
-  { name: "Operação", badge: "Expansão", desc: "Desenho gradual para escritórios com múltiplos canais e equipes.", label: "Implantação controlada", featured: false, feats: ["Usuários do escritório mapeados", "Monitoramento e WhatsApp por etapas", "Playbooks por rotina", "Governança de agentes", "Suporte de evolução"] },
+const betaAccessNotes = [
+  "Produto real em beta supervisionado, com limites claros.",
+  "Prioridade para escritórios com dor operacional concreta.",
+  "Demonstração e implantação inicial com decisão humana no centro.",
 ];
 
 const faqs = [
   { q: "Qual a diferença entre agente e sistema agêntico?", a: "Um agente responde quando chamado. Um sistema agêntico observa, planeja, executa e replaneja em loop contínuo, sem precisar ser chamado. O MAYUS é agêntico: ele age antes de você perceber que precisava." },
   { q: "Preciso trocar meu sistema atual para usar o MAYUS?", a: "Não necessariamente. O MAYUS pode operar em paralelo com sistemas existentes. Você começa pelo monitoramento, importa os processos via OAB e expande conforme a equipe se adapta." },
   { q: "O que é BYOK e por que isso importa?", a: "BYOK significa Bring Your Own Key: você usa sua própria chave de IA. Seus dados ficam sob sua política, e você controla os custos de uso diretamente." },
-  { q: "Por que a condição comercial não está aberta?", a: "Porque o MAYUS está em beta supervisionado. Primeiro avaliamos a operação, os limites de uso e a dor que precisa ser resolvida com acompanhamento humano." },
+  { q: "Como funciona o beta supervisionado?", a: "Primeiro avaliamos a operação, os limites de uso e a dor que precisa ser resolvida. Depois indicamos o próximo passo seguro, sempre com acompanhamento humano." },
   { q: "Em quanto tempo meu escritório está operando?", a: "O onboarding foi desenhado para começar em menos de uma hora: OAB, importação, pipelines e monitoramento inicial." },
   { q: "O agente WhatsApp consulta processos em tempo real?", a: "Sim. Ele usa o monitoramento do MAYUS para responder com informação atualizada e escalar para humano quando precisar de critério jurídico." },
   { q: "Se eu quiser sair, levo meus dados?", a: "Sempre. Processos, tarefas, histórico de movimentações e memória institucional devem permanecer exportáveis pelo escritório." },
@@ -314,9 +314,68 @@ const SectionImageBackdrop = ({
   );
 };
 
+type BetaFormStatus = "idle" | "submitting" | "success" | "error";
+
+const betaInputClass = "min-h-[48px] w-full rounded-xl border border-[#C4A35A]/20 bg-black/35 px-4 py-3 text-sm text-[#F5F0E8] outline-none transition placeholder:text-[#F5F0E8]/28 focus:border-[#E2C97E]/70 focus:bg-black/50";
+const betaLabelClass = "font-mono text-[9px] font-bold uppercase tracking-[0.22em] text-[#C4A35A]";
+
 export default function LandingPage() {
   const [scrolled, setScrolled] = useState(false);
   const [openFaq, setOpenFaq] = useState<number | null>(0);
+  const [betaFormStatus, setBetaFormStatus] = useState<BetaFormStatus>("idle");
+  const [betaFormMessage, setBetaFormMessage] = useState("");
+
+  async function handleBetaSubmit(event: FormEvent<HTMLFormElement>) {
+    event.preventDefault();
+    const form = event.currentTarget;
+    const formData = new FormData(form);
+    const searchParams = new URLSearchParams(window.location.search);
+
+    setBetaFormStatus("submitting");
+    setBetaFormMessage("");
+
+    const payload = {
+      name: String(formData.get("name") || ""),
+      firmName: String(formData.get("firmName") || ""),
+      email: String(formData.get("email") || ""),
+      phone: String(formData.get("phone") || ""),
+      mainPain: String(formData.get("mainPain") || ""),
+      consent: true,
+      website: String(formData.get("website") || ""),
+      landingPage: window.location.pathname,
+      referrer: document.referrer || "",
+      utmSource: searchParams.get("utm_source") || "",
+      utmMedium: searchParams.get("utm_medium") || "",
+      utmCampaign: searchParams.get("utm_campaign") || "",
+      utmContent: searchParams.get("utm_content") || "",
+    };
+
+    if (!payload.email.trim() && !payload.phone.trim()) {
+      setBetaFormStatus("error");
+      setBetaFormMessage("Informe email ou WhatsApp para recebermos o pedido.");
+      return;
+    }
+
+    try {
+      const response = await fetch("/api/public/beta-access", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify(payload),
+      });
+      const data = await response.json().catch(() => ({}));
+
+      if (!response.ok) {
+        throw new Error(data?.error || "Nao foi possivel registrar o pedido agora.");
+      }
+
+      form.reset();
+      setBetaFormStatus("success");
+      setBetaFormMessage("Cadastro recebido. Vamos revisar o encaixe do escritório e responder com os próximos passos do beta supervisionado.");
+    } catch (error: any) {
+      setBetaFormStatus("error");
+      setBetaFormMessage(error?.message || "Nao foi possivel registrar o pedido agora.");
+    }
+  }
 
   useEffect(() => {
     const onScroll = () => setScrolled(window.scrollY > 60);
@@ -341,8 +400,8 @@ export default function LandingPage() {
         }`}
       >
         <div className="mx-auto flex max-w-[1280px] items-center justify-between px-6 lg:px-12">
-          <div className="flex items-center gap-3">
-            <div className="relative h-16 w-16 transition-transform duration-500 hover:scale-[1.05] mix-blend-screen">
+          <div className="flex items-center gap-2.5">
+            <div className="relative h-11 w-11 shrink-0 transition-transform duration-500 hover:scale-[1.04] mix-blend-screen sm:h-12 sm:w-12">
               <div className="relative h-full w-full">
                 <video
                   src="/logo-mayus-gira.mp4"
@@ -350,18 +409,18 @@ export default function LandingPage() {
                   loop
                   muted
                   playsInline
-                  className="object-contain w-full h-full scale-[1.45] contrast-[1.15] brightness-[0.95] drop-shadow-[0_4px_12px_rgba(0,0,0,0.3)]"
+                  className="h-full w-full scale-[1.08] object-contain contrast-[1.1] brightness-[0.96] drop-shadow-[0_4px_12px_rgba(0,0,0,0.3)]"
                   style={{ 
                     pointerEvents: "none",
-                    WebkitMaskImage: "radial-gradient(circle at center, black 40%, transparent 68%)",
-                    maskImage: "radial-gradient(circle at center, black 40%, transparent 68%)"
+                    WebkitMaskImage: "radial-gradient(circle at center, black 48%, transparent 74%)",
+                    maskImage: "radial-gradient(circle at center, black 48%, transparent 74%)"
                   }}
                 />
               </div>
             </div>
-            <div className="leading-none">
-              <p className={`text-2xl font-bold tracking-[0.3em] ${syncopate.className}`}>MAYUS</p>
-              <p className="mt-1 font-mono text-[8px] uppercase tracking-[0.24em] text-[#F5F0E8]/50">
+            <div className="flex min-w-0 flex-col justify-center leading-none">
+              <p className={`text-2xl font-bold [letter-spacing:0] sm:text-[1.7rem] ${syncopate.className}`}>MAYUS</p>
+              <p className="mt-1 font-mono text-[8px] uppercase [letter-spacing:0] text-[#F5F0E8]/50">
                 IA jurídica agêntica
               </p>
             </div>
@@ -371,15 +430,16 @@ export default function LandingPage() {
             <a href="#operacao" className="hover:text-[#C4A35A]">Operação</a>
             <a href="#conceito" className="hover:text-[#C4A35A]">Conceito</a>
             <a href="#arquitetura" className="hover:text-[#C4A35A]">Arquitetura</a>
-            <a href="#circulo-fundador" className="hover:text-[#C4A35A]">Fundadores</a>
+            <a href="#circulo-fundador" className="hover:text-[#C4A35A]">Beta</a>
           </div>
 
           <div className="flex items-center gap-4">
             <Link href="/login" className="hidden font-mono text-[10px] uppercase tracking-[0.2em] text-[#F5F0E8]/60 hover:text-[#C4A35A] md:block">
               Entrar
             </Link>
-            <a href="#cta" className="rounded-full bg-gradient-to-r from-[#E2C97E] via-[#C4A35A] to-[#8B6E35] px-6 py-2.5 font-mono text-[10px] font-bold uppercase tracking-[0.2em] text-black transition hover:brightness-110">
-              Solicitar convite
+            <a href="#circulo-fundador" className="rounded-full bg-gradient-to-r from-[#E2C97E] via-[#C4A35A] to-[#8B6E35] px-4 py-2.5 font-mono text-[9px] font-bold uppercase tracking-[0.14em] text-black transition hover:brightness-110 sm:px-6 sm:text-[10px] sm:tracking-[0.2em]">
+              <span className="sm:hidden">Lista beta</span>
+              <span className="hidden sm:inline">Entrar na lista beta</span>
             </a>
           </div>
         </div>
@@ -815,59 +875,92 @@ export default function LandingPage() {
         </div>
       </section>
 
-      <section id="circulo-fundador" className="lux-bg-pricing relative z-10 overflow-hidden px-6 py-28">
-        <SectionImageBackdrop src="/landing/founder-badge.png" opacity={0.16} glow="center" />
-        <div className="relative z-10 mx-auto max-w-[1240px] text-center">
+      <section id="circulo-fundador" className="lux-bg-pricing relative z-10 scroll-mt-24 overflow-hidden px-4 py-20 sm:px-6 md:py-28">
+        <SectionImageBackdrop src="/images/mayus_core_motion.png" opacity={0.16} glow="center" />
+        <div className="relative z-10 mx-auto grid max-w-[1180px] gap-10 lg:grid-cols-[0.9fr_1.1fr] lg:items-start">
           <Reveal>
-            <SectionLabel>A oferta</SectionLabel>
-            <h2 className="font-display mt-4 text-5xl font-semibold leading-[1.02] md:text-7xl">
-              Não compre o MAYUS. <span className="text-[#E2C97E]">Contrate uma equipe de IA</span> que custa menos que um estagiário.
-            </h2>
-            <p className="mx-auto mt-5 max-w-2xl text-sm leading-7 text-[#F5F0E8]/60">
-              Um escritório que opera com inteligência agêntica fatura diferente. Entre como fundador antes que seu concorrente perceba que isso existe.
-            </p>
-          </Reveal>
-          <Stagger className="mt-14 grid gap-5 text-left md:grid-cols-3">
-            {plans.map((plan) => (
-              <StaggerItem key={plan.name}>
-                <article className={`lux-plan-card h-full rounded-2xl border p-7 ${plan.featured ? "lux-prime-card border-[#E2C97E]/65 bg-gradient-to-br from-[#221A0D]/80 to-[#100C06]/90 shadow-[0_0_60px_rgba(196,163,90,0.2)]" : "border-[#C4A35A]/20 bg-[#0C0A07]/75"}`}>
-                  <p className="font-mono text-[9px] uppercase tracking-[0.2em] text-[#C4A35A]">{plan.badge}</p>
-                  <h3 className={`font-display mt-3 text-5xl font-semibold ${plan.featured ? "text-[#E2C97E]" : ""}`}>{plan.name}</h3>
-                  <p className="mt-2 text-sm text-[#F5F0E8]/60">{plan.desc}</p>
-                  <p className={`mt-6 font-mono text-sm uppercase tracking-[0.22em] ${plan.featured ? "text-[#E2C97E]" : "text-[#F5F0E8]"}`}>
-                    {plan.label}
-                  </p>
-                  <ul className="mt-6 space-y-3">
-                    {plan.feats.map((feat) => (
-                      <li key={feat} className="flex items-start gap-2 text-xs leading-5 text-[#F5F0E8]/62">
-                        <span className="text-[#C4A35A]">✓</span>
-                        <span>{feat}</span>
-                      </li>
-                    ))}
-                  </ul>
-                  <a href="/vendas#acesso-beta" className={`mt-7 inline-flex rounded-full px-5 py-3 font-mono text-[10px] font-bold uppercase tracking-[0.18em] transition ${plan.featured ? "bg-gradient-to-r from-[#E2C97E] to-[#C4A35A] text-black hover:brightness-110" : "border border-[#C4A35A]/35 text-[#F5F0E8]/70 hover:bg-[#C4A35A]/10 hover:text-[#E2C97E]"}`}>
-                    {plan.featured ? "Entrar como fundador" : "Solicitar convite"}
-                  </a>
-                </article>
-              </StaggerItem>
-            ))}
-          </Stagger>
-          <Reveal delay={0.3}>
-            <div className="mt-10 flex flex-col gap-6 rounded-2xl border border-[#C4A35A]/22 bg-[#0D0C0A]/75 p-7 text-left md:flex-row md:items-center md:justify-between">
-              <div>
-                <h4 className="font-display text-4xl font-semibold">Vagas do Círculo Fundador</h4>
-                <p className="mt-2 text-sm text-[#F5F0E8]/60">100 escritórios. 92 vagas restantes. A janela não é urgência artificial: é limite operacional para acompanhar os fundadores de perto.</p>
-              </div>
-              <div className="w-full md:w-72">
-                <div className="mb-2 flex justify-between font-mono text-[10px] uppercase tracking-[0.12em] text-[#F5F0E8]/65">
-                  <span>8 de 100 preenchidas</span>
-                  <span>8%</span>
-                </div>
-                <div className="h-1.5 overflow-hidden rounded-full bg-white/10">
-                  <div className="h-full w-[8%] bg-gradient-to-r from-[#8B6E35] to-[#E2C97E]" />
-                </div>
+            <div className="text-left">
+              <SectionLabel>Acesso beta supervisionado</SectionLabel>
+              <h2 className="font-display mt-4 text-4xl font-semibold leading-[1.04] sm:text-5xl md:text-7xl">
+                Cadastre seu escritório para testar o <span className="text-[#E2C97E]">MAYUS em operação real.</span>
+              </h2>
+              <p className="mt-5 max-w-2xl text-sm leading-7 text-[#F5F0E8]/62 md:text-base md:leading-8">
+                O site mostra tudo que o MAYUS faz. A conversão agora é simples: entendemos sua dor operacional, avaliamos o encaixe e liberamos o próximo passo do beta com acompanhamento humano.
+              </p>
+
+              <div className="mt-8 grid gap-3">
+                {betaAccessNotes.map((item) => (
+                  <div key={item} className="flex items-start gap-3 rounded-xl border border-[#C4A35A]/16 bg-black/20 px-4 py-3 text-sm leading-6 text-[#F5F0E8]/68">
+                    <span className="mt-0.5 text-[#C4A35A]">✓</span>
+                    <span>{item}</span>
+                  </div>
+                ))}
               </div>
             </div>
+          </Reveal>
+
+          <Reveal delay={0.1}>
+            <form onSubmit={handleBetaSubmit} className="rounded-2xl border border-[#C4A35A]/24 bg-[#080706]/82 p-5 text-left shadow-[0_32px_90px_rgba(0,0,0,0.42)] backdrop-blur-md sm:p-7 md:p-8">
+              <input name="website" tabIndex={-1} autoComplete="off" className="hidden" aria-hidden="true" />
+
+              <div className="mb-6">
+                <p className="font-mono text-[9px] uppercase tracking-[0.24em] text-[#C4A35A]">Cadastro beta</p>
+                <h3 className="font-display mt-2 text-3xl font-semibold text-[#F5F0E8] sm:text-4xl">Entre na lista.</h3>
+                <p className="mt-2 text-xs leading-6 text-[#F5F0E8]/48">
+                  Sem compra automática. Sem promessa de resultado. Apenas uma conversa objetiva sobre operação.
+                </p>
+              </div>
+
+              <div className="grid gap-4 md:grid-cols-2">
+                <label className="space-y-2">
+                  <span className={betaLabelClass}>Nome</span>
+                  <input name="name" required minLength={2} className={betaInputClass} placeholder="Seu nome" />
+                </label>
+                <label className="space-y-2">
+                  <span className={betaLabelClass}>Escritório</span>
+                  <input name="firmName" className={betaInputClass} placeholder="Nome do escritório" />
+                </label>
+                <label className="space-y-2">
+                  <span className={betaLabelClass}>Email</span>
+                  <input name="email" type="email" className={betaInputClass} placeholder="voce@escritorio.com" />
+                </label>
+                <label className="space-y-2">
+                  <span className={betaLabelClass}>WhatsApp</span>
+                  <input name="phone" className={betaInputClass} placeholder="(00) 00000-0000" />
+                </label>
+              </div>
+
+              <label className="mt-4 block space-y-2">
+                <span className={betaLabelClass}>Principal dor operacional</span>
+                <textarea
+                  name="mainPain"
+                  required
+                  minLength={8}
+                  rows={5}
+                  className={`${betaInputClass} min-h-[132px] resize-none leading-relaxed`}
+                  placeholder="Ex: prazos soltos, WhatsApp sem follow-up, documentos perdidos, equipe dependendo da memória do sócio..."
+                />
+              </label>
+
+              <button
+                type="submit"
+                disabled={betaFormStatus === "submitting"}
+                className="mt-5 flex min-h-[52px] w-full items-center justify-center gap-3 rounded-xl bg-gradient-to-r from-[#E2C97E] via-[#C4A35A] to-[#8B6E35] px-5 py-4 font-mono text-[10px] font-black uppercase tracking-[0.16em] text-black transition hover:brightness-110 active:scale-[0.99] disabled:cursor-not-allowed disabled:opacity-65 sm:text-[11px] sm:tracking-[0.22em]"
+              >
+                {betaFormStatus === "submitting" ? <Loader2 className="h-4 w-4 animate-spin" /> : null}
+                Solicitar acesso beta
+              </button>
+
+              {betaFormMessage ? (
+                <p className={`mt-4 text-sm leading-6 ${betaFormStatus === "success" ? "text-[#E2C97E]" : "text-red-300"}`}>
+                  {betaFormMessage}
+                </p>
+              ) : (
+                <p className="mt-4 text-[10px] leading-5 text-[#F5F0E8]/38">
+                  Ao enviar, você autoriza o contato do MAYUS sobre o beta supervisionado.
+                </p>
+              )}
+            </form>
           </Reveal>
         </div>
       </section>
@@ -920,11 +1013,11 @@ export default function LandingPage() {
         </Reveal>
         <Reveal delay={0.2}>
           <div className="mt-9 flex flex-wrap justify-center gap-4">
-            <a href="/vendas#acesso-beta" className="rounded-full bg-gradient-to-r from-[#E2C97E] via-[#C4A35A] to-[#8B6E35] px-7 py-4 font-mono text-[10px] font-bold uppercase tracking-[0.2em] text-black transition hover:brightness-110">Solicitar acesso beta</a>
-            <a href="#circulo-fundador" className="rounded-full border border-[#C4A35A]/45 px-7 py-4 font-mono text-[10px] uppercase tracking-[0.2em] text-[#F5F0E8]/80 transition hover:bg-[#C4A35A]/10 hover:text-[#E2C97E]">Ver perfis de acesso</a>
+            <a href="#circulo-fundador" className="rounded-full bg-gradient-to-r from-[#E2C97E] via-[#C4A35A] to-[#8B6E35] px-7 py-4 font-mono text-[10px] font-bold uppercase tracking-[0.2em] text-black transition hover:brightness-110">Solicitar acesso beta</a>
+            <a href="#operacao" className="rounded-full border border-[#C4A35A]/45 px-7 py-4 font-mono text-[10px] uppercase tracking-[0.2em] text-[#F5F0E8]/80 transition hover:bg-[#C4A35A]/10 hover:text-[#E2C97E]">Ver o produto</a>
           </div>
           <p className="mt-7 font-mono text-[9px] uppercase tracking-[0.2em] text-[#F5F0E8]/35">
-            Sem taxa de setup · cancelamento a qualquer momento · dados sempre seus · LGPD nativo
+            Beta supervisionado · dados sempre seus · LGPD nativo · decisão humana
           </p>
         </Reveal>
       </section>
@@ -938,7 +1031,7 @@ export default function LandingPage() {
           <div className="flex flex-wrap gap-5 font-mono text-[10px] uppercase tracking-[0.15em] text-[#F5F0E8]/55">
             <a href="#conceito" className="hover:text-[#C4A35A]">O Conceito</a>
             <a href="#arquitetura" className="hover:text-[#C4A35A]">Arquitetura</a>
-            <a href="#circulo-fundador" className="hover:text-[#C4A35A]">Círculo Fundador</a>
+            <a href="#circulo-fundador" className="hover:text-[#C4A35A]">Lista beta</a>
           </div>
         </div>
         <div className="mx-auto mt-8 flex max-w-[1240px] flex-wrap justify-between gap-3 border-t border-white/10 pt-5 font-mono text-[10px] uppercase tracking-[0.12em] text-[#F5F0E8]/28">

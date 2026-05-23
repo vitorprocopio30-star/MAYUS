@@ -12,7 +12,7 @@ import { isBrainExecutiveRole } from "@/lib/brain/roles";
 import type { BrainInboxApprovalItem, BrainInboxResponse } from "@/lib/brain/inbox-types";
 import Link from "next/link";
 
-const montserrat = Montserrat({ subsets: ["latin"], weight: ["400", "500", "600"] });
+const montserrat = Montserrat({ subsets: ["latin"], weight: ["400", "500", "600"], fallback: ["system-ui", "-apple-system", "BlinkMacSystemFont", "Segoe UI", "Roboto", "Helvetica Neue", "Arial", "sans-serif"] });
 
 // Mapa de labels amigaveis para cada perfil
 const roleLabels: Record<string, string> = {
@@ -41,7 +41,8 @@ export function AdminHeader() {
   const [brainInboxOpen, setBrainInboxOpen] = useState(false);
   const [brainPendingCount, setBrainPendingCount] = useState(0);
   const [brainPendingApprovals, setBrainPendingApprovals] = useState<BrainInboxApprovalItem[]>([]);
-  const isExecutive = isBrainExecutiveRole(role);
+  const isLocalNoLogin = profile?.id === "mayus-local-user";
+  const isExecutive = !isLocalNoLogin && isBrainExecutiveRole(role);
 
   const loadBrainInbox = useCallback(async () => {
     if (!isExecutive) {
@@ -81,6 +82,11 @@ export function AdminHeader() {
 
   useEffect(() => {
     if (!profile?.tenant_id) return;
+    if (isLocalNoLogin) {
+      setGlobalName("MAYUS");
+      return;
+    }
+
     async function fetchTenantName() {
       const { data } = await supabase
         .from("tenants")
@@ -98,15 +104,17 @@ export function AdminHeader() {
       }
     }
     fetchTenantName();
-  }, [profile, supabase]);
+  }, [isLocalNoLogin, profile, supabase]);
 
   // Hook Ativo: Realtime WebSocket (apenas ativa se logado)
-  useNotifications(profile?.id, profile?.tenant_id);
+  useNotifications(isLocalNoLogin ? undefined : profile?.id, isLocalNoLogin ? undefined : profile?.tenant_id);
 
   useEffect(() => {
     if (!profile?.tenant_id) return;
 
     // Busca inicial de histórico
+    if (isLocalNoLogin) return;
+
     async function fetchNotifications() {
       const { data } = await supabase
         .from('notifications')
@@ -132,7 +140,7 @@ export function AdminHeader() {
 
     window.addEventListener('new-notification', handleNewNotif);
     return () => window.removeEventListener('new-notification', handleNewNotif);
-  }, [profile?.id, profile?.tenant_id, profile, supabase]);
+  }, [isLocalNoLogin, profile?.id, profile?.tenant_id, profile, supabase]);
 
   useEffect(() => {
     if (!profile?.tenant_id || !isExecutive) return;
@@ -150,6 +158,8 @@ export function AdminHeader() {
     setUnreadCount(0);
     setNotifications(prev => prev.map(n => ({ ...n, is_read: true })));
 
+    if (isLocalNoLogin) return;
+
     await supabase.from('notifications')
       .update({ is_read: true })
       .eq('tenant_id', profile.tenant_id)
@@ -158,6 +168,11 @@ export function AdminHeader() {
   };
 
   const handleLogout = async () => {
+    if (isLocalNoLogin) {
+      router.push("/dashboard/operacoes/prazos");
+      return;
+    }
+
     await supabase.auth.signOut();
     router.push("/login");
   };

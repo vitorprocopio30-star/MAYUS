@@ -1,25 +1,10 @@
 'use client'
 
 import { useEffect, useState, useMemo, useCallback } from 'react'
+import type { MouseEvent } from 'react'
 import { createClient } from '@/lib/supabase/client'
 import { buildAgendaPayloadFromProcessPrazo, syncAgendaTaskBySource } from '@/lib/agenda/userTasks'
-import {
-  Clock,
-  Search,
-  UserPlus,
-  ChevronDown,
-  Calendar,
-  Gavel,
-  CheckCircle,
-  User,
-  Copy,
-  Check,
-  X
-} from 'lucide-react'
-import { Montserrat, Cormorant_Garamond } from "next/font/google"
-
-const montserrat = Montserrat({ subsets: ["latin"], weight: ["300", "400", "500", "600", "700"] });
-const cormorant = Cormorant_Garamond({ subsets: ["latin"], weight: ["400", "600", "700"], style: ["normal", "italic"] });
+import { PrazosDesignSystemView } from './PrazosDesignSystemView'
 
 function formatarData(v: string | null): string {
   if (!v) return '—'
@@ -146,18 +131,184 @@ function deduplicarPrazos(lista: any[]): any[] {
   return Array.from(mapa.values())
 }
 
-function GlassCard({ children, className = "" }: { children: React.ReactNode; className?: string }) {
-  return (
-    <div className={`rounded-2xl overflow-hidden p-6 relative group border border-[#CCA761]/10 bg-gradient-to-b from-white/90 dark:from-[#111111]/90 to-gray-50/90 dark:to-[#050505]/90 backdrop-blur-md shadow-[0_8px_32px_rgba(0,0,0,0.4)] ring-1 ring-gray-200 dark:ring-white/5 transition-all duration-500 ${className}`}>
-      <div className="absolute inset-0 bg-gradient-to-br from-white/[0.02] to-transparent pointer-events-none" />
-      <div className="relative z-10 w-full h-full flex flex-col">
-        {children}
-      </div>
-    </div>
-  );
+type TabType = 'movimentacoes' | 'prazos' | 'audiencias'
+
+const LOCAL_DEV_TENANT_ID = 'mayus-local-tenant'
+const LOCAL_DEV_USER = {
+  id: 'mayus-local-user',
+  email: 'local@mayus.dev',
+  app_metadata: {
+    role: 'admin',
+    tenant_id: LOCAL_DEV_TENANT_ID,
+  },
+}
+const LOCAL_DEV_PROFILE = {
+  id: LOCAL_DEV_USER.id,
+  tenant_id: LOCAL_DEV_TENANT_ID,
+  full_name: 'MAYUS Local',
+  avatar_url: null,
+  is_active: true,
 }
 
-type TabType = 'movimentacoes' | 'prazos' | 'audiencias'
+function isLocalNoLoginMode(): boolean {
+  if (typeof window === 'undefined') return false
+  return ['localhost', '127.0.0.1', '::1'].includes(window.location.hostname)
+}
+
+function addDaysIso(days: number): string {
+  const data = new Date()
+  data.setDate(data.getDate() + days)
+  return data.toISOString()
+}
+
+function buildLocalDevPrazos() {
+  const processos = [
+    {
+      numero_processo: '0803152-79.2025.8.19.0054',
+      partes: {
+        polo_ativo: 'Ministério Público do Estado do Rio de Janeiro',
+        polo_passivo: 'Estado do Rio de Janeiro',
+      },
+      tribunal: 'TJRJ',
+      comarca: 'Rio de Janeiro',
+      vara: '4ª Vara de Fazenda Pública',
+      assunto: 'Cumprimento de sentença',
+      classe_processual: 'Procedimento comum cível',
+      tipo_acao: 'Obrigação de fazer',
+      fase_atual: 'Sentença publicada',
+      data_ultima_movimentacao: addDaysIso(0),
+      ultima_movimentacao_texto: 'Sentença publicada. Intimem-se as partes para ciência e eventual interposição de recurso no prazo legal.',
+      resumo_curto: 'Processo em fase recursal, com prazo crítico para análise de embargos e apelação.',
+      cliente_nome: 'Vitor Procópio',
+      escavador_monitoramento_id: 'local-monitoramento-1',
+    },
+    {
+      numero_processo: '0023455-04.2019.8.19.0008',
+      partes: {
+        polo_ativo: 'Lucia Helena Silva Leão',
+        polo_passivo: 'Estado do Rio de Janeiro',
+      },
+      tribunal: 'TJRJ',
+      comarca: 'Belford Roxo',
+      vara: '2ª Vara Cível',
+      assunto: 'Cumprimento individual de sentença coletiva',
+      classe_processual: 'Cumprimento de sentença',
+      tipo_acao: 'Servidor público',
+      fase_atual: 'Citação recebida',
+      data_ultima_movimentacao: addDaysIso(-1),
+      ultima_movimentacao_texto: 'Citação recebida. Aberto prazo para apresentação de contestação e manifestação sobre documentos.',
+      resumo_curto: 'Prazo sem card Kanban vinculado para acompanhamento manual do escritório.',
+      cliente_nome: 'Lucia Helena Silva Leão',
+      escavador_monitoramento_id: null,
+    },
+    {
+      numero_processo: '0820294-40.2025.8.19.0008',
+      partes: {
+        polo_ativo: 'Elizabeth Barbosa de Oliveira Ramos',
+        polo_passivo: 'Banco Master S.A.',
+      },
+      tribunal: 'TJRJ',
+      comarca: 'Nova Iguaçu',
+      vara: '1º Juizado Especial Cível',
+      assunto: 'Direito do consumidor',
+      classe_processual: 'Procedimento do Juizado Especial Cível',
+      tipo_acao: 'Bancário',
+      fase_atual: 'Audiência designada',
+      data_ultima_movimentacao: addDaysIso(-2),
+      ultima_movimentacao_texto: 'Audiência de conciliação designada. As partes deverão comparecer munidas de documentos pessoais.',
+      resumo_curto: 'Audiência próxima com necessidade de conferência de documentos e orientação da cliente.',
+      cliente_nome: 'Elizabeth Barbosa de Oliveira Ramos',
+      escavador_monitoramento_id: 'local-monitoramento-3',
+    },
+  ]
+
+  return [
+    {
+      id: 'local-prazo-1',
+      tenant_id: LOCAL_DEV_TENANT_ID,
+      tipo: 'sentenca',
+      descricao: 'Sentença publicada — analisar e verificar recurso',
+      data_vencimento: addDaysIso(5),
+      status: 'pendente',
+      responsavel_id: LOCAL_DEV_USER.id,
+      criado_por_ia: true,
+      process_task_id: 'local-task-1',
+      monitored_process_id: 'local-process-1',
+      escavador_movimentacao_id: 'local-mov-1',
+      created_at: addDaysIso(-1),
+      monitored_processes: processos[0],
+      process_tasks: {
+        id: 'local-task-1',
+        movimentacoes_timeline: [
+          {
+            escavador_movimentacao_id: 'local-mov-1',
+            data: addDaysIso(0),
+            conteudo: processos[0].ultima_movimentacao_texto,
+            tipo_evento: 'sentenca',
+            revisado_por_humano: false,
+          },
+        ],
+      },
+      profiles: LOCAL_DEV_PROFILE,
+    },
+    {
+      id: 'local-prazo-2',
+      tenant_id: LOCAL_DEV_TENANT_ID,
+      tipo: 'citacao',
+      descricao: 'Citação recebida — apresentar contestação',
+      data_vencimento: addDaysIso(8),
+      status: 'pendente',
+      responsavel_id: null,
+      criado_por_ia: true,
+      process_task_id: null,
+      monitored_process_id: 'local-process-2',
+      escavador_movimentacao_id: 'local-mov-2',
+      created_at: addDaysIso(-2),
+      monitored_processes: processos[1],
+      process_tasks: {
+        id: null,
+        movimentacoes_timeline: [
+          {
+            escavador_movimentacao_id: 'local-mov-2',
+            data: addDaysIso(-1),
+            conteudo: processos[1].ultima_movimentacao_texto,
+            tipo_evento: 'citacao',
+            revisado_por_humano: false,
+          },
+        ],
+      },
+      profiles: null,
+    },
+    {
+      id: 'local-audiencia-1',
+      tenant_id: LOCAL_DEV_TENANT_ID,
+      tipo: 'audiencia',
+      descricao: 'Audiência de conciliação — preparar cliente',
+      data_vencimento: addDaysIso(12),
+      status: 'pendente',
+      responsavel_id: LOCAL_DEV_USER.id,
+      criado_por_ia: false,
+      process_task_id: 'local-task-3',
+      monitored_process_id: 'local-process-3',
+      escavador_movimentacao_id: 'local-mov-3',
+      created_at: addDaysIso(-3),
+      monitored_processes: processos[2],
+      process_tasks: {
+        id: 'local-task-3',
+        movimentacoes_timeline: [
+          {
+            escavador_movimentacao_id: 'local-mov-3',
+            data: addDaysIso(-2),
+            conteudo: processos[2].ultima_movimentacao_texto,
+            tipo_evento: 'audiencia',
+            revisado_por_humano: true,
+          },
+        ],
+      },
+      profiles: LOCAL_DEV_PROFILE,
+    },
+  ]
+}
 
 function normalizarDataISO(valor?: string | null): string {
   if (!valor) return ''
@@ -184,15 +335,34 @@ function normalizarDataISO(valor?: string | null): string {
 }
 
 function obterTimestampMovimentacao(dataReferencia?: string | null, createdAt?: string | null): number {
+  const dataISO = normalizarDataISO(dataReferencia)
+  if (dataISO) return new Date(`${dataISO}T12:00:00`).getTime()
+
+  return obterTimestampCriacaoMovimentacao(createdAt)
+}
+
+function obterTimestampCriacaoMovimentacao(createdAt?: string | null): number {
   const created = String(createdAt || '').trim()
   if (created) {
     const parsedCreated = new Date(created.replace(' ', 'T')).getTime()
     if (!Number.isNaN(parsedCreated)) return parsedCreated
   }
 
-  const dataISO = normalizarDataISO(dataReferencia)
-  if (!dataISO) return 0
-  return new Date(`${dataISO}T12:00:00`).getTime()
+  return 0
+}
+
+function compararMovimentacoesDecrescente(a: any, b: any): number {
+  const dataA = obterTimestampMovimentacao(a.dataISO || a.dataReferencia, a.createdAt)
+  const dataB = obterTimestampMovimentacao(b.dataISO || b.dataReferencia, b.createdAt)
+  const diffData = dataB - dataA
+  if (diffData !== 0) return diffData
+
+  const createdA = obterTimestampCriacaoMovimentacao(a.createdAt)
+  const createdB = obterTimestampCriacaoMovimentacao(b.createdAt)
+  const diffCriacao = createdB - createdA
+  if (diffCriacao !== 0) return diffCriacao
+
+  return String(a.id ?? '').localeCompare(String(b.id ?? ''))
 }
 
 function getDeadlineOrigin(item: any) {
@@ -211,7 +381,6 @@ function getDeadlineOrigin(item: any) {
     return {
       label: 'Revisado por humano',
       description: 'Prazo validado por revisor antes de entrar na agenda.',
-      className: 'border-emerald-500/30 bg-emerald-500/10 text-emerald-300',
       hasKanbanCard,
     }
   }
@@ -220,7 +389,6 @@ function getDeadlineOrigin(item: any) {
     return {
       label: 'IA alta confiança',
       description: 'Prazo criado automaticamente por regra de alta confiança.',
-      className: 'border-[#CCA761]/40 bg-[#CCA761]/10 text-[#CCA761]',
       hasKanbanCard,
     }
   }
@@ -228,7 +396,6 @@ function getDeadlineOrigin(item: any) {
   return {
     label: 'Manual',
     description: 'Prazo criado ou ajustado manualmente pela equipe.',
-    className: 'border-white/10 bg-white/5 text-gray-300',
     hasKanbanCard,
   }
 }
@@ -251,7 +418,7 @@ export default function PrazosPage() {
   const [copiedId, setCopiedId] = useState<string | null>(null)
   const [tenantId, setTenantId] = useState<string | null>(null)
   const [monitoringProcessNumber, setMonitoringProcessNumber] = useState<string | null>(null)
-  
+
   // Estados para o Drawer de Detalhes
   const [selectedItemId, setSelectedItemId] = useState<string | null>(null)
   const [selectedItemData, setSelectedItemData] = useState<any | null>(null)
@@ -270,6 +437,7 @@ export default function PrazosPage() {
 
   async function syncPrazoAgenda(item: any, overrides?: Record<string, any>) {
     if (!tenantId) return
+    if (isLocalNoLoginMode()) return
 
     const nextItem = { ...item, ...(overrides || {}) }
     const assignedProfile = getProfileById(nextItem.responsavel_id)
@@ -329,6 +497,7 @@ export default function PrazosPage() {
         .from('process_movimentacoes_inbox')
         .select('id, numero_cnj, oab_estado, oab_numero, latest_data, latest_conteudo, latest_fonte, latest_created_at, quantidade_eventos, movimentacoes, payload_ultimo_evento, monitorado')
         .eq('tenant_id', tenantIdValue)
+        .order('latest_data', { ascending: false, nullsFirst: false })
         .order('latest_created_at', { ascending: false })
         .limit(1000),
       supabase
@@ -392,16 +561,36 @@ export default function PrazosPage() {
 
   useEffect(() => {
     async function init() {
+      if (isLocalNoLoginMode()) {
+        const localItems = buildLocalDevPrazos()
+
+        setCurrentUser(LOCAL_DEV_USER)
+        setTenantId(LOCAL_DEV_TENANT_ID)
+        setProfiles([LOCAL_DEV_PROFILE])
+        setItems(localItems)
+        setMovementRecords([])
+        setMovementInboxRecords([])
+        setMonitoredContexts(localItems.map((item) => item.monitored_processes).filter(Boolean))
+        setLoading(false)
+        return
+      }
+
       const { data: { user } } = await supabase.auth.getUser()
       setCurrentUser(user)
-      if (!user) return
+      if (!user) {
+        setLoading(false)
+        return
+      }
 
       const { data: profile } = await supabase
         .from('profiles')
         .select('tenant_id')
         .eq('id', user.id)
         .single()
-      if (!profile) return
+      if (!profile) {
+        setLoading(false)
+        return
+      }
 
       setTenantId(profile.tenant_id)
 
@@ -435,7 +624,7 @@ export default function PrazosPage() {
 
       // Filtro por Busca (Processo ou Descrição)
       const searchLower = searchTerm.toLowerCase()
-      const matchSearch = 
+      const matchSearch =
         item.descricao.toLowerCase().includes(searchLower) ||
         item.monitored_processes?.numero_processo?.toLowerCase().includes(searchLower)
       if (!matchSearch) return false
@@ -662,7 +851,7 @@ export default function PrazosPage() {
       }
 
       timeline.forEach((mov: any, index: number) => {
-        const dataReferencia = mov?.criado_em || mov?.data || item.monitored_processes?.data_ultima_movimentacao || null
+        const dataReferencia = mov?.data || mov?.criado_em || item.monitored_processes?.data_ultima_movimentacao || null
 
         const conteudo = String(mov?.conteudo ?? '').trim()
         const cliente = String(item.monitored_processes?.cliente_nome ?? '')
@@ -732,9 +921,7 @@ export default function PrazosPage() {
 
     return Array.from(agrupadoPorProcesso.values())
       .map((mov) => {
-        const historico = [...mov.historico].sort((a: any, b: any) => {
-          return obterTimestampMovimentacao(b.dataISO || b.dataReferencia, b.createdAt) - obterTimestampMovimentacao(a.dataISO || a.dataReferencia, a.createdAt)
-        })
+        const historico = [...mov.historico].sort(compararMovimentacoesDecrescente)
 
         const principal = historico[0]
         return {
@@ -745,11 +932,7 @@ export default function PrazosPage() {
           quantidadeMovimentacoes: historico.length,
         }
       })
-      .sort((a, b) => {
-        const ta = obterTimestampMovimentacao(a.dataISO || a.dataReferencia, a.createdAt)
-        const tb = obterTimestampMovimentacao(b.dataISO || b.dataReferencia, b.createdAt)
-        return tb - ta
-      })
+      .sort(compararMovimentacoesDecrescente)
   }, [items, monitoredContexts, movementDateFilter, movementInboxRecords, movementRecords, searchTerm])
 
   const buildMonitoramentoPayload = useCallback((entry: any) => {
@@ -771,11 +954,17 @@ export default function PrazosPage() {
     }
   }, [])
 
-  const handleMonitorProcess = useCallback(async (event: React.MouseEvent, entry: any) => {
+  const handleMonitorProcess = useCallback(async (event: MouseEvent, entry: any) => {
     event.stopPropagation()
 
     const payload = buildMonitoramentoPayload(entry)
     if (!payload.numero_processo || !tenantId || !currentUser?.id) return
+
+    if (isLocalNoLoginMode()) {
+      setMovementInboxRecords((prev) => prev.filter((registro) => registro?.numero_cnj !== payload.numero_processo))
+      setMonitoringProcessNumber(null)
+      return
+    }
 
     const executarMonitoramento = async (confirmarCusto: boolean) => {
       const response = await fetch('/api/monitoramento/importar-lote', {
@@ -830,11 +1019,17 @@ export default function PrazosPage() {
   }, [buildMonitoramentoPayload, currentUser?.id, loadData, profiles, tenantId])
 
   async function updateStatus(id: string, newStatus: string) {
+    if (isLocalNoLoginMode()) {
+      setItems(prev => prev.map(item => item.id === id ? { ...item, status: newStatus } : item))
+      setSelectedItemData(prev => prev?.id === id ? { ...prev, status: newStatus } : prev)
+      return
+    }
+
     const { error } = await supabase
       .from('process_prazos')
       .update({ status: newStatus })
       .eq('id', id)
-    
+
     if (!error) {
       const currentItem = items.find((item) => item.id === id)
       const updatedItem = currentItem ? { ...currentItem, status: newStatus } : null
@@ -849,10 +1044,17 @@ export default function PrazosPage() {
     if (!tenantId) return
 
     if (responsavelId && !profiles.some((profile) => profile.id === responsavelId)) {
-      console.error('[Prazos] Responsavel inativo ou fora do tenant:', responsavelId)
+      console.error('[Prazos] Responsável inativo ou fora do tenant:', responsavelId)
       if (typeof window !== 'undefined') {
-        window.alert('Este responsavel nao esta ativo neste escritorio.')
+        window.alert('Este responsável não está ativo neste escritório.')
       }
+      return
+    }
+
+    if (isLocalNoLoginMode()) {
+      const profile = responsavelId ? profiles.find(p => p.id === responsavelId) : null
+      setItems(prev => prev.map(item => item.id === id ? { ...item, responsavel_id: responsavelId, profiles: profile } : item))
+      setSelectedItemData(prev => prev?.id === id ? { ...prev, responsavel_id: responsavelId, profiles: profile } : prev)
       return
     }
 
@@ -865,17 +1067,17 @@ export default function PrazosPage() {
       .maybeSingle()
 
     if (error) {
-      console.error('[Prazos] Erro ao atualizar responsavel:', error)
+      console.error('[Prazos] Erro ao atualizar responsável:', error)
       if (typeof window !== 'undefined') {
-        window.alert('Nao foi possivel atualizar o responsavel deste prazo.')
+        window.alert('Não foi possível atualizar o responsável deste prazo.')
       }
       return
     }
 
     if (!data) {
-      console.error('[Prazos] Nenhum prazo atualizado para responsavel:', { id, tenantId })
+      console.error('[Prazos] Nenhum prazo atualizado para responsável:', { id, tenantId })
       if (typeof window !== 'undefined') {
-        window.alert('Prazo nao encontrado neste escritorio.')
+        window.alert('Prazo não encontrado neste escritório.')
       }
       return
     }
@@ -892,18 +1094,53 @@ export default function PrazosPage() {
       try {
         await syncPrazoAgenda(updatedItem)
       } catch (agendaError) {
-        console.error('[Prazos] Falha ao sincronizar agenda apos atualizar responsavel:', agendaError)
+        console.error('[Prazos] Falha ao sincronizar agenda após atualizar responsável:', agendaError)
       }
     }
   }
 
-  function getUrgencyStyle(data: string, status: string) {
-    if (status === 'concluido') return 'border-green-500/20 text-green-400'
-    const d = diasRestantes(data)
-    if (d <= 0) return 'border-red-600 bg-red-600/10 text-red-500 shadow-[0_0_15px_rgba(220,38,38,0.3)]'
-    if (d <= 3) return 'border-red-500/40 bg-red-500/10 text-red-400'
-    if (d <= 7) return 'border-orange-500/40 bg-orange-500/10 text-orange-400'
-    return 'border-[#CCA761]/40 bg-[#CCA761]/10 text-[#CCA761]'
+  async function excluirPrazo(id: string) {
+    if (!tenantId) return
+
+    const item = items.find((prazo) => prazo.id === id)
+    const shouldDelete = typeof window !== 'undefined'
+      ? window.confirm(`Excluir este registro${item?.descricao ? `: ${item.descricao}` : ''}?`)
+      : false
+
+    if (!shouldDelete) return
+
+    if (isLocalNoLoginMode()) {
+      setItems(prev => prev.filter((prazo) => prazo.id !== id))
+      if (selectedItemId === id) {
+        setSelectedItemId(null)
+        setSelectedItemData(null)
+        setSelectedMovimentacao(null)
+        setIsDrawerOpen(false)
+      }
+      return
+    }
+
+    const { error } = await supabase
+      .from('process_prazos')
+      .delete()
+      .eq('id', id)
+      .eq('tenant_id', tenantId)
+
+    if (error) {
+      console.error('[Prazos] Erro ao excluir prazo:', error)
+      if (typeof window !== 'undefined') {
+        window.alert('Não foi possível excluir este registro.')
+      }
+      return
+    }
+
+    setItems(prev => prev.filter((prazo) => prazo.id !== id))
+    if (selectedItemId === id) {
+      setSelectedItemId(null)
+      setSelectedItemData(null)
+      setSelectedMovimentacao(null)
+      setIsDrawerOpen(false)
+    }
   }
 
   async function handleOpenDrawer(item: any, movimentacao: any | null = null) {
@@ -914,6 +1151,13 @@ export default function PrazosPage() {
     setLoadingTask(true)
     setTaskDetails(null)
     setAnnotationText('')
+
+    if (isLocalNoLoginMode()) {
+      setTaskDetails(item.process_tasks || null)
+      setAnnotationText(item.process_tasks?.description || item.monitored_processes?.resumo_curto || '')
+      setLoadingTask(false)
+      return
+    }
 
     if (item.process_task_id) {
       const { data, error } = await supabase
@@ -937,8 +1181,21 @@ export default function PrazosPage() {
     const item = selectedItemData ?? items.find(i => i.id === selectedItemId)
     if (!item?.monitored_process_id) return
 
+    if (isLocalNoLoginMode()) {
+      const savedTask = {
+        ...(taskDetails || item.process_tasks || {}),
+        id: taskDetails?.id ?? item.process_task_id ?? `local-task-${item.id}`,
+        description: annotationText,
+      }
+      setTaskDetails(savedTask)
+      setItems(prev => prev.map(i => i.id === selectedItemId ? { ...i, process_tasks: savedTask, process_task_id: savedTask.id } : i))
+      setSaveSuccess(true)
+      setTimeout(() => setSaveSuccess(false), 2000)
+      return
+    }
+
     setIsSavingAnnotation(true)
-    
+
     try {
       const res = await fetch('/api/prazos/salvar-anotacao', {
         method: 'POST',
@@ -969,683 +1226,50 @@ export default function PrazosPage() {
   }
 
   return (
-    <div className={`p-8 min-h-screen bg-white dark:bg-[#050505] text-white ${montserrat.className}`}>
-      {/* Header Section */}
-      <div className="flex flex-col md:flex-row md:items-end justify-between gap-6 mb-12">
-        <div>
-          <h2 className={`text-[#CCA761] text-sm uppercase tracking-[0.3em] font-medium mb-2 ${montserrat.className}`}>
-            Operações Jurídicas
-          </h2>
-          <h1 className={`text-4xl md:text-5xl font-light text-white tracking-tight ${cormorant.className}`}>
-            Prazos & <span className="italic text-[#CCA761]">Audiências</span>
-          </h1>
-        </div>
-
-        {/* Tabs */}
-        <div className="grid grid-cols-3 gap-1 w-full sm:w-[480px] bg-white/5 p-1 rounded-2xl border border-white/10 backdrop-blur-xl">
-          <button 
-            onClick={() => setActiveTab('movimentacoes')}
-            className={`w-full px-4 py-2.5 rounded-xl text-sm font-medium transition-all duration-300 ${activeTab === 'movimentacoes' ? 'bg-[#CCA761] text-black shadow-lg shadow-[#CCA761]/20' : 'text-gray-400 dark:text-white/40 hover:text-gray-700 dark:text-white/70'}`}
-          >
-            Movimentações
-          </button>
-          <button 
-            onClick={() => setActiveTab('prazos')}
-            className={`w-full px-4 py-2.5 rounded-xl text-sm font-medium transition-all duration-300 ${activeTab === 'prazos' ? 'bg-[#CCA761] text-black shadow-lg shadow-[#CCA761]/20' : 'text-gray-400 dark:text-white/40 hover:text-gray-700 dark:text-white/70'}`}
-          >
-            Prazos
-          </button>
-          <button 
-            onClick={() => setActiveTab('audiencias')}
-            className={`w-full px-4 py-2.5 rounded-xl text-sm font-medium transition-all duration-300 ${activeTab === 'audiencias' ? 'bg-[#CCA761] text-black shadow-lg shadow-[#CCA761]/20' : 'text-gray-400 dark:text-white/40 hover:text-gray-700 dark:text-white/70'}`}
-          >
-            Audiências
-          </button>
-        </div>
-      </div>
-
-      {/* Filters Bar */}
-      <GlassCard className="mb-8 !p-4">
-        <div className="flex flex-wrap items-center gap-6">
-          <div className="flex-1 min-w-[300px] relative">
-            <Search className="absolute left-4 top-1/2 -translate-y-1/2 text-gray-300 dark:text-white/20" size={18} />
-            <input 
-              type="text" 
-              placeholder={activeTab === 'movimentacoes' ? 'Buscar por processo, cliente ou movimentação...' : 'Buscar por processo ou descrição...'}
-              value={searchTerm}
-              onChange={(e) => setSearchTerm(e.target.value)}
-              className="w-full bg-white/5 border border-white/10 rounded-xl py-3 pl-12 pr-4 text-sm focus:outline-none focus:border-[#CCA761]/50 transition-all"
-            />
-          </div>
-
-          {activeTab === 'movimentacoes' ? (
-            <div className="flex items-center gap-3 flex-wrap">
-              <div className="flex items-center gap-2 bg-white/5 border border-white/10 rounded-xl px-3 py-2 min-h-[44px]">
-                <Calendar size={16} className="text-[#CCA761]" />
-                <input
-                  type="date"
-                  value={movementDateFilter}
-                  onChange={(e) => setMovementDateFilter(e.target.value)}
-                  className="bg-transparent text-sm focus:outline-none text-white [color-scheme:dark]"
-                  title="Filtrar movimentações por data"
-                />
-              </div>
-              {movementDateFilter && (
-                <button
-                  onClick={() => setMovementDateFilter('')}
-                  className="h-[44px] px-4 rounded-xl bg-white/5 hover:bg-white/10 text-gray-700 dark:text-white/70 hover:text-white text-sm border border-white/10 transition-all"
-                >
-                  Limpar data
-                </button>
-              )}
-            </div>
-          ) : (
-            <div className="flex items-center gap-4 flex-wrap">
-              <div className="flex items-center gap-2 bg-white/5 border border-white/10 rounded-xl px-4 py-2">
-                <User size={16} className="text-[#CCA761]" />
-                <select 
-                  value={filterResponsavel}
-                  onChange={(e) => setFilterResponsavel(e.target.value)}
-                  className="bg-transparent text-sm text-white focus:outline-none cursor-pointer [color-scheme:dark]"
-                >
-                  <option value="todos" style={{ backgroundColor: '#101012', color: '#f4f4f5' }}>Todos Responsáveis</option>
-                  <option value="sem_responsavel" style={{ backgroundColor: '#101012', color: '#f4f4f5' }}>Sem Responsável (Fila)</option>
-                  {profiles.map(p => (
-                    <option key={p.id} value={p.id} style={{ backgroundColor: '#101012', color: '#f4f4f5' }}>{p.full_name}</option>
-                  ))}
-                </select>
-              </div>
-
-              <div className="flex items-center gap-2 bg-white/5 border border-white/10 rounded-xl px-4 py-2">
-                <Gavel size={16} className="text-[#CCA761]" />
-                <select 
-                  value={filterTribunal}
-                  onChange={(e) => setFilterTribunal(e.target.value)}
-                  className="bg-transparent text-sm text-white focus:outline-none cursor-pointer [color-scheme:dark]"
-                >
-                  <option value="todos" style={{ backgroundColor: '#101012', color: '#f4f4f5' }}>Todos Tribunais</option>
-                  {tribunals.map(t => (
-                    <option key={t} value={t} style={{ backgroundColor: '#101012', color: '#f4f4f5' }}>{t}</option>
-                  ))}
-                </select>
-              </div>
-            </div>
-          )}
-        </div>
-      </GlassCard>
-
-      {/* Grid de Prazos */}
-      {loading ? (
-        <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6 animate-pulse">
-          {[1, 2, 3, 4, 5, 6].map(i => (
-            <div key={i} className="h-48 bg-white/5 rounded-2xl border border-white/10" />
-          ))}
-        </div>
-      ) : activeTab === 'movimentacoes' ? (
-        movimentacoesFiltradas.length === 0 ? (
-          <div className="text-center py-24 border border-dashed border-white/10 rounded-3xl bg-white/[0.02]">
-            <Calendar size={64} className="mx-auto mb-6 text-gray-200 dark:text-white/10" />
-            <h3 className="text-xl text-gray-600 dark:text-white/60 mb-2">Nenhuma movimentação encontrada</h3>
-            <p className="text-gray-400 dark:text-white/30 max-w-md mx-auto">
-              Não há movimentações registradas para os filtros atuais.
-            </p>
-          </div>
-        ) : (
-          <div className="grid grid-cols-1 md:grid-cols-2 xl:grid-cols-3 gap-6">
-            {movimentacoesFiltradas.map((mov) => (
-              <div
-                key={mov.id}
-                onClick={() => handleOpenDrawer(mov.item, mov)}
-                className="cursor-pointer"
-              >
-                <GlassCard className="border-[#CCA761]/40 hover:border-[#CCA761]/80 hover:scale-[1.01] transform transition-all hover:shadow-[0_0_24px_rgba(204,167,97,0.16)] h-full">
-                  <div className="flex items-start justify-between gap-3 mb-4">
-                    <div className="flex items-center gap-2 flex-wrap">
-                      <span className="px-2.5 py-1 rounded-lg text-[10px] font-bold tracking-widest border border-[#CCA761]/40 text-[#CCA761] uppercase">
-                        Movimentação
-                      </span>
-                      <span className="px-2.5 py-1 rounded-full text-[10px] font-bold border border-[#CCA761]/30 text-[#CCA761]/90 bg-[#CCA761]/10">
-                        {mov.quantidadeMovimentacoes || 1} evento(s)
-                      </span>
-                      {mov.monitorado ? (
-                        <span className="flex items-center gap-1 text-[10px] text-green-400 font-bold bg-green-400/5 px-2 py-0.5 rounded border border-green-400/20">
-                          <span className="w-1.5 h-1.5 bg-green-400 rounded-full animate-pulse" />
-                          Monitorado
-                        </span>
-                      ) : (
-                        <button
-                          onClick={(e) => handleMonitorProcess(e, mov)}
-                          disabled={monitoringProcessNumber === mov.numeroProcesso}
-                          className="text-[10px] text-[#CCA761] font-bold border border-[#CCA761]/30 px-2 py-0.5 rounded hover:bg-[#CCA761]/10 transition-colors disabled:opacity-60 disabled:cursor-not-allowed"
-                        >
-                          {monitoringProcessNumber === mov.numeroProcesso ? 'Monitorando...' : '+ Monitorar'}
-                        </button>
-                      )}
-                    </div>
-                    <span className="px-3 py-1 rounded-full text-[11px] font-bold border border-white/10 text-gray-600 dark:text-white/60 bg-white/5">
-                      {formatarData(mov.dataISO || mov.dataReferencia)}
-                    </span>
-                  </div>
-
-                  <h3 className="text-[17px] font-medium text-white mb-3 leading-snug line-clamp-2">
-                    {mov.item.descricao || 'Atualização processual'}
-                  </h3>
-
-                  <div className="rounded-xl border border-white/10 bg-white/[0.02] p-4 mb-4">
-                    <div className="text-[10px] uppercase tracking-[0.18em] text-gray-400 dark:text-white/30 font-semibold mb-2">
-                      Última movimentação
-                    </div>
-                    <p className="text-[13px] text-gray-700 dark:text-white/70 leading-relaxed whitespace-pre-wrap break-words max-h-56 overflow-y-auto pr-1">
-                      {mov.conteudo}
-                    </p>
-                  </div>
-
-                  <div className="space-y-2 mb-6">
-                    <div className="flex items-center gap-2 text-gray-400 dark:text-white/40 text-[12px]">
-                      <Clock size={14} className="text-[#CCA761]" />
-                      <span>Registro: {formatarData(mov.dataISO || mov.dataReferencia)}</span>
-                    </div>
-                    {mov.numeroProcesso && (
-                      <div className="space-y-1">
-                        <div className="flex items-center gap-2 text-[13px] group/cnj-mov">
-                          <Gavel size={14} className="text-[#CCA761]" />
-                          <span className="truncate font-medium text-[#CCA761]">Proc: {mov.numeroProcesso}</span>
-                          <button
-                            onClick={(e) => {
-                              e.stopPropagation()
-                              navigator.clipboard.writeText(mov.numeroProcesso)
-                              setCopiedId(mov.id)
-                              setTimeout(() => setCopiedId(null), 2000)
-                            }}
-                            className="opacity-0 group-hover/cnj-mov:opacity-100 p-1 hover:bg-white/10 rounded transition-all text-[#CCA761]"
-                            title="Copiar número do processo"
-                          >
-                            {copiedId === mov.id ? <Check size={12} /> : <Copy size={12} />}
-                          </button>
-                        </div>
-                        {mov.cliente && (
-                          <div className="text-[11px] text-gray-400 dark:text-white/30 pl-6 leading-tight">
-                            Cliente: {mov.cliente}
-                          </div>
-                        )}
-                        {mov.tribunal && (
-                          <div className="text-[10px] text-gray-300 dark:text-white/20 uppercase tracking-wider pl-6">
-                            {mov.tribunal}{mov.comarca ? ` · ${mov.comarca}` : ''}{mov.vara ? ` · ${mov.vara}` : ''}
-                          </div>
-                        )}
-                        {mov.assunto && (
-                          <div className="text-[11px] text-white/45 pl-6 leading-tight">
-                            Assunto: {mov.assunto}
-                          </div>
-                        )}
-                        {(mov.classeProcessual || mov.tipoAcao) && (
-                          <div className="text-[10px] text-white/35 uppercase tracking-wider pl-6 leading-tight">
-                            {mov.classeProcessual || '—'}{mov.tipoAcao ? ` · ${mov.tipoAcao}` : ''}
-                          </div>
-                        )}
-                        {mov.faseAtual && (
-                          <div className="text-[10px] text-[#CCA761]/80 uppercase tracking-wider pl-6 leading-tight">
-                            Fase: {mov.faseAtual}
-                          </div>
-                        )}
-                        {(mov.poloAtivo || mov.poloPassivo) && (
-                          <div className="text-[10px] text-white/35 pl-6 leading-tight">
-                            {mov.poloAtivo ? `Ativo: ${mov.poloAtivo}` : ''}
-                            {mov.poloAtivo && mov.poloPassivo ? ' · ' : ''}
-                            {mov.poloPassivo ? `Passivo: ${mov.poloPassivo}` : ''}
-                          </div>
-                        )}
-                        {mov.resumoCurto && (
-                          <div className="text-[11px] text-gray-400 dark:text-white/25 italic pl-6 leading-relaxed line-clamp-2">
-                            &quot;{mov.resumoCurto}&quot;
-                          </div>
-                        )}
-                      </div>
-                    )}
-                  </div>
-
-                  <div className="mt-auto pt-4 border-t border-white/5 flex items-center justify-between">
-                    <span className="text-[11px] uppercase tracking-wider text-gray-400 dark:text-white/30">
-                      {mov.tipoEvento}
-                    </span>
-                    <span className="text-[11px] text-[#CCA761]">Abrir detalhes</span>
-                  </div>
-                </GlassCard>
-              </div>
-            ))}
-          </div>
-        )
-      ) : filteredItems.length === 0 ? (
-          <div className="text-center py-24 border border-dashed border-white/10 rounded-3xl bg-white/[0.02]">
-            <Calendar size={64} className="mx-auto mb-6 text-gray-200 dark:text-white/10" />
-            <h3 className="text-xl text-gray-600 dark:text-white/60 mb-2">Nenhum registro encontrado</h3>
-            <p className="text-gray-400 dark:text-white/30 max-w-md mx-auto">
-              Ajuste seus filtros ou aguarde novas movimentações processuais monitoradas pela IA.
-            </p>
-          </div>
-      ) : (
-        <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
-          {filteredItems.map(item => {
-            const deadlineOrigin = getDeadlineOrigin(item)
-            return (
-              <div 
-                key={item.id} 
-                onClick={() => handleOpenDrawer(item, null)}
-                className="cursor-pointer"
-              >
-              <GlassCard className="border-[#CCA761]/50 hover:border-[#CCA761]/90 hover:scale-[1.02] transform transition-all hover:shadow-[0_0_24px_rgba(204,167,97,0.2)] h-full">
-              <div className="flex justify-between items-start mb-4">
-                <div className="flex items-center gap-2">
-                  <span className={`px-2.5 py-1 rounded-lg text-[10px] font-bold tracking-widest border border-current uppercase`}>
-                    {item.tipo}
-                  </span>
-                  {item.monitored_processes?.escavador_monitoramento_id ? (
-                    <span className="flex items-center gap-1 text-[10px] text-green-400 font-bold bg-green-400/5 px-2 py-0.5 rounded border border-green-400/20">
-                      <span className="w-1.5 h-1.5 bg-green-400 rounded-full animate-pulse" />
-                      Monitorado
-                    </span>
-                  ) : (
-                    <button 
-                      onClick={(e) => handleMonitorProcess(e, item)}
-                      disabled={monitoringProcessNumber === item.monitored_processes?.numero_processo}
-                      className="text-[10px] text-[#CCA761] font-bold border border-[#CCA761]/30 px-2 py-0.5 rounded hover:bg-[#CCA761]/10 transition-colors disabled:opacity-60 disabled:cursor-not-allowed"
-                    >
-                      {monitoringProcessNumber === item.monitored_processes?.numero_processo ? 'Monitorando...' : '+ Monitorar'}
-                    </button>
-                  )}
-                  <span
-                    className={`px-2.5 py-1 rounded-lg text-[10px] font-bold tracking-widest border uppercase ${deadlineOrigin.className}`}
-                    title={deadlineOrigin.description}
-                  >
-                    {deadlineOrigin.label}
-                  </span>
-                  {!deadlineOrigin.hasKanbanCard && (
-                    <span
-                      className="px-2.5 py-1 rounded-lg text-[10px] font-bold tracking-widest border border-orange-500/30 bg-orange-500/10 text-orange-300 uppercase"
-                      title="Este prazo nao esta vinculado a um card Kanban processual."
-                    >
-                      Sem card
-                    </span>
-                  )}
-                </div>
-                <div className={`px-3 py-1 rounded-full text-[11px] font-bold border transition-all ${getUrgencyStyle(item.data_vencimento, item.status)}`}>
-                  {item.status === 'concluido' ? 'CONCLUÍDO' : 
-                   diasRestantes(item.data_vencimento) <= 0 ? 'PRAZO FATAL' : 
-                   `${diasRestantes(item.data_vencimento)} DIAS`}
-                </div>
-              </div>
-
-              {!deadlineOrigin.hasKanbanCard && (
-                <div className="mb-4 rounded-xl border border-orange-500/20 bg-orange-500/10 px-3 py-2 text-[11px] leading-relaxed text-orange-200">
-                  Prazo sem card Kanban vinculado. Revise o processo para garantir acompanhamento no quadro processual.
-                </div>
-              )}
-
-              <h3 className="text-lg font-medium text-white mb-2 line-clamp-2 leading-tight">
-                {item.descricao}
-              </h3>
-
-              {(item.monitored_processes?.resumo_curto || item.monitored_processes?.ultima_movimentacao_texto) && (
-                <p className="text-[12px] text-gray-400 dark:text-white/40 font-normal leading-relaxed mb-4 line-clamp-3">
-                  {item.monitored_processes.resumo_curto || 
-                   (item.monitored_processes.ultima_movimentacao_texto?.length > 120 
-                    ? item.monitored_processes.ultima_movimentacao_texto.slice(0, 120) + '...'
-                    : item.monitored_processes.ultima_movimentacao_texto)}
-                </p>
-              )}
-
-              <div className="space-y-2 mb-6">
-                <div className="flex items-center gap-2 text-gray-400 dark:text-white/40 text-[12px]">
-                  <Clock size={14} className="text-[#CCA761]" />
-                  <span>Vencimento: {formatarData(item.data_vencimento)}</span>
-                </div>
-                {ehPrazoDeSentenca(item) && (() => {
-                  const vencimentoEmbargos = obterVencimentoEmbargosDeclaracao(item)
-                  return (
-                    <div className="ml-6 rounded-lg border border-yellow-500/30 bg-yellow-500/10 px-3 py-2 text-[11px] text-yellow-300">
-                      {`Alerta: embargos de declaração em 5 dias úteis${vencimentoEmbargos ? ` (venc. estimado: ${formatarData(vencimentoEmbargos)})` : ''}.`}
-                    </div>
-                  )
-                })()}
-                {item.monitored_processes?.numero_processo && (
-                  <div className="space-y-1">
-                    <div className="flex items-center gap-2 text-[13px] group/cnj">
-                      <Gavel size={14} className="text-[#CCA761]" />
-                      <span className="truncate font-medium text-[#CCA761]">Proc: {item.monitored_processes.numero_processo}</span>
-                      <button 
-                        onClick={(e) => {
-                          e.stopPropagation();
-                          navigator.clipboard.writeText(item.monitored_processes.numero_processo);
-                          setCopiedId(item.id);
-                          setTimeout(() => setCopiedId(null), 2000);
-                        }}
-                        className="opacity-0 group-hover/cnj:opacity-100 p-1 hover:bg-white/10 rounded transition-all text-[#CCA761]"
-                        title="Copiar CNJ"
-                      >
-                        {copiedId === item.id ? <Check size={12} /> : <Copy size={12} />}
-                      </button>
-                    </div>
-                    {item.monitored_processes.partes?.polo_ativo && (
-                      <div className="text-[11px] text-gray-400 dark:text-white/30 pl-6 leading-tight">
-                        {item.monitored_processes.partes.polo_ativo}
-                      </div>
-                    )}
-                  </div>
-                )}
-                {item.monitored_processes?.cliente_nome && (
-                  <div className="text-[11px] text-gray-300 dark:text-white/20 pl-6 -mt-1 mb-2">
-                    Cliente: {item.monitored_processes.cliente_nome}
-                  </div>
-                )}
-                {item.monitored_processes?.tribunal && (
-                  <div className="text-[10px] text-gray-300 dark:text-white/20 uppercase tracking-wider pl-6">
-                    {item.monitored_processes.tribunal} · {item.monitored_processes.comarca || '—'}
-                  </div>
-                )}
-              </div>
-
-              <div className="mt-auto pt-4 border-t border-white/5 flex items-center justify-between">
-                {/* Responsável */}
-                <div className="relative group/user">
-                  {item.responsavel_id ? (
-                    <div className="flex items-center gap-2">
-                      <div className="w-8 h-8 rounded-full bg-[#CCA761]/20 border border-[#CCA761]/60 flex items-center justify-center overflow-hidden shrink-0">
-                        {item.profiles?.avatar_url ? (
-                          <img src={item.profiles.avatar_url} alt={item.profiles.full_name ?? ''} className="w-full h-full object-cover" />
-                        ) : (
-                          <span className="text-[#CCA761] text-[13px] font-semibold leading-none">
-                            {item.profiles?.full_name?.charAt(0)?.toUpperCase() ?? '?'}
-                          </span>
-                        )}
-                      </div>
-                      <div className="text-[13px] text-[#CCA761] font-medium truncate max-w-[100px]">
-                        {item.profiles?.full_name?.split(' ')[0] ?? 'Sem responsável'}
-                      </div>
-                    </div>
-                  ) : (
-                    <button 
-                      onClick={(e) => {
-                        e.stopPropagation()
-                        atribuirResponsavel(item.id, currentUser?.id)
-                      }}
-                      className="h-10 flex items-center gap-2 text-[12px] text-red-400 hover:text-red-300 transition-colors bg-red-400/5 px-4 rounded-lg border border-red-400/20 shadow-lg shadow-red-900/10"
-                    >
-                      <UserPlus size={14} /> Assumir
-                    </button>
-                  )}
-                </div>
-
-                {/* Ações */}
-                <div className="flex items-center gap-2">
-                  {item.status !== 'concluido' ? (
-                    <button 
-                      onClick={(e) => {
-                        e.stopPropagation()
-                        updateStatus(item.id, 'concluido')
-                      }}
-                      className="h-10 w-10 flex items-center justify-center rounded-lg bg-green-500/10 text-green-400 hover:bg-green-500 hover:text-black transition-all border border-green-500/20"
-                      title="Marcar como Concluído"
-                    >
-                      <CheckCircle size={16} />
-                    </button>
-                  ) : (
-                    <button 
-                      onClick={(e) => {
-                        e.stopPropagation()
-                        updateStatus(item.id, 'pendente')
-                      }}
-                      className="h-10 w-10 flex items-center justify-center rounded-lg bg-orange-500/10 text-orange-400 hover:bg-orange-500 hover:text-black transition-all border border-orange-500/20"
-                      title="Reabrir Prazo"
-                    >
-                      <Clock size={16} />
-                    </button>
-                  )}
-                  
-                  <div className="relative group/menu">
-                    <button 
-                      onClick={(e) => e.stopPropagation()}
-                      className="h-10 w-10 flex items-center justify-center rounded-lg bg-white/5 text-gray-400 dark:text-white/40 hover:bg-white/10 transition-all border border-white/10"
-                    >
-                      <ChevronDown size={16} />
-                    </button>
-                    {/* Minimalistic Dropdown placeholder */}
-                    <div className="absolute bottom-full right-0 mb-2 w-48 bg-[#111111] border border-white/10 rounded-xl shadow-2xl opacity-0 invisible group-hover/menu:opacity-100 group-hover/menu:visible transition-all z-50 p-1">
-                      <p className="text-[10px] text-gray-300 dark:text-white/20 px-3 py-2 uppercase tracking-widest font-bold">Atribuir a:</p>
-                      {profiles.map(p => (
-                        <button 
-                          key={p.id}
-                          onClick={(e) => {
-                            e.stopPropagation()
-                            atribuirResponsavel(item.id, p.id)
-                          }}
-                          className="w-full text-left px-3 py-2 text-xs text-gray-600 dark:text-white/60 hover:text-white hover:bg-[#CCA761] hover:text-black rounded-lg transition-all"
-                        >
-                          {p.full_name || `Colaborador ${String(p.id).slice(0, 6)}`}
-                        </button>
-                      ))}
-                      <div className="h-[1px] bg-white/5 my-1" />
-                      <button 
-                        onClick={(e) => {
-                          e.stopPropagation()
-                          atribuirResponsavel(item.id, null)
-                        }}
-                        className="w-full text-left px-3 py-2 text-xs text-gray-400 dark:text-white/40 hover:text-white hover:bg-red-500 bg-transparent rounded-lg transition-all flex items-center justify-between"
-                      >
-                        Remover Responsável <UserPlus size={12} />
-                      </button>
-                    </div>
-                  </div>
-                </div>
-              </div>
-            </GlassCard>
-          </div>
-        )})}
-        </div>
-      )}
-
-      {/* Drawer de Detalhes (Modal Centralizado) */}
-      {isDrawerOpen && (selectedItemData || selectedItemId) && (
-        <div className="fixed inset-0 z-[60] flex items-center justify-center p-4">
-          {/* Overlay */}
-          <div 
-            className="fixed inset-0 bg-gray-200 dark:bg-black/60 backdrop-blur-sm z-[60] animate-in fade-in duration-300"
-            onClick={() => {
-              setIsDrawerOpen(false)
-              setSelectedItemData(null)
-              setSelectedMovimentacao(null)
-            }}
-          />
-          
-          {/* Modal Content */}
-          <div className="relative bg-[#0f0f0f] border border-[#CCA761]/20 z-[61] shadow-2xl flex flex-col animate-in zoom-in-95 duration-300 rounded-2xl overflow-hidden max-w-2xl w-full max-h-[90vh]">
-            {(() => {
-              const item = selectedItemData ?? items.find(i => i.id === selectedItemId)
-              if (!item) {
-                return (
-                  <div className="p-8 text-center text-gray-500 dark:text-white/50">Detalhes indisponíveis para este registro.</div>
-                )
-              }
-
-              return (
-                <>
-                  {/* Modal Header */}
-                  <div className="p-6 border-b border-white/5 flex items-center justify-between bg-gray-50 dark:bg-[#141414]/50 shrink-0">
-                    <div>
-                      <h3 className="text-[#CCA761] text-[20px] font-bold tracking-tight">
-                        Detalhamento do Processo
-                      </h3>
-                      <p className="text-gray-400 dark:text-white/40 text-xs uppercase tracking-[0.2em] mt-1 font-medium">
-                        {item.monitored_processes?.numero_processo}
-                      </p>
-                    </div>
-                    <button 
-                      onClick={() => {
-                        setIsDrawerOpen(false)
-                        setSelectedItemData(null)
-                        setSelectedMovimentacao(null)
-                      }}
-                      className="p-2 rounded-xl bg-white/5 text-gray-400 dark:text-white/40 hover:text-white hover:bg-white/10 transition-all"
-                    >
-                      <X size={20} />
-                    </button>
-                  </div>
-
-                  {/* Drawer Body */}
-                  <div className="flex-1 overflow-y-auto p-8 space-y-8 no-scrollbar">
-                    {/* Header Info */}
-                    <div className="space-y-4">
-                      <div className="flex flex-col gap-1">
-                        <label className="text-[10px] text-[#CCA761] font-black uppercase tracking-widest">Número do Processo</label>
-                        <p className="text-xl font-bold text-white tracking-wide">
-                          {item.monitored_processes?.numero_processo}
-                        </p>
-                      </div>
-
-                      <div className="grid grid-cols-2 gap-6">
-                        <div className="flex flex-col gap-1">
-                          <label className="text-[10px] text-gray-400 dark:text-white/30 font-black uppercase tracking-widest">Autor (Polo Ativo)</label>
-                          <p className="text-sm text-white/80 font-medium">
-                            {item.monitored_processes?.partes?.polo_ativo || '—'}
-                          </p>
-                        </div>
-                        <div className="flex flex-col gap-1">
-                          <label className="text-[10px] text-gray-400 dark:text-white/30 font-black uppercase tracking-widest">Réu (Polo Passivo)</label>
-                          <p className="text-sm text-white/80 font-medium">
-                            {item.monitored_processes?.partes?.polo_passivo || '—'}
-                          </p>
-                        </div>
-                      </div>
-
-                      <div className="pt-4 grid grid-cols-2 gap-6 border-t border-white/5">
-                        <div className="flex flex-col gap-1">
-                          <label className="text-[10px] text-gray-400 dark:text-white/30 font-black uppercase tracking-widest">Tribunal / Comarca</label>
-                          <p className="text-xs text-gray-600 dark:text-white/60">
-                            {item.monitored_processes?.tribunal} · {item.monitored_processes?.comarca || '—'}
-                          </p>
-                        </div>
-                        <div className="flex flex-col gap-1">
-                          <label className="text-[10px] text-gray-400 dark:text-white/30 font-black uppercase tracking-widest">Vencimento</label>
-                          <div className="flex items-center gap-2">
-                             <Clock size={12} className="text-[#CCA761]" />
-                             <p className="text-xs text-[#CCA761] font-bold">
-                               {formatarData(item.data_vencimento)}
-                             </p>
-                          </div>
-                        </div>
-                      </div>
-                    </div>
-
-                    {/* Movimentação Completa */}
-                    {(selectedMovimentacao?.conteudo || item.monitored_processes?.ultima_movimentacao_texto) && (
-                      <div className="p-6 rounded-2xl bg-gray-50 dark:bg-white/[0.03] border border-white/5 space-y-3">
-                        <div className="flex items-center justify-between gap-3 flex-wrap">
-                          <label className="text-[10px] text-[#CCA761] font-black uppercase tracking-widest">Movimentação Completa</label>
-                          <span className="text-[11px] text-gray-400 dark:text-white/40">
-                            {formatarData(selectedMovimentacao?.dataISO || selectedMovimentacao?.dataReferencia || item.monitored_processes?.data_ultima_movimentacao || null)}
-                          </span>
-                        </div>
-                        <div className="max-h-64 overflow-y-auto pr-1">
-                          <p className="text-[13px] text-white/75 leading-relaxed whitespace-pre-wrap break-words">
-                            {selectedMovimentacao?.conteudo || item.monitored_processes?.ultima_movimentacao_texto}
-                          </p>
-                        </div>
-                      </div>
-                    )}
-
-                    {Array.isArray(selectedMovimentacao?.historico) && selectedMovimentacao.historico.length > 1 && (
-                      <div className="p-6 rounded-2xl bg-gray-50 dark:bg-white/[0.03] border border-white/5 space-y-4">
-                        <div className="flex items-center justify-between gap-3">
-                          <label className="text-[10px] text-[#CCA761] font-black uppercase tracking-widest">Histórico de Movimentações</label>
-                          <span className="text-[11px] text-gray-400 dark:text-white/40">{selectedMovimentacao.historico.length} registros</span>
-                        </div>
-
-                        <div className="max-h-72 overflow-y-auto space-y-3 pr-1">
-                          {selectedMovimentacao.historico.slice(1).map((movHist: any) => (
-                            <div key={movHist.id} className="rounded-xl border border-white/10 bg-gray-200 dark:bg-black/20 p-4 space-y-2">
-                              <div className="flex items-center justify-between">
-                                <span className="text-[10px] uppercase tracking-wider text-gray-400 dark:text-white/30">Movimentação</span>
-                                <span className="text-[10px] text-[#CCA761]">{formatarData(movHist.dataISO || movHist.dataReferencia || null)}</span>
-                              </div>
-                              <p className="text-[12px] text-gray-700 dark:text-white/70 leading-relaxed whitespace-pre-wrap break-words">
-                                {movHist.conteudo || 'Sem conteúdo'}
-                              </p>
-                            </div>
-                          ))}
-                        </div>
-                      </div>
-                    )}
-
-                    {/* Descrição do Prazo */}
-                    <div className="p-6 rounded-2xl bg-gray-50 dark:bg-white/[0.03] border border-white/5 space-y-3">
-                      <label className="text-[10px] text-[#CCA761] font-black uppercase tracking-widest">Título do Prazo / Audiência</label>
-                      <h4 className="text-lg font-medium text-white leading-tight">
-                        {item.descricao}
-                      </h4>
-                      {item.monitored_processes?.resumo_curto && (
-                        <div className="pt-3 border-t border-white/5">
-                          <p className="text-[13px] text-gray-500 dark:text-white/50 leading-relaxed italic">
-                            &quot;{item.monitored_processes.resumo_curto}&quot;
-                          </p>
-                        </div>
-                      )}
-                    </div>
-
-                    {/* Resumo do Caso (Kanban) */}
-                    <div className="space-y-4">
-                      <div className="flex items-center justify-between">
-                         <label className="text-[10px] text-[#CCA761] font-black uppercase tracking-widest">Anotações (Resumo do Caso)</label>
-                         {loadingTask && <div className="w-4 h-4 border-2 border-[#CCA761]/30 border-t-[#CCA761] rounded-full animate-spin" />}
-                      </div>
-                      
-                      <div className="space-y-4">
-                        <textarea
-                          value={annotationText}
-                          onChange={(e) => setAnnotationText(e.target.value)}
-                          placeholder="Escreva aqui os detalhes importantes deste caso..."
-                          className="w-full h-48 p-4 bg-[#111] border border-white/10 rounded-xl text-sm text-white/80 focus:outline-none focus:ring-1 focus:ring-[#CCA761]/50 placeholder:text-gray-200 dark:text-white/10 resize-none transition-all"
-                        />
-                        
-                        <div className="flex justify-end">
-                          <button
-                            onClick={handleSaveAnnotation}
-                            disabled={isSavingAnnotation}
-                            className={`px-6 py-2 rounded-lg text-xs font-bold transition-all flex items-center gap-2 ${
-                              saveSuccess 
-                                ? 'bg-green-500/20 text-green-400 border border-green-500/50' 
-                                : 'bg-[#CCA761] hover:bg-[#b39255] text-black disabled:opacity-50'
-                            }`}
-                          >
-                            {isSavingAnnotation ? (
-                              <div className="w-3 h-3 border-2 border-black/30 border-t-black rounded-full animate-spin" />
-                            ) : saveSuccess ? (
-                              <CheckCircle size={14} />
-                            ) : null}
-                            {saveSuccess ? 'Salvo ✓' : isSavingAnnotation ? 'Salvando...' : 'Salvar Anotação'}
-                          </button>
-                        </div>
-                      </div>
-                    </div>
-                  </div>
-
-                  {/* Drawer Footer */}
-                  <div className="p-6 border-t border-white/5 bg-gray-50 dark:bg-[#141414]/50 flex justify-end">
-                    <button 
-                      onClick={() => {
-                        setIsDrawerOpen(false)
-                        setSelectedItemData(null)
-                        setSelectedMovimentacao(null)
-                      }}
-                      className="px-8 py-3 bg-white/5 hover:bg-white/10 text-white font-bold text-sm rounded-xl transition-all border border-white/5"
-                    >
-                      Fechar Detalhes
-                    </button>
-                  </div>
-                </>
-              )
-            })()}
-          </div>
-        </div>
-      )}
-    </div>
+    <PrazosDesignSystemView
+      activeTab={activeTab}
+      setActiveTab={(tab) => setActiveTab(tab)}
+      loading={loading}
+      searchTerm={searchTerm}
+      setSearchTerm={setSearchTerm}
+      movementDateFilter={movementDateFilter}
+      setMovementDateFilter={setMovementDateFilter}
+      filterResponsavel={filterResponsavel}
+      setFilterResponsavel={setFilterResponsavel}
+      filterTribunal={filterTribunal}
+      setFilterTribunal={setFilterTribunal}
+      profiles={profiles}
+      tribunals={tribunals}
+      filteredItems={filteredItems}
+      movimentacoesFiltradas={movimentacoesFiltradas}
+      copiedId={copiedId}
+      setCopiedId={setCopiedId}
+      monitoringProcessNumber={monitoringProcessNumber}
+      currentUser={currentUser}
+      items={items}
+      formatarData={formatarData}
+      diasRestantes={diasRestantes}
+      getDeadlineOrigin={getDeadlineOrigin}
+      ehPrazoDeSentenca={ehPrazoDeSentenca}
+      obterVencimentoEmbargosDeclaracao={obterVencimentoEmbargosDeclaracao}
+      handleMonitorProcess={handleMonitorProcess}
+      handleOpenDrawer={handleOpenDrawer}
+      updateStatus={updateStatus}
+      atribuirResponsavel={atribuirResponsavel}
+      excluirPrazo={excluirPrazo}
+      isDrawerOpen={isDrawerOpen}
+      setIsDrawerOpen={setIsDrawerOpen}
+      selectedItemId={selectedItemId}
+      selectedItemData={selectedItemData}
+      setSelectedItemData={setSelectedItemData}
+      selectedMovimentacao={selectedMovimentacao}
+      setSelectedMovimentacao={setSelectedMovimentacao}
+      loadingTask={loadingTask}
+      annotationText={annotationText}
+      setAnnotationText={setAnnotationText}
+      isSavingAnnotation={isSavingAnnotation}
+      saveSuccess={saveSuccess}
+      handleSaveAnnotation={handleSaveAnnotation}
+    />
   )
 }

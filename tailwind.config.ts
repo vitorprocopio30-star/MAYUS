@@ -10,6 +10,24 @@ const config: Config = {
   theme: {
     extend: {
       colors: {
+        mayus: {
+          bg: "var(--bg)",
+          "bg-1": "var(--bg-1)",
+          "bg-2": "var(--bg-2)",
+          "bg-3": "var(--bg-3)",
+          line: "var(--line)",
+          "line-strong": "var(--line-strong)",
+          gold: "var(--gold)",
+          "gold-bright": "var(--gold-bright)",
+          "gold-soft": "var(--gold-soft)",
+          "gold-dim": "var(--gold-dim)",
+          ink: "var(--ink)",
+          "ink-1": "var(--ink-1)",
+          "ink-2": "var(--ink-2)",
+          "ink-3": "var(--ink-3)",
+          fatal: "var(--fatal)",
+          done: "var(--done)",
+        },
         border: "hsl(var(--border))",
         input: "hsl(var(--input))",
         ring: "hsl(var(--ring))",
@@ -45,9 +63,17 @@ const config: Config = {
         },
       },
       fontFamily: {
-        sans: ["var(--font-montserrat)", "var(--font-inter)", "sans-serif"],
+        sans: ["var(--font-noto-sans)", "var(--font-inter)", "sans-serif"],
+        display: ["var(--type-display)", "Georgia", "serif"],
+        title: ["var(--type-title)", "Georgia", "serif"],
+        body: ["var(--type-body)", "Georgia", "serif"],
+        ui: ["var(--type-ui)", "system-ui", "sans-serif"],
+        proc: ["var(--type-proc)", "ui-monospace", "monospace"],
+        inter: ["var(--font-inter)", "sans-serif"],
         montserrat: ["var(--font-montserrat)", "sans-serif"],
         cormorant: ["var(--font-cormorant)", "serif"],
+        gentium: ["var(--font-gentium)", "serif"],
+        noto: ["var(--font-noto-sans)", "sans-serif"],
       },
       borderRadius: {
         lg: "var(--radius)",

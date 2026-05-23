@@ -122,6 +122,28 @@ type DailyPlaybookPreferences = {
   authorizedPhones: string[];
 };
 
+type OperationalMethodologyStatus = "missing" | "draft" | "recommended" | "approved" | "rejected";
+
+type OperationalMethodologyArea = {
+  area: string;
+  required_documents: string[];
+  phases: string[];
+  document_structure: string[];
+  owner_team: string | null;
+  validation_status: "validated" | "needs_area_review";
+  next_review_question: string | null;
+};
+
+type OperationalMethodologyDraft = {
+  status: OperationalMethodologyStatus;
+  office_name: string | null;
+  practice_areas: string[];
+  methodology_base_used: boolean;
+  area_methods: OperationalMethodologyArea[];
+  pending_validations: string[];
+  approval_next_action: string | null;
+};
+
 const EMPTY_SALES_PROFILE: SalesConsultationProfile = {
   ideal_client: "",
   core_solution: "",
@@ -141,6 +163,127 @@ const DEFAULT_DAILY_PLAYBOOK: DailyPlaybookPreferences = {
   detailLevel: "standard",
   authorizedPhones: [],
 };
+
+function normalizeStringList(value: unknown) {
+  return Array.isArray(value)
+    ? value.map((item) => String(item || "").trim()).filter(Boolean)
+    : [];
+}
+
+function normalizeOperationalMethodology(value: any): OperationalMethodologyDraft | null {
+  if (!value || typeof value !== "object") return null;
+
+  const status = ["draft", "recommended", "approved", "rejected"].includes(String(value.status))
+    ? String(value.status) as OperationalMethodologyStatus
+    : "draft";
+  const identity = value.identity && typeof value.identity === "object" ? value.identity : {};
+  const intake = value.intake && typeof value.intake === "object" ? value.intake : {};
+  const review = value.tenant_review && typeof value.tenant_review === "object" ? value.tenant_review : {};
+  const approval = review.approval_proposal && typeof review.approval_proposal === "object" ? review.approval_proposal : {};
+  const areaMethods = Array.isArray(value.area_methods) ? value.area_methods : [];
+
+  return {
+    status,
+    office_name: String(identity.office_name || value.office_name || "").trim() || null,
+    practice_areas: normalizeStringList(identity.practice_areas || value.practice_areas),
+    methodology_base_used: intake.methodology_base_used === true,
+    area_methods: areaMethods.map((area: any): OperationalMethodologyArea => ({
+      area: String(area?.area || "Area sem nome").trim(),
+      required_documents: normalizeStringList(area?.required_documents),
+      phases: normalizeStringList(area?.phases),
+      document_structure: normalizeStringList(area?.document_structure),
+      owner_team: String(area?.owner_team || "").trim() || null,
+      validation_status: area?.validation_status === "validated" ? "validated" : "needs_area_review",
+      next_review_question: String(area?.next_review_question || "").trim() || null,
+    })),
+    pending_validations: normalizeStringList(review.pending_validations).concat(
+      Array.isArray(review.pending_area_validations)
+        ? review.pending_area_validations
+          .map((item: any) => String(item?.next_review_question || item?.area || "").trim())
+          .filter(Boolean)
+        : []
+    ),
+    approval_next_action: String(approval.next_action || "").trim() || null,
+  };
+}
+
+function getMethodologyStatusLabel(status: OperationalMethodologyStatus) {
+  switch (status) {
+    case "approved": return "Aprovada";
+    case "recommended": return "Recomendada";
+    case "rejected": return "Rejeitada";
+    case "draft": return "Rascunho";
+    default: return "Ausente";
+  }
+}
+
+function getMethodologyStatusClass(status: OperationalMethodologyStatus) {
+  if (status === "approved") return "border-[#4ade80]/20 bg-[#4ade80]/10 text-[#4ade80]";
+  if (status === "rejected") return "border-red-400/20 bg-red-400/10 text-red-300";
+  if (status === "recommended") return "border-[#CCA761]/25 bg-[#CCA761]/10 text-[#CCA761]";
+  return "border-amber-400/20 bg-amber-400/10 text-amber-300";
+}
+
+function normalizeMethodologyStatus(value: unknown): OperationalMethodologyStatus {
+  return ["draft", "recommended", "approved", "rejected"].includes(String(value))
+    ? String(value) as OperationalMethodologyStatus
+    : "draft";
+}
+
+function withOperationalMethodologyReview(methodology: any) {
+  if (!methodology || typeof methodology !== "object") return methodology;
+
+  const status = normalizeMethodologyStatus(methodology.status);
+  const areaMethods = Array.isArray(methodology.area_methods) ? methodology.area_methods : [];
+  const pendingAreaValidations = areaMethods
+    .filter((area: any) => area?.validation_status !== "validated")
+    .map((area: any) => ({
+      area: String(area?.area || "Area sem nome").trim(),
+      validation_status: "needs_area_review",
+      next_review_question: String(area?.next_review_question || "").trim() || `Validar metodologia da area ${String(area?.area || "sem nome").trim()}.`,
+    }));
+  const methodologyBaseUsed = methodology?.intake?.methodology_base_used === true;
+  const improvementRules = Array.isArray(methodology.improvement_rules) ? methodology.improvement_rules : [];
+  const pendingImprovementRules = improvementRules.filter((rule: any) => rule?.requires_approval !== false && rule?.status !== "approved" && rule?.status !== "rejected");
+  const reviewReasons = [
+    status === "draft" ? "methodology_still_draft" : null,
+    status === "recommended" ? "methodology_recommended_not_approved" : null,
+    status === "rejected" ? "methodology_rejected" : null,
+    methodologyBaseUsed && status !== "approved" ? "methodology_base_requires_tenant_validation" : null,
+    pendingAreaValidations.length > 0 ? "area_methods_need_review" : null,
+    pendingImprovementRules.length > 0 ? "methodology_improvement_requires_approval" : null,
+  ].filter(Boolean);
+
+  return {
+    ...methodology,
+    tenant_review: {
+      ...(methodology.tenant_review && typeof methodology.tenant_review === "object" ? methodology.tenant_review : {}),
+      status,
+      activation: status === "approved" ? "active_internal" : status === "rejected" ? "rejected" : "supervised_suggestion",
+      requires_human_review: reviewReasons.length > 0 || status !== "approved",
+      review_reasons: reviewReasons,
+      pending_validations: reviewReasons,
+      pending_area_validations: pendingAreaValidations,
+      summary_by_area: areaMethods.map((area: any) => ({
+        area: String(area?.area || "Area sem nome").trim(),
+        validation_status: area?.validation_status === "validated" ? "validated" : "needs_area_review",
+        required_documents: normalizeStringList(area?.required_documents),
+        phases: normalizeStringList(area?.phases),
+        owner_team: String(area?.owner_team || "").trim() || null,
+        next_review_question: String(area?.next_review_question || "").trim() || null,
+      })),
+      approval_proposal: {
+        action: status === "approved" ? "approved_by_human" : status === "rejected" ? "rejected_by_human" : "review_with_human",
+        next_action: status === "approved"
+          ? "Metodologia aprovada para orientar contexto interno do escritorio."
+          : status === "rejected"
+            ? "Reabrir conversa de metodologia antes de usar regras por area."
+            : "Validar pendencias por area antes de ativar como regra interna.",
+        human_required: status !== "approved" || reviewReasons.length > 0,
+      },
+    },
+  };
+}
 
 function normalizeSalesProfile(value: any): SalesConsultationProfile {
   if (!value || typeof value !== "object") return EMPTY_SALES_PROFILE;
@@ -812,6 +955,50 @@ function ConfiguracoesContent() {
     setPlaybookPreview(null);
   };
 
+  const updateOperationalMethodology = (updater: (current: any) => any) => {
+    setAiFeatures((prev: any) => {
+      const current = prev?.operational_methodology && typeof prev.operational_methodology === "object"
+        ? prev.operational_methodology
+        : null;
+      if (!current) return prev;
+      return {
+        ...prev,
+        operational_methodology: updater(current),
+      };
+    });
+    setHasUnsavedChanges(true);
+  };
+
+  const setOperationalMethodologyStatus = (status: Exclude<OperationalMethodologyStatus, "missing">) => {
+    updateOperationalMethodology((current) => withOperationalMethodologyReview({
+      ...current,
+      status,
+      area_methods: Array.isArray(current.area_methods)
+        ? current.area_methods.map((area: any) => status === "approved"
+          ? { ...area, validation_status: "validated", next_review_question: null }
+          : area)
+        : [],
+      updated_at: new Date().toISOString(),
+    }));
+    toast.success(status === "approved" ? "Metodologia marcada para aprovacao." : status === "rejected" ? "Metodologia marcada como rejeitada." : "Metodologia atualizada.");
+  };
+
+  const setOperationalMethodologyAreaStatus = (index: number, validationStatus: OperationalMethodologyArea["validation_status"]) => {
+    updateOperationalMethodology((current) => withOperationalMethodologyReview({
+      ...current,
+      area_methods: Array.isArray(current.area_methods)
+        ? current.area_methods.map((area: any, areaIndex: number) => areaIndex === index
+          ? {
+            ...area,
+            validation_status: validationStatus,
+            next_review_question: validationStatus === "validated" ? null : area.next_review_question,
+          }
+          : area)
+        : [],
+      updated_at: new Date().toISOString(),
+    }));
+  };
+
   const updateAuthorizedPhonesInput = (value: string) => {
     setAuthorizedPhonesInput(value);
     updateDailyPlaybook({ authorizedPhones: parseAuthorizedPhonesInput(value) });
@@ -959,6 +1146,7 @@ function ConfiguracoesContent() {
     { title: "Jurídico & Modelos", desc: "Fonte, espaçamento, assets institucionais e modelos por peça para cada escritório.", icon: FileCheck, href: "/dashboard/configuracoes/juridico", stats: "Perfil jurídico multi-tenant", color: "#CCA761" }
   ];
 
+  const operationalMethodology = normalizeOperationalMethodology(aiFeatures?.operational_methodology);
   const BASE_WEBHOOK_URL = typeof window !== "undefined" ? `${window.location.origin}/api/webhooks/gateway` : "";
 
   return (
@@ -998,6 +1186,131 @@ function ConfiguracoesContent() {
             onRefresh={loadDoctorReport}
             onAutofix={runDoctorAutofix}
           />
+
+          <section className="border border-[#CCA761]/20 rounded-3xl p-6 sm:p-7 bg-white/80 dark:bg-[#0d0b07] mb-10">
+            <div className="flex flex-col lg:flex-row lg:items-start justify-between gap-5 mb-6">
+              <div className="flex gap-4 min-w-0">
+                <div className="w-12 h-12 rounded-2xl bg-[#CCA761]/10 border border-[#CCA761]/20 flex items-center justify-center shrink-0">
+                  <FileCheck size={22} className="text-[#CCA761]" />
+                </div>
+                <div>
+                  <h2 className="text-sm font-black uppercase tracking-[0.25em] text-[#CCA761]">Metodologia Operacional</h2>
+                  <p className="text-xs text-gray-500 leading-relaxed max-w-2xl mt-2">
+                    Revisao tenant-only da metodologia criada pelo Chat MAYUS, com areas, documentos, fases, responsaveis e pendencias de validacao.
+                  </p>
+                </div>
+              </div>
+              <span className={`w-fit rounded-full border px-3 py-1 text-[9px] font-black uppercase tracking-widest ${getMethodologyStatusClass(operationalMethodology?.status || "missing")}`}>
+                {getMethodologyStatusLabel(operationalMethodology?.status || "missing")}
+              </span>
+            </div>
+
+            {!operationalMethodology ? (
+              <div className="rounded-2xl border border-white/10 bg-black/20 p-5">
+                <p className="text-sm text-gray-300">Nenhuma metodologia operacional foi criada ainda.</p>
+                <p className="mt-2 text-xs text-gray-500">Use o Chat MAYUS para montar a metodologia do escritorio antes de aprovar regras por area.</p>
+              </div>
+            ) : (
+              <div className="space-y-5">
+                <div className="grid grid-cols-1 md:grid-cols-3 gap-3">
+                  <div className="rounded-2xl border border-white/10 bg-black/20 p-4">
+                    <p className="text-[10px] uppercase tracking-widest text-gray-500 font-black">Escritorio</p>
+                    <p className="mt-2 text-sm text-white">{operationalMethodology.office_name || "Em revisao"}</p>
+                  </div>
+                  <div className="rounded-2xl border border-white/10 bg-black/20 p-4">
+                    <p className="text-[10px] uppercase tracking-widest text-gray-500 font-black">Areas</p>
+                    <p className="mt-2 text-sm text-white">{operationalMethodology.practice_areas.length || operationalMethodology.area_methods.length}</p>
+                  </div>
+                  <div className="rounded-2xl border border-white/10 bg-black/20 p-4">
+                    <p className="text-[10px] uppercase tracking-widest text-gray-500 font-black">Base MAYUS</p>
+                    <p className="mt-2 text-sm text-white">{operationalMethodology.methodology_base_used ? "Requer validacao" : "Entrevista do escritorio"}</p>
+                  </div>
+                </div>
+
+                {operationalMethodology.pending_validations.length > 0 && (
+                  <div className="rounded-2xl border border-amber-400/20 bg-amber-400/10 p-4">
+                    <div className="flex items-center gap-2 text-amber-200">
+                      <AlertTriangle size={15} />
+                      <p className="text-[10px] uppercase tracking-widest font-black">Pendencias de validacao</p>
+                    </div>
+                    <ul className="mt-3 space-y-2 text-xs text-amber-100/90">
+                      {operationalMethodology.pending_validations.slice(0, 4).map((item, index) => (
+                        <li key={`${item}-${index}`}>{item}</li>
+                      ))}
+                    </ul>
+                  </div>
+                )}
+
+                <div className="space-y-3">
+                  {operationalMethodology.area_methods.map((area, index) => (
+                    <div key={`${area.area}-${index}`} className="rounded-2xl border border-white/10 bg-black/20 p-4">
+                      <div className="flex flex-col md:flex-row md:items-start justify-between gap-3">
+                        <div>
+                          <div className="flex flex-wrap items-center gap-2">
+                            <p className="text-sm font-black text-white">{area.area}</p>
+                            <span className={`rounded-full border px-2 py-1 text-[9px] font-black uppercase tracking-widest ${
+                              area.validation_status === "validated"
+                                ? "border-[#4ade80]/20 bg-[#4ade80]/10 text-[#4ade80]"
+                                : "border-amber-400/20 bg-amber-400/10 text-amber-300"
+                            }`}>
+                              {area.validation_status === "validated" ? "Area validada" : "Revisar area"}
+                            </span>
+                          </div>
+                          <p className="mt-2 text-xs text-gray-500">
+                            {area.owner_team || "Responsavel pendente"} - {area.phases.slice(0, 3).join(" -> ") || "Fases pendentes"}
+                          </p>
+                        </div>
+                        <button
+                          type="button"
+                          onClick={() => setOperationalMethodologyAreaStatus(index, area.validation_status === "validated" ? "needs_area_review" : "validated")}
+                          className="h-9 px-3 rounded-xl border border-white/10 bg-white/5 text-[9px] font-black uppercase tracking-widest text-gray-200 hover:border-[#CCA761]/40"
+                        >
+                          {area.validation_status === "validated" ? "Reabrir revisao" : "Validar area"}
+                        </button>
+                      </div>
+
+                      <div className="mt-4 grid grid-cols-1 md:grid-cols-3 gap-3 text-xs">
+                        <div>
+                          <p className="text-[10px] uppercase tracking-widest text-gray-500 font-black">Documentos</p>
+                          <p className="mt-1 text-gray-300">{area.required_documents.slice(0, 4).join(", ") || "Nao informado"}</p>
+                        </div>
+                        <div>
+                          <p className="text-[10px] uppercase tracking-widest text-gray-500 font-black">Estrutura</p>
+                          <p className="mt-1 text-gray-300">{area.document_structure.slice(0, 3).join(", ") || "Nao informada"}</p>
+                        </div>
+                        <div>
+                          <p className="text-[10px] uppercase tracking-widest text-gray-500 font-black">Proxima pergunta</p>
+                          <p className="mt-1 text-gray-300">{area.next_review_question || "Sem pendencia aberta"}</p>
+                        </div>
+                      </div>
+                    </div>
+                  ))}
+                </div>
+
+                <div className="flex flex-col md:flex-row md:items-center justify-between gap-3 pt-2">
+                  <p className="text-[11px] text-gray-500 leading-relaxed max-w-2xl">
+                    Enquanto estiver em rascunho ou recomendada, a metodologia entra apenas como sugestao supervisionada. Ao aprovar, ela passa a orientar contexto interno sem side effect externo automatico.
+                  </p>
+                  <div className="flex flex-wrap gap-2">
+                    <button
+                      type="button"
+                      onClick={() => setOperationalMethodologyStatus("approved")}
+                      className="h-10 px-4 rounded-xl border border-[#4ade80]/20 bg-[#4ade80]/10 text-[10px] font-black uppercase tracking-widest text-[#4ade80]"
+                    >
+                      Aprovar metodologia
+                    </button>
+                    <button
+                      type="button"
+                      onClick={() => setOperationalMethodologyStatus("rejected")}
+                      className="h-10 px-4 rounded-xl border border-red-400/20 bg-red-400/10 text-[10px] font-black uppercase tracking-widest text-red-300"
+                    >
+                      Rejeitar
+                    </button>
+                  </div>
+                </div>
+              </div>
+            )}
+          </section>
 
           <section className="border border-[#CCA761]/20 rounded-3xl p-6 sm:p-7 bg-white/80 dark:bg-[#0d0b07] mb-10">
             <div className="flex flex-col lg:flex-row lg:items-start justify-between gap-5 mb-6">
