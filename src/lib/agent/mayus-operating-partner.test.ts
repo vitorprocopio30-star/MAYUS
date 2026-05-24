@@ -1493,6 +1493,78 @@ describe("mayus-operating-partner", () => {
     expect(decision.should_auto_send).toBe(true);
   });
 
+  it("nao se reapresenta nem pergunta assunto quando nome localiza varios processos", async () => {
+    const fetcher = operatingPartnerFetcher({
+      reply: "Bom dia, Vitor. Aqui e a Maya, assistente do Dutra Advocacia.\n\nPra eu te orientar com seguranca, qual e o assunto do processo: danos morais contra Bradesco ou atualizacao/FGTS/INPC contra a Caixa?",
+      intent: "process_status",
+      next_action: "perguntar assunto do processo",
+      conversation_state: {
+        conversation_role: "case_status",
+        conversation_goal: "localizar processo",
+        last_customer_message: "Marcio da Silva Machado",
+        last_mayus_message: "Claro. Para eu localizar com seguranca, me mande o nome completo do cliente ou o numero do processo.",
+        has_mayus_introduced: true,
+        next_action: "perguntar assunto do processo",
+        conversation_summary: "Operador pediu processo e enviou nome do cliente.",
+      },
+      support_summary: { is_existing_client: true, issue_type: "process_status", verified_case_reference: true, summary: "mais de um processo encontrado" },
+      actions_to_execute: [{ type: "answer_support", title: "Responder candidatos processuais", requires_approval: false }],
+    });
+
+    const decision = await buildMayusOperatingPartnerDecision({
+      supabase: {} as any,
+      tenantId: "tenant-1",
+      channel: "whatsapp",
+      contactName: "Vitor",
+      messages: [
+        { direction: "inbound", content: "Oi mayus" },
+        { direction: "inbound", content: "Bom dia" },
+        { direction: "outbound", content: "Bom dia, Vitor. Aqui e a Maya, assistente do Dutra Advocacia. Como posso te ajudar?" },
+        { direction: "inbound", content: "Gostaria de saber sobre um processo" },
+        { direction: "outbound", content: "Claro. Para eu localizar com seguranca, me mande o nome completo do cliente ou o numero do processo." },
+        { direction: "inbound", content: "Marcio da Silva Machado" },
+      ],
+      whatsappActorContext: { role: "office_operator", sender_phone_authorized: true, reason: "daily_playbook_authorized_phone" },
+      processStatusContext: {
+        verified: true,
+        confidence: "high",
+        accessScope: "tenant_authorized",
+        senderPhoneAuthorized: true,
+        processTaskId: null,
+        clientName: "Marcio da Silva Machado",
+        processNumber: null,
+        title: "Dossie processual do cliente",
+        currentStage: null,
+        detectedPhase: "sem_fase_confiavel",
+        detectedPhaseLabel: null,
+        lastMovementAt: null,
+        lastMovementText: null,
+        deadlineAt: null,
+        pendingItems: [],
+        nextStep: null,
+        riskFlags: [],
+        clientReply: null,
+        candidateProcesses: [
+          { processTaskId: "bradesco", clientName: "Marcio da Silva Machado", processNumber: "3000141-95.2026.8.19.0213", title: "Marcio x Bradesco", opposingParty: "Bradesco", summary: "danos morais", currentStage: "Conhecimento", lastMovementAt: "2026-06-21", lastMovementText: "Aguardando andamento do juizo" },
+          { processTaskId: "caixa", clientName: "Marcio da Silva Machado", processNumber: "5006349-29.2023.4.02.5110", title: "Marcio x Caixa", opposingParty: "Caixa", summary: "atualizacao/FGTS/INPC", currentStage: "Conhecimento", lastMovementAt: "2023-06-10", lastMovementText: null },
+        ],
+        grounding: { factualSources: ["processos monitorados"], inferenceNotes: [], missingSignals: [] },
+      },
+      operatingPartner: { enabled: true, autonomy_mode: "high_supervised" },
+      fetcher,
+    });
+
+    expect(fetcher).toHaveBeenCalledTimes(1);
+    expect(decision.conversation_frame?.resolution_type).toBe("process_candidates");
+    expect(decision.final_response_source).toBe("deterministic_guardrail");
+    expect(decision.reply).toContain("Encontrei 2 processos para Marcio da Silva Machado");
+    expect(decision.reply).toContain("Bradesco");
+    expect(decision.reply).toContain("Caixa");
+    expect(decision.reply).not.toMatch(/aqui (e|eh|sou)|assistente do|qual .*assunto|danos morais.*ou.*FGTS|qual desses|qual deles/i);
+    expect(decision.reply_blocks).toHaveLength(3);
+    expect(decision.should_auto_send).toBe(true);
+  });
+
   it("responde referencia curta ao Banco Master sem perguntar assunto nem misturar outros processos", async () => {
     const fetcher = operatingPartnerFetcher({
       reply: "A do Banco Master está em Recurso. O ponto atual é gratuidade/custas em recurso e o último registro na base é: Sem decisão nova registrada.",
@@ -1730,10 +1802,12 @@ describe("mayus-operating-partner", () => {
       fetcher,
     });
 
-    expect(fetcher).toHaveBeenCalledTimes(2);
+    expect(fetcher).toHaveBeenCalledTimes(1);
     expect(decision.risk_flags).not.toContain("scripted_process_followup_question");
     expect(decision.reply).not.toMatch(/quer.*resumo|prefere ver|quer que eu detalhe|qual desses|qual deles|quer acompanhar|se .*nao souber/i);
     expect(decision.reply_blocks).toHaveLength(3);
+    expect(decision.conversation_frame?.resolution_type).toBe("process_candidates");
+    expect(decision.final_response_source).toBe("deterministic_guardrail");
     expect(decision.should_auto_send).toBe(true);
   });
 

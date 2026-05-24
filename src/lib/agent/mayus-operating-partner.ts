@@ -148,6 +148,7 @@ export type MayusWhatsAppConversationResolutionType =
   | "complaint"
   | "referenced_process"
   | "unmatched_process_reference"
+  | "process_candidates"
   | "generic_process_request"
   | "short_process_nudge"
   | "commercial_triage"
@@ -581,6 +582,34 @@ function buildReferencedProcessCandidateReply(candidate: ProcessCandidateMemory)
   return `A do ${label}${ref}: ${details.join(". ")}.`;
 }
 
+function buildProcessCandidatesReply(params: {
+  candidates: ProcessCandidateMemory[];
+  clientName?: string | null;
+  actorContext?: MayusWhatsAppActorContext | null;
+  processStatusContext?: WhatsAppProcessStatusContext | null;
+}) {
+  const candidates = params.candidates.slice(0, 5);
+  const clientName = cleanText(params.clientName) || cleanText(candidates.find((candidate) => candidate.clientName)?.clientName);
+  const total = candidates.length;
+  const intro = `${isOfficeOperatorActor(params.actorContext, params.processStatusContext) ? "Encontrei" : "Localizei"} ${total} ${total === 1 ? "processo" : "processos"}${clientName ? ` para ${clientName}` : ""}.`;
+  const lines = candidates.map((candidate, index) => {
+    const label = processCandidateLabel(candidate) || `processo ${index + 1}`;
+    const parts = [
+      cleanText(candidate.currentStage),
+      cleanText(candidate.summary),
+      cleanText(candidate.lastMovementText)
+        ? `ultimo registro${formatShortDateLabel(candidate.lastMovementAt) ? ` em ${formatShortDateLabel(candidate.lastMovementAt)}` : ""}: ${candidate.lastMovementText}`
+        : null,
+    ].filter(Boolean);
+    return `${index + 1}. ${label}${parts.length ? ` - ${parts.join(" - ")}` : ""}`;
+  });
+  const closing = isOfficeOperatorActor(params.actorContext, params.processStatusContext)
+    ? "Me diga o banco ou o numero do processo que eu abro o detalhe certo."
+    : "Me envie o banco ou o numero do processo para eu abrir o detalhe certo.";
+
+  return [intro, lines.join("\n"), closing].filter(Boolean).join("\n\n");
+}
+
 function processCandidateLabel(candidate: ProcessCandidateMemory) {
   return cleanText(candidate.opposingParty)
     || cleanText(candidate.title)
@@ -628,6 +657,8 @@ function buildWhatsAppConversationFrame(input: MayusOperatingPartnerInput, param
   const genericProcessRequest = isGenericProcessStatusRequestWithoutReference(lastMessage);
   const shortProcessNudge = isShortProcessNudge(input.messages, input.processStatusContext);
   const commercialTriage = isCommercialTriageMessage(lastMessage) && (input.processStatusContext || previousAskedForProcessIdentifier(input.messages));
+  const hasVerifiedProcessCandidates = input.processStatusContext?.verified === true
+    && normalizeProcessCandidateMemory(input.processStatusContext.candidateProcesses || []).length > 1;
   const unverifiedProcessStatus = (params.deterministicIntent === "process_status" || genericProcessRequest)
     && input.processStatusContext?.verified !== true;
   const unmatchedProcessReference = !referencedCandidate
@@ -699,6 +730,21 @@ function buildWhatsAppConversationFrame(input: MayusOperatingPartnerInput, param
     safeFallbackReply = isOfficeOperatorActor(params.actorContext, input.processStatusContext)
       ? `${cleanText(input.contactName) || "Entendi"}, você tem razão. Vou tratar como ${explicitProcessReference} mesmo, sem confundir com outro banco. Na base carregada agora eu não encontrei esse processo com segurança; deixei como conferência por ${explicitProcessReference}.`
       : `Entendi. Vou tratar como ${explicitProcessReference} mesmo. Para não te passar informação errada, vou conferir esse processo na base antes de afirmar o andamento.`;
+  } else if (hasVerifiedProcessCandidates) {
+    resolutionType = "process_candidates";
+    recommendedIntent = "process_status";
+    conversationGoal = "mostrar os processos encontrados para o nome informado sem pergunta roteirizada";
+    knownFacts.add(`processos encontrados: ${candidates.length}`);
+    responseGuidance.add("listar os candidatos encontrados em blocos curtos");
+    responseGuidance.add("nao perguntar assunto juridico, banco provavel ou tipo de acao");
+    forbiddenMoves.add("nao se reapresentar no meio da conversa");
+    forbiddenMoves.add("nao perguntar se e danos morais, FGTS, INPC ou outro assunto");
+    safeFallbackReply = buildProcessCandidatesReply({
+      candidates,
+      clientName: input.processStatusContext?.clientName,
+      actorContext: params.actorContext,
+      processStatusContext: input.processStatusContext,
+    });
   } else if (genericProcessRequest) {
     resolutionType = "generic_process_request";
     recommendedIntent = "process_status";
@@ -2050,6 +2096,17 @@ function buildReplyQualityCheck(params: {
     }
   }
 
+  if (params.frame.resolution_type === "process_candidates") {
+    if (/aqui (e|eh|sou)|eu sou|assistente do/.test(text)) {
+      flags.push("unnecessary_reintroduction");
+      reasons.push("Resposta com candidatos processuais se reapresentou no meio da conversa.");
+    }
+    if (/assunto principal|qual .*assunto|danos morais.*ou.*(fgts|inpc|caixa)|fgts.*ou.*bradesco|indenizacao.*ou.*atualizacao|qual desses|qual deles/.test(text)) {
+      flags.push("asks_unneeded_process_subject");
+      reasons.push("Resposta com processos encontrados perguntou assunto/tipo de acao em vez de listar os candidatos.");
+    }
+  }
+
   if (params.frame.resolution_type === "generic_process_request") {
     if (/assunto principal|qual .*assunto|tema|indenizacao|fgts|atualizacao|rmc|bancario|previdenciario|beneficio|consignado|execucao|familia|esse processo|processo d[ao]/.test(text)) {
       flags.push("asks_unneeded_process_subject");
@@ -2101,7 +2158,7 @@ function normalizeDecision(parsed: any, params: {
     riskFlags.push("low_confidence");
   }
 
-  const useFrameGuardrailReply = ["greeting", "complaint", "unmatched_process_reference"].includes(params.conversationFrame.resolution_type);
+  const useFrameGuardrailReply = ["greeting", "complaint", "unmatched_process_reference", "process_candidates"].includes(params.conversationFrame.resolution_type);
   let intent = useFrameGuardrailReply
     ? params.conversationFrame.recommended_intent
     : normalizeIntent(parsed?.intent, params.deterministicIntent);
@@ -2213,7 +2270,12 @@ function normalizeDecision(parsed: any, params: {
     ? params.conversationFrame.conversation_goal
     : cleanText(parsed?.next_action) || "organizar proximo passo com seguranca";
 
-  const sanitizedBlocks = modelReplyBlocks.length
+  const frameReplyBlocks = params.conversationFrame.resolution_type === "process_candidates"
+    ? params.conversationFrame.safe_fallback_reply.split(/\n{2,}/).map((block) => cleanText(block)).filter(Boolean) as string[]
+    : [];
+  const sanitizedBlocks = frameReplyBlocks.length
+    ? frameReplyBlocks
+    : modelReplyBlocks.length
     ? (cleanText(modelReply) === cleanText(sanitizedReply)
       ? modelReplyBlocks.map((block) => cleanText(block)).filter(Boolean) as string[]
       : sanitizedReply.split(/\n{2,}/).map((block) => cleanText(block)).filter(Boolean) as string[])
