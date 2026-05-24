@@ -653,6 +653,11 @@ export async function prepareWhatsAppSalesReplyForContact(params: {
   preferredProvider?: WhatsAppSendProvider | null;
   replyTargetMessageId?: string | null;
   replyTargetCreatedAt?: string | null;
+  brainTrace?: {
+    taskId?: string | null;
+    runId?: string | null;
+    stepId?: string | null;
+  } | null;
 }) {
   const { data: contact, error: contactError } = await params.supabase
     .from("whatsapp_contacts")
@@ -984,11 +989,27 @@ export async function prepareWhatsAppSalesReplyForContact(params: {
     blockedReason = replyAbortedReason;
   }
 
+  const runtimeRoute = metadata.conversation_classification?.class
+    || operatingPartnerDecision?.intent
+    || metadata.reply_source
+    || "unknown";
+  const runtimeSkill = processStatusContext
+    ? processStatusContext.verified === true ? "support_case_status" : "whatsapp_process_query"
+    : runtimeRoute === "commercial" || operatingPartnerDecision?.intent === "sales_qualification" || operatingPartnerDecision?.intent === "sales_closing"
+      ? "lead_qualify"
+      : operatingPartnerDecision?.intent === "legal_triage"
+        ? "lead_intake"
+        : "mayus_operating_partner";
   metadata = {
     ...metadata,
     mode: replyAbortedReason ? "human_review_required" : metadata.mode,
     may_auto_send: replyAbortedReason ? false : metadata.may_auto_send,
     requires_human_review: replyAbortedReason ? true : metadata.requires_human_review,
+    brain_task_id: params.brainTrace?.taskId || null,
+    brain_run_id: params.brainTrace?.runId || null,
+    brain_step_id: params.brainTrace?.stepId || null,
+    skill: metadata.skill || runtimeSkill,
+    route: metadata.route || runtimeRoute,
     reply_target_message_id: replyTarget.id,
     reply_target_created_at: replyTarget.created_at,
     latest_inbound_message_id_at_decision: latestInboundAtDecision.id,
@@ -1085,6 +1106,11 @@ export async function prepareWhatsAppSalesReplyForContact(params: {
             provider: autoReply.provider,
             model_used: autoReply.modelUsed,
             intent: autoReply.intent,
+            brain_task_id: params.brainTrace?.taskId || null,
+            brain_run_id: params.brainTrace?.runId || null,
+            brain_step_id: params.brainTrace?.stepId || null,
+            skill: metadata.skill || null,
+            route: metadata.conversation_classification?.class || autoReply.intent,
             lead_stage: autoReply.leadStage,
             confidence: autoReply.confidence,
             expected_outcome: autoReply.expectedOutcome,

@@ -1642,10 +1642,120 @@ describe("mayus-operating-partner", () => {
     expect(decision.reply).toContain("gratuidade/custas em recurso");
     expect(decision.reply).toContain("Sem decisão nova registrada");
     expect(decision.reply).not.toMatch(/Bradesco|Caixa|indeniza[cç][aã]o|FGTS|qual .*assunto principal|localizar com seguran[cç]a/i);
-    expect(decision.next_action).toBe("responder o candidato processual referenciado");
+    expect(decision.next_action).toBe("responder o processo que acabou de ser referenciado");
     expect(decision.should_auto_send).toBe(true);
     expect(decision.conversation_frame?.resolution_type).toBe("referenced_process");
     expect(decision.conversation_frame?.resolved_reference?.opposingParty).toBe("Banco Master");
+  });
+
+  it("responde Bradesco escolhido de forma deterministica sem perguntar objetivo principal", async () => {
+    const fetcher = operatingPartnerFetcher({
+      reply: "Perfeito, Vitor. Então é o processo do Bradesco. Pra eu te dizer o andamento com segurança, qual é seu objetivo principal: reduzir descontos, buscar indenização ou só acompanhar?",
+      intent: "process_status",
+      next_action: "perguntar objetivo principal",
+      conversation_state: {
+        conversation_role: "case_status",
+        conversation_goal: "acompanhar processos do cliente",
+        last_customer_message: "Bradesco",
+        next_action: "perguntar objetivo principal",
+        conversation_summary: "Operador escolheu Bradesco.",
+        facts_known: ["referencia ao Bradesco"],
+        missing_information: [],
+      },
+      support_summary: { is_existing_client: true, issue_type: "process_status", verified_case_reference: true, summary: "referencia curta resolvida" },
+      actions_to_execute: [{ type: "answer_support", title: "Responder processo referenciado", requires_approval: false }],
+    });
+
+    const lastProcessCandidates = [
+      { processTaskId: "master", clientName: "Márcio da Silva Machado", processNumber: "3000144-50.2026.8.19.0213", title: "Márcio x Banco Master", opposingParty: "Banco Master", summary: "gratuidade/custas em recurso", currentStage: "Recurso", lastMovementAt: "2026-04-30", lastMovementText: "Sem decisão nova registrada" },
+      { processTaskId: "bradesco", clientName: "Márcio da Silva Machado", processNumber: "3000141-95.2026.8.19.0213", title: "Márcio x Bradesco", opposingParty: "Bradesco", summary: "ação de indenização", currentStage: "Conhecimento", lastMovementAt: "2026-06-21", lastMovementText: "Aguardando andamento do juízo" },
+      { processTaskId: "caixa", clientName: "Márcio da Silva Machado", processNumber: "5006349-29.2023.4.02.5110", title: "Márcio x Caixa", opposingParty: "Caixa", summary: "FGTS/atualização", currentStage: "Conhecimento", lastMovementAt: "2023-06-10", lastMovementText: null },
+    ];
+
+    const decision = await buildMayusOperatingPartnerDecision({
+      supabase: {} as any,
+      tenantId: "tenant-1",
+      channel: "whatsapp",
+      contactName: "Vitor",
+      messages: [
+        { direction: "inbound", content: "Marcio da Silva Machado" },
+        { direction: "outbound", content: "Márcio, localizei três processos principais: Banco Master, Bradesco e Caixa." },
+        { direction: "inbound", content: "Bradesco" },
+      ],
+      whatsappActorContext: { role: "office_operator", sender_phone_authorized: true, reason: "daily_playbook_authorized_phone" },
+      previousMayusEvent: {
+        intent: "process_status",
+        conversation_state: {
+          conversation_role: "case_status",
+          conversation_goal: "acompanhar processos do cliente",
+          last_process_candidates: lastProcessCandidates,
+          has_mayus_introduced: true,
+        },
+      },
+      operatingPartner: { enabled: true, autonomy_mode: "high_supervised" },
+      fetcher,
+    });
+
+    expect(decision.reply).toContain("A do Bradesco");
+    expect(decision.reply).toContain("3000141-95.2026.8.19.0213");
+    expect(decision.reply).toContain("Aguardando andamento do juízo");
+    expect(decision.reply).not.toMatch(/objetivo principal|reduzir|cessar descontos|buscar indeniza[cç][aã]o|s[oó] acompanhar/i);
+    expect(decision.conversation_frame?.resolution_type).toBe("referenced_process");
+    expect(decision.final_response_source).toBe("deterministic_guardrail");
+    expect(decision.should_auto_send).toBe(true);
+  });
+
+  it("lista os outros processos quando operador pede outro processo apos detalhe", async () => {
+    const fetcher = operatingPartnerFetcher({
+      reply: "Qual outro você quer: Bradesco ou Caixa?",
+      intent: "process_status",
+      next_action: "perguntar outro processo",
+      conversation_state: {
+        conversation_role: "case_status",
+        conversation_goal: "acompanhar processos do cliente",
+        last_customer_message: "Quero o outro processo",
+        next_action: "perguntar outro processo",
+        conversation_summary: "Operador pediu outro processo.",
+      },
+      support_summary: { is_existing_client: true, issue_type: "process_status", verified_case_reference: true, summary: "pedido por outro processo" },
+    });
+
+    const lastProcessCandidates = [
+      { processTaskId: "master", clientName: "Márcio da Silva Machado", processNumber: "3000144-50.2026.8.19.0213", title: "Márcio x Banco Master", opposingParty: "Banco Master", summary: "gratuidade/custas em recurso", currentStage: "Recurso", lastMovementAt: "2026-04-30", lastMovementText: "Sem decisão nova registrada" },
+      { processTaskId: "bradesco", clientName: "Márcio da Silva Machado", processNumber: "3000141-95.2026.8.19.0213", title: "Márcio x Bradesco", opposingParty: "Bradesco", summary: "ação de indenização", currentStage: "Conhecimento", lastMovementAt: "2026-06-21", lastMovementText: "Aguardando andamento do juízo" },
+      { processTaskId: "caixa", clientName: "Márcio da Silva Machado", processNumber: "5006349-29.2023.4.02.5110", title: "Márcio x Caixa", opposingParty: "Caixa", summary: "FGTS/atualização", currentStage: "Conhecimento", lastMovementAt: "2023-06-10", lastMovementText: null },
+    ];
+
+    const decision = await buildMayusOperatingPartnerDecision({
+      supabase: {} as any,
+      tenantId: "tenant-1",
+      channel: "whatsapp",
+      contactName: "Vitor",
+      messages: [
+        { direction: "inbound", content: "Bradesco" },
+        { direction: "outbound", content: "A do Bradesco (3000141-95.2026.8.19.0213): está em Conhecimento. último registro em 21/06/2026: Aguardando andamento do juízo." },
+        { direction: "inbound", content: "Quero o outro processo" },
+      ],
+      whatsappActorContext: { role: "office_operator", sender_phone_authorized: true, reason: "daily_playbook_authorized_phone" },
+      previousMayusEvent: {
+        intent: "process_status",
+        conversation_state: {
+          conversation_role: "case_status",
+          conversation_goal: "acompanhar processos do cliente",
+          last_process_candidates: lastProcessCandidates,
+          has_mayus_introduced: true,
+        },
+      },
+      operatingPartner: { enabled: true, autonomy_mode: "high_supervised" },
+      fetcher,
+    });
+
+    expect(decision.reply).toContain("Banco Master");
+    expect(decision.reply).toContain("Caixa");
+    expect(decision.reply).not.toContain("Bradesco (3000141-95.2026.8.19.0213)");
+    expect(decision.conversation_frame?.resolution_type).toBe("process_candidates");
+    expect(decision.final_response_source).toBe("deterministic_guardrail");
+    expect(decision.should_auto_send).toBe(true);
   });
 
   it("nao forca Banco Master em Bradesco ou Caixa quando a referencia nao esta nos candidatos", async () => {

@@ -381,7 +381,7 @@ export function isProcessStatusRequest(messages: WhatsAppSalesMessage[]) {
   if (/nome completo\s+(?:e|é|eh)\s+/i.test(cleanText(lastText) || "") && previousAskedForProcessIdentifier(messages)) return true;
   if (lastMessageLooksLikeName(lastText) && previousAskedForProcessIdentifier(messages)) return true;
   const text = normalizeText(lastText);
-  return /andamento|status|meu processo|meu caso|processos? d[aeo]|casos? d[aeo]|gostaria de saber (sobre |de )?(o |um )?processo|queria saber (sobre |de )?(o |um )?processo|saber (sobre |de )?(o |um )?processo|atualizacao do processo|atualizacao do caso|novidade no processo|numero do processo|cnj|movimentacao|movimentacao|qual fase|saiu decisao|teve novidade|processo andou/.test(text);
+  return /andamento|status|meu processo|meu caso|processos? d[aeo]|casos? d[aeo]|gostaria de saber (sobre |de )?(o |um )?processo|queria saber (sobre |de )?(o |um )?processo|saber (sobre |de )?(o |um )?processo|saber como esta (o |um )?processo|como esta (o |um )?processo|atualizacao do processo|atualizacao do caso|novidade no processo|numero do processo|cnj|movimentacao|movimentacao|qual fase|saiu decisao|teve novidade|processo andou/.test(text);
 }
 
 function isGenericProcessRequestWithoutReference(messages: WhatsAppSalesMessage[]) {
@@ -391,7 +391,7 @@ function isGenericProcessRequestWithoutReference(messages: WhatsAppSalesMessage[
   if (/\d{7}-\d{2}|cnj|cpf|cnpj|processos? d[aeo]\s+[a-z]{2,}|casos? d[aeo]\s+[a-z]{2,}|nome completo\s+(e|eh|é)/.test(text)) return false;
   if (lastMessageLooksLikeName(lastText)) return false;
   if (/^(o\s+)?(ultimo|último|ultima|última|esse|essa|isso|este|esta|primeiro|segundo|terceiro|1|2|3)\.?$/.test(text)) return false;
-  return /um processo|sobre um processo|saber sobre um processo|gostaria de saber (sobre |de )?(o |um )?processo|queria saber (sobre |de )?(o |um )?processo/.test(text);
+  return /um processo|sobre um processo|saber sobre um processo|gostaria de saber (sobre |de )?(o |um )?processo|queria saber (sobre |de )?(o |um )?processo|saber como esta (o |um )?processo|como esta (o |um )?processo/.test(text);
 }
 
 function extractProcessNumber(messages: WhatsAppSalesMessage[]) {
@@ -420,6 +420,13 @@ function extractProcessReference(messages: WhatsAppSalesMessage[]) {
   }
   if (lastMessageLooksLikeName(text) && previousAskedForProcessIdentifier(messages)) return cleanText(text);
   return null;
+}
+
+function isSamePersonReference(reference?: string | null, clientName?: string | null) {
+  const ref = normalizeText(reference);
+  const name = normalizeText(clientName);
+  if (!ref || !name) return false;
+  return ref === name || ref.includes(name) || name.includes(ref);
 }
 
 function isDeadlineCritical(value?: string | null) {
@@ -576,6 +583,10 @@ async function queryProcessTasks(params: {
       ]).join(",");
       const { data } = await base().or(filters).order("data_ultima_movimentacao", { ascending: false, nullsFirst: false }).limit(20);
       if (data?.length) found.push(...(data as MonitoredProcessRow[]).map((row) => normalizeMonitoredProcess(row)));
+
+      const { data: broadData } = await base().order("data_ultima_movimentacao", { ascending: false, nullsFirst: false }).limit(100);
+      const jsonMatched = filterRowsByName((broadData || []).map((row) => normalizeMonitoredProcess(row as MonitoredProcessRow)), params.clientName);
+      if (jsonMatched.length) found.push(...jsonMatched);
     }
   } catch {
     // Missing table/columns should not block process_tasks results.
@@ -793,8 +804,9 @@ export async function fetchWhatsAppProcessStatusContext(params: {
   const phone = normalizePhone(params.contact.phone_number);
   const senderPhoneAuthorized = params.senderPhoneAuthorized === true;
   const selectedProcessNumber = extractSelectedProcessNumber(params.messages);
-  if (!selectedProcessNumber && isGenericProcessRequestWithoutReference(params.messages)) {
-    return buildFallbackContext(senderPhoneAuthorized ? "authorized_process_access_needs_reference" : "process_access_needs_reference", { senderPhoneAuthorized });
+  const genericRequestWithoutReference = !selectedProcessNumber && isGenericProcessRequestWithoutReference(params.messages);
+  if (senderPhoneAuthorized && genericRequestWithoutReference) {
+    return buildFallbackContext("authorized_process_access_needs_reference", { senderPhoneAuthorized });
   }
   const processNumberFromMessage = selectedProcessNumber || extractProcessNumber(params.messages);
   const cpf = extractCpf(params.messages);
@@ -808,22 +820,37 @@ export async function fetchWhatsAppProcessStatusContext(params: {
     tenantId: params.tenantId,
     phone: senderPhoneAuthorized ? null : phone,
     cpf,
-    contactName: explicitReference || params.contact.name,
+    contactName: senderPhoneAuthorized ? explicitReference || params.contact.name : null,
   });
+  const externalNameOnlyReference = !senderPhoneAuthorized && Boolean(explicitReference) && !processNumberFromMessage && !cpf;
+  const externalReferenceMatchesLinkedClient = externalNameOnlyReference && isSamePersonReference(explicitReference, client?.name);
+  if (externalNameOnlyReference && !externalReferenceMatchesLinkedClient) {
+    return buildFallbackContext("process_access_needs_strong_identifier", { senderPhoneAuthorized });
+  }
+  const queryClientName = senderPhoneAuthorized
+    ? explicitReference || client?.name || null
+    : processNumberFromMessage || cpf
+      ? explicitReference || client?.name || null
+      : externalReferenceMatchesLinkedClient
+        ? client?.name || explicitReference || null
+        : client?.name || null;
   const processTasks = await queryProcessTasks({
     supabase: params.supabase,
     tenantId: params.tenantId,
     processNumber: processNumberFromMessage,
-    phone: (explicitReference || senderPhoneAuthorized) ? null : phone || normalizePhone(client?.phone),
-    clientName: explicitReference || client?.name || (!senderPhoneAuthorized ? params.contact.name : null) || null,
+    phone: !senderPhoneAuthorized && !processNumberFromMessage && !cpf ? phone || normalizePhone(client?.phone) : null,
+    clientName: queryClientName,
   });
+  if (!senderPhoneAuthorized && genericRequestWithoutReference && processTasks.length === 0) {
+    return buildFallbackContext("process_access_needs_reference", { senderPhoneAuthorized });
+  }
 
   const briefingContext = await buildClientProcessBriefingContext({
     supabase: params.supabase,
     tenantId: params.tenantId,
     senderPhoneAuthorized,
     rows: processTasks,
-    clientName: explicitReference || client?.name || (!senderPhoneAuthorized ? params.contact.name : null) || processTasks.find((row) => row.client_name)?.client_name || null,
+    clientName: queryClientName || processTasks.find((row) => row.client_name)?.client_name || null,
     selectedProcessNumber,
   });
   const shouldUseBriefingContext = processTasks.length > 1

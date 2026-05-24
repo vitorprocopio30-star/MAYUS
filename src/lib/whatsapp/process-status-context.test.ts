@@ -319,12 +319,50 @@ describe("process-status-context", () => {
         { direction: "outbound", content: "Me mande o nome completo do cliente ou número do processo." },
         { direction: "inbound", content: "Márcio da Silva Machado" },
       ],
+      senderPhoneAuthorized: true,
     });
 
     expect(processOrFilters.join(" ")).toMatch(/M[áa]rcio|Marcio/);
     expect(processOrFilters.join(" ")).not.toContain("5511999999999");
     expect(context?.verified).toBe(true);
     expect(context?.processTaskId).toBe("process-marcio-explicit");
+  });
+
+  it("nao libera status por nome sozinho para cliente externo sem vinculo forte", async () => {
+    const processOrFilters: string[] = [];
+    const from = vi.fn((table: string) => {
+      if (table === "clients") return makeQuery({ data: null, error: null });
+      if (table === "process_tasks") {
+        const query: any = {
+          select: vi.fn(() => query),
+          eq: vi.fn(() => query),
+          or: vi.fn((filters: string) => {
+            processOrFilters.push(filters);
+            return query;
+          }),
+          order: vi.fn(() => query),
+          limit: vi.fn(async () => ({ data: [], error: null })),
+        };
+        return query;
+      }
+      if (table === "process_movimentacoes_inbox") return makeQuery({ data: null, error: null });
+      return makeQuery({ data: null, error: null });
+    });
+
+    const context = await fetchWhatsAppProcessStatusContext({
+      supabase: { from } as any,
+      tenantId: "tenant-1",
+      contact: { phone_number: "5511999999999@s.whatsapp.net", name: "Contato externo" },
+      messages: [
+        { direction: "inbound", content: "Gostaria de saber de um processo" },
+        { direction: "outbound", content: "Me mande o número do processo/CNJ ou CPF." },
+        { direction: "inbound", content: "Márcio da Silva Machado" },
+      ],
+    });
+
+    expect(processOrFilters).toEqual([]);
+    expect(context?.verified).toBe(false);
+    expect(context?.grounding.missingSignals).toContain("process_access_needs_strong_identifier");
   });
 
   it("ranqueia nome completo em client_name titulo e descricao antes de declarar ambiguidade", async () => {
@@ -566,6 +604,65 @@ describe("process-status-context", () => {
     expect(context?.candidateProcesses?.map((item) => item.processNumber)).not.toContain("3003925-40.2026.8.19.0000");
     expect(context?.grounding.inferenceNotes).toContain("agravos/incidentes foram separados dos processos principais");
     expect(context?.grounding.factualSources).toContain("cérebro MAYUS");
+  });
+
+  it("localiza processo monitorado por nome em partes mesmo com cliente_nome vazio", async () => {
+    const monitoredRows = [
+      {
+        id: "master-json-only",
+        numero_processo: "3000144-50.2026.8.19.0213",
+        tribunal: "TJRJ",
+        assunto: "Indenização por danos materiais",
+        classe_processual: "Procedimento comum",
+        status: "ATIVO",
+        fase_atual: "Conhecimento",
+        status_predito: null,
+        cliente_nome: null,
+        resumo_curto: "Ação contra Banco Master S.A.",
+        ultima_movimentacao_texto: "Sem decisão nova registrada",
+        data_ultima_movimentacao: "2026-04-30T00:00:00.000Z",
+        partes: { polo_ativo: "Márcio da Silva Machado", polo_passivo: "Banco Master S.A" },
+        envolvidos: [],
+        raw_escavador: null,
+      },
+    ];
+    const from = vi.fn((table: string) => {
+      if (table === "clients") return makeQuery({ data: null, error: null });
+      if (table === "process_tasks") return makeQuery({ data: [], error: null });
+      if (table === "monitored_processes") {
+        let usedOr = false;
+        const query: any = {
+          select: vi.fn(() => query),
+          eq: vi.fn(() => query),
+          or: vi.fn(() => {
+            usedOr = true;
+            return query;
+          }),
+          order: vi.fn(() => query),
+          limit: vi.fn(async () => ({ data: usedOr ? [] : monitoredRows, error: null })),
+          then: (resolve: any) => resolve({ data: usedOr ? [] : monitoredRows, error: null }),
+        };
+        return query;
+      }
+      if (table === "processos_cache") return makeQuery({ data: [], error: null });
+      if (table === "brain_artifacts") return makeQuery({ data: [], error: null });
+      if (table === "process_movimentacoes_inbox") return makeQuery({ data: null, error: null });
+      return makeQuery({ data: null, error: null });
+    });
+
+    const context = await fetchWhatsAppProcessStatusContext({
+      supabase: { from } as any,
+      tenantId: "tenant-1",
+      contact: { phone_number: "5521999990000@s.whatsapp.net", name: "Dono" },
+      messages: [{ direction: "inbound", content: "Como está o processo do Márcio da Silva Machado?" }],
+      senderPhoneAuthorized: true,
+    });
+
+    expect(context?.verified).toBe(true);
+    expect(context?.processTaskId).toBe("master-json-only");
+    expect(context?.processNumber).toBe("3000144-50.2026.8.19.0213");
+    expect(context?.clientName).toBe("Márcio da Silva Machado");
+    expect(context?.title).toContain("Banco Master");
   });
 
   it("busca no cache local do Escavador por envolvidos/raw sem chamar busca paga", async () => {

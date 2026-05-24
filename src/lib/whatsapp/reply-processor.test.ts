@@ -84,6 +84,30 @@ function makeSupabase(row: any, options: { newerMessage?: boolean } = {}) {
         };
       }
 
+      if (table === "brain_tasks" || table === "brain_runs" || table === "brain_steps") {
+        const ids: Record<string, string> = {
+          brain_tasks: "brain-task-1",
+          brain_runs: "brain-run-1",
+          brain_steps: "brain-step-1",
+        };
+        return {
+          insert: vi.fn((payload: any) => {
+            inserts.push({ table, payload });
+            return {
+              select: vi.fn(() => ({
+                single: vi.fn(async () => ({ data: { id: ids[table] }, error: null })),
+              })),
+            };
+          }),
+          update: vi.fn((payload: any) => {
+            updates.push({ table, payload });
+            return {
+              eq: vi.fn(async () => ({ error: null })),
+            };
+          }),
+        };
+      }
+
       return {};
     }),
   };
@@ -141,6 +165,11 @@ describe("whatsapp reply processor", () => {
     const { supabase, updates, inserts } = makeSupabase(row);
     mocks.prepareWhatsAppSalesReplyForContact.mockResolvedValueOnce({
       autoSendResult: { status: "sent" },
+      metadata: {
+        conversation_classification: { class: "process_status" },
+        process_status_context: { verified: true },
+        whatsapp_actor_context: { role: "external_client" },
+      },
     });
 
     const result = await processPendingWhatsAppRepliesBatch({ supabase, limit: 1 });
@@ -154,6 +183,11 @@ describe("whatsapp reply processor", () => {
       autoSendFirstResponse: true,
       replyTargetMessageId: "message-1",
       replyTargetCreatedAt: row.created_at,
+      brainTrace: expect.objectContaining({
+        taskId: "brain-task-1",
+        runId: "brain-run-1",
+        stepId: "brain-step-1",
+      }),
     }));
     expect(mocks.sendEvolutionPresenceForContact).toHaveBeenCalledWith(expect.objectContaining({
       tenantId: "tenant-1",
@@ -168,6 +202,17 @@ describe("whatsapp reply processor", () => {
     }));
     expect(updates.some((item) => item.payload.metadata?.reply_processing_status === "processing")).toBe(true);
     expect(updates.some((item) => item.payload.metadata?.reply_processing_status === "processed")).toBe(true);
+    expect(updates.some((item) => item.table === "whatsapp_messages" && item.payload.metadata?.brain_run_id === "brain-run-1")).toBe(true);
+    expect(updates.some((item) => item.table === "whatsapp_messages" && item.payload.metadata?.brain_step_id === "brain-step-1")).toBe(true);
+    expect(updates.some((item) => item.table === "whatsapp_messages" && item.payload.metadata?.skill === "support_case_status")).toBe(true);
+    expect(updates.some((item) => item.table === "whatsapp_messages" && item.payload.metadata?.route === "process_status")).toBe(true);
+    expect(inserts).toContainEqual(expect.objectContaining({
+      table: "brain_tasks",
+      payload: expect.objectContaining({
+        channel: "whatsapp",
+        module: "whatsapp",
+      }),
+    }));
     expect(inserts).toContainEqual(expect.objectContaining({
       table: "system_event_logs",
       payload: expect.objectContaining({
