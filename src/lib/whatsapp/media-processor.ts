@@ -317,7 +317,11 @@ async function prepareReplyAfterProcessing(params: {
   row: PendingWhatsAppMediaMessage;
 }) {
   if (params.row.direction !== "inbound") return false;
-  if (params.row.metadata?.media_reply_suppressed === "owner_audio" || params.row.metadata?.owner_audio_command_attempted === true) {
+  if (
+    params.row.metadata?.audio_transcript_used_as_command === true
+    || params.row.metadata?.media_reply_suppressed === "owner_audio_command_handled"
+    || (params.row.metadata?.owner_audio_command_attempted === true && params.row.metadata?.owner_audio_command_fallback_to_conversation !== true)
+  ) {
     await params.supabase.from("system_event_logs").insert({
       tenant_id: params.row.tenant_id,
       user_id: null,
@@ -328,7 +332,9 @@ async function prepareReplyAfterProcessing(params: {
       payload: {
         message_id: params.row.id,
         contact_id: params.row.contact_id,
-        reason: "owner_audio_internal_command_candidate",
+        reason: params.row.metadata?.owner_audio_command_fallback_to_conversation === true
+          ? "owner_audio_internal_command_handled"
+          : "owner_audio_internal_command_candidate",
       },
       created_at: new Date().toISOString(),
     });

@@ -160,6 +160,9 @@ export type MayusWhatsAppConversationFrame = {
   actor_context: MayusWhatsAppActorContext;
   last_message: string | null;
   recommended_intent: MayusOperatingPartnerIntent;
+  writer_mode: "llm_natural" | "deterministic_guardrail";
+  llm_writer_allowed: boolean;
+  hard_guardrail_reason: string | null;
   conversation_goal: string;
   known_facts: string[];
   missing_data: string[];
@@ -687,6 +690,23 @@ function processCandidateSummaries(candidates: ProcessCandidateMemory[]): NonNul
   })).filter((candidate) => candidate.label || candidate.processNumber || candidate.processTaskId).slice(0, 8);
 }
 
+function hardGuardrailReasonForResolution(resolutionType: MayusWhatsAppConversationResolutionType) {
+  const reasons: Partial<Record<MayusWhatsAppConversationResolutionType, string>> = {
+    greeting: "saudacao_limpa_sem_contexto_antigo",
+    complaint: "recuperacao_de_erro_de_contexto",
+    unmatched_process_reference: "referencia_explicita_nao_localizada_com_seguranca",
+    process_candidates: "lista_de_candidatos_deve_ser_factual",
+    generic_process_request: "pedido_generico_precisa_identificador_seguro",
+    short_process_nudge: "cobranca_curta_sem_fonte_suficiente",
+    unverified_process_status: "status_processual_sem_processo_verificado",
+  };
+  return reasons[resolutionType] || null;
+}
+
+function shouldUseFrameGuardrailReply(resolutionType: MayusWhatsAppConversationResolutionType) {
+  return Boolean(hardGuardrailReasonForResolution(resolutionType));
+}
+
 function buildWhatsAppConversationFrame(input: MayusOperatingPartnerInput, params: {
   deterministicIntent: MayusOperatingPartnerIntent;
   fallbackState: MayusConversationState;
@@ -857,11 +877,16 @@ function buildWhatsAppConversationFrame(input: MayusOperatingPartnerInput, param
     safeFallbackReply = processFallbackReply(input.processStatusContext, params.actorContext);
   }
 
+  const hardGuardrailReason = hardGuardrailReasonForResolution(resolutionType);
+
   return {
     resolution_type: resolutionType,
     actor_context: params.actorContext,
     last_message: lastMessage,
     recommended_intent: recommendedIntent,
+    writer_mode: hardGuardrailReason ? "deterministic_guardrail" : "llm_natural",
+    llm_writer_allowed: !hardGuardrailReason,
+    hard_guardrail_reason: hardGuardrailReason,
     conversation_goal: conversationGoal,
     known_facts: Array.from(knownFacts).slice(0, 12),
     missing_data: Array.from(missingData).slice(0, 10),
@@ -1281,6 +1306,9 @@ function buildPrompt(input: MayusOperatingPartnerInput, config: MayusOperatingPa
     "Nao responda a mensagem isolada. Voce e responsavel pela continuidade da conversa, como vendedor consultivo e suporte do escritorio.",
     "O MAYUS ja montou um Conversation Brain Frame com ator, fatos, referencia resolvida, lacunas, proibicoes e objetivo. Use esse frame como fonte principal de contexto.",
     "Voce e o escritor natural da resposta: nao copie frase pronta, nao use template, nao exponha o frame, nao explique o bastidor. Escreva como uma pessoa atenta no WhatsApp.",
+    "Se writer_mode for llm_natural, voce e o escritor principal: responda com naturalidade usando os fatos do frame, sem criar entrevista.",
+    "Se houver processo verificado ou referencia processual resolvida, responda o resumo disponivel do processo. Nao pergunte objetivo, foco, providencia, urgencia, consulta mesmo ou o que a pessoa precisa decidir.",
+    "Se o operador pedir para analisar e passar ao cliente, entregue um resumo claro que o operador possa encaminhar, com status, ultima movimentacao e lacunas, sem nova pergunta.",
     "Se o frame trouxer resolved_reference, responda esse item diretamente. Se o frame for greeting, responda so a saudacao limpa. Se o frame pedir identificador minimo, peca apenas esse dado.",
     "Sempre escolha primeiro o papel da conversa: seller, support, case_status, billing, legal_triage ou handoff. A resposta deve cumprir esse papel.",
     "Nao aja como chatbot aleatorio. Use o historico, nao presuma que o cliente pediu status de processo se ele nao pediu.",
@@ -1622,7 +1650,7 @@ function asksKnownPaymentStatus(reply: string | null | undefined, state: MayusCo
 function asksUnnecessaryProcessSummaryChoice(reply: string | null | undefined, processStatusContext?: WhatsAppProcessStatusContext | null) {
   if (processStatusContext?.verified !== true || !(processStatusContext.candidateProcesses?.length)) return false;
   const text = normalizeText(reply);
-  return /quer (que eu )?(te )?(passe|envie|mande|faca)? ?(um )?resumo|prefere (ver|que eu veja|um deles|algum deles)|quer (que eu )?(detalhe|explique)|quer ver um|qual (desses|deles|processo|caso)|me diga (so )?qual (desses|deles)|qual .*voce quer (acompanhar|ver|detalhar)|foco agora|situacao geral|situa[cç][aã]o geral|providencia pratica|provid[eê]ncia pr[aá]tica|consulta mesmo|aproveitar alguma movimenta[cç][aã]o|se (voce )?nao souber.*(numero do processo|foto do documento)/.test(text);
+  return /quer (que eu )?(te )?(passe|envie|mande|faca)? ?(um )?resumo|prefere (ver|que eu veja|um deles|algum deles)|quer (que eu )?(detalhe|explique)|quer ver um|qual (desses|deles|processo|caso)|me diga (so )?qual (desses|deles)|qual .*voce quer (acompanhar|ver|detalhar)|foco agora|situacao geral|situa[cç][aã]o geral|providencia pratica|provid[eê]ncia pr[aá]tica|consulta mesmo|acompanhamento.*urgencia|urgencia.*acompanhamento|o que voce precisa decidir|responder algo|apresentar documento|evitar bloqueio|evitar pagamento|aproveitar alguma movimenta[cç][aã]o|se (voce )?nao souber.*(numero do processo|foto do documento)/.test(text);
 }
 
 function asksKnownOfficeIdentity(reply: string | null | undefined, actorContext?: MayusWhatsAppActorContext | null, processStatusContext?: WhatsAppProcessStatusContext | null) {
@@ -2097,6 +2125,44 @@ function buildSafeFallbackDecisionFromFrame(params: {
   });
 }
 
+function canUseFactualProcessFallback(decision: MayusOperatingPartnerDecision | null | undefined) {
+  return decision?.intent === "process_status"
+    && decision.conversation_frame?.resolution_type === "referenced_process"
+    && Boolean(cleanText(decision.conversation_frame.safe_fallback_reply));
+}
+
+function buildFactualProcessFallbackDecision(decision: MayusOperatingPartnerDecision, reasonFlag: string): MayusOperatingPartnerDecision {
+  const frame = decision.conversation_frame!;
+  const qualityCheck: MayusWhatsAppReplyQualityCheck = {
+    status: "pass",
+    flags: [reasonFlag],
+    reasons: ["O LLM tentou entrevistar ou falhou no reparo; MAYUS respondeu com o resumo factual do processo."],
+  };
+  const conversationState = {
+    ...decision.conversation_state,
+    conversation_goal: frame.conversation_goal,
+    next_action: frame.conversation_goal,
+  };
+
+  return withOperatingPartnerAgenticContext({
+    ...decision,
+    reply: sanitizeReplyForConversation(frame.safe_fallback_reply, conversationState),
+    reply_blocks: undefined,
+    risk_flags: decision.risk_flags.filter((flag) => !REPAIRABLE_RISK_FLAGS.includes(flag) && flag !== "reply_repair_still_unsafe" && flag !== "reply_repair_failed"),
+    next_action: frame.conversation_goal,
+    conversation_state: conversationState,
+    reasoning_summary_for_team: "Fallback factual usado porque a resposta natural tentou fazer entrevista desnecessaria em status processual verificado.",
+    actions_to_execute: decision.actions_to_execute.length ? decision.actions_to_execute : [{ type: "answer_support", title: "Responder resumo factual do processo", requires_approval: false }],
+    requires_approval: false,
+    should_auto_send: true,
+    model_used: "deterministic",
+    provider: "mayus",
+    expected_outcome: "entregar resumo do processo sem nova pergunta",
+    quality_check: qualityCheck,
+    final_response_source: "safe_fallback",
+  });
+}
+
 function guardAutoExecuteActions(actions: MayusOperatingPartnerAction[], confidence: number, threshold: number) {
   const sideEffectActions: MayusOperatingPartnerActionType[] = ["create_crm_lead", "update_crm_stage", "create_task"];
   if (confidence >= threshold) return actions;
@@ -2168,7 +2234,7 @@ function buildReplyQualityCheck(params: {
       flags.push("mixed_process_candidates");
       reasons.push("Resposta misturou processo referenciado com outros candidatos.");
     }
-    if (/qual .*assunto principal|assunto principal|objetivo principal|reduzir|cessar descontos|buscar indenizacao|buscar indenização|acompanhar como esta|proximo passo|pr[oó]ximo passo|providencia pratica|provid[eê]ncia pr[aá]tica|situacao geral|situa[cç][aã]o geral|consulta mesmo|aproveitar alguma movimentacao|aproveitar alguma movimenta[cç][aã]o|e .*bradesco.*ou.*caixa|e .*caixa.*ou.*bradesco|qual desses|qual deles/.test(text)) {
+    if (/qual .*assunto principal|assunto principal|objetivo principal|reduzir|cessar descontos|buscar indenizacao|buscar indenização|acompanhar como esta|providencia pratica|provid[eê]ncia pr[aá]tica|situacao geral|situa[cç][aã]o geral|consulta mesmo|acompanhamento.*urgencia|urgencia.*acompanhamento|foco agora|risco\/medida|o que voce precisa decidir|responder algo|apresentar documento|evitar bloqueio|evitar pagamento|aproveitar alguma movimentacao|aproveitar alguma movimenta[cç][aã]o|e .*bradesco.*ou.*caixa|e .*caixa.*ou.*bradesco|qual desses|qual deles/.test(text)) {
       flags.push("asks_unneeded_process_choice");
       reasons.push("Resposta pediu escolha/assunto apesar de a referencia ja estar resolvida.");
     }
@@ -2247,7 +2313,7 @@ function normalizeDecision(parsed: any, params: {
     riskFlags.push("low_confidence");
   }
 
-  const useFrameGuardrailReply = ["greeting", "complaint", "referenced_process", "unmatched_process_reference", "process_candidates"].includes(params.conversationFrame.resolution_type);
+  const useFrameGuardrailReply = shouldUseFrameGuardrailReply(params.conversationFrame.resolution_type);
   let intent = useFrameGuardrailReply
     ? params.conversationFrame.recommended_intent
     : normalizeIntent(parsed?.intent, params.deterministicIntent);
@@ -2680,9 +2746,12 @@ export async function buildMayusOperatingPartnerDecision(input: MayusOperatingPa
       repairedDecision,
       durationMs: Date.now() - repairStartedAt,
     });
-    return repairedStillUnsafe
-      ? forceReplyManualReview(repairedDecision, "reply_repair_still_unsafe")
-      : { ...repairedDecision, final_response_source: "llm_repaired" };
+    if (repairedStillUnsafe) {
+      return canUseFactualProcessFallback(repairedDecision)
+        ? buildFactualProcessFallbackDecision(repairedDecision, "reply_repair_still_unsafe")
+        : forceReplyManualReview(repairedDecision, "reply_repair_still_unsafe");
+    }
+    return { ...repairedDecision, final_response_source: "llm_repaired" };
   } catch (error) {
     await recordReplyRepairEvent({
       supabase: input.supabase,
@@ -2693,6 +2762,8 @@ export async function buildMayusOperatingPartnerDecision(input: MayusOperatingPa
       durationMs: Date.now() - repairStartedAt,
       error: error instanceof Error ? error.message : String(error || "Falha no reparo"),
     });
-    return forceReplyManualReview(decision, "reply_repair_failed");
+    return canUseFactualProcessFallback(decision)
+      ? buildFactualProcessFallbackDecision(decision, "reply_repair_failed")
+      : forceReplyManualReview(decision, "reply_repair_failed");
   }
 }

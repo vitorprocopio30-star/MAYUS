@@ -848,7 +848,7 @@ describe("mayus-operating-partner", () => {
     });
 
     expect(fetcher).toHaveBeenCalledTimes(1);
-    expect(decision.reply).toBe("Claro. Para eu localizar com segurança, me confirme seu nome completo ou o número do processo.");
+    expect(decision.reply).toBe("Claro. Para eu localizar com segurança, me mande o número do processo/CNJ ou CPF.");
     expect(decision.reply).not.toMatch(/M[áa]rcio|tema|assunto|banco|RMC|benef[ií]cio|execu[cç][aã]o|fam[ií]lia/i);
     expect(decision.should_auto_send).toBe(true);
     expect(decision.requires_approval).toBe(false);
@@ -1642,7 +1642,7 @@ describe("mayus-operating-partner", () => {
     expect(decision.reply).toContain("gratuidade/custas em recurso");
     expect(decision.reply).toContain("Sem decisão nova registrada");
     expect(decision.reply).not.toMatch(/Bradesco|Caixa|indeniza[cç][aã]o|FGTS|qual .*assunto principal|localizar com seguran[cç]a/i);
-    expect(decision.next_action).toBe("responder o processo que acabou de ser referenciado");
+    expect(decision.next_action).toBe("responder o candidato processual referenciado");
     expect(decision.should_auto_send).toBe(true);
     expect(decision.conversation_frame?.resolution_type).toBe("referenced_process");
     expect(decision.conversation_frame?.resolved_reference?.opposingParty).toBe("Banco Master");
@@ -1701,7 +1701,7 @@ describe("mayus-operating-partner", () => {
     expect(decision.reply).toContain("Aguardando andamento do juízo");
     expect(decision.reply).not.toMatch(/objetivo principal|reduzir|cessar descontos|buscar indeniza[cç][aã]o|s[oó] acompanhar/i);
     expect(decision.conversation_frame?.resolution_type).toBe("referenced_process");
-    expect(decision.final_response_source).toBe("deterministic_guardrail");
+    expect(decision.final_response_source).toBe("safe_fallback");
     expect(decision.should_auto_send).toBe(true);
   });
 
@@ -1757,7 +1757,7 @@ describe("mayus-operating-partner", () => {
       expect(decision.reply).toContain("Aguardando andamento do juizo");
       expect(decision.reply).not.toMatch(/foco agora|situa[cç][aã]o geral|consulta mesmo|provid[eê]ncia|objetivo principal|reduzir|cessar|aproveitar alguma movimenta[cç][aã]o/i);
       expect(decision.conversation_frame?.resolution_type).toBe("referenced_process");
-      expect(decision.final_response_source).toBe("deterministic_guardrail");
+      expect(decision.final_response_source).toBe("safe_fallback");
       expect(decision.should_auto_send).toBe(true);
     }
   });

@@ -27,6 +27,7 @@ import {
 } from "@/lib/agent/mayus-operating-partner-actions";
 import { sendWhatsAppMessage, type SendWhatsAppMessageResult } from "@/lib/whatsapp/send-message";
 import type { WhatsAppSendProvider } from "@/lib/whatsapp/send-message";
+import { synthesizeWhatsAppReplyAudio } from "@/lib/whatsapp/tts";
 import {
   RMC_FORBIDDEN_CLAIMS,
   RMC_OFFER_POSITIONING,
@@ -565,6 +566,8 @@ type WhatsAppInboundMessageMarker = {
   created_at: string | null;
 };
 
+type WhatsAppReplyModality = "text" | "audio";
+
 function normalizeInboundMessageMarker(row: any): WhatsAppInboundMessageMarker {
   return {
     id: getStringValue(row?.id),
@@ -588,6 +591,52 @@ function buildReplyTargetMarker(params: {
     id: getStringValue(params.replyTargetMessageId) || params.latestInboundAtDecision.id,
     created_at: getStringValue(params.replyTargetCreatedAt) || params.latestInboundAtDecision.created_at,
   };
+}
+
+function getLatestInboundMessage(messages: any[]) {
+  return [...messages]
+    .reverse()
+    .find((message) => message?.direction === "inbound") || null;
+}
+
+function messageTextForModality(message: any) {
+  return [
+    message?.content,
+    message?.media_text,
+    message?.media_summary,
+  ]
+    .map((value) => getStringValue(value))
+    .filter(Boolean)
+    .join(" ");
+}
+
+function wantsAudioReply(text?: string | null) {
+  const value = String(text || "").normalize("NFD").replace(/[\u0300-\u036f]/g, "").toLowerCase();
+  if (!value.trim()) return false;
+  return /\b(manda|mande|responde|responda|envia|envie|fala|fale)\b.{0,48}\b(audio|voz)\b/.test(value)
+    || /\b(por|em)\s+(audio|voz)\b/.test(value)
+    || /\bresposta\s+(em|por)\s+(audio|voz)\b/.test(value);
+}
+
+function resolveReplyModality(messages: any[]): {
+  modality: WhatsAppReplyModality;
+  policy: "mirror_audio" | "text_default";
+  reason: string;
+} {
+  const latestInbound = getLatestInboundMessage(messages);
+  if (!latestInbound) {
+    return { modality: "text", policy: "text_default", reason: "no_inbound_message" };
+  }
+
+  if (latestInbound.message_type === "audio") {
+    return { modality: "audio", policy: "mirror_audio", reason: "last_inbound_was_audio" };
+  }
+
+  if (wantsAudioReply(messageTextForModality(latestInbound))) {
+    return { modality: "audio", policy: "mirror_audio", reason: "user_requested_audio_reply" };
+  }
+
+  return { modality: "text", policy: "text_default", reason: "text_turn" };
 }
 
 async function loadLatestInboundMessageMarker(params: {
@@ -683,6 +732,7 @@ export async function prepareWhatsAppSalesReplyForContact(params: {
     tenantId: params.tenantId,
   });
   const orderedMessages = (messages || []).reverse();
+  const replyModalityPreference = resolveReplyModality(orderedMessages);
   const latestInboundAtDecision = getLatestInboundMessageMarker(orderedMessages);
   const replyTarget = buildReplyTargetMarker({
     replyTargetMessageId: params.replyTargetMessageId,
@@ -736,6 +786,9 @@ export async function prepareWhatsAppSalesReplyForContact(params: {
     model_used: "deterministic",
     fallback_reason: null,
     whatsapp_actor_context: whatsappActorContext,
+    reply_modality: replyModalityPreference.modality,
+    audio_policy: replyModalityPreference.policy,
+    audio_requested_reason: replyModalityPreference.reason,
   };
   let llmReply: SalesLlmReply | null = null;
   let operatingPartnerDecision: MayusOperatingPartnerDecision | null = null;
@@ -1010,6 +1063,10 @@ export async function prepareWhatsAppSalesReplyForContact(params: {
     brain_step_id: params.brainTrace?.stepId || null,
     skill: metadata.skill || runtimeSkill,
     route: metadata.route || runtimeRoute,
+    reply_modality: replyModalityPreference.modality,
+    audio_policy: replyModalityPreference.policy,
+    audio_requested_reason: replyModalityPreference.reason,
+    reply_text: autoReply?.text || llmReply?.reply || operatingPartnerDecision?.reply || reply.suggestedReply || null,
     reply_target_message_id: replyTarget.id,
     reply_target_created_at: replyTarget.created_at,
     latest_inbound_message_id_at_decision: latestInboundAtDecision.id,
@@ -1089,36 +1146,100 @@ export async function prepareWhatsAppSalesReplyForContact(params: {
 
   if (autoReply && canAutoSend) {
     try {
-      const blocks = autoReply.replyBlocks?.length ? autoReply.replyBlocks : splitWhatsAppReplyBlocks(autoReply.text);
       let sendResult: Awaited<ReturnType<typeof sendWhatsAppMessage>> | null = null;
-      for (let index = 0; index < blocks.length; index += 1) {
-        const block = blocks[index];
-        sendResult = await sendWhatsAppMessage({
-          supabase: params.supabase,
-          tenantId: params.tenantId,
-          contactId: contact.id,
-          phoneNumber: contact.phone_number || "",
-          preferredProvider: params.preferredProvider || null,
-          text: block,
-          humanizeDelivery: true,
-          metadata: {
-            source: autoReply.source,
-            provider: autoReply.provider,
-            model_used: autoReply.modelUsed,
-            intent: autoReply.intent,
-            brain_task_id: params.brainTrace?.taskId || null,
-            brain_run_id: params.brainTrace?.runId || null,
-            brain_step_id: params.brainTrace?.stepId || null,
-            skill: metadata.skill || null,
-            route: metadata.conversation_classification?.class || autoReply.intent,
-            lead_stage: autoReply.leadStage,
-            confidence: autoReply.confidence,
-            expected_outcome: autoReply.expectedOutcome,
-            reply_block_index: index + 1,
-            reply_block_count: blocks.length,
-          },
-        });
+      let replyBlockCount = 0;
+      let actualReplyModality: WhatsAppReplyModality = replyModalityPreference.modality;
+      let audioProvider: string | null = null;
+      let audioStoragePath: string | null = null;
+      let audioFallbackReason: string | null = null;
+      const baseSendMetadata = {
+        source: autoReply.source,
+        provider: autoReply.provider,
+        model_used: autoReply.modelUsed,
+        intent: autoReply.intent,
+        brain_task_id: params.brainTrace?.taskId || null,
+        brain_run_id: params.brainTrace?.runId || null,
+        brain_step_id: params.brainTrace?.stepId || null,
+        skill: metadata.skill || null,
+        route: metadata.conversation_classification?.class || autoReply.intent,
+        lead_stage: autoReply.leadStage,
+        confidence: autoReply.confidence,
+        expected_outcome: autoReply.expectedOutcome,
+        audio_policy: replyModalityPreference.policy,
+        audio_requested_reason: replyModalityPreference.reason,
+        reply_text: autoReply.text,
+      };
+
+      if (replyModalityPreference.modality === "audio") {
+        try {
+          const audio = await synthesizeWhatsAppReplyAudio({
+            supabase: params.supabase,
+            tenantId: params.tenantId,
+            contactId: contact.id,
+            text: autoReply.text,
+          });
+          audioProvider = audio.provider;
+          audioStoragePath = audio.storagePath;
+          replyBlockCount = 1;
+          sendResult = await sendWhatsAppMessage({
+            supabase: params.supabase,
+            tenantId: params.tenantId,
+            contactId: contact.id,
+            phoneNumber: contact.phone_number || "",
+            preferredProvider: params.preferredProvider || null,
+            audioUrl: audio.audioUrl,
+            mediaStoragePath: audio.storagePath,
+            mediaMimeType: audio.mimeType,
+            mediaFilename: audio.filename,
+            humanizeDelivery: true,
+            metadata: {
+              ...baseSendMetadata,
+              reply_modality: "audio",
+              audio_provider: audio.provider,
+              audio_storage_path: audio.storagePath,
+              reply_block_index: 1,
+              reply_block_count: 1,
+            },
+          });
+        } catch (audioError) {
+          audioFallbackReason = sanitizeFallbackReason(audioError);
+          actualReplyModality = "text";
+          console.error("[whatsapp-sales-reply-runtime][audio-reply]", audioError);
+        }
       }
+
+      if (!sendResult) {
+        const blocks = autoReply.replyBlocks?.length ? autoReply.replyBlocks : splitWhatsAppReplyBlocks(autoReply.text);
+        replyBlockCount = blocks.length;
+        for (let index = 0; index < blocks.length; index += 1) {
+          const block = blocks[index];
+          sendResult = await sendWhatsAppMessage({
+            supabase: params.supabase,
+            tenantId: params.tenantId,
+            contactId: contact.id,
+            phoneNumber: contact.phone_number || "",
+            preferredProvider: params.preferredProvider || null,
+            text: block,
+            humanizeDelivery: true,
+            metadata: {
+              ...baseSendMetadata,
+              reply_modality: "text",
+              audio_fallback_reason: audioFallbackReason,
+              reply_block_index: index + 1,
+              reply_block_count: blocks.length,
+            },
+          });
+        }
+      }
+
+      metadata = {
+        ...metadata,
+        reply_modality: actualReplyModality,
+        audio_provider: audioProvider,
+        audio_storage_path: audioStoragePath,
+        audio_fallback_reason: audioFallbackReason,
+      };
+
       if (!sendResult) throw new Error("Resposta automatica vazia");
       autoSendResult = {
         attempted: true,
@@ -1140,7 +1261,13 @@ export async function prepareWhatsAppSalesReplyForContact(params: {
           intent: autoReply.intent,
           confidence: autoReply.confidence,
           send_provider: sendResult.provider,
-          reply_block_count: blocks.length,
+          reply_modality: actualReplyModality,
+          audio_policy: replyModalityPreference.policy,
+          audio_requested_reason: replyModalityPreference.reason,
+          audio_provider: audioProvider,
+          audio_storage_path: audioStoragePath,
+          audio_fallback_reason: audioFallbackReason,
+          reply_block_count: replyBlockCount,
           first_response_sla_minutes: reply.firstResponseSlaMinutes,
           handoff_recommended: reply.handoffRecommended,
         },
@@ -1165,6 +1292,8 @@ export async function prepareWhatsAppSalesReplyForContact(params: {
           contact_id: contact.id,
           trigger: params.trigger,
           model_used: autoReply.modelUsed,
+          reply_modality: replyModalityPreference.modality,
+          audio_policy: replyModalityPreference.policy,
           error: message,
           first_response_sla_minutes: reply.firstResponseSlaMinutes,
         },

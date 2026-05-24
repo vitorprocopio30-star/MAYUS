@@ -199,7 +199,7 @@ function getHumanizedDelayMs(text?: string | null) {
   if (process.env.NODE_ENV === "test") return 0;
   const length = String(text || "").trim().length;
   if (length <= 0) return 0;
-  return Math.min(10000, Math.max(2600, 1500 + length * 22));
+  return Math.min(6500, Math.max(700, 420 + length * 14));
 }
 
 async function sleep(ms: number) {
@@ -236,6 +236,21 @@ async function sendEvolutionTypingPulse(input: SendWhatsAppMessageInput, delayMs
 
 async function sendViaEvolutionHumanized(input: SendWhatsAppMessageInput, provider: ResolvedTenantIntegration) {
   const shouldHumanize = Boolean(input.humanizeDelivery && input.text && !input.audioUrl && !input.mediaUrl);
+  const shouldPulseAudio = Boolean(input.humanizeDelivery && input.audioUrl && !input.mediaUrl);
+  if (shouldPulseAudio) {
+    try {
+      await sendEvolutionTypingPulse(input, process.env.NODE_ENV === "test" ? 0 : 900);
+      return await sendViaEvolution(input, provider);
+    } finally {
+      await sendEvolutionPresence({
+        tenantId: input.tenantId,
+        remoteJid: input.phoneNumber,
+        presence: "paused",
+        supabase: input.supabase,
+        fetcher: input.fetcher,
+      });
+    }
+  }
   if (!shouldHumanize) return sendViaEvolution(input, provider);
 
   try {

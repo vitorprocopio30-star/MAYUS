@@ -466,7 +466,77 @@ describe("/api/evolution-webhook", () => {
     ]));
   });
 
-  it("confirma audio sem texto de contracheque quando nao vira comando interno", async () => {
+  it("audio de dono autorizado com transcript normal vira conversa agentica quando nao e comando interno", async () => {
+    handleWhatsAppInternalCommandMock.mockResolvedValue({ handled: false, sent: false, intent: "unknown" });
+    processPendingWhatsAppMediaBatchMock.mockImplementationOnce(async ({ messageId }: { messageId: string }) => {
+      supabaseMock.messageRows[messageId] = {
+        ...(supabaseMock.messageRows[messageId] || {}),
+        media_text: "Quero saber como esta o processo do Bradesco",
+        media_summary: "Audio transcrito: Quero saber como esta o processo do Bradesco",
+        metadata: {
+          ...(supabaseMock.messageRows[messageId]?.metadata || {}),
+          media_processed_at: "2026-05-06T12:00:00.000Z",
+        },
+      };
+      return { picked: 1, processed: 1, failed: 0, replies_prepared: 0, results: [] };
+    });
+
+    const { POST } = await import("./route");
+    const request = new Request("http://localhost/api/evolution-webhook", {
+      method: "POST",
+      body: JSON.stringify({
+        event: "MESSAGES_UPSERT",
+        instance: "mayus-dutra",
+        data: {
+          key: {
+            remoteJid: "5521999990000@s.whatsapp.net",
+            fromMe: false,
+            id: "msg-owner-audio-chat-1",
+          },
+          pushName: "Dono Teste",
+          message: {
+            audioMessage: {
+              mimetype: "audio/ogg",
+              mediaKey: "media-key",
+            },
+          },
+        },
+      }),
+    });
+
+    const response = await POST(request);
+    const body = await response.json();
+
+    expect(response.status).toBe(200);
+    expect(body).toEqual({
+      success: true,
+      owner_audio_command: true,
+      handled: false,
+      routed_to_conversation: true,
+      audio_transcribed: true,
+    });
+    expect(enqueueWhatsAppReplyMock).toHaveBeenCalledWith(expect.objectContaining({
+      messageId: "message-1",
+      preferredProvider: "evolution",
+    }));
+    expect(processPendingWhatsAppRepliesBatchMock).toHaveBeenCalledWith(expect.objectContaining({
+      messageId: "message-1",
+      limit: 1,
+    }));
+    expect(sendWhatsAppMessageMock).not.toHaveBeenCalled();
+    expect(supabaseMock.messageUpdates).toEqual(expect.arrayContaining([
+      expect.objectContaining({
+        content: "Quero saber como esta o processo do Bradesco",
+        metadata: expect.objectContaining({
+          owner_audio_command_handled: false,
+          owner_audio_command_fallback_to_conversation: true,
+          owner_audio_command_unhandled_reason: "unknown_internal_command_intent",
+        }),
+      }),
+    ]));
+  });
+
+  it("deixa audio transcrito seguir para resposta agentica quando nao vira comando interno", async () => {
     handleWhatsAppInternalCommandMock.mockResolvedValue({ handled: false, sent: false, intent: "unknown" });
     processPendingWhatsAppMediaBatchMock.mockImplementationOnce(async ({ messageId }: { messageId: string }) => {
       supabaseMock.messageRows[messageId] = {
@@ -505,11 +575,8 @@ describe("/api/evolution-webhook", () => {
 
     expect(response.status).toBe(200);
     expect(body).toEqual({ success: true, pending_media: true });
-    expect(sendWhatsAppMessageMock).toHaveBeenCalledWith(expect.objectContaining({
-      text: expect.stringContaining("Recebi o audio"),
-    }));
-    expect(sendWhatsAppMessageMock).toHaveBeenCalledWith(expect.objectContaining({
-      text: expect.not.stringContaining("contracheque"),
+    expect(sendWhatsAppMessageMock).not.toHaveBeenCalledWith(expect.objectContaining({
+      metadata: expect.objectContaining({ source: "immediate_media_ack" }),
     }));
   });
 
@@ -523,7 +590,6 @@ describe("/api/evolution-webhook", () => {
         metadata: {
           ...(supabaseMock.messageRows[messageId]?.metadata || {}),
           owner_audio_command_attempted: true,
-          media_reply_suppressed: "owner_audio",
         },
       };
       return { picked: 1, processed: 1, failed: 0, replies_prepared: 0, results: [] };
@@ -556,17 +622,12 @@ describe("/api/evolution-webhook", () => {
     const body = await response.json();
 
     expect(response.status).toBe(200);
-    expect(body).toEqual({
-      success: true,
-      owner_audio_command: true,
-      handled: false,
-      reason: "audio_transcription_unavailable",
-    });
+    expect(body).toEqual({ success: true, audio_transcribed: false, handled: false, reason: "audio_transcription_unavailable" });
     expect(handleWhatsAppInternalCommandMock).not.toHaveBeenCalled();
     expect(sendWhatsAppMessageMock).toHaveBeenCalledTimes(1);
     expect(sendWhatsAppMessageMock).toHaveBeenCalledWith(expect.objectContaining({
-      text: expect.stringContaining("Nao consegui entender esse audio como comando interno"),
-      metadata: expect.objectContaining({ source: "owner_audio_command_fallback" }),
+      text: expect.stringContaining("Nao consegui ouvir bem esse audio"),
+      metadata: expect.objectContaining({ source: "audio_transcription_fallback" }),
     }));
     expect(sendWhatsAppMessageMock).not.toHaveBeenCalledWith(expect.objectContaining({
       metadata: expect.objectContaining({ source: "immediate_media_ack" }),
@@ -575,8 +636,8 @@ describe("/api/evolution-webhook", () => {
     expect(supabaseMock.messageUpdates).toEqual(expect.arrayContaining([
       expect.objectContaining({
         metadata: expect.objectContaining({
-          owner_audio_command_suppressed: true,
-          media_reply_suppressed: "owner_audio",
+          owner_audio_command_handled: false,
+          owner_audio_command_unhandled_reason: "audio_transcription_unavailable",
           reply_processing_status: "processed",
         }),
       }),

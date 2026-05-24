@@ -240,6 +240,73 @@ describe("sendWhatsAppMessage", () => {
     );
   });
 
+  it("envia audio por Evolution, pulsa presenca curta e salva texto auditavel no metadata", async () => {
+    const { supabase, inserts } = makeSupabase();
+    const fetcher = vi.fn(async () => new Response(JSON.stringify({ key: { id: "msg-audio-1" } }), { status: 200 }));
+    listTenantIntegrationsResolvedMock.mockResolvedValueOnce([
+      {
+        id: "evo-1",
+        tenant_id: "tenant-1",
+        provider: "evolution",
+        api_key: "evo-key",
+        webhook_secret: null,
+        webhook_url: null,
+        instance_name: "https://evolution.example.com|mayus",
+        status: "active",
+        metadata: null,
+        display_name: "Evolution",
+      },
+    ]);
+
+    const result = await sendWhatsAppMessage({
+      supabase,
+      tenantId: "tenant-1",
+      contactId: "contact-1",
+      phoneNumber: "5511999999999@s.whatsapp.net",
+      audioUrl: "https://storage.example.com/audio.mp3",
+      mediaStoragePath: "tenant-1/contact-1/outbound-audio/audio.mp3",
+      mediaMimeType: "audio/mpeg",
+      mediaFilename: "audio.mp3",
+      humanizeDelivery: true,
+      metadata: {
+        source: "mayus_operating_partner_auto_reply",
+        reply_modality: "audio",
+        reply_text: "Resumo do processo para auditoria.",
+      },
+      fetcher: fetcher as any,
+    });
+
+    expect(result.provider).toBe("evolution");
+    expect(result.messageId).toBe("msg-audio-1");
+    expect(sendEvolutionPresenceMock).toHaveBeenCalledWith(expect.objectContaining({
+      presence: "composing",
+    }));
+    expect(sendEvolutionPresenceMock).toHaveBeenCalledWith(expect.objectContaining({
+      presence: "paused",
+    }));
+    expect(fetcher).toHaveBeenCalledWith(
+      "https://evolution.example.com/message/sendWhatsAppAudio/mayus",
+      expect.objectContaining({
+        method: "POST",
+        headers: expect.objectContaining({ apikey: "evo-key" }),
+        body: JSON.stringify({ number: "5511999999999", audio: "https://storage.example.com/audio.mp3" }),
+      }),
+    );
+    expect(inserts[0].payload[0]).toEqual(expect.objectContaining({
+      message_type: "audio",
+      content: "[Audio Enviado]",
+      media_storage_path: "tenant-1/contact-1/outbound-audio/audio.mp3",
+      media_mime_type: "audio/mpeg",
+      media_filename: "audio.mp3",
+      metadata: expect.objectContaining({
+        reply_modality: "audio",
+        reply_text: "Resumo do processo para auditoria.",
+        media_storage_path: "tenant-1/contact-1/outbound-audio/audio.mp3",
+        media_type: "audio",
+      }),
+    }));
+  });
+
   it("falha sem fallback quando provider preferido nao existe", async () => {
     const { supabase } = makeSupabase();
     listTenantIntegrationsResolvedMock.mockResolvedValueOnce([
