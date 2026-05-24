@@ -1705,6 +1705,63 @@ describe("mayus-operating-partner", () => {
     expect(decision.should_auto_send).toBe(true);
   });
 
+  it("responde pedido de situacao do processo ja escolhido sem nova entrevista", async () => {
+    const badModelReply = "Pra eu te orientar no proximo passo: seu foco agora e saber so a situacao geral, ou e confirmar se tem algo a fazer na pratica?";
+    const lastProcessCandidates = [
+      { processTaskId: "master", clientName: "Marcio da Silva Machado", processNumber: "3000144-50.2026.8.19.0213", title: "Marcio x Banco Master", opposingParty: "Banco Master", summary: "gratuidade/custas em recurso", currentStage: "Recurso", lastMovementAt: "2026-04-30", lastMovementText: "Sem decisao nova registrada" },
+      { processTaskId: "bradesco", clientName: "Marcio da Silva Machado", processNumber: "3000141-95.2026.8.19.0213", title: "Marcio x Bradesco", opposingParty: "Bradesco", summary: "acao de indenizacao", currentStage: "Conhecimento", lastMovementAt: "2026-06-21", lastMovementText: "Aguardando andamento do juizo" },
+      { processTaskId: "caixa", clientName: "Marcio da Silva Machado", processNumber: "5006349-29.2023.4.02.5110", title: "Marcio x Caixa", opposingParty: "Caixa", summary: "FGTS/atualizacao", currentStage: "Conhecimento", lastMovementAt: "2023-06-10", lastMovementText: null },
+    ];
+
+    for (const message of ["Acompanhar como esta", "So saber a situacao", "Quero saber da porra do processo"]) {
+      const fetcher = operatingPartnerFetcher({
+        reply: badModelReply,
+        intent: "process_status",
+        next_action: "perguntar objetivo de acompanhamento",
+        conversation_state: {
+          conversation_role: "case_status",
+          conversation_goal: "acompanhar processos do cliente",
+          last_customer_message: message,
+          next_action: "perguntar objetivo de acompanhamento",
+          conversation_summary: "Operador pediu situacao do processo do Bradesco.",
+        },
+        support_summary: { is_existing_client: true, issue_type: "process_status", verified_case_reference: true, summary: "pedido de situacao" },
+      });
+
+      const decision = await buildMayusOperatingPartnerDecision({
+        supabase: {} as any,
+        tenantId: "tenant-1",
+        channel: "whatsapp",
+        contactName: "Vitor",
+        messages: [
+          { direction: "inbound", content: "Bradesco" },
+          { direction: "outbound", content: "A do Bradesco (3000141-95.2026.8.19.0213): esta em Conhecimento. ultimo registro em 21/06/2026: Aguardando andamento do juizo." },
+          { direction: "inbound", content: message },
+        ],
+        whatsappActorContext: { role: "office_operator", sender_phone_authorized: true, reason: "daily_playbook_authorized_phone" },
+        previousMayusEvent: {
+          intent: "process_status",
+          conversation_state: {
+            conversation_role: "case_status",
+            conversation_goal: "acompanhar processos do cliente",
+            last_process_candidates: lastProcessCandidates,
+            has_mayus_introduced: true,
+          },
+        },
+        operatingPartner: { enabled: true, autonomy_mode: "high_supervised" },
+        fetcher,
+      });
+
+      expect(decision.reply).toContain("A do Bradesco");
+      expect(decision.reply).toContain("3000141-95.2026.8.19.0213");
+      expect(decision.reply).toContain("Aguardando andamento do juizo");
+      expect(decision.reply).not.toMatch(/foco agora|situa[cç][aã]o geral|consulta mesmo|provid[eê]ncia|objetivo principal|reduzir|cessar|aproveitar alguma movimenta[cç][aã]o/i);
+      expect(decision.conversation_frame?.resolution_type).toBe("referenced_process");
+      expect(decision.final_response_source).toBe("deterministic_guardrail");
+      expect(decision.should_auto_send).toBe(true);
+    }
+  });
+
   it("lista os outros processos quando operador pede outro processo apos detalhe", async () => {
     const fetcher = operatingPartnerFetcher({
       reply: "Qual outro você quer: Bradesco ou Caixa?",

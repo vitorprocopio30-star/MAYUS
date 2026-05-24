@@ -453,6 +453,24 @@ function normalizeProcessCandidateMemory(value: unknown): NonNullable<MayusConve
 
 type ProcessCandidateMemory = NonNullable<MayusConversationState["last_process_candidates"]>[number];
 
+function processStatusContextAsCandidate(processStatusContext?: WhatsAppProcessStatusContext | null): ProcessCandidateMemory | null {
+  if (processStatusContext?.verified !== true) return null;
+  if ((processStatusContext.candidateProcesses || []).length > 0 && !processStatusContext.processTaskId && !processStatusContext.processNumber) return null;
+  if (!processStatusContext.processTaskId && !processStatusContext.processNumber && !processStatusContext.title) return null;
+
+  return {
+    processTaskId: cleanText(processStatusContext.processTaskId),
+    clientName: cleanText(processStatusContext.clientName),
+    processNumber: cleanText(processStatusContext.processNumber),
+    title: cleanText(processStatusContext.title),
+    opposingParty: cleanText(processStatusContext.title),
+    summary: cleanText(processStatusContext.clientReply || processStatusContext.nextStep),
+    currentStage: cleanText(processStatusContext.currentStage || processStatusContext.detectedPhaseLabel),
+    lastMovementAt: cleanText(processStatusContext.lastMovementAt),
+    lastMovementText: cleanText(processStatusContext.lastMovementText),
+  };
+}
+
 function formatShortDateLabel(value?: string | null) {
   const text = cleanText(value);
   if (!text) return null;
@@ -463,10 +481,11 @@ function formatShortDateLabel(value?: string | null) {
 
 function collectProcessCandidates(input: MayusOperatingPartnerInput, state: MayusConversationState) {
   const candidates = [
+    processStatusContextAsCandidate(input.processStatusContext),
     ...normalizeProcessCandidateMemory(input.processStatusContext?.candidateProcesses || []),
     ...normalizeProcessCandidateMemory(input.previousMayusEvent?.conversation_state?.last_process_candidates || []),
     ...(state.last_process_candidates || []),
-  ];
+  ].filter(Boolean) as ProcessCandidateMemory[];
   const seen = new Set<string>();
   return candidates.filter((candidate) => {
     const key = [
@@ -549,6 +568,15 @@ function findLastAnsweredProcessCandidate(messages: WhatsAppSalesMessage[], cand
 function isOtherProcessReference(message: string | null | undefined) {
   const text = normalizeText(message);
   return /\b(outro processo|outro caso|o outro|a outra|outro|restante|demais)\b/.test(text);
+}
+
+function isResolvedProcessStatusFollowup(message: string | null | undefined) {
+  const text = normalizeText(message);
+  if (!text) return false;
+  if (isPureGreeting(text) || isOtherProcessReference(text)) return false;
+
+  return /\b(acompanhar|andamento|status|situacao|novidade|atualizacao|consulta mesmo|consultar mesmo|so saber|saber a situacao|saber da situacao|como esta|como anda)\b/.test(text)
+    || (/\bprocesso\b/.test(text) && /\b(quero saber|saber|me fala|me diga|me passa|ver|olhar|consultar|porra)\b/.test(text));
 }
 
 function isConversationComplaint(message: string | null | undefined) {
@@ -669,7 +697,10 @@ function buildWhatsAppConversationFrame(input: MayusOperatingPartnerInput, param
   const candidates = collectProcessCandidates(input, params.fallbackState);
   const referencedCandidate = findReferencedProcessCandidate(lastMessage, candidates);
   const otherProcessReference = isOtherProcessReference(lastMessage);
-  const lastAnsweredCandidate = otherProcessReference ? findLastAnsweredProcessCandidate(input.messages, candidates) : null;
+  const lastAnsweredCandidate = findLastAnsweredProcessCandidate(input.messages, candidates);
+  const statusFollowupCandidate = isResolvedProcessStatusFollowup(lastMessage)
+    ? (lastAnsweredCandidate || (candidates.length === 1 ? candidates[0] : null))
+    : null;
   const remainingProcessCandidates = otherProcessReference && lastAnsweredCandidate
     ? candidates.filter((candidate) => {
         const candidateKey = normalizeText(candidate.processTaskId || candidate.processNumber || candidate.title || candidate.opposingParty);
@@ -721,6 +752,20 @@ function buildWhatsAppConversationFrame(input: MayusOperatingPartnerInput, param
     responseGuidance.add("apenas cumprimentar e perguntar como pode ajudar");
     forbiddenMoves.add("nao se reapresentar se a conversa ja existe");
     safeFallbackReply = buildNaturalGreetingReply(lastMessage, input.contactName);
+  } else if (statusFollowupCandidate) {
+    resolutionType = "referenced_process";
+    recommendedIntent = "process_status";
+    resolvedReference = processCandidateFrame(statusFollowupCandidate);
+    conversationGoal = "responder a situacao do processo ja escolhido sem fazer nova triagem";
+    knownFacts.add(`processo ja escolhido: ${resolvedReference.label || resolvedReference.processNumber || "processo"}`);
+    if (resolvedReference.summary) knownFacts.add(`resumo do processo: ${resolvedReference.summary}`);
+    if (resolvedReference.currentStage) knownFacts.add(`fase/status: ${resolvedReference.currentStage}`);
+    if (resolvedReference.lastMovementText) knownFacts.add(`ultimo registro: ${resolvedReference.lastMovementText}`);
+    responseGuidance.add("responder o andamento disponivel do processo ja escolhido");
+    responseGuidance.add("nao perguntar objetivo, proximo passo, assunto, providencia ou se e consulta mesmo");
+    forbiddenMoves.add("nao transformar pedido de status em entrevista");
+    forbiddenMoves.add("nao perguntar se quer acompanhar, baixar, agir ou aproveitar movimentacao");
+    safeFallbackReply = buildReferencedProcessCandidateReply(statusFollowupCandidate);
   } else if (isConversationComplaint(lastMessage)) {
     resolutionType = "complaint";
     recommendedIntent = "client_support";
@@ -1577,7 +1622,7 @@ function asksKnownPaymentStatus(reply: string | null | undefined, state: MayusCo
 function asksUnnecessaryProcessSummaryChoice(reply: string | null | undefined, processStatusContext?: WhatsAppProcessStatusContext | null) {
   if (processStatusContext?.verified !== true || !(processStatusContext.candidateProcesses?.length)) return false;
   const text = normalizeText(reply);
-  return /quer (que eu )?(te )?(passe|envie|mande|faca)? ?(um )?resumo|prefere (ver|que eu veja|um deles|algum deles)|quer (que eu )?(detalhe|explique)|quer ver um|qual (desses|deles|processo|caso)|me diga (so )?qual (desses|deles)|qual .*voce quer (acompanhar|ver|detalhar)|se (voce )?nao souber.*(numero do processo|foto do documento)/.test(text);
+  return /quer (que eu )?(te )?(passe|envie|mande|faca)? ?(um )?resumo|prefere (ver|que eu veja|um deles|algum deles)|quer (que eu )?(detalhe|explique)|quer ver um|qual (desses|deles|processo|caso)|me diga (so )?qual (desses|deles)|qual .*voce quer (acompanhar|ver|detalhar)|foco agora|situacao geral|situa[cç][aã]o geral|providencia pratica|provid[eê]ncia pr[aá]tica|consulta mesmo|aproveitar alguma movimenta[cç][aã]o|se (voce )?nao souber.*(numero do processo|foto do documento)/.test(text);
 }
 
 function asksKnownOfficeIdentity(reply: string | null | undefined, actorContext?: MayusWhatsAppActorContext | null, processStatusContext?: WhatsAppProcessStatusContext | null) {
@@ -2123,7 +2168,7 @@ function buildReplyQualityCheck(params: {
       flags.push("mixed_process_candidates");
       reasons.push("Resposta misturou processo referenciado com outros candidatos.");
     }
-    if (/qual .*assunto principal|assunto principal|objetivo principal|reduzir|cessar descontos|buscar indenizacao|buscar indenização|acompanhar como esta|e .*bradesco.*ou.*caixa|e .*caixa.*ou.*bradesco|qual desses|qual deles/.test(text)) {
+    if (/qual .*assunto principal|assunto principal|objetivo principal|reduzir|cessar descontos|buscar indenizacao|buscar indenização|acompanhar como esta|proximo passo|pr[oó]ximo passo|providencia pratica|provid[eê]ncia pr[aá]tica|situacao geral|situa[cç][aã]o geral|consulta mesmo|aproveitar alguma movimentacao|aproveitar alguma movimenta[cç][aã]o|e .*bradesco.*ou.*caixa|e .*caixa.*ou.*bradesco|qual desses|qual deles/.test(text)) {
       flags.push("asks_unneeded_process_choice");
       reasons.push("Resposta pediu escolha/assunto apesar de a referencia ja estar resolvida.");
     }
