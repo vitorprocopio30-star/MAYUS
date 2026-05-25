@@ -1891,10 +1891,16 @@ describe("dispatchCapabilityExecution - juridico", () => {
         methodology: expect.any(Object),
         sources: expect.objectContaining({
           factual: expect.any(Array),
+          operationalThesisSources: expect.any(Array),
         }),
         gaps: expect.objectContaining({
           all: expect.any(Array),
         }),
+        operational_thesis: expect.objectContaining({
+          openClawReason: expect.stringContaining("Draft Factory"),
+          nextActionBeforeDraftFactory: expect.stringContaining("approval humano"),
+        }),
+        openclaw_reason: expect.stringContaining("Draft Factory"),
         recommendedAction: "generate_first_draft",
         sideEffectGuardrail: expect.objectContaining({
           approvalGate: "humanGate",
@@ -2404,6 +2410,12 @@ describe("dispatchCapabilityExecution - juridico", () => {
       awaitingPayload: expect.objectContaining({
         skillName: "legal_first_draft_generate",
         riskLevel: "high",
+        operationalThesis: expect.objectContaining({
+          openClawReason: expect.stringContaining("Draft Factory"),
+          sourcesUsed: expect.arrayContaining(["case_brain"]),
+        }),
+        sources_used_before_draft_factory: expect.arrayContaining(["case_brain"]),
+        openclaw_reason: expect.stringContaining("Draft Factory"),
         processMissionContext: expect.objectContaining({
           recommendedAction: "generate_first_draft",
         }),

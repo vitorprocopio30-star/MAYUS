@@ -97,6 +97,16 @@ export type LegalOperatorState = {
   };
 };
 
+export type ProcessMissionOperationalThesis = {
+  thesis: string;
+  rationale: string[];
+  sourcesUsed: string[];
+  gaps: string[];
+  blockers: string[];
+  nextActionBeforeDraftFactory: string;
+  openClawReason: string;
+};
+
 export type ProcessMissionContext = {
   process: {
     processTaskId: string;
@@ -137,6 +147,7 @@ export type ProcessMissionContext = {
   confidence: ProcessMissionConfidence;
   recommendedAction: ProcessMissionRecommendedAction;
   missionGoal: string;
+  operationalThesis: ProcessMissionOperationalThesis;
 };
 
 function uniqueStrings(values: Array<string | null | undefined>) {
@@ -486,6 +497,52 @@ function resolveLegalOperatorBlockers(context: ProcessMissionContext) {
   ]);
 }
 
+function resolveOperationalThesis(params: {
+  contextCore: Omit<ProcessMissionContext, "operationalThesis">;
+}) : ProcessMissionOperationalThesis {
+  const context = params.contextCore;
+  const processLabel = context.process.processNumber || context.process.title;
+  const sourcesUsed = uniqueStrings([
+    ...context.grounding.factualSources,
+    context.documents.summary ? "document_memory_summary" : null,
+    context.methodology.provided ? "tenant_operational_methodology" : null,
+  ]);
+  const gaps = uniqueStrings([
+    ...context.grounding.missingSignals,
+    ...context.status.pendingItems,
+    ...context.documents.missingDocuments,
+    ...context.methodology.missingExpectedDocuments,
+  ]);
+  const blockers = resolveLegalOperatorBlockers(context as ProcessMissionContext);
+  const pieceLabel = context.draft.recommendedPiece || "primeira minuta juridica";
+  const nextActionBeforeDraftFactory = context.recommendedAction === "generate_first_draft"
+    ? `Pedir approval humano com fontes, lacunas e tese antes de chamar a Draft Factory para ${pieceLabel}.`
+    : formatProcessMissionActionLabel(context.recommendedAction);
+  const openClawReason = context.recommendedAction === "generate_first_draft"
+    ? "OpenClaw: geracao de minuta juridica e superficie legal sensivel; exige approval humano antes da Draft Factory."
+    : context.confidence === "low"
+      ? "OpenClaw: contexto processual insuficiente bloqueia execucao automatica."
+      : context.methodology.requiresHumanReview
+        ? "OpenClaw: metodologia operacional do tenant exige supervisao antes de orientar ato juridico sensivel."
+        : "OpenClaw: apenas acao interna segura pode prosseguir; efeitos externos seguem bloqueados.";
+
+  return {
+    thesis: `Para ${processLabel}, a tese operacional atual e ${context.missionGoal}`,
+    rationale: uniqueStrings([
+      context.status.currentPhase ? `Fase atual: ${context.status.currentPhase}` : null,
+      context.status.progressSummary ? `Resumo: ${context.status.progressSummary}` : null,
+      context.status.nextStep ? `Proximo passo: ${context.status.nextStep}` : null,
+      context.draft.recommendedPiece ? `Peca sugerida: ${context.draft.recommendedPiece}` : null,
+      `Confianca: ${context.confidence}`,
+    ]),
+    sourcesUsed,
+    gaps,
+    blockers,
+    nextActionBeforeDraftFactory,
+    openClawReason,
+  };
+}
+
 function buildLegalMissionCoordination(): LegalMissionCoordination {
   return {
     owner: {
@@ -574,7 +631,7 @@ export function buildProcessMissionContext(
   const recommendedAction = resolveRecommendedAction({ snapshot, confidence, pendingItems });
   const grounding = resolveGrounding({ snapshot, progressSummary, currentPhase, nextStep, pendingItems, methodology });
 
-  return {
+  const contextCore: Omit<ProcessMissionContext, "operationalThesis"> = {
     process: {
       processTaskId: snapshot.processTask.id,
       title: snapshot.processTask.title,
@@ -613,5 +670,10 @@ export function buildProcessMissionContext(
     confidence,
     recommendedAction,
     missionGoal: buildMissionGoal({ snapshot, recommendedAction }),
+  };
+
+  return {
+    ...contextCore,
+    operationalThesis: resolveOperationalThesis({ contextCore }),
   };
 }

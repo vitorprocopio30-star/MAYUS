@@ -3845,6 +3845,7 @@ function buildProcessMissionSources(context: ReturnType<typeof buildProcessMissi
   return {
     factual: context.grounding.factualSources,
     inferenceNotes: context.grounding.inferenceNotes,
+    operationalThesisSources: context.operationalThesis.sourcesUsed,
     documentMemory: {
       freshness: context.documents.freshness,
       documentCount: context.documents.count,
@@ -4081,6 +4082,11 @@ function buildProcessMissionBetaContract(
     methodology: context.methodology,
     sources,
     gaps,
+    operationalThesis: context.operationalThesis,
+    operational_thesis: context.operationalThesis,
+    blockers: context.operationalThesis.blockers,
+    openclawReason: context.operationalThesis.openClawReason,
+    openclaw_reason: context.operationalThesis.openClawReason,
     recommendedAction: context.recommendedAction,
     recommended_action: context.recommendedAction,
     sideEffectGuardrail,
@@ -4107,6 +4113,8 @@ function buildProcessMissionPlanReply(context: ReturnType<typeof buildProcessMis
     `- Confianca: ${context.confidence}`,
     `- Acao recomendada: ${formatProcessMissionRecommendedAction(context.recommendedAction)}`,
     `- Objetivo da missao: ${context.missionGoal}`,
+    `- Tese operacional: ${context.operationalThesis.thesis}`,
+    `- Motivo OpenClaw: ${context.operationalThesis.openClawReason}`,
     context.status.nextStep ? `- Proximo passo: ${context.status.nextStep}` : null,
     context.status.pendingItems.length > 0
       ? `- Pendencias: ${context.status.pendingItems.join("; ")}`
@@ -4131,6 +4139,9 @@ function buildProcessMissionPlanReply(context: ReturnType<typeof buildProcessMis
     context.methodology.blockers.length > 0
       ? `- Travas metodologicas: ${context.methodology.blockers.join("; ")}`
       : null,
+    context.operationalThesis.blockers.length > 0
+      ? `- Bloqueios antes da Draft Factory: ${context.operationalThesis.blockers.join("; ")}`
+      : "- Bloqueios antes da Draft Factory: nenhum bloqueio critico registrado",
     "- Execucao: plano registrado sem side effects externos. Acoes juridicas, Drive, minuta, publicacao ou comunicacao externa seguem supervisionadas.",
   ].filter(Boolean).join("\n");
 }
@@ -4525,6 +4536,10 @@ function buildLegalPieceReadinessContext(params: {
   return {
     piece_label: pieceLabel,
     pieceLabel,
+    operational_thesis: params.context.operationalThesis,
+    operationalThesis: params.context.operationalThesis,
+    openclaw_reason: params.context.operationalThesis.openClawReason,
+    openclawReason: params.context.operationalThesis.openClawReason,
     phase: params.context.status.currentPhase,
     process_number: params.context.process.processNumber,
     process_task_id: params.context.process.processTaskId,
@@ -4535,6 +4550,7 @@ function buildLegalPieceReadinessContext(params: {
     missing_documents: missingDocuments,
     missingDocuments,
     gaps,
+    blockers: params.context.operationalThesis.blockers,
     methodology_status: params.context.methodology.status,
     methodology_activation: params.context.methodology.activation,
     methodology_requires_human_review: params.context.methodology.requiresHumanReview,
@@ -4571,6 +4587,8 @@ function buildProcessMissionApprovalReply(params: {
     `- Capability proposta: ${params.proposedCapability}`,
     `- Confianca: ${params.context.confidence}`,
     `- Objetivo da missao: ${params.context.missionGoal}`,
+    `- Tese operacional: ${params.context.operationalThesis.thesis}`,
+    `- Motivo OpenClaw: ${params.context.operationalThesis.openClawReason}`,
     params.context.draft.recommendedPiece ? `- Peca sugerida: ${params.context.draft.recommendedPiece}` : null,
     params.context.grounding.factualSources.length > 0
       ? `- Fontes: ${params.context.grounding.factualSources.join("; ")}`
@@ -4588,6 +4606,9 @@ function buildProcessMissionApprovalReply(params: {
     params.pieceReadiness?.draft_verification_checklist.length
       ? `- Checklist da minuta: ${params.pieceReadiness.draft_verification_checklist.slice(0, 3).join("; ")}`
       : null,
+    params.context.operationalThesis.blockers.length > 0
+      ? `- Bloqueios antes da Draft Factory: ${params.context.operationalThesis.blockers.join("; ")}`
+      : "- Bloqueios antes da Draft Factory: nenhum bloqueio critico registrado",
     "- Guardrail: nenhuma minuta foi gerada ainda. A Draft Factory juridica so sera chamada se um aprovador autorizar.",
   ].filter(Boolean).join("\n");
 }
@@ -4725,6 +4746,12 @@ async function requestProcessMissionDraftApproval(
       case_brain_high_contradiction_count: highContradictionCount,
       case_brain_grounding_gap_count: params.caseBrainInsights?.groundingGaps.length || 0,
       piece_context: pieceReadiness,
+      operational_thesis: params.context.operationalThesis,
+      operationalThesis: params.context.operationalThesis,
+      sources_used_before_draft_factory: params.context.operationalThesis.sourcesUsed,
+      gaps_before_draft_factory: params.context.operationalThesis.gaps,
+      blockers_before_draft_factory: params.context.operationalThesis.blockers,
+      openclaw_reason: params.context.operationalThesis.openClawReason,
       draft_verification_checklist: pieceReadiness.draft_verification_checklist,
       ...methodologyPayload,
       operational_methodology_context: params.context.methodology,
@@ -4743,6 +4770,12 @@ async function requestProcessMissionDraftApproval(
       legal_operator_state: legalOperatorState,
       operational_methodology_context: params.context.methodology,
       processMissionContext: params.context,
+      operational_thesis: params.context.operationalThesis,
+      operationalThesis: params.context.operationalThesis,
+      sources_used_before_draft_factory: params.context.operationalThesis.sourcesUsed,
+      gaps_before_draft_factory: params.context.operationalThesis.gaps,
+      blockers_before_draft_factory: params.context.operationalThesis.blockers,
+      openclaw_reason: params.context.operationalThesis.openClawReason,
       methodology: params.context.methodology,
       piece_context: pieceReadiness,
       pieceContext: pieceReadiness,
@@ -4750,6 +4783,7 @@ async function requestProcessMissionDraftApproval(
       draftVerificationChecklist: pieceReadiness.draft_verification_checklist,
       sources: approvalBetaContract.sources,
       gaps: approvalBetaContract.gaps,
+      blockers: params.context.operationalThesis.blockers,
       recommendedAction: params.context.recommendedAction,
       sideEffectGuardrail: approvalBetaContract.sideEffectGuardrail,
       agentic_governance: approvalBetaContract.agentic_governance,
@@ -4815,6 +4849,7 @@ async function requestProcessMissionDraftApproval(
       operational_methodology_context: params.context.methodology,
       legal_operator_state: legalOperatorState,
       piece_context: pieceReadiness,
+      operational_thesis: params.context.operationalThesis,
       draft_verification_checklist: pieceReadiness.draft_verification_checklist,
       external_side_effects_blocked: true,
       ...buildProcessMissionBetaContract(params.context, {
@@ -4856,6 +4891,12 @@ async function requestProcessMissionDraftApproval(
       recommended_piece_label: params.snapshot.caseBrain.recommendedPieceLabel,
       piece_context: pieceReadiness,
       pieceContext: pieceReadiness,
+      operational_thesis: params.context.operationalThesis,
+      operationalThesis: params.context.operationalThesis,
+      sources_used_before_draft_factory: params.context.operationalThesis.sourcesUsed,
+      gaps_before_draft_factory: params.context.operationalThesis.gaps,
+      blockers_before_draft_factory: params.context.operationalThesis.blockers,
+      openclaw_reason: params.context.operationalThesis.openClawReason,
       draft_verification_checklist: pieceReadiness.draft_verification_checklist,
       draftVerificationChecklist: pieceReadiness.draft_verification_checklist,
       approval_required: true,
@@ -4877,6 +4918,16 @@ async function requestProcessMissionDraftApproval(
         methodology: params.context.methodology,
         pieceContext: pieceReadiness,
         piece_context: pieceReadiness,
+        operationalThesis: params.context.operationalThesis,
+        operational_thesis: params.context.operationalThesis,
+        sourcesUsedBeforeDraftFactory: params.context.operationalThesis.sourcesUsed,
+        sources_used_before_draft_factory: params.context.operationalThesis.sourcesUsed,
+        gapsBeforeDraftFactory: params.context.operationalThesis.gaps,
+        gaps_before_draft_factory: params.context.operationalThesis.gaps,
+        blockersBeforeDraftFactory: params.context.operationalThesis.blockers,
+        blockers_before_draft_factory: params.context.operationalThesis.blockers,
+        openclawReason: params.context.operationalThesis.openClawReason,
+        openclaw_reason: params.context.operationalThesis.openClawReason,
         draftVerificationChecklist: pieceReadiness.draft_verification_checklist,
         draft_verification_checklist: pieceReadiness.draft_verification_checklist,
         sources: approvalBetaContract.sources,

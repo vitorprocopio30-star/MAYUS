@@ -110,6 +110,18 @@ const agenticGovernance = {
       { type: "approval_requested", summary: "Movimentacao juridica enviada para supervisao humana." },
     ],
   },
+  operational_thesis: {
+    thesis: "Movimentacao exige manifestacao supervisionada antes da Draft Factory.",
+    sourcesUsed: ["case_brain", "process_movimentacoes"],
+    gaps: ["confirmar prazo fatal"],
+    blockers: ["human_approval_required"],
+    nextActionBeforeDraftFactory: "Aprovador deve confirmar prazo e providencia.",
+    openClawReason: "OpenClaw: revisao juridica exige approval humano.",
+  },
+  sources_used_before_draft_factory: ["case_brain", "process_movimentacoes"],
+  gaps_before_draft_factory: ["confirmar prazo fatal"],
+  blockers_before_draft_factory: ["human_approval_required"],
+  openclaw_reason: "OpenClaw: revisao juridica exige approval humano.",
 };
 
 function chain(table: string, data: any, options: { insertError?: Error; upsertError?: Error; updateError?: Error; queryError?: Error } = {}) {
@@ -277,6 +289,13 @@ describe("/api/juridico/movement-reviews", () => {
             last_event_type: "approval_requested",
             last_event_summary: "Movimentacao juridica enviada para supervisao humana.",
           },
+        }),
+        supervision_context: expect.objectContaining({
+          operational_thesis: "Movimentacao exige manifestacao supervisionada antes da Draft Factory.",
+          sources_used: expect.arrayContaining(["case_brain", "process_movimentacoes", "agentic_governance"]),
+          gaps: ["confirmar prazo fatal"],
+          blockers: ["human_approval_required"],
+          openclaw_reason: "OpenClaw: revisao juridica exige approval humano.",
         }),
       }),
     ]));
@@ -509,6 +528,13 @@ describe("/api/juridico/movement-reviews", () => {
         review_source: "human_approved_movement_review",
         process_task_id: "task-created-1",
         due_date: "2026-05-20T00:00:00.000Z",
+        supervision_context: expect.objectContaining({
+          operational_thesis: "Movimentacao exige manifestacao supervisionada antes da Draft Factory.",
+          sources_used: expect.arrayContaining(["case_brain", "process_movimentacoes"]),
+          gaps: ["confirmar prazo fatal"],
+          openclaw_reason: "OpenClaw: revisao juridica exige approval humano.",
+        }),
+        openclaw_reason: "OpenClaw: revisao juridica exige approval humano.",
       }),
     }));
     expect(upserts).toEqual(expect.arrayContaining([
@@ -539,6 +565,12 @@ describe("/api/juridico/movement-reviews", () => {
       hermes: expect.objectContaining({ last_event_type: "approval_requested" }),
     }));
     expect(finalized?.payload.payload.action_result).toEqual(expect.objectContaining({
+      reviewed_payload: expect.objectContaining({
+        supervision_context: expect.objectContaining({
+          operational_thesis: "Movimentacao exige manifestacao supervisionada antes da Draft Factory.",
+          blockers: ["human_approval_required"],
+        }),
+      }),
       proactive_movement: expect.objectContaining({
         status: "prepared",
         artifactId: "lex-proactive-artifact-1",

@@ -140,6 +140,12 @@ describe("buildProcessMissionContext", () => {
     expect(context.draft.recommendedPiece).toBe("Replica a contestacao");
     expect(context.confidence).toBe("high");
     expect(context.recommendedAction).toBe("generate_first_draft");
+    expect(context.operationalThesis).toEqual(expect.objectContaining({
+      thesis: expect.stringContaining("Gerar primeira minuta"),
+      sourcesUsed: expect.arrayContaining(["case_brain", "fresh_document_memory"]),
+      openClawReason: expect.stringContaining("Draft Factory"),
+      nextActionBeforeDraftFactory: expect.stringContaining("approval humano"),
+    }));
     expect(context.grounding.factualSources).toEqual(expect.arrayContaining([
       "case_brain",
       "fresh_document_memory",
@@ -270,6 +276,11 @@ describe("buildProcessMissionContext", () => {
       "low_confidence_process_mission",
       "missing:document_memory",
       "missing:case_brain_task",
+    ]));
+    expect(context.operationalThesis.openClawReason).toContain("insuficiente");
+    expect(context.operationalThesis.blockers).toEqual(expect.arrayContaining([
+      "low_confidence_process_mission",
+      "missing_document_memory",
     ]));
   });
 

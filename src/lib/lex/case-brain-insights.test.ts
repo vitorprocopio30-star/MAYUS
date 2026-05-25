@@ -78,6 +78,11 @@ describe("buildCaseBrainInsights", () => {
       expect.stringContaining("Resumo documental"),
     ]));
     expect(insights.likelyNextActs[0]).toContain("Preparar replica");
+    expect(insights.operationalThesis).toEqual(expect.objectContaining({
+      thesis: expect.stringContaining("1234567-89.2024.8.26.0100"),
+      sourcesUsed: expect.arrayContaining(["case_brain", "fresh_document_memory"]),
+      openClawReason: expect.stringContaining("OpenClaw"),
+    }));
     expect(insights.confidence).toBe("high");
   });
 
@@ -173,6 +178,8 @@ describe("buildCaseBrainInsights", () => {
     expect(reply).toContain("## Case Brain 2.0");
     expect(reply).toContain("### Cronologia estruturada");
     expect(reply).toContain("### Riscos");
+    expect(reply).toContain("Motivo OpenClaw");
+    expect(reply).toContain("### Fontes e lacunas antes da Draft Factory");
     expect(reply).toContain("Guardrail: este diagnostico nao executa protocolo");
   });
 });

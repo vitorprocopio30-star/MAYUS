@@ -55,6 +55,25 @@ type AgenticGovernanceSummary = {
   }
 }
 
+type ReviewSupervisionContext = {
+  process_context: {
+    numero_cnj: string | null
+    cliente_nome: string | null
+    tribunal: string | null
+    tipo_evento: string | null
+    acao_sugerida: string | null
+    data_vencimento_extraida: string | null
+    movimentacao_data: string | null
+    movimentacao_conteudo: string | null
+  }
+  sources_used: string[]
+  gaps: string[]
+  blockers: string[]
+  operational_thesis: string | null
+  next_action_before_draft_factory: string | null
+  openclaw_reason: string | null
+}
+
 type ReviewOverrides = {
   acao_sugerida?: string | null
   data_vencimento_extraida?: string | null
@@ -130,6 +149,12 @@ function optionalBoolean(value: unknown) {
   return typeof value === 'boolean' ? value : null
 }
 
+function stringList(value: unknown) {
+  return Array.isArray(value)
+    ? Array.from(new Set(value.map((item) => optionalSummaryText(item)).filter((item): item is string => Boolean(item))))
+    : []
+}
+
 function summarizeOpenClawPolicy(policy: Record<string, unknown>) {
   const subject = isRecord(policy.subject) ? policy.subject : {}
   const surfaceMatrix = isRecord(policy.surface_matrix) ? policy.surface_matrix : {}
@@ -183,6 +208,74 @@ function summarizeAgenticGovernance(payload: ReviewPayload, analysis: ReviewPayl
   return {
     openclaw: summarizeOpenClawPolicy(openclawPolicy),
     hermes: summarizeHermesTrajectory(hermesTrajectory),
+  }
+}
+
+function summarizeReviewSupervisionContext(params: {
+  payload: ReviewPayload
+  analysis: ReviewPayload
+  movement: any
+  process: any
+  agenticGovernance: AgenticGovernanceSummary | null
+}): ReviewSupervisionContext {
+  const governance = isRecord(params.payload.agentic_governance)
+    ? params.payload.agentic_governance
+    : isRecord(params.analysis.agentic_governance)
+      ? params.analysis.agentic_governance
+      : {}
+  const operationalThesis = isRecord(governance.operational_thesis)
+    ? governance.operational_thesis
+    : isRecord(governance.operationalThesis)
+      ? governance.operationalThesis
+      : null
+  const processNumber = optionalSummaryText(params.payload.numero_cnj)
+    || optionalSummaryText(params.movement?.numero_cnj)
+    || optionalSummaryText(params.process?.numero_processo)
+  const action = optionalSummaryText(params.payload.acao_sugerida)
+    || optionalSummaryText(params.movement?.acao_sugerida)
+  const eventType = optionalSummaryText(params.payload.tipo_evento)
+    || optionalSummaryText(params.movement?.tipo_evento)
+  const dueDate = optionalSummaryText(params.payload.data_vencimento_extraida)
+    || optionalSummaryText(params.movement?.data_vencimento_extraida)
+
+  const sourcesUsed = stringList((governance as Record<string, unknown>).sources_used_before_draft_factory)
+    .concat(stringList((governance as Record<string, unknown>).sourcesUsedBeforeDraftFactory))
+    .concat(stringList(isRecord((governance as Record<string, unknown>).sources) ? ((governance as Record<string, unknown>).sources as Record<string, unknown>).factual : null))
+  const gaps = stringList((governance as Record<string, unknown>).gaps_before_draft_factory)
+    .concat(stringList((governance as Record<string, unknown>).gapsBeforeDraftFactory))
+    .concat(stringList(isRecord((governance as Record<string, unknown>).gaps) ? ((governance as Record<string, unknown>).gaps as Record<string, unknown>).all : null))
+  const blockers = stringList((governance as Record<string, unknown>).blockers_before_draft_factory)
+    .concat(stringList((governance as Record<string, unknown>).blockersBeforeDraftFactory))
+    .concat(stringList((governance as Record<string, unknown>).blockers))
+
+  return {
+    process_context: {
+      numero_cnj: processNumber,
+      cliente_nome: optionalSummaryText(params.process?.cliente_nome),
+      tribunal: optionalSummaryText(params.process?.tribunal),
+      tipo_evento: eventType,
+      acao_sugerida: action,
+      data_vencimento_extraida: dueDate,
+      movimentacao_data: optionalSummaryText(params.movement?.data),
+      movimentacao_conteudo: optionalSummaryText(movementContent(params.movement, params.payload)),
+    },
+    sources_used: Array.from(new Set([
+      ...sourcesUsed,
+      params.movement?.id ? 'process_movimentacoes' : null,
+      params.process?.id ? 'monitored_processes' : null,
+      params.payload.agentic_governance || params.analysis.agentic_governance ? 'agentic_governance' : null,
+    ].filter((item): item is string => Boolean(item)))),
+    gaps: Array.from(new Set(gaps)),
+    blockers: Array.from(new Set(blockers)),
+    operational_thesis: optionalSummaryText(operationalThesis?.thesis)
+      || (processNumber && action ? `Movimentacao ${eventType || 'juridica'} do processo ${processNumber} exige supervisao antes da Draft Factory: ${action}.` : null),
+    next_action_before_draft_factory: optionalSummaryText(operationalThesis?.nextActionBeforeDraftFactory)
+      || optionalSummaryText((governance as Record<string, unknown>).next_action_before_draft_factory)
+      || 'Aprovador humano deve confirmar prazo, fonte e providencia antes de liberar missao Lex/Draft Factory.',
+    openclaw_reason: optionalSummaryText((governance as Record<string, unknown>).openclaw_reason)
+      || optionalSummaryText((governance as Record<string, unknown>).openclawReason)
+      || params.agenticGovernance?.openclaw.reason
+      || 'Politica OpenClaw exige aprovacao humana antes de side effects juridicos.',
   }
 }
 
@@ -317,6 +410,7 @@ async function listPendingReviews(tenantId: string) {
     const { movement, process } = await loadReviewContext(tenantId, payload)
     const analysis = normalizePayload(movement?.analise_json)
     const agenticGovernance = summarizeAgenticGovernance(payload, analysis)
+    const supervisionContext = summarizeReviewSupervisionContext({ payload, analysis, movement, process, agenticGovernance })
     items.push({
       id: review.id,
       created_at: review.created_at,
@@ -337,6 +431,7 @@ async function listPendingReviews(tenantId: string) {
       evidencia: payload.evidencia || String(analysis.evidencia || ''),
       review_required: payload.review_required ?? (typeof analysis.review_required === 'boolean' ? analysis.review_required : true),
       agentic_governance: agenticGovernance,
+      supervision_context: supervisionContext,
       movimentacao_data: movement?.data || null,
       movimentacao_conteudo: movementContent(movement, payload),
       cliente_nome: process?.cliente_nome || null,
@@ -365,6 +460,7 @@ async function listStuckReviews(tenantId: string) {
     const { movement, process } = await loadReviewContext(tenantId, payload)
     const analysis = normalizePayload(movement?.analise_json)
     const agenticGovernance = summarizeAgenticGovernance(payload, analysis)
+    const supervisionContext = summarizeReviewSupervisionContext({ payload, analysis, movement, process, agenticGovernance })
     items.push({
       id: review.id,
       created_at: review.created_at,
@@ -385,6 +481,7 @@ async function listStuckReviews(tenantId: string) {
       evidencia: payload.evidencia || String(analysis.evidencia || ''),
       review_required: payload.review_required ?? (typeof analysis.review_required === 'boolean' ? analysis.review_required : true),
       agentic_governance: agenticGovernance,
+      supervision_context: supervisionContext,
       movimentacao_data: movement?.data || null,
       movimentacao_conteudo: movementContent(movement, payload),
       cliente_nome: process?.cliente_nome || null,
@@ -530,6 +627,15 @@ async function approveReview(params: { tenantId: string; userId: string; review:
     reviewerId: params.userId,
   })
   const escavadorMovimentacaoId = payload.escavador_movimentacao_id || movement?.escavador_movimentacao_id || null
+  const analysisForSupervision = normalizePayload(movement?.analise_json)
+  const agenticGovernance = summarizeAgenticGovernance(reviewedPayload, analysisForSupervision)
+  const supervisionContext = summarizeReviewSupervisionContext({
+    payload: reviewedPayload,
+    analysis: analysisForSupervision,
+    movement,
+    process,
+    agenticGovernance,
+  })
 
   const { error: prazoError } = await supabaseAdmin.from('process_prazos').upsert({
     tenant_id: params.tenantId,
@@ -596,6 +702,12 @@ async function approveReview(params: { tenantId: string; userId: string; review:
         review_note: params.note || null,
         process_task_id: taskId,
         due_date: dueDateIso,
+        supervision_context: supervisionContext,
+        sources_used_before_draft_factory: supervisionContext.sources_used,
+        gaps_before_draft_factory: supervisionContext.gaps,
+        blockers_before_draft_factory: supervisionContext.blockers,
+        operational_thesis: supervisionContext.operational_thesis,
+        openclaw_reason: supervisionContext.openclaw_reason,
       },
     })
   } catch (error: any) {
@@ -618,6 +730,12 @@ async function approveReview(params: { tenantId: string; userId: string; review:
       confidence: reviewedPayload.confidence || reviewedPayload.confianca_analise || null,
       confidence_reason: reviewedPayload.confidence_reason ?? null,
       evidencia: reviewedPayload.evidencia ?? null,
+      supervision_context: supervisionContext,
+      sources_used_before_draft_factory: supervisionContext.sources_used,
+      gaps_before_draft_factory: supervisionContext.gaps,
+      blockers_before_draft_factory: supervisionContext.blockers,
+      operational_thesis: supervisionContext.operational_thesis,
+      openclaw_reason: supervisionContext.openclaw_reason,
     },
   }
 }
