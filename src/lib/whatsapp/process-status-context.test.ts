@@ -328,6 +328,74 @@ describe("process-status-context", () => {
     expect(context?.processTaskId).toBe("process-marcio-explicit");
   });
 
+  it("mantem nome recente quando operador pede status generico depois de citar o cliente", async () => {
+    const processOrFilters: string[] = [];
+    const from = vi.fn((table: string) => {
+      if (table === "clients") return makeQuery({ data: null, error: null });
+      if (table === "process_tasks") {
+        const query: any = {
+          select: vi.fn(() => query),
+          eq: vi.fn(() => query),
+          or: vi.fn((filter: string) => {
+            processOrFilters.push(filter);
+            return query;
+          }),
+          order: vi.fn(() => query),
+          limit: vi.fn(async () => ({
+            data: filtersIncludeMarcio(processOrFilters[processOrFilters.length - 1])
+              ? [{
+                id: "process-marcio-retained",
+                title: "Marcio da Silva Machado x Banco Bradesco",
+                description: "Processo contra Banco Bradesco.",
+                phone: null,
+                client_name: "Marcio da Silva Machado",
+                process_number: "3000141-95.2026.8.19.0213",
+                processo_1grau: null,
+                processo_2grau: null,
+                andamento_1grau: "Aguardando andamento do juizo",
+                andamento_2grau: null,
+                orgao_julgador: null,
+                tutela_urgencia: null,
+                sentenca: null,
+                prazo_fatal: null,
+                liminar_deferida: false,
+                data_ultima_movimentacao: "2026-06-21T00:00:00.000Z",
+                tags: [],
+                urgency: "ROTINA",
+                reu: "Banco Bradesco",
+                process_stages: { name: "Conhecimento" },
+              }]
+              : [],
+            error: null,
+          })),
+        };
+        return query;
+      }
+      if (table === "monitored_processes") return makeQuery({ data: [], error: null });
+      if (table === "processos_cache") return makeQuery({ data: [], error: null });
+      if (table === "brain_artifacts") return makeQuery({ data: [], error: null });
+      return makeQuery({ data: null, error: null });
+    });
+
+    const context = await fetchWhatsAppProcessStatusContext({
+      supabase: { from } as any,
+      tenantId: "tenant-1",
+      contact: { phone_number: "5521999990000@s.whatsapp.net", name: "Vitor" },
+      messages: [
+        { direction: "inbound", content: "Marcio da Silva Machado" },
+        { direction: "outbound", content: "Encontrei processos para Marcio." },
+        { direction: "inbound", content: "Quero saber sobre o processo" },
+      ],
+      senderPhoneAuthorized: true,
+    });
+
+    expect(processOrFilters.join(" ")).toMatch(/M[áa]rcio|Marcio/);
+    expect(context?.verified).toBe(true);
+    expect(context?.processTaskId).toBe("process-marcio-retained");
+    expect(context?.clientName).toBe("Marcio da Silva Machado");
+    expect(context?.grounding.missingSignals).not.toContain("authorized_process_access_needs_reference");
+  });
+
   it("nao libera status por nome sozinho para cliente externo sem vinculo forte", async () => {
     const processOrFilters: string[] = [];
     const from = vi.fn((table: string) => {

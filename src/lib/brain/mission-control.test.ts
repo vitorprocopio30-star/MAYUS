@@ -48,6 +48,7 @@ describe("buildBrainMissionControlSnapshots", () => {
     expect(snapshots[0]).toEqual(expect.objectContaining({
       missionId: "task-1",
       module: "core",
+      owner: "MAYUS Operating Partner",
       status: "executing",
       currentStep: expect.objectContaining({
         id: "step-2",
@@ -135,6 +136,37 @@ describe("buildBrainMissionControlSnapshots", () => {
     }));
     expect(JSON.stringify(snapshots[0].policy)).not.toContain("sk-secret-value");
     expect(JSON.stringify(snapshots[0].policy)).not.toContain("profile_explanation");
+  });
+
+  it("sanitiza blockers reconstruidos de erros de task e step", () => {
+    const snapshots = buildBrainMissionControlSnapshots({
+      tasks: [{
+        id: "task-secret-error",
+        goal: "Investigar falha operacional",
+        module: "core",
+        status: "blocked",
+        error_message: "Falha upstream token=sk-secret-value",
+        created_at: "2026-05-21T11:30:00.000Z",
+      }],
+      steps: [{
+        id: "step-secret-error",
+        task_id: "task-secret-error",
+        title: "Executar chamada interna",
+        status: "failed",
+        error_message: "Provider respondeu service_role_key=super-secret",
+        created_at: "2026-05-21T11:31:00.000Z",
+      }],
+    });
+
+    const serialized = JSON.stringify(snapshots[0]);
+
+    expect(snapshots[0].blockers).toEqual(expect.arrayContaining([
+      "Falha upstream [redacted]",
+      "Provider respondeu [redacted]",
+    ]));
+    expect(serialized).not.toContain("sk-secret-value");
+    expect(serialized).not.toContain("super-secret");
+    expect(serialized).not.toContain("service_role_key=super-secret");
   });
 
   it("conecta Hermes trajectory e proposta lifecycle pendente", () => {
@@ -431,6 +463,7 @@ describe("buildBrainMissionControlSnapshots", () => {
 
     expect(snapshots[0]).toEqual(expect.objectContaining({
       agentSource: "paperclip",
+      owner: "Operador juridico",
       pendingApproval: expect.objectContaining({ id: "approval-paperclip" }),
       routine: expect.objectContaining({
         routineId: "paperclip_deadline_guardian",

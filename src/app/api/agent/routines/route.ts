@@ -9,7 +9,10 @@ import {
 } from "@/lib/agent/runtime/routines";
 import { buildMayusAgentControlPlane } from "@/lib/agent/runtime/control-plane";
 import { buildLegalOperatorMissionSnapshots } from "@/lib/brain/legal-operator-missions";
-import { buildBrainMissionControlSnapshots } from "@/lib/brain/mission-control";
+import {
+  buildBrainMissionControlSnapshots,
+  type BrainMissionControlSnapshot,
+} from "@/lib/brain/mission-control";
 
 export const dynamic = "force-dynamic";
 export const maxDuration = 60;
@@ -57,6 +60,14 @@ type BrainRelationRow = Record<string, unknown> & {
   step_id?: string | null;
 };
 
+type MissionControlDiagnostics = {
+  status: "ready" | "degraded";
+  canReconstruct: boolean;
+  reason: string;
+  nextAction: string;
+  sources: string[];
+};
+
 const ROUTINE_EVENT_NAMES = [
   "agentic_routine_woken",
   "agentic_routine_blocked",
@@ -79,7 +90,7 @@ function sanitizeText(value: unknown, fallback = "scheduler_error") {
   const text = typeof value === "string" && value.trim() ? value.trim() : fallback;
   return text
     .replace(/Bearer\s+[A-Za-z0-9._~+/=-]+/gi, "Bearer [redacted]")
-    .replace(/(service[_-]?role|secret|token|api[_-]?key|authorization)(["'\s:=]+)[^"',\s}]+/gi, "$1$2[redacted]")
+    .replace(/(service[_-]?role[_-]?key|service[_-]?role|secret|token|api[_-]?key|authorization)(["'\s:=_-]+)[^"',\s}]+/gi, "$1$2[redacted]")
     .slice(0, 280);
 }
 
@@ -246,7 +257,20 @@ function uniqueIds(values: Array<string | null | undefined>) {
 async function loadAgentControlMissionSnapshots(params: {
   client: RoutineClient;
   tenantId: string;
-}) {
+}): Promise<{
+  snapshots: BrainMissionControlSnapshot[];
+  diagnostics: MissionControlDiagnostics;
+}> {
+  const sources = [
+    "brain_tasks",
+    "brain_runs",
+    "brain_steps",
+    "brain_approvals",
+    "brain_artifacts",
+    "learning_events",
+    "brain_memories",
+  ];
+
   try {
     const [
       { data: pendingApprovals, error: pendingError },
@@ -363,7 +387,7 @@ async function loadAgentControlMissionSnapshots(params: {
       events: events as any,
     });
 
-    return buildBrainMissionControlSnapshots({
+    const snapshots = buildBrainMissionControlSnapshots({
       tasks: [...((taskRows || []) as any[]), ...(tasks as any[])],
       runs: (runRows || []) as any[],
       steps: (stepRows || []) as any[],
@@ -373,9 +397,38 @@ async function loadAgentControlMissionSnapshots(params: {
       memories: (memoryRows || []) as any[],
       legalOperatorMissions,
     }).slice(0, 12);
+
+    return {
+      snapshots,
+      diagnostics: snapshots.length > 0
+        ? {
+            status: "ready",
+            canReconstruct: true,
+            reason: "Mission Control reconstruiu missoes reais com owner, blockers, policy OpenClaw e trajectory Hermes.",
+            nextAction: "Usar mission_control_snapshots como fonte de leitura para coordenacao interna.",
+            sources,
+          }
+        : {
+            status: "degraded",
+            canReconstruct: false,
+            reason: "Nenhum snapshot real de Mission Control foi encontrado para este tenant.",
+            nextAction: "Acordar uma rotina Paperclip ou verificar se brain_tasks/approvals/artifacts/events existem para este tenant.",
+            sources,
+          },
+    };
   } catch (error) {
-    console.warn("[agent/routines] mission snapshots unavailable", sanitizeError(error));
-    return [];
+    const safeError = sanitizeError(error);
+    console.warn("[agent/routines] mission snapshots unavailable", safeError);
+    return {
+      snapshots: [],
+      diagnostics: {
+        status: "degraded",
+        canReconstruct: false,
+        reason: `Mission Control indisponivel: ${safeError.message}`,
+        nextAction: "Verificar schema brain_*, learning_events, brain_memories e credenciais server-side antes de confiar no painel.",
+        sources,
+      },
+    };
   }
 }
 
@@ -646,10 +699,11 @@ export async function GET() {
       tenantId: auth.context!.tenantId,
       client: brainAdminSupabase,
     });
-    const missionControlSnapshots = await loadAgentControlMissionSnapshots({
+    const missionControl = await loadAgentControlMissionSnapshots({
       tenantId: auth.context!.tenantId,
       client: brainAdminSupabase,
     });
+    const missionControlSnapshots = missionControl.snapshots;
     const controlPlane = buildMayusAgentControlPlane({
       routines,
       missionSnapshots: missionControlSnapshots,
@@ -660,6 +714,13 @@ export async function GET() {
       agents: controlPlane.agents,
       summary: controlPlane.summary,
       control_plane: controlPlane,
+      mission_control: {
+        ...missionControl.diagnostics,
+        snapshots: missionControlSnapshots,
+      },
+      mission_control_degradation: missionControl.diagnostics.status === "degraded"
+        ? missionControl.diagnostics
+        : null,
       mission_control_snapshots: missionControlSnapshots,
     });
   } catch (error) {

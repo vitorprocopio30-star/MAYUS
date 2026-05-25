@@ -515,13 +515,13 @@ describe("route - juridico MAYUS", () => {
     expect(result.ambiguous).toBe(false);
   });
 
-  it("detecta pedido para gerar a primeira minuta juridica", () => {
+  it("roteia pedido para gerar primeira minuta pela missao supervisionada", () => {
     const result = route(
       "Pode gerar a primeira minuta do processo 1234567-89.2024.8.26.0100 pela Draft Factory?",
       baseContext
     );
 
-    expect(result.intent).toBe("legal_first_draft_generate");
+    expect(result.intent).toBe("legal_process_mission_execute_next");
     expect(result.entities).toEqual({ process_number: "1234567-89.2024.8.26.0100" });
     expect(result.confidence).toBeGreaterThanOrEqual(0.9);
     expect(result.ambiguous).toBe(false);

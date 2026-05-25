@@ -57,6 +57,17 @@ function makeEmptyBrainReadQuery() {
   return query;
 }
 
+function makeBrainReadErrorQuery(message = "relation missing") {
+  const query: Record<string, any> = {};
+  query.select = vi.fn(() => query);
+  query.eq = vi.fn(() => query);
+  query.neq = vi.fn(() => query);
+  query.order = vi.fn(() => query);
+  query.limit = vi.fn().mockResolvedValue({ data: null, error: new Error(message) });
+  query.in = vi.fn().mockResolvedValue({ data: null, error: new Error(message) });
+  return query;
+}
+
 function mockSchedulerSupabase(params: {
   settingsRows: Array<Record<string, unknown>>;
   eventRows?: Array<Record<string, unknown>>;
@@ -157,10 +168,48 @@ describe("/api/agent/routines", () => {
       policyPrecedence: ["global", "tenant", "module", "agent", "tool", "channel"],
     }));
     expect(body.mission_control_snapshots).toEqual([]);
+    expect(body.mission_control).toEqual(expect.objectContaining({
+      status: "degraded",
+      canReconstruct: false,
+      reason: "Nenhum snapshot real de Mission Control foi encontrado para este tenant.",
+      nextAction: expect.stringContaining("Acordar uma rotina Paperclip"),
+      snapshots: [],
+    }));
+    expect(body.mission_control_degradation).toEqual(expect.objectContaining({
+      status: "degraded",
+      canReconstruct: false,
+    }));
     expect(body.control_plane.agents).toEqual(body.agents);
     expect(listMayusAgenticRoutinesMock).toHaveBeenCalledWith(expect.objectContaining({
       tenantId: "tenant-session",
     }));
+  });
+
+  it("GET degrada Mission Control explicitamente quando schema real falha", async () => {
+    brainAdminSupabaseMock.from.mockImplementation((table: string) => (
+      table === "brain_approvals"
+        ? makeBrainReadErrorQuery("relation brain_approvals missing service-role-key leaked")
+        : makeEmptyBrainReadQuery()
+    ));
+
+    const response = await GET();
+    const body = await response.json();
+
+    expect(response.status).toBe(200);
+    expect(body.mission_control_snapshots).toEqual([]);
+    expect(body.mission_control).toEqual(expect.objectContaining({
+      status: "degraded",
+      canReconstruct: false,
+      reason: expect.stringContaining("Mission Control indisponivel"),
+      nextAction: expect.stringContaining("Verificar schema brain_*"),
+      snapshots: [],
+    }));
+    expect(body.mission_control.sources).toEqual(expect.arrayContaining([
+      "brain_tasks",
+      "brain_approvals",
+      "learning_events",
+    ]));
+    expect(JSON.stringify(body.mission_control)).not.toContain("service-role-key leaked");
   });
 
   it("POST usa tenant da sessao e ignora tenantId do body", async () => {

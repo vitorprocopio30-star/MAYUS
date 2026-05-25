@@ -971,7 +971,7 @@ const INTENT_PATTERNS: IntentDefinition[] = [
     baseConfidence: 0.82,
   },
   {
-    intent: 'legal_first_draft_generate',
+    intent: 'legal_process_mission_execute_next',
     patterns: [
       /gerar\s+(a\s+)?(primeira\s+)?minuta/i,
       /atualizar\s+(a\s+)?(primeira\s+)?minuta/i,

@@ -197,6 +197,15 @@ export interface DispatchCapabilityResult {
   outputPayload?: Record<string, unknown>;
 }
 
+type AgentApprovalGateRow = {
+  skill_invoked: string | null;
+  approval_status: string | null;
+  approved_by: string | null;
+  approved_at: string | null;
+  approval_context: Record<string, unknown> | null;
+  pending_execution_payload: Record<string, unknown> | null;
+};
+
 type BillingCrmTaskContext = {
   id: string;
   pipeline_id: string;
@@ -5498,6 +5507,95 @@ async function registerLegalFirstDraftResultArtifact(
   });
 }
 
+async function resolveLegalFirstDraftApprovalGate(input: DispatchCapabilityInput) {
+  if (!input.auditLogId) {
+    return {
+      approved: false,
+      reason: "draft_generation_requires_human_approval",
+      detail: "Geracao de minuta juridica exige audit log aprovado antes da Draft Factory.",
+    };
+  }
+
+  try {
+    const { data, error } = await serviceSupabase
+      .from("agent_audit_logs")
+      .select("skill_invoked, approval_status, approved_by, approved_at, approval_context, pending_execution_payload")
+      .eq("tenant_id", input.tenantId)
+      .eq("id", input.auditLogId)
+      .maybeSingle<AgentApprovalGateRow>();
+
+    if (error) {
+      return {
+        approved: false,
+        reason: "draft_generation_approval_lookup_failed",
+        detail: error.message || "Nao foi possivel confirmar a aprovacao humana da minuta.",
+      };
+    }
+
+    if (!data) {
+      return {
+        approved: false,
+        reason: "draft_generation_approval_not_found",
+        detail: "Aprovacao humana da minuta nao foi encontrada para este tenant.",
+      };
+    }
+
+    if (data.skill_invoked !== "legal_first_draft_generate") {
+      return {
+        approved: false,
+        reason: "draft_generation_approval_skill_mismatch",
+        detail: "O approval encontrado nao pertence a legal_first_draft_generate.",
+      };
+    }
+
+    if (data.approval_status !== "approved" || !data.approved_by || !data.approved_at) {
+      return {
+        approved: false,
+        reason: "draft_generation_approval_not_approved",
+        detail: "A Draft Factory juridica so pode rodar depois de approval humano aprovado.",
+      };
+    }
+
+    const approvalContext = data.approval_context || {};
+    const pendingPayload = data.pending_execution_payload || {};
+    const sourceCapability = getStringValue(approvalContext.source_capability);
+    const sourcePayload = getStringValue(pendingPayload.source);
+
+    if (
+      sourceCapability !== "legal_process_mission_execute_next" ||
+      sourcePayload !== "legal_process_mission_execute_next"
+    ) {
+      return {
+        approved: false,
+        reason: "draft_generation_approval_source_mismatch",
+        detail: "A aprovacao da minuta precisa ter sido aberta pela missao processual supervisionada.",
+      };
+    }
+
+    if (data.approved_by && input.userId && data.approved_by !== input.userId) {
+      return {
+        approved: false,
+        reason: "draft_generation_approver_mismatch",
+        detail: "O usuario executor nao corresponde ao aprovador registrado.",
+      };
+    }
+
+    return {
+      approved: true,
+      reason: null,
+      detail: null,
+      approvedBy: data.approved_by,
+      approvedAt: data.approved_at,
+    };
+  } catch (error) {
+    return {
+      approved: false,
+      reason: "draft_generation_approval_lookup_failed",
+      detail: error instanceof Error ? error.message : "Nao foi possivel confirmar a aprovacao humana da minuta.",
+    };
+  }
+}
+
 async function runLegalDocumentMemoryRefresh(input: DispatchCapabilityInput): Promise<DispatchCapabilityResult> {
   const snapshotBefore = await getLegalCaseContextSnapshot({
     tenantId: input.tenantId,
@@ -7054,6 +7152,54 @@ async function runLegalFirstDraftGenerate(input: DispatchCapabilityInput): Promi
   });
   const processMissionContext = await buildTenantProcessMissionContext(input, snapshotBefore);
   const methodologyPayload = buildOperationalMethodologyPayload(processMissionContext);
+  const approvalGate = await resolveLegalFirstDraftApprovalGate(input);
+
+  if (!approvalGate.approved) {
+    const reason = approvalGate.detail || "A Draft Factory juridica exige approval humano aprovado antes de gerar minuta.";
+    const reply = [
+      "## Primeira minuta juridica",
+      `- Processo: ${snapshotBefore.processTask.processNumber || snapshotBefore.processTask.title}`,
+      "- Status: bloqueada para approval humano.",
+      `- Motivo: ${reason}`,
+      "- Guardrail: a Draft Factory juridica nao foi chamada e nenhum side effect externo foi realizado.",
+    ].join("\n");
+
+    await registerLegalFirstDraftResultArtifact(input, {
+      snapshot: snapshotBefore,
+      reply,
+      summary: "Draft Factory bloqueada antes da geracao por falta de approval humano aprovado.",
+      resultStatus: "failed",
+      firstDraftStaleBefore: snapshotBefore.firstDraft.isStale,
+      errorMessage: reason,
+      processMissionContext,
+    });
+
+    return {
+      status: "blocked",
+      reply,
+      outputPayload: {
+        auditLogId: input.auditLogId || null,
+        handler_type: input.handlerType,
+        process_task_id: snapshotBefore.processTask.id,
+        process_number: snapshotBefore.processTask.processNumber,
+        blocked_reason: approvalGate.reason || "draft_generation_requires_human_approval",
+        approval_required: true,
+        approval_status: "missing_or_unapproved",
+        process_mission_confidence: processMissionContext.confidence,
+        process_mission_recommended_action: processMissionContext.recommendedAction,
+        ...methodologyPayload,
+        legal_operator_state: withLegalOperatorRuntimeState(processMissionContext, {
+          status: "blocked",
+          blocker: approvalGate.reason || "draft_generation_requires_human_approval",
+        }),
+        external_side_effects_blocked: true,
+      },
+      data: {
+        snapshot: snapshotBefore,
+        processMissionContext,
+      },
+    };
+  }
 
   if (!snapshotBefore.caseBrain.taskId || !snapshotBefore.caseBrain.recommendedPieceInput) {
     const reply = `O processo ${snapshotBefore.processTask.processNumber || snapshotBefore.processTask.title} ainda nao tem um draft plan juridico pronto. Rode o Case Brain antes de pedir a primeira minuta.`;
@@ -7072,7 +7218,9 @@ async function runLegalFirstDraftGenerate(input: DispatchCapabilityInput): Promi
         auditLogId: input.auditLogId || null,
         handler_type: input.handlerType,
         process_task_id: snapshotBefore.processTask.id,
+        approval_status: "approved",
         ...methodologyPayload,
+        external_side_effects_blocked: true,
       },
     };
   }
@@ -7111,7 +7259,9 @@ async function runLegalFirstDraftGenerate(input: DispatchCapabilityInput): Promi
         process_task_id: snapshotBefore.processTask.id,
         first_draft_status: snapshotBefore.firstDraft.status,
         first_draft_stale: snapshotBefore.firstDraft.isStale,
+        approval_status: "approved",
         ...methodologyPayload,
+        external_side_effects_blocked: true,
       },
       data: snapshotBefore,
     };
@@ -7148,6 +7298,7 @@ async function runLegalFirstDraftGenerate(input: DispatchCapabilityInput): Promi
           : "operational_methodology_requires_review",
         process_mission_confidence: processMissionContext.confidence,
         process_mission_recommended_action: processMissionContext.recommendedAction,
+        approval_status: "approved",
         ...methodologyPayload,
         legal_operator_state: withLegalOperatorRuntimeState(processMissionContext, {
           status: "blocked",
@@ -7211,6 +7362,9 @@ async function runLegalFirstDraftGenerate(input: DispatchCapabilityInput): Promi
       already_existing: execution.alreadyExisting === true,
       first_draft_stale_before: snapshotBefore.firstDraft.isStale,
       piece_label: pieceLabel,
+      approval_status: "approved",
+      approval_audit_log_id: input.auditLogId || null,
+      external_side_effects_blocked: true,
       ...methodologyPayload,
     });
 
@@ -7237,7 +7391,10 @@ async function runLegalFirstDraftGenerate(input: DispatchCapabilityInput): Promi
         first_draft_status: snapshotAfter.firstDraft.status,
         first_draft_stale: snapshotAfter.firstDraft.isStale,
         recommended_piece_label: pieceLabel,
+        approval_status: "approved",
+        approval_audit_log_id: input.auditLogId || null,
         ...methodologyPayload,
+        external_side_effects_blocked: true,
       },
       data: {
         execution,
@@ -7264,7 +7421,9 @@ async function runLegalFirstDraftGenerate(input: DispatchCapabilityInput): Promi
         auditLogId: input.auditLogId || null,
         handler_type: input.handlerType,
         process_task_id: snapshotBefore.processTask.id,
+        approval_status: "approved",
         ...methodologyPayload,
+        external_side_effects_blocked: true,
       },
     };
   }

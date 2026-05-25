@@ -313,6 +313,25 @@ function makeGrowthQuery(table: string, inserts: Array<{ table: string; payload:
   return query;
 }
 
+function makeApprovedLegalFirstDraftApprovalQuery(overrides: Record<string, any> = {}) {
+  return makeMaybeSingleQuery({
+    data: {
+      skill_invoked: "legal_first_draft_generate",
+      approval_status: "approved",
+      approved_by: "user-1",
+      approved_at: "2026-04-20T21:05:00.000Z",
+      approval_context: {
+        source_capability: "legal_process_mission_execute_next",
+      },
+      pending_execution_payload: {
+        source: "legal_process_mission_execute_next",
+      },
+      ...overrides,
+    },
+    error: null,
+  });
+}
+
 describe("dispatchCapabilityExecution - juridico", () => {
   beforeEach(() => {
     insertMock.mockReset();
@@ -2660,6 +2679,137 @@ describe("dispatchCapabilityExecution - juridico", () => {
     }));
   });
 
+  it("bloqueia Draft Factory direta sem approval humano aprovado", async () => {
+    getLegalCaseContextSnapshotMock.mockResolvedValue(makeSnapshot({
+      documentMemory: {
+        ...makeSnapshot().documentMemory,
+        freshness: "fresh",
+      },
+    }));
+    fromMock.mockImplementation((table: string) => {
+      if (table === "agent_audit_logs") {
+        return makeMaybeSingleQuery({ data: null, error: null });
+      }
+
+      return { insert: insertMock };
+    });
+
+    const result = await dispatchCapabilityExecution({
+      handlerType: "lex_first_draft_generate",
+      capabilityName: "legal_first_draft_generate",
+      tenantId: "tenant-1",
+      userId: "user-1",
+      entities: { process_number: "E2E-2026-0001" },
+      auditLogId: "audit-direct-draft",
+      brainContext: {
+        taskId: "brain-task-direct-draft",
+        runId: "brain-run-direct-draft",
+        stepId: "brain-step-direct-draft",
+        sourceModule: "mayus",
+      },
+    });
+
+    expect(result.status).toBe("blocked");
+    expect(result.reply).toContain("bloqueada para approval humano");
+    expect(result.outputPayload).toEqual(expect.objectContaining({
+      blocked_reason: "draft_generation_approval_not_found",
+      approval_required: true,
+      approval_status: "missing_or_unapproved",
+      external_side_effects_blocked: true,
+    }));
+    expect(executeDraftFactoryForProcessTaskMock).not.toHaveBeenCalled();
+    expect(createBrainArtifactMock).toHaveBeenCalledWith(expect.objectContaining({
+      artifactType: "legal_first_draft_result",
+      metadata: expect.objectContaining({
+        result_status: "failed",
+        process_task_id: "process-task-1",
+        error_message: expect.stringContaining("Aprovacao humana da minuta nao foi encontrada"),
+        external_side_effects_blocked: true,
+      }),
+    }));
+  });
+
+  it("bloqueia Draft Factory com approval aprovado que nao veio da missao processual", async () => {
+    getLegalCaseContextSnapshotMock.mockResolvedValue(makeSnapshot({
+      documentMemory: {
+        ...makeSnapshot().documentMemory,
+        freshness: "fresh",
+      },
+    }));
+    fromMock.mockImplementation((table: string) => {
+      if (table === "agent_audit_logs") {
+        return makeApprovedLegalFirstDraftApprovalQuery({
+          approval_context: { source_capability: "legal_first_draft_generate" },
+          pending_execution_payload: { source: "manual_draft_factory" },
+        });
+      }
+
+      return { insert: insertMock };
+    });
+
+    const result = await dispatchCapabilityExecution({
+      handlerType: "lex_first_draft_generate",
+      capabilityName: "legal_first_draft_generate",
+      tenantId: "tenant-1",
+      userId: "user-1",
+      entities: { process_number: "E2E-2026-0001" },
+      auditLogId: "audit-direct-approved-draft",
+      brainContext: {
+        taskId: "brain-task-direct-approved-draft",
+        runId: "brain-run-direct-approved-draft",
+        stepId: "brain-step-direct-approved-draft",
+        sourceModule: "mayus",
+      },
+    });
+
+    expect(result.status).toBe("blocked");
+    expect(result.outputPayload).toEqual(expect.objectContaining({
+      blocked_reason: "draft_generation_approval_source_mismatch",
+      approval_required: true,
+      external_side_effects_blocked: true,
+    }));
+    expect(executeDraftFactoryForProcessTaskMock).not.toHaveBeenCalled();
+  });
+
+  it("bloqueia Draft Factory com approval sem aprovador humano completo", async () => {
+    getLegalCaseContextSnapshotMock.mockResolvedValue(makeSnapshot({
+      documentMemory: {
+        ...makeSnapshot().documentMemory,
+        freshness: "fresh",
+      },
+    }));
+    fromMock.mockImplementation((table: string) => {
+      if (table === "agent_audit_logs") {
+        return makeApprovedLegalFirstDraftApprovalQuery({ approved_by: null });
+      }
+
+      return { insert: insertMock };
+    });
+
+    const result = await dispatchCapabilityExecution({
+      handlerType: "lex_first_draft_generate",
+      capabilityName: "legal_first_draft_generate",
+      tenantId: "tenant-1",
+      userId: "user-1",
+      entities: { process_number: "E2E-2026-0001" },
+      auditLogId: "audit-approved-without-human",
+      brainContext: {
+        taskId: "brain-task-approved-without-human",
+        runId: "brain-run-approved-without-human",
+        stepId: "brain-step-approved-without-human",
+        sourceModule: "mayus",
+      },
+    });
+
+    expect(result.status).toBe("blocked");
+    expect(result.outputPayload).toEqual(expect.objectContaining({
+      blocked_reason: "draft_generation_approval_not_approved",
+      approval_required: true,
+      external_side_effects_blocked: true,
+    }));
+    expect(executeDraftFactoryForProcessTaskMock).not.toHaveBeenCalled();
+  });
+
   it("registra artifact do resultado da primeira minuta quando o MAYUS aciona a Draft Factory", async () => {
     const snapshotBefore = makeSnapshot({
       firstDraft: {
@@ -2683,6 +2833,13 @@ describe("dispatchCapabilityExecution - juridico", () => {
     getLegalCaseContextSnapshotMock
       .mockResolvedValueOnce(snapshotBefore)
       .mockResolvedValueOnce(snapshotAfter);
+    fromMock.mockImplementation((table: string) => {
+      if (table === "agent_audit_logs") {
+        return makeApprovedLegalFirstDraftApprovalQuery();
+      }
+
+      return { insert: insertMock };
+    });
     executeDraftFactoryForProcessTaskMock.mockResolvedValue({
       draftFactoryTaskId: "draft-factory-task-1",
       runId: "draft-run-1",
@@ -2751,6 +2908,7 @@ describe("dispatchCapabilityExecution - juridico", () => {
         recommended_piece_label: "Contestação Previdenciária",
         first_draft_status: "completed",
         first_draft_stale_before: false,
+        external_side_effects_blocked: true,
       }),
     }));
     expect(insertMock).toHaveBeenCalledWith(expect.objectContaining({
@@ -2759,6 +2917,9 @@ describe("dispatchCapabilityExecution - juridico", () => {
       payload: expect.objectContaining({
         process_task_id: "process-task-1",
         draft_factory_task_id: "draft-factory-task-1",
+        approval_status: "approved",
+        approval_audit_log_id: "audit-2",
+        external_side_effects_blocked: true,
         piece_label: "Contestação Previdenciária",
       }),
     }));
@@ -2794,6 +2955,10 @@ describe("dispatchCapabilityExecution - juridico", () => {
       },
     }));
     fromMock.mockImplementation((table: string) => {
+      if (table === "agent_audit_logs") {
+        return makeApprovedLegalFirstDraftApprovalQuery();
+      }
+
       if (table === "tenant_settings") {
         return makeMaybeSingleQuery({
           data: {

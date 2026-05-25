@@ -693,8 +693,12 @@ describe("mayus-operating-partner", () => {
       fetcher,
     });
 
+    expect(fetcher).not.toHaveBeenCalled();
     expect(decision.reply).toBe("Boa noite, Vitor. Como posso ajudar?");
     expect(decision.reply).not.toMatch(/cnj|processo|nome completo/i);
+    expect(decision.conversation_state.last_process_candidates).toBeUndefined();
+    expect(decision.conversation_frame?.resolution_type).toBe("greeting");
+    expect(decision.final_response_source).toBe("deterministic_guardrail");
   });
 
   it("apresenta Maya mesmo se evento anterior dizia introduzido mas historico recente nao mostra apresentacao", async () => {
@@ -724,7 +728,7 @@ describe("mayus-operating-partner", () => {
       fetcher,
     });
 
-    expect(fetcher).toHaveBeenCalledTimes(1);
+    expect(fetcher).not.toHaveBeenCalled();
     expect(decision.reply).toBe("Boa noite, Vitor Procópio. Como posso ajudar?");
     expect(decision.conversation_frame?.resolution_type).toBe("greeting");
     expect(decision.final_response_source).toBe("deterministic_guardrail");
@@ -1042,14 +1046,66 @@ describe("mayus-operating-partner", () => {
       fetcher,
     });
 
-    expect(fetcher).toHaveBeenCalledTimes(1);
+    expect(fetcher).not.toHaveBeenCalled();
     expect(decision.reply).toBe("Oi, Vitor, tudo bem? Como posso ajudar?");
     expect(decision.reply).not.toMatch(/custas|processo|Maya|assistente|Dutra/i);
+    expect(decision.conversation_state.last_process_candidates).toBeUndefined();
     expect(decision.next_action).toBe("abrir conversa limpa sem puxar contexto antigo");
     expect(decision.requires_approval).toBe(false);
     expect(decision.conversation_frame?.resolution_type).toBe("greeting");
     expect(decision.quality_check?.status).toBe("pass");
     expect(decision.final_response_source).toBe("deterministic_guardrail");
+  });
+
+  it("ignora candidatos de evento anterior quando o turno atual e saudacao pura", async () => {
+    const fetcher = vi.fn(async () => {
+      throw new Error("LLM nao deveria ser chamada em saudacao limpa");
+    }) as any;
+
+    const decision = await buildMayusOperatingPartnerDecision({
+      supabase: {} as any,
+      tenantId: "tenant-1",
+      channel: "whatsapp",
+      contactName: "Vitor",
+      messages: [{ direction: "inbound", content: "Oi mayus" }],
+      whatsappActorContext: { role: "office_operator", sender_phone_authorized: true, reason: "daily_playbook_authorized_phone" },
+      previousMayusEvent: {
+        created_at: new Date().toISOString(),
+        intent: "process_status",
+        next_action: "perguntar qual processo",
+        conversation_state: {
+          conversation_role: "case_status",
+          conversation_goal: "retomar processo antigo",
+          customer_temperature: "existing_client",
+          stage: "client_support",
+          facts_known: ["processos encontrados"],
+          missing_information: [],
+          objections: [],
+          urgency: "none",
+          decision_maker: "unknown",
+          documents_requested: [],
+          last_customer_message: "Marcio da Silva Machado",
+          last_mayus_message: "Encontrei Bradesco e Caixa.",
+          last_commitment: null,
+          next_action: "perguntar qual processo",
+          has_mayus_introduced: true,
+          conversation_summary: "Contexto antigo de processos.",
+          last_process_candidates: [
+            { processTaskId: "bradesco", clientName: "Marcio", processNumber: "3000141-95.2026.8.19.0213", title: "Bradesco", opposingParty: "Banco Bradesco", summary: "danos morais", currentStage: "Conhecimento", lastMovementAt: null, lastMovementText: null },
+            { processTaskId: "caixa", clientName: "Marcio", processNumber: "5006349-29.2023.4.02.5110", title: "Caixa", opposingParty: "Caixa", summary: "FGTS", currentStage: "Recurso", lastMovementAt: null, lastMovementText: null },
+          ],
+        },
+      },
+      operatingPartner: { enabled: true, autonomy_mode: "high_supervised" },
+      fetcher,
+    });
+
+    expect(fetcher).not.toHaveBeenCalled();
+    expect(decision.reply).toBe("Oi, Vitor, tudo bem? Como posso ajudar?");
+    expect(decision.reply).not.toMatch(/Bradesco|Caixa|processo/i);
+    expect(decision.conversation_state.last_process_candidates).toBeUndefined();
+    expect(decision.conversation_frame?.candidate_summaries).toEqual([]);
+    expect(decision.conversation_frame?.resolution_type).toBe("greeting");
   });
 
   it("reconhece reclamacao sem repetir contexto antigo ou alternativas erradas", async () => {
@@ -1390,6 +1446,72 @@ describe("mayus-operating-partner", () => {
     expect(decision.requires_approval).toBe(false);
   });
 
+  it("responde processo unico verificado sem perguntar categoria, duvida ou objetivo", async () => {
+    const fetcher = vi.fn()
+      .mockResolvedValueOnce({
+        ok: true,
+        json: async () => ({ choices: [{ message: { content: JSON.stringify(operatingPartnerPayload({
+          reply: "Marcio, tudo bem? Aqui e a Maya, assistente do Dutra Advocacia.\n\nEncontrei seu processo do Banco Bradesco e preciso confirmar sua duvida: e sobre custas/pagamento, andamento geral ou proxima audiencia?",
+          intent: "process_status",
+          confidence: 0.91,
+          next_action: "confirmar duvida sobre o processo",
+          conversation_state: {
+            conversation_role: "case_status",
+            conversation_goal: "confirmar duvida processual",
+            last_customer_message: "Marcio da Silva Machado",
+            next_action: "confirmar duvida sobre o processo",
+            conversation_summary: "Operador informou nome de cliente e ha processo verificado.",
+          },
+          support_summary: { is_existing_client: true, issue_type: "process_status", verified_case_reference: true, summary: "processo verificado" },
+          actions_to_execute: [{ type: "answer_support", title: "Responder status", requires_approval: false }],
+        })) } }] }),
+      })
+      .mockRejectedValueOnce(new Error("repair provider unavailable")) as any;
+
+    const decision = await buildMayusOperatingPartnerDecision({
+      supabase: { from: () => ({ insert: vi.fn(async () => ({ error: null })) }) } as any,
+      tenantId: "tenant-1",
+      channel: "whatsapp",
+      contactName: "Vitor",
+      messages: [
+        { direction: "inbound", content: "Marcio da Silva Machado" },
+      ],
+      whatsappActorContext: { role: "office_operator", sender_phone_authorized: true, reason: "daily_playbook_authorized_phone" },
+      processStatusContext: {
+        verified: true,
+        confidence: "high",
+        accessScope: "tenant_authorized",
+        senderPhoneAuthorized: true,
+        processTaskId: "bradesco",
+        clientName: "Marcio da Silva Machado",
+        processNumber: "3000141-95.2026.8.19.0213",
+        title: "Banco Bradesco",
+        currentStage: "Conhecimento",
+        detectedPhase: "sem_fase_confiavel",
+        detectedPhaseLabel: null,
+        lastMovementAt: "2026-06-21",
+        lastMovementText: "Aguardando andamento do juizo",
+        deadlineAt: null,
+        pendingItems: [],
+        nextStep: null,
+        riskFlags: [],
+        clientReply: null,
+        grounding: { factualSources: ["processos monitorados"], inferenceNotes: [], missingSignals: [] },
+      },
+      operatingPartner: { enabled: true, autonomy_mode: "high_supervised" },
+      fetcher,
+    });
+
+    expect(decision.reply).toContain("Processo do Banco Bradesco");
+    expect(decision.reply).toContain("3000141-95.2026.8.19.0213");
+    expect(decision.reply).toContain("Conhecimento");
+    expect(decision.reply).toContain("Aguardando andamento do juizo");
+    expect(decision.reply).not.toMatch(/confirmar sua duvida|custas\/pagamento|andamento geral|proxima audiencia|qual .*objetivo|qual .*duvida|me mande o nome completo/i);
+    expect(decision.conversation_frame?.resolution_type).toBe("referenced_process");
+    expect(decision.final_response_source).toBe("safe_fallback");
+    expect(decision.should_auto_send).toBe(true);
+  });
+
   it("responde todos os processos verificados em blocos sem perguntar se quer resumo", async () => {
     let prompt = "";
     const fetcher = vi.fn(async (_url: string, init: RequestInit) => {
@@ -1484,7 +1606,7 @@ describe("mayus-operating-partner", () => {
     });
 
     expect(prompt).toContain("responda todos diretamente em blocos curtos");
-    expect(decision.reply_blocks).toHaveLength(3);
+    expect(decision.reply_blocks).toHaveLength(4);
     expect(decision.reply).toContain("Banco Master");
     expect(decision.reply).toContain("Bradesco");
     expect(decision.reply).toContain("Caixa");
@@ -1637,7 +1759,7 @@ describe("mayus-operating-partner", () => {
     });
 
     expect(fetcher).toHaveBeenCalledTimes(1);
-    expect(decision.reply).toContain("A do Banco Master");
+    expect(decision.reply).toContain("Processo do Banco Master");
     expect(decision.reply).toContain("Recurso");
     expect(decision.reply).toContain("gratuidade/custas em recurso");
     expect(decision.reply).toContain("Sem decisão nova registrada");
@@ -1696,7 +1818,7 @@ describe("mayus-operating-partner", () => {
       fetcher,
     });
 
-    expect(decision.reply).toContain("A do Bradesco");
+    expect(decision.reply).toContain("Processo do Bradesco");
     expect(decision.reply).toContain("3000141-95.2026.8.19.0213");
     expect(decision.reply).toContain("Aguardando andamento do juízo");
     expect(decision.reply).not.toMatch(/objetivo principal|reduzir|cessar descontos|buscar indeniza[cç][aã]o|s[oó] acompanhar/i);
@@ -1752,7 +1874,7 @@ describe("mayus-operating-partner", () => {
         fetcher,
       });
 
-      expect(decision.reply).toContain("A do Bradesco");
+      expect(decision.reply).toContain("Processo do Bradesco");
       expect(decision.reply).toContain("3000141-95.2026.8.19.0213");
       expect(decision.reply).toContain("Aguardando andamento do juizo");
       expect(decision.reply).not.toMatch(/foco agora|situa[cç][aã]o geral|consulta mesmo|provid[eê]ncia|objetivo principal|reduzir|cessar|aproveitar alguma movimenta[cç][aã]o/i);
@@ -1972,7 +2094,7 @@ describe("mayus-operating-partner", () => {
     expect(fetcher).toHaveBeenCalledTimes(1);
     expect(decision.risk_flags).not.toContain("scripted_process_followup_question");
     expect(decision.reply).not.toMatch(/quer.*resumo|prefere ver|quer que eu detalhe|qual desses|qual deles|quer acompanhar|se .*nao souber/i);
-    expect(decision.reply_blocks).toHaveLength(3);
+    expect(decision.reply_blocks).toHaveLength(4);
     expect(decision.conversation_frame?.resolution_type).toBe("process_candidates");
     expect(decision.final_response_source).toBe("deterministic_guardrail");
     expect(decision.should_auto_send).toBe(true);

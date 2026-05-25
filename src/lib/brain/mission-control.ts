@@ -213,6 +213,7 @@ export type BrainMissionControlSnapshot = {
   taskId: string;
   module: string | null;
   agentSource: string | null;
+  owner: string | null;
   status: string | null;
   goal: string | null;
   currentStep: BrainMissionControlStepSummary | null;
@@ -749,6 +750,28 @@ function findRoutine(bucket: MissionBucket): BrainMissionControlRoutineSummary |
   };
 }
 
+function missionOwner(
+  bucket: MissionBucket,
+  routine: BrainMissionControlRoutineSummary | null,
+) {
+  if (routine?.owner) return routine.owner;
+
+  const taskInput = bucket.task.task_input || {};
+  const taskContext = bucket.task.task_context || {};
+  const internalAgent = summarizeMayusInternalAgent(resolveMayusInternalAgentForRoutine({
+    id: stringValue(taskInput.routine_id) || bucket.task.id,
+    agentId: stringValue(taskContext.internal_agent_id)
+      || stringValue(taskInput.internal_agent_id)
+      || stringValue(taskContext.agent_id)
+      || stringValue(taskInput.agent_id)
+      || stringValue(bucket.task.channel)
+      || stringValue(bucket.task.module),
+    module: stringValue(bucket.task.module),
+  }));
+
+  return internalAgent.owner;
+}
+
 function currentStep(steps: BrainMissionStepInput[]): BrainMissionControlStepSummary | null {
   const activeStatus = new Set(["awaiting_approval", "running", "executing", "queued", "planning", "failed", "blocked", "cancelled"]);
   const sorted = [...steps].sort((left, right) => {
@@ -894,10 +917,12 @@ function collectBlockers(params: {
   const { bucket, policy, approval, trajectory, routine } = params;
 
   if (approval) blockers.add(`Approval humano pendente${approval.skillName ? `: ${approval.skillName}` : ""}`);
-  if (bucket.task.error_message) blockers.add(String(bucket.task.error_message).slice(0, 200));
+  const taskError = stringValue(bucket.task.error_message);
+  if (taskError) blockers.add(taskError.slice(0, 200));
   for (const step of bucket.steps) {
     if ((step.status === "failed" || step.status === "blocked") && step.error_message) {
-      blockers.add(String(step.error_message).slice(0, 200));
+      const stepError = stringValue(step.error_message);
+      if (stepError) blockers.add(stepError.slice(0, 200));
     }
     if (step.status === "cancelled") {
       blockers.add(`Step cancelado: ${stringValue(step.title) || stringValue(step.capability_name) || step.id}`);
@@ -1031,6 +1056,7 @@ export function buildBrainMissionControlSnapshots(input: {
         taskId: bucket.task.id,
         module: stringValue(bucket.task.module),
         agentSource: agentSource(bucket, routine, trajectory),
+        owner: missionOwner(bucket, routine),
         status: stringValue(bucket.task.status),
         goal: stringValue(bucket.task.goal) || stringValue(bucket.task.title),
         currentStep: current,
