@@ -120,6 +120,22 @@ function buildWhatsAppActorContext(params: {
   };
 }
 
+function buildConversationResolutionMetadata(decision?: MayusOperatingPartnerDecision | null) {
+  const frame = decision?.conversation_frame;
+  return {
+    type: frame?.resolution_type || null,
+    writer_mode: frame?.writer_mode || null,
+    llm_writer_allowed: frame?.llm_writer_allowed ?? null,
+    hard_guardrail_reason: frame?.hard_guardrail_reason || null,
+    recommended_intent: frame?.recommended_intent || decision?.intent || null,
+    resolved_reference: frame?.resolved_reference || null,
+    candidate_count: frame?.candidate_summaries?.length || 0,
+    final_response_source: decision?.final_response_source || null,
+    quality_status: decision?.quality_check?.status || null,
+    quality_flags: decision?.quality_check?.flags || [],
+  };
+}
+
 function mapOperationalMethodologyAreaMethods(context: TenantOperationalMethodologyContext) {
   return context.areaMethods.map((method) => ({
     area: method.area,
@@ -822,6 +838,8 @@ export async function prepareWhatsAppSalesReplyForContact(params: {
         ...deterministicMetadata.risk_flags,
         ...operatingPartnerDecision.risk_flags,
       ], processStatusContext);
+      const resolvedActorContext = operatingPartnerDecision.whatsapp_actor_context || whatsappActorContext;
+      const conversationResolution = buildConversationResolutionMetadata(operatingPartnerDecision);
       metadata = {
         ...deterministicMetadata,
         reply_source: "operating_partner",
@@ -848,9 +866,11 @@ export async function prepareWhatsAppSalesReplyForContact(params: {
           conversation_state: operatingPartnerDecision.conversation_state,
           closing_readiness: operatingPartnerDecision.closing_readiness,
           support_summary: operatingPartnerDecision.support_summary,
-          whatsapp_actor_context: operatingPartnerDecision.whatsapp_actor_context || whatsappActorContext,
+          whatsapp_actor_context: resolvedActorContext,
+          actor_context: resolvedActorContext,
           process_status_context: processStatusContext,
           conversation_frame: operatingPartnerDecision.conversation_frame,
+          conversation_resolution: conversationResolution,
           quality_check: operatingPartnerDecision.quality_check,
           final_response_source: operatingPartnerDecision.final_response_source,
           conversation_classification: operatingPartnerDecision.conversation_classification,
@@ -873,8 +893,10 @@ export async function prepareWhatsAppSalesReplyForContact(params: {
         paperclip_mission: operatingPartnerDecision.agentic_governance?.paperclip_mission,
         reasoning_summary_for_team: operatingPartnerDecision.reasoning_summary_for_team,
         process_status_context: processStatusContext,
-        whatsapp_actor_context: whatsappActorContext,
+        whatsapp_actor_context: resolvedActorContext,
+        actor_context: resolvedActorContext,
         conversation_frame: operatingPartnerDecision.conversation_frame,
+        conversation_resolution: conversationResolution,
         quality_check: operatingPartnerDecision.quality_check,
         final_response_source: operatingPartnerDecision.final_response_source,
       };
@@ -1063,6 +1085,8 @@ export async function prepareWhatsAppSalesReplyForContact(params: {
     brain_step_id: params.brainTrace?.stepId || null,
     skill: metadata.skill || runtimeSkill,
     route: metadata.route || runtimeRoute,
+    actor_context: metadata.actor_context || metadata.whatsapp_actor_context || whatsappActorContext,
+    conversation_resolution: metadata.conversation_resolution || buildConversationResolutionMetadata(operatingPartnerDecision),
     reply_modality: replyModalityPreference.modality,
     audio_policy: replyModalityPreference.policy,
     audio_requested_reason: replyModalityPreference.reason,

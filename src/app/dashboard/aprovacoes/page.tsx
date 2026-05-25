@@ -66,6 +66,45 @@ type LegalMovementReviewItem = {
   review_note?: string | null;
 };
 
+type WhatsAppAgentAuditEntry = {
+  id: string;
+  created_at: string;
+  event_name: string;
+  status: string;
+  contact_id: string | null;
+  brain_run_id: string | null;
+  skill: string | null;
+  route: string | null;
+  actor_role: string | null;
+  conversation_type: string | null;
+  quality_status: string | null;
+  quality_flags: string[];
+  risk_flags: string[];
+  final_response_source: string | null;
+  mode: string | null;
+  blocked: boolean;
+  repaired: boolean;
+  reason: string | null;
+  original_reply_preview: string | null;
+  final_reply_preview: string | null;
+};
+
+type WhatsAppAgentAuditResponse = {
+  ok: boolean;
+  generated_at: string;
+  metrics: {
+    total: number;
+    blocked: number;
+    repaired: number;
+    safe_fallback: number;
+    llm_repaired: number;
+    warnings: number;
+    errors: number;
+    quality_blocks: number;
+  };
+  entries: WhatsAppAgentAuditEntry[];
+};
+
 const APPROVAL_FILTERS: Array<{ id: ApprovalFilterId; label: string }> = [
   { id: "all", label: "Todas" },
   { id: "setup", label: "Setup" },
@@ -1428,13 +1467,92 @@ function EventCard({ event }: { event: BrainInboxEventItem }) {
   );
 }
 
+function getWhatsAppAuditBadge(entry: WhatsAppAgentAuditEntry) {
+  if (entry.status === "error" || entry.quality_status === "block") {
+    return "border-red-500/30 bg-red-500/10 text-red-300";
+  }
+  if (entry.blocked) {
+    return "border-orange-500/30 bg-orange-500/10 text-orange-300";
+  }
+  if (entry.repaired) {
+    return "border-sky-400/30 bg-sky-400/10 text-sky-300";
+  }
+  return "border-emerald-500/30 bg-emerald-500/10 text-emerald-300";
+}
+
+function getWhatsAppAuditLabel(entry: WhatsAppAgentAuditEntry) {
+  if (entry.status === "error" || entry.quality_status === "block") return "bloqueada";
+  if (entry.blocked) return "revisao";
+  if (entry.repaired) return "reparada";
+  return "ok";
+}
+
+function WhatsAppAuditEntryCard({ entry }: { entry: WhatsAppAgentAuditEntry }) {
+  const flags = entry.quality_flags.length ? entry.quality_flags : entry.risk_flags;
+  return (
+    <div className="rounded-xl border border-white/8 bg-[#0f0f0f] p-4">
+      <div className="flex items-start justify-between gap-3">
+        <div>
+          <p className="text-sm font-medium text-white">
+            {entry.skill || entry.route || entry.event_name}
+          </p>
+          <p className="mt-1 text-xs text-gray-500">
+            {entry.actor_role || "ator nao identificado"} - {entry.conversation_type || "sem resolucao"} - {dayjs(entry.created_at).fromNow()}
+          </p>
+        </div>
+        <span className={`rounded-full border px-2 py-1 text-[10px] uppercase tracking-widest ${getWhatsAppAuditBadge(entry)}`}>
+          {getWhatsAppAuditLabel(entry)}
+        </span>
+      </div>
+
+      <div className="mt-3 grid gap-2 text-[11px] text-gray-400 md:grid-cols-2">
+        <span>Fonte final: <b className="font-medium text-gray-200">{entry.final_response_source || "nao informado"}</b></span>
+        <span>Quality: <b className="font-medium text-gray-200">{entry.quality_status || "nao informado"}</b></span>
+        {entry.brain_run_id && <span>Brain run: <b className="font-medium text-gray-200">{entry.brain_run_id}</b></span>}
+        {entry.contact_id && <span>Contato: <b className="font-medium text-gray-200">{entry.contact_id}</b></span>}
+      </div>
+
+      {entry.reason && (
+        <p className="mt-3 rounded-lg border border-white/8 bg-black/20 p-2 text-xs text-gray-300">
+          {entry.reason}
+        </p>
+      )}
+
+      {(entry.original_reply_preview || entry.final_reply_preview) && (
+        <div className="mt-3 grid gap-3 md:grid-cols-2">
+          <div>
+            <p className="text-[10px] uppercase tracking-[0.18em] text-gray-500">Original LLM</p>
+            <p className="mt-1 line-clamp-4 text-xs text-gray-400">{entry.original_reply_preview || "Sem reparo registrado."}</p>
+          </div>
+          <div>
+            <p className="text-[10px] uppercase tracking-[0.18em] text-gray-500">Resposta final</p>
+            <p className="mt-1 line-clamp-4 text-xs text-gray-300">{entry.final_reply_preview || "Sem resposta final registrada."}</p>
+          </div>
+        </div>
+      )}
+
+      {flags.length > 0 && (
+        <div className="mt-3 flex flex-wrap gap-1.5">
+          {flags.slice(0, 5).map((flag) => (
+            <span key={flag} className="rounded-full border border-white/10 bg-white/5 px-2 py-1 text-[10px] text-gray-400">
+              {flag}
+            </span>
+          ))}
+        </div>
+      )}
+    </div>
+  );
+}
+
 export default function BrainApprovalsPage() {
   const { role, isLoading: profileLoading } = useUserProfile();
   const [inbox, setInbox] = useState<BrainInboxResponse | null>(null);
   const [movementReviews, setMovementReviews] = useState<LegalMovementReviewItem[]>([]);
   const [stuckMovementReviews, setStuckMovementReviews] = useState<LegalMovementReviewItem[]>([]);
+  const [whatsappAudit, setWhatsappAudit] = useState<WhatsAppAgentAuditResponse | null>(null);
   const [isLoading, setIsLoading] = useState(true);
   const [reviewsLoading, setReviewsLoading] = useState(true);
+  const [auditLoading, setAuditLoading] = useState(true);
   const [approvalFilter, setApprovalFilter] = useState<ApprovalFilterId>("all");
   const [activityFilter, setActivityFilter] = useState<ActivityFilterId>("all");
   const [missionAgentFilter, setMissionAgentFilter] = useState("all");
@@ -1510,12 +1628,27 @@ export default function BrainApprovalsPage() {
     }
   }, []);
 
+  const loadWhatsAppAudit = useCallback(async () => {
+    setAuditLoading(true);
+    try {
+      const response = await fetch("/api/whatsapp/agent-audit?limit=12", { cache: "no-store" });
+      const data = await response.json().catch(() => ({}));
+      if (!response.ok) throw new Error(data?.error || "Nao foi possivel carregar auditoria do WhatsApp.");
+      setWhatsappAudit(data as WhatsAppAgentAuditResponse);
+    } catch (error: any) {
+      toast.error(error?.message || "Falha ao carregar auditoria do WhatsApp.");
+    } finally {
+      setAuditLoading(false);
+    }
+  }, []);
+
   useEffect(() => {
     if (!profileLoading && isExecutive) {
       void loadInbox();
       void loadMovementReviews();
+      void loadWhatsAppAudit();
     }
-  }, [profileLoading, isExecutive, loadInbox, loadMovementReviews]);
+  }, [profileLoading, isExecutive, loadInbox, loadMovementReviews, loadWhatsAppAudit]);
 
   if (!profileLoading && !isExecutive) {
     return (
@@ -1537,7 +1670,7 @@ export default function BrainApprovalsPage() {
         </div>
 
         <button
-          onClick={() => void Promise.all([loadInbox(), loadMovementReviews()])}
+          onClick={() => void Promise.all([loadInbox(), loadMovementReviews(), loadWhatsAppAudit()])}
           className="inline-flex items-center gap-2 self-start rounded-xl border border-[#CCA761]/30 bg-[#CCA761]/10 px-4 py-2 text-xs font-bold uppercase tracking-widest text-[#CCA761] hover:bg-[#CCA761]/20"
         >
           <Clock3 size={14} /> Atualizar inbox
@@ -1648,6 +1781,63 @@ export default function BrainApprovalsPage() {
           </span>
         </button>
       </div>
+
+      {!isLoading && (
+        <section className="space-y-4">
+          <div className="flex items-center justify-between gap-3">
+            <div>
+              <h2 className="text-lg font-semibold text-white">Auditoria WhatsApp MAYUS</h2>
+              <p className="mt-1 text-xs text-gray-500">
+                Respostas reparadas, bloqueadas ou enviadas pelo agente com fonte final, qualidade e trilha do Brain.
+              </p>
+            </div>
+            <span className="text-xs uppercase tracking-widest text-gray-500">
+              {whatsappAudit?.metrics.total ?? 0} evento{(whatsappAudit?.metrics.total ?? 0) === 1 ? "" : "s"}
+            </span>
+          </div>
+
+          <div className="grid gap-3 md:grid-cols-2 xl:grid-cols-5">
+            <div className="rounded-xl border border-white/10 bg-[#0f0f0f] p-4">
+              <p className="text-[10px] uppercase tracking-[0.18em] text-gray-500">Reparadas</p>
+              <p className="mt-2 text-2xl font-semibold text-sky-300">{whatsappAudit?.metrics.repaired ?? 0}</p>
+            </div>
+            <div className="rounded-xl border border-white/10 bg-[#0f0f0f] p-4">
+              <p className="text-[10px] uppercase tracking-[0.18em] text-gray-500">Bloqueadas</p>
+              <p className="mt-2 text-2xl font-semibold text-orange-300">{whatsappAudit?.metrics.blocked ?? 0}</p>
+            </div>
+            <div className="rounded-xl border border-white/10 bg-[#0f0f0f] p-4">
+              <p className="text-[10px] uppercase tracking-[0.18em] text-gray-500">LLM reparada</p>
+              <p className="mt-2 text-2xl font-semibold text-emerald-300">{whatsappAudit?.metrics.llm_repaired ?? 0}</p>
+            </div>
+            <div className="rounded-xl border border-white/10 bg-[#0f0f0f] p-4">
+              <p className="text-[10px] uppercase tracking-[0.18em] text-gray-500">Safe fallback</p>
+              <p className="mt-2 text-2xl font-semibold text-gray-200">{whatsappAudit?.metrics.safe_fallback ?? 0}</p>
+            </div>
+            <div className="rounded-xl border border-white/10 bg-[#0f0f0f] p-4">
+              <p className="text-[10px] uppercase tracking-[0.18em] text-gray-500">Alertas</p>
+              <p className="mt-2 text-2xl font-semibold text-red-300">
+                {(whatsappAudit?.metrics.warnings ?? 0) + (whatsappAudit?.metrics.errors ?? 0)}
+              </p>
+            </div>
+          </div>
+
+          {auditLoading ? (
+            <div className="rounded-2xl border border-white/10 bg-[#0f0f0f] p-6 flex items-center justify-center gap-3 text-gray-400">
+              <Loader2 size={16} className="animate-spin text-[#CCA761]" /> Carregando auditoria WhatsApp...
+            </div>
+          ) : whatsappAudit?.entries.length ? (
+            <div className="grid gap-4 xl:grid-cols-2">
+              {whatsappAudit.entries.map((entry) => (
+                <WhatsAppAuditEntryCard key={entry.id} entry={entry} />
+              ))}
+            </div>
+          ) : (
+            <div className="rounded-2xl border border-white/10 bg-[#0f0f0f] p-6 text-center text-gray-500">
+              Nenhuma resposta auditavel do WhatsApp encontrada nos eventos recentes.
+            </div>
+          )}
+        </section>
+      )}
 
       {!isLoading && (
         <section className="space-y-4">

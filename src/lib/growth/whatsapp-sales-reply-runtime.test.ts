@@ -1397,6 +1397,33 @@ describe("prepareWhatsAppSalesReplyForContact", () => {
       support_summary: { is_existing_client: true, issue_type: "process_status", verified_case_reference: true, summary: "status verificado" },
       reasoning_summary_for_team: "Número autorizado consultou processo do tenant.",
       expected_outcome: "dono recebe status",
+      whatsapp_actor_context: { role: "office_operator", sender_phone_authorized: true, reason: "daily_playbook_authorized_phone" },
+      conversation_frame: {
+        resolution_type: "referenced_process",
+        actor_context: { role: "office_operator", sender_phone_authorized: true, reason: "daily_playbook_authorized_phone" },
+        last_message: "Como esta o processo da Camila Autorizada?",
+        recommended_intent: "process_status",
+        writer_mode: "llm_natural",
+        llm_writer_allowed: true,
+        hard_guardrail_reason: null,
+        conversation_goal: "responder status processual verificado",
+        known_facts: ["processo verificado"],
+        missing_data: [],
+        forbidden_moves: [],
+        response_guidance: [],
+        resolved_reference: {
+          kind: "process_candidate",
+          label: "Camila Autorizada x Banco",
+          processTaskId: "process-owner-1",
+          processNumber: "2222222-22.2024.8.26.0100",
+          clientName: "Camila Autorizada",
+          opposingParty: "Banco",
+        },
+        candidate_summaries: [],
+        safe_fallback_reply: "Verifiquei o processo da Camila com seguranca.",
+      },
+      quality_check: { status: "pass", flags: [], reasons: [] },
+      final_response_source: "llm_natural",
     });
 
     const supabase: any = {
@@ -1471,6 +1498,19 @@ describe("prepareWhatsAppSalesReplyForContact", () => {
     expect(prepared.metadata.whatsapp_actor_context).toEqual(expect.objectContaining({
       role: "office_operator",
       sender_phone_authorized: true,
+    }));
+    expect(prepared.metadata.actor_context).toEqual(expect.objectContaining({
+      role: "office_operator",
+      sender_phone_authorized: true,
+    }));
+    expect(prepared.metadata.conversation_resolution).toEqual(expect.objectContaining({
+      type: "referenced_process",
+      final_response_source: "llm_natural",
+      quality_status: "pass",
+    }));
+    expect(prepared.metadata.mayus_operating_partner).toEqual(expect.objectContaining({
+      actor_context: expect.objectContaining({ role: "office_operator" }),
+      conversation_resolution: expect.objectContaining({ type: "referenced_process" }),
     }));
   });
 

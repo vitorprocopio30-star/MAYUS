@@ -418,6 +418,11 @@ function cleanText(value?: string | null) {
   return text || null;
 }
 
+function previewReplyText(value?: string | null, maxLength = 1200) {
+  const text = cleanText(value);
+  return text ? text.slice(0, maxLength) : null;
+}
+
 function normalizeText(value?: string | null) {
   return cleanText(value)
     ?.normalize("NFD")
@@ -690,10 +695,8 @@ function processCandidateSummaries(candidates: ProcessCandidateMemory[]): NonNul
 
 function hardGuardrailReasonForResolution(resolutionType: MayusWhatsAppConversationResolutionType) {
   const reasons: Partial<Record<MayusWhatsAppConversationResolutionType, string>> = {
-    greeting: "saudacao_limpa_sem_contexto_antigo",
     complaint: "recuperacao_de_erro_de_contexto",
     unmatched_process_reference: "referencia_explicita_nao_localizada_com_seguranca",
-    process_candidates: "lista_de_candidatos_deve_ser_factual",
     generic_process_request: "pedido_generico_precisa_identificador_seguro",
     short_process_nudge: "cobranca_curta_sem_fonte_suficiente",
     unverified_process_status: "status_processual_sem_processo_verificado",
@@ -987,7 +990,14 @@ function getLastOutbound(messages: WhatsAppSalesMessage[]) {
 }
 
 function isPureGreeting(value?: string | null) {
-  return /^(oi|ola|bom dia|boa tarde|boa noite|tudo bem|boa)(,?\s+(mayus|maya))?[!.?]*$/i.test(normalizeText(value));
+  const text = normalizeText(value)
+    .replace(/[?!.,;:]+/g, " ")
+    .replace(/\b(mayus|maya)\b/g, " ")
+    .replace(/\s+/g, " ")
+    .trim();
+  if (!text) return false;
+  if (/processo|caso|cliente|cpf|cnj|andamento|status|atualizacao|novidade|documento|boleto|contrato|prazo/.test(text)) return false;
+  return /^(oi|ola|bom dia|boa tarde|boa noite|boa|tudo bem|oi tudo bem|ola tudo bem|bom dia tudo bem|boa tarde tudo bem|boa noite tudo bem|tudo bem e vc|tudo bem e voce|oi tudo bem e vc|oi tudo bem e voce)$/.test(text);
 }
 
 function looksLikeFullName(value?: string | null) {
@@ -1275,7 +1285,7 @@ function detectDeterministicIntentAndRisk(messages: WhatsAppSalesMessage[], proc
     intent = "client_support";
   } else if (isCommercialTriageMessage(rawLastInbound)) {
     intent = "legal_triage";
-  } else if (/andamento|status|meu processo|meu caso|processos? d[aeo]|casos? d[aeo]|gostaria de saber (sobre |de )?(o |um )?processo|queria saber (sobre |de )?(o |um )?processo|saber (sobre |de )?(o |um )?processo|saber como esta (o |um )?processo|como esta (o |um )?processo|atualizacao do processo|atualizacao do caso|novidade no processo|numero do processo|cnj|movimentacao|movimentacao/.test(lastInbound) || (looksLikeFullName(rawLastInbound) && processStatusContext)) {
+  } else if (/andamento|status|situacao|meu processo|meu caso|processos? d[aeo]|casos? d[aeo]|gostaria de saber (sobre |de )?(o |um )?processo|queria saber (sobre |de )?(o |um )?processo|saber (sobre |de )?(o |um )?processo|saber como esta (o |um )?processo|como esta (o |um )?processo|atualizacao do processo|atualizacao do caso|novidade no processo|numero do processo|cnj|movimentacao|movimentacao/.test(lastInbound) || (looksLikeFullName(rawLastInbound) && processStatusContext)) {
     intent = "process_status";
     if (processStatusContext?.verified !== true) riskFlags.push("case_status_unverified");
   } else if (/preco|valor|caro|honorario|boleto|pix|pagamento|contrato|entrada|cobranca/.test(lastInbound)) {
@@ -1379,7 +1389,7 @@ function buildPrompt(input: MayusOperatingPartnerInput, config: MayusOperatingPa
     "Antes de responder, reconstrua mentalmente o contexto: o que ja foi recebido, o que o cliente quer agora, o que falta, qual risco existe e qual e a proxima melhor jogada.",
     "A resposta pode ter contexto suficiente para parecer humana, mas deve continuar natural para WhatsApp: sem textao institucional, sem lista burocratica e sem explicar a metodologia interna.",
     "Nunca repita apresentacao se o estado indicar que o MAYUS ja se apresentou.",
-    `Se for a primeira resposta ao contato, apresente-se de forma breve como ${assistantName}. Exemplo: \"Bom dia, Joao. Aqui e a ${assistantName}, assistente do escritorio.\" Se ja houve apresentacao, nao repita.`,
+    `Nao se reapresente como ${assistantName} em saudacao simples ou conversa em andamento. So apresente a assistente se for absolutamente necessario para um primeiro contato externo e sem usar frase fixa.`,
     "Se o contato nao estiver identificado com seguranca, peca nome completo antes de falar de processo, mas continue prestativo e pergunte o assunto em uma frase. Se o cliente acabou de enviar um nome completo, trate como dado recebido e tente localizar; nao peca o mesmo nome de novo.",
     "Nem todo cliente pergunta apenas de processo. Se a demanda for outra ou estiver ambigua, acolha, peca para adiantar o assunto e diga que vai organizar o resumo para o advogado responsavel retornar.",
     "Quando for suporte, outra demanda ou pedido de advogado, inclua uma acao create_task para o advogado/equipe atender o cliente, com resumo, proximo passo e ideias de encaminhamento. A mensagem ao cliente deve ser simpatica e prestativa.",
@@ -1722,9 +1732,9 @@ function isSafeProcessIdentifierRequest(reply: string | null | undefined) {
 
 function isGenericProcessStatusRequestWithoutReference(value?: string | null) {
   const text = normalizeText(value);
-  if (!/processo|caso|andamento|status|atualizacao|novidade/.test(text)) return false;
+  if (!/processo|caso|andamento|status|situacao|atualizacao|novidade/.test(text)) return false;
   if (/\d{7}-\d{2}|cnj|cpf|cnpj|processos? d[aeo]\s+[a-z]{2,}|casos? d[aeo]\s+[a-z]{2,}|nome completo\s+(e|eh)/.test(text)) return false;
-  return /um processo|sobre um processo|saber sobre um processo|gostaria de saber (sobre |de )?(o |um )?processo|queria saber (sobre |de )?(o |um )?processo|saber como esta (o |um )?processo|como esta (o |um )?processo/.test(text);
+  return /um processo|sobre um processo|saber sobre um processo|situacao do processo|situacao do caso|me pass(a|e|ar).{0,30}situacao|gostaria de saber (sobre |de )?(o |um )?processo|queria saber (sobre |de )?(o |um )?processo|saber como esta (o |um )?processo|como esta (o |um )?processo/.test(text);
 }
 
 function isCommercialTriageMessage(value?: string | null) {
@@ -1826,7 +1836,8 @@ function stripAssistantReintroduction(reply: string) {
 function sanitizeReplyForConversation(reply: string | null, state: MayusConversationState, params?: { assistantName?: string | null; officeName?: string | null; contactName?: string | null }) {
   const lastMessage = cleanText(state.last_customer_message);
   if (isPureGreeting(lastMessage)) {
-    return buildNaturalGreetingReply(lastMessage, params?.contactName);
+    const greetingReply = stripAssistantReintroduction(cleanText(reply) || "");
+    return greetingReply || buildNaturalGreetingReply(lastMessage, params?.contactName);
   }
 
   let text = cleanText(reply) || "Entendi. Me diga so o ponto principal para eu organizar o proximo passo certo.";
@@ -2179,9 +2190,11 @@ function buildSafeFallbackDecisionFromFrame(params: {
 }
 
 function canUseFactualProcessFallback(decision: MayusOperatingPartnerDecision | null | undefined) {
-  return decision?.intent === "process_status"
-    && decision.conversation_frame?.resolution_type === "referenced_process"
-    && Boolean(cleanText(decision.conversation_frame.safe_fallback_reply));
+  const resolutionType = decision?.conversation_frame?.resolution_type;
+  const frameIntent = decision?.conversation_frame?.recommended_intent;
+  return (decision?.intent === "process_status" || frameIntent === "process_status" || resolutionType === "greeting")
+    && (resolutionType === "referenced_process" || resolutionType === "process_candidates" || resolutionType === "greeting")
+    && Boolean(cleanText(decision?.conversation_frame?.safe_fallback_reply));
 }
 
 function buildFactualProcessFallbackDecision(decision: MayusOperatingPartnerDecision, reasonFlag: string): MayusOperatingPartnerDecision {
@@ -2200,7 +2213,9 @@ function buildFactualProcessFallbackDecision(decision: MayusOperatingPartnerDeci
   return withOperatingPartnerAgenticContext({
     ...decision,
     reply: normalizeProcessStatusReplyTone(sanitizeReplyForConversation(frame.safe_fallback_reply, conversationState), frame),
-    reply_blocks: undefined,
+    reply_blocks: frame.resolution_type === "process_candidates"
+      ? frame.safe_fallback_reply.split(/\n{2,}/).map((block) => cleanText(block)).filter(Boolean) as string[]
+      : undefined,
     risk_flags: decision.risk_flags.filter((flag) => !REPAIRABLE_RISK_FLAGS.includes(flag) && flag !== "reply_repair_still_unsafe" && flag !== "reply_repair_failed"),
     next_action: frame.conversation_goal,
     conversation_state: conversationState,
@@ -2242,6 +2257,14 @@ function includesAnyProcessCandidate(text: string, candidates: NonNullable<Mayus
       .filter((value) => value && !except.has(value) && value.length >= 4);
     return refs.some((ref) => normalized.includes(ref));
   });
+}
+
+function asksResolvedProcessInterviewQuestion(text: string) {
+  return /qual .*assunto principal|qual .*assunto|assunto principal|qual .*objetivo|objetivo principal|qual .*foco|foco agora|seu foco|qual .*duvida|confirmar (sua )?(duvida|d[uú]vida)|duvida principal|tratar desconto|desconto\/valores|desconto ou valores|andamento.{0,80}(ou|\/).{0,80}(desconto|valor|custas|pagamento)|desconto.{0,80}(ou|\/).{0,80}(andamento|processo)|consultar andamento.{0,80}(desconto|valor)|reduzir|cessar descontos|buscar indenizacao|buscar indenização|acompanhar como esta|providencia pratica|provid[eê]ncia pr[aá]tica|situacao geral|situa[cç][aã]o geral|consulta mesmo|acompanhamento.*urgencia|urgencia.*acompanhamento|risco\/medida|o que voce precisa decidir|o que precisa agora|responder algo|apresentar documento|evitar bloqueio|evitar pagamento|aproveitar alguma movimentacao|aproveitar alguma movimenta[cç][aã]o|qual desses|qual deles/.test(text);
+}
+
+function asksProcessCandidateInterviewQuestion(text: string) {
+  return /assunto principal|qual .*assunto|qual .*objetivo|objetivo principal|danos morais.*ou.*(fgts|inpc|caixa)|fgts.*ou.*bradesco|indenizacao.*ou.*atualizacao|qual desses|qual deles|qual outro|qual processo|tratar desconto|desconto\/valores|desconto ou valores|andamento.{0,80}(ou|\/).{0,80}(desconto|valor|custas|pagamento)|se (voce )?nao souber.*(numero do processo|foto do documento)/.test(text);
 }
 
 function buildReplyQualityCheck(params: {
@@ -2287,14 +2310,14 @@ function buildReplyQualityCheck(params: {
       flags.push("mixed_process_candidates");
       reasons.push("Resposta misturou processo referenciado com outros candidatos.");
     }
-    if (/qual .*assunto principal|assunto principal|objetivo principal|reduzir|cessar descontos|buscar indenizacao|buscar indenização|acompanhar como esta|providencia pratica|provid[eê]ncia pr[aá]tica|situacao geral|situa[cç][aã]o geral|consulta mesmo|acompanhamento.*urgencia|urgencia.*acompanhamento|foco agora|risco\/medida|o que voce precisa decidir|responder algo|apresentar documento|evitar bloqueio|evitar pagamento|aproveitar alguma movimentacao|aproveitar alguma movimenta[cç][aã]o|e .*bradesco.*ou.*caixa|e .*caixa.*ou.*bradesco|qual desses|qual deles/.test(text)) {
+    if (asksResolvedProcessInterviewQuestion(text) || /e .*bradesco.*ou.*caixa|e .*caixa.*ou.*bradesco/.test(text)) {
       flags.push("asks_unneeded_process_choice");
       reasons.push("Resposta pediu escolha/assunto apesar de a referencia ja estar resolvida.");
     }
   }
 
   if (params.frame.resolution_type === "referenced_process") {
-    if (/confirmar (sua )?(duvida|d[uú]vida)|custas\/pagamento|andamento geral|proxima audiencia|pr[oó]xima audi[eê]ncia|me mande o nome completo|numero do processo|n[uú]mero do processo/.test(text)) {
+    if (asksResolvedProcessInterviewQuestion(text) || /custas\/pagamento|andamento geral|proxima audiencia|pr[oó]xima audi[eê]ncia|me mande o nome completo|numero do processo|n[uú]mero do processo/.test(text)) {
       flags.push("asks_unneeded_process_choice");
       reasons.push("Resposta entrevistou o usuario apesar de o processo ja estar verificado.");
     }
@@ -2316,7 +2339,7 @@ function buildReplyQualityCheck(params: {
       flags.push("unnecessary_reintroduction");
       reasons.push("Resposta com candidatos processuais se reapresentou no meio da conversa.");
     }
-    if (/assunto principal|qual .*assunto|danos morais.*ou.*(fgts|inpc|caixa)|fgts.*ou.*bradesco|indenizacao.*ou.*atualizacao|qual desses|qual deles/.test(text)) {
+    if (asksProcessCandidateInterviewQuestion(text)) {
       flags.push("asks_unneeded_process_subject");
       reasons.push("Resposta com processos encontrados perguntou assunto/tipo de acao em vez de listar os candidatos.");
     }
@@ -2327,6 +2350,11 @@ function buildReplyQualityCheck(params: {
       flags.push("asks_unneeded_process_subject");
       reasons.push("Resposta com processos encontrados fez entrevista em vez de resumir o que encontrou.");
     }
+  }
+
+  if (params.frame.resolution_type === "process_candidates" && /\b(cpf|cnj)\b/.test(text)) {
+    flags.push("asks_unneeded_process_subject");
+    reasons.push("Resposta com processos encontrados pediu CPF/CNJ em vez de usar os candidatos ja localizados.");
   }
 
   if (params.frame.resolution_type === "generic_process_request") {
@@ -2493,7 +2521,7 @@ function normalizeDecision(parsed: any, params: {
     ? params.conversationFrame.conversation_goal
     : cleanText(parsed?.next_action) || "organizar proximo passo com seguranca";
 
-  const frameReplyBlocks = params.conversationFrame.resolution_type === "process_candidates"
+  const frameReplyBlocks = useFrameGuardrailReply && params.conversationFrame.resolution_type === "process_candidates"
     ? params.conversationFrame.safe_fallback_reply.split(/\n{2,}/).map((block) => cleanText(block)).filter(Boolean) as string[]
     : [];
   const sanitizedBlocks = frameReplyBlocks.length
@@ -2634,6 +2662,22 @@ async function recordReplyRepairEvent(params: {
 }) {
   try {
     if (typeof (params.supabase as any)?.from !== "function") return;
+    const originalReplyPreview = previewReplyText(params.invalidDecision.reply);
+    const repairedReplyPreview = previewReplyText(params.repairedDecision?.reply);
+    const finalResponseSource = params.status === "ok"
+      ? "llm_repaired"
+      : params.repairedDecision?.final_response_source || params.invalidDecision.final_response_source
+      || null;
+    const repairAuditMetadata = {
+      original_reply_preview: originalReplyPreview,
+      repaired_reply_preview: repairedReplyPreview,
+      final_reply_preview: repairedReplyPreview || originalReplyPreview,
+      final_response_source: finalResponseSource,
+      original_conversation_resolution: params.invalidDecision.conversation_frame?.resolution_type || null,
+      repaired_conversation_resolution: params.repairedDecision?.conversation_frame?.resolution_type || null,
+      original_quality_check: params.invalidDecision.quality_check || null,
+      repaired_quality_check: params.repairedDecision?.quality_check || null,
+    };
     const query = params.supabase.from("system_event_logs");
     if (typeof (query as any).insert === "function") {
       await query.insert({
@@ -2654,6 +2698,7 @@ async function recordReplyRepairEvent(params: {
           repaired_intent: params.repairedDecision?.intent || null,
           original_model_used: params.invalidDecision.model_used,
           repaired_model_used: params.repairedDecision?.model_used || null,
+          ...repairAuditMetadata,
           duration_ms: params.durationMs,
           error: params.error ? String(params.error).slice(0, 500) : null,
         },
@@ -2674,6 +2719,7 @@ async function recordReplyRepairEvent(params: {
       repaired_intent: params.repairedDecision?.intent || null,
       repaired_should_auto_send: params.repairedDecision?.should_auto_send ?? null,
       model_used: params.repairedDecision?.model_used || params.invalidDecision.model_used || null,
+      ...repairAuditMetadata,
       duration_ms: params.durationMs,
     };
 
@@ -2692,6 +2738,9 @@ async function recordReplyRepairEvent(params: {
       metadata: {
         original_risk_flags: params.invalidDecision.risk_flags,
         model_used: params.invalidDecision.model_used || null,
+        original_reply_preview: originalReplyPreview,
+        original_conversation_resolution: params.invalidDecision.conversation_frame?.resolution_type || null,
+        original_quality_check: params.invalidDecision.quality_check || null,
       },
     });
 
@@ -2724,6 +2773,7 @@ async function recordReplyRepairEvent(params: {
         repaired_intent: params.repairedDecision?.intent || null,
         repaired_should_auto_send: params.repairedDecision?.should_auto_send ?? null,
         model_used: params.repairedDecision?.model_used || params.invalidDecision.model_used || null,
+        ...repairAuditMetadata,
         duration_ms: params.durationMs,
       },
     });
@@ -2746,38 +2796,6 @@ export async function buildMayusOperatingPartnerDecision(input: MayusOperatingPa
     fallbackSupportSummary,
     actorContext: whatsappActorContext,
   });
-
-  if (conversationFrame.resolution_type === "greeting") {
-    return buildDeterministicDecision({
-      config,
-      reply: conversationFrame.safe_fallback_reply,
-      intent: conversationFrame.recommended_intent,
-      confidence: 0.96,
-      state: {
-        ...fallbackState,
-        conversation_goal: conversationFrame.conversation_goal,
-        next_action: conversationFrame.conversation_goal,
-        facts_known: fallbackState.last_customer_message ? [`ultima mensagem do cliente: ${fallbackState.last_customer_message}`] : [],
-        missing_information: [],
-        last_process_candidates: undefined,
-      },
-      closingReadiness: fallbackClosingReadiness,
-      supportSummary: fallbackSupportSummary,
-      riskFlags: [],
-      nextAction: conversationFrame.conversation_goal,
-      actions: [{ type: "answer_support", title: "Responder saudacao limpa", requires_approval: false }],
-      requiresApproval: false,
-      expectedOutcome: "abrir conversa sem puxar processo ou contexto antigo",
-      reasoning: "Turn Reset Gate: saudacao pura zera contexto processual antigo e nao chama LLM.",
-      assistantName: input.officeKnowledgeProfile?.assistantName,
-      officeName: input.officeKnowledgeProfile?.officeName,
-      contactName: input.contactName,
-      whatsappActorContext,
-      conversationFrame,
-      qualityCheck: { status: "pass", flags: [], reasons: [] },
-      finalResponseSource: "deterministic_guardrail",
-    });
-  }
 
   const llm = await getLLMClient(input.supabase, input.tenantId, "sdr_whatsapp", {
     preferredProvider: "openrouter",

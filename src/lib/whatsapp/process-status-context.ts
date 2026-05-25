@@ -345,6 +345,44 @@ function rankProcessTasksByName(tasks: ProcessTaskRow[], reference?: string | nu
   return ranked.map((item) => item.task);
 }
 
+function scoreProcessChoiceMatch(task: ProcessTaskRow, reference?: string | null) {
+  const ref = normalizeText(reference);
+  if (!ref) return 0;
+  const haystack = normalizeText([
+    task.opposing_party,
+    task.reu,
+    task.title,
+    task.description,
+    task.process_number,
+    task.processo_1grau,
+    task.processo_2grau,
+  ].filter(Boolean).join(" "));
+  if (!haystack) return 0;
+  const tokens = ref.split(/\s+/).filter((word) => word.length >= 3 && !/^(e|eh|o|a|os|as|do|da|de|dos|das|que|esse|essa|isso|seria)$/.test(word));
+  let score = haystack.includes(ref) ? 8 : 0;
+  for (const token of tokens) {
+    if (haystack.includes(token)) score += 4;
+  }
+  const partyTokens = normalizeText([task.opposing_party, task.reu].filter(Boolean).join(" "))
+    .split(/\s+/)
+    .filter((word) => word.length >= 4 && !/^(banco|ltda|federal|economica|cef)$/.test(word));
+  for (const token of partyTokens) {
+    if (ref.includes(token)) score += 6;
+  }
+  return score;
+}
+
+function rankProcessTasksByChoice(tasks: ProcessTaskRow[], reference?: string | null) {
+  if (!reference || tasks.length <= 1) return tasks;
+  const ranked = tasks
+    .map((task) => ({ task, score: scoreProcessChoiceMatch(task, reference) }))
+    .sort((a, b) => b.score - a.score);
+  const matched = ranked.filter((item) => item.score > 0);
+  if (!matched.length) return tasks;
+  if (matched[0]?.score > (matched[1]?.score || 0)) return [matched[0].task];
+  return matched.map((item) => item.task);
+}
+
 function getLastInboundText(messages: WhatsAppSalesMessage[]) {
   return [...messages].reverse().find((message) => message.direction === "inbound" && cleanText(message.content))?.content || null;
 }
@@ -355,14 +393,21 @@ function previousMessages(messages: WhatsAppSalesMessage[]) {
   return typeof lastInboundIndex === "number" ? messages.slice(0, lastInboundIndex) : messages;
 }
 
-function isPureGreetingText(value?: string | null) {
-  return /^(oi|ola|ol[aá]|bom dia|boa tarde|boa noite|tudo bem|boa)$/i.test(normalizeText(value));
+function isNaturalPureGreetingText(value?: string | null) {
+  const text = normalizeText(value)
+    .replace(/[?!.,;:]+/g, " ")
+    .replace(/\b(mayus|maya)\b/g, " ")
+    .replace(/\s+/g, " ")
+    .trim();
+  if (!text) return false;
+  if (/processo|caso|cliente|cpf|cnj|andamento|status|situacao|atualizacao|novidade|documento|boleto|contrato|prazo/.test(text)) return false;
+  return /^(oi|ola|bom dia|boa tarde|boa noite|boa|tudo bem|oi tudo bem|ola tudo bem|bom dia tudo bem|boa tarde tudo bem|boa noite tudo bem|tudo bem e vc|tudo bem e voce|oi tudo bem e vc|oi tudo bem e voce)$/.test(text);
 }
 
 function lastMessageLooksLikeName(value?: string | null) {
   const text = cleanText(value) || "";
   const normalized = normalizeText(text);
-  if (!normalized || isPureGreetingText(text)) return false;
+  if (!normalized || isNaturalPureGreetingText(text)) return false;
   if (/\d|@|processo|cnj|cpf|cnpj|boa noite|bom dia|boa tarde|oi|ola/.test(normalized)) return false;
   const words = text.split(/\s+/).filter(Boolean);
   return words.length >= 2 && words.length <= 8 && words.every((word) => /^[A-Za-zÀ-ÿ'’-]{2,}$/.test(word));
@@ -376,22 +421,23 @@ function previousAskedForProcessIdentifier(messages: WhatsAppSalesMessage[]) {
 
 export function isProcessStatusRequest(messages: WhatsAppSalesMessage[]) {
   const lastText = getLastInboundText(messages);
-  if (isPureGreetingText(lastText)) return false;
+  if (isNaturalPureGreetingText(lastText)) return false;
   if (extractSelectedProcessNumber(messages)) return true;
+  if (extractProcessChoiceReferenceFromText(lastText) && previousAskedForProcessIdentifier(messages)) return true;
   if (/nome completo\s+(?:e|é|eh)\s+/i.test(cleanText(lastText) || "") && previousAskedForProcessIdentifier(messages)) return true;
   if (lastMessageLooksLikeName(lastText) && previousAskedForProcessIdentifier(messages)) return true;
   const text = normalizeText(lastText);
-  return /andamento|status|meu processo|meu caso|processos? d[aeo]|casos? d[aeo]|gostaria de saber (sobre |de )?(o |um )?processo|queria saber (sobre |de )?(o |um )?processo|saber (sobre |de )?(o |um )?processo|saber como esta (o |um )?processo|como esta (o |um )?processo|atualizacao do processo|atualizacao do caso|novidade no processo|numero do processo|cnj|movimentacao|movimentacao|qual fase|saiu decisao|teve novidade|processo andou/.test(text);
+  return /andamento|status|situacao|meu processo|meu caso|processos? d[aeo]|casos? d[aeo]|gostaria de saber (sobre |de )?(o |um )?processo|queria saber (sobre |de )?(o |um )?processo|saber (sobre |de )?(o |um )?processo|saber como esta (o |um )?processo|como esta (o |um )?processo|atualizacao do processo|atualizacao do caso|novidade no processo|numero do processo|cnj|movimentacao|movimentacao|qual fase|saiu decisao|teve novidade|processo andou/.test(text);
 }
 
 function isGenericProcessRequestWithoutReference(messages: WhatsAppSalesMessage[]) {
   const lastText = cleanText(getLastInboundText(messages)) || "";
   const text = normalizeText(lastText);
-  if (!/processo|caso|andamento|status|atualizacao|novidade/.test(text)) return false;
+  if (!/processo|caso|andamento|status|situacao|atualizacao|novidade/.test(text)) return false;
   if (/\d{7}-\d{2}|cnj|cpf|cnpj|processos? d[aeo]\s+[a-z]{2,}|casos? d[aeo]\s+[a-z]{2,}|nome completo\s+(e|eh|é)/.test(text)) return false;
   if (lastMessageLooksLikeName(lastText)) return false;
   if (/^(o\s+)?(ultimo|último|ultima|última|esse|essa|isso|este|esta|primeiro|segundo|terceiro|1|2|3)\.?$/.test(text)) return false;
-  return /um processo|sobre (o |um )?processo|saber sobre (o |um )?processo|quero saber (sobre |de )?(o |um )?processo|gostaria de saber (sobre |de )?(o |um )?processo|queria saber (sobre |de )?(o |um )?processo|saber como esta (o |um )?processo|como esta (o |um )?processo/.test(text);
+  return /um processo|sobre (o |um )?processo|saber sobre (o |um )?processo|situacao do processo|situacao do caso|me pass(a|e|ar).{0,30}situacao|quero saber (sobre |de )?(o |um )?processo|gostaria de saber (sobre |de )?(o |um )?processo|queria saber (sobre |de )?(o |um )?processo|saber como esta (o |um )?processo|como esta (o |um )?processo/.test(text);
 }
 
 function extractProcessNumber(messages: WhatsAppSalesMessage[]) {
@@ -407,6 +453,22 @@ function extractCpf(messages: WhatsAppSalesMessage[]) {
 function extractProcessReference(messages: WhatsAppSalesMessage[]) {
   const text = cleanText(getLastInboundText(messages)) || "";
   return extractProcessReferenceFromText(text, previousAskedForProcessIdentifier(messages));
+}
+
+function extractProcessChoiceReferenceFromText(value?: string | null) {
+  const original = cleanText(value);
+  const normalized = normalizeText(original);
+  if (!original || !normalized || isNaturalPureGreetingText(original)) return null;
+  if (/processo|caso|andamento|status|situacao|atualizacao|novidade|cpf|cnj|\d{7}-\d{2}/.test(normalized)) return null;
+  const stripped = normalized
+    .replace(/^(e|eh|isso|esse|essa|seria|ser|o|a)\s+/, "")
+    .replace(/^(o\s+|a\s+)?(do|da|de)\s+/, "")
+    .trim();
+  const candidate = stripped !== normalized ? stripped : normalized;
+  const words = candidate.split(/\s+/).filter(Boolean);
+  if (words.length > 5 || candidate.length < 3) return null;
+  if (lastMessageLooksLikeName(candidate) && !/^(banco|caixa|inss|bradesco|master|itau|santander|cef)\b/.test(candidate)) return null;
+  return candidate;
 }
 
 function extractProcessReferenceFromText(text: string, allowLooseName: boolean) {
@@ -434,9 +496,24 @@ function extractRecentNameReferenceForGenericRequest(messages: WhatsAppSalesMess
 
   for (const message of previousInbound) {
     const text = cleanText(message.content) || "";
-    if (isPureGreetingText(text)) break;
+    if (isNaturalPureGreetingText(text)) break;
     const reference = extractProcessReferenceFromText(text, true);
     if (reference && lastMessageLooksLikeName(reference)) return reference;
+  }
+  return null;
+}
+
+function extractRecentProcessChoiceReferenceForGenericRequest(messages: WhatsAppSalesMessage[]) {
+  const previousInbound = previousMessages(messages)
+    .filter((message) => message.direction === "inbound" && cleanText(message.content))
+    .reverse()
+    .slice(0, 4);
+
+  for (const message of previousInbound) {
+    const text = cleanText(message.content) || "";
+    if (isNaturalPureGreetingText(text)) break;
+    const reference = extractProcessChoiceReferenceFromText(text);
+    if (reference) return reference;
   }
   return null;
 }
@@ -818,22 +895,33 @@ export async function fetchWhatsAppProcessStatusContext(params: {
   messages: WhatsAppSalesMessage[];
   senderPhoneAuthorized?: boolean;
 }): Promise<WhatsAppProcessStatusContext | null> {
-  if (!isProcessStatusRequest(params.messages)) return null;
-
   const phone = normalizePhone(params.contact.phone_number);
   const senderPhoneAuthorized = params.senderPhoneAuthorized === true;
+  const lastInboundText = getLastInboundText(params.messages);
+  const authorizedNameOnlyRequest = senderPhoneAuthorized && lastMessageLooksLikeName(lastInboundText)
+    ? cleanText(lastInboundText)
+    : null;
+  if (!isProcessStatusRequest(params.messages) && !authorizedNameOnlyRequest) return null;
+
   const selectedProcessNumber = extractSelectedProcessNumber(params.messages);
   const genericRequestWithoutReference = !selectedProcessNumber && isGenericProcessRequestWithoutReference(params.messages);
-  const recentNameReference = senderPhoneAuthorized && genericRequestWithoutReference
+  const currentProcessChoiceReference = senderPhoneAuthorized && previousAskedForProcessIdentifier(params.messages)
+    ? extractProcessChoiceReferenceFromText(lastInboundText)
+    : null;
+  const recentNameReference = senderPhoneAuthorized && (genericRequestWithoutReference || Boolean(currentProcessChoiceReference))
     ? extractRecentNameReferenceForGenericRequest(params.messages)
     : null;
-  if (senderPhoneAuthorized && genericRequestWithoutReference && !recentNameReference) {
+  const recentProcessChoiceReference = senderPhoneAuthorized && genericRequestWithoutReference
+    ? extractRecentProcessChoiceReferenceForGenericRequest(params.messages)
+    : null;
+  const processChoiceReference = currentProcessChoiceReference || recentProcessChoiceReference;
+  if (senderPhoneAuthorized && genericRequestWithoutReference && !recentNameReference && !processChoiceReference) {
     return buildFallbackContext("authorized_process_access_needs_reference", { senderPhoneAuthorized });
   }
   const processNumberFromMessage = selectedProcessNumber || extractProcessNumber(params.messages);
   const cpf = extractCpf(params.messages);
-  const explicitReference = extractProcessReference(params.messages);
-  if (senderPhoneAuthorized && !processNumberFromMessage && !cpf && !explicitReference && !recentNameReference) {
+  const explicitReference = extractProcessReference(params.messages) || authorizedNameOnlyRequest;
+  if (senderPhoneAuthorized && !processNumberFromMessage && !cpf && !explicitReference && !recentNameReference && !processChoiceReference) {
     return buildFallbackContext("authorized_process_access_needs_reference", { senderPhoneAuthorized });
   }
 
@@ -863,7 +951,8 @@ export async function fetchWhatsAppProcessStatusContext(params: {
     phone: !senderPhoneAuthorized && !processNumberFromMessage && !cpf ? phone || normalizePhone(client?.phone) : null,
     clientName: queryClientName,
   });
-  if (!senderPhoneAuthorized && genericRequestWithoutReference && processTasks.length === 0) {
+  const scopedProcessTasks = rankProcessTasksByChoice(processTasks, processChoiceReference);
+  if (!senderPhoneAuthorized && genericRequestWithoutReference && scopedProcessTasks.length === 0) {
     return buildFallbackContext("process_access_needs_reference", { senderPhoneAuthorized });
   }
 
@@ -871,22 +960,23 @@ export async function fetchWhatsAppProcessStatusContext(params: {
     supabase: params.supabase,
     tenantId: params.tenantId,
     senderPhoneAuthorized,
-    rows: processTasks,
-    clientName: queryClientName || processTasks.find((row) => row.client_name)?.client_name || null,
+    rows: scopedProcessTasks,
+    clientName: queryClientName || scopedProcessTasks.find((row) => row.client_name)?.client_name || null,
     selectedProcessNumber,
   });
-  const shouldUseBriefingContext = processTasks.length > 1
+  const shouldUseBriefingContext = scopedProcessTasks.length > 1
     || Boolean(selectedProcessNumber)
-    || processTasks.some((row) => row.source === "monitored_processes" || row.source === "processos_cache");
+    || Boolean(processChoiceReference)
+    || scopedProcessTasks.some((row) => row.source === "monitored_processes" || row.source === "processos_cache");
   if (briefingContext && shouldUseBriefingContext) {
     return briefingContext;
   }
 
-  if (processTasks.length !== 1) {
-    return buildFallbackContext(processTasks.length > 1 ? "mais de um processo possivel" : "processo nao localizado", { senderPhoneAuthorized, candidates: processTasks });
+  if (scopedProcessTasks.length !== 1) {
+    return buildFallbackContext(scopedProcessTasks.length > 1 ? "mais de um processo possivel" : "processo nao localizado", { senderPhoneAuthorized, candidates: scopedProcessTasks });
   }
 
-  const task = processTasks[0];
+  const task = scopedProcessTasks[0];
   const processNumber = task.process_number || task.processo_1grau || task.processo_2grau || processNumberFromMessage;
   const inbox = await loadMovementInbox({ supabase: params.supabase, tenantId: params.tenantId, processNumber });
   const stageName = task.process_stages?.name || null;

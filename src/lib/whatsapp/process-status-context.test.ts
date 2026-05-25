@@ -196,6 +196,7 @@ describe("process-status-context", () => {
     expect(isProcessStatusRequest([{ direction: "inbound", content: "Boa tarde, gostaria de saber sobre o processo" }])).toBe(true);
     expect(isProcessStatusRequest([{ direction: "inbound", content: "Gostaria de saber sobre um processo" }])).toBe(true);
     expect(isProcessStatusRequest([{ direction: "inbound", content: "Gostaria de saber de um processo" }])).toBe(true);
+    expect(isProcessStatusRequest([{ direction: "inbound", content: "Pode me passar a situacao do processo?" }])).toBe(true);
 
     const context = await fetchWhatsAppProcessStatusContext({
       supabase: { from } as any,
@@ -672,6 +673,103 @@ describe("process-status-context", () => {
     expect(context?.candidateProcesses?.map((item) => item.processNumber)).not.toContain("3003925-40.2026.8.19.0000");
     expect(context?.grounding.inferenceNotes).toContain("agravos/incidentes foram separados dos processos principais");
     expect(context?.grounding.factualSources).toContain("cérebro MAYUS");
+  });
+
+  it("regressao diaria: Oi Mayus, Marcio, candidatos bancarios, escolha Bradesco e pedido de situacao", async () => {
+    const from = vi.fn((table: string) => {
+      if (table === "clients") return makeQuery({ data: null, error: null });
+      if (table === "process_tasks") return makeQuery({ data: [], error: null });
+      if (table === "monitored_processes") return makeQuery({
+        data: [
+          {
+            id: "master",
+            numero_processo: "3000144-50.2026.8.19.0213",
+            tribunal: "TJRJ",
+            assunto: "Indenizacao por danos materiais",
+            classe_processual: "Procedimento comum",
+            status: "ATIVO",
+            fase_atual: "Conhecimento",
+            status_predito: null,
+            cliente_nome: "Marcio da Silva Machado",
+            resumo_curto: "Acao de indenizacao contra o Banco Master S.A.",
+            ultima_movimentacao_texto: "Sem decisao nova registrada",
+            data_ultima_movimentacao: "2026-04-30T00:00:00.000Z",
+            partes: { polo_ativo: "Marcio da Silva Machado", polo_passivo: "Banco Master S.A" },
+            envolvidos: [],
+            raw_escavador: null,
+          },
+          {
+            id: "bradesco",
+            numero_processo: "3000141-95.2026.8.19.0213",
+            tribunal: "TJRJ",
+            assunto: "Indenizacao por danos materiais",
+            classe_processual: "Procedimento comum",
+            status: "ATIVO",
+            fase_atual: "Conhecimento",
+            status_predito: null,
+            cliente_nome: "Marcio da Silva Machado",
+            resumo_curto: "Processo contra o Banco Bradesco S.A.",
+            ultima_movimentacao_texto: "Aguardando andamento do juizo",
+            data_ultima_movimentacao: "2026-06-21T00:00:00.000Z",
+            partes: { polo_ativo: "Marcio da Silva Machado", polo_passivo: "Banco Bradesco S.A" },
+            envolvidos: [],
+            raw_escavador: null,
+          },
+          {
+            id: "caixa",
+            numero_processo: "5006349-29.2023.4.02.5110",
+            tribunal: "TRF2",
+            assunto: "Contratos bancarios",
+            classe_processual: "Procedimento comum",
+            status: "ATIVO",
+            fase_atual: "Conhecimento",
+            status_predito: null,
+            cliente_nome: "Marcio da Silva Machado",
+            resumo_curto: "Processo contra a Caixa Economica Federal.",
+            ultima_movimentacao_texto: null,
+            data_ultima_movimentacao: "2023-06-10T00:00:00.000Z",
+            partes: { polo_ativo: "Marcio da Silva Machado", polo_passivo: "Caixa Economica Federal Cef" },
+            envolvidos: [],
+            raw_escavador: null,
+          },
+        ],
+        error: null,
+      });
+      if (table === "processos_cache") return makeQuery({ data: [], error: null });
+      if (table === "brain_artifacts") return makeQuery({ data: [], error: null });
+      if (table === "process_movimentacoes_inbox") return makeQuery({ data: null, error: null });
+      return makeQuery({ data: null, error: null });
+    });
+
+    const messages = [
+      { direction: "inbound" as const, content: "Oi Mayus" },
+      { direction: "outbound" as const, content: "Boa tarde, Vitor. Me confirma o nome completo ou CNJ para localizar com seguranca." },
+      { direction: "inbound" as const, content: "Marcio da Silva Machado" },
+      { direction: "outbound" as const, content: "Localizei Banco Master, Banco Bradesco e Caixa para Marcio. Qual deles voce quer?" },
+      { direction: "inbound" as const, content: "E o do Bradesco" },
+      { direction: "outbound" as const, content: "Perfeito, e o processo do Banco Bradesco." },
+      { direction: "inbound" as const, content: "Pode me passar a situacao do processo" },
+    ];
+
+    expect(isProcessStatusRequest([{ direction: "inbound", content: "Oi Mayus" }])).toBe(false);
+    expect(isProcessStatusRequest(messages.slice(0, 5))).toBe(true);
+
+    const context = await fetchWhatsAppProcessStatusContext({
+      supabase: { from } as any,
+      tenantId: "tenant-1",
+      contact: { phone_number: "5521999990000@s.whatsapp.net", name: "Dono" },
+      messages,
+      senderPhoneAuthorized: true,
+    });
+
+    expect(context?.verified).toBe(true);
+    expect(context?.clientName).toBe("Marcio da Silva Machado");
+    expect(context?.processNumber).toBe("3000141-95.2026.8.19.0213");
+    expect(context?.candidateProcesses).toHaveLength(1);
+    expect(context?.candidateProcesses?.[0]).toEqual(expect.objectContaining({
+      opposingParty: "Banco Bradesco S.A",
+      summary: expect.stringContaining("Banco Bradesco"),
+    }));
   });
 
   it("localiza processo monitorado por nome em partes mesmo com cliente_nome vazio", async () => {
