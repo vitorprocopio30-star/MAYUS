@@ -1300,7 +1300,7 @@ function detectDeterministicIntentAndRisk(messages: WhatsAppSalesMessage[], proc
 
 function chooseModel(input: MayusOperatingPartnerInput) {
   const defaultModel = cleanText(input.salesTestbench?.default_model);
-  return defaultModel || "deepseek/deepseek-v4-pro";
+  return defaultModel || null;
 }
 
 function summarizePracticeAreaPlaybooks(playbooks?: OfficePracticeAreaPlaybook[] | null) {

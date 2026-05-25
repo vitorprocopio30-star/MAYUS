@@ -19,13 +19,13 @@ import {
 describe("mayus-operating-partner", () => {
   beforeEach(() => {
     vi.clearAllMocks();
-    getLLMClientMock.mockResolvedValue({
+    getLLMClientMock.mockImplementation(async (_supabase, _tenantId, _useCase, options) => ({
       provider: "openrouter",
-      model: "deepseek/deepseek-v4-pro",
+      model: options?.modelOverride || "openai/gpt-5.4-nano",
       endpoint: "https://openrouter.test/chat/completions",
       apiKey: "openrouter-key",
       extraHeaders: {},
-    });
+    }));
     buildHeadersMock.mockReturnValue({
       Authorization: "Bearer openrouter-key",
       "Content-Type": "application/json",
@@ -1358,7 +1358,11 @@ describe("mayus-operating-partner", () => {
     expect(decision.requires_approval).toBe(false);
     expect(decision.risk_flags).not.toContain("case_status_unverified");
     expect(decision.actions_to_execute[0].type).toBe("answer_support");
-    expect(decision.model_used).toBe("deepseek/deepseek-v4-pro");
+    expect(getLLMClientMock).toHaveBeenCalledWith({} as any, "tenant-1", "sdr_whatsapp", {
+      preferredProvider: "openrouter",
+      modelOverride: null,
+    });
+    expect(decision.model_used).toBe("openai/gpt-5.4-nano");
   });
 
   it("classifica pedido plural de processo por nome como status processual", async () => {
