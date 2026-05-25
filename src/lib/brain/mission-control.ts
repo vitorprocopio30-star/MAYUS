@@ -15,6 +15,8 @@ type JsonRecord = Record<string, unknown>;
 
 export type BrainMissionTaskInput = {
   id: string;
+  tenant_id?: string | null;
+  tenantId?: string | null;
   title?: string | null;
   goal?: string | null;
   module?: string | null;
@@ -211,6 +213,7 @@ export type BrainMissionControlPendingApproval = {
 export type BrainMissionControlSnapshot = {
   missionId: string;
   taskId: string;
+  tenantId: string | null;
   module: string | null;
   agentSource: string | null;
   owner: string | null;
@@ -339,6 +342,15 @@ function getTaskId(input: {
   task?: BrainMissionTaskInput | null;
 }) {
   return stringValue(input.task_id) || stringValue(input.task?.id);
+}
+
+function taskTenantId(task: BrainMissionTaskInput) {
+  return stringValue(task.tenant_id)
+    || stringValue(task.tenantId)
+    || stringValue(task.task_context?.tenant_id)
+    || stringValue(task.task_context?.tenantId)
+    || stringValue(task.task_input?.tenant_id)
+    || stringValue(task.task_input?.tenantId);
 }
 
 function ensureBucket(
@@ -1054,6 +1066,7 @@ export function buildBrainMissionControlSnapshots(input: {
       return {
         missionId: bucket.task.id,
         taskId: bucket.task.id,
+        tenantId: taskTenantId(bucket.task),
         module: stringValue(bucket.task.module),
         agentSource: agentSource(bucket, routine, trajectory),
         owner: missionOwner(bucket, routine),

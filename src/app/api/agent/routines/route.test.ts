@@ -167,12 +167,33 @@ describe("/api/agent/routines", () => {
       readyAgents: 1,
       policyPrecedence: ["global", "tenant", "module", "agent", "tool", "channel"],
     }));
+    expect(body.tenant_readiness).toEqual(expect.objectContaining({
+      tenantId: "tenant-session",
+      summary: expect.objectContaining({
+        ready: 1,
+        blocked: 0,
+        awaitingApproval: 0,
+        insufficientEvidence: 6,
+      }),
+      agents: expect.arrayContaining([
+        expect.objectContaining({
+          agentId: "finance_agent",
+          status: "ready",
+          primitives: expect.arrayContaining([
+            expect.objectContaining({ id: "paperclip", status: "ready" }),
+            expect.objectContaining({ id: "openclaw", status: "insufficient_evidence" }),
+            expect.objectContaining({ id: "hermes", status: "insufficient_evidence" }),
+          ]),
+        }),
+      ]),
+    }));
     expect(body.mission_control_snapshots).toEqual([]);
     expect(body.mission_control).toEqual(expect.objectContaining({
       status: "degraded",
       canReconstruct: false,
       reason: "Nenhum snapshot real de Mission Control foi encontrado para este tenant.",
       nextAction: expect.stringContaining("Acordar uma rotina Paperclip"),
+      tenant_readiness: body.tenant_readiness,
       snapshots: [],
     }));
     expect(body.mission_control_degradation).toEqual(expect.objectContaining({

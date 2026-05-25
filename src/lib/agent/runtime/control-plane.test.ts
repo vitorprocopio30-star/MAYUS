@@ -27,6 +27,7 @@ describe("Mayus Agent Control Plane", () => {
 
   it("calcula health por agente com bloqueio, approvals, budget e memoria sanitizados", () => {
     const controlPlane = buildMayusAgentControlPlane({
+      tenantId: "tenant-session",
       routines: [{
         id: "finance-daily-review",
         label: "Revisao financeira diaria",
@@ -142,9 +143,28 @@ describe("Mayus Agent Control Plane", () => {
         latestMemoryId: "memory-1",
         lifecycleStatus: "proposed",
       }),
+      readiness: expect.objectContaining({
+        tenantId: "tenant-session",
+        status: "blocked",
+        primitives: expect.arrayContaining([
+          expect.objectContaining({ id: "paperclip", status: "blocked" }),
+          expect.objectContaining({ id: "openclaw", status: "blocked" }),
+          expect.objectContaining({ id: "hermes", status: "awaiting_approval" }),
+        ]),
+      }),
     }));
     expect(JSON.stringify(monitoringAgent)).not.toContain("secret-value");
     expect(financeAgent?.health.status).toBe("ready");
+    expect(financeAgent?.readiness).toEqual(expect.objectContaining({
+      tenantId: "tenant-session",
+      status: "ready",
+      evidenceSufficient: true,
+      primitives: expect.arrayContaining([
+        expect.objectContaining({ id: "paperclip", status: "ready" }),
+        expect.objectContaining({ id: "openclaw", status: "insufficient_evidence" }),
+        expect.objectContaining({ id: "hermes", status: "insufficient_evidence" }),
+      ]),
+    }));
     expect(controlPlane.summary).toEqual(expect.objectContaining({
       totalAgents: 7,
       pendingApprovals: 1,
@@ -200,6 +220,30 @@ describe("Mayus Agent Control Plane", () => {
         }),
       }),
     ]));
+    expect(controlPlane.tenant_readiness).toEqual(expect.objectContaining({
+      tenantId: "tenant-session",
+      summary: expect.objectContaining({
+        ready: 1,
+        blocked: 1,
+        awaitingApproval: 0,
+        insufficientEvidence: 5,
+      }),
+      agents: expect.arrayContaining([
+        expect.objectContaining({
+          agentId: "monitoring_agent",
+          status: "blocked",
+          primitives: expect.arrayContaining([
+            expect.objectContaining({ id: "paperclip" }),
+            expect.objectContaining({ id: "openclaw" }),
+            expect.objectContaining({ id: "hermes" }),
+          ]),
+        }),
+        expect.objectContaining({
+          agentId: "finance_agent",
+          status: "ready",
+        }),
+      ]),
+    }));
     expect(JSON.stringify(controlPlane.publicAgents)).not.toContain("secret-value");
   });
 

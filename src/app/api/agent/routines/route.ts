@@ -295,7 +295,7 @@ async function loadAgentControlMissionSnapshots(params: {
         .limit(8),
       params.client
         .from("brain_tasks")
-        .select("id, title, goal, module, channel, status, created_at, updated_at, started_at, result_summary, error_message, task_input, task_context, policy_snapshot")
+        .select("id, tenant_id, title, goal, module, channel, status, created_at, updated_at, started_at, result_summary, error_message, task_input, task_context, policy_snapshot")
         .eq("tenant_id", params.tenantId)
         .order("updated_at", { ascending: false })
         .limit(12),
@@ -344,7 +344,7 @@ async function loadAgentControlMissionSnapshots(params: {
       taskIds.length > 0
         ? params.client
             .from("brain_tasks")
-            .select("id, title, goal, module, channel, status, created_at, updated_at, started_at, result_summary, error_message, task_input, task_context, policy_snapshot")
+            .select("id, tenant_id, title, goal, module, channel, status, created_at, updated_at, started_at, result_summary, error_message, task_input, task_context, policy_snapshot")
             .eq("tenant_id", params.tenantId)
             .in("id", taskIds)
         : Promise.resolve({ data: [], error: null }),
@@ -707,6 +707,7 @@ export async function GET() {
     const controlPlane = buildMayusAgentControlPlane({
       routines,
       missionSnapshots: missionControlSnapshots,
+      tenantId: auth.context!.tenantId,
     });
 
     return NextResponse.json({
@@ -714,8 +715,10 @@ export async function GET() {
       agents: controlPlane.agents,
       summary: controlPlane.summary,
       control_plane: controlPlane,
+      tenant_readiness: controlPlane.tenant_readiness,
       mission_control: {
         ...missionControl.diagnostics,
+        tenant_readiness: controlPlane.tenant_readiness,
         snapshots: missionControlSnapshots,
       },
       mission_control_degradation: missionControl.diagnostics.status === "degraded"

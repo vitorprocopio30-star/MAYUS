@@ -414,6 +414,7 @@ describe("buildBrainMissionControlSnapshots", () => {
     const snapshots = buildBrainMissionControlSnapshots({
       tasks: [{
         id: "task-paperclip",
+        tenant_id: "tenant-session",
         title: "Guardiao de prazos",
         goal: "Revisar riscos de prazo",
         module: "legal_ops",
@@ -462,6 +463,7 @@ describe("buildBrainMissionControlSnapshots", () => {
     });
 
     expect(snapshots[0]).toEqual(expect.objectContaining({
+      tenantId: "tenant-session",
       agentSource: "paperclip",
       owner: "Operador juridico",
       pendingApproval: expect.objectContaining({ id: "approval-paperclip" }),

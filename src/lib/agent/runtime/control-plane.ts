@@ -115,6 +115,20 @@ export type MayusAgentControlPlaneCoordination = {
 export type MayusPublicAgentPrimitiveId = "paperclip" | "openclaw" | "hermes";
 
 export type MayusPublicAgentMatrixStatus = "ready" | "needs_attention" | "blocked" | "read_only";
+export type MayusTenantAgentReadinessStatus =
+  | "ready"
+  | "blocked"
+  | "awaiting_approval"
+  | "insufficient_evidence";
+
+export type MayusTenantAgentPrimitiveReadiness = {
+  id: MayusPublicAgentPrimitiveId;
+  label: string;
+  status: MayusTenantAgentReadinessStatus;
+  evidence: string[];
+  blockers: string[];
+  nextAction: string;
+};
 
 export type MayusPublicAgentMatrixItem = {
   id: MayusPublicAgentPrimitiveId;
@@ -412,6 +426,15 @@ export type MayusAgentControlPlaneAgent = MayusAgentControlPlaneProfile & {
       scope: "tenant_only";
     } | null;
   };
+  readiness: {
+    tenantId: string | null;
+    status: MayusTenantAgentReadinessStatus;
+    evidenceSufficient: boolean;
+    evidence: string[];
+    blockers: string[];
+    nextAction: string;
+    primitives: MayusTenantAgentPrimitiveReadiness[];
+  };
 };
 
 export type MayusAgentControlPlaneSummary = {
@@ -438,6 +461,26 @@ export type MayusAgentControlPlane = {
   summary: MayusAgentControlPlaneSummary;
   coordination: MayusAgentControlPlaneCoordination;
   publicAgents: MayusPublicAgentMatrixItem[];
+  tenant_readiness: {
+    tenantId: string | null;
+    summary: {
+      ready: number;
+      blocked: number;
+      awaitingApproval: number;
+      insufficientEvidence: number;
+    };
+    agents: Array<{
+      agentId: MayusInternalAgentId;
+      agentLabel: string;
+      module: MayusAgentControlModule;
+      status: MayusTenantAgentReadinessStatus;
+      evidenceSufficient: boolean;
+      evidence: string[];
+      blockers: string[];
+      nextAction: string;
+      primitives: MayusTenantAgentPrimitiveReadiness[];
+    }>;
+  };
 };
 
 export type MayusInternalAgentSummary = Pick<
@@ -1622,12 +1665,212 @@ function buildPublicAgentMatrix(params: {
   ];
 }
 
+function primitiveStatusFromBlockedOrApproval(params: {
+  hasBlocker: boolean;
+  hasApproval: boolean;
+  hasEvidence: boolean;
+}): MayusTenantAgentReadinessStatus {
+  if (params.hasBlocker) return "blocked";
+  if (params.hasApproval) return "awaiting_approval";
+  if (!params.hasEvidence) return "insufficient_evidence";
+  return "ready";
+}
+
+function buildPaperclipReadiness(agent: MayusAgentControlPlaneAgent): MayusTenantAgentPrimitiveReadiness {
+  const evidence = [
+    `${agent.routines.enabled}/${agent.routines.total} rotinas habilitadas`,
+    `${agent.routines.awaitingApproval} approval(s) Paperclip`,
+  ];
+  const blockers = uniqueSanitizedTexts(
+    agent.routines.items
+      .filter((routine) => routine.status === "blocked")
+      .map((routine) => routine.reason || routine.label)
+  );
+  const status = primitiveStatusFromBlockedOrApproval({
+    hasBlocker: blockers.length > 0,
+    hasApproval: agent.routines.awaitingApproval > 0,
+    hasEvidence: agent.routines.total > 0,
+  });
+
+  return {
+    id: "paperclip",
+    label: "Paperclip",
+    status,
+    evidence,
+    blockers,
+    nextAction: status === "blocked"
+      ? "Resolver rotina bloqueada antes de acordar novo trabalho."
+      : status === "awaiting_approval"
+        ? "Revisar approval da rotina antes do proximo heartbeat."
+        : status === "insufficient_evidence"
+          ? "Habilitar rotina ou acordar dry-run Paperclip para gerar evidencia."
+          : agent.routines.items.find((routine) => routine.enabled && !routine.paused)?.nextAction
+            || "Manter heartbeat supervisionado.",
+  };
+}
+
+function buildOpenClawReadiness(agent: MayusAgentControlPlaneAgent): MayusTenantAgentPrimitiveReadiness {
+  const hasEvidence = Boolean(
+    agent.openclaw.outcome
+    || agent.openclaw.surface
+    || agent.openclaw.source
+    || agent.openclaw.appliedLayersCount > 0
+    || agent.openclaw.methodology
+  );
+  const blockers = uniqueSanitizedTexts([
+    agent.openclaw.blockedLayer ? `${agent.openclaw.blockedLayer}: ${agent.openclaw.reason || "policy bloqueou a acao."}` : null,
+  ]);
+  const hasApproval = String(agent.openclaw.outcome || "").includes("approval")
+    || agent.openclaw.methodology?.requiresHumanReview === true;
+  const status = primitiveStatusFromBlockedOrApproval({
+    hasBlocker: blockers.length > 0,
+    hasApproval,
+    hasEvidence,
+  });
+
+  return {
+    id: "openclaw",
+    label: "OpenClaw",
+    status,
+    evidence: uniqueSanitizedTexts([
+      agent.openclaw.outcome ? `outcome: ${agent.openclaw.outcome}` : null,
+      agent.openclaw.surface ? `surface: ${agent.openclaw.surface}` : null,
+      `${agent.openclaw.appliedLayersCount} camada(s) aplicada(s)`,
+      agent.openclaw.methodology?.status ? `metodologia: ${agent.openclaw.methodology.status}` : null,
+    ]),
+    blockers,
+    nextAction: status === "blocked"
+      ? "Revisar camada bloqueada antes de permitir execucao inferior."
+      : status === "awaiting_approval"
+        ? "Aguardar approval humano exigido por policy ou metodologia."
+        : status === "insufficient_evidence"
+          ? "Gerar mission snapshot com policy OpenClaw para este agente."
+          : "Manter policy debugger como evidencia de execucao segura.",
+  };
+}
+
+function buildHermesReadiness(agent: MayusAgentControlPlaneAgent): MayusTenantAgentPrimitiveReadiness {
+  const hasEvidence = Boolean(
+    agent.hermes.status
+    || agent.hermes.latestMemoryId
+    || agent.hermes.lifecycleStatus
+    || agent.hermes.lastEventSummary
+    || agent.hermes.tenantMethodology
+  );
+  const lifecycleStatus = agent.hermes.lifecycleStatus;
+  const hasApproval = lifecycleStatus === "proposed"
+    || lifecycleStatus === "pending_review"
+    || agent.hermes.status === "waiting_approval"
+    || agent.hermes.status === "awaiting_approval";
+  const status = primitiveStatusFromBlockedOrApproval({
+    hasBlocker: agent.hermes.status === "blocked",
+    hasApproval,
+    hasEvidence,
+  });
+
+  return {
+    id: "hermes",
+    label: "Hermes",
+    status,
+    evidence: uniqueSanitizedTexts([
+      agent.hermes.status ? `trajectory: ${agent.hermes.status}` : null,
+      agent.hermes.lifecycleStatus ? `lifecycle: ${agent.hermes.lifecycleStatus}` : null,
+      agent.hermes.latestMemoryId ? `memory: ${agent.hermes.latestMemoryId}` : null,
+      agent.hermes.tenantMethodology?.status ? `tenant methodology: ${agent.hermes.tenantMethodology.status}` : null,
+    ]),
+    blockers: agent.hermes.status === "blocked"
+      ? uniqueSanitizedTexts([agent.hermes.lastEventSummary || "Trajectory Hermes bloqueada."])
+      : [],
+    nextAction: status === "blocked"
+      ? "Revisar trajectory Hermes bloqueada antes de promover memoria ou skill."
+      : status === "awaiting_approval"
+        ? "Acompanhar lifecycle pendente sem autoaprovar memoria, skill ou procedimento."
+        : status === "insufficient_evidence"
+          ? "Vincular trajectory ou lifecycle Hermes ao proximo mission snapshot."
+          : "Usar lifecycle Hermes como evidencia tenant-only.",
+  };
+}
+
+function buildAgentReadiness(params: {
+  tenantId: string | null;
+  agent: MayusAgentControlPlaneAgent;
+}): MayusAgentControlPlaneAgent["readiness"] {
+  const primitives = [
+    buildPaperclipReadiness(params.agent),
+    buildOpenClawReadiness(params.agent),
+    buildHermesReadiness(params.agent),
+  ];
+  const evidence = uniqueSanitizedTexts(primitives.flatMap((primitive) => primitive.evidence));
+  const blockers = uniqueSanitizedTexts([
+    ...primitives.flatMap((primitive) => primitive.blockers),
+    params.agent.activity.latestBlocker,
+  ]);
+  const hasApproval = params.agent.approvalsPending > 0
+    || primitives.some((primitive) => primitive.status === "awaiting_approval");
+  const evidenceSufficient = primitives.some((primitive) => primitive.status !== "insufficient_evidence")
+    || Boolean(params.agent.activity.latestMission);
+  const status: MayusTenantAgentReadinessStatus = blockers.length > 0 || params.agent.health.status === "blocked"
+    ? "blocked"
+    : hasApproval
+      ? "awaiting_approval"
+      : evidenceSufficient && params.agent.health.status === "ready"
+        ? "ready"
+        : "insufficient_evidence";
+
+  return {
+    tenantId: params.tenantId,
+    status,
+    evidenceSufficient,
+    evidence,
+    blockers,
+    nextAction: status === "blocked"
+      ? params.agent.health.nextAction
+      : status === "awaiting_approval"
+        ? "Revisar approvals pendentes antes de liberar nova acao."
+        : status === "insufficient_evidence"
+          ? "Gerar evidencia Paperclip/OpenClaw/Hermes antes de marcar o agente como pronto."
+          : params.agent.health.nextAction,
+    primitives,
+  };
+}
+
+function buildTenantReadiness(params: {
+  tenantId: string | null;
+  agents: MayusAgentControlPlaneAgent[];
+}): MayusAgentControlPlane["tenant_readiness"] {
+  const agents = params.agents.map((agent) => ({
+    agentId: agent.id,
+    agentLabel: agent.label,
+    module: agent.module,
+    status: agent.readiness.status,
+    evidenceSufficient: agent.readiness.evidenceSufficient,
+    evidence: agent.readiness.evidence,
+    blockers: agent.readiness.blockers,
+    nextAction: agent.readiness.nextAction,
+    primitives: agent.readiness.primitives,
+  }));
+
+  return {
+    tenantId: params.tenantId,
+    summary: {
+      ready: agents.filter((agent) => agent.status === "ready").length,
+      blocked: agents.filter((agent) => agent.status === "blocked").length,
+      awaitingApproval: agents.filter((agent) => agent.status === "awaiting_approval").length,
+      insufficientEvidence: agents.filter((agent) => agent.status === "insufficient_evidence").length,
+    },
+    agents,
+  };
+}
+
 export function buildMayusAgentControlPlane(input: {
   routines?: RoutineLike[];
   missionSnapshots?: MissionSnapshotLike[];
+  tenantId?: string | null;
 } = {}): MayusAgentControlPlane {
   const routines = input.routines || [];
   const missions = input.missionSnapshots || [];
+  const tenantId = sanitizeText(input.tenantId, 120)
+    || extractTenantId(latestMission(missions) || {});
 
   const agents = MAYUS_INTERNAL_AGENT_REGISTRY.map((agent) => {
     const agentRoutines = routines.filter((routine) => resolveMayusInternalAgentForRoutine(routine).id === agent.id);
@@ -1642,7 +1885,7 @@ export function buildMayusAgentControlPlane(input: {
     const health = computeHealth({ agent, routines: routineSummaries, missions: agentMissions });
     const coordination = buildAgentCoordination({ agent, health });
 
-    return {
+    const agentWithoutReadiness = {
       ...agent,
       coordination,
       health,
@@ -1659,6 +1902,14 @@ export function buildMayusAgentControlPlane(input: {
       activity: buildAgentActivity(agentMissions),
       openclaw: buildAgentOpenClaw(agentMissions),
       hermes: buildAgentHermes(agentMissions),
+    } as Omit<MayusAgentControlPlaneAgent, "readiness">;
+
+    return {
+      ...agentWithoutReadiness,
+      readiness: buildAgentReadiness({
+        tenantId,
+        agent: agentWithoutReadiness as MayusAgentControlPlaneAgent,
+      }),
     } satisfies MayusAgentControlPlaneAgent;
   });
 
@@ -1672,6 +1923,7 @@ export function buildMayusAgentControlPlane(input: {
     || agents[0];
   const coordination = buildControlPlaneCoordination(agents, missions);
   const publicAgents = buildPublicAgentMatrix({ agents, missions });
+  const tenantReadiness = buildTenantReadiness({ tenantId, agents });
 
   return {
     agents,
@@ -1695,5 +1947,6 @@ export function buildMayusAgentControlPlane(input: {
     },
     coordination,
     publicAgents,
+    tenant_readiness: tenantReadiness,
   };
 }
