@@ -408,6 +408,7 @@ export default function PrazosPage() {
   const [movementRecords, setMovementRecords] = useState<any[]>([])
   const [movementInboxRecords, setMovementInboxRecords] = useState<any[]>([])
   const [monitoredContexts, setMonitoredContexts] = useState<any[]>([])
+  const [monitoringHealth, setMonitoringHealth] = useState<any | null>(null)
   const [profiles, setProfiles] = useState<any[]>([])
   const [loading, setLoading] = useState(true)
   const [searchTerm, setSearchTerm] = useState('')
@@ -458,7 +459,7 @@ export default function PrazosPage() {
 
   const loadData = useCallback(async (tenantIdValue: string, loggedUserId: string, teamProfiles: any[]) => {
     setLoading(true)
-    const [prazosRes, movimentacoesRes, inboxRes, contextosRes] = await Promise.all([
+    const [prazosRes, operacoesRes] = await Promise.all([
       supabase
         .from('process_prazos')
         .select(`
@@ -486,25 +487,16 @@ export default function PrazosPage() {
         .in('tipo', ['sessao', 'pericia', 'audiencia', 'citacao', 'sentenca', 'recurso', 'prazo'])
         .not('descricao', 'ilike', '%Despacho%')
         .order('data_vencimento', { ascending: true }),
-      supabase
-        .from('process_movimentacoes')
-        .select('id, numero_cnj, data, conteudo, fonte, created_at')
-        .eq('tenant_id', tenantIdValue)
-        .order('data', { ascending: false })
-        .order('created_at', { ascending: false })
-        .limit(1000),
-      supabase
-        .from('process_movimentacoes_inbox')
-        .select('id, numero_cnj, oab_estado, oab_numero, latest_data, latest_conteudo, latest_fonte, latest_created_at, quantidade_eventos, movimentacoes, payload_ultimo_evento, monitorado')
-        .eq('tenant_id', tenantIdValue)
-        .order('latest_data', { ascending: false, nullsFirst: false })
-        .order('latest_created_at', { ascending: false })
-        .limit(1000),
-      supabase
-        .from('monitored_processes')
-        .select('numero_processo, partes, tribunal, comarca, vara, assunto, classe_processual, tipo_acao, fase_atual, data_ultima_movimentacao, ultima_movimentacao_texto, resumo_curto, cliente_nome, escavador_monitoramento_id')
-        .eq('tenant_id', tenantIdValue)
+      fetch('/api/operacoes/movimentacoes?limit=1000', { cache: 'no-store' })
     ])
+
+    let operacoesPayload: any = null
+    if (operacoesRes.ok) {
+      operacoesPayload = await operacoesRes.json().catch(() => null)
+    } else {
+      const errorText = await operacoesRes.text().catch(() => '')
+      console.error('Erro ao buscar movimentacoes operacionais:', operacoesRes.status, errorText)
+    }
 
     if (prazosRes.error) {
       console.error('Erro ao buscar prazos:', prazosRes.error)
@@ -538,23 +530,10 @@ export default function PrazosPage() {
       }
     }
 
-    if (movimentacoesRes.error) {
-      console.error('Erro ao buscar movimentações:', movimentacoesRes.error)
-    } else {
-      setMovementRecords(movimentacoesRes.data || [])
-    }
-
-    if (inboxRes.error) {
-      console.error('Erro ao buscar inbox de movimentações:', inboxRes.error)
-    } else {
-      setMovementInboxRecords(inboxRes.data || [])
-    }
-
-    if (contextosRes.error) {
-      console.error('Erro ao buscar contexto de processos:', contextosRes.error)
-    } else {
-      setMonitoredContexts(contextosRes.data || [])
-    }
+    setMovementRecords(operacoesPayload?.movementRecords || [])
+    setMovementInboxRecords(operacoesPayload?.movementInboxRecords || [])
+    setMonitoredContexts(operacoesPayload?.monitoredContexts || [])
+    setMonitoringHealth(operacoesPayload?.health || null)
 
     setLoading(false)
   }, [])
@@ -571,6 +550,7 @@ export default function PrazosPage() {
         setMovementRecords([])
         setMovementInboxRecords([])
         setMonitoredContexts(localItems.map((item) => item.monitored_processes).filter(Boolean))
+        setMonitoringHealth(null)
         setLoading(false)
         return
       }
@@ -759,13 +739,13 @@ export default function PrazosPage() {
       const resumoCurto = String(contexto?.resumo_curto ?? '')
 
       pushMovimentacao({
-        id: registro?.id ? `pm-${registro.id}` : `pm-${numeroProcesso}-${index}`,
-        dedupeKey: registro?.id ? `pm-${registro.id}` : `pm-${numeroProcesso}-${index}`,
+        id: registro?.escavador_movimentacao_id ? `esc-${registro.escavador_movimentacao_id}` : registro?.id ? `pm-${registro.id}` : `pm-${numeroProcesso}-${index}`,
+        dedupeKey: registro?.escavador_movimentacao_id ? `esc-${registro.escavador_movimentacao_id}` : registro?.id ? `pm-${registro.id}` : `pm-${numeroProcesso}-${index}`,
         item,
         conteudo: conteudo || 'Movimentação sem descrição',
         dataReferencia,
         createdAt: registro?.created_at || null,
-        tipoEvento: String(registro?.fonte ?? 'movimentacao'),
+        tipoEvento: String(registro?.tipo_evento ?? registro?.fonte ?? 'movimentacao'),
         numeroProcesso,
         cliente,
         tribunal,
@@ -1242,6 +1222,7 @@ export default function PrazosPage() {
       tribunals={tribunals}
       filteredItems={filteredItems}
       movimentacoesFiltradas={movimentacoesFiltradas}
+      monitoringHealth={monitoringHealth}
       copiedId={copiedId}
       setCopiedId={setCopiedId}
       monitoringProcessNumber={monitoringProcessNumber}

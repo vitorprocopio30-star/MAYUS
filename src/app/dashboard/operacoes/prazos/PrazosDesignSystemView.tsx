@@ -114,6 +114,7 @@ export function PrazosDesignSystemView({
   tribunals,
   filteredItems,
   movimentacoesFiltradas,
+  monitoringHealth,
   copiedId,
   setCopiedId,
   monitoringProcessNumber,
@@ -158,6 +159,7 @@ export function PrazosDesignSystemView({
   tribunals: string[]
   filteredItems: any[]
   movimentacoesFiltradas: any[]
+  monitoringHealth: any | null
   copiedId: string | null
   setCopiedId: Dispatch<SetStateAction<string | null>>
   monitoringProcessNumber: string | null
@@ -272,6 +274,23 @@ export function PrazosDesignSystemView({
           )}
         </div>
       </div>
+
+      {activeTab === 'movimentacoes' && monitoringHealth ? (
+        <div className="mb-6 grid gap-3 rounded-md border border-[#3b3322] bg-[#11100c] px-4 py-3 text-sm text-[#f0ead8] md:grid-cols-3">
+          <div className="flex items-center gap-2">
+            <Clock size={16} className="text-[#d6ad58]" />
+            <span>Ultima gravada: {formatarData(monitoringHealth.latestMovementDate || monitoringHealth.latestMovementCreatedAt)}</span>
+          </div>
+          <div className="flex items-center gap-2">
+            <CheckCircle size={16} className="text-[#65d985]" />
+            <span>Ultimo processamento: {formatarData(monitoringHealth.queue?.lastProcessedAt)}</span>
+          </div>
+          <div className="flex items-center gap-2">
+            <Calendar size={16} className="text-[#d6ad58]" />
+            <span>Fila: {monitoringHealth.queue?.pending ?? 0} pendentes / {monitoringHealth.queue?.processing ?? 0} processando / {monitoringHealth.queue?.error ?? 0} erro</span>
+          </div>
+        </div>
+      ) : null}
 
       {loading ? (
         <div className="grid grid-cols-1 gap-5 md:grid-cols-2 xl:grid-cols-3">

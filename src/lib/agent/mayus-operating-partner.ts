@@ -1702,6 +1702,7 @@ function asksKnownPaymentStatus(reply: string | null | undefined, state: MayusCo
 function asksUnnecessaryProcessSummaryChoice(reply: string | null | undefined, processStatusContext?: WhatsAppProcessStatusContext | null) {
   if (processStatusContext?.verified !== true || !(processStatusContext.candidateProcesses?.length)) return false;
   const text = normalizeText(reply);
+  if (/qual .*banco|qual .*tema|banco\/tema|saude.*desconto|desconto\/rmc|danos morais/.test(text)) return true;
   return /quer (que eu )?(te )?(passe|envie|mande|faca)? ?(um )?resumo|prefere (ver|que eu veja|um deles|algum deles)|quer (que eu )?(detalhe|explique)|quer ver um|qual (desses|deles|processo|caso)|me diga (so )?qual (desses|deles)|qual .*voce quer (acompanhar|ver|detalhar)|foco agora|situacao geral|situa[cç][aã]o geral|providencia pratica|provid[eê]ncia pr[aá]tica|consulta mesmo|acompanhamento.*urgencia|urgencia.*acompanhamento|o que voce precisa decidir|responder algo|apresentar documento|evitar bloqueio|evitar pagamento|aproveitar alguma movimenta[cç][aã]o|se (voce )?nao souber.*(numero do processo|foto do documento)/.test(text);
 }
 
@@ -2260,10 +2261,12 @@ function includesAnyProcessCandidate(text: string, candidates: NonNullable<Mayus
 }
 
 function asksResolvedProcessInterviewQuestion(text: string) {
+  if (/qual .*banco|qual .*tema|banco\/tema|saude.*desconto|desconto\/rmc|danos morais/.test(text)) return true;
   return /qual .*assunto principal|qual .*assunto|assunto principal|qual .*objetivo|objetivo principal|qual .*foco|foco agora|seu foco|qual .*duvida|confirmar (sua )?(duvida|d[uú]vida)|duvida principal|tratar desconto|desconto\/valores|desconto ou valores|andamento.{0,80}(ou|\/).{0,80}(desconto|valor|custas|pagamento)|desconto.{0,80}(ou|\/).{0,80}(andamento|processo)|consultar andamento.{0,80}(desconto|valor)|reduzir|cessar descontos|buscar indenizacao|buscar indenização|acompanhar como esta|providencia pratica|provid[eê]ncia pr[aá]tica|situacao geral|situa[cç][aã]o geral|consulta mesmo|acompanhamento.*urgencia|urgencia.*acompanhamento|risco\/medida|o que voce precisa decidir|o que precisa agora|responder algo|apresentar documento|evitar bloqueio|evitar pagamento|aproveitar alguma movimentacao|aproveitar alguma movimenta[cç][aã]o|qual desses|qual deles/.test(text);
 }
 
 function asksProcessCandidateInterviewQuestion(text: string) {
+  if (/qual .*banco|qual .*tema|banco\/tema|saude.*desconto|desconto\/rmc|danos morais/.test(text)) return true;
   return /assunto principal|qual .*assunto|qual .*objetivo|objetivo principal|danos morais.*ou.*(fgts|inpc|caixa)|fgts.*ou.*bradesco|indenizacao.*ou.*atualizacao|qual desses|qual deles|qual outro|qual processo|tratar desconto|desconto\/valores|desconto ou valores|andamento.{0,80}(ou|\/).{0,80}(desconto|valor|custas|pagamento)|se (voce )?nao souber.*(numero do processo|foto do documento)/.test(text);
 }
 
@@ -2634,6 +2637,7 @@ function buildRepairPrompt(params: {
     "- responder 100% em portugues do Brasil; nenhuma palavra em ingles, espanhol, chines, japones, coreano, indonesio ou outro idioma;",
     "- nao perguntar se o cliente ainda esta pagando quando ha contracheque, desconto em folha ou afirmacao de pagamento/desconto no historico;",
     "- se ha processos verificados/candidateProcesses, responder os fatos disponiveis diretamente; nao perguntar se quer resumo, se prefere ver um especifico ou se quer que detalhe;",
+    "- se ha nome, referencia ou processo suficiente, nao perguntar banco/tema, assunto, objetivo, desconto/valores ou andamento/desconto;",
     "- se o interlocutor e office_operator/telefone autorizado, nunca perguntar se ele e cliente ou do escritorio;",
     "- se custas, preparo, guia ou gratuidade faltarem na base em conversa interna, transformar em ponto de conferencia interno; nao perguntar se o operador pagou;",
     "- se o interlocutor e interno, nao dizer 'seu processo' ou 'seu caso'; diga processo do cliente, processo localizado ou base do escritorio;",

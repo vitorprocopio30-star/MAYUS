@@ -872,6 +872,107 @@ describe("process-status-context", () => {
     expect(context?.grounding.factualSources).toContain("cache local do Escavador");
   });
 
+  it("operador autorizado localiza processo quando cita nome em processo da cliente", async () => {
+    const processRow = {
+      id: "process-michele",
+      title: "Michele Cristina Pinto Foppolos Santos x Banco",
+      description: "Processo monitorado da Michele Cristina Pinto Foppolos Santos.",
+      phone: null,
+      client_name: "Michele Cristina Pinto Foppolos Santos",
+      process_number: "3002575-03.2026.8.19.0000",
+      processo_1grau: null,
+      processo_2grau: null,
+      andamento_1grau: "Publicado despacho em 25/05/2026",
+      andamento_2grau: null,
+      orgao_julgador: "TJRJ",
+      tutela_urgencia: null,
+      sentenca: null,
+      prazo_fatal: null,
+      liminar_deferida: false,
+      data_ultima_movimentacao: "2026-05-25T00:00:00.000Z",
+      tags: [],
+      urgency: "ROTINA",
+      reu: "Banco",
+      process_stages: { name: "Acompanhamento" },
+    };
+    const from = vi.fn((table: string) => {
+      if (table === "clients") return makeQuery({ data: null, error: null });
+      if (table === "process_tasks") return makeQuery({ data: [processRow], error: null });
+      if (table === "process_movimentacoes_inbox") return makeQuery({ data: null, error: null });
+      return makeQuery({ data: [], error: null });
+    });
+
+    const messages = [{ direction: "inbound" as const, content: "Quero saber do processo Michele Cristina Pinto Foppolos Santos" }];
+
+    expect(isProcessStatusRequest(messages)).toBe(true);
+
+    const context = await fetchWhatsAppProcessStatusContext({
+      supabase: { from } as any,
+      tenantId: "tenant-1",
+      contact: { phone_number: "5521999990000@s.whatsapp.net", name: "Vitor" },
+      messages,
+      senderPhoneAuthorized: true,
+    });
+
+    expect(context?.verified).toBe(true);
+    expect(context?.clientName).toBe("Michele Cristina Pinto Foppolos Santos");
+    expect(context?.processNumber).toBe("3002575-03.2026.8.19.0000");
+    expect(context?.grounding.missingSignals).not.toContain("authorized_process_access_needs_reference");
+  });
+
+  it("operador autorizado reutiliza ultimo nome quando responde pelo nome vc consegue", async () => {
+    const processRow = {
+      id: "process-michele",
+      title: "Michele Cristina Pinto Foppolos Santos x Banco",
+      description: "Processo monitorado da Michele Cristina Pinto Foppolos Santos.",
+      phone: null,
+      client_name: "Michele Cristina Pinto Foppolos Santos",
+      process_number: "3002575-03.2026.8.19.0000",
+      processo_1grau: null,
+      processo_2grau: null,
+      andamento_1grau: "Publicado despacho em 25/05/2026",
+      andamento_2grau: null,
+      orgao_julgador: "TJRJ",
+      tutela_urgencia: null,
+      sentenca: null,
+      prazo_fatal: null,
+      liminar_deferida: false,
+      data_ultima_movimentacao: "2026-05-25T00:00:00.000Z",
+      tags: [],
+      urgency: "ROTINA",
+      reu: "Banco",
+      process_stages: { name: "Acompanhamento" },
+    };
+    const from = vi.fn((table: string) => {
+      if (table === "clients") return makeQuery({ data: null, error: null });
+      if (table === "process_tasks") return makeQuery({ data: [processRow], error: null });
+      if (table === "process_movimentacoes_inbox") return makeQuery({ data: null, error: null });
+      return makeQuery({ data: [], error: null });
+    });
+
+    const messages = [
+      { direction: "inbound" as const, content: "E outro processo" },
+      { direction: "outbound" as const, content: "Me diga qual processo quer localizar." },
+      { direction: "inbound" as const, content: "Quero saber do processo Michele Cristina Pinto Foppolos Santos" },
+      { direction: "outbound" as const, content: "Me mande o numero para eu localizar." },
+      { direction: "inbound" as const, content: "Pelo nome vc consegue" },
+    ];
+
+    expect(isProcessStatusRequest(messages)).toBe(true);
+
+    const context = await fetchWhatsAppProcessStatusContext({
+      supabase: { from } as any,
+      tenantId: "tenant-1",
+      contact: { phone_number: "5521999990000@s.whatsapp.net", name: "Vitor" },
+      messages,
+      senderPhoneAuthorized: true,
+    });
+
+    expect(context?.verified).toBe(true);
+    expect(context?.clientName).toBe("Michele Cristina Pinto Foppolos Santos");
+    expect(context?.grounding.missingSignals).not.toContain("authorized_process_access_needs_reference");
+  });
+
   it("numero autorizado sem referencia pede identificador em vez de escolher processo", async () => {
     const from = vi.fn(() => makeQuery({ data: null, error: null }));
 

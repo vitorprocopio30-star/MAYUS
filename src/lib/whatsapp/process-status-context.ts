@@ -413,6 +413,12 @@ function lastMessageLooksLikeName(value?: string | null) {
   return words.length >= 2 && words.length <= 8 && words.every((word) => /^[A-Za-zÀ-ÿ'’-]{2,}$/.test(word));
 }
 
+function isNameLookupFollowupText(value?: string | null) {
+  const text = normalizeText(value);
+  if (!text) return false;
+  return /\bpelo nome\b|\bpor nome\b|consegue.{0,30}\bnome\b|consigo.{0,30}\bnome\b|busc(a|ar|ando).{0,30}\bnome\b|procur(a|ar).{0,30}\bnome\b|localiz(a|ar).{0,30}\bnome\b|acha(r)?.{0,30}\bnome\b/.test(text);
+}
+
 function previousAskedForProcessIdentifier(messages: WhatsAppSalesMessage[]) {
   const previous = previousMessages(messages).slice(-6);
   const text = normalizeText(previous.map((message) => message.content || "").join(" "));
@@ -424,10 +430,11 @@ export function isProcessStatusRequest(messages: WhatsAppSalesMessage[]) {
   if (isNaturalPureGreetingText(lastText)) return false;
   if (extractSelectedProcessNumber(messages)) return true;
   if (extractProcessChoiceReferenceFromText(lastText) && previousAskedForProcessIdentifier(messages)) return true;
+  if (isNameLookupFollowupText(lastText) && extractRecentNameReferenceForGenericRequest(messages)) return true;
   if (/nome completo\s+(?:e|é|eh)\s+/i.test(cleanText(lastText) || "") && previousAskedForProcessIdentifier(messages)) return true;
   if (lastMessageLooksLikeName(lastText) && previousAskedForProcessIdentifier(messages)) return true;
   const text = normalizeText(lastText);
-  return /andamento|status|situacao|meu processo|meu caso|processos? d[aeo]|casos? d[aeo]|gostaria de saber (sobre |de )?(o |um )?processo|queria saber (sobre |de )?(o |um )?processo|saber (sobre |de )?(o |um )?processo|saber como esta (o |um )?processo|como esta (o |um )?processo|atualizacao do processo|atualizacao do caso|novidade no processo|numero do processo|cnj|movimentacao|movimentacao|qual fase|saiu decisao|teve novidade|processo andou/.test(text);
+  return /andamento|status|situacao|meu processo|meu caso|processos? d[aeo]|casos? d[aeo]|gostaria de saber (sobre |de |do |da )?(o |um )?processo|queria saber (sobre |de |do |da )?(o |um )?processo|quero saber (sobre |de |do |da )?(o |um )?processo|saber (sobre |de |do |da )?(o |um )?processo|saber como esta (o |um )?processo|como esta (o |um )?processo|atualizacao do processo|atualizacao do caso|novidade no processo|numero do processo|cnj|movimentacao|movimentacao|qual fase|saiu decisao|teve novidade|processo andou/.test(text);
 }
 
 function isGenericProcessRequestWithoutReference(messages: WhatsAppSalesMessage[]) {
@@ -459,6 +466,7 @@ function extractProcessChoiceReferenceFromText(value?: string | null) {
   const original = cleanText(value);
   const normalized = normalizeText(original);
   if (!original || !normalized || isNaturalPureGreetingText(original)) return null;
+  if (isNameLookupFollowupText(original)) return null;
   if (/processo|caso|andamento|status|situacao|atualizacao|novidade|cpf|cnj|\d{7}-\d{2}/.test(normalized)) return null;
   const stripped = normalized
     .replace(/^(e|eh|isso|esse|essa|seria|ser|o|a)\s+/, "")
@@ -472,6 +480,15 @@ function extractProcessChoiceReferenceFromText(value?: string | null) {
 }
 
 function extractProcessReferenceFromText(text: string, allowLooseName: boolean) {
+  const namedProcessPatterns = [
+    /(?:processo|caso)\s+(?:d[aeo]\s+)?([^,.?!\n]{3,80})/i,
+    /(?:processo|caso)\s+([^,.?!\n]{3,80})/i,
+  ];
+  for (const pattern of namedProcessPatterns) {
+    const match = cleanText(text.match(pattern)?.[1]);
+    if (match && lastMessageLooksLikeName(match)) return match;
+  }
+
   const patterns = [
     /nome completo\s+(?:e|é|eh)\s+([^,.?!\n]{3,80})/i,
     /(?:meu nome|nome)\s+(?:e|é|eh)\s+([^,.?!\n]{3,80})/i,
@@ -898,29 +915,33 @@ export async function fetchWhatsAppProcessStatusContext(params: {
   const phone = normalizePhone(params.contact.phone_number);
   const senderPhoneAuthorized = params.senderPhoneAuthorized === true;
   const lastInboundText = getLastInboundText(params.messages);
+  const nameLookupFollowup = senderPhoneAuthorized && isNameLookupFollowupText(lastInboundText);
   const authorizedNameOnlyRequest = senderPhoneAuthorized && lastMessageLooksLikeName(lastInboundText)
     ? cleanText(lastInboundText)
     : null;
-  if (!isProcessStatusRequest(params.messages) && !authorizedNameOnlyRequest) return null;
+  if (!isProcessStatusRequest(params.messages) && !authorizedNameOnlyRequest && !nameLookupFollowup) return null;
 
   const selectedProcessNumber = extractSelectedProcessNumber(params.messages);
   const genericRequestWithoutReference = !selectedProcessNumber && isGenericProcessRequestWithoutReference(params.messages);
+  const processNumberFromMessage = selectedProcessNumber || extractProcessNumber(params.messages);
+  const cpf = extractCpf(params.messages);
+  const explicitReference = extractProcessReference(params.messages) || authorizedNameOnlyRequest;
   const currentProcessChoiceReference = senderPhoneAuthorized && previousAskedForProcessIdentifier(params.messages)
     ? extractProcessChoiceReferenceFromText(lastInboundText)
     : null;
-  const recentNameReference = senderPhoneAuthorized && (genericRequestWithoutReference || Boolean(currentProcessChoiceReference))
+  const recentNameReference = senderPhoneAuthorized && (genericRequestWithoutReference || Boolean(currentProcessChoiceReference) || nameLookupFollowup)
     ? extractRecentNameReferenceForGenericRequest(params.messages)
     : null;
   const recentProcessChoiceReference = senderPhoneAuthorized && genericRequestWithoutReference
     ? extractRecentProcessChoiceReferenceForGenericRequest(params.messages)
     : null;
   const processChoiceReference = currentProcessChoiceReference || recentProcessChoiceReference;
-  if (senderPhoneAuthorized && genericRequestWithoutReference && !recentNameReference && !processChoiceReference) {
+  if (senderPhoneAuthorized && nameLookupFollowup && !recentNameReference) {
     return buildFallbackContext("authorized_process_access_needs_reference", { senderPhoneAuthorized });
   }
-  const processNumberFromMessage = selectedProcessNumber || extractProcessNumber(params.messages);
-  const cpf = extractCpf(params.messages);
-  const explicitReference = extractProcessReference(params.messages) || authorizedNameOnlyRequest;
+  if (senderPhoneAuthorized && genericRequestWithoutReference && !explicitReference && !recentNameReference && !processChoiceReference) {
+    return buildFallbackContext("authorized_process_access_needs_reference", { senderPhoneAuthorized });
+  }
   if (senderPhoneAuthorized && !processNumberFromMessage && !cpf && !explicitReference && !recentNameReference && !processChoiceReference) {
     return buildFallbackContext("authorized_process_access_needs_reference", { senderPhoneAuthorized });
   }

@@ -2177,6 +2177,92 @@ describe("mayus-operating-partner", () => {
     expect(decision.should_auto_send).toBe(true);
   });
 
+  it("repara pergunta de banco ou tema quando operador ja deu nome suficiente", async () => {
+    const fetcher = vi.fn()
+      .mockResolvedValueOnce({
+        ok: true,
+        json: async () => ({ choices: [{ message: { content: JSON.stringify({
+          reply: "Vitor, consigo localizar, mas para acertar sem confusao: qual banco/tema desse processo da Michele (saude, desconto/RMC, danos morais)?",
+          intent: "process_status",
+          confidence: 0.9,
+          risk_flags: [],
+          next_action: "perguntar banco ou tema",
+          conversation_state: { conversation_role: "case_status", conversation_goal: "localizar processo", customer_temperature: "existing_client", stage: "client_support", facts_known: ["nome Michele"], missing_information: [], objections: [], urgency: "none", decision_maker: "unknown", documents_requested: [], last_customer_message: "Pelo nome vc consegue", last_mayus_message: null, last_commitment: null, next_action: "perguntar banco ou tema", has_mayus_introduced: true, conversation_summary: "operador pediu processo por nome" },
+          closing_readiness: { score: 0, status: "not_ready", reasons: [] },
+          support_summary: { is_existing_client: true, issue_type: "process_status", verified_case_reference: true, summary: "processo localizado por nome" },
+          reasoning_summary_for_team: "perguntou tema mesmo com processo verificado",
+          actions_to_execute: [{ type: "answer_support", title: "Responder status", requires_approval: false }],
+          requires_approval: false,
+          should_auto_send: true,
+          expected_outcome: "operador informa tema",
+        }) } }] }),
+      })
+      .mockResolvedValueOnce({
+        ok: true,
+        json: async () => ({ choices: [{ message: { content: JSON.stringify({
+          reply: "Vitor, localizei o processo da Michele Cristina Pinto Foppolos Santos. A ultima movimentacao registrada foi publicada em 25/05/2026; deixei como acompanhamento interno para conferir o despacho antes de qualquer proximo passo.",
+          intent: "process_status",
+          confidence: 0.91,
+          risk_flags: [],
+          next_action: "conferir despacho do processo da Michele",
+          conversation_state: { conversation_role: "case_status", conversation_goal: "responder processo localizado", customer_temperature: "existing_client", stage: "client_support", facts_known: ["processo Michele localizado"], missing_information: [], objections: [], urgency: "none", decision_maker: "unknown", documents_requested: [], last_customer_message: "Pelo nome vc consegue", last_mayus_message: null, last_commitment: null, next_action: "conferir despacho do processo da Michele", has_mayus_introduced: true, conversation_summary: "processo localizado por nome" },
+          closing_readiness: { score: 0, status: "not_ready", reasons: [] },
+          support_summary: { is_existing_client: true, issue_type: "process_status", verified_case_reference: true, summary: "processo localizado por nome" },
+          reasoning_summary_for_team: "respondeu com fatos do processo localizado",
+          actions_to_execute: [{ type: "answer_support", title: "Responder status", requires_approval: false }],
+          requires_approval: false,
+          should_auto_send: true,
+          expected_outcome: "operador recebe contexto do processo",
+        }) } }] }),
+      }) as any;
+
+    const decision = await buildMayusOperatingPartnerDecision({
+      supabase: { from: () => ({ insert: vi.fn(async () => ({ error: null })) }) } as any,
+      tenantId: "tenant-1",
+      channel: "whatsapp",
+      contactName: "Vitor",
+      messages: [
+        { direction: "inbound", content: "Quero saber do processo Michele Cristina Pinto Foppolos Santos" },
+        { direction: "outbound", content: "Me mande o numero do processo." },
+        { direction: "inbound", content: "Pelo nome vc consegue" },
+      ],
+      whatsappActorContext: { role: "office_operator", sender_phone_authorized: true, reason: "daily_playbook_authorized_phone" },
+      processStatusContext: {
+        verified: true,
+        confidence: "high",
+        accessScope: "tenant_authorized",
+        senderPhoneAuthorized: true,
+        processTaskId: "process-michele",
+        clientName: "Michele Cristina Pinto Foppolos Santos",
+        processNumber: "3002575-03.2026.8.19.0000",
+        title: "Michele x Banco",
+        currentStage: "Acompanhamento",
+        detectedPhase: "sem_fase_confiavel",
+        detectedPhaseLabel: null,
+        lastMovementAt: "2026-05-25",
+        lastMovementText: "Publicado despacho",
+        deadlineAt: null,
+        pendingItems: [],
+        nextStep: "conferir despacho",
+        riskFlags: [],
+        clientReply: null,
+        candidateProcesses: [
+          { processTaskId: "process-michele", clientName: "Michele Cristina Pinto Foppolos Santos", processNumber: "3002575-03.2026.8.19.0000", title: "Michele x Banco", opposingParty: "Banco", summary: "acompanhamento", currentStage: "Acompanhamento", lastMovementAt: "2026-05-25", lastMovementText: "Publicado despacho" },
+        ],
+        grounding: { factualSources: ["processo monitorado"], inferenceNotes: [], missingSignals: [] },
+      },
+      operatingPartner: { enabled: true, autonomy_mode: "high_supervised" },
+      fetcher,
+    });
+
+    expect(fetcher).toHaveBeenCalledTimes(2);
+    expect(decision.risk_flags).not.toContain("asks_unneeded_process_choice");
+    expect(decision.reply).not.toMatch(/banco\/tema|qual banco|qual tema|desconto\/RMC|danos morais/i);
+    expect(decision.reply).toContain("Michele");
+    expect(decision.final_response_source).toBe("llm_repaired");
+    expect(decision.should_auto_send).toBe(true);
+  });
+
   it("repara pergunta obvia sobre identidade quando o telefone e do escritorio", async () => {
     let repairPrompt = "";
     const fetcher = vi.fn()
