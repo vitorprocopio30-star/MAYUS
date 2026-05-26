@@ -38,6 +38,7 @@ import {
 } from "@/lib/growth/rmc-playbook";
 import { normalizeOfficePlaybookProfile, summarizeOfficePlaybookForPrompt } from "@/lib/growth/office-playbook-profile";
 import { fetchWhatsAppProcessStatusContext, type WhatsAppProcessStatusContext } from "@/lib/whatsapp/process-status-context";
+import { buildWhatsAppAgentTurnV2, resolveWhatsAppDeliveryPolicy } from "@/lib/whatsapp/agent-v2";
 import { isAuthorizedWhatsAppCommandSender } from "@/lib/mayus/whatsapp-command-center";
 import {
   buildInstitutionalMemoryPromptBlock,
@@ -737,7 +738,7 @@ export async function prepareWhatsAppSalesReplyForContact(params: {
 
   const { data: messages } = await params.supabase
     .from("whatsapp_messages")
-    .select("id, direction, content, message_type, media_url, media_filename, media_mime_type, media_text, media_summary, created_at")
+    .select("id, direction, content, message_type, media_url, media_filename, media_mime_type, media_processing_status, media_text, media_summary, created_at")
     .eq("tenant_id", params.tenantId)
     .eq("contact_id", contact.id)
     .order("created_at", { ascending: false })
@@ -748,7 +749,6 @@ export async function prepareWhatsAppSalesReplyForContact(params: {
     tenantId: params.tenantId,
   });
   const orderedMessages = (messages || []).reverse();
-  const replyModalityPreference = resolveReplyModality(orderedMessages);
   const latestInboundAtDecision = getLatestInboundMessageMarker(orderedMessages);
   const replyTarget = buildReplyTargetMarker({
     replyTargetMessageId: params.replyTargetMessageId,
@@ -784,6 +784,35 @@ export async function prepareWhatsAppSalesReplyForContact(params: {
     processStatusContext,
     crmContext,
   });
+  const agentTurnV2 = buildWhatsAppAgentTurnV2({
+    messages: orderedMessages,
+    actorContext: whatsappActorContext,
+    trigger: params.trigger,
+  });
+  const replyModalityPreference = {
+    modality: agentTurnV2.outputModality,
+    policy: agentTurnV2.outputModalityPolicy,
+    reason: agentTurnV2.outputModalityReason,
+  };
+  const agentV2Metadata = {
+    agent_version: agentTurnV2.agentVersion,
+    input_modalities: agentTurnV2.inputModalities,
+    media_contexts: agentTurnV2.mediaContexts,
+    latest_media_context: agentTurnV2.latestMediaContext,
+    media_processing_status: agentTurnV2.latestMediaContext?.status || null,
+    transcription_source: agentTurnV2.latestMediaContext?.transcriptionSource || null,
+    vision_source: agentTurnV2.latestMediaContext?.visionSource || null,
+    output_modality: agentTurnV2.outputModality,
+    output_modality_policy: agentTurnV2.outputModalityPolicy,
+    output_modality_reason: agentTurnV2.outputModalityReason,
+    delivery_profile: agentTurnV2.deliveryPolicy.profile,
+    humanize_delivery: agentTurnV2.deliveryPolicy.humanizeDelivery,
+    humanize_delivery_mode: agentTurnV2.deliveryPolicy.humanizeDeliveryMode,
+    typing_delay_ms: agentTurnV2.deliveryPolicy.typingDelayMs,
+    max_blocking_delay_ms: agentTurnV2.deliveryPolicy.maxBlockingDelayMs,
+    reply_block_gap_ms: agentTurnV2.deliveryPolicy.replyBlockGapMs,
+    delivery_policy_reason: agentTurnV2.deliveryPolicy.reason,
+  };
   const institutionalMemoryPrompt = buildInstitutionalMemoryPromptBlock(
     institutionalMemory,
     DEFAULT_INSTITUTIONAL_MEMORY_PROMPT_CAP,
@@ -798,6 +827,7 @@ export async function prepareWhatsAppSalesReplyForContact(params: {
   const fallbackReasons: string[] = [];
   let metadata: Record<string, any> = {
     ...deterministicMetadata,
+    ...agentV2Metadata,
     reply_source: "deterministic_fallback",
     model_used: "deterministic",
     fallback_reason: null,
@@ -842,6 +872,7 @@ export async function prepareWhatsAppSalesReplyForContact(params: {
       const conversationResolution = buildConversationResolutionMetadata(operatingPartnerDecision);
       metadata = {
         ...deterministicMetadata,
+        ...agentV2Metadata,
         reply_source: "operating_partner",
         model_used: operatingPartnerDecision.model_used,
         fallback_reason: null,
@@ -906,6 +937,7 @@ export async function prepareWhatsAppSalesReplyForContact(params: {
       console.error("[whatsapp-sales-reply-runtime][operating-partner]", error);
       metadata = {
         ...deterministicMetadata,
+        ...agentV2Metadata,
         reply_source: "deterministic_fallback",
         model_used: "deterministic",
         fallback_reason: fallbackReasons.join("|"),
@@ -938,6 +970,7 @@ export async function prepareWhatsAppSalesReplyForContact(params: {
       });
       metadata = {
         ...deterministicMetadata,
+        ...agentV2Metadata,
         reply_source: "sales_llm",
         model_used: llmReply.model_used,
         fallback_reason: fallbackReasons.length > 0 ? fallbackReasons.join("|") : null,
@@ -966,6 +999,7 @@ export async function prepareWhatsAppSalesReplyForContact(params: {
       console.error("[whatsapp-sales-reply-runtime][sales-llm]", error);
       metadata = {
         ...deterministicMetadata,
+        ...agentV2Metadata,
         reply_source: "deterministic_fallback",
         model_used: "deterministic",
         fallback_reason: fallbackReasons.join("|"),
@@ -1064,6 +1098,13 @@ export async function prepareWhatsAppSalesReplyForContact(params: {
     blockedReason = replyAbortedReason;
   }
 
+  const effectiveActorContext = metadata.actor_context || metadata.whatsapp_actor_context || whatsappActorContext;
+  const deliveryPolicy = resolveWhatsAppDeliveryPolicy({
+    actorContext: effectiveActorContext,
+    outputModality: replyModalityPreference.modality,
+    trigger: params.trigger,
+    replyText: autoReply?.text || llmReply?.reply || operatingPartnerDecision?.reply || reply.suggestedReply || null,
+  });
   const runtimeRoute = metadata.conversation_classification?.class
     || operatingPartnerDecision?.intent
     || metadata.reply_source
@@ -1090,6 +1131,14 @@ export async function prepareWhatsAppSalesReplyForContact(params: {
     reply_modality: replyModalityPreference.modality,
     audio_policy: replyModalityPreference.policy,
     audio_requested_reason: replyModalityPreference.reason,
+    output_modality: replyModalityPreference.modality,
+    delivery_profile: deliveryPolicy.profile,
+    humanize_delivery: deliveryPolicy.humanizeDelivery,
+    humanize_delivery_mode: deliveryPolicy.humanizeDeliveryMode,
+    typing_delay_ms: deliveryPolicy.typingDelayMs,
+    max_blocking_delay_ms: deliveryPolicy.maxBlockingDelayMs,
+    reply_block_gap_ms: deliveryPolicy.replyBlockGapMs,
+    delivery_policy_reason: deliveryPolicy.reason,
     reply_text: autoReply?.text || llmReply?.reply || operatingPartnerDecision?.reply || reply.suggestedReply || null,
     reply_target_message_id: replyTarget.id,
     reply_target_created_at: replyTarget.created_at,
@@ -1191,6 +1240,18 @@ export async function prepareWhatsAppSalesReplyForContact(params: {
         expected_outcome: autoReply.expectedOutcome,
         audio_policy: replyModalityPreference.policy,
         audio_requested_reason: replyModalityPreference.reason,
+        agent_version: agentTurnV2.agentVersion,
+        input_modalities: agentTurnV2.inputModalities,
+        output_modality: replyModalityPreference.modality,
+        media_processing_status: agentTurnV2.latestMediaContext?.status || null,
+        transcription_source: agentTurnV2.latestMediaContext?.transcriptionSource || null,
+        vision_source: agentTurnV2.latestMediaContext?.visionSource || null,
+        delivery_profile: deliveryPolicy.profile,
+        humanize_delivery: deliveryPolicy.humanizeDelivery,
+        humanize_delivery_mode: deliveryPolicy.humanizeDeliveryMode,
+        typing_delay_ms: deliveryPolicy.typingDelayMs,
+        max_blocking_delay_ms: deliveryPolicy.maxBlockingDelayMs,
+        reply_block_gap_ms: deliveryPolicy.replyBlockGapMs,
         reply_text: autoReply.text,
       };
 
@@ -1215,7 +1276,9 @@ export async function prepareWhatsAppSalesReplyForContact(params: {
             mediaStoragePath: audio.storagePath,
             mediaMimeType: audio.mimeType,
             mediaFilename: audio.filename,
-            humanizeDelivery: params.trigger === "manual",
+            humanizeDelivery: deliveryPolicy.humanizeDelivery,
+            humanizeDeliveryMode: deliveryPolicy.humanizeDeliveryMode,
+            humanizeDeliveryMaxDelayMs: deliveryPolicy.maxBlockingDelayMs,
             metadata: {
               ...baseSendMetadata,
               reply_modality: "audio",
@@ -1244,7 +1307,9 @@ export async function prepareWhatsAppSalesReplyForContact(params: {
             phoneNumber: contact.phone_number || "",
             preferredProvider: params.preferredProvider || null,
             text: block,
-            humanizeDelivery: params.trigger === "manual",
+            humanizeDelivery: deliveryPolicy.humanizeDelivery,
+            humanizeDeliveryMode: deliveryPolicy.humanizeDeliveryMode,
+            humanizeDeliveryMaxDelayMs: deliveryPolicy.maxBlockingDelayMs,
             metadata: {
               ...baseSendMetadata,
               reply_modality: "text",
@@ -1262,6 +1327,7 @@ export async function prepareWhatsAppSalesReplyForContact(params: {
         audio_provider: audioProvider,
         audio_storage_path: audioStoragePath,
         audio_fallback_reason: audioFallbackReason,
+        output_modality: actualReplyModality,
       };
 
       if (!sendResult) throw new Error("Resposta automatica vazia");
@@ -1291,6 +1357,11 @@ export async function prepareWhatsAppSalesReplyForContact(params: {
           audio_provider: audioProvider,
           audio_storage_path: audioStoragePath,
           audio_fallback_reason: audioFallbackReason,
+          delivery_profile: deliveryPolicy.profile,
+          humanize_delivery: deliveryPolicy.humanizeDelivery,
+          humanize_delivery_mode: deliveryPolicy.humanizeDeliveryMode,
+          typing_delay_ms: deliveryPolicy.typingDelayMs,
+          max_blocking_delay_ms: deliveryPolicy.maxBlockingDelayMs,
           reply_block_count: replyBlockCount,
           first_response_sla_minutes: reply.firstResponseSlaMinutes,
           handoff_recommended: reply.handoffRecommended,
@@ -1318,6 +1389,9 @@ export async function prepareWhatsAppSalesReplyForContact(params: {
           model_used: autoReply.modelUsed,
           reply_modality: replyModalityPreference.modality,
           audio_policy: replyModalityPreference.policy,
+          delivery_profile: deliveryPolicy.profile,
+          humanize_delivery: deliveryPolicy.humanizeDelivery,
+          humanize_delivery_mode: deliveryPolicy.humanizeDeliveryMode,
           error: message,
           first_response_sla_minutes: reply.firstResponseSlaMinutes,
         },
