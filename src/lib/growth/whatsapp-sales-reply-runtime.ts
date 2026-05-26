@@ -1215,7 +1215,7 @@ export async function prepareWhatsAppSalesReplyForContact(params: {
             mediaStoragePath: audio.storagePath,
             mediaMimeType: audio.mimeType,
             mediaFilename: audio.filename,
-            humanizeDelivery: true,
+            humanizeDelivery: params.trigger === "manual",
             metadata: {
               ...baseSendMetadata,
               reply_modality: "audio",
@@ -1244,7 +1244,7 @@ export async function prepareWhatsAppSalesReplyForContact(params: {
             phoneNumber: contact.phone_number || "",
             preferredProvider: params.preferredProvider || null,
             text: block,
-            humanizeDelivery: true,
+            humanizeDelivery: params.trigger === "manual",
             metadata: {
               ...baseSendMetadata,
               reply_modality: "text",

@@ -2293,6 +2293,85 @@ describe("mayus-operating-partner", () => {
     expect(decision.should_auto_send).toBe(true);
   });
 
+  it("autoenvia resposta processual segura para operador mesmo se acao interna exigir aprovacao", async () => {
+    const fetcher = operatingPartnerFetcher({
+      reply: "Encontrei 2 processos ativos para Marcio da Silva Machado: Banco Bradesco S.A, no TJRJ 3000141-95.2026.8.19.0213, e Caixa Economica Federal, no TRF2 5006349-29.2023.4.02.5110.",
+      intent: "process_status",
+      confidence: 0.91,
+      risk_flags: [],
+      next_action: "listar processos encontrados por nome",
+      conversation_state: {
+        conversation_role: "case_status",
+        conversation_goal: "mostrar processos encontrados por nome",
+        customer_temperature: "existing_client",
+        stage: "client_support",
+        facts_known: ["operador autorizado pediu pelo nome"],
+        missing_information: [],
+        objections: [],
+        urgency: "none",
+        decision_maker: "unknown",
+        documents_requested: [],
+        last_customer_message: "pelo nome vc consegue",
+        last_mayus_message: "Localizei os processos do Marcio.",
+        last_commitment: null,
+        next_action: "listar processos encontrados por nome",
+        has_mayus_introduced: true,
+        conversation_summary: "operador autorizado pediu busca processual por nome",
+      },
+      support_summary: { is_existing_client: true, issue_type: "process_status", verified_case_reference: true, summary: "processos encontrados por nome" },
+      actions_to_execute: [
+        { type: "create_crm_lead", title: "Registrar lead no CRM", requires_approval: true },
+      ],
+      requires_approval: false,
+      should_auto_send: true,
+    });
+
+    const decision = await buildMayusOperatingPartnerDecision({
+      supabase: {} as any,
+      tenantId: "tenant-1",
+      channel: "whatsapp",
+      contactName: "Vitor",
+      messages: [
+        { direction: "inbound", content: "Quero saber do processo Marcio da Silva Machado" },
+        { direction: "outbound", content: "Encontrei 2 processos do Marcio da Silva Machado." },
+        { direction: "inbound", content: "pelo nome vc consegue" },
+      ],
+      whatsappActorContext: { role: "office_operator", sender_phone_authorized: true, reason: "daily_playbook_authorized_phone" },
+      processStatusContext: {
+        verified: true,
+        confidence: "high",
+        accessScope: "tenant_authorized",
+        senderPhoneAuthorized: true,
+        processTaskId: null,
+        clientName: "Marcio da Silva Machado",
+        processNumber: null,
+        title: "Dossie processual do cliente",
+        currentStage: null,
+        detectedPhase: "sem_fase_confiavel",
+        detectedPhaseLabel: null,
+        lastMovementAt: null,
+        lastMovementText: null,
+        deadlineAt: null,
+        pendingItems: [],
+        nextStep: null,
+        riskFlags: [],
+        clientReply: null,
+        candidateProcesses: [
+          { processTaskId: "bradesco", clientName: "Marcio da Silva Machado", processNumber: "3000141-95.2026.8.19.0213", title: "Marcio x Bradesco", opposingParty: "Banco Bradesco S.A", summary: "fase inicial", currentStage: "ATIVO", lastMovementAt: "2026-05-25" },
+          { processTaskId: "caixa", clientName: "Marcio da Silva Machado", processNumber: "5006349-29.2023.4.02.5110", title: "Marcio x Caixa", opposingParty: "Caixa Economica Federal", summary: "ativo", currentStage: "ATIVO", lastMovementAt: null },
+        ],
+        grounding: { factualSources: ["processos monitorados"], inferenceNotes: [], missingSignals: [] },
+      },
+      operatingPartner: { enabled: true, autonomy_mode: "high_supervised" },
+      fetcher,
+    });
+
+    expect(decision.conversation_frame?.resolution_type).toBe("process_candidates");
+    expect(decision.requires_approval).toBe(false);
+    expect(decision.should_auto_send).toBe(true);
+    expect(decision.reply).toContain("Marcio da Silva Machado");
+  });
+
   it("repara pergunta de banco ou tema quando operador ja deu nome suficiente", async () => {
     const fetcher = vi.fn()
       .mockResolvedValueOnce({
