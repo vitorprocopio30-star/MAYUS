@@ -2484,6 +2484,17 @@ function normalizeDecision(parsed: any, params: {
     ? riskFlags.filter((flag) => flag !== "case_status_unverified")
     : riskFlags;
   const hasHighRisk = effectiveRiskFlags.some((flag) => HIGH_RISK_FLAGS.includes(flag));
+  const safeOfficeOperatorProcessReply = isOfficeOperatorActor(params.whatsappActorContext, params.processStatusContext)
+    && intent === "process_status"
+    && (
+      params.conversationFrame.resolution_type === "referenced_process"
+      || params.conversationFrame.resolution_type === "process_candidates"
+      || params.conversationFrame.resolution_type === "generic_process_request"
+    )
+    && qualityCheck.status === "pass"
+    && !hasHighRisk
+    && !riskFlags.includes("generic_reply_not_conversational")
+    && !riskFlags.includes("foreign_language_leak");
   const mustHonorModelApproval = parsed?.requires_approval === true && (
     hasHighRisk
     || (intent === "process_status" && params.processStatusContext?.verified !== true && !safeUnverifiedProcessStatusReply)
@@ -2504,12 +2515,12 @@ function normalizeDecision(parsed: any, params: {
     || riskFlags.includes("incomplete_conversation_control")
     || closingReadiness.status === "ready_for_human_close"
     || closingReadiness.status === "blocked"
-    || effectiveActions.some((action) => (
+    || (!safeOfficeOperatorProcessReply && effectiveActions.some((action) => (
       (action.requires_approval === true && action.type !== "recommend_handoff")
       || action.type === "prepare_proposal"
       || action.type === "mark_ready_for_closing"
       || action.type === "handoff_human"
-    ));
+    )));
   const cleanGreetingResponse = params.conversationFrame.resolution_type === "greeting"
     && qualityCheck.status === "pass"
     && !riskFlags.includes("foreign_language_leak")

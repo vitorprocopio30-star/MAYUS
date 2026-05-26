@@ -920,6 +920,7 @@ describe("prepareWhatsAppSalesReplyForContact", () => {
     }));
     expect(sendWhatsAppMessageMock).toHaveBeenCalledWith(expect.objectContaining({
       text: "Entendi. Esse desconto aparece com qual nome no contracheque?",
+      humanizeDelivery: false,
       metadata: expect.objectContaining({
         source: "mayus_operating_partner_auto_reply",
         intent: "legal_triage",
