@@ -114,7 +114,13 @@ export type MayusAgentControlPlaneCoordination = {
 
 export type MayusPublicAgentPrimitiveId = "paperclip" | "openclaw" | "hermes";
 
-export type MayusPublicAgentMatrixStatus = "ready" | "needs_attention" | "blocked" | "read_only";
+export type MayusPublicAgentMatrixStatus =
+  | "working"
+  | "ready"
+  | "awaiting_approval"
+  | "needs_attention"
+  | "blocked"
+  | "read_only";
 export type MayusTenantAgentReadinessStatus =
   | "ready"
   | "blocked"
@@ -140,6 +146,15 @@ export type MayusPublicAgentMatrixItem = {
   evidence: string[];
   blockers: string[];
   nextAction: string;
+  operational: {
+    status: MayusPublicAgentMatrixStatus;
+    modulesCovered: string[];
+    latestSignalAt: string | null;
+    approvals: number;
+    blockerCount: number;
+    gaps: string[];
+    nextAction: string;
+  };
   paperclip?: {
     heartbeat: string;
     routines: {
@@ -547,9 +562,9 @@ export const MAYUS_AGENTIC_WORKSTREAM_REGISTRY: MayusAgenticWorkstreamProfile[] 
   },
   {
     id: "front_b_agentic_core",
-    label: "Frente B Agentic Core",
-    owner: "Time Agentic Core",
-    scope: "Control Plane, rotinas, profiles, Hermes, OpenClaw, Paperclip, approvals, health e mission snapshots.",
+    label: "Frente B Agentes Publicos / Core Agentico",
+    owner: "Time Agentes Publicos/Core",
+    scope: "Control Plane, rotinas, profiles, Paperclip, OpenClaw, Hermes, approvals, health e mission snapshots.",
     internalAgentIds: [
       "mayus_integrator",
       "monitoring_agent",
@@ -1474,9 +1489,31 @@ function buildPaperclipPublicAgent(
   );
   const status: MayusPublicAgentMatrixStatus = blocked > 0
     ? "blocked"
-    : approvals > 0 || enabled === 0
-      ? "needs_attention"
-      : "ready";
+    : approvals > 0 || awaitingApproval > 0
+      ? "awaiting_approval"
+      : enabled > 0
+        ? "working"
+        : total > 0
+          ? "needs_attention"
+          : "read_only";
+  const modulesCovered = uniqueSanitizedTexts(
+    agents
+      .filter((agent) => agent.routines.total > 0)
+      .map((agent) => agent.module)
+  );
+  const operationalGaps = uniqueSanitizedTexts([
+    total === 0 ? "paperclip_routines_missing" : null,
+    total > 0 && enabled === 0 ? "no_enabled_routines" : null,
+    activeOwners.length === 0 ? "no_active_owner_signal" : null,
+    approvals > 0 ? "approval_pending_before_next_wakeup" : null,
+  ]);
+  const nextAction = status === "blocked"
+    ? "Resolver rotinas bloqueadas antes de acordar novo trabalho."
+    : status === "awaiting_approval"
+      ? "Revisar approvals pendentes em /dashboard/aprovacoes antes de novos wakeups sensiveis."
+      : status === "read_only"
+        ? "Habilitar rotina Paperclip ou rodar dry-run para gerar heartbeat operacional."
+        : "Manter heartbeat supervisionado e preparar preflight de portabilidade.";
 
   return {
     id: "paperclip",
@@ -1495,13 +1532,18 @@ function buildPaperclipPublicAgent(
       ...routineItems.filter((routine) => routine.status === "blocked").map((routine) => routine.reason),
       ...agents.flatMap((agent) => agent.activity.latestBlocker ? [agent.activity.latestBlocker] : []),
     ]),
-    nextAction: status === "blocked"
-      ? "Resolver rotinas bloqueadas antes de acordar novo trabalho."
-      : approvals > 0
-        ? "Revisar approvals pendentes em /dashboard/aprovacoes antes de novos wakeups sensiveis."
-        : "Manter heartbeat supervisionado e preparar preflight de portabilidade.",
+    nextAction,
+    operational: {
+      status,
+      modulesCovered,
+      latestSignalAt: latestMissionAt,
+      approvals,
+      blockerCount: blocked,
+      gaps: operationalGaps,
+      nextAction,
+    },
     paperclip: {
-      heartbeat: blocked > 0 ? "blocked" : enabled > 0 ? "ready" : "needs_setup",
+      heartbeat: blocked > 0 ? "blocked" : enabled > 0 ? "working" : "needs_setup",
       routines: {
         total,
         enabled,
@@ -1557,11 +1599,30 @@ function buildOpenClawPublicAgent(
       .filter((agent) => agent.enabled && !modulesWithPolicy.has(agent.module))
       .map((agent) => agent.module)
   ).slice(0, 5);
+  const approvals = outcomes.filter((outcome) => outcome === "requires_approval").length
+    + (methodology?.requiresHumanReview ? 1 : 0);
+  const latestSignalAt = policyMissions.reduce<string | null>((latest, mission) => (
+    latestDate(latest, sanitizeText(mission.lastUpdatedAt, 120))
+  ), null);
   const status: MayusPublicAgentMatrixStatus = blockedLayer
     ? "blocked"
-    : policyMissions.length > 0
-      ? "ready"
-      : "needs_attention";
+    : approvals > 0
+      ? "awaiting_approval"
+      : policyMissions.length > 0
+        ? "working"
+        : "needs_attention";
+  const operationalGaps = uniqueSanitizedTexts([
+    ...nextModules.map((module) => `missing_policy_snapshot:${module}`),
+    surfaces.length === 0 ? "no_surface_policy_snapshot" : null,
+    outcomes.length === 0 ? "no_recent_policy_outcome" : null,
+  ]);
+  const nextAction = blockedLayer
+    ? "Revisar camada bloqueada antes de permitir execucao inferior."
+    : approvals > 0
+      ? "Aguardar approval humano exigido por policy ou metodologia."
+      : nextModules.length > 0
+        ? `Expandir cobertura por mission snapshot para: ${nextModules.join(", ")}.`
+        : "Manter leitura de policy por mission snapshot sem exigir matriz completa.";
 
   return {
     id: "openclaw",
@@ -1577,11 +1638,16 @@ function buildOpenClawPublicAgent(
       methodology ? `metodologia ${methodology.status || "sem status"} / ${methodology.activation || "sem ativacao"}` : "metodologia sem snapshot",
     ],
     blockers: blockedLayer ? [`${blockedLayer}: ${reason || "policy bloqueou a acao."}`] : [],
-    nextAction: blockedLayer
-      ? "Revisar camada bloqueada antes de permitir execucao inferior."
-      : nextModules.length > 0
-        ? `Expandir cobertura por mission snapshot para: ${nextModules.join(", ")}.`
-        : "Manter leitura de policy por mission snapshot sem exigir matriz completa.",
+    nextAction,
+    operational: {
+      status,
+      modulesCovered: uniqueSanitizedTexts(policyMissions.map((mission) => normalizeModule(mission.policy?.module || mission.module))),
+      latestSignalAt,
+      approvals,
+      blockerCount: blockedLayer ? 1 : 0,
+      gaps: operationalGaps,
+      nextAction,
+    },
     openclaw: {
       coverage: "mission_snapshot_policy",
       requiresFullMatrix: false,
@@ -1615,8 +1681,30 @@ function buildHermesPublicAgent(missions: MissionSnapshotLike[]): MayusPublicAge
   const pendingLifecycle = trajectoryMissions.filter((item) => (
     item.trajectory?.lifecycleStatus === "proposed" || item.trajectory?.lifecycleStatus === "pending_review"
   )).length;
-  const blocked = missions.flatMap((item) => item.blockers || []).length;
-  const status: MayusPublicAgentMatrixStatus = "read_only";
+  const blockerTexts = uniqueSanitizedTexts(missions.flatMap((item) => item.blockers || []));
+  const blocked = blockerTexts.length;
+  const latestSignalAt = trajectoryMissions.reduce<string | null>((latest, item) => (
+    latestDate(latest, sanitizeText(item.lastUpdatedAt, 120))
+  ), null);
+  const status: MayusPublicAgentMatrixStatus = blocked > 0
+    ? "blocked"
+    : pendingLifecycle > 0
+      ? "awaiting_approval"
+      : trajectoryMissions.length > 0
+        ? "working"
+        : "read_only";
+  const operationalGaps = uniqueSanitizedTexts([
+    trajectoryMissions.length === 0 ? "no_hermes_trajectory_snapshot" : null,
+    pendingLifecycle > 0 ? "memory_or_lifecycle_pending_review" : null,
+    methodologySignals.length === 0 ? "tenant_learning_signal_missing" : null,
+  ]);
+  const nextAction = blocked > 0
+    ? "Resolver blockers de trajectory antes de promover memoria, skill ou procedimento."
+    : pendingLifecycle > 0
+      ? "Acompanhar lifecycle pendente sem autoaprovar memoria, skill ou procedimento."
+      : trajectoryMissions.length > 0
+        ? "Manter Hermes lendo trajectories tenant-only dos mission snapshots."
+        : "Consumir Hermes apenas como leitura dos mission snapshots.";
 
   return {
     id: "hermes",
@@ -1631,10 +1719,17 @@ function buildHermesPublicAgent(missions: MissionSnapshotLike[]): MayusPublicAge
       `${blocked} blocker(s) em missoes observadas`,
       `${methodologySignals.length} sinal(is) de metodologia tenant-only`,
     ],
-    blockers: [],
-    nextAction: pendingLifecycle > 0
-      ? "Acompanhar lifecycle pendente sem autoaprovar memoria, skill ou procedimento."
-      : "Consumir Hermes apenas como leitura dos mission snapshots.",
+    blockers: blockerTexts,
+    nextAction,
+    operational: {
+      status,
+      modulesCovered: uniqueSanitizedTexts(trajectoryMissions.map((item) => normalizeModule(item.module))),
+      latestSignalAt,
+      approvals: pendingLifecycle,
+      blockerCount: blocked,
+      gaps: operationalGaps,
+      nextAction,
+    },
     hermes: {
       source: "mission_snapshots_read_only",
       missionsObserved: trajectoryMissions.length,

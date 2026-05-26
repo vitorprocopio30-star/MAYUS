@@ -660,9 +660,25 @@ function LegalDraftApprovalDetails({ approval }: { approval: BrainInboxApprovalI
   const sources = asRecordValue(payload?.sources);
   const gaps = asRecordValue(payload?.gaps);
   const pieceContext = asRecordValue(payloadExtras?.pieceContext) || asRecordValue(payloadExtras?.piece_context);
-  const agenticGovernance = asRecordValue(payload?.agenticGovernance);
-  const openclawPolicy = asRecordValue(payload?.openclawPolicy) || asRecordValue(agenticGovernance?.openclaw_policy);
-  const sideEffectGuardrail = asRecordValue(payload?.sideEffectGuardrail);
+  const processMissionContext = asRecordValue(payload?.processMissionContext) || asRecordValue(payloadExtras?.process_mission_context);
+  const agenticGovernance = asRecordValue(payload?.agenticGovernance) || asRecordValue(payloadExtras?.agentic_governance);
+  const openclawPolicy = asRecordValue(payload?.openclawPolicy)
+    || asRecordValue(payloadExtras?.openclaw_policy)
+    || asRecordValue(agenticGovernance?.openclawPolicy)
+    || asRecordValue(agenticGovernance?.openclaw_policy);
+  const hermesTrajectory = asRecordValue(payload?.hermesTrajectory)
+    || asRecordValue(payloadExtras?.hermes_trajectory)
+    || asRecordValue(agenticGovernance?.hermesTrajectory)
+    || asRecordValue(agenticGovernance?.hermes_trajectory);
+  const paperclipOwner = asRecordValue(payloadExtras?.paperclipOwner)
+    || asRecordValue(payloadExtras?.paperclip_owner)
+    || asRecordValue(agenticGovernance?.paperclipOwner)
+    || asRecordValue(agenticGovernance?.paperclip_owner);
+  const legalDuty = asRecordValue(payloadExtras?.legalDuty)
+    || asRecordValue(payloadExtras?.legal_duty)
+    || asRecordValue(processMissionContext?.legalDuty)
+    || asRecordValue(processMissionContext?.legal_duty);
+  const sideEffectGuardrail = asRecordValue(payload?.sideEffectGuardrail) || asRecordValue(payloadExtras?.side_effect_guardrail);
   const expectedDocuments = getRecordList(methodology?.expectedDocuments).slice(0, 6);
   const factualSources = getRecordList(sources?.factual).slice(0, 5);
   const gapItems = getRecordList(gaps?.all).slice(0, 6);
@@ -678,9 +694,22 @@ function LegalDraftApprovalDetails({ approval }: { approval: BrainInboxApprovalI
         : getRecordList(pieceContext?.draft_verification_checklist)).slice(0, 6);
   const piecePhase = getRecordText(pieceContext, "phase");
   const caseBrain = asRecordValue(pieceContext?.case_brain);
-  const protectedSideEffects = getRecordList(sideEffectGuardrail?.protectedSideEffects).slice(0, 6);
+  const protectedSideEffects = (getRecordList(sideEffectGuardrail?.protectedSideEffects).length > 0
+    ? getRecordList(sideEffectGuardrail?.protectedSideEffects)
+    : getRecordList(sideEffectGuardrail?.protected_side_effects)).slice(0, 6);
   const openclawReason = getRecordText(openclawPolicy, "reason");
   const openclawOutcome = getRecordText(openclawPolicy, "outcome");
+  const openclawBlockedLayer = getRecordText(asRecordValue(openclawPolicy?.debugger), "blockedLayer")
+    || getRecordText(asRecordValue(openclawPolicy?.debugger), "blocked_layer");
+  const hermesStatus = getRecordText(hermesTrajectory, "status");
+  const hermesEvents = Array.isArray(hermesTrajectory?.events) ? hermesTrajectory.events : [];
+  const hermesEventCount = hermesEvents.length;
+  const paperclipStatus = getRecordText(paperclipOwner, "status");
+  const paperclipNextAction = getRecordText(paperclipOwner, "nextAction") || getRecordText(paperclipOwner, "next_action");
+  const legalDutyPole = getRecordText(legalDuty, "representedPole") || getRecordText(legalDuty, "represented_pole");
+  const legalDutyObligation = getRecordText(legalDuty, "obligationOwner") || getRecordText(legalDuty, "obligation_owner");
+  const legalDutyConfidence = getRecordText(legalDuty, "confidence");
+  const legalDutyReason = getRecordText(legalDuty, "confidenceReason") || getRecordText(legalDuty, "confidence_reason");
 
   return (
     <div className="rounded-2xl border border-[#CCA761]/20 bg-[#CCA761]/10 p-4 space-y-4">
@@ -748,8 +777,38 @@ function LegalDraftApprovalDetails({ approval }: { approval: BrainInboxApprovalI
           <p className="text-[10px] uppercase tracking-[0.18em] text-orange-300">OpenClaw</p>
           <p className="mt-1 text-sm text-orange-100">
             {openclawOutcome ? `Resultado: ${openclawOutcome}. ` : ""}
+            {openclawBlockedLayer ? `Camada: ${openclawBlockedLayer}. ` : ""}
             {openclawReason || "Policy juridica exige supervisao antes de efeito sensivel."}
           </p>
+        </div>
+      )}
+
+      {(paperclipOwner || hermesTrajectory || legalDuty) && (
+        <div className="grid gap-3 md:grid-cols-3">
+          <div className="rounded-xl border border-white/10 bg-black/20 p-3">
+            <p className="text-[10px] uppercase tracking-[0.18em] text-gray-500">Paperclip</p>
+            <p className="mt-1 text-xs text-gray-200 leading-relaxed">
+              {paperclipStatus ? `Status: ${paperclipStatus}. ` : ""}
+              {paperclipNextAction || "Dono e proximo passo supervisionado nao informados."}
+            </p>
+          </div>
+          <div className="rounded-xl border border-white/10 bg-black/20 p-3">
+            <p className="text-[10px] uppercase tracking-[0.18em] text-gray-500">Hermes</p>
+            <p className="mt-1 text-xs text-gray-200 leading-relaxed">
+              {hermesStatus ? `Status: ${hermesStatus}. ` : ""}
+              {hermesEventCount} evento(s) de trajectory antes da decisao.
+            </p>
+          </div>
+          <div className="rounded-xl border border-white/10 bg-black/20 p-3">
+            <p className="text-[10px] uppercase tracking-[0.18em] text-gray-500">Polo / obrigacao</p>
+            <p className="mt-1 text-xs text-gray-200 leading-relaxed">
+              {legalDutyPole || "polo nao consolidado"} / {legalDutyObligation || "obrigacao nao consolidada"}
+              {legalDutyConfidence ? ` (${legalDutyConfidence})` : ""}
+            </p>
+            {legalDutyReason && (
+              <p className="mt-1 text-[10px] leading-relaxed text-gray-500">{legalDutyReason}</p>
+            )}
+          </div>
         </div>
       )}
 

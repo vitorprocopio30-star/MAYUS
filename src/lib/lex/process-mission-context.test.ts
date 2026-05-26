@@ -138,6 +138,11 @@ describe("buildProcessMissionContext", () => {
     expect(context.status.nextStep).toBe("Preparar replica com base na contestacao e documentos do cliente.");
     expect(context.documents.freshness).toBe("fresh");
     expect(context.draft.recommendedPiece).toBe("Replica a contestacao");
+    expect(context.legalDuty).toEqual(expect.objectContaining({
+      representedPole: null,
+      obligationOwner: null,
+      confidence: "not_available",
+    }));
     expect(context.confidence).toBe("high");
     expect(context.recommendedAction).toBe("generate_first_draft");
     expect(context.operationalThesis).toEqual(expect.objectContaining({
@@ -151,6 +156,7 @@ describe("buildProcessMissionContext", () => {
       "fresh_document_memory",
       "case_brain_first_actions",
     ]));
+    expect(context.grounding.inferenceNotes).toContain("legal_duty_not_consolidated");
 
     const operatorState = buildLegalOperatorState(context);
     expect(operatorState).toEqual(expect.objectContaining({
@@ -193,8 +199,37 @@ describe("buildProcessMissionContext", () => {
         confidence: "high",
         documentFreshness: "fresh",
         documentCount: 5,
+        legalDuty: expect.objectContaining({
+          confidence: "not_available",
+        }),
       }),
     }));
+  });
+
+  it("consolida polo e obrigacao quando Case Brain traz sinal explicito", () => {
+    const context = buildProcessMissionContext(makeSnapshot({
+      caseBrain: {
+        ...makeSnapshot().caseBrain,
+        summaryMaster: [
+          "Banco apresentou contestacao.",
+          "polo_representado: autor.",
+          "obrigacao_de_quem: escritorio.",
+        ].join(" "),
+      },
+    }));
+
+    expect(context.legalDuty).toEqual(expect.objectContaining({
+      representedPole: "autor",
+      obligationOwner: "escritorio",
+      confidence: "confirmed",
+      evidence: expect.arrayContaining([
+        "case_brain_summary:polo_representado",
+        "case_brain_summary:obrigacao_de_quem",
+      ]),
+      sources: ["case_brain_summary"],
+    }));
+    expect(context.grounding.factualSources).toContain("legal_duty_signal");
+    expect(context.operationalThesis.gaps).not.toContain("legal_duty_not_consolidated");
   });
 
   it("prioriza refresh documental quando memoria esta ausente ou desatualizada", () => {
