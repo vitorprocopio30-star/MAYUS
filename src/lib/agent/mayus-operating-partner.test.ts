@@ -693,15 +693,18 @@ describe("mayus-operating-partner", () => {
       fetcher,
     });
 
-    expect(fetcher).toHaveBeenCalledTimes(1);
+    expect(fetcher).not.toHaveBeenCalled();
+    expect(getLLMClientMock).not.toHaveBeenCalled();
     expect(decision.reply).toBe("Boa noite, Vitor. Como posso ajudar?");
     expect(decision.reply).not.toMatch(/cnj|processo|nome completo/i);
     expect(decision.conversation_state.last_process_candidates).toBeUndefined();
     expect(decision.conversation_frame?.resolution_type).toBe("greeting");
-    expect(decision.final_response_source).toBe("llm_natural");
+    expect(decision.conversation_frame?.llm_writer_allowed).toBe(false);
+    expect(decision.quality_check).toEqual({ status: "pass", flags: [], reasons: [] });
+    expect(decision.final_response_source).toBe("deterministic_guardrail");
   });
 
-  it("apresenta Maya mesmo se evento anterior dizia introduzido mas historico recente nao mostra apresentacao", async () => {
+  it("responde saudacao pura sem depender de evento anterior", async () => {
     const fetcher = operatingPartnerFetcher({
       reply: "Boa noite, Vitor Procópio. Como posso ajudar?",
       intent: "client_support",
@@ -728,10 +731,12 @@ describe("mayus-operating-partner", () => {
       fetcher,
     });
 
-    expect(fetcher).toHaveBeenCalledTimes(1);
+    expect(fetcher).not.toHaveBeenCalled();
+    expect(getLLMClientMock).not.toHaveBeenCalled();
     expect(decision.reply).toBe("Boa noite, Vitor Procópio. Como posso ajudar?");
     expect(decision.conversation_frame?.resolution_type).toBe("greeting");
-    expect(decision.final_response_source).toBe("llm_natural");
+    expect(decision.conversation_frame?.llm_writer_allowed).toBe(false);
+    expect(decision.final_response_source).toBe("deterministic_guardrail");
   });
 
   it("nao usa MAYUS como nome visivel do escritorio na apresentacao", async () => {
@@ -752,6 +757,8 @@ describe("mayus-operating-partner", () => {
 
     expect(decision.reply).toBe("Boa noite, Vitor Procópio. Como posso ajudar?");
     expect(decision.reply).not.toContain("assistente do MAYUS");
+    expect(fetcher).not.toHaveBeenCalled();
+    expect(getLLMClientMock).not.toHaveBeenCalled();
   });
 
   it("nao reutiliza nome antigo quando pedido de processo e generico", async () => {
@@ -813,7 +820,8 @@ describe("mayus-operating-partner", () => {
       fetcher,
     });
 
-    expect(decision.reply).toBe("Claro. Para eu localizar com segurança, me mande o nome completo do cliente ou o número do processo.");
+    expect(decision.reply).toContain("nome completo do cliente");
+    expect(decision.reply).toContain("processo");
     expect(decision.reply).not.toContain("Márcio");
     expect(decision.should_auto_send).toBe(true);
     expect(decision.requires_approval).toBe(false);
@@ -857,6 +865,76 @@ describe("mayus-operating-partner", () => {
     expect(decision.should_auto_send).toBe(true);
     expect(decision.requires_approval).toBe(false);
     expect(decision.conversation_frame?.resolution_type).toBe("generic_process_request");
+  });
+
+  it("depois de saudacao limpa, pedido generico de operador nao reutiliza Michele", async () => {
+    const fetcher = operatingPartnerFetcher({
+      reply: "Claro. Para eu localizar com seguranca, me mande o nome completo do cliente ou o numero do processo.",
+      intent: "process_status",
+      next_action: "pedir nome completo ou numero do processo",
+      conversation_state: {
+        conversation_role: "case_status",
+        conversation_goal: "pedir identificador minimo",
+        last_customer_message: "GOSTARIA DE SABER SOBRE UM PROCESSO",
+        next_action: "pedir nome completo ou numero do processo",
+        conversation_summary: "Pedido generico sem identificador atual.",
+      },
+      support_summary: { is_existing_client: true, issue_type: "process_status", verified_case_reference: false, summary: "sem identificador" },
+    });
+
+    const decision = await buildMayusOperatingPartnerDecision({
+      supabase: {} as any,
+      tenantId: "tenant-1",
+      channel: "whatsapp",
+      contactName: "Vitor",
+      messages: [
+        { direction: "inbound", content: "Quero saber do processo Michele Cristina Pinto Foppolos Santos", created_at: "2026-05-07T20:50:00.000Z" },
+        { direction: "outbound", content: "Localizei o processo da Michele Cristina Pinto Foppolos Santos.", created_at: "2026-05-07T20:51:00.000Z" },
+        { direction: "inbound", content: "BOA NOITE MAYUS", created_at: "2026-05-07T22:21:00.000Z" },
+        { direction: "outbound", content: "Boa noite, Vitor. Como posso ajudar?", created_at: "2026-05-07T22:22:00.000Z" },
+        { direction: "inbound", content: "GOSTARIA DE SABER SOBRE UM PROCESSO", created_at: "2026-05-07T22:23:00.000Z" },
+      ],
+      whatsappActorContext: { role: "office_operator", sender_phone_authorized: true, reason: "daily_playbook_authorized_phone" },
+      previousMayusEvent: {
+        created_at: new Date().toISOString(),
+        intent: "process_status",
+        next_action: "responder Michele",
+        conversation_state: {
+          conversation_role: "case_status",
+          conversation_goal: "processo antigo da Michele",
+          customer_temperature: "existing_client",
+          stage: "client_support",
+          facts_known: ["processo antigo da Michele"],
+          missing_information: [],
+          objections: [],
+          urgency: "none",
+          decision_maker: "unknown",
+          documents_requested: [],
+          last_customer_message: "Quero saber do processo Michele Cristina Pinto Foppolos Santos",
+          last_mayus_message: "Localizei o processo da Michele Cristina Pinto Foppolos Santos.",
+          last_commitment: null,
+          next_action: "responder Michele",
+          has_mayus_introduced: true,
+          conversation_summary: "Contexto antigo de Michele.",
+          last_process_candidates: [
+            { processTaskId: "process-michele", clientName: "Michele Cristina Pinto Foppolos Santos", processNumber: "3002575-03.2026.8.19.0000", title: "Michele x Banco", opposingParty: "Banco", summary: "acompanhamento", currentStage: "Acompanhamento", lastMovementAt: "2026-05-25", lastMovementText: "Publicado despacho" },
+          ],
+        },
+      },
+      processStatusContext: { verified: false, confidence: "low", accessScope: "tenant_authorized", senderPhoneAuthorized: true, processTaskId: null, clientName: null, processNumber: null, title: null, currentStage: null, detectedPhase: "sem_fase_confiavel", detectedPhaseLabel: null, lastMovementAt: null, lastMovementText: null, deadlineAt: null, pendingItems: [], nextStep: null, riskFlags: ["case_status_unverified"], clientReply: null, grounding: { factualSources: [], inferenceNotes: [], missingSignals: ["authorized_process_access_needs_reference"] } },
+      officeKnowledgeProfile: { assistantName: "Maya", officeName: "Dutra" },
+      operatingPartner: { enabled: true, autonomy_mode: "high_supervised" },
+      fetcher,
+    });
+
+    expect(fetcher).toHaveBeenCalledTimes(1);
+    expect(decision.reply).toContain("nome completo do cliente");
+    expect(decision.reply).toContain("processo");
+    expect(decision.reply).not.toMatch(/Michele|banco|tema|saude|RMC|danos morais/i);
+    expect(decision.conversation_frame?.resolution_type).toBe("generic_process_request");
+    expect(decision.conversation_frame?.llm_writer_allowed).toBe(false);
+    expect(decision.final_response_source).not.toBe("llm_natural");
+    expect(decision.should_auto_send).toBe(true);
   });
 
   it("responde cobranca curta de status com LLM guiado pelo frame", async () => {
@@ -1046,28 +1124,39 @@ describe("mayus-operating-partner", () => {
       fetcher,
     });
 
-    expect(fetcher).toHaveBeenCalledTimes(2);
+    expect(fetcher).not.toHaveBeenCalled();
+    expect(getLLMClientMock).not.toHaveBeenCalled();
     expect(decision.reply).toBe("Oi, Vitor, tudo bem? Como posso ajudar?");
     expect(decision.reply).not.toMatch(/custas|processo|Maya|assistente|Dutra/i);
     expect(decision.conversation_state.last_process_candidates).toBeUndefined();
-    expect(decision.next_action).toBe("abrir conversa limpa sem puxar contexto antigo");
+    expect(decision.next_action).toBe("aguardar o assunto atual do interlocutor");
     expect(decision.requires_approval).toBe(false);
     expect(decision.conversation_frame?.resolution_type).toBe("greeting");
-    expect(decision.quality_check?.status).toBe("pass");
-    expect(decision.final_response_source).toBe("safe_fallback");
+    expect(decision.conversation_frame?.llm_writer_allowed).toBe(false);
+    expect(decision.quality_check).toEqual({ status: "pass", flags: [], reasons: [] });
+    expect(decision.final_response_source).toBe("deterministic_guardrail");
   });
 
-  it("ignora candidatos de evento anterior quando o turno atual e saudacao pura", async () => {
-    const fetcher = vi.fn(async () => {
-      throw new Error("LLM nao deveria ser chamada em saudacao limpa");
-    }) as any;
+  it("ignora Michele/processo antigo quando o turno atual e saudacao pura em caixa alta", async () => {
+    const fetcher = operatingPartnerFetcher({
+      reply: "Boa noite, Vitor. Sobre a Michele, preciso saber qual banco/tema do processo.",
+      intent: "process_status",
+      next_action: "perguntar banco ou tema",
+      conversation_state: {
+        conversation_role: "case_status",
+        conversation_goal: "retomar processo antigo",
+        last_customer_message: "BOA NOITE MAYUS",
+        next_action: "perguntar banco ou tema",
+        conversation_summary: "Resposta ruim com contexto antigo.",
+      },
+    });
 
     const decision = await buildMayusOperatingPartnerDecision({
       supabase: {} as any,
       tenantId: "tenant-1",
       channel: "whatsapp",
       contactName: "Vitor",
-      messages: [{ direction: "inbound", content: "Oi mayus" }],
+      messages: [{ direction: "inbound", content: "BOA NOITE MAYUS" }],
       whatsappActorContext: { role: "office_operator", sender_phone_authorized: true, reason: "daily_playbook_authorized_phone" },
       previousMayusEvent: {
         created_at: new Date().toISOString(),
@@ -1084,28 +1173,55 @@ describe("mayus-operating-partner", () => {
           urgency: "none",
           decision_maker: "unknown",
           documents_requested: [],
-          last_customer_message: "Marcio da Silva Machado",
-          last_mayus_message: "Encontrei Bradesco e Caixa.",
+          last_customer_message: "Quero saber do processo Michele Cristina Pinto Foppolos Santos",
+          last_mayus_message: "Localizei Michele x Banco.",
           last_commitment: null,
           next_action: "perguntar qual processo",
           has_mayus_introduced: true,
           conversation_summary: "Contexto antigo de processos.",
           last_process_candidates: [
-            { processTaskId: "bradesco", clientName: "Marcio", processNumber: "3000141-95.2026.8.19.0213", title: "Bradesco", opposingParty: "Banco Bradesco", summary: "danos morais", currentStage: "Conhecimento", lastMovementAt: null, lastMovementText: null },
-            { processTaskId: "caixa", clientName: "Marcio", processNumber: "5006349-29.2023.4.02.5110", title: "Caixa", opposingParty: "Caixa", summary: "FGTS", currentStage: "Recurso", lastMovementAt: null, lastMovementText: null },
+            { processTaskId: "process-michele", clientName: "Michele Cristina Pinto Foppolos Santos", processNumber: "3002575-03.2026.8.19.0000", title: "Michele x Banco", opposingParty: "Banco", summary: "acompanhamento", currentStage: "Acompanhamento", lastMovementAt: "2026-05-25", lastMovementText: "Publicado despacho" },
           ],
         },
+      },
+      processStatusContext: {
+        verified: true,
+        confidence: "high",
+        accessScope: "tenant_authorized",
+        senderPhoneAuthorized: true,
+        processTaskId: "process-michele",
+        clientName: "Michele Cristina Pinto Foppolos Santos",
+        processNumber: "3002575-03.2026.8.19.0000",
+        title: "Michele x Banco",
+        currentStage: "Acompanhamento",
+        detectedPhase: "sem_fase_confiavel",
+        detectedPhaseLabel: null,
+        lastMovementAt: "2026-05-25",
+        lastMovementText: "Publicado despacho",
+        deadlineAt: null,
+        pendingItems: [],
+        nextStep: "conferir despacho",
+        riskFlags: [],
+        clientReply: null,
+        candidateProcesses: [
+          { processTaskId: "process-michele", clientName: "Michele Cristina Pinto Foppolos Santos", processNumber: "3002575-03.2026.8.19.0000", title: "Michele x Banco", opposingParty: "Banco", summary: "acompanhamento", currentStage: "Acompanhamento", lastMovementAt: "2026-05-25", lastMovementText: "Publicado despacho" },
+        ],
+        grounding: { factualSources: ["processo monitorado"], inferenceNotes: [], missingSignals: [] },
       },
       operatingPartner: { enabled: true, autonomy_mode: "high_supervised" },
       fetcher,
     });
 
-    expect(fetcher).toHaveBeenCalledTimes(1);
-    expect(decision.reply).toBe("Oi, Vitor, tudo bem? Como posso ajudar?");
-    expect(decision.reply).not.toMatch(/Bradesco|Caixa|processo/i);
+    expect(fetcher).not.toHaveBeenCalled();
+    expect(getLLMClientMock).not.toHaveBeenCalled();
+    expect(decision.reply).toBe("Boa noite, Vitor. Como posso ajudar?");
+    expect(decision.reply).not.toMatch(/Michele|processo|banco|tema|assistente/i);
     expect(decision.conversation_state.last_process_candidates).toBeUndefined();
     expect(decision.conversation_frame?.candidate_summaries).toEqual([]);
     expect(decision.conversation_frame?.resolution_type).toBe("greeting");
+    expect(decision.conversation_frame?.llm_writer_allowed).toBe(false);
+    expect(decision.quality_check).toEqual({ status: "pass", flags: [], reasons: [] });
+    expect(decision.final_response_source).toBe("deterministic_guardrail");
   });
 
   it("reconhece reclamacao sem repetir contexto antigo ou alternativas erradas", async () => {
