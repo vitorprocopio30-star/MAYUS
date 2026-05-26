@@ -199,10 +199,19 @@ type AgentControlPlanePublicAgent = {
   reusedAs: string;
   matrixMode: "read_only_status";
   owner: string;
-  status: "ready" | "needs_attention" | "blocked" | "read_only";
+  status: "working" | "ready" | "awaiting_approval" | "needs_attention" | "blocked" | "read_only";
   evidence: string[];
   blockers: string[];
   nextAction: string;
+  operational?: {
+    status: "working" | "ready" | "awaiting_approval" | "needs_attention" | "blocked" | "read_only";
+    modulesCovered: string[];
+    latestSignalAt: string | null;
+    approvals: number;
+    blockerCount: number;
+    gaps: string[];
+    nextAction: string;
+  };
   paperclip?: {
     heartbeat: string;
     routines: {
@@ -219,6 +228,14 @@ type AgentControlPlanePublicAgent = {
     activity: {
       latestMissionAt: string | null;
       activeOwners: string[];
+      handoff?: {
+        chain: string[];
+        latestTenantId: string | null;
+        methodologyStatus: string | null;
+        legalStatus: string | null;
+        agenticStatus: string | null;
+        nextAction: string;
+      };
     };
     portability: {
       status: "pending_preflight";
@@ -234,6 +251,14 @@ type AgentControlPlanePublicAgent = {
     blockedLayer: string | null;
     reason: string | null;
     nextModules: string[];
+    methodology?: {
+      status: string | null;
+      activation: string | null;
+      requiresHumanReview: boolean;
+      reviewReasons: string[];
+      blockedLayer: string | null;
+      reason: string | null;
+    } | null;
   };
   hermes?: {
     source: "mission_snapshots_read_only";
@@ -242,6 +267,14 @@ type AgentControlPlanePublicAgent = {
     latestMemoryId: string | null;
     lifecycleStatus: string | null;
     lastEventSummary: string | null;
+    tenantLearning?: {
+      scope: "tenant_only";
+      signalsObserved: number;
+      latestTenantId: string | null;
+      latestMethodologyStatus: string | null;
+      latestActivation: string | null;
+      lastReviewReason: string | null;
+    };
   };
 };
 
@@ -285,7 +318,9 @@ const AGENT_HEALTH_STYLES: Record<AgentControlPlaneAgent["health"]["status"], st
 };
 
 const PUBLIC_AGENT_STATUS_STYLES: Record<AgentControlPlanePublicAgent["status"], string> = {
+  working: "text-emerald-300 border-emerald-500/30 bg-emerald-500/10",
   ready: "text-emerald-400 border-emerald-500/30 bg-emerald-500/10",
+  awaiting_approval: "text-orange-300 border-orange-500/30 bg-orange-500/10",
   needs_attention: "text-yellow-400 border-yellow-500/30 bg-yellow-500/10",
   blocked: "text-red-400 border-red-500/30 bg-red-500/10",
   read_only: "text-sky-300 border-sky-500/30 bg-sky-500/10",
@@ -814,12 +849,46 @@ export default function AgentSkillRegistryPage() {
                     </div>
                     <p className="text-gray-500 text-[10px] leading-relaxed mt-1 line-clamp-2">{publicAgent.reusedAs}</p>
 
+                    {publicAgent.operational && (
+                      <div className="mt-3 grid grid-cols-2 gap-2 text-[10px] leading-relaxed text-gray-500">
+                        <div className="rounded-lg border border-white/5 bg-black/20 p-2">
+                          <p className="text-[8px] uppercase tracking-widest text-gray-600">modulos</p>
+                          <p className="mt-1 text-gray-200 line-clamp-2">
+                            {publicAgent.operational.modulesCovered.slice(0, 4).join(", ") || "sem cobertura"}
+                          </p>
+                        </div>
+                        <div className="rounded-lg border border-white/5 bg-black/20 p-2">
+                          <p className="text-[8px] uppercase tracking-widest text-gray-600">ultimo sinal</p>
+                          <p className="mt-1 text-gray-200 line-clamp-2">
+                            {publicAgent.operational.latestSignalAt || "sem sinal"}
+                          </p>
+                        </div>
+                        <div className="rounded-lg border border-white/5 bg-black/20 p-2">
+                          <p className="text-[8px] uppercase tracking-widest text-gray-600">approvals</p>
+                          <p className="mt-1 text-gray-200">{publicAgent.operational.approvals}</p>
+                        </div>
+                        <div className="rounded-lg border border-white/5 bg-black/20 p-2">
+                          <p className="text-[8px] uppercase tracking-widest text-gray-600">bloqueios</p>
+                          <p className="mt-1 text-gray-200">{publicAgent.operational.blockerCount}</p>
+                        </div>
+                        <div className="rounded-lg border border-white/5 bg-black/20 p-2 col-span-2">
+                          <p className="text-[8px] uppercase tracking-widest text-gray-600">lacunas</p>
+                          <p className="mt-1 text-gray-200 line-clamp-2">
+                            {publicAgent.operational.gaps.slice(0, 4).join(", ") || "sem lacuna operacional"}
+                          </p>
+                        </div>
+                      </div>
+                    )}
+
                     {publicAgent.paperclip && (
                       <div className="mt-3 space-y-1 text-[10px] leading-relaxed text-gray-500">
                         <p><span className="text-gray-300">Heartbeat:</span> {publicAgent.paperclip.heartbeat}</p>
                         <p><span className="text-gray-300">Rotinas:</span> {publicAgent.paperclip.routines.enabled}/{publicAgent.paperclip.routines.total} enabled / {publicAgent.paperclip.routines.blocked} blocked</p>
                         <p><span className="text-gray-300">Approvals:</span> {publicAgent.paperclip.approvals} / hard stops {publicAgent.paperclip.budget.hardStops}</p>
                         <p><span className="text-gray-300">Owners:</span> {publicAgent.paperclip.activity.activeOwners.slice(0, 3).join(", ") || "sem dono ativo"}</p>
+                        {publicAgent.paperclip.activity.handoff && (
+                          <p><span className="text-gray-300">Handoff:</span> {publicAgent.paperclip.activity.handoff.nextAction}</p>
+                        )}
                         <p><span className="text-gray-300">Portabilidade:</span> {publicAgent.paperclip.portability.status}</p>
                       </div>
                     )}
@@ -830,6 +899,9 @@ export default function AgentSkillRegistryPage() {
                         <p><span className="text-gray-300">Superficies:</span> {publicAgent.openclaw.surfaces.slice(0, 3).join(", ") || "sem snapshot"}</p>
                         <p><span className="text-gray-300">Outcome:</span> {publicAgent.openclaw.outcomes.join(", ") || "sem policy recente"}</p>
                         <p><span className="text-gray-300">Bloqueio:</span> {publicAgent.openclaw.blockedLayer || "nenhum"}</p>
+                        {publicAgent.openclaw.methodology && (
+                          <p><span className="text-gray-300">Metodologia:</span> {publicAgent.openclaw.methodology.status || "sem status"} / {publicAgent.openclaw.methodology.activation || "sem ativacao"}</p>
+                        )}
                         <p><span className="text-gray-300">Proximos modulos:</span> {publicAgent.openclaw.nextModules.join(", ") || "cobertura atual ok"}</p>
                       </div>
                     )}
@@ -841,6 +913,9 @@ export default function AgentSkillRegistryPage() {
                         <p><span className="text-gray-300">Status:</span> {publicAgent.hermes.lifecycleStatus || publicAgent.hermes.latestStatus || "sem trajectory"}</p>
                         <p><span className="text-gray-300">Memoria:</span> {publicAgent.hermes.latestMemoryId || "sem memoria recente"}</p>
                         <p><span className="text-gray-300">Evento:</span> {publicAgent.hermes.lastEventSummary || "sem evento recente"}</p>
+                        {publicAgent.hermes.tenantLearning && (
+                          <p><span className="text-gray-300">Learning:</span> {publicAgent.hermes.tenantLearning.signalsObserved} tenant-only</p>
+                        )}
                       </div>
                     )}
 
@@ -850,7 +925,7 @@ export default function AgentSkillRegistryPage() {
                       </p>
                     )}
                     <p className="mt-3 text-[#CCA761] text-[10px] font-bold uppercase tracking-wider leading-relaxed">
-                      {publicAgent.nextAction}
+                      {publicAgent.operational?.nextAction || publicAgent.nextAction}
                     </p>
                   </div>
                 );

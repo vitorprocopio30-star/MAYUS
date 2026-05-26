@@ -181,6 +181,12 @@ describe("Mayus Agent Control Plane", () => {
         id: "paperclip",
         matrixMode: "read_only_status",
         status: "blocked",
+        operational: expect.objectContaining({
+          status: "blocked",
+          modulesCovered: expect.arrayContaining(["finance", "monitoring"]),
+          approvals: 1,
+          blockerCount: 1,
+        }),
         paperclip: expect.objectContaining({
           heartbeat: "blocked",
           routines: expect.objectContaining({
@@ -200,6 +206,11 @@ describe("Mayus Agent Control Plane", () => {
       expect.objectContaining({
         id: "openclaw",
         status: "blocked",
+        operational: expect.objectContaining({
+          status: "blocked",
+          approvals: 1,
+          blockerCount: 1,
+        }),
         openclaw: expect.objectContaining({
           requiresFullMatrix: false,
           precedence: ["global", "tenant", "module", "agent", "tool", "channel"],
@@ -211,7 +222,12 @@ describe("Mayus Agent Control Plane", () => {
       }),
       expect.objectContaining({
         id: "hermes",
-        status: "read_only",
+        status: "blocked",
+        operational: expect.objectContaining({
+          status: "blocked",
+          approvals: 1,
+          blockerCount: 1,
+        }),
         hermes: expect.objectContaining({
           source: "mission_snapshots_read_only",
           missionsObserved: 1,
@@ -323,7 +339,7 @@ describe("Mayus Agent Control Plane", () => {
       blockers: 1,
     }));
     expect(agenticWorkstream).toEqual(expect.objectContaining({
-      label: "Frente B Agentic Core",
+      label: "Frente B Agentes Publicos / Core Agentico",
       internalAgentIds: expect.arrayContaining(["mayus_integrator", "monitoring_agent", "finance_agent"]),
       status: "clear",
     }));
