@@ -7,6 +7,8 @@ import {
 
 export type ProcessMissionConfidence = "high" | "medium" | "low";
 
+export type ProcessMissionLegalDutyConfidence = "confirmed" | "inferred" | "not_available";
+
 export type ProcessMissionRecommendedAction =
   | "refresh_document_memory"
   | "generate_first_draft"
@@ -38,6 +40,15 @@ export type ProcessMissionMethodologyContext = {
   reviewReasons: string[];
   reviewCriteria: string[];
   blockers: string[];
+};
+
+export type ProcessMissionLegalDuty = {
+  representedPole: string | null;
+  obligationOwner: string | null;
+  confidence: ProcessMissionLegalDutyConfidence;
+  confidenceReason: string;
+  evidence: string[];
+  sources: string[];
 };
 
 export type LegalOperatorStatus =
@@ -94,6 +105,7 @@ export type LegalOperatorState = {
     methodologyStatus: ProcessMissionContext["methodology"]["status"];
     methodologyActivation: ProcessMissionContext["methodology"]["activation"];
     methodologyReviewReasons: string[];
+    legalDuty: ProcessMissionContext["legalDuty"];
   };
 };
 
@@ -143,6 +155,7 @@ export type ProcessMissionContext = {
     inferenceNotes: string[];
     missingSignals: string[];
   };
+  legalDuty: ProcessMissionLegalDuty;
   methodology: ProcessMissionMethodologyContext;
   confidence: ProcessMissionConfidence;
   recommendedAction: ProcessMissionRecommendedAction;
@@ -316,6 +329,117 @@ function resolveNextStep(
   return null;
 }
 
+function cleanLegalDutyValue(value: string | null | undefined) {
+  const cleaned = String(value || "")
+    .split(/[\n\r.;|]/)[0]
+    .replace(/["'`]/g, "")
+    .replace(/\s+/g, " ")
+    .trim()
+    .slice(0, 80);
+  return cleaned || null;
+}
+
+function extractTaggedLegalDutyValue(text: string, labels: string[]) {
+  for (const label of labels) {
+    const pattern = new RegExp(`${label}\\s*[:=\\-]\\s*([^\\n\\r.;|]+)`, "i");
+    const match = text.match(pattern);
+    const value = cleanLegalDutyValue(match?.[1]);
+    if (value) return value;
+  }
+  return null;
+}
+
+function inferRepresentedPole(text: string) {
+  const normalized = normalizeComparable(text);
+  if (/\b(polo representado|representamos|representa|cliente e|cliente esta)\b.*\b(autor|ativo|requerente|exequente)\b/.test(normalized)) {
+    return "autor";
+  }
+  if (/\b(polo representado|representamos|representa|cliente e|cliente esta)\b.*\b(reu|passivo|requerido|executado)\b/.test(normalized)) {
+    return "reu";
+  }
+  return null;
+}
+
+function inferObligationOwner(text: string) {
+  const normalized = normalizeComparable(text);
+  if (/\b(obrigacao|prazo|providencia|intimacao)\b.*\b(escritorio|advogado|cliente|nosso polo|polo representado)\b/.test(normalized)) {
+    return "escritorio";
+  }
+  if (/\b(obrigacao|prazo|providencia|intimacao)\b.*\b(parte contraria|banco|inss|reu|autor adverso|polo contrario)\b/.test(normalized)) {
+    return "parte_contraria";
+  }
+  return null;
+}
+
+function resolveLegalDuty(snapshot: LegalCaseContextSnapshot): ProcessMissionLegalDuty {
+  const sources = [
+    { id: "case_brain_summary", value: snapshot.caseBrain.summaryMaster },
+    { id: "case_brain_phase", value: snapshot.caseBrain.currentPhase },
+    { id: "case_brain_first_actions", value: stringArray(snapshot.caseBrain.firstActions).join("\n") },
+    { id: "document_memory_summary", value: snapshot.documentMemory.summaryMaster },
+    { id: "document_memory_phase", value: snapshot.documentMemory.currentPhase },
+    { id: "process_task_description", value: snapshot.processTask.description },
+  ];
+  const representedPoleLabels = [
+    "polo[_\\s-]*representado",
+    "polo[_\\s-]*do[_\\s-]*cliente",
+    "polo[_\\s-]*cliente",
+  ];
+  const obligationOwnerLabels = [
+    "obrigacao[_\\s-]*de[_\\s-]*quem",
+    "obrigacao[_\\s-]*do[_\\s-]*escritorio",
+    "responsavel[_\\s-]*pela[_\\s-]*obrigacao",
+    "dono[_\\s-]*da[_\\s-]*obrigacao",
+  ];
+
+  let representedPole: string | null = null;
+  let obligationOwner: string | null = null;
+  const evidence: string[] = [];
+  const evidenceSources: string[] = [];
+
+  for (const source of sources) {
+    const value = typeof source.value === "string" ? source.value.trim() : "";
+    if (!value) continue;
+
+    const explicitPole = extractTaggedLegalDutyValue(value, representedPoleLabels);
+    const explicitObligation = extractTaggedLegalDutyValue(value, obligationOwnerLabels);
+    const inferredPole = explicitPole ? null : inferRepresentedPole(value);
+    const inferredObligation = explicitObligation ? null : inferObligationOwner(value);
+
+    if (!representedPole && (explicitPole || inferredPole)) {
+      representedPole = explicitPole || inferredPole;
+      evidence.push(`${source.id}:polo_representado`);
+      evidenceSources.push(source.id);
+    }
+    if (!obligationOwner && (explicitObligation || inferredObligation)) {
+      obligationOwner = explicitObligation || inferredObligation;
+      evidence.push(`${source.id}:obrigacao_de_quem`);
+      evidenceSources.push(source.id);
+    }
+    if (representedPole && obligationOwner) break;
+  }
+
+  const confidence: ProcessMissionLegalDutyConfidence = representedPole && obligationOwner
+    ? "confirmed"
+    : representedPole || obligationOwner
+      ? "inferred"
+      : "not_available";
+  const confidenceReason = confidence === "confirmed"
+    ? "Polo representado e obrigacao foram encontrados em sinais internos da missao."
+    : confidence === "inferred"
+      ? "A missao tem sinal parcial de polo ou obrigacao, mas ainda exige conferencia humana."
+      : "Polo representado e obrigacao ainda nao foram consolidados no snapshot da missao.";
+
+  return {
+    representedPole,
+    obligationOwner,
+    confidence,
+    confidenceReason,
+    evidence: uniqueStrings(evidence),
+    sources: uniqueStrings(evidenceSources),
+  };
+}
+
 function resolveGrounding(params: {
   snapshot: LegalCaseContextSnapshot;
   progressSummary: string | null;
@@ -323,8 +447,9 @@ function resolveGrounding(params: {
   nextStep: string | null;
   pendingItems: string[];
   methodology: ProcessMissionMethodologyContext;
+  legalDuty: ProcessMissionLegalDuty;
 }) {
-  const { snapshot, progressSummary, currentPhase, nextStep, pendingItems, methodology } = params;
+  const { snapshot, progressSummary, currentPhase, nextStep, pendingItems, methodology, legalDuty } = params;
   const factualSources = uniqueStrings([
     snapshot.caseBrain.taskId ? "case_brain" : null,
     snapshot.caseBrain.summaryMaster ? "case_brain_summary" : null,
@@ -339,6 +464,7 @@ function resolveGrounding(params: {
     snapshot.firstDraft.artifactId ? "first_draft_artifact" : null,
     methodology.provided ? "tenant_operational_methodology" : null,
     methodology.areaMethod ? "tenant_operational_area_method" : null,
+    legalDuty.confidence !== "not_available" ? "legal_duty_signal" : null,
   ]);
 
   const inferenceNotes = uniqueStrings([
@@ -347,6 +473,8 @@ function resolveGrounding(params: {
     snapshot.documentMemory.freshness === "stale" ? "document_memory_may_be_stale" : null,
     methodology.provided && methodology.expectedPhases[0] && currentPhase === methodology.expectedPhases[0] ? "phase_inferred_from_tenant_methodology" : null,
     methodology.provided && methodology.blockers.length > 0 ? "tenant_methodology_requires_review" : null,
+    legalDuty.confidence === "inferred" ? "legal_duty_partial_signal" : null,
+    legalDuty.confidence === "not_available" ? "legal_duty_not_consolidated" : null,
   ]);
 
   const missingSignals = uniqueStrings([
@@ -506,12 +634,16 @@ function resolveOperationalThesis(params: {
     ...context.grounding.factualSources,
     context.documents.summary ? "document_memory_summary" : null,
     context.methodology.provided ? "tenant_operational_methodology" : null,
+    context.legalDuty.confidence !== "not_available" ? "legal_duty_signal" : null,
   ]);
   const gaps = uniqueStrings([
     ...context.grounding.missingSignals,
     ...context.status.pendingItems,
     ...context.documents.missingDocuments,
     ...context.methodology.missingExpectedDocuments,
+    !context.legalDuty.representedPole ? "represented_pole_not_consolidated" : null,
+    !context.legalDuty.obligationOwner ? "obligation_owner_not_consolidated" : null,
+    context.legalDuty.confidence === "not_available" ? "legal_duty_not_consolidated" : null,
   ]);
   const blockers = resolveLegalOperatorBlockers(context as ProcessMissionContext);
   const pieceLabel = context.draft.recommendedPiece || "primeira minuta juridica";
@@ -533,6 +665,8 @@ function resolveOperationalThesis(params: {
       context.status.progressSummary ? `Resumo: ${context.status.progressSummary}` : null,
       context.status.nextStep ? `Proximo passo: ${context.status.nextStep}` : null,
       context.draft.recommendedPiece ? `Peca sugerida: ${context.draft.recommendedPiece}` : null,
+      context.legalDuty.representedPole ? `Polo representado: ${context.legalDuty.representedPole}` : null,
+      context.legalDuty.obligationOwner ? `Obrigacao: ${context.legalDuty.obligationOwner}` : null,
       `Confianca: ${context.confidence}`,
     ]),
     sourcesUsed,
@@ -610,6 +744,7 @@ export function buildLegalOperatorState(context: ProcessMissionContext): LegalOp
       methodologyStatus: context.methodology.status,
       methodologyActivation: context.methodology.activation,
       methodologyReviewReasons: context.methodology.reviewReasons,
+      legalDuty: context.legalDuty,
     },
   };
 }
@@ -629,7 +764,8 @@ export function buildProcessMissionContext(
   const nextStep = resolveNextStep(snapshot, pendingItems, methodology);
   const confidence = resolveConfidence({ snapshot, progressSummary, currentPhase, nextStep, pendingItems });
   const recommendedAction = resolveRecommendedAction({ snapshot, confidence, pendingItems });
-  const grounding = resolveGrounding({ snapshot, progressSummary, currentPhase, nextStep, pendingItems, methodology });
+  const legalDuty = resolveLegalDuty(snapshot);
+  const grounding = resolveGrounding({ snapshot, progressSummary, currentPhase, nextStep, pendingItems, methodology, legalDuty });
 
   const contextCore: Omit<ProcessMissionContext, "operationalThesis"> = {
     process: {
@@ -666,6 +802,7 @@ export function buildProcessMissionContext(
       requiresHumanReview: snapshot.firstDraft.requiresHumanReview,
     },
     grounding,
+    legalDuty,
     methodology,
     confidence,
     recommendedAction,

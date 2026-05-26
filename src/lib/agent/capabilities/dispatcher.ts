@@ -3825,18 +3825,27 @@ function uniqueProcessMissionTexts(values: unknown[]) {
 }
 
 function buildProcessMissionGaps(context: ReturnType<typeof buildProcessMissionContext>) {
+  const legalDutyGaps = uniqueProcessMissionTexts([
+    !context.legalDuty.representedPole ? "represented_pole_not_consolidated" : null,
+    !context.legalDuty.obligationOwner ? "obligation_owner_not_consolidated" : null,
+    context.legalDuty.confidence === "not_available" ? "legal_duty_not_consolidated" : null,
+  ]);
+
   return {
     missingSignals: context.grounding.missingSignals,
     pendingItems: context.status.pendingItems,
     missingDocuments: context.documents.missingDocuments,
     missingExpectedDocuments: context.methodology.missingExpectedDocuments,
     methodologyBlockers: context.methodology.blockers,
+    legalDuty: context.legalDuty,
+    legalDutyGaps,
     all: uniqueProcessMissionTexts([
       ...context.grounding.missingSignals,
       ...context.status.pendingItems,
       ...context.documents.missingDocuments,
       ...context.methodology.missingExpectedDocuments,
       ...context.methodology.blockers,
+      ...legalDutyGaps,
     ]),
   };
 }
@@ -3853,6 +3862,49 @@ function buildProcessMissionSources(context: ReturnType<typeof buildProcessMissi
       syncStatus: context.documents.syncStatus,
     },
     methodologySource: context.methodology.source,
+    legalDuty: context.legalDuty,
+  };
+}
+
+function buildProcessMissionPaperclipOwner(params: {
+  context: ReturnType<typeof buildProcessMissionContext>;
+  state: LegalOperatorState;
+  status?: "planned" | "executed" | "blocked" | "failed" | "awaiting_approval";
+  approvalId?: string | null;
+}) {
+  const status = params.status === "blocked" || params.status === "failed" || params.state.status === "blocked"
+    ? "blocked"
+    : params.state.safeNextAction.requiresApproval || params.status === "awaiting_approval" || params.approvalId
+      ? "awaiting_approval"
+      : "working";
+  const approvalsPending = status === "awaiting_approval" ? 1 : 0;
+
+  return {
+    public_agent: "paperclip",
+    publicAgent: "paperclip",
+    owner: "Operador juridico supervisionado",
+    workstream_id: "front_a_juridico_lex",
+    workstreamId: "front_a_juridico_lex",
+    module: "legal_ops",
+    process_task_id: params.context.process.processTaskId,
+    processTaskId: params.context.process.processTaskId,
+    process_number: params.context.process.processNumber,
+    processNumber: params.context.process.processNumber,
+    status,
+    approvals_pending: approvalsPending,
+    approvalsPending,
+    approval_id: params.approvalId || null,
+    approvalId: params.approvalId || null,
+    blocker_count: params.state.blockers.length,
+    blockerCount: params.state.blockers.length,
+    blockers: params.state.blockers,
+    next_action: params.state.safeNextAction.label,
+    nextAction: params.state.safeNextAction.label,
+    legal_duty: params.context.legalDuty,
+    legalDuty: params.context.legalDuty,
+    external_side_effects_blocked: true,
+    externalSideEffectsBlocked: true,
+    handoff: "Paperclip mantem dono e proximo passo; Draft Factory so roda depois de approval humano.",
   };
 }
 
@@ -3911,6 +3963,10 @@ function buildProcessMissionOpenClawPolicy(params: {
       handler_type: params.handlerType || null,
       process_task_id: params.context.process.processTaskId,
       recommended_action: params.context.recommendedAction,
+      represented_pole: params.context.legalDuty.representedPole,
+      obligation_owner: params.context.legalDuty.obligationOwner,
+      legal_duty_confidence: params.context.legalDuty.confidence,
+      legal_duty: params.context.legalDuty,
     },
     debugger: {
       precedence: ["platform_default", "tenant", "module", "agent", "tool", "channel"],
@@ -3971,6 +4027,7 @@ function buildProcessMissionHermesTrajectory(params: {
       recommended_action: params.context.recommendedAction,
       capability_name: params.capabilityName || null,
       tenant_learning_scope: "tenant_only",
+      legal_duty: params.context.legalDuty,
     },
   });
 
@@ -3980,6 +4037,9 @@ function buildProcessMissionHermesTrajectory(params: {
       current_phase: params.context.status.currentPhase,
       document_freshness: params.context.documents.freshness,
       draft_status: params.context.draft.status,
+      represented_pole: params.context.legalDuty.representedPole,
+      obligation_owner: params.context.legalDuty.obligationOwner,
+      legal_duty_confidence: params.context.legalDuty.confidence,
     },
   });
   trajectory = recordHermesMissionDecision(trajectory, {
@@ -3990,6 +4050,7 @@ function buildProcessMissionHermesTrajectory(params: {
       requires_approval: params.state.safeNextAction.requiresApproval,
       methodology_status: params.context.methodology.status,
       methodology_activation: params.context.methodology.activation,
+      legal_duty: params.context.legalDuty,
     },
   });
 
@@ -4073,12 +4134,20 @@ function buildProcessMissionBetaContract(
     reason: options.reason,
     approvalId: options.approvalId,
   });
+  const paperclipOwner = buildProcessMissionPaperclipOwner({
+    context,
+    state: legalOperatorState,
+    status: options.status,
+    approvalId: options.approvalId,
+  });
 
   return {
     processMissionContext: context,
     process_mission_context: context,
     legalOperatorState,
     legal_operator_state: legalOperatorState,
+    legalDuty: context.legalDuty,
+    legal_duty: context.legalDuty,
     methodology: context.methodology,
     sources,
     gaps,
@@ -4094,11 +4163,21 @@ function buildProcessMissionBetaContract(
     nextSafeAction: legalOperatorState.safeNextAction,
     external_side_effects_blocked: true,
     agentic_governance: {
+      paperclip_owner: paperclipOwner,
       openclaw_policy: openclawPolicy,
       hermes_trajectory: hermesTrajectory,
     },
+    agenticGovernance: {
+      paperclipOwner,
+      openclawPolicy,
+      hermesTrajectory,
+    },
+    paperclip_owner: paperclipOwner,
+    paperclipOwner,
     openclaw_policy: openclawPolicy,
+    openclawPolicy,
     hermes_trajectory: hermesTrajectory,
+    hermesTrajectory,
   };
 }
 
@@ -4121,6 +4200,9 @@ function buildProcessMissionPlanReply(context: ReturnType<typeof buildProcessMis
       : "- Pendencias: nenhuma pendencia critica registrada",
     `- Memoria documental: ${context.documents.freshness}${context.documents.lastSyncedAt ? ` em ${formatDateTimeLabel(context.documents.lastSyncedAt)}` : ""}`,
     context.draft.recommendedPiece ? `- Peca/minuta sugerida: ${context.draft.recommendedPiece}` : null,
+    context.legalDuty.representedPole || context.legalDuty.obligationOwner
+      ? `- Polo/obrigacao: ${context.legalDuty.representedPole || "polo nao consolidado"} / ${context.legalDuty.obligationOwner || "obrigacao nao consolidada"} (${context.legalDuty.confidence})`
+      : `- Polo/obrigacao: nao consolidado (${context.legalDuty.confidence})`,
     context.grounding.factualSources.length > 0
       ? `- Fontes: ${context.grounding.factualSources.join("; ")}`
       : null,
@@ -4602,6 +4684,9 @@ function buildProcessMissionApprovalReply(params: {
     params.context.methodology.expectedDocuments.length > 0
       ? `- Documentos esperados pela metodologia: ${params.context.methodology.expectedDocuments.join("; ")}`
       : null,
+    params.context.legalDuty.representedPole || params.context.legalDuty.obligationOwner
+      ? `- Polo/obrigacao: ${params.context.legalDuty.representedPole || "polo nao consolidado"} / ${params.context.legalDuty.obligationOwner || "obrigacao nao consolidada"} (${params.context.legalDuty.confidence})`
+      : `- Polo/obrigacao: nao consolidado (${params.context.legalDuty.confidence})`,
     params.caseBrainInsights ? `- Case Brain 2.0: ${highRiskCount} risco(s) alto(s), ${highContradictionCount} contradicao(oes) alta(s), ${params.caseBrainInsights.groundingGaps.length} lacuna(s) de grounding` : null,
     params.pieceReadiness?.draft_verification_checklist.length
       ? `- Checklist da minuta: ${params.pieceReadiness.draft_verification_checklist.slice(0, 3).join("; ")}`
@@ -4785,10 +4870,17 @@ async function requestProcessMissionDraftApproval(
       gaps: approvalBetaContract.gaps,
       blockers: params.context.operationalThesis.blockers,
       recommendedAction: params.context.recommendedAction,
+      legalDuty: approvalBetaContract.legalDuty,
+      legal_duty: approvalBetaContract.legal_duty,
       sideEffectGuardrail: approvalBetaContract.sideEffectGuardrail,
       agentic_governance: approvalBetaContract.agentic_governance,
+      agenticGovernance: approvalBetaContract.agenticGovernance,
+      paperclip_owner: approvalBetaContract.paperclip_owner,
+      paperclipOwner: approvalBetaContract.paperclipOwner,
       openclaw_policy: approvalBetaContract.openclaw_policy,
+      openclawPolicy: approvalBetaContract.openclawPolicy,
       hermes_trajectory: approvalBetaContract.hermes_trajectory,
+      hermesTrajectory: approvalBetaContract.hermesTrajectory,
     },
     idempotencyExpiresAt: new Date(Date.now() + 24 * 60 * 60 * 1000).toISOString(),
   });
@@ -4933,10 +5025,16 @@ async function requestProcessMissionDraftApproval(
         sources: approvalBetaContract.sources,
         gaps: approvalBetaContract.gaps,
         recommendedAction: params.context.recommendedAction,
+        legalDuty: approvalBetaContract.legalDuty,
+        legal_duty: approvalBetaContract.legal_duty,
         sideEffectGuardrail: approvalBetaContract.sideEffectGuardrail,
-        agenticGovernance: approvalBetaContract.agentic_governance,
+        agenticGovernance: approvalBetaContract.agenticGovernance,
+        paperclipOwner: approvalBetaContract.paperclipOwner,
+        paperclip_owner: approvalBetaContract.paperclip_owner,
         openclawPolicy: approvalBetaContract.openclaw_policy,
+        openclaw_policy: approvalBetaContract.openclaw_policy,
         hermesTrajectory: approvalBetaContract.hermes_trajectory,
+        hermes_trajectory: approvalBetaContract.hermes_trajectory,
       },
     },
     data: {
