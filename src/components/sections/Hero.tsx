@@ -310,7 +310,7 @@ export function Hero() {
           </span>
         </div>
 
-        <div className="pointer-events-none absolute right-6 top-20 z-10 flex items-center gap-3 md:right-10 md:top-24">
+        <div className="pointer-events-none absolute right-6 top-20 z-10 hidden items-center gap-3 md:right-10 md:top-24 md:flex">
           <span className="font-mono text-[10px] uppercase tracking-[0.34em] text-zinc-300 md:text-[11px]">
             Confiança
           </span>

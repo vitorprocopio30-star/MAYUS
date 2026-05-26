@@ -44,6 +44,9 @@ next-env.d.ts
 nul
 mayus_estrutura.txt
 mayus_supabase_types.txt
+analysis*.txt
+font_comparison_mockup.png
+/public/font_comparison_mockup.png
 opencode.json
 *.log
 dev_log.txt
@@ -56,5 +59,6 @@ server_output_fresh.txt
 save_meta_token.mjs
 .vercel-api-key
 .codex-test/
+.codex/
 
 .vercel

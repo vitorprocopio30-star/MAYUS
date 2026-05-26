@@ -124,9 +124,35 @@ describe("draft-versions", () => {
   });
 
   it("usa a RPC atomica para aprovar ou publicar versao", async () => {
+    const learningEventInsertMock = vi.fn().mockResolvedValue({ error: null });
+    fromMock.mockImplementation((table: string) => {
+      if (table === "learning_events") return { insert: learningEventInsertMock };
+      throw new Error(`Tabela inesperada no teste: ${table}`);
+    });
     rpcMock.mockReturnValue({
       single: vi.fn().mockResolvedValue({
-        data: { id: "version-1", workflow_status: "published" },
+        data: {
+          id: "version-1",
+          process_task_id: "task-1",
+          version_number: 2,
+          workflow_status: "published",
+          parent_version_id: "version-0",
+          piece_type: "contestacao",
+          piece_label: "Contestacao",
+          practice_area: "previdenciario",
+          metadata: {
+            edit_source: "human_editor",
+            learning_loop_capture: {
+              categories: ["citations_enriched"],
+              changeRatio: 0.27,
+              sourceKind: "parent_version",
+            },
+            promotion_candidate: {
+              candidateTypes: ["citation_policy"],
+              confidence: "low",
+            },
+          },
+        },
         error: null,
       }),
     });
@@ -146,7 +172,22 @@ describe("draft-versions", () => {
       p_action: "publish",
       p_actor_id: "user-1",
     });
-    expect(result).toEqual({ id: "version-1", workflow_status: "published" });
+    expect(learningEventInsertMock).toHaveBeenCalledWith(expect.objectContaining({
+      tenant_id: "tenant-1",
+      event_type: "legal_piece_published",
+      source_module: "lex_draft_versions",
+      payload: expect.objectContaining({
+        process_task_id: "task-1",
+        draft_version_id: "version-1",
+        piece_type: "contestacao",
+        practice_area: "previdenciario",
+        signal_categories: ["citations_enriched"],
+        candidate_types: ["citation_policy"],
+        has_human_revision: true,
+        published: true,
+      }),
+    }));
+    expect(result).toEqual(expect.objectContaining({ id: "version-1", workflow_status: "published" }));
   });
 
   it("preserva erro semantico de stale draft ao transicionar workflow", async () => {
@@ -364,6 +405,8 @@ describe("draft-versions", () => {
     const versionEqTenantMock = vi.fn(() => ({ eq: versionEqTaskMock }));
     const versionSelectMock = vi.fn(() => ({ eq: versionEqTenantMock }));
 
+    const learningEventInsertMock = vi.fn().mockResolvedValue({ error: null });
+
     fromMock.mockImplementation((table: string) => {
       if (table === "process_draft_versions") {
         return { select: versionSelectMock };
@@ -371,6 +414,10 @@ describe("draft-versions", () => {
 
       if (table === "process_document_memory") {
         return { select: memorySelectMock };
+      }
+
+      if (table === "learning_events") {
+        return { insert: learningEventInsertMock };
       }
 
       throw new Error(`Tabela inesperada no teste: ${table}`);
@@ -424,6 +471,23 @@ describe("draft-versions", () => {
           paragraphCount: expect.any(Number),
           sectionCount: expect.any(Number),
         }),
+      }),
+    }));
+    expect(learningEventInsertMock).toHaveBeenCalledWith(expect.objectContaining({
+      tenant_id: "tenant-1",
+      event_type: "human_revision_delta_recorded",
+      source_module: "lex_draft_versions",
+      created_by: "user-1",
+      payload: expect.objectContaining({
+        process_task_id: "task-1",
+        draft_version_id: "version-2",
+        base_version_id: "version-1",
+        base_version_number: 1,
+        piece_type: "contestacao",
+        practice_area: "previdenciario",
+        signal_categories: expect.arrayContaining(["citations_enriched"]),
+        candidate_types: expect.arrayContaining(["citation_policy"]),
+        edited_in_surface: "documentos",
       }),
     }));
     expect(result).toEqual({ id: "version-2", version_number: 2 });

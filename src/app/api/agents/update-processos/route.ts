@@ -10,8 +10,131 @@ const adminSupabase = createClient(
   process.env.SUPABASE_SERVICE_ROLE_KEY!
 )
 
+const DEFAULT_BATCH_SIZE = 50
+const MAX_BATCH_SIZE = 100
+
+function batchSize(req: NextRequest) {
+  const parsed = Number(req.nextUrl.searchParams.get('limit') || DEFAULT_BATCH_SIZE)
+  if (!Number.isFinite(parsed)) return DEFAULT_BATCH_SIZE
+  return Math.max(1, Math.min(MAX_BATCH_SIZE, Math.trunc(parsed)))
+}
+
+function text(value: unknown) {
+  return typeof value === 'string' && value.trim() ? value.trim() : null
+}
+
+function isRecord(value: unknown): value is Record<string, any> {
+  return Boolean(value) && typeof value === 'object' && !Array.isArray(value)
+}
+
+function asArray(value: unknown) {
+  return Array.isArray(value) ? value : []
+}
+
+function normalizeDate(value: unknown) {
+  const raw = text(value)
+  if (!raw) return null
+  const parsed = new Date(raw)
+  if (Number.isNaN(parsed.getTime())) return raw
+  return parsed.toISOString()
+}
+
+function movementId(movement: Record<string, any>) {
+  return text(movement.id)
+    || text(movement.id_movimentacao)
+    || text(movement.movimentacao_id)
+    || text(movement.escavador_movimentacao_id)
+}
+
+function movementDate(movement: Record<string, any>) {
+  return normalizeDate(
+    movement.data
+    || movement.data_movimentacao
+    || movement.dataHora
+    || movement.data_hora
+    || movement.created_at
+  )
+}
+
+function movementText(movement: Record<string, any>) {
+  return text(movement.conteudo)
+    || text(movement.descricao)
+    || text(movement.texto)
+    || text(movement.movimento)
+    || text(movement.nome)
+}
+
+function collectMovements(dados: any) {
+  const fontes = asArray(dados?.fontes)
+  return [
+    ...asArray(dados?.movimentacoes),
+    ...fontes.flatMap((fonte: any) => asArray(fonte?.movimentacoes)),
+    ...fontes.flatMap((fonte: any) => asArray(fonte?.capa?.movimentacoes)),
+  ].filter(isRecord)
+}
+
+function latestMovement(dados: any) {
+  const movements = collectMovements(dados)
+    .map((movement) => ({
+      raw: movement,
+      id: movementId(movement),
+      data: movementDate(movement),
+      conteudo: movementText(movement),
+    }))
+    .filter((movement) => movement.data || movement.conteudo)
+    .sort((a, b) => {
+      const aTime = a.data ? new Date(a.data).getTime() : 0
+      const bTime = b.data ? new Date(b.data).getTime() : 0
+      return bTime - aTime
+    })
+
+  return movements[0] || null
+}
+
+function mergeQueuePayload(payload: unknown, patch: Record<string, unknown>) {
+  return {
+    ...(isRecord(payload) ? payload : {}),
+    update_agent: {
+      ...(isRecord((payload as any)?.update_agent) ? (payload as any).update_agent : {}),
+      ...patch,
+    },
+  }
+}
+
+async function persistMovementIfNew(params: {
+  tenantId: string
+  numeroCnj: string
+  movement: ReturnType<typeof latestMovement>
+}) {
+  if (!params.movement?.id || !params.movement.conteudo) return null
+
+  const { data: existing } = await adminSupabase
+    .from('process_movimentacoes')
+    .select('id')
+    .eq('tenant_id', params.tenantId)
+    .eq('escavador_movimentacao_id', params.movement.id)
+    .maybeSingle()
+
+  if (existing?.id) return existing.id
+
+  const { data } = await adminSupabase
+    .from('process_movimentacoes')
+    .insert({
+      tenant_id: params.tenantId,
+      numero_cnj: params.numeroCnj,
+      data: params.movement.data,
+      conteudo: params.movement.conteudo,
+      fonte: 'escavador_update_agent',
+      escavador_movimentacao_id: params.movement.id,
+      tipo_evento: 'movimentacao',
+    })
+    .select('id')
+    .maybeSingle()
+
+  return data?.id || null
+}
+
 export async function GET(req: NextRequest) {
-  // Segurança: cron secret em produção
   const cronSecret = req.headers.get('x-cron-secret')
   if (
     cronSecret !== process.env.CRON_SECRET &&
@@ -20,80 +143,129 @@ export async function GET(req: NextRequest) {
     return NextResponse.json({ error: 'Forbidden' }, { status: 403 })
   }
 
-  // Busca até 10 itens pendentes por execução
-  const { data: fila } = await adminSupabase
+  const limit = batchSize(req)
+  const { data: fila, error: filaError } = await adminSupabase
     .from('process_update_queue')
-    .select('id, numero_cnj, tenant_id')
+    .select('id, numero_cnj, tenant_id, payload')
     .eq('status', 'PENDENTE')
-    .limit(10)
+    .order('created_at', { ascending: true })
+    .limit(limit)
 
-  if (!fila?.length) return NextResponse.json({ ok: true, processados: 0 })
+  if (filaError) {
+    return NextResponse.json({ ok: false, error: filaError.message }, { status: 500 })
+  }
 
-  let processados = 0
+  if (!fila?.length) return NextResponse.json({ ok: true, picked: 0, processed: 0, failed: 0, limit })
+
+  let processed = 0
+  let failed = 0
 
   for (const item of fila) {
+    const processedAt = new Date().toISOString()
+    let itemSucceeded = false
+    let itemError: string | null = null
+
     try {
-      // Marca como processando (evita processamento duplo)
       await adminSupabase
         .from('process_update_queue')
         .update({ status: 'PROCESSANDO' })
         .eq('id', item.id)
 
-      // Busca todos os tenants que monitoram esse CNJ
-      const { data: processos } = await adminSupabase
+      let processQuery = adminSupabase
         .from('monitored_processes')
-        .select('id, tenant_id')
+        .select('id, tenant_id, numero_processo')
         .eq('numero_processo', item.numero_cnj)
 
+      if (item.tenant_id) {
+        processQuery = processQuery.eq('tenant_id', item.tenant_id)
+      }
+
+      const { data: processos } = await processQuery
+
+      if (!processos?.length) {
+        itemError = 'monitored_process_not_found'
+      }
+
       for (const processo of processos ?? []) {
-        // Busca integração do tenant
         const { apiKey } = await requireTenantApiKey(processo.tenant_id, 'escavador')
+        if (!apiKey) {
+          itemError = 'missing_escavador_api_key'
+          continue
+        }
 
-        if (!apiKey) continue
-
-        // Busca dados frescos do processo no Escavador
         const dados = await escavadorFetch(
           `/processos/numero_cnj/${encodeURIComponent(item.numero_cnj)}`,
           apiKey,
           processo.tenant_id
         ).catch(() => null)
 
-        if (!dados) continue
+        if (!dados) {
+          itemError = 'escavador_fetch_failed'
+          continue
+        }
 
         const fontes = dados.fontes ?? []
-        const fonteTrib =
-          fontes.find((f: any) => f.tribunal?.sigla) ?? fontes[0] ?? {}
+        const fonteTrib = fontes.find((f: any) => f.tribunal?.sigla) ?? fontes[0] ?? {}
         const capa = fonteTrib?.capa ?? {}
+        const latest = latestMovement(dados)
+        const latestText = latest?.conteudo || text(dados.ultima_movimentacao)
+        const latestDate = latest?.data || normalizeDate(dados.data_ultima_movimentacao)
 
         await adminSupabase
           .from('monitored_processes')
           .update({
             status: capa.status_predito ?? 'ATIVO',
-            tribunal: dados.unidade_origem?.tribunal_sigla ?? '—',
-            assunto: capa.assunto_principal_normalizado?.nome ?? '—',
-            ultima_movimentacao: dados.data_ultima_movimentacao ?? '—',
-            updated_at: new Date().toISOString()
+            tribunal: dados.unidade_origem?.tribunal_sigla ?? fonteTrib?.tribunal?.sigla ?? '-',
+            assunto: capa.assunto_principal_normalizado?.nome ?? capa.assunto ?? '-',
+            ultima_movimentacao: latestText || latestDate || '-',
+            data_ultima_movimentacao: latestDate,
+            ultima_movimentacao_texto: latestText,
+            updated_at: processedAt,
           })
           .eq('id', processo.id)
+          .eq('tenant_id', processo.tenant_id)
+
+        await persistMovementIfNew({
+          tenantId: processo.tenant_id,
+          numeroCnj: item.numero_cnj,
+          movement: latest,
+        })
+
+        itemSucceeded = true
       }
 
       await adminSupabase
         .from('process_update_queue')
         .update({
-          status: 'CONCLUIDO',
-          processed_at: new Date().toISOString()
+          status: itemSucceeded ? 'CONCLUIDO' : 'ERRO',
+          processed_at: processedAt,
+          payload: mergeQueuePayload(item.payload, {
+            status: itemSucceeded ? 'ok' : 'error',
+            error: itemSucceeded ? null : itemError || 'unknown_error',
+            processed_at: processedAt,
+          }),
         })
         .eq('id', item.id)
 
-      processados++
-    } catch (e) {
-      console.error('[UPDATE_AGENT] Erro:', e)
+      if (itemSucceeded) processed++
+      else failed++
+    } catch (error) {
+      failed++
+      console.error('[UPDATE_AGENT] Erro:', error)
       await adminSupabase
         .from('process_update_queue')
-        .update({ status: 'ERRO' })
+        .update({
+          status: 'ERRO',
+          processed_at: processedAt,
+          payload: mergeQueuePayload(item.payload, {
+            status: 'error',
+            error: error instanceof Error ? error.message.slice(0, 300) : 'unknown_error',
+            processed_at: processedAt,
+          }),
+        })
         .eq('id', item.id)
     }
   }
 
-  return NextResponse.json({ ok: true, processados })
+  return NextResponse.json({ ok: true, picked: fila.length, processed, failed, limit })
 }

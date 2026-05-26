@@ -620,6 +620,25 @@ export default function WhatsAppChatPremiumPage() {
           body: JSON.stringify({
              contact_id: activeContact.id,
              text: textToSend,
+            mayus_draft_context: mayusDraft?.suggested_reply
+              ? {
+                suggested_reply: mayusDraft.suggested_reply,
+                reply_source: mayusDraft.reply_source,
+                model_used: mayusDraft.model_used,
+                mode: mayusDraft.mode,
+                intent: mayusDraft.mayus_operating_partner?.intent || mayusDraft.sales_llm?.intent || null,
+                risk_flags: mayusDraft.risk_flags || [],
+                may_auto_send: mayusDraft.may_auto_send,
+                requires_human_review: mayusDraft.requires_human_review,
+                conversation_state: mayusDraft.conversation_state || mayusDraft.mayus_operating_partner?.conversation_state || null,
+                support_summary: mayusDraft.support_summary || mayusDraft.mayus_operating_partner?.support_summary || null,
+                conversation_classification: mayusDraft.conversation_classification || mayusDraft.mayus_operating_partner?.conversation_classification || null,
+                agentic_governance: mayusDraft.agentic_governance || mayusDraft.mayus_operating_partner?.agentic_governance || null,
+                openclaw_policy: mayusDraft.openclaw_policy || mayusDraft.mayus_operating_partner?.openclaw_policy || null,
+                hermes_trajectory: mayusDraft.hermes_trajectory || mayusDraft.mayus_operating_partner?.hermes_trajectory || null,
+                paperclip_mission: mayusDraft.paperclip_mission || mayusDraft.mayus_operating_partner?.paperclip_mission || null,
+              }
+              : null,
             ...(uploadedMedia || {}),
           })
        });
@@ -627,6 +646,7 @@ export default function WhatsAppChatPremiumPage() {
 
        toast.success("Mensagem disparada com sucesso.");
        setSelectedFile(null);
+       setMayusDraft(null);
        fetchContacts();
     } catch (e: any) {
        toast.error("Falha : " + e.message);
@@ -1285,6 +1305,22 @@ export default function WhatsAppChatPremiumPage() {
                                <span className="text-[9px] text-gray-600">({(selectedFile.size / 1024).toFixed(1)} KB)</span>
                              </div>
                              <button onClick={() => setSelectedFile(null)} className="text-gray-500 hover:text-white"><X size={14} /></button>
+                           </div>
+                         )}
+
+                         {mayusDraft?.suggested_reply && (
+                           <div className="mx-4 mt-2 rounded-xl border border-[#CCA761]/20 bg-[#CCA761]/10 px-3 py-2 text-[10px] text-[#f0d9a6]">
+                             <div className="flex items-center justify-between gap-3">
+                               <span className="font-black uppercase tracking-widest">MAYUS</span>
+                               <span className="truncate text-[9px] uppercase tracking-widest text-[#CCA761]">
+                                 {(mayusDraft.conversation_classification || mayusDraft.mayus_operating_partner?.conversation_classification)?.class || "rascunho supervisionado"}
+                               </span>
+                             </div>
+                             <p className="mt-1 line-clamp-2 text-gray-300">
+                               {(mayusDraft.agentic_governance || mayusDraft.mayus_operating_partner?.agentic_governance)?.openclaw_policy?.reason
+                                 || mayusDraft.internal_note
+                                 || "Resposta preparada com supervisao e rastro operacional."}
+                             </p>
                            </div>
                          )}
 

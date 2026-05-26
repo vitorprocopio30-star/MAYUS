@@ -19,7 +19,20 @@ import {
   getLegalCaseContextSnapshot,
   type LegalCaseContextSnapshot,
 } from "@/lib/lex/case-context";
-import { buildProcessMissionContext } from "@/lib/lex/process-mission-context";
+import {
+  buildLegalOperatorState,
+  buildProcessMissionContext,
+  type LegalOperatorState,
+} from "@/lib/lex/process-mission-context";
+import {
+  createHermesMissionTrajectory,
+  recordHermesMissionApproval,
+  recordHermesMissionArtifact,
+  recordHermesMissionBlock,
+  recordHermesMissionDecision,
+  recordHermesMissionResult,
+  recordHermesMissionStep,
+} from "@/lib/agent/runtime/trajectory";
 import {
   buildCaseBrainInsights,
   buildCaseBrainInsightsReply,
@@ -110,9 +123,14 @@ import {
   buildOfficeSetupConversationArtifactMetadata,
   buildOfficeSetupConversationPlan,
   type OfficeKnowledgeProfile,
+  type OfficeOperationalMethodology,
   type OfficePracticeAreaPlaybook,
   type OfficeSetupConversationInput,
 } from "@/lib/setup/office-setup-conversation";
+import {
+  buildTenantOperationalMethodologyContext,
+  type TenantOperationalMethodologyContext,
+} from "@/lib/setup/tenant-operational-methodology";
 import {
   buildMemoryPromotionEventPayload,
   buildMemoryPromotionProposal,
@@ -134,6 +152,12 @@ import {
   buildCollectionsFollowupPlan,
   type CollectionsFollowupInput,
 } from "@/lib/finance/collections-followup";
+import { loadTenantFinanceSummary } from "@/lib/finance/tenant-finance-summary";
+import { buildManagementDataReadiness } from "@/lib/management/management-data-readiness";
+import {
+  buildManagementIntelligenceBrief,
+  buildManagementIntelligenceReply,
+} from "@/lib/management/management-intelligence-brief";
 import {
   buildMarketingCopywriterArtifactMetadata,
   buildMarketingCopywriterDraft,
@@ -172,6 +196,15 @@ export interface DispatchCapabilityResult {
   data?: unknown;
   outputPayload?: Record<string, unknown>;
 }
+
+type AgentApprovalGateRow = {
+  skill_invoked: string | null;
+  approval_status: string | null;
+  approved_by: string | null;
+  approved_at: string | null;
+  approval_context: Record<string, unknown> | null;
+  pending_execution_payload: Record<string, unknown> | null;
+};
 
 type BillingCrmTaskContext = {
   id: string;
@@ -1283,6 +1316,76 @@ async function runFinanceCollectionsFollowup(input: DispatchCapabilityInput): Pr
   };
 }
 
+async function runManagementIntelligenceBrief(input: DispatchCapabilityInput): Promise<DispatchCapabilityResult> {
+  const request =
+    getStringValue(input.entities.request) ||
+    input.history?.slice().reverse().find((item) => item.role === "user")?.content ||
+    "Analise de gestao do escritorio";
+  const dataErrors: string[] = [];
+  let financeSummary = null;
+
+  try {
+    financeSummary = await loadTenantFinanceSummary({
+      supabase: serviceSupabase,
+      tenantId: input.tenantId,
+    });
+  } catch (error: any) {
+    dataErrors.push(`Falha ao carregar dados financeiros/CRM: ${String(error?.message || error || "erro desconhecido").slice(0, 160)}`);
+  }
+
+  const readiness = buildManagementDataReadiness({
+    tenantId: input.tenantId,
+    financeSummary,
+    dataErrors,
+  });
+  const brief = buildManagementIntelligenceBrief({
+    request,
+    readiness,
+    financeSummary,
+  });
+  const reply = buildManagementIntelligenceReply(brief);
+
+  await registerArtifact(input, {
+    artifactType: "management_intelligence_brief",
+    title: "Inteligencia de gestao - brief supervisionado",
+    mimeType: "application/json",
+    dedupeKey: input.auditLogId
+      ? `management-intelligence:${input.auditLogId}`
+      : `management-intelligence:${input.tenantId}:${readiness.status}`,
+    metadata: brief,
+  });
+
+  await registerLearningEvent(input, "management_intelligence_brief_created", {
+    readiness_status: readiness.status,
+    readiness_confidence: readiness.confidence,
+    data_sources: readiness.availableDataSources,
+    missing_data_sources: readiness.missingDataSources,
+    concept_terms: brief.conceptCards.map((card) => card.term),
+    external_side_effects_blocked: true,
+    strategic_decision_blocked: true,
+    tenant_only: true,
+  });
+
+  return {
+    status: "executed",
+    reply,
+    outputPayload: {
+      auditLogId: input.auditLogId || null,
+      handler_type: input.handlerType,
+      artifact_type: brief.artifactType,
+      readiness_status: readiness.status,
+      readiness_confidence: readiness.confidence,
+      data_sources: readiness.availableDataSources,
+      missing_data_sources: readiness.missingDataSources,
+      external_side_effects_blocked: true,
+      strategic_decision_blocked: true,
+    },
+    data: {
+      brief,
+    },
+  };
+}
+
 async function runKanbanUpdate(input: DispatchCapabilityInput): Promise<DispatchCapabilityResult> {
   const { data: card } = await serviceSupabase
     .from("process_tasks")
@@ -1775,6 +1878,7 @@ function buildSalesProfileSetupReply(params: {
 
 function buildOfficeSetupConversationReply(params: {
   status: string;
+  methodologyStatus: string;
   completeness: number;
   officeName: string | null;
   practiceAreaCount: number;
@@ -1783,8 +1887,9 @@ function buildOfficeSetupConversationReply(params: {
   persisted: boolean;
 }) {
   return [
-    "## Onboarding operacional do escritorio",
+    "## Metodologia operacional do escritorio",
     `- Status: ${params.status.replaceAll("_", " ")}`,
+    `- Metodologia: ${params.methodologyStatus.replaceAll("_", " ")}`,
     `- Perfil operacional: ${params.completeness}% completo`,
     `- Escritorio: ${params.officeName || "ainda investigando"}`,
     `- Areas cadastradas: ${params.practiceAreaCount}`,
@@ -1792,6 +1897,19 @@ function buildOfficeSetupConversationReply(params: {
     `- Gravado nas configuracoes: ${params.persisted ? "sim" : "ainda nao"}`,
     `- Proxima pergunta: ${params.nextQuestion}`,
   ].join("\n");
+}
+
+function getOfficeOperationalMethodologyEventType(status: OfficeOperationalMethodology["status"]) {
+  switch (status) {
+    case "approved":
+      return "office_operational_methodology_approved";
+    case "recommended":
+      return "office_operational_methodology_recommended";
+    case "rejected":
+      return "office_operational_methodology_rejected";
+    default:
+      return "office_operational_methodology_created";
+  }
 }
 
 function buildSalesConsultationInputFromEntities(entities: Record<string, string>): SalesConsultationInput {
@@ -2056,6 +2174,10 @@ async function loadTenantOfficeKnowledgeProfile(tenantId: string): Promise<Offic
       status: getStringValue(profile.status),
       office_name: getStringValue(profile.office_name),
       practice_areas: list(profile.practice_areas),
+      ideal_client: getStringValue(profile.ideal_client),
+      unique_value_proposition: getStringValue(profile.unique_value_proposition),
+      value_pillars: list(profile.value_pillars),
+      anti_client_signals: list(profile.anti_client_signals),
       triage_rules: list(profile.triage_rules),
       human_handoff_rules: list(profile.human_handoff_rules),
       communication_tone: getStringValue(profile.communication_tone),
@@ -2077,7 +2199,8 @@ async function loadTenantOfficeKnowledgeProfile(tenantId: string): Promise<Offic
 
 async function persistTenantOfficeKnowledgeProfile(params: {
   tenantId: string;
-  profile: OfficeKnowledgeProfile & { status?: string | null };
+  profile?: (OfficeKnowledgeProfile & { status?: string | null }) | null;
+  operationalMethodology?: OfficeOperationalMethodology | null;
 }) {
   const { data } = await serviceSupabase
     .from("tenant_settings")
@@ -2089,39 +2212,76 @@ async function persistTenantOfficeKnowledgeProfile(params: {
     ? data.ai_features
     : {};
 
-  const officeProfile = {
-    office_name: params.profile.office_name || null,
-    practice_areas: params.profile.practice_areas || [],
-    triage_rules: params.profile.triage_rules || [],
-    human_handoff_rules: params.profile.human_handoff_rules || [],
-    communication_tone: params.profile.communication_tone || null,
-    required_documents_by_case: params.profile.required_documents_by_case || [],
-    forbidden_claims: params.profile.forbidden_claims || [],
-    pricing_policy: params.profile.pricing_policy || null,
-    response_sla: params.profile.response_sla || null,
-    departments: params.profile.departments || [],
-    permission_policy: params.profile.permission_policy || null,
-    calendar_policy: params.profile.calendar_policy || null,
-    finance_policy: params.profile.finance_policy || null,
-    playbook_notes: params.profile.playbook_notes || null,
-    practice_area_playbooks: params.profile.practice_area_playbooks || [],
-    status: params.profile.status || "draft",
-    updated_at: new Date().toISOString(),
+  const officeProfile = params.profile
+    ? {
+      office_name: params.profile.office_name || null,
+      practice_areas: params.profile.practice_areas || [],
+      ideal_client: params.profile.ideal_client || null,
+      unique_value_proposition: params.profile.unique_value_proposition || null,
+      value_pillars: params.profile.value_pillars || [],
+      anti_client_signals: params.profile.anti_client_signals || [],
+      triage_rules: params.profile.triage_rules || [],
+      human_handoff_rules: params.profile.human_handoff_rules || [],
+      communication_tone: params.profile.communication_tone || null,
+      required_documents_by_case: params.profile.required_documents_by_case || [],
+      forbidden_claims: params.profile.forbidden_claims || [],
+      pricing_policy: params.profile.pricing_policy || null,
+      response_sla: params.profile.response_sla || null,
+      departments: params.profile.departments || [],
+      permission_policy: params.profile.permission_policy || null,
+      calendar_policy: params.profile.calendar_policy || null,
+      finance_policy: params.profile.finance_policy || null,
+      playbook_notes: params.profile.playbook_notes || null,
+      practice_area_playbooks: params.profile.practice_area_playbooks || [],
+      status: params.profile.status || "draft",
+      updated_at: new Date().toISOString(),
+    }
+    : null;
+
+  const nextAiFeatures = {
+    ...aiFeatures,
+    ...(officeProfile ? { office_knowledge_profile: officeProfile } : {}),
+    ...(params.operationalMethodology ? { operational_methodology: params.operationalMethodology } : {}),
   };
 
   const { error } = await serviceSupabase
     .from("tenant_settings")
     .upsert({
       tenant_id: params.tenantId,
-      ai_features: {
-        ...aiFeatures,
-        office_knowledge_profile: officeProfile,
-      },
+      ai_features: nextAiFeatures,
       updated_at: new Date().toISOString(),
     }, { onConflict: "tenant_id" });
 
   if (error) throw error;
-  return officeProfile;
+  return {
+    officeProfile,
+    operationalMethodology: params.operationalMethodology || null,
+  };
+}
+
+async function loadTenantOperationalMethodologyContext(
+  tenantId: string,
+): Promise<TenantOperationalMethodologyContext | null> {
+  try {
+    const query = serviceSupabase.from("tenant_settings") as any;
+    if (!query || typeof query.select !== "function") return null;
+
+    const { data, error } = await query
+      .select("ai_features")
+      .eq("tenant_id", tenantId)
+      .maybeSingle();
+
+    if (error) return null;
+    const aiFeatures = data?.ai_features && typeof data.ai_features === "object" && !Array.isArray(data.ai_features)
+      ? data.ai_features
+      : {};
+
+    return buildTenantOperationalMethodologyContext(
+      aiFeatures.operational_methodology as OfficeOperationalMethodology | null,
+    );
+  } catch {
+    return null;
+  }
 }
 
 function buildOfficeSetupMemoryCandidates(profile: OfficeKnowledgeProfile) {
@@ -2633,18 +2793,21 @@ async function runSetupOfficeProfileConversation(input: DispatchCapabilityInput)
   });
 
   let persisted = false;
+  let methodologyPersisted = false;
   let persistError: string | null = null;
   let memoryProposalCount = 0;
   let memoryProposalError: string | null = null;
-  if (plan.shouldPersist) {
+  if (plan.shouldPersist || plan.shouldPersistMethodology) {
     try {
       await persistTenantOfficeKnowledgeProfile({
         tenantId: input.tenantId,
-        profile: plan.profile,
+        profile: plan.shouldPersist ? plan.profile : null,
+        operationalMethodology: plan.shouldPersistMethodology ? plan.operationalMethodology : null,
       });
-      persisted = true;
+      persisted = plan.shouldPersist;
+      methodologyPersisted = plan.shouldPersistMethodology;
     } catch (error: any) {
-      persistError = error?.message || "Nao foi possivel gravar o perfil operacional agora.";
+      persistError = error?.message || "Nao foi possivel gravar a metodologia operacional agora.";
     }
   }
 
@@ -2659,10 +2822,40 @@ async function runSetupOfficeProfileConversation(input: DispatchCapabilityInput)
   const metadata = {
     ...buildOfficeSetupConversationArtifactMetadata(plan),
     persisted,
+    methodology_persisted: methodologyPersisted,
     persist_error: persistError,
     memory_proposals_created: memoryProposalCount,
     memory_proposal_error: memoryProposalError,
   };
+
+  const methodologyMetadata = {
+    summary: plan.summary,
+    operational_methodology: plan.operationalMethodology,
+    methodology_status: plan.operationalMethodology.status,
+    setup_status: plan.status,
+    setup_completeness: plan.completeness,
+    office_name: plan.profile.office_name,
+    practice_areas: plan.profile.practice_areas,
+    area_method_count: plan.operationalMethodology.area_methods.length,
+    methodology_base_used: plan.operationalMethodology.intake.methodology_base_used,
+    improvement_rules: plan.operationalMethodology.improvement_rules,
+    internet_policy: plan.operationalMethodology.internet_policy,
+    persisted: methodologyPersisted,
+    profile_persisted: persisted,
+    persist_error: persistError,
+    requires_human_review: plan.requiresHumanReview,
+    external_side_effects_blocked: plan.externalSideEffectsBlocked,
+  };
+
+  await registerArtifact(input, {
+    artifactType: "office_operational_methodology",
+    title: "Metodologia operacional do escritorio",
+    mimeType: "application/json",
+    dedupeKey: input.auditLogId
+      ? `office-operational-methodology:${input.auditLogId}`
+      : `office-operational-methodology:${input.tenantId}:${plan.operationalMethodology.status}`,
+    metadata: methodologyMetadata,
+  });
 
   await registerArtifact(input, {
     artifactType: "office_setup_conversation",
@@ -2674,10 +2867,28 @@ async function runSetupOfficeProfileConversation(input: DispatchCapabilityInput)
     metadata,
   });
 
+  await registerLearningEvent(input, getOfficeOperationalMethodologyEventType(plan.operationalMethodology.status), {
+    summary: plan.summary,
+    office_name: plan.profile.office_name,
+    methodology_status: plan.operationalMethodology.status,
+    setup_status: plan.status,
+    setup_completeness: plan.completeness,
+    practice_area_count: plan.profile.practice_areas.length,
+    area_method_count: plan.operationalMethodology.area_methods.length,
+    methodology_base_used: plan.operationalMethodology.intake.methodology_base_used,
+    persisted: methodologyPersisted,
+    profile_persisted: persisted,
+    persist_error: persistError,
+    requires_human_review: plan.requiresHumanReview,
+    external_side_effects_blocked: plan.externalSideEffectsBlocked,
+  });
+
   await registerLearningEvent(input, persisted ? "office_setup_profile_configured" : "office_setup_conversation_created", {
     summary: plan.summary,
     office_name: plan.profile.office_name,
     practice_area_count: plan.profile.practice_areas.length,
+    methodology_status: plan.operationalMethodology.status,
+    methodology_persisted: methodologyPersisted,
     setup_status: plan.status,
     setup_completeness: plan.completeness,
     missing_signal_count: plan.missingSignals.length,
@@ -2692,6 +2903,7 @@ async function runSetupOfficeProfileConversation(input: DispatchCapabilityInput)
     status: persistError ? "failed" : "executed",
     reply: buildOfficeSetupConversationReply({
       status: plan.status,
+      methodologyStatus: plan.operationalMethodology.status,
       completeness: plan.completeness,
       officeName: plan.profile.office_name,
       practiceAreaCount: plan.profile.practice_areas.length,
@@ -2703,12 +2915,19 @@ async function runSetupOfficeProfileConversation(input: DispatchCapabilityInput)
       auditLogId: input.auditLogId || null,
       handler_type: input.handlerType,
       setup_status: plan.status,
+      methodology_status: plan.operationalMethodology.status,
       setup_completeness: plan.completeness,
       office_setup_persisted: persisted,
+      operational_methodology_persisted: methodologyPersisted,
       office_setup_persist_error: persistError,
       memory_proposals_created: memoryProposalCount,
       memory_proposal_error: memoryProposalError,
       missing_signal_count: plan.missingSignals.length,
+      area_method_count: plan.operationalMethodology.area_methods.length,
+      methodology_base_used: plan.operationalMethodology.intake.methodology_base_used,
+      artifact_type: "office_operational_methodology",
+      legacy_artifact_type: "office_setup_conversation",
+      event_type: getOfficeOperationalMethodologyEventType(plan.operationalMethodology.status),
       next_question: plan.nextQuestion,
       requires_human_review: plan.requiresHumanReview,
       external_side_effects_blocked: plan.externalSideEffectsBlocked,
@@ -2716,6 +2935,7 @@ async function runSetupOfficeProfileConversation(input: DispatchCapabilityInput)
     data: {
       plan,
       persisted,
+      methodologyPersisted,
       memoryProposalCount,
     },
   };
@@ -3422,7 +3642,15 @@ async function runLegalCaseContext(input: DispatchCapabilityInput): Promise<Disp
     tenantId: input.tenantId,
     entities: input.entities,
   });
-  const processMissionContext = buildProcessMissionContext(snapshot);
+  const processMissionContext = await buildTenantProcessMissionContext(input, snapshot);
+  const legalOperatorState = buildLegalOperatorState(processMissionContext);
+  const processMissionBetaContract = buildProcessMissionBetaContract(processMissionContext, {
+    legalOperatorState,
+    artifactType: "legal_case_context",
+    capabilityName: input.capabilityName,
+    handlerType: input.handlerType,
+    status: "planned",
+  });
   const reply = buildLegalCaseContextReply(snapshot);
   const summary = `Contexto juridico resolvido para ${snapshot.processTask.processNumber || snapshot.processTask.title}.`;
 
@@ -3447,7 +3675,10 @@ async function runLegalCaseContext(input: DispatchCapabilityInput): Promise<Disp
       first_draft_status: snapshot.firstDraft.status,
       first_draft_stale: snapshot.firstDraft.isStale,
       first_draft_artifact_id: snapshot.firstDraft.artifactId,
+      ...buildOperationalMethodologyPayload(processMissionContext),
       process_mission_context: processMissionContext,
+      legal_operator_state: legalOperatorState,
+      ...processMissionBetaContract,
     },
   });
 
@@ -3462,6 +3693,9 @@ async function runLegalCaseContext(input: DispatchCapabilityInput): Promise<Disp
     first_draft_stale: snapshot.firstDraft.isStale,
     process_mission_confidence: processMissionContext.confidence,
     process_mission_recommended_action: processMissionContext.recommendedAction,
+    ...buildOperationalMethodologyPayload(processMissionContext),
+    legal_operator_state: legalOperatorState,
+    ...processMissionBetaContract,
   });
 
   return {
@@ -3478,6 +3712,9 @@ async function runLegalCaseContext(input: DispatchCapabilityInput): Promise<Disp
       process_mission_confidence: processMissionContext.confidence,
       process_mission_recommended_action: processMissionContext.recommendedAction,
       process_mission_goal: processMissionContext.missionGoal,
+      ...buildOperationalMethodologyPayload(processMissionContext),
+      legal_operator_state: legalOperatorState,
+      ...processMissionBetaContract,
     },
     data: snapshot,
   };
@@ -3493,6 +3730,10 @@ function buildOfficeSetupConversationInputFromEntities(entities: Record<string, 
   return {
     officeName: getStringValue(entities.office_name) || getStringValue(entities.firm_name),
     practiceAreas: splitEntityList(entities.practice_areas) || splitEntityList(entities.legal_areas),
+    idealClient: getStringValue(entities.ideal_client),
+    uniqueValueProposition: getStringValue(entities.unique_value_proposition),
+    valuePillars: splitEntityList(entities.value_pillars),
+    antiClientSignals: splitEntityList(entities.anti_client_signals),
     communicationTone: getStringValue(entities.communication_tone) || getStringValue(entities.tone),
     triageRules: splitEntityList(entities.triage_rules),
     humanHandoffRules: splitEntityList(entities.human_handoff_rules) || splitEntityList(entities.handoff_rules),
@@ -3506,6 +3747,29 @@ function buildOfficeSetupConversationInputFromEntities(entities: Record<string, 
     financePolicy: getStringValue(entities.finance_policy),
     playbookNotes: getStringValue(entities.playbook_notes),
     confirmationText: getStringValue(entities.confirmation) || getStringValue(entities.confirm_save),
+  };
+}
+
+async function buildTenantProcessMissionContext(
+  input: DispatchCapabilityInput,
+  snapshot: LegalCaseContextSnapshot,
+) {
+  const operationalMethodology = await loadTenantOperationalMethodologyContext(input.tenantId);
+  return buildProcessMissionContext(snapshot, { operationalMethodology });
+}
+
+function buildOperationalMethodologyPayload(context: ReturnType<typeof buildProcessMissionContext>) {
+  return {
+    operational_methodology_provided: context.methodology.provided,
+    operational_methodology_status: context.methodology.status,
+    operational_methodology_activation: context.methodology.activation,
+    operational_methodology_can_guide_internal_decisions: context.methodology.canGuideInternalDecisions,
+    operational_methodology_requires_human_review: context.methodology.requiresHumanReview,
+    operational_methodology_review_reasons: context.methodology.reviewReasons,
+    operational_methodology_area: context.methodology.areaMethod?.area || null,
+    operational_methodology_expected_documents: context.methodology.expectedDocuments,
+    operational_methodology_missing_expected_documents: context.methodology.missingExpectedDocuments,
+    operational_methodology_blockers: context.methodology.blockers,
   };
 }
 
@@ -3526,6 +3790,318 @@ function formatProcessMissionRecommendedAction(action: ReturnType<typeof buildPr
   }
 }
 
+function withLegalOperatorRuntimeState(
+  context: ReturnType<typeof buildProcessMissionContext>,
+  options?: {
+    status?: LegalOperatorState["status"];
+    blocker?: string | null;
+  }
+): LegalOperatorState {
+  const state = buildLegalOperatorState(context);
+  const blockers = options?.blocker
+    ? Array.from(new Set([...state.blockers, options.blocker]))
+    : state.blockers;
+
+  return {
+    ...state,
+    status: options?.status || state.status,
+    blockers,
+    humanGate: options?.status === "blocked"
+      ? {
+          required: true,
+          reason: options.blocker || state.humanGate.reason,
+          blocksExternalAction: true,
+        }
+      : state.humanGate,
+  };
+}
+
+function uniqueProcessMissionTexts(values: unknown[]) {
+  return Array.from(new Set(
+    values
+      .map((value) => typeof value === "string" ? value.trim() : "")
+      .filter(Boolean)
+  ));
+}
+
+function buildProcessMissionGaps(context: ReturnType<typeof buildProcessMissionContext>) {
+  return {
+    missingSignals: context.grounding.missingSignals,
+    pendingItems: context.status.pendingItems,
+    missingDocuments: context.documents.missingDocuments,
+    missingExpectedDocuments: context.methodology.missingExpectedDocuments,
+    methodologyBlockers: context.methodology.blockers,
+    all: uniqueProcessMissionTexts([
+      ...context.grounding.missingSignals,
+      ...context.status.pendingItems,
+      ...context.documents.missingDocuments,
+      ...context.methodology.missingExpectedDocuments,
+      ...context.methodology.blockers,
+    ]),
+  };
+}
+
+function buildProcessMissionSources(context: ReturnType<typeof buildProcessMissionContext>) {
+  return {
+    factual: context.grounding.factualSources,
+    inferenceNotes: context.grounding.inferenceNotes,
+    operationalThesisSources: context.operationalThesis.sourcesUsed,
+    documentMemory: {
+      freshness: context.documents.freshness,
+      documentCount: context.documents.count,
+      lastSyncedAt: context.documents.lastSyncedAt,
+      syncStatus: context.documents.syncStatus,
+    },
+    methodologySource: context.methodology.source,
+  };
+}
+
+function resolveProcessMissionOpenClawLayer(params: {
+  context: ReturnType<typeof buildProcessMissionContext>;
+  state: LegalOperatorState;
+  blockedReason?: string | null;
+}) {
+  if (params.blockedReason) return "process_mission";
+  if (params.context.methodology.requiresHumanReview) return "tenant_methodology";
+  if (params.context.confidence === "low") return "process_context";
+  if (params.state.humanGate.required) return "human_gate";
+  return null;
+}
+
+function buildProcessMissionOpenClawPolicy(params: {
+  context: ReturnType<typeof buildProcessMissionContext>;
+  state: LegalOperatorState;
+  capabilityName?: string | null;
+  handlerType?: string | null;
+  status?: "planned" | "executed" | "blocked" | "failed" | "awaiting_approval";
+  reason?: string | null;
+  blockedReason?: string | null;
+}) {
+  const status = params.status || "planned";
+  const blockedLayer = status === "blocked" || status === "failed" || params.state.humanGate.required
+    ? resolveProcessMissionOpenClawLayer({
+        context: params.context,
+        state: params.state,
+        blockedReason: params.blockedReason,
+      })
+    : null;
+  const outcome = status === "blocked" || status === "failed"
+    ? "blocked"
+    : params.state.humanGate.required
+      ? "requires_approval"
+      : "allowed";
+  const reason = params.reason
+    || params.state.humanGate.reason
+    || "Policy OpenClaw juridica avaliada para missao processual supervisionada.";
+
+  return {
+    surface: "legal_decision",
+    module: "legal_ops",
+    outcome,
+    allowed: outcome !== "blocked",
+    requires_approval: params.state.humanGate.required,
+    requiresApproval: params.state.humanGate.required,
+    can_execute_now: params.state.safeNextAction.canAutoExecute && outcome === "allowed",
+    canExecuteNow: params.state.safeNextAction.canAutoExecute && outcome === "allowed",
+    reason,
+    subject: {
+      surface: "legal_decision",
+      module: "legal_ops",
+      tool: params.capabilityName || params.context.recommendedAction,
+      handler_type: params.handlerType || null,
+      process_task_id: params.context.process.processTaskId,
+      recommended_action: params.context.recommendedAction,
+    },
+    debugger: {
+      precedence: ["platform_default", "tenant", "module", "agent", "tool", "channel"],
+      blocked_layer: blockedLayer,
+      blockedLayer,
+      blocked_reason_code: params.blockedReason || (blockedLayer ? `${blockedLayer}_requires_review` : null),
+      blockedReasonCode: params.blockedReason || (blockedLayer ? `${blockedLayer}_requires_review` : null),
+      lower_layers_cannot_reopen: true,
+      lowerLayersCannotReopen: true,
+      applied_layers: [
+        {
+          scope: "surface_matrix",
+          key: "legal_decision",
+          enabled: true,
+          requires_approval: true,
+          requiresApproval: true,
+          has_allow: false,
+          hasAllow: false,
+          has_deny: false,
+          hasDeny: false,
+          has_surface_matrix: true,
+          hasSurfaceMatrix: true,
+        },
+        {
+          scope: "tenant",
+          key: "operational_methodology",
+          enabled: params.context.methodology.provided,
+          requires_approval: params.context.methodology.requiresHumanReview,
+          requiresApproval: params.context.methodology.requiresHumanReview,
+          has_allow: params.context.methodology.canGuideInternalDecisions,
+          hasAllow: params.context.methodology.canGuideInternalDecisions,
+          has_deny: params.context.methodology.requiresHumanReview,
+          hasDeny: params.context.methodology.requiresHumanReview,
+          has_surface_matrix: false,
+          hasSurfaceMatrix: false,
+        },
+      ],
+    },
+  };
+}
+
+function buildProcessMissionHermesTrajectory(params: {
+  context: ReturnType<typeof buildProcessMissionContext>;
+  state: LegalOperatorState;
+  artifactType?: string | null;
+  capabilityName?: string | null;
+  status?: "planned" | "executed" | "blocked" | "failed" | "awaiting_approval";
+  reason?: string | null;
+  approvalId?: string | null;
+}) {
+  const status = params.status || "planned";
+  let trajectory = createHermesMissionTrajectory({
+    missionId: params.context.process.processTaskId,
+    objective: params.context.missionGoal,
+    payload: {
+      process_task_id: params.context.process.processTaskId,
+      process_number: params.context.process.processNumber,
+      recommended_action: params.context.recommendedAction,
+      capability_name: params.capabilityName || null,
+      tenant_learning_scope: "tenant_only",
+    },
+  });
+
+  trajectory = recordHermesMissionStep(trajectory, {
+    summary: `Lex consolidou ProcessMissionContext com confianca ${params.context.confidence}.`,
+    payload: {
+      current_phase: params.context.status.currentPhase,
+      document_freshness: params.context.documents.freshness,
+      draft_status: params.context.draft.status,
+    },
+  });
+  trajectory = recordHermesMissionDecision(trajectory, {
+    summary: params.state.safeNextAction.label,
+    payload: {
+      recommended_action: params.context.recommendedAction,
+      can_auto_execute: params.state.safeNextAction.canAutoExecute,
+      requires_approval: params.state.safeNextAction.requiresApproval,
+      methodology_status: params.context.methodology.status,
+      methodology_activation: params.context.methodology.activation,
+    },
+  });
+
+  if (status === "blocked" || status === "failed") {
+    trajectory = recordHermesMissionBlock(trajectory, {
+      summary: params.reason || params.state.humanGate.reason || "Missao processual bloqueada antes de efeito externo.",
+      payload: {
+        status,
+        blockers: params.state.blockers,
+        external_side_effects_blocked: true,
+      },
+    });
+  }
+
+  if (params.artifactType) {
+    trajectory = recordHermesMissionArtifact(trajectory, {
+      summary: `Artifact ${params.artifactType} registrado para missao processual.`,
+      payload: {
+        artifact_type: params.artifactType,
+        external_side_effects_blocked: true,
+      },
+    });
+  }
+
+  if (status === "awaiting_approval" || params.approvalId) {
+    trajectory = recordHermesMissionApproval(trajectory, {
+      summary: params.reason || params.state.humanGate.reason || "Approval humano requerido antes da Draft Factory.",
+      decision: "requested",
+      payload: {
+        approval_id: params.approvalId || null,
+        external_side_effects_blocked: true,
+      },
+    });
+  }
+
+  if (status === "executed") {
+    trajectory = recordHermesMissionResult(trajectory, {
+      summary: "Acao interna segura executada sem side effects externos.",
+      payload: {
+        recommended_action: params.context.recommendedAction,
+        external_side_effects_blocked: true,
+      },
+    });
+  }
+
+  return trajectory;
+}
+
+function buildProcessMissionBetaContract(
+  context: ReturnType<typeof buildProcessMissionContext>,
+  options: {
+    legalOperatorState?: LegalOperatorState;
+    artifactType?: string | null;
+    capabilityName?: string | null;
+    handlerType?: string | null;
+    status?: "planned" | "executed" | "blocked" | "failed" | "awaiting_approval";
+    reason?: string | null;
+    blockedReason?: string | null;
+    approvalId?: string | null;
+  } = {},
+) {
+  const legalOperatorState = options.legalOperatorState || buildLegalOperatorState(context);
+  const sources = buildProcessMissionSources(context);
+  const gaps = buildProcessMissionGaps(context);
+  const sideEffectGuardrail = legalOperatorState.coordination?.sideEffectGuardrail ?? null;
+  const openclawPolicy = buildProcessMissionOpenClawPolicy({
+    context,
+    state: legalOperatorState,
+    capabilityName: options.capabilityName,
+    handlerType: options.handlerType,
+    status: options.status,
+    reason: options.reason,
+    blockedReason: options.blockedReason,
+  });
+  const hermesTrajectory = buildProcessMissionHermesTrajectory({
+    context,
+    state: legalOperatorState,
+    artifactType: options.artifactType,
+    capabilityName: options.capabilityName,
+    status: options.status,
+    reason: options.reason,
+    approvalId: options.approvalId,
+  });
+
+  return {
+    processMissionContext: context,
+    process_mission_context: context,
+    legalOperatorState,
+    legal_operator_state: legalOperatorState,
+    methodology: context.methodology,
+    sources,
+    gaps,
+    operationalThesis: context.operationalThesis,
+    operational_thesis: context.operationalThesis,
+    blockers: context.operationalThesis.blockers,
+    openclawReason: context.operationalThesis.openClawReason,
+    openclaw_reason: context.operationalThesis.openClawReason,
+    recommendedAction: context.recommendedAction,
+    recommended_action: context.recommendedAction,
+    sideEffectGuardrail,
+    side_effect_guardrail: sideEffectGuardrail,
+    nextSafeAction: legalOperatorState.safeNextAction,
+    external_side_effects_blocked: true,
+    agentic_governance: {
+      openclaw_policy: openclawPolicy,
+      hermes_trajectory: hermesTrajectory,
+    },
+    openclaw_policy: openclawPolicy,
+    hermes_trajectory: hermesTrajectory,
+  };
+}
+
 function buildProcessMissionPlanReply(context: ReturnType<typeof buildProcessMissionContext>) {
   const processLabel = context.process.processNumber || context.process.title;
   return [
@@ -3537,6 +4113,8 @@ function buildProcessMissionPlanReply(context: ReturnType<typeof buildProcessMis
     `- Confianca: ${context.confidence}`,
     `- Acao recomendada: ${formatProcessMissionRecommendedAction(context.recommendedAction)}`,
     `- Objetivo da missao: ${context.missionGoal}`,
+    `- Tese operacional: ${context.operationalThesis.thesis}`,
+    `- Motivo OpenClaw: ${context.operationalThesis.openClawReason}`,
     context.status.nextStep ? `- Proximo passo: ${context.status.nextStep}` : null,
     context.status.pendingItems.length > 0
       ? `- Pendencias: ${context.status.pendingItems.join("; ")}`
@@ -3552,6 +4130,18 @@ function buildProcessMissionPlanReply(context: ReturnType<typeof buildProcessMis
     context.grounding.missingSignals.length > 0
       ? `- Sinais faltantes: ${context.grounding.missingSignals.join("; ")}`
       : null,
+    context.methodology.provided
+      ? `- Metodologia do escritorio: ${context.methodology.status}/${context.methodology.activation}${context.methodology.areaMethod ? ` para ${context.methodology.areaMethod.area}` : ""}`
+      : null,
+    context.methodology.expectedDocuments.length > 0
+      ? `- Documentos esperados pela metodologia: ${context.methodology.expectedDocuments.join("; ")}`
+      : null,
+    context.methodology.blockers.length > 0
+      ? `- Travas metodologicas: ${context.methodology.blockers.join("; ")}`
+      : null,
+    context.operationalThesis.blockers.length > 0
+      ? `- Bloqueios antes da Draft Factory: ${context.operationalThesis.blockers.join("; ")}`
+      : "- Bloqueios antes da Draft Factory: nenhum bloqueio critico registrado",
     "- Execucao: plano registrado sem side effects externos. Acoes juridicas, Drive, minuta, publicacao ou comunicacao externa seguem supervisionadas.",
   ].filter(Boolean).join("\n");
 }
@@ -3561,7 +4151,16 @@ async function runLegalProcessMissionPlan(input: DispatchCapabilityInput): Promi
     tenantId: input.tenantId,
     entities: input.entities,
   });
-  const processMissionContext = buildProcessMissionContext(snapshot);
+  const processMissionContext = await buildTenantProcessMissionContext(input, snapshot);
+  const legalOperatorState = buildLegalOperatorState(processMissionContext);
+  const processMissionBetaContract = buildProcessMissionBetaContract(processMissionContext, {
+    legalOperatorState,
+    artifactType: "process_mission_plan",
+    capabilityName: input.capabilityName,
+    handlerType: input.handlerType,
+    status: legalOperatorState.status === "blocked" ? "blocked" : "planned",
+    reason: legalOperatorState.humanGate.reason,
+  });
   const reply = buildProcessMissionPlanReply(processMissionContext);
   const processLabel = snapshot.processTask.processNumber || snapshot.processTask.title;
   const summary = `Missao agentica planejada para ${processLabel}: ${formatProcessMissionRecommendedAction(processMissionContext.recommendedAction)}.`;
@@ -3582,10 +4181,13 @@ async function runLegalProcessMissionPlan(input: DispatchCapabilityInput): Promi
       client_name: snapshot.processTask.clientName,
       case_brain_task_id: snapshot.caseBrain.taskId,
       process_mission_context: processMissionContext,
+      legal_operator_state: legalOperatorState,
       process_mission_confidence: processMissionContext.confidence,
       process_mission_recommended_action: processMissionContext.recommendedAction,
       process_mission_goal: processMissionContext.missionGoal,
+      ...buildOperationalMethodologyPayload(processMissionContext),
       external_side_effects_blocked: true,
+      ...processMissionBetaContract,
     },
   });
 
@@ -3598,10 +4200,13 @@ async function runLegalProcessMissionPlan(input: DispatchCapabilityInput): Promi
     confidence: processMissionContext.confidence,
     recommended_action: processMissionContext.recommendedAction,
     mission_goal: processMissionContext.missionGoal,
+    ...buildOperationalMethodologyPayload(processMissionContext),
     factual_sources: processMissionContext.grounding.factualSources,
     inference_notes: processMissionContext.grounding.inferenceNotes,
     missing_signals: processMissionContext.grounding.missingSignals,
+    legal_operator_state: legalOperatorState,
     external_side_effects_blocked: true,
+    ...processMissionBetaContract,
   });
 
   return {
@@ -3616,8 +4221,10 @@ async function runLegalProcessMissionPlan(input: DispatchCapabilityInput): Promi
       process_mission_confidence: processMissionContext.confidence,
       process_mission_recommended_action: processMissionContext.recommendedAction,
       process_mission_goal: processMissionContext.missionGoal,
+      ...buildOperationalMethodologyPayload(processMissionContext),
       factual_source_count: processMissionContext.grounding.factualSources.length,
       missing_signal_count: processMissionContext.grounding.missingSignals.length,
+      legal_operator_state: legalOperatorState,
       external_side_effects_blocked: true,
     },
     data: {
@@ -3775,6 +4382,16 @@ async function runLegalCaseBrainInsights(input: DispatchCapabilityInput): Promis
     entities: input.entities,
   });
   const evidence = await loadCaseBrainEvidence({ tenantId: input.tenantId, snapshot });
+  const processMissionContext = await buildTenantProcessMissionContext(input, snapshot);
+  const legalOperatorState = buildLegalOperatorState(processMissionContext);
+  const processMissionBetaContract = buildProcessMissionBetaContract(processMissionContext, {
+    legalOperatorState,
+    artifactType: "legal_case_brain_insights",
+    capabilityName: input.capabilityName,
+    handlerType: input.handlerType,
+    status: "planned",
+    reason: legalOperatorState.humanGate.reason,
+  });
   const insights = buildCaseBrainInsights(snapshot, evidence);
   const reply = buildCaseBrainInsightsReply(insights);
   const summary = `Case Brain 2.0 gerado para ${insights.processLabel}: ${insights.risks.length} risco(s), ${insights.contradictions.length} contradicao(oes), ${insights.timeline.length} marco(s).`;
@@ -3802,8 +4419,12 @@ async function runLegalCaseBrainInsights(input: DispatchCapabilityInput): Promis
       grounding_gap_count: insights.groundingGaps.length,
       evidence_document_count: insights.evidence.documentCount,
       evidence_movement_count: insights.evidence.movementCount,
+      ...buildOperationalMethodologyPayload(processMissionContext),
+      process_mission_context: processMissionContext,
+      legal_operator_state: legalOperatorState,
       insights,
       external_side_effects_blocked: true,
+      ...processMissionBetaContract,
     },
   });
 
@@ -3821,7 +4442,10 @@ async function runLegalCaseBrainInsights(input: DispatchCapabilityInput): Promis
     evidence_document_count: insights.evidence.documentCount,
     evidence_movement_count: insights.evidence.movementCount,
     grounding_gaps: insights.groundingGaps,
+    ...buildOperationalMethodologyPayload(processMissionContext),
+    legal_operator_state: legalOperatorState,
     external_side_effects_blocked: true,
+    ...processMissionBetaContract,
   });
 
   return {
@@ -3842,7 +4466,10 @@ async function runLegalCaseBrainInsights(input: DispatchCapabilityInput): Promis
       grounding_gap_count: insights.groundingGaps.length,
       evidence_document_count: insights.evidence.documentCount,
       evidence_movement_count: insights.evidence.movementCount,
+      ...buildOperationalMethodologyPayload(processMissionContext),
+      legal_operator_state: legalOperatorState,
       external_side_effects_blocked: true,
+      ...processMissionBetaContract,
     },
     data: {
       snapshot,
@@ -3868,11 +4495,85 @@ function buildProcessMissionExecutionBlockedReply(params: {
   ].join("\n");
 }
 
+function compactStringList(values: Array<string | null | undefined>) {
+  return Array.from(new Set(values.map((value) => String(value || "").trim()).filter(Boolean)));
+}
+
+function buildLegalPieceReadinessContext(params: {
+  snapshot: LegalCaseContextSnapshot;
+  context: ReturnType<typeof buildProcessMissionContext>;
+  caseBrainInsights?: CaseBrainInsights | null;
+}) {
+  const pieceLabel = params.context.draft.recommendedPiece
+    || params.snapshot.caseBrain.recommendedPieceLabel
+    || params.snapshot.caseBrain.recommendedPieceInput
+    || "Primeira minuta juridica";
+  const highRiskCount = params.caseBrainInsights?.risks.filter((risk) => risk.severity === "high").length || 0;
+  const highContradictionCount = params.caseBrainInsights?.contradictions.filter((item) => item.severity === "high").length || 0;
+  const documentsUsed = compactStringList([
+    ...params.context.grounding.factualSources,
+    params.context.documents.summary,
+    params.context.documents.lastSyncedAt ? `Memoria documental sincronizada em ${params.context.documents.lastSyncedAt}` : null,
+  ]).slice(0, 8);
+  const expectedDocuments = compactStringList(params.context.methodology.expectedDocuments).slice(0, 8);
+  const missingDocuments = compactStringList([
+    ...params.context.documents.missingDocuments,
+    ...params.context.methodology.missingExpectedDocuments,
+  ]).slice(0, 8);
+  const gaps = compactStringList([
+    ...params.context.grounding.missingSignals,
+    ...params.context.methodology.blockers,
+  ]).slice(0, 10);
+  const draftVerificationChecklist = compactStringList([
+    `Confirmar se ${pieceLabel} e compativel com a fase atual${params.context.status.currentPhase ? ` (${params.context.status.currentPhase})` : ""}.`,
+    "Validar fatos e documentos antes de citar qualquer informacao na minuta.",
+    expectedDocuments.length > 0 ? "Conferir documentos esperados pela metodologia do tenant." : "Conferir se a metodologia do tenant nao exige documento adicional.",
+    gaps.length > 0 ? "Resolver ou registrar lacunas antes de assinatura/revisao final." : "Registrar que nao ha lacuna critica conhecida neste envelope.",
+    highRiskCount > 0 || highContradictionCount > 0 ? "Revisar riscos/contradicoes do Case Brain antes de aprovar texto." : "Fazer leitura humana final antes de qualquer uso externo.",
+    "Manter minuta como artefato interno: sem protocolo, envio externo ou publicacao automatica.",
+  ]);
+
+  return {
+    piece_label: pieceLabel,
+    pieceLabel,
+    operational_thesis: params.context.operationalThesis,
+    operationalThesis: params.context.operationalThesis,
+    openclaw_reason: params.context.operationalThesis.openClawReason,
+    openclawReason: params.context.operationalThesis.openClawReason,
+    phase: params.context.status.currentPhase,
+    process_number: params.context.process.processNumber,
+    process_task_id: params.context.process.processTaskId,
+    documents_used: documentsUsed,
+    documentsUsed,
+    expected_documents: expectedDocuments,
+    expectedDocuments,
+    missing_documents: missingDocuments,
+    missingDocuments,
+    gaps,
+    blockers: params.context.operationalThesis.blockers,
+    methodology_status: params.context.methodology.status,
+    methodology_activation: params.context.methodology.activation,
+    methodology_requires_human_review: params.context.methodology.requiresHumanReview,
+    case_brain: {
+      confidence: params.caseBrainInsights?.confidence || null,
+      risk_count: params.caseBrainInsights?.risks.length || 0,
+      high_risk_count: highRiskCount,
+      contradiction_count: params.caseBrainInsights?.contradictions.length || 0,
+      high_contradiction_count: highContradictionCount,
+      grounding_gap_count: params.caseBrainInsights?.groundingGaps.length || 0,
+    },
+    draft_verification_checklist: draftVerificationChecklist,
+    draftVerificationChecklist,
+    external_side_effects_blocked: true,
+  };
+}
+
 function buildProcessMissionApprovalReply(params: {
   context: ReturnType<typeof buildProcessMissionContext>;
   proposedCapability: string;
   proposedActionLabel: string;
   caseBrainInsights?: CaseBrainInsights | null;
+  pieceReadiness?: ReturnType<typeof buildLegalPieceReadinessContext> | null;
 }) {
   const processLabel = params.context.process.processNumber || params.context.process.title;
   const highRiskCount = params.caseBrainInsights?.risks.filter((risk) => risk.severity === "high").length || 0;
@@ -3886,6 +4587,8 @@ function buildProcessMissionApprovalReply(params: {
     `- Capability proposta: ${params.proposedCapability}`,
     `- Confianca: ${params.context.confidence}`,
     `- Objetivo da missao: ${params.context.missionGoal}`,
+    `- Tese operacional: ${params.context.operationalThesis.thesis}`,
+    `- Motivo OpenClaw: ${params.context.operationalThesis.openClawReason}`,
     params.context.draft.recommendedPiece ? `- Peca sugerida: ${params.context.draft.recommendedPiece}` : null,
     params.context.grounding.factualSources.length > 0
       ? `- Fontes: ${params.context.grounding.factualSources.join("; ")}`
@@ -3893,7 +4596,19 @@ function buildProcessMissionApprovalReply(params: {
     params.context.grounding.missingSignals.length > 0
       ? `- Lacunas/sinais faltantes: ${params.context.grounding.missingSignals.join("; ")}`
       : "- Lacunas/sinais faltantes: nenhuma lacuna critica registrada",
+    params.context.methodology.provided
+      ? `- Metodologia do escritorio: ${params.context.methodology.status}/${params.context.methodology.activation}${params.context.methodology.areaMethod ? ` para ${params.context.methodology.areaMethod.area}` : ""}`
+      : null,
+    params.context.methodology.expectedDocuments.length > 0
+      ? `- Documentos esperados pela metodologia: ${params.context.methodology.expectedDocuments.join("; ")}`
+      : null,
     params.caseBrainInsights ? `- Case Brain 2.0: ${highRiskCount} risco(s) alto(s), ${highContradictionCount} contradicao(oes) alta(s), ${params.caseBrainInsights.groundingGaps.length} lacuna(s) de grounding` : null,
+    params.pieceReadiness?.draft_verification_checklist.length
+      ? `- Checklist da minuta: ${params.pieceReadiness.draft_verification_checklist.slice(0, 3).join("; ")}`
+      : null,
+    params.context.operationalThesis.blockers.length > 0
+      ? `- Bloqueios antes da Draft Factory: ${params.context.operationalThesis.blockers.join("; ")}`
+      : "- Bloqueios antes da Draft Factory: nenhum bloqueio critico registrado",
     "- Guardrail: nenhuma minuta foi gerada ainda. A Draft Factory juridica so sera chamada se um aprovador autorizar.",
   ].filter(Boolean).join("\n");
 }
@@ -3924,15 +4639,31 @@ async function requestProcessMissionDraftApproval(
   const proposedHandlerType = "lex_first_draft_generate";
   const proposedActionLabel = "Gerar primeira minuta juridica";
   const processLabel = params.snapshot.processTask.processNumber || params.snapshot.processTask.title;
+  const pieceReadiness = buildLegalPieceReadinessContext({
+    snapshot: params.snapshot,
+    context: params.context,
+    caseBrainInsights: params.caseBrainInsights || null,
+  });
   const reply = buildProcessMissionApprovalReply({
     context: params.context,
     proposedCapability,
     proposedActionLabel,
     caseBrainInsights: params.caseBrainInsights || null,
+    pieceReadiness,
   });
   const highRiskCount = params.caseBrainInsights?.risks.filter((risk) => risk.severity === "high").length || 0;
   const highContradictionCount = params.caseBrainInsights?.contradictions.filter((item) => item.severity === "high").length || 0;
   const summary = `Missao processual de ${processLabel} pediu aprovacao para gerar primeira minuta.`;
+  const legalOperatorState = withLegalOperatorRuntimeState(params.context, { status: "awaiting_human_approval" });
+  const methodologyPayload = buildOperationalMethodologyPayload(params.context);
+  const approvalBetaContract = buildProcessMissionBetaContract(params.context, {
+    legalOperatorState,
+    artifactType: "process_mission_step_result",
+    capabilityName: proposedCapability,
+    handlerType: proposedHandlerType,
+    status: "awaiting_approval",
+    reason: legalOperatorState.humanGate.reason,
+  });
   const pendingEntities: Record<string, string> = {
     process_task_id: params.snapshot.processTask.id,
   };
@@ -3977,6 +4708,10 @@ async function requestProcessMissionDraftApproval(
         case_brain_high_contradiction_count: highContradictionCount,
         proposed_capability: proposedCapability,
         approval_error: errorMessage,
+        piece_context: pieceReadiness,
+        draft_verification_checklist: pieceReadiness.draft_verification_checklist,
+        ...methodologyPayload,
+        legal_operator_state: withLegalOperatorRuntimeState(params.context, { status: "blocked", blocker: errorMessage }),
         external_side_effects_blocked: true,
       },
       data: { snapshot: params.snapshot, processMissionContext: params.context },
@@ -4010,6 +4745,18 @@ async function requestProcessMissionDraftApproval(
       case_brain_contradiction_count: params.caseBrainInsights?.contradictions.length || 0,
       case_brain_high_contradiction_count: highContradictionCount,
       case_brain_grounding_gap_count: params.caseBrainInsights?.groundingGaps.length || 0,
+      piece_context: pieceReadiness,
+      operational_thesis: params.context.operationalThesis,
+      operationalThesis: params.context.operationalThesis,
+      sources_used_before_draft_factory: params.context.operationalThesis.sourcesUsed,
+      gaps_before_draft_factory: params.context.operationalThesis.gaps,
+      blockers_before_draft_factory: params.context.operationalThesis.blockers,
+      openclaw_reason: params.context.operationalThesis.openClawReason,
+      draft_verification_checklist: pieceReadiness.draft_verification_checklist,
+      ...methodologyPayload,
+      operational_methodology_context: params.context.methodology,
+      legal_operator_state: legalOperatorState,
+      ...approvalBetaContract,
       factual_sources: params.context.grounding.factualSources,
       missing_signals: params.context.grounding.missingSignals,
       requested_at: new Date().toISOString(),
@@ -4020,6 +4767,28 @@ async function requestProcessMissionDraftApproval(
       skillName: proposedCapability,
       schemaVersion: "1.0.0",
       source: "legal_process_mission_execute_next",
+      legal_operator_state: legalOperatorState,
+      operational_methodology_context: params.context.methodology,
+      processMissionContext: params.context,
+      operational_thesis: params.context.operationalThesis,
+      operationalThesis: params.context.operationalThesis,
+      sources_used_before_draft_factory: params.context.operationalThesis.sourcesUsed,
+      gaps_before_draft_factory: params.context.operationalThesis.gaps,
+      blockers_before_draft_factory: params.context.operationalThesis.blockers,
+      openclaw_reason: params.context.operationalThesis.openClawReason,
+      methodology: params.context.methodology,
+      piece_context: pieceReadiness,
+      pieceContext: pieceReadiness,
+      draft_verification_checklist: pieceReadiness.draft_verification_checklist,
+      draftVerificationChecklist: pieceReadiness.draft_verification_checklist,
+      sources: approvalBetaContract.sources,
+      gaps: approvalBetaContract.gaps,
+      blockers: params.context.operationalThesis.blockers,
+      recommendedAction: params.context.recommendedAction,
+      sideEffectGuardrail: approvalBetaContract.sideEffectGuardrail,
+      agentic_governance: approvalBetaContract.agentic_governance,
+      openclaw_policy: approvalBetaContract.openclaw_policy,
+      hermes_trajectory: approvalBetaContract.hermes_trajectory,
     },
     idempotencyExpiresAt: new Date(Date.now() + 24 * 60 * 60 * 1000).toISOString(),
   });
@@ -4054,6 +4823,10 @@ async function requestProcessMissionDraftApproval(
         case_brain_high_contradiction_count: highContradictionCount,
         proposed_capability: proposedCapability,
         approval_error: errorMessage,
+        piece_context: pieceReadiness,
+        draft_verification_checklist: pieceReadiness.draft_verification_checklist,
+        ...methodologyPayload,
+        legal_operator_state: withLegalOperatorRuntimeState(params.context, { status: "blocked", blocker: errorMessage }),
         external_side_effects_blocked: true,
       },
       data: { snapshot: params.snapshot, processMissionContext: params.context },
@@ -4072,7 +4845,22 @@ async function requestProcessMissionDraftApproval(
       proposed_capability: proposedCapability,
       proposed_handler_type: proposedHandlerType,
       proposed_entities: pendingEntities,
+      ...methodologyPayload,
+      operational_methodology_context: params.context.methodology,
+      legal_operator_state: legalOperatorState,
+      piece_context: pieceReadiness,
+      operational_thesis: params.context.operationalThesis,
+      draft_verification_checklist: pieceReadiness.draft_verification_checklist,
       external_side_effects_blocked: true,
+      ...buildProcessMissionBetaContract(params.context, {
+        legalOperatorState,
+        artifactType: "process_mission_step_result",
+        capabilityName: proposedCapability,
+        handlerType: proposedHandlerType,
+        status: "awaiting_approval",
+        reason: legalOperatorState.humanGate.reason,
+        approvalId: approvalAuditLogId,
+      }),
     },
   });
 
@@ -4095,12 +4883,25 @@ async function requestProcessMissionDraftApproval(
       case_brain_contradiction_count: params.caseBrainInsights?.contradictions.length || 0,
       case_brain_high_contradiction_count: highContradictionCount,
       case_brain_grounding_gap_count: params.caseBrainInsights?.groundingGaps.length || 0,
+      ...methodologyPayload,
+      legal_operator_state: legalOperatorState,
       proposed_capability: proposedCapability,
       proposed_handler_type: proposedHandlerType,
       proposed_action_label: proposedActionLabel,
       recommended_piece_label: params.snapshot.caseBrain.recommendedPieceLabel,
+      piece_context: pieceReadiness,
+      pieceContext: pieceReadiness,
+      operational_thesis: params.context.operationalThesis,
+      operationalThesis: params.context.operationalThesis,
+      sources_used_before_draft_factory: params.context.operationalThesis.sourcesUsed,
+      gaps_before_draft_factory: params.context.operationalThesis.gaps,
+      blockers_before_draft_factory: params.context.operationalThesis.blockers,
+      openclaw_reason: params.context.operationalThesis.openClawReason,
+      draft_verification_checklist: pieceReadiness.draft_verification_checklist,
+      draftVerificationChecklist: pieceReadiness.draft_verification_checklist,
       approval_required: true,
       external_side_effects_blocked: true,
+      ...approvalBetaContract,
       awaitingPayload: {
         idempotencyKey,
         entities: pendingEntities,
@@ -4111,6 +4912,31 @@ async function requestProcessMissionDraftApproval(
         proposedActionLabel,
         processLabel,
         missionGoal: params.context.missionGoal,
+        operationalMethodology: params.context.methodology,
+        legalOperatorState,
+        processMissionContext: params.context,
+        methodology: params.context.methodology,
+        pieceContext: pieceReadiness,
+        piece_context: pieceReadiness,
+        operationalThesis: params.context.operationalThesis,
+        operational_thesis: params.context.operationalThesis,
+        sourcesUsedBeforeDraftFactory: params.context.operationalThesis.sourcesUsed,
+        sources_used_before_draft_factory: params.context.operationalThesis.sourcesUsed,
+        gapsBeforeDraftFactory: params.context.operationalThesis.gaps,
+        gaps_before_draft_factory: params.context.operationalThesis.gaps,
+        blockersBeforeDraftFactory: params.context.operationalThesis.blockers,
+        blockers_before_draft_factory: params.context.operationalThesis.blockers,
+        openclawReason: params.context.operationalThesis.openClawReason,
+        openclaw_reason: params.context.operationalThesis.openClawReason,
+        draftVerificationChecklist: pieceReadiness.draft_verification_checklist,
+        draft_verification_checklist: pieceReadiness.draft_verification_checklist,
+        sources: approvalBetaContract.sources,
+        gaps: approvalBetaContract.gaps,
+        recommendedAction: params.context.recommendedAction,
+        sideEffectGuardrail: approvalBetaContract.sideEffectGuardrail,
+        agenticGovernance: approvalBetaContract.agentic_governance,
+        openclawPolicy: approvalBetaContract.openclaw_policy,
+        hermesTrajectory: approvalBetaContract.hermes_trajectory,
       },
     },
     data: {
@@ -4136,6 +4962,25 @@ async function registerProcessMissionStepResult(
   }
 ) {
   const processLabel = params.context.process.processNumber || params.context.process.title;
+  const legalOperatorState = withLegalOperatorRuntimeState(params.context, {
+    status: params.status === "executed" ? undefined : "blocked",
+    blocker: params.errorMessage || null,
+  });
+  const methodologyPayload = buildOperationalMethodologyPayload(params.context);
+  const approvalId = getStringValue(params.stepOutputPayload?.approval_audit_log_id);
+  const betaStatus = approvalId
+    ? "awaiting_approval"
+    : params.status;
+  const processMissionBetaContract = buildProcessMissionBetaContract(params.context, {
+    legalOperatorState,
+    artifactType: "process_mission_step_result",
+    capabilityName: params.executedCapability || input.capabilityName,
+    handlerType: params.executedHandlerType || input.handlerType,
+    status: betaStatus,
+    reason: params.errorMessage || legalOperatorState.humanGate.reason,
+    blockedReason: params.errorMessage || null,
+    approvalId,
+  });
   await registerArtifact(input, {
     artifactType: "process_mission_step_result",
     title: `Resultado da missao processual - ${params.context.process.clientName || params.context.process.title}`,
@@ -4152,13 +4997,16 @@ async function registerProcessMissionStepResult(
       process_label: processLabel,
       client_name: params.context.process.clientName,
       process_mission_context: params.context,
+      legal_operator_state: legalOperatorState,
       process_mission_confidence: params.context.confidence,
       process_mission_recommended_action: params.context.recommendedAction,
       process_mission_goal: params.context.missionGoal,
+      ...methodologyPayload,
       executed_capability: params.executedCapability || null,
       executed_handler_type: params.executedHandlerType || null,
       step_output_payload: params.stepOutputPayload || null,
       error_message: params.errorMessage || null,
+      ...processMissionBetaContract,
     },
   });
 
@@ -4171,9 +5019,12 @@ async function registerProcessMissionStepResult(
     confidence: params.context.confidence,
     recommended_action: params.context.recommendedAction,
     mission_goal: params.context.missionGoal,
+    legal_operator_state: legalOperatorState,
+    ...methodologyPayload,
     executed_capability: params.executedCapability || null,
     executed_handler_type: params.executedHandlerType || null,
     error_message: params.errorMessage || null,
+    ...processMissionBetaContract,
   });
 }
 
@@ -4216,7 +5067,9 @@ async function runLegalProcessMissionExecuteNext(input: DispatchCapabilityInput)
     tenantId: input.tenantId,
     entities: input.entities,
   });
-  const processMissionContext = buildProcessMissionContext(snapshot);
+  const processMissionContext = await buildTenantProcessMissionContext(input, snapshot);
+  const legalOperatorState = buildLegalOperatorState(processMissionContext);
+  const methodologyPayload = buildOperationalMethodologyPayload(processMissionContext);
   const caseBrainEvidence = await loadCaseBrainEvidence({ tenantId: input.tenantId, snapshot });
   const caseBrainInsights = buildCaseBrainInsights(snapshot, caseBrainEvidence);
   const processLabel = snapshot.processTask.processNumber || snapshot.processTask.title;
@@ -4247,6 +5100,56 @@ async function runLegalProcessMissionExecuteNext(input: DispatchCapabilityInput)
         case_brain_contradiction_count: caseBrainInsights.contradictions.length,
         case_brain_grounding_gap_count: caseBrainInsights.groundingGaps.length,
         blocked_reason: "low_confidence_process_mission",
+        ...methodologyPayload,
+        legal_operator_state: withLegalOperatorRuntimeState(processMissionContext, {
+          status: "blocked",
+          blocker: "low_confidence_process_mission",
+        }),
+        external_side_effects_blocked: true,
+      },
+      data: { snapshot, processMissionContext, caseBrainInsights },
+    };
+  }
+
+  if (
+    processMissionContext.methodology.provided
+    && processMissionContext.methodology.requiresHumanReview
+    && processMissionContext.recommendedAction === "refresh_document_memory"
+  ) {
+    const reason = legalOperatorState.humanGate.reason;
+    const reply = buildProcessMissionExecutionBlockedReply({ context: processMissionContext, reason });
+    const summary = `Missao processual de ${processLabel} bloqueada pela metodologia operacional do tenant.`;
+    await registerProcessMissionStepResult(input, {
+      context: processMissionContext,
+      status: "blocked",
+      reply,
+      summary,
+      errorMessage: reason,
+      stepOutputPayload: {
+        ...methodologyPayload,
+        external_side_effects_blocked: true,
+      },
+    });
+
+    return {
+      status: "blocked",
+      reply,
+      outputPayload: {
+        auditLogId: input.auditLogId || null,
+        handler_type: input.handlerType,
+        process_task_id: snapshot.processTask.id,
+        process_number: snapshot.processTask.processNumber,
+        process_mission_confidence: processMissionContext.confidence,
+        process_mission_recommended_action: processMissionContext.recommendedAction,
+        case_brain_risk_count: caseBrainInsights.risks.length,
+        case_brain_contradiction_count: caseBrainInsights.contradictions.length,
+        case_brain_grounding_gap_count: caseBrainInsights.groundingGaps.length,
+        blocked_reason: "operational_methodology_requires_review",
+        ...methodologyPayload,
+        legal_operator_state: withLegalOperatorRuntimeState(processMissionContext, {
+          status: "blocked",
+          blocker: "operational_methodology_requires_review",
+        }),
         external_side_effects_blocked: true,
       },
       data: { snapshot, processMissionContext, caseBrainInsights },
@@ -4288,6 +5191,11 @@ async function runLegalProcessMissionExecuteNext(input: DispatchCapabilityInput)
         case_brain_contradiction_count: caseBrainInsights.contradictions.length,
         case_brain_grounding_gap_count: caseBrainInsights.groundingGaps.length,
         blocked_reason: caseBrainBlock.blockedReason,
+        ...methodologyPayload,
+        legal_operator_state: withLegalOperatorRuntimeState(processMissionContext, {
+          status: "blocked",
+          blocker: caseBrainBlock.blockedReason,
+        }),
         external_side_effects_blocked: true,
       },
       data: { snapshot, processMissionContext, caseBrainInsights },
@@ -4328,6 +5236,11 @@ async function runLegalProcessMissionExecuteNext(input: DispatchCapabilityInput)
         case_brain_contradiction_count: caseBrainInsights.contradictions.length,
         case_brain_grounding_gap_count: caseBrainInsights.groundingGaps.length,
         blocked_reason: "recommended_action_requires_supervision",
+        ...methodologyPayload,
+        legal_operator_state: withLegalOperatorRuntimeState(processMissionContext, {
+          status: "awaiting_supervision",
+          blocker: "recommended_action_requires_supervision",
+        }),
         external_side_effects_blocked: true,
       },
       data: { snapshot, processMissionContext, caseBrainInsights },
@@ -4382,6 +5295,13 @@ async function runLegalProcessMissionExecuteNext(input: DispatchCapabilityInput)
       executed_handler_type: "lex_document_memory_refresh",
       step_status: refreshResult.status,
       step_output_payload: refreshResult.outputPayload || null,
+      ...methodologyPayload,
+      legal_operator_state: refreshResult.status === "executed"
+        ? legalOperatorState
+        : withLegalOperatorRuntimeState(processMissionContext, {
+            status: "blocked",
+            blocker: getStringValue(refreshResult.outputPayload?.error_message) || refreshResult.reply,
+          }),
     },
     data: {
       snapshot,
@@ -4398,7 +5318,16 @@ async function runSupportCaseStatus(input: DispatchCapabilityInput): Promise<Dis
       tenantId: input.tenantId,
       entities: input.entities,
     });
-    const processMissionContext = buildProcessMissionContext(snapshot);
+    const processMissionContext = await buildTenantProcessMissionContext(input, snapshot);
+    const legalOperatorState = buildLegalOperatorState(processMissionContext);
+    const processMissionBetaContract = buildProcessMissionBetaContract(processMissionContext, {
+      legalOperatorState,
+      artifactType: "support_case_status",
+      capabilityName: input.capabilityName,
+      handlerType: input.handlerType,
+      status: "planned",
+      reason: legalOperatorState.humanGate.reason,
+    });
     const contract = buildSupportCaseStatusContract(snapshot);
     const reply = buildSupportCaseStatusReply(contract);
     const summary = contract.responseMode === "handoff"
@@ -4431,7 +5360,10 @@ async function runSupportCaseStatus(input: DispatchCapabilityInput): Promise<Dis
         support_status_inference_notes: contract.grounding.inferenceNotes,
         support_status_missing_signals: contract.grounding.missingSignals,
         support_status_handoff_reason: contract.handoffReason,
+        ...buildOperationalMethodologyPayload(processMissionContext),
         process_mission_context: processMissionContext,
+        legal_operator_state: legalOperatorState,
+        ...processMissionBetaContract,
       },
     });
 
@@ -4455,6 +5387,9 @@ async function runSupportCaseStatus(input: DispatchCapabilityInput): Promise<Dis
       handoff_reason: contract.handoffReason,
       process_mission_confidence: processMissionContext.confidence,
       process_mission_recommended_action: processMissionContext.recommendedAction,
+      ...buildOperationalMethodologyPayload(processMissionContext),
+      legal_operator_state: legalOperatorState,
+      ...processMissionBetaContract,
     });
 
     return {
@@ -4477,6 +5412,9 @@ async function runSupportCaseStatus(input: DispatchCapabilityInput): Promise<Dis
         process_mission_confidence: processMissionContext.confidence,
         process_mission_recommended_action: processMissionContext.recommendedAction,
         process_mission_goal: processMissionContext.missionGoal,
+        ...buildOperationalMethodologyPayload(processMissionContext),
+        legal_operator_state: legalOperatorState,
+        ...processMissionBetaContract,
       },
       data: {
         snapshot,
@@ -4552,9 +5490,28 @@ async function registerLegalFirstDraftResultArtifact(
     execution?: DraftFactoryExecutionResult | null;
     firstDraftStaleBefore?: boolean;
     errorMessage?: string | null;
+    processMissionContext?: ReturnType<typeof buildProcessMissionContext> | null;
   }
 ) {
   const processLabel = params.snapshot.processTask.processNumber || params.snapshot.processTask.title;
+  const legalOperatorState = params.processMissionContext
+    ? buildLegalOperatorState(params.processMissionContext)
+    : null;
+  const processMissionBetaContract = params.processMissionContext && legalOperatorState
+    ? buildProcessMissionBetaContract(params.processMissionContext, {
+        legalOperatorState,
+        artifactType: "legal_first_draft_result",
+        capabilityName: input.capabilityName,
+        handlerType: input.handlerType,
+        status: params.resultStatus === "completed"
+          ? "executed"
+          : params.resultStatus === "running"
+            ? "planned"
+            : "blocked",
+        reason: params.errorMessage || legalOperatorState.humanGate.reason,
+        blockedReason: params.errorMessage || null,
+      })
+    : null;
   const pieceLabel = params.execution?.recommendedPieceLabel
     || params.execution?.result.pieceLabel
     || params.snapshot.caseBrain.recommendedPieceLabel
@@ -4589,10 +5546,105 @@ async function registerLegalFirstDraftResultArtifact(
       draft_factory_task_id: params.execution?.draftFactoryTaskId || params.snapshot.firstDraft.taskId,
       already_existing: params.execution?.alreadyExisting === true,
       requires_human_review: params.execution?.result.requiresHumanReview ?? params.snapshot.firstDraft.requiresHumanReview,
+      ...(params.processMissionContext ? {
+        ...buildOperationalMethodologyPayload(params.processMissionContext),
+        process_mission_context: params.processMissionContext,
+        legal_operator_state: legalOperatorState,
+        ...(processMissionBetaContract || {}),
+      } : {}),
       piece_label: pieceLabel,
       error_message: params.errorMessage || params.snapshot.firstDraft.error || null,
     },
   });
+}
+
+async function resolveLegalFirstDraftApprovalGate(input: DispatchCapabilityInput) {
+  if (!input.auditLogId) {
+    return {
+      approved: false,
+      reason: "draft_generation_requires_human_approval",
+      detail: "Geracao de minuta juridica exige audit log aprovado antes da Draft Factory.",
+    };
+  }
+
+  try {
+    const { data, error } = await serviceSupabase
+      .from("agent_audit_logs")
+      .select("skill_invoked, approval_status, approved_by, approved_at, approval_context, pending_execution_payload")
+      .eq("tenant_id", input.tenantId)
+      .eq("id", input.auditLogId)
+      .maybeSingle<AgentApprovalGateRow>();
+
+    if (error) {
+      return {
+        approved: false,
+        reason: "draft_generation_approval_lookup_failed",
+        detail: error.message || "Nao foi possivel confirmar a aprovacao humana da minuta.",
+      };
+    }
+
+    if (!data) {
+      return {
+        approved: false,
+        reason: "draft_generation_approval_not_found",
+        detail: "Aprovacao humana da minuta nao foi encontrada para este tenant.",
+      };
+    }
+
+    if (data.skill_invoked !== "legal_first_draft_generate") {
+      return {
+        approved: false,
+        reason: "draft_generation_approval_skill_mismatch",
+        detail: "O approval encontrado nao pertence a legal_first_draft_generate.",
+      };
+    }
+
+    if (data.approval_status !== "approved" || !data.approved_by || !data.approved_at) {
+      return {
+        approved: false,
+        reason: "draft_generation_approval_not_approved",
+        detail: "A Draft Factory juridica so pode rodar depois de approval humano aprovado.",
+      };
+    }
+
+    const approvalContext = data.approval_context || {};
+    const pendingPayload = data.pending_execution_payload || {};
+    const sourceCapability = getStringValue(approvalContext.source_capability);
+    const sourcePayload = getStringValue(pendingPayload.source);
+
+    if (
+      sourceCapability !== "legal_process_mission_execute_next" ||
+      sourcePayload !== "legal_process_mission_execute_next"
+    ) {
+      return {
+        approved: false,
+        reason: "draft_generation_approval_source_mismatch",
+        detail: "A aprovacao da minuta precisa ter sido aberta pela missao processual supervisionada.",
+      };
+    }
+
+    if (data.approved_by && input.userId && data.approved_by !== input.userId) {
+      return {
+        approved: false,
+        reason: "draft_generation_approver_mismatch",
+        detail: "O usuario executor nao corresponde ao aprovador registrado.",
+      };
+    }
+
+    return {
+      approved: true,
+      reason: null,
+      detail: null,
+      approvedBy: data.approved_by,
+      approvedAt: data.approved_at,
+    };
+  } catch (error) {
+    return {
+      approved: false,
+      reason: "draft_generation_approval_lookup_failed",
+      detail: error instanceof Error ? error.message : "Nao foi possivel confirmar a aprovacao humana da minuta.",
+    };
+  }
 }
 
 async function runLegalDocumentMemoryRefresh(input: DispatchCapabilityInput): Promise<DispatchCapabilityResult> {
@@ -6149,6 +7201,56 @@ async function runLegalFirstDraftGenerate(input: DispatchCapabilityInput): Promi
     tenantId: input.tenantId,
     entities: input.entities,
   });
+  const processMissionContext = await buildTenantProcessMissionContext(input, snapshotBefore);
+  const methodologyPayload = buildOperationalMethodologyPayload(processMissionContext);
+  const approvalGate = await resolveLegalFirstDraftApprovalGate(input);
+
+  if (!approvalGate.approved) {
+    const reason = approvalGate.detail || "A Draft Factory juridica exige approval humano aprovado antes de gerar minuta.";
+    const reply = [
+      "## Primeira minuta juridica",
+      `- Processo: ${snapshotBefore.processTask.processNumber || snapshotBefore.processTask.title}`,
+      "- Status: bloqueada para approval humano.",
+      `- Motivo: ${reason}`,
+      "- Guardrail: a Draft Factory juridica nao foi chamada e nenhum side effect externo foi realizado.",
+    ].join("\n");
+
+    await registerLegalFirstDraftResultArtifact(input, {
+      snapshot: snapshotBefore,
+      reply,
+      summary: "Draft Factory bloqueada antes da geracao por falta de approval humano aprovado.",
+      resultStatus: "failed",
+      firstDraftStaleBefore: snapshotBefore.firstDraft.isStale,
+      errorMessage: reason,
+      processMissionContext,
+    });
+
+    return {
+      status: "blocked",
+      reply,
+      outputPayload: {
+        auditLogId: input.auditLogId || null,
+        handler_type: input.handlerType,
+        process_task_id: snapshotBefore.processTask.id,
+        process_number: snapshotBefore.processTask.processNumber,
+        blocked_reason: approvalGate.reason || "draft_generation_requires_human_approval",
+        approval_required: true,
+        approval_status: "missing_or_unapproved",
+        process_mission_confidence: processMissionContext.confidence,
+        process_mission_recommended_action: processMissionContext.recommendedAction,
+        ...methodologyPayload,
+        legal_operator_state: withLegalOperatorRuntimeState(processMissionContext, {
+          status: "blocked",
+          blocker: approvalGate.reason || "draft_generation_requires_human_approval",
+        }),
+        external_side_effects_blocked: true,
+      },
+      data: {
+        snapshot: snapshotBefore,
+        processMissionContext,
+      },
+    };
+  }
 
   if (!snapshotBefore.caseBrain.taskId || !snapshotBefore.caseBrain.recommendedPieceInput) {
     const reply = `O processo ${snapshotBefore.processTask.processNumber || snapshotBefore.processTask.title} ainda nao tem um draft plan juridico pronto. Rode o Case Brain antes de pedir a primeira minuta.`;
@@ -6157,6 +7259,7 @@ async function runLegalFirstDraftGenerate(input: DispatchCapabilityInput): Promi
       reply,
       summary: "O draft plan juridico ainda nao esta pronto para gerar a primeira minuta.",
       resultStatus: "missing_draft_plan",
+      processMissionContext,
     });
 
     return {
@@ -6166,6 +7269,9 @@ async function runLegalFirstDraftGenerate(input: DispatchCapabilityInput): Promi
         auditLogId: input.auditLogId || null,
         handler_type: input.handlerType,
         process_task_id: snapshotBefore.processTask.id,
+        approval_status: "approved",
+        ...methodologyPayload,
+        external_side_effects_blocked: true,
       },
     };
   }
@@ -6192,6 +7298,7 @@ async function runLegalFirstDraftGenerate(input: DispatchCapabilityInput): Promi
         : "A Draft Factory juridica ja esta executando a primeira minuta solicitada.",
       resultStatus: "running",
       firstDraftStaleBefore: snapshotBefore.firstDraft.isStale,
+      processMissionContext,
     });
 
     return {
@@ -6203,8 +7310,59 @@ async function runLegalFirstDraftGenerate(input: DispatchCapabilityInput): Promi
         process_task_id: snapshotBefore.processTask.id,
         first_draft_status: snapshotBefore.firstDraft.status,
         first_draft_stale: snapshotBefore.firstDraft.isStale,
+        approval_status: "approved",
+        ...methodologyPayload,
+        external_side_effects_blocked: true,
       },
       data: snapshotBefore,
+    };
+  }
+
+  if (processMissionContext.confidence === "low" || (
+    processMissionContext.methodology.provided && processMissionContext.methodology.requiresHumanReview
+  )) {
+    const reason = processMissionContext.confidence === "low"
+      ? "a base do processo ainda esta fraca para gerar minuta com seguranca"
+      : "a metodologia operacional deste tenant ainda exige revisao humana antes da Draft Factory";
+    const reply = buildProcessMissionExecutionBlockedReply({ context: processMissionContext, reason });
+
+    await registerLegalFirstDraftResultArtifact(input, {
+      snapshot: snapshotBefore,
+      reply,
+      summary: `Draft Factory bloqueada: ${reason}.`,
+      resultStatus: "failed",
+      firstDraftStaleBefore: snapshotBefore.firstDraft.isStale,
+      errorMessage: reason,
+      processMissionContext,
+    });
+
+    return {
+      status: "blocked",
+      reply,
+      outputPayload: {
+        auditLogId: input.auditLogId || null,
+        handler_type: input.handlerType,
+        process_task_id: snapshotBefore.processTask.id,
+        process_number: snapshotBefore.processTask.processNumber,
+        blocked_reason: processMissionContext.confidence === "low"
+          ? "low_confidence_process_mission"
+          : "operational_methodology_requires_review",
+        process_mission_confidence: processMissionContext.confidence,
+        process_mission_recommended_action: processMissionContext.recommendedAction,
+        approval_status: "approved",
+        ...methodologyPayload,
+        legal_operator_state: withLegalOperatorRuntimeState(processMissionContext, {
+          status: "blocked",
+          blocker: processMissionContext.confidence === "low"
+            ? "low_confidence_process_mission"
+            : "operational_methodology_requires_review",
+        }),
+        external_side_effects_blocked: true,
+      },
+      data: {
+        snapshot: snapshotBefore,
+        processMissionContext,
+      },
     };
   }
 
@@ -6214,6 +7372,7 @@ async function runLegalFirstDraftGenerate(input: DispatchCapabilityInput): Promi
       userId: input.userId || null,
       processTaskId: snapshotBefore.processTask.id,
       trigger: "manual_draft_factory",
+      operationalMethodology: processMissionContext.methodology,
     });
     const snapshotAfter = await getLegalCaseContextSnapshot({
       tenantId: input.tenantId,
@@ -6254,6 +7413,10 @@ async function runLegalFirstDraftGenerate(input: DispatchCapabilityInput): Promi
       already_existing: execution.alreadyExisting === true,
       first_draft_stale_before: snapshotBefore.firstDraft.isStale,
       piece_label: pieceLabel,
+      approval_status: "approved",
+      approval_audit_log_id: input.auditLogId || null,
+      external_side_effects_blocked: true,
+      ...methodologyPayload,
     });
 
     await registerLegalFirstDraftResultArtifact(input, {
@@ -6263,6 +7426,7 @@ async function runLegalFirstDraftGenerate(input: DispatchCapabilityInput): Promi
       resultStatus: "completed",
       execution,
       firstDraftStaleBefore: snapshotBefore.firstDraft.isStale,
+      processMissionContext,
     });
 
     return {
@@ -6278,10 +7442,15 @@ async function runLegalFirstDraftGenerate(input: DispatchCapabilityInput): Promi
         first_draft_status: snapshotAfter.firstDraft.status,
         first_draft_stale: snapshotAfter.firstDraft.isStale,
         recommended_piece_label: pieceLabel,
+        approval_status: "approved",
+        approval_audit_log_id: input.auditLogId || null,
+        ...methodologyPayload,
+        external_side_effects_blocked: true,
       },
       data: {
         execution,
         snapshot: snapshotAfter,
+        processMissionContext,
       },
     };
   } catch (error: any) {
@@ -6293,6 +7462,7 @@ async function runLegalFirstDraftGenerate(input: DispatchCapabilityInput): Promi
       resultStatus: "failed",
       firstDraftStaleBefore: snapshotBefore.firstDraft.isStale,
       errorMessage,
+      processMissionContext,
     });
 
     return {
@@ -6302,6 +7472,9 @@ async function runLegalFirstDraftGenerate(input: DispatchCapabilityInput): Promi
         auditLogId: input.auditLogId || null,
         handler_type: input.handlerType,
         process_task_id: snapshotBefore.processTask.id,
+        approval_status: "approved",
+        ...methodologyPayload,
+        external_side_effects_blocked: true,
       },
     };
   }
@@ -6317,6 +7490,8 @@ export async function dispatchCapabilityExecution(input: DispatchCapabilityInput
       return runGrowthMarketingCopywriter(input);
     case "growth_marketing_ops_assistant":
       return runGrowthMarketingOpsAssistant(input);
+    case "management_intelligence_brief":
+      return runManagementIntelligenceBrief(input);
     case "growth_sales_profile_setup":
       return runGrowthSalesProfileSetup(input);
     case "setup_office_profile_conversation":

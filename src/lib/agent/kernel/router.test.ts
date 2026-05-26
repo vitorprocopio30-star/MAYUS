@@ -5,7 +5,7 @@ const baseContext = {
   userId: "user-1",
   tenantId: "tenant-1",
   channel: "chat" as const,
-  availableSkills: ["marketing_copywriter", "marketing_ops_assistant", "sales_profile_setup", "office_setup_conversation", "sales_consultation", "commercial_playbook_setup", "billing_create", "collections_followup", "lead_reactivation", "client_acceptance_record", "external_action_preview", "revenue_flow_plan", "lead_schedule", "lead_followup", "lead_qualify", "lead_intake", "support_case_status", "legal_process_mission_plan", "legal_process_mission_execute_next", "legal_case_brain_insights", "legal_case_context", "legal_document_memory_refresh", "legal_first_draft_generate", "legal_draft_workflow", "legal_draft_review_guidance", "legal_draft_revision_loop", "legal_artifact_publish_premium", "query_process_status"],
+  availableSkills: ["marketing_copywriter", "marketing_ops_assistant", "management_intelligence_brief", "sales_profile_setup", "office_setup_conversation", "sales_consultation", "commercial_playbook_setup", "billing_create", "collections_followup", "lead_reactivation", "client_acceptance_record", "external_action_preview", "revenue_flow_plan", "lead_schedule", "lead_followup", "lead_qualify", "lead_intake", "support_case_status", "legal_process_mission_plan", "legal_process_mission_execute_next", "legal_case_brain_insights", "legal_case_context", "legal_document_memory_refresh", "legal_first_draft_generate", "legal_draft_workflow", "legal_draft_review_guidance", "legal_draft_revision_loop", "legal_artifact_publish_premium", "query_process_status"],
 };
 
 describe("route - juridico MAYUS", () => {
@@ -33,6 +33,20 @@ describe("route - juridico MAYUS", () => {
     expect(result.entities).toEqual(expect.objectContaining({
       channel: "LinkedIn",
       legal_area: "Previdenciario",
+    }));
+    expect(result.confidence).toBeGreaterThanOrEqual(0.9);
+  });
+
+  it("detecta brief de inteligencia de gestao sem acao executiva", () => {
+    const result = route(
+      "Mayus, analise meu escritorio como CEO e explique CAC, pipeline e margem antes de eu decidir.",
+      baseContext
+    );
+
+    expect(result.intent).toBe("management_intelligence_brief");
+    expect(result.entities).toEqual(expect.objectContaining({
+      focus_terms: "CAC",
+      request: "Mayus, analise meu escritorio como CEO e explique CAC, pipeline e margem antes de eu decidir.",
     }));
     expect(result.confidence).toBeGreaterThanOrEqual(0.9);
   });
@@ -100,6 +114,34 @@ describe("route - juridico MAYUS", () => {
       confirmation: "Pode salvar",
     }));
     expect(result.confidence).toBeGreaterThanOrEqual(0.9);
+  });
+
+  it("detecta pedido de metodologia operacional e areas iniciais", () => {
+    const result = route(
+      "Mayus, monte a metodologia do meu escritorio. Nao tenho processo definido e quero configurar trabalhista, previdenciario e bancario/RMC.",
+      baseContext
+    );
+
+    expect(result.intent).toBe("office_setup_conversation");
+    expect(result.entities).toEqual(expect.objectContaining({
+      practice_areas: "trabalhista, previdenciario e bancario/RMC",
+    }));
+    expect(result.confidence).toBeGreaterThanOrEqual(0.9);
+  });
+
+  it("captura identidade comercial dentro da metodologia operacional", () => {
+    const result = route(
+      "Mayus, metodologia operacional do escritorio. Cliente ideal: servidores aposentados com desconto indevido. PUV: prova organizada antes da promessa. Pilares: diagnostico | documento | proximo passo. Anti-cliente: quem quer causa ganha.",
+      baseContext
+    );
+
+    expect(result.intent).toBe("office_setup_conversation");
+    expect(result.entities).toEqual(expect.objectContaining({
+      ideal_client: "servidores aposentados com desconto indevido",
+      unique_value_proposition: "prova organizada antes da promessa",
+      value_pillars: "diagnostico | documento | proximo passo",
+      anti_client_signals: "quem quer causa ganha",
+    }));
   });
 
   it("detecta criacao de playbook comercial a partir do documento Dutra", () => {
@@ -424,6 +466,18 @@ describe("route - juridico MAYUS", () => {
     expect(result.ambiguous).toBe(false);
   });
 
+  it("roteia pedido para montar peca processual como missao antes da Draft Factory", () => {
+    const result = route(
+      "Mayus, monte a pe\u00e7a desse processo 1234567-89.2024.8.26.0100.",
+      baseContext
+    );
+
+    expect(result.intent).toBe("legal_process_mission_plan");
+    expect(result.entities).toEqual({ process_number: "1234567-89.2024.8.26.0100" });
+    expect(result.confidence).toBeGreaterThanOrEqual(0.85);
+    expect(result.ambiguous).toBe(false);
+  });
+
   it("detecta pedido para executar proximo passo seguro da missao processual", () => {
     const result = route(
       "Mayus, execute o proximo passo seguro da missao do processo 1234567-89.2024.8.26.0100.",
@@ -461,13 +515,13 @@ describe("route - juridico MAYUS", () => {
     expect(result.ambiguous).toBe(false);
   });
 
-  it("detecta pedido para gerar a primeira minuta juridica", () => {
+  it("roteia pedido para gerar primeira minuta pela missao supervisionada", () => {
     const result = route(
       "Pode gerar a primeira minuta do processo 1234567-89.2024.8.26.0100 pela Draft Factory?",
       baseContext
     );
 
-    expect(result.intent).toBe("legal_first_draft_generate");
+    expect(result.intent).toBe("legal_process_mission_execute_next");
     expect(result.entities).toEqual({ process_number: "1234567-89.2024.8.26.0100" });
     expect(result.confidence).toBeGreaterThanOrEqual(0.9);
     expect(result.ambiguous).toBe(false);

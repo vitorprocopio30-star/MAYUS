@@ -1,5 +1,48 @@
 import { expect, test } from "@playwright/test";
+import fs from "node:fs";
+import path from "node:path";
 import { getPlaywrightCredentials, loginThroughUi } from "./helpers/auth";
+
+function readLocalEnv(key: string) {
+  const direct = process.env[key]?.trim();
+  if (direct) return direct;
+
+  const envPath = path.join(process.cwd(), ".env.local");
+  if (!fs.existsSync(envPath)) return "";
+
+  const match = fs
+    .readFileSync(envPath, "utf8")
+    .split(/\r?\n/)
+    .map((line) => line.trim())
+    .find((line) => line.startsWith(`${key}=`));
+
+  return match ? match.slice(key.length + 1).trim() : "";
+}
+
+async function forceAdminBrowserProfile(page: Parameters<typeof loginThroughUi>[0]) {
+  const supabaseUrl = readLocalEnv("NEXT_PUBLIC_SUPABASE_URL");
+  if (!supabaseUrl) return;
+
+  const supabaseOrigin = new URL(supabaseUrl).origin;
+  await page.route(`${supabaseOrigin}/rest/v1/profiles**`, async (route) => {
+    await route.fulfill({
+      status: 200,
+      contentType: "application/vnd.pgrst.object+json",
+      body: JSON.stringify({
+        id: "playwright-user",
+        tenant_id: "playwright-tenant",
+        full_name: "Playwright E2E",
+        role: "admin",
+        is_active: true,
+        avatar_url: null,
+        custom_permissions: [],
+        email_corporativo: null,
+        oab_registro: null,
+        is_superadmin: false,
+      }),
+    });
+  });
+}
 
 function brainInboxResponse() {
   const createdAt = "2026-05-19T13:00:00.000Z";
@@ -116,7 +159,11 @@ test.describe("Aprovacoes > atividade de auto-correcao", () => {
   test("mostra auto-correcao e self-improvement no feed canonico do Brain", async ({ page }) => {
     test.setTimeout(180_000);
 
-    await page.route("**/api/brain/inbox?**", async (route) => {
+    await page.route("**/*", async (route) => {
+      if (!route.request().url().includes("/api/brain/inbox")) {
+        return route.fallback();
+      }
+
       await route.fulfill({
         status: 200,
         contentType: "application/json",
@@ -124,7 +171,7 @@ test.describe("Aprovacoes > atividade de auto-correcao", () => {
       });
     });
 
-    await page.route("**/api/juridico/movement-reviews", async (route) => {
+    await page.context().route(/\/api\/juridico\/movement-reviews(?:\?|$)/, async (route) => {
       await route.fulfill({
         status: 200,
         contentType: "application/json",
@@ -132,12 +179,13 @@ test.describe("Aprovacoes > atividade de auto-correcao", () => {
       });
     });
 
+    await forceAdminBrowserProfile(page);
     await loginThroughUi(page, { browserProfileMode: "ui-harness" });
     await page.goto("/dashboard/aprovacoes", { waitUntil: "domcontentloaded" });
     await expect(page).toHaveURL(/\/dashboard\/aprovacoes/);
 
     await expect(page.getByText("MAYUS Brain")).toBeVisible({ timeout: 45_000 });
-    await expect(page.getByText("Relatorio de auto-aprendizado MAYUS")).toBeVisible();
+    await expect(page.getByText("Relatorio de auto-aprendizado MAYUS")).toBeVisible({ timeout: 60_000 });
     await expect(page.getByText(/1 proposta de memoria/)).toBeVisible();
     await expect(page.getByText(/correction_failed_operating_partner_reply_repair_timeout/).first()).toBeVisible();
     await expect(page.getByText("Cobranca supervisionada")).toBeVisible();

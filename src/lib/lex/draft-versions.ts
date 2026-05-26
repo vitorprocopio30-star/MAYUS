@@ -1,3 +1,4 @@
+import { recordLearningEvent } from "@/lib/agent/memory/learning-events";
 import { supabaseAdmin } from "@/lib/supabase/admin";
 
 export type ProcessDraftVersionRecord = {
@@ -359,6 +360,44 @@ function withoutPublicationMetadata(metadata: Record<string, unknown> | null | u
   return nextMetadata;
 }
 
+function getStringArray(value: unknown) {
+  if (!Array.isArray(value)) return [];
+  return value
+    .filter((item): item is string => typeof item === "string" && item.trim().length > 0)
+    .map((item) => item.trim())
+    .slice(0, 10);
+}
+
+function getLearningLoopCapture(metadata: Record<string, unknown> | null | undefined) {
+  return isRecord(metadata?.learning_loop_capture) ? metadata.learning_loop_capture : {};
+}
+
+function getPromotionCandidate(metadata: Record<string, unknown> | null | undefined) {
+  return isRecord(metadata?.promotion_candidate) ? metadata.promotion_candidate : {};
+}
+
+function buildDraftLearningEventBasePayload(version: Partial<ProcessDraftVersionRecord>) {
+  const metadata = isRecord(version.metadata) ? version.metadata : {};
+  const learningLoopCapture = getLearningLoopCapture(metadata);
+  const promotionCandidate = getPromotionCandidate(metadata);
+
+  return {
+    process_task_id: version.process_task_id || null,
+    draft_version_id: version.id || null,
+    version_number: version.version_number ?? null,
+    parent_version_id: version.parent_version_id || null,
+    piece_type: version.piece_type || null,
+    piece_label: version.piece_label || null,
+    practice_area: version.practice_area || null,
+    edit_source: getString(metadata, "edit_source"),
+    signal_categories: getStringArray(learningLoopCapture.categories),
+    change_ratio: typeof learningLoopCapture.changeRatio === "number" ? learningLoopCapture.changeRatio : null,
+    source_kind: getString(learningLoopCapture, "sourceKind"),
+    candidate_types: getStringArray(promotionCandidate.candidateTypes),
+    promotion_candidate_confidence: getString(promotionCandidate, "confidence"),
+  };
+}
+
 export async function createHumanReviewedProcessDraftVersion(params: {
   tenantId: string;
   processTaskId: string;
@@ -420,7 +459,7 @@ export async function createHumanReviewedProcessDraftVersion(params: {
     baseVersionNumber: baseVersion.version_number,
   });
 
-  return createProcessDraftVersion({
+  const version = await createProcessDraftVersion({
     tenantId: params.tenantId,
     processTaskId: params.processTaskId,
     sourceArtifactId: baseVersion.source_artifact_id,
@@ -453,6 +492,38 @@ export async function createHumanReviewedProcessDraftVersion(params: {
     },
     createdBy: params.actorId,
   });
+
+  await recordLearningEvent({
+    supabase: supabaseAdmin,
+    tenantId: params.tenantId,
+    eventType: "human_revision_delta_recorded",
+    sourceModule: "lex_draft_versions",
+    createdBy: params.actorId,
+    payload: {
+      ...buildDraftLearningEventBasePayload({
+        ...baseVersion,
+        ...version,
+        process_task_id: params.processTaskId,
+        parent_version_id: baseVersion.id,
+        piece_type: baseVersion.piece_type,
+        piece_label: baseVersion.piece_label,
+        practice_area: baseVersion.practice_area,
+        metadata: {
+          edit_source: "human_editor",
+          learning_loop_capture: learningLoopCapture,
+          promotion_candidate: promotionCandidate,
+        },
+      }),
+      base_version_id: baseVersion.id,
+      base_version_number: baseVersion.version_number,
+      edited_in_surface: params.surface || "documentos",
+      delta: learningLoopCapture.delta,
+      final_metrics: learningLoopCapture.final,
+      baseline_metrics: learningLoopCapture.baseline,
+    },
+  });
+
+  return version;
 }
 
 export async function loadDraftLearningLoopDelta(params: {
@@ -593,6 +664,25 @@ export async function updateProcessDraftVersionWorkflow(params: {
   if (updateError || !updatedVersion) {
     throw new Error(getErrorMessage(updateError, "Nao foi possivel atualizar o workflow da minuta."));
   }
+
+  await recordLearningEvent({
+    supabase: supabaseAdmin,
+    tenantId: params.tenantId,
+    eventType: params.action === "approve" ? "legal_piece_approved" : "legal_piece_published",
+    sourceModule: "lex_draft_versions",
+    createdBy: params.actorId,
+    payload: {
+      ...buildDraftLearningEventBasePayload({
+        ...updatedVersion,
+        process_task_id: updatedVersion.process_task_id || params.processTaskId,
+      }),
+      action: params.action,
+      workflow_status: updatedVersion.workflow_status,
+      approved: params.action === "approve" || updatedVersion.workflow_status === "approved" || updatedVersion.workflow_status === "published",
+      published: params.action === "publish" || updatedVersion.workflow_status === "published",
+      has_human_revision: Boolean(updatedVersion.parent_version_id),
+    },
+  });
 
   return updatedVersion;
 }

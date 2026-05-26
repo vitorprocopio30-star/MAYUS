@@ -1,3 +1,5 @@
+import { buildTenantOperationalMethodologyContext } from "./tenant-operational-methodology";
+
 export type OfficeSetupConversationInput = {
   officeName?: string | null;
   practiceAreas?: string[] | null;
@@ -13,6 +15,10 @@ export type OfficeSetupConversationInput = {
   calendarPolicy?: string | null;
   financePolicy?: string | null;
   playbookNotes?: string | null;
+  idealClient?: string | null;
+  uniqueValueProposition?: string | null;
+  valuePillars?: string[] | null;
+  antiClientSignals?: string[] | null;
   conversationSummary?: string | null;
   conversationTurns?: Array<{ role: string; content: string }> | null;
   existingProfile?: OfficeKnowledgeProfile | null;
@@ -20,6 +26,45 @@ export type OfficeSetupConversationInput = {
 };
 
 export type OfficeSetupStatus = "collecting" | "draft" | "validated";
+export type OfficeOperationalMethodologyStatus = "draft" | "recommended" | "approved" | "rejected";
+
+export type OfficeOperationalMethodologyAreaValidation = {
+  area: string;
+  status: "needs_area_review" | "validated";
+  owner_team: string | null;
+  pending_items: string[];
+  next_review_question: string | null;
+  required_documents_count: number;
+  phases_count: number;
+};
+
+export type OfficeOperationalMethodologyApprovalProposal = {
+  recommendation: "approve" | "review_before_approval" | "edit_or_reject";
+  title: string;
+  summary: string;
+  next_action: string;
+  requires_human_approval: boolean;
+  blocks_sensitive_activation: boolean;
+};
+
+export type OfficeOperationalMethodologyReview = {
+  scope: "individual_office";
+  status: OfficeOperationalMethodologyStatus;
+  activation: "active_internal" | "supervised_suggestion" | "rejected" | "missing";
+  can_guide_internal_decisions: boolean;
+  requires_human_review: boolean;
+  review_reasons: string[];
+  area_validations: OfficeOperationalMethodologyAreaValidation[];
+  pending_area_validations: OfficeOperationalMethodologyAreaValidation[];
+  pending_improvement_rules: Array<{
+    id: string;
+    title: string;
+    suggestion: string;
+    source: string;
+    requires_approval: boolean;
+  }>;
+  approval_proposal: OfficeOperationalMethodologyApprovalProposal;
+};
 
 export type OfficePracticeAreaPlaybook = {
   area: string;
@@ -37,6 +82,10 @@ export type OfficeKnowledgeProfile = {
   status?: string | null;
   office_name: string | null;
   practice_areas: string[];
+  ideal_client: string | null;
+  unique_value_proposition: string | null;
+  value_pillars: string[];
+  anti_client_signals: string[];
   triage_rules: string[];
   human_handoff_rules: string[];
   communication_tone: string | null;
@@ -52,10 +101,76 @@ export type OfficeKnowledgeProfile = {
   practice_area_playbooks: OfficePracticeAreaPlaybook[];
 };
 
+export type OfficeOperationalMethodology = {
+  status: OfficeOperationalMethodologyStatus;
+  identity: {
+    office_name: string | null;
+    practice_areas: string[];
+    ideal_client: string | null;
+    unique_value_proposition: string | null;
+    value_pillars: string[];
+    anti_client_signals: string[];
+    communication_tone: string | null;
+    forbidden_claims: string[];
+  };
+  intake: {
+    methodology_base_used: boolean;
+    rules: string[];
+    required_documents_by_case: string[];
+    human_handoff_rules: string[];
+    response_sla: string | null;
+    missing_information_policy: string;
+  };
+  case_flow: {
+    phases: Array<{
+      name: string;
+      owner_team: string | null;
+      advance_criteria: string;
+      block_criteria: string;
+    }>;
+    departments: string[];
+    permission_policy: string | null;
+    calendar_policy: string | null;
+    finance_policy: string | null;
+  };
+  area_methods: Array<{
+    area: string;
+    intake_questions: string[];
+    required_documents: string[];
+    phases: string[];
+    document_structure: string[];
+    owner_team: string | null;
+    validation_status: "needs_area_review" | "validated";
+    next_review_question: string;
+  }>;
+  improvement_rules: Array<{
+    id: string;
+    title: string;
+    suggestion: string;
+    status: "pending" | "approved" | "rejected";
+    source: "methodology_base" | "office_interview" | "internet_research" | "usage_learning";
+    requires_approval: boolean;
+  }>;
+  internet_policy: {
+    enabled: boolean;
+    allowed_sources: string[];
+    required_citation_fields: string[];
+    usage: string;
+    sensitive_data_policy: string;
+    no_auto_activation: boolean;
+  };
+  tenant_review?: OfficeOperationalMethodologyReview;
+  updated_at: string;
+};
+
 export type OfficeSetupSignal = {
   key:
     | "office_name"
     | "practice_areas"
+    | "ideal_client"
+    | "unique_value_proposition"
+    | "value_pillars"
+    | "anti_client_signals"
     | "communication_tone"
     | "triage_rules"
     | "human_handoff_rules"
@@ -76,6 +191,8 @@ export type OfficeSetupSignal = {
 
 export type OfficeSetupConversationPlan = {
   profile: OfficeKnowledgeProfile & { status: OfficeSetupStatus };
+  operationalMethodology: OfficeOperationalMethodology;
+  methodologyReview: OfficeOperationalMethodologyReview;
   knownSignals: OfficeSetupSignal[];
   missingSignals: OfficeSetupSignal[];
   completeness: number;
@@ -84,6 +201,7 @@ export type OfficeSetupConversationPlan = {
   setupConversationScript: string[];
   autoConfigurationActions: string[];
   shouldPersist: boolean;
+  shouldPersistMethodology: boolean;
   shouldMarkValidated: boolean;
   requiresHumanReview: boolean;
   externalSideEffectsBlocked: boolean;
@@ -227,27 +345,27 @@ function buildDefaultPipeline(area: string) {
   return base;
 }
 
-function buildDefaultDocuments(area: string, globalDocuments: string[]) {
+function buildDefaultDocuments(area: string, baseDocuments: string[]) {
   const normalized = normalizeText(area);
   const shared = ["Documento pessoal", "Comprovante de endereco", "Contrato de honorarios/procuracao", "Resumo cronologico do caso"];
 
   if (/previdenci|inss|beneficio/.test(normalized)) {
-    return uniqueList([...globalDocuments, "CNIS", "Carta de indeferimento ou decisao do INSS", "Documentos medicos quando houver", ...shared], 8);
+    return uniqueList([...baseDocuments, "CNIS", "Carta de indeferimento ou decisao do INSS", "Documentos medicos quando houver", ...shared], 8);
   }
 
   if (/banc|consignad|rmc|rcc|credcesta|cartao|emprestimo/.test(normalized)) {
-    return uniqueList([...globalDocuments, "Contrato ou proposta bancaria", "Extratos", "Contracheque ou comprovante do desconto", "Comprovante de valores liberados", ...shared], 8);
+    return uniqueList([...baseDocuments, "Contrato ou proposta bancaria", "Extratos", "Contracheque ou comprovante do desconto", "Comprovante de valores liberados", ...shared], 8);
   }
 
   if (/famil|alimento|divorcio|guarda/.test(normalized)) {
-    return uniqueList([...globalDocuments, "Certidao de casamento ou nascimento", "Comprovantes de renda", "Comprovantes de despesas", "Conversas ou acordos relevantes", ...shared], 8);
+    return uniqueList([...baseDocuments, "Certidao de casamento ou nascimento", "Comprovantes de renda", "Comprovantes de despesas", "Conversas ou acordos relevantes", ...shared], 8);
   }
 
   if (/trabalh|emprego|rescis|verba/.test(normalized)) {
-    return uniqueList([...globalDocuments, "CTPS", "Contrato de trabalho", "Holerites", "TRCT/rescisao", "Controles de ponto quando houver", ...shared], 8);
+    return uniqueList([...baseDocuments, "CTPS", "Contrato de trabalho", "Holerites", "TRCT/rescisao", "Controles de ponto quando houver", ...shared], 8);
   }
 
-  return uniqueList([...globalDocuments, ...shared], 8);
+  return uniqueList([...baseDocuments, ...shared], 8);
 }
 
 function buildDefaultIntakeQuestions(area: string) {
@@ -354,6 +472,244 @@ export function buildOfficePracticeAreaPlaybooks(params: {
   });
 }
 
+function buildDraftUniqueValueProposition(params: {
+  idealClient?: string | null;
+  practiceAreas: string[];
+}) {
+  const client = cleanText(params.idealClient) || "pessoas com problema juridico relevante e decisao pendente";
+  const areaLabel = params.practiceAreas.length
+    ? ` nas areas de ${params.practiceAreas.slice(0, 3).join(", ")}`
+    : "";
+
+  return `Ajudamos ${client}${areaLabel} a entender risco, documentos e proximo passo com atendimento consultivo, prova organizada e decisao juridica humana, sem promessa vazia de resultado.`;
+}
+
+function buildDraftValuePillars() {
+  return [
+    "Diagnostico consultivo antes da venda",
+    "Documentos e provas antes de promessa",
+    "Proximo passo claro e acompanhado",
+  ];
+}
+
+function shouldUseMayusBaseMethodology(params: {
+  text: string;
+  triageRules: string[];
+  requiredDocumentsByCase: string[];
+  playbookNotes: string | null;
+}) {
+  const normalized = normalizeText(params.text);
+  return /nao\s+tenho\s+(processo|metodo|metodologia|direcao)|sem\s+(processo|metodo|metodologia)\s+definid|mont(e|ar)\s+(a\s+)?metodologia|ajud(e|ar)\s+a\s+construir\s+(o\s+)?processo|nao\s+sei\s+como\s+organizar/.test(normalized)
+    || (params.triageRules.length === 0 && params.requiredDocumentsByCase.length === 0 && !params.playbookNotes);
+}
+
+function buildTenantMethodologyPhases(params: {
+  departments: string[];
+  defaultPipeline: string[];
+}) {
+  const ownerTeam = params.departments.find((department) => /jurid/i.test(department))
+    || params.departments[0]
+    || null;
+
+  return params.defaultPipeline.map((phase) => ({
+    name: phase,
+    owner_team: ownerTeam,
+    advance_criteria: "Avancar somente quando informacoes minimas, documentos esperados e risco de handoff estiverem revisados.",
+    block_criteria: "Travar quando faltar documento essencial, houver urgencia juridica, decisao sensivel, cobranca, contrato ou duvida que exija humano.",
+  }));
+}
+
+function buildAreaValidation(
+  method: ReturnType<typeof buildTenantOperationalMethodologyContext>["areaMethods"][number],
+): OfficeOperationalMethodologyAreaValidation {
+  const pendingItems = [
+    method.validationStatus !== "validated"
+      ? "Confirmar se perguntas, documentos e fases refletem a rotina real do escritorio."
+      : null,
+    method.intakeQuestions.length === 0 ? "Definir perguntas obrigatorias de triagem." : null,
+    method.requiredDocuments.length === 0 ? "Definir documentos obrigatorios da area." : null,
+    method.phases.length === 0 ? "Definir fases e criterios de andamento." : null,
+    method.documentStructure.length === 0 ? "Definir estrutura documental da area." : null,
+    !method.ownerTeam ? "Definir equipe responsavel pela area." : null,
+  ].filter((item): item is string => Boolean(item));
+
+  return {
+    area: method.area,
+    status: method.validationStatus,
+    owner_team: method.ownerTeam,
+    pending_items: pendingItems,
+    next_review_question: method.nextReviewQuestion,
+    required_documents_count: method.requiredDocuments.length,
+    phases_count: method.phases.length,
+  };
+}
+
+function buildApprovalProposal(params: {
+  context: ReturnType<typeof buildTenantOperationalMethodologyContext>;
+  pendingAreaValidations: OfficeOperationalMethodologyAreaValidation[];
+}): OfficeOperationalMethodologyApprovalProposal {
+  const hasBlockingReview = params.context.reviewReasons
+    .some((reason) => reason !== "methodology_improvement_requires_approval");
+  const blocksSensitiveActivation = params.context.activation !== "active_internal" || hasBlockingReview;
+
+  if (params.context.status === "approved" && !blocksSensitiveActivation) {
+    return {
+      recommendation: "approve",
+      title: "Metodologia aprovada para uso interno",
+      summary: "A metodologia individual do escritorio pode orientar decisoes internas; melhorias novas seguem aguardando aprovacao humana.",
+      next_action: params.context.pendingImprovementRules.length > 0
+        ? "Revisar sugestoes pendentes antes de incorporar novas regras."
+        : "Manter revisao periodica da metodologia por area.",
+      requires_human_approval: params.context.requiresHumanReview,
+      blocks_sensitive_activation: false,
+    };
+  }
+
+  if (params.context.status === "rejected") {
+    return {
+      recommendation: "edit_or_reject",
+      title: "Metodologia rejeitada ou inativa",
+      summary: "A metodologia nao deve orientar atendimento, juridico ou financeiro ate ser refeita e aprovada pelo escritorio.",
+      next_action: "Reabrir a entrevista operacional e gerar nova versao para revisao do dono.",
+      requires_human_approval: true,
+      blocks_sensitive_activation: true,
+    };
+  }
+
+  const areaLabel = params.pendingAreaValidations.length
+    ? `${params.pendingAreaValidations.length} area(s) ainda precisam de validacao.`
+    : "As areas estao estruturadas, mas a aprovacao do dono ainda falta.";
+
+  return {
+    recommendation: "review_before_approval",
+    title: "Revisar metodologia antes de ativar",
+    summary: `${areaLabel} O MAYUS deve tratar este conteudo como sugestao supervisionada do tenant.`,
+    next_action: "Abrir revisao humana, confirmar area por area e aprovar apenas o que representa o escritorio.",
+    requires_human_approval: true,
+    blocks_sensitive_activation: true,
+  };
+}
+
+function buildOfficeOperationalMethodologyReview(
+  methodology: OfficeOperationalMethodology,
+): OfficeOperationalMethodologyReview {
+  const context = buildTenantOperationalMethodologyContext(methodology);
+  const areaValidations = context.areaMethods.map(buildAreaValidation);
+  const pendingAreaValidations = areaValidations.filter((item) => (
+    item.status !== "validated" || item.pending_items.length > 0
+  ));
+  const status = context.status === "missing" ? "draft" : context.status;
+
+  return {
+    scope: "individual_office",
+    status,
+    activation: context.activation,
+    can_guide_internal_decisions: context.canGuideInternalDecisions,
+    requires_human_review: context.requiresHumanReview,
+    review_reasons: context.reviewReasons,
+    area_validations: areaValidations,
+    pending_area_validations: pendingAreaValidations,
+    pending_improvement_rules: context.pendingImprovementRules.map((rule) => ({
+      id: rule.id,
+      title: rule.title,
+      suggestion: rule.suggestion,
+      source: rule.source,
+      requires_approval: rule.requiresApproval,
+    })),
+    approval_proposal: buildApprovalProposal({
+      context,
+      pendingAreaValidations,
+    }),
+  };
+}
+
+function buildOperationalMethodology(params: {
+  status: OfficeOperationalMethodologyStatus;
+  profile: OfficeKnowledgeProfile & { status: OfficeSetupStatus };
+  methodologyBaseUsed: boolean;
+  methodologyPlaybooks: OfficePracticeAreaPlaybook[];
+}) {
+  const defaultPipeline = params.methodologyPlaybooks[0]?.default_pipeline?.length
+    ? params.methodologyPlaybooks[0].default_pipeline
+    : buildDefaultPipeline("geral");
+
+  const methodology = {
+    status: params.status,
+    identity: {
+      office_name: params.profile.office_name,
+      practice_areas: params.profile.practice_areas,
+      ideal_client: params.profile.ideal_client,
+      unique_value_proposition: params.profile.unique_value_proposition,
+      value_pillars: params.profile.value_pillars,
+      anti_client_signals: params.profile.anti_client_signals,
+      communication_tone: params.profile.communication_tone,
+      forbidden_claims: params.profile.forbidden_claims,
+    },
+    intake: {
+      methodology_base_used: params.methodologyBaseUsed,
+      rules: params.profile.triage_rules,
+      required_documents_by_case: params.profile.required_documents_by_case,
+      human_handoff_rules: params.profile.human_handoff_rules,
+      response_sla: params.profile.response_sla,
+      missing_information_policy: "Quando faltar informacao ou documento, o MAYUS deve pedir somente o minimo necessario para destravar o proximo passo.",
+    },
+    case_flow: {
+      phases: buildTenantMethodologyPhases({
+        departments: params.profile.departments,
+        defaultPipeline,
+      }),
+      departments: params.profile.departments,
+      permission_policy: params.profile.permission_policy,
+      calendar_policy: params.profile.calendar_policy,
+      finance_policy: params.profile.finance_policy,
+    },
+    area_methods: params.methodologyPlaybooks.map((playbook) => ({
+      area: playbook.area,
+      intake_questions: playbook.intake_questions,
+      required_documents: playbook.required_documents,
+      phases: playbook.default_pipeline,
+      document_structure: playbook.document_structure,
+      owner_team: playbook.owner_team,
+      validation_status: playbook.validation_status,
+      next_review_question: playbook.next_review_question,
+    })),
+    improvement_rules: [
+      {
+        id: "confirmar-metodologia-base",
+        title: "Validar metodologia v0",
+        suggestion: params.methodologyBaseUsed
+          ? "Revisar a Metodologia Base MAYUS e aprovar, ajustar ou rejeitar cada regra antes de usar como verdade operacional."
+          : "Confirmar se a metodologia capturada representa o escritorio antes de aplicar em atendimento, juridico e financeiro.",
+        status: "pending" as const,
+        source: params.methodologyBaseUsed ? "methodology_base" as const : "office_interview" as const,
+        requires_approval: true,
+      },
+      {
+        id: "lembrar-correcoes-recorrentes",
+        title: "Aprender com correcao humana",
+        suggestion: "Quando o advogado corrigir atendimento, documentos, fase ou criterio, o MAYUS deve perguntar se deve lembrar para proximos casos desse tipo.",
+        status: "pending" as const,
+        source: "usage_learning" as const,
+        requires_approval: true,
+      },
+    ],
+    internet_policy: {
+      enabled: true,
+      allowed_sources: ["STF", "STJ", "TST", "TRFs", "TRTs", "TNU", "INSS", "diarios oficiais", "tribunais locais", "fontes oficiais e artigos com link verificavel"],
+      required_citation_fields: ["fonte", "link", "data_da_busca", "motivo", "fato_ou_inferencia"],
+      usage: "Pesquisa externa serve para atualizar contexto, sugerir revisao da metodologia e apoiar pecas com fonte clicavel; nao altera regra ativa sozinha.",
+      sensitive_data_policy: "Nao enviar dados sensiveis de clientes para busca aberta sem politica explicita e aprovacao humana.",
+      no_auto_activation: true,
+    },
+    updated_at: new Date().toISOString(),
+  } satisfies OfficeOperationalMethodology;
+
+  return {
+    ...methodology,
+    tenant_review: buildOfficeOperationalMethodologyReview(methodology),
+  } satisfies OfficeOperationalMethodology;
+}
+
 function isConfirmation(input: OfficeSetupConversationInput) {
   const text = normalizeText([
     input.confirmationText,
@@ -392,6 +748,26 @@ export function buildOfficeSetupConversationPlan(input: OfficeSetupConversationI
 
   const practiceAreas = pickList(input.practiceAreas, existing?.practice_areas, text, [
     /(?:areas?\s+(?:juridicas?|de\s+atuacao)|atuamos\s+em|atuacao)\s*[:\-]?\s*(.{4,260})/i,
+  ]);
+
+  const idealClient = cleanText(input.idealClient)
+    || cleanText(existing?.ideal_client)
+    || pickEvidence(text, [
+      /(?:cliente\s+ideal|publico\s+alvo|perfil\s+de\s+cliente)\s*[:\-]?\s*(.{8,260})/i,
+    ]);
+
+  const uniqueValueProposition = cleanText(input.uniqueValueProposition)
+    || cleanText(existing?.unique_value_proposition)
+    || pickEvidence(text, [
+      /(?:puv|proposta\s+unica\s+de\s+valor|proposta\s+unica|diferencial)\s*[:\-]?\s*(.{8,300})/i,
+    ]);
+
+  const valuePillars = pickList(input.valuePillars, existing?.value_pillars, text, [
+    /(?:pilares?|pilares\s+de\s+valor|sustentamos\s+(?:em|com))\s*[:\-]?\s*(.{8,240})/i,
+  ]);
+
+  const antiClientSignals = pickList(input.antiClientSignals, existing?.anti_client_signals, text, [
+    /(?:anti[-\s]?cliente|cliente\s+que\s+nao\s+queremos|nao\s+queremos\s+atender)\s*[:\-]?\s*(.{8,240})/i,
   ]);
 
   const communicationTone = cleanText(input.communicationTone)
@@ -471,11 +847,22 @@ export function buildOfficeSetupConversationPlan(input: OfficeSetupConversationI
   const defaultPermissionPolicy = "Acoes externas, contrato, cobranca, mudanca de permissao, acesso a dados sensiveis e decisao juridica exigem aprovacao humana.";
   const defaultCalendarPolicy = "O MAYUS pode preparar sugestoes de retorno e agenda, mas confirmacao externa de consulta, audiencia ou prazo exige aprovacao humana.";
   const defaultFinancePolicy = "Cobrancas, renegociacoes, descontos, contratos e qualquer acao financeira externa ficam em modo supervisionado.";
-  const defaultPlaybookNotes = "Sem playbook especifico validado; usar tom, triagem e regras operacionais ate o dono aprovar roteiro por area.";
+  const defaultPlaybookNotes = "Sem metodologia especifica validada; usar a Metodologia Base MAYUS como rascunho supervisionado ate o dono aprovar regras por area.";
 
   const resolvedTriageRules = triageRules.length > 0 ? triageRules : defaultTriageRules;
   const resolvedHandoffRules = humanHandoffRules.length > 0 ? humanHandoffRules : defaultHandoffRules;
   const resolvedForbiddenClaims = forbiddenClaims.length > 0 ? forbiddenClaims : defaultForbiddenClaims;
+  const methodologyBaseUsed = shouldUseMayusBaseMethodology({
+    text,
+    triageRules,
+    requiredDocumentsByCase,
+    playbookNotes,
+  });
+  const methodologyAreas = practiceAreas.length > 0
+    ? practiceAreas
+    : methodologyBaseUsed
+      ? ["Trabalhista", "Previdenciario", "Bancario/RMC"]
+      : [];
   const practiceAreaPlaybooks = buildOfficePracticeAreaPlaybooks({
     practiceAreas,
     requiredDocumentsByCase,
@@ -484,10 +871,27 @@ export function buildOfficeSetupConversationPlan(input: OfficeSetupConversationI
     departments,
     existingPlaybooks: existing?.practice_area_playbooks,
   });
+  const methodologyPlaybooks = methodologyAreas.length === practiceAreas.length
+    ? practiceAreaPlaybooks
+    : buildOfficePracticeAreaPlaybooks({
+      practiceAreas: methodologyAreas,
+      requiredDocumentsByCase,
+      triageRules: resolvedTriageRules,
+      humanHandoffRules: resolvedHandoffRules,
+      departments,
+      existingPlaybooks: existing?.practice_area_playbooks,
+    });
 
   const profile: OfficeSetupConversationPlan["profile"] = {
     office_name: officeName,
     practice_areas: practiceAreas,
+    ideal_client: idealClient,
+    unique_value_proposition: uniqueValueProposition || buildDraftUniqueValueProposition({
+      idealClient,
+      practiceAreas: methodologyAreas.length > 0 ? methodologyAreas : practiceAreas,
+    }),
+    value_pillars: valuePillars.length > 0 ? valuePillars : buildDraftValuePillars(),
+    anti_client_signals: antiClientSignals,
     triage_rules: resolvedTriageRules,
     human_handoff_rules: resolvedHandoffRules,
     communication_tone: communicationTone || "WhatsApp claro, humano, curto, seguro e consultivo.",
@@ -516,6 +920,30 @@ export function buildOfficeSetupConversationPlan(input: OfficeSetupConversationI
       label: "Areas de atuacao",
       evidence: practiceAreas,
       nextQuestion: "Quais areas juridicas o escritorio atende hoje e quais devem ter prioridade?",
+    }),
+    makeSignal({
+      key: "ideal_client",
+      label: "Cliente ideal",
+      evidence: idealClient,
+      nextQuestion: "Qual cliente ideal o escritorio quer atrair e atender melhor?",
+    }),
+    makeSignal({
+      key: "unique_value_proposition",
+      label: "PUV",
+      evidence: uniqueValueProposition,
+      nextQuestion: "Qual e a proposta unica de valor do escritorio? Se ainda nao existir, posso sugerir uma base.",
+    }),
+    makeSignal({
+      key: "value_pillars",
+      label: "Pilares de valor",
+      evidence: valuePillars,
+      nextQuestion: "Quais pilares sustentam a promessa comercial do escritorio?",
+    }),
+    makeSignal({
+      key: "anti_client_signals",
+      label: "Anti-cliente",
+      evidence: antiClientSignals,
+      nextQuestion: "Que tipo de cliente ou caso o escritorio prefere evitar?",
     }),
     makeSignal({
       key: "communication_tone",
@@ -585,9 +1013,9 @@ export function buildOfficeSetupConversationPlan(input: OfficeSetupConversationI
     }),
     makeSignal({
       key: "playbook_notes",
-      label: "Playbooks operacionais",
+      label: "Metodologia operacional",
       evidence: playbookNotes,
-      nextQuestion: "Quais roteiros ou playbooks o MAYUS deve seguir para atendimento, vendas, agenda e cobranca?",
+      nextQuestion: "Quais fases, criterios e rotinas o MAYUS deve seguir no processo do escritorio?",
     }),
   ];
 
@@ -602,35 +1030,57 @@ export function buildOfficeSetupConversationPlan(input: OfficeSetupConversationI
       : "collecting";
 
   profile.status = status;
+  const methodologyStatus: OfficeOperationalMethodologyStatus = status === "validated"
+    ? "approved"
+    : methodologyBaseUsed
+      ? "recommended"
+      : "draft";
+  const operationalMethodology = buildOperationalMethodology({
+    status: methodologyStatus,
+    profile,
+    methodologyBaseUsed,
+    methodologyPlaybooks,
+  });
+  const methodologyReview = operationalMethodology.tenant_review || buildOfficeOperationalMethodologyReview(operationalMethodology);
+  const methodologyNextQuestion = methodologyReview.pending_area_validations[0]?.next_review_question
+    || methodologyReview.approval_proposal.next_action;
 
   return {
     profile,
+    operationalMethodology,
+    methodologyReview,
     knownSignals,
     missingSignals,
     completeness,
     status,
-    nextQuestion: missingSignals[0]?.nextQuestion || "Base operacional do escritorio pronta para revisao humana.",
+    nextQuestion: missingSignals[0]?.nextQuestion || methodologyNextQuestion || "Base operacional do escritorio pronta para revisao humana.",
     setupConversationScript: [
-      "Comecar por areas de atuacao, tom e regras de triagem.",
-      "Depois coletar handoff humano, documentos, promessas proibidas, preco, permissoes, agenda, financeiro e playbooks.",
-      "Gerar defaults por area juridica: perguntas, documentos, pipeline e estrutura de pastas em modo needs_area_review.",
-      "Salvar apenas quando o dono confirmar que as respostas representam o escritorio.",
+      "Comecar por identidade: areas, cliente ideal, PUV, pilares e anti-cliente.",
+      "Depois coletar tom, triagem, handoff humano, documentos, promessas proibidas, preco, permissoes, agenda, financeiro e fases do processo.",
+      "Se o escritorio ainda nao tiver direcao, sugerir a Metodologia Base MAYUS para atendimento, vendas, documentos e areas iniciais.",
+      "Gerar metodologia por area juridica: perguntas, documentos, fases, criterios e estrutura de pastas em modo needs_area_review.",
+      "Salvar como rascunho/recomendacao e aplicar como regra apenas quando o dono confirmar que representa o escritorio.",
       "Reusar o perfil no Operating Partner, WhatsApp, Setup Doctor e futuras rotinas de onboarding.",
     ],
     autoConfigurationActions: [
+      "Atualizar operational_methodology em tenant_settings.ai_features como draft, recommended ou approved.",
       "Atualizar office_knowledge_profile em tenant_settings.ai_features quando houver confirmacao.",
-      "Registrar artifact office_setup_conversation para auditoria.",
-      "Registrar learning event para o Setup Doctor reconhecer o onboarding operacional.",
-      "Gerar practice_area_playbooks para orientar pipeline juridico e estrutura documental por area sem executar acao externa.",
-      "Manter qualquer acao externa bloqueada ate o humano aprovar regras sensiveis.",
+      "Registrar artifact office_operational_methodology para auditoria.",
+      "Registrar learning event quando metodologia for criada, revisada ou aprovada.",
+      "Gerar area_methods/practice_area_playbooks para orientar intake, pipeline juridico e estrutura documental por area sem executar acao externa.",
+      "Usar internet apenas como fonte auditavel: fonte, link, data, motivo e separacao entre fato e inferencia.",
+      "Manter qualquer acao externa ou regra sensivel bloqueada ate o humano aprovar.",
     ],
     shouldPersist: confirmed && knownSignals.length > 0,
+    shouldPersistMethodology: knownSignals.length > 0 || methodologyBaseUsed,
     shouldMarkValidated: confirmed && knownSignals.length > 0,
-    requiresHumanReview: !confirmed,
+    requiresHumanReview: methodologyReview.requires_human_review,
     externalSideEffectsBlocked: true,
     summary: confirmed
-      ? "Onboarding operacional do escritorio validado para o MAYUS supervisionado."
-      : "Onboarding operacional em coleta; MAYUS ainda precisa de confirmacao antes de gravar respostas.",
+      ? "Metodologia operacional do escritorio aprovada para o MAYUS supervisionado."
+      : methodologyBaseUsed
+        ? "Metodologia Base MAYUS recomendada como v0; precisa de revisao humana antes de virar regra ativa."
+        : "Metodologia operacional em coleta; MAYUS ainda precisa de confirmacao antes de aplicar respostas.",
   };
 }
 
@@ -638,7 +1088,13 @@ export function buildOfficeSetupConversationArtifactMetadata(plan: OfficeSetupCo
   return {
     summary: plan.summary,
     profile: plan.profile,
+    operational_methodology: plan.operationalMethodology,
+    methodology_review: plan.methodologyReview,
     setup_status: plan.status,
+    methodology_status: plan.operationalMethodology.status,
+    methodology_activation: plan.methodologyReview.activation,
+    pending_area_validations: plan.methodologyReview.pending_area_validations,
+    human_approval_proposal: plan.methodologyReview.approval_proposal,
     setup_completeness: plan.completeness,
     known_signals: plan.knownSignals,
     missing_signals: plan.missingSignals,
@@ -646,6 +1102,7 @@ export function buildOfficeSetupConversationArtifactMetadata(plan: OfficeSetupCo
     setup_conversation_script: plan.setupConversationScript,
     auto_configuration_actions: plan.autoConfigurationActions,
     should_persist: plan.shouldPersist,
+    should_persist_methodology: plan.shouldPersistMethodology,
     should_mark_validated: plan.shouldMarkValidated,
     requires_human_review: plan.requiresHumanReview,
     external_side_effects_blocked: plan.externalSideEffectsBlocked,

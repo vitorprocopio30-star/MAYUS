@@ -80,7 +80,7 @@ Evidencia 2026-04-28: `client_acceptance_record` registra artifact `client_accep
 
 ## MAYUS Growth OS
 
-- [ ] Posicionar MAYUS como socio operacional de IA da banca.
+- [ ] Posicionar MAYUS como Operating System juridico com inteligencia operacional e de gestao supervisionada.
 - [x] Agenda Google opcional por usuario.
 Evidencia 2026-04-28: Agenda Diaria ganhou conexao Google Agenda por usuario, OAuth read-only, listagem dos eventos do calendario primario e desconexao sem afetar tarefas internas.
 - [x] Agenda Google global opcional do escritorio.

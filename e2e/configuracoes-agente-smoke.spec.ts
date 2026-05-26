@@ -54,7 +54,7 @@ test.describe("Configuracoes > Agente smoke", () => {
 
     let routineDryRunRequested = false;
 
-    await page.route("**/api/agent/skills", async (route) => {
+    await page.route("**/api/agent/skills**", async (route) => {
       if (route.request().method() !== "GET") {
         return route.continue();
       }
@@ -81,7 +81,7 @@ test.describe("Configuracoes > Agente smoke", () => {
       });
     });
 
-    await page.route("**/api/setup/doctor", async (route) => {
+    await page.route("**/api/setup/doctor**", async (route) => {
       await route.fulfill({
         status: 200,
         contentType: "application/json",
@@ -107,7 +107,7 @@ test.describe("Configuracoes > Agente smoke", () => {
       });
     });
 
-    await page.route("**/api/agent/routines", async (route) => {
+    await page.route("**/api/agent/routines**", async (route) => {
       if (route.request().method() === "POST") {
         const body = route.request().postDataJSON() as { routineId?: string; dryRun?: boolean };
         expect(body).toEqual({ routineId: "finance-daily-review", dryRun: true });
@@ -137,11 +137,182 @@ test.describe("Configuracoes > Agente smoke", () => {
               id: "finance-daily-review",
               label: "Revisao financeira diaria",
               module: "finance",
+              internalAgent: {
+                id: "finance_agent",
+                label: "Finance Agent",
+                role: "Revisa recebiveis, excedentes e cobrancas supervisionadas.",
+                owner: "Admin financeiro",
+              },
               enabled: true,
               paused: false,
               status: "ready",
               reason: "Pronta para dry-run supervisionado.",
               nextAction: "Preparar proximas acoes financeiras sem enviar cobranca.",
+            },
+          ],
+          agents: [
+            {
+              id: "finance_agent",
+              label: "Finance Agent",
+              role: "Revisa recebiveis, excedentes, aceite de custo e cobrancas supervisionadas.",
+              module: "finance",
+              owner: "Admin financeiro",
+              enabled: true,
+              autonomyMode: "supervised",
+              allowedSurfaces: ["financeiro", "monitoramento", "aprovacoes", "brain"],
+              budgetPolicy: {
+                label: "Cobranca real e custo externo exigem aprovacao",
+                paidExternalActions: "approval_required",
+                maxAutomaticCostCents: 0,
+              },
+              health: {
+                status: "ready",
+                reason: "Agente com rotina habilitada e sem bloqueio critico.",
+                lastActivityAt: "2026-05-21T12:00:00.000Z",
+                nextAction: "Preparar proximas acoes financeiras sem enviar cobranca.",
+              },
+              routines: {
+                total: 1,
+                enabled: 1,
+                blocked: 0,
+                awaitingApproval: 0,
+              },
+              approvalsPending: 0,
+              blockersCount: 0,
+              memoryLifecycle: {
+                applied: 0,
+                pendingProposals: 0,
+                suggestedSkills: 0,
+                revocations: 0,
+              },
+              activity: {
+                latestMission: {
+                  id: "mission-control-smoke",
+                  status: "planning",
+                  goal: "Revisao financeira diaria",
+                  lastUpdatedAt: "2026-05-21T12:00:00.000Z",
+                  nextSafeAction: "Preparar proximas acoes financeiras sem enviar cobranca.",
+                },
+                pendingApproval: null,
+                latestArtifact: null,
+                latestEvent: {
+                  id: "event-mission-control",
+                  eventType: "agentic_routine_dry_run",
+                  createdAt: "2026-05-21T12:00:00.000Z",
+                },
+                latestBlocker: null,
+              },
+              openclaw: {
+                outcome: "allowed",
+                surface: "internal",
+                source: "openclaw_policy",
+                reason: "Rotina interna sem side effects externos.",
+                blockedLayer: null,
+                appliedLayersCount: 1,
+                precedence: ["global", "tenant", "module", "agent", "tool", "channel"],
+              },
+              hermes: {
+                status: "completed",
+                latestMemoryId: null,
+                lifecycleStatus: null,
+                lifecycleKind: null,
+                lastEventSummary: "Dry-run revisado.",
+              },
+            },
+          ],
+          summary: {
+            totalAgents: 7,
+            enabledAgents: 7,
+            readyAgents: 1,
+            blockedAgents: 0,
+            degradedAgents: 0,
+            pendingApprovals: 0,
+            blockers: 0,
+            nextAction: "Preparar proximas acoes financeiras sem enviar cobranca.",
+            policyPrecedence: ["global", "tenant", "module", "agent", "tool", "channel"],
+          },
+        }),
+      });
+    });
+
+    await page.route("**/api/brain/inbox**", async (route) => {
+      await route.fulfill({
+        status: 200,
+        contentType: "application/json",
+        body: JSON.stringify({
+          pending_count: 1,
+          pending_approvals: [],
+          recent_approvals: [],
+          recent_tasks: [],
+          recent_artifacts: [],
+          recent_events: [],
+          legal_operator_missions: [],
+          mission_control_snapshots: [
+            {
+              missionId: "mission-control-smoke",
+              taskId: "mission-control-smoke",
+              module: "finance",
+              agentSource: "paperclip",
+              status: "planning",
+              goal: "Revisao financeira diaria",
+              currentStep: null,
+              pendingApproval: null,
+              blockers: [],
+              policy: {
+                outcome: "ok",
+                surface: "internal",
+                module: "finance",
+                requiresApproval: false,
+                canExecuteNow: true,
+                credentialGate: false,
+                budgetGate: "ok",
+                reason: "Rotina interna sem side effects externos.",
+                source: "openclaw_policy",
+                debugger: {
+                  precedence: ["global", "tenant", "module", "agent", "tool", "channel"],
+                  blockedLayer: null,
+                  blockedReasonCode: null,
+                  lowerLayersCannotReopen: true,
+                  appliedLayers: [
+                    {
+                      scope: "global",
+                      key: "global",
+                      enabled: true,
+                      requiresApproval: false,
+                      hasAllow: true,
+                      hasDeny: false,
+                      hasSurfaceMatrix: false,
+                    },
+                  ],
+                },
+              },
+              trajectory: {
+                status: "completed",
+                eventsCount: 2,
+                lastEventType: "result",
+                lastEventSummary: "Dry-run revisado.",
+                lifecycleStatus: null,
+                lifecycleKind: null,
+                latestMemoryId: null,
+              },
+              routine: {
+                routineId: "finance-daily-review",
+                label: "Revisao financeira diaria",
+                source: "paperclip",
+                agentId: "paperclip",
+                internalAgentId: "finance_agent",
+                internalAgentLabel: "Finance Agent",
+                internalAgentRole: "Revisa recebiveis, excedentes e cobrancas supervisionadas.",
+                status: "planning",
+                budgetStatus: "ok",
+                owner: "Admin financeiro",
+              },
+              latestArtifactId: null,
+              latestEventId: "event-mission-control",
+              timeline: [],
+              nextSafeAction: "Preparar proximas acoes financeiras sem enviar cobranca.",
+              legalOperatorMission: null,
+              lastUpdatedAt: "2026-05-21T12:00:00.000Z",
             },
           ],
         }),
@@ -159,10 +330,23 @@ test.describe("Configuracoes > Agente smoke", () => {
     await expect(page.getByTestId("agentic-next-best-action")).toContainText(/scheduler supervisionado/i);
     await expect(page.getByTestId("agentic-readiness-module-scheduler")).toBeVisible();
 
+    await expect(page.getByTestId("agent-control-plane-panel")).toBeVisible();
+    await expect(page.getByTestId("agent-control-card-finance_agent")).toBeVisible();
+    await expect(page.getByTestId("agent-health-status").first()).toHaveText("ready");
+    await expect(page.getByTestId("agent-control-next-action")).toContainText(/financeiras/i);
+    await expect(page.getByTestId("agent-filter-finance_agent")).toBeVisible();
+    await expect(page.getByText(/Ultima missao:/i)).toBeVisible();
+    await expect(page.getByText(/OpenClaw:/i)).toBeVisible();
+    await expect(page.getByText(/Hermes:/i)).toBeVisible();
+
+    await expect(page.getByTestId("agentic-mission-control-panel")).toBeVisible();
+    await expect(page.getByText(/Controle agentico/i)).toBeVisible();
+    await expect(page.getByText(/Revisao financeira diaria/i).first()).toBeVisible();
+
     await expect(page.getByTestId("agentic-routines-panel")).toBeVisible();
     await expect(page.getByTestId("agentic-routine-row-finance-daily-review")).toBeVisible();
     await expect(page.getByTestId("agentic-routine-status")).toHaveText("ready");
-    await expect(page.getByText(/Revisao financeira diaria/i)).toBeVisible();
+    await expect(page.getByText(/Revisao financeira diaria/i).first()).toBeVisible();
 
     await page.getByTestId("agentic-routine-run").click();
     await expect.poll(() => routineDryRunRequested).toBe(true);

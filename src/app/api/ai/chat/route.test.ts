@@ -89,6 +89,12 @@ function buildRequest(message: string) {
 
 const missionSkills = [
   {
+    name: "management_intelligence_brief",
+    description: "Cria brief de inteligencia de gestao.",
+    input_schema: { type: "object", properties: {} },
+    handler_type: "management_intelligence_brief",
+  },
+  {
     name: "office_setup_conversation",
     description: "Conduz onboarding operacional do escritorio.",
     input_schema: { type: "object", properties: {} },
@@ -198,9 +204,12 @@ describe("POST /api/ai/chat deterministic process mission routing", () => {
       reply: "## Perfil operacional configurado",
       outputPayload: {
         office_setup_persisted: true,
-        profile_status: "validated",
-        artifact_type: "office_setup_conversation",
-        event_type: "office_setup_profile_configured",
+        operational_methodology_persisted: true,
+        setup_status: "validated",
+        methodology_status: "approved",
+        artifact_type: "office_operational_methodology",
+        legacy_artifact_type: "office_setup_conversation",
+        event_type: "office_operational_methodology_approved",
         external_side_effects: [],
       },
       data: { ok: true },
@@ -246,10 +255,58 @@ describe("POST /api/ai/chat deterministic process mission routing", () => {
       handlerType: "setup_office_profile_conversation",
       outputPayload: expect.objectContaining({
         office_setup_persisted: true,
-        profile_status: "validated",
-        artifact_type: "office_setup_conversation",
-        event_type: "office_setup_profile_configured",
+        operational_methodology_persisted: true,
+        setup_status: "validated",
+        methodology_status: "approved",
+        artifact_type: "office_operational_methodology",
+        legacy_artifact_type: "office_setup_conversation",
+        event_type: "office_operational_methodology_approved",
         external_side_effects: [],
+      }),
+    }));
+  });
+
+  it("executa inteligencia de gestao pelo router local sem chamar LLM", async () => {
+    dispatchCapabilityExecutionMock.mockResolvedValueOnce({
+      status: "executed",
+      reply: "## Inteligencia de gestao",
+      outputPayload: {
+        artifact_type: "management_intelligence_brief",
+        readiness_status: "partial",
+        readiness_confidence: "low",
+        external_side_effects_blocked: true,
+        strategic_decision_blocked: true,
+      },
+      data: { ok: true },
+    });
+
+    const response = await POST(buildRequest(
+      "Mayus, analise meu escritorio como CEO e explique CAC, pipeline e margem antes de eu decidir."
+    ));
+    const json = await response.json();
+
+    expect(response.status).toBe(200);
+    expect(callLLMWithFallbackMock).not.toHaveBeenCalled();
+    expect(executeMock).toHaveBeenCalledWith(expect.objectContaining({
+      intent: "management_intelligence_brief",
+      entities: expect.objectContaining({
+        focus_terms: "CAC",
+      }),
+    }), expect.objectContaining({ tenantId: "tenant-1", userId: "user-1" }));
+    expect(dispatchCapabilityExecutionMock).toHaveBeenCalledWith(expect.objectContaining({
+      handlerType: "management_intelligence_brief",
+      capabilityName: "management_intelligence_brief",
+      tenantId: "tenant-1",
+      userId: "user-1",
+      auditLogId: "audit-1",
+    }));
+    expect(json.kernel).toEqual(expect.objectContaining({
+      status: "executed",
+      capabilityName: "management_intelligence_brief",
+      handlerType: "management_intelligence_brief",
+      outputPayload: expect.objectContaining({
+        artifact_type: "management_intelligence_brief",
+        strategic_decision_blocked: true,
       }),
     }));
   });

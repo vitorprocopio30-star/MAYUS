@@ -48,6 +48,7 @@ interface AwaitingPayload {
   entities: Record<string, string>;
   idempotencyKey: string;
   schemaVersion: string;
+  legalOperatorState?: Record<string, unknown>;
 }
 
 interface MessageKernel {
@@ -174,11 +175,32 @@ const FINANCE_CAPABILITY_ARTIFACT_TYPES: Record<string, string> = {
   revenue_to_case: "revenue_to_case",
 };
 
+const MANAGEMENT_ARTIFACT_TYPE_LABELS: Record<string, string> = {
+  management_intelligence_brief: "Inteligencia de gestao",
+  management_data_readiness: "Readiness de gestao",
+};
+
 type FinanceArtifactHighlight = {
   artifactType: string;
   label: string;
   status: string;
   details: string[];
+};
+
+type ManagementArtifactHighlight = {
+  artifactType: string;
+  label: string;
+  status: string;
+  details: string[];
+};
+
+type LegalOperatorHighlight = {
+  phase: string | null;
+  status: string;
+  action: string;
+  gate: string;
+  blockers: string[];
+  confidence: string | null;
 };
 
 function getPayloadString(payload: Record<string, unknown> | undefined, keys: string[]) {
@@ -190,6 +212,51 @@ function getPayloadString(payload: Record<string, unknown> | undefined, keys: st
     if (typeof value === "boolean") return value ? "sim" : "nao";
   }
   return null;
+}
+
+function asPlainRecord(value: unknown): Record<string, unknown> | null {
+  return value && typeof value === "object" && !Array.isArray(value)
+    ? value as Record<string, unknown>
+    : null;
+}
+
+function getRecordStringValue(record: Record<string, unknown> | null | undefined, key: string) {
+  const value = record?.[key];
+  if (typeof value === "string" && value.trim()) return value.trim();
+  if (typeof value === "number" && Number.isFinite(value)) return String(value);
+  if (typeof value === "boolean") return value ? "sim" : "nao";
+  return null;
+}
+
+function getStringListValue(value: unknown) {
+  return Array.isArray(value)
+    ? value.map((item) => String(item || "").trim()).filter(Boolean)
+    : [];
+}
+
+function getLegalOperatorHighlight(kernel?: MessageKernel): LegalOperatorHighlight | null {
+  if (!kernel) return null;
+  const payload = kernel.outputPayload || {};
+  const state = asPlainRecord(payload.legal_operator_state) || asPlainRecord(kernel.awaitingPayload?.legalOperatorState);
+  if (!state) return null;
+
+  const safeNextAction = asPlainRecord(state.safeNextAction);
+  const humanGate = asPlainRecord(state.humanGate);
+  const evidenceSummary = asPlainRecord(state.evidenceSummary);
+  const action = getRecordStringValue(safeNextAction, "label")
+    || getRecordStringValue(safeNextAction, "action")
+    || "Proxima acao segura";
+  const gateRequired = humanGate?.required === true;
+  const gateReason = getRecordStringValue(humanGate, "reason");
+
+  return {
+    phase: getRecordStringValue(state, "phase"),
+    status: getRecordStringValue(state, "status") || "ativo",
+    action,
+    gate: gateRequired ? (gateReason || "approval humano requerido") : "sem approval pendente",
+    blockers: getStringListValue(state.blockers).slice(0, 3),
+    confidence: getRecordStringValue(evidenceSummary, "confidence"),
+  };
 }
 
 function inferFinanceArtifactType(kernel?: MessageKernel) {
@@ -246,6 +313,48 @@ function getFinanceArtifactHighlights(kernel?: MessageKernel): FinanceArtifactHi
   return [{ artifactType, label, status, details }];
 }
 
+function inferManagementArtifactType(kernel?: MessageKernel) {
+  if (!kernel) return null;
+  const payload = kernel.outputPayload || {};
+  const directType = getPayloadString(payload, ["artifact_type", "artifactType"]);
+  if (directType && MANAGEMENT_ARTIFACT_TYPE_LABELS[directType]) return directType;
+  if (kernel.capabilityName === "management_intelligence_brief" || kernel.handlerType === "management_intelligence_brief") {
+    return "management_intelligence_brief";
+  }
+  if (getPayloadString(payload, ["readiness_status", "readiness_confidence"])) {
+    return "management_intelligence_brief";
+  }
+  return null;
+}
+
+function getManagementArtifactHighlights(kernel?: MessageKernel): ManagementArtifactHighlight[] {
+  const artifactType = inferManagementArtifactType(kernel);
+  if (!artifactType || !kernel) return [];
+  const payload = kernel.outputPayload || {};
+  const missing = Array.isArray(payload.missing_data_sources)
+    ? payload.missing_data_sources.map((item) => String(item || "").trim()).filter(Boolean)
+    : [];
+  const sources = Array.isArray(payload.data_sources)
+    ? payload.data_sources.map((item) => String(item || "").trim()).filter(Boolean)
+    : [];
+  const status = [
+    getPayloadString(payload, ["readiness_status"]) || "brief",
+    getPayloadString(payload, ["readiness_confidence"]) || null,
+  ].filter(Boolean).join(" / ");
+  const details = [
+    sources.length ? `dados: ${sources.slice(0, 2).join(", ")}` : null,
+    missing.length ? `lacunas: ${missing.slice(0, 2).join(", ")}` : null,
+    getPayloadString(payload, ["strategic_decision_blocked"]) === "sim" ? "decisao do dono preservada" : null,
+  ].filter((value): value is string => Boolean(value));
+
+  return [{
+    artifactType,
+    label: MANAGEMENT_ARTIFACT_TYPE_LABELS[artifactType] || artifactType,
+    status,
+    details,
+  }];
+}
+
 function getKernelHighlight(kernel?: MessageKernel) {
   if (!kernel) return null;
 
@@ -262,7 +371,13 @@ function getKernelHighlight(kernel?: MessageKernel) {
           : ""
   );
   const financeLabel = FINANCE_ARTIFACT_TYPE_LABELS[inferFinanceArtifactType(kernel) || ""] || null;
-  const label = financeLabel || (missionKind ? MISSION_KIND_LABELS[missionKind] : null);
+  const managementLabel = MANAGEMENT_ARTIFACT_TYPE_LABELS[inferManagementArtifactType(kernel) || ""] || null;
+  const setupLabel = capability === "office_setup_conversation"
+    || kernel.handlerType === "setup_office_profile_conversation"
+    || getPayloadString(kernel.outputPayload, ["artifact_type"]) === "office_operational_methodology"
+    ? "Metodologia operacional"
+    : null;
+  const label = financeLabel || managementLabel || setupLabel || (missionKind ? MISSION_KIND_LABELS[missionKind] : null);
   const statusLabel = KERNEL_STATUS_LABELS[kernel.status] || kernel.status;
   const approval = Boolean(kernel.approvalRequired || kernel.status === "awaiting_approval");
 
@@ -2359,6 +2474,8 @@ export default function MAYUSPlayground() {
           {messages.map((msg, idx) => {
             const kernelHighlight = getKernelHighlight(msg.kernel);
             const financeArtifactHighlights = getFinanceArtifactHighlights(msg.kernel);
+            const managementArtifactHighlights = getManagementArtifactHighlights(msg.kernel);
+            const legalOperatorHighlight = getLegalOperatorHighlight(msg.kernel);
 
             if (msg.role === "approval" && msg.kernel?.auditLogId && msg.kernel?.awaitingPayload) {
               return (
@@ -2430,9 +2547,61 @@ export default function MAYUSPlayground() {
                     </div>
                   )}
 
+                  {msg.role === 'model' && legalOperatorHighlight && (
+                    <div className="mt-3 space-y-2 rounded-xl border border-[#CCA761]/20 bg-black/25 p-3">
+                      <div className="flex flex-wrap items-center gap-2">
+                        <span className="rounded-full border border-[#CCA761]/30 bg-[#CCA761]/10 px-2.5 py-1 text-[10px] font-black uppercase tracking-[0.18em] text-[#E2C37A]">
+                          Operador juridico
+                        </span>
+                        <span className="text-[10px] uppercase tracking-[0.16em] text-gray-500">
+                          {legalOperatorHighlight.status}
+                        </span>
+                        {legalOperatorHighlight.confidence && (
+                          <span className="text-[10px] uppercase tracking-[0.16em] text-gray-500">
+                            confianca {legalOperatorHighlight.confidence}
+                          </span>
+                        )}
+                      </div>
+                      <div className="space-y-1 text-xs text-gray-300">
+                        {legalOperatorHighlight.phase && <p>Missao: {legalOperatorHighlight.phase}</p>}
+                        <p>Proxima acao: {legalOperatorHighlight.action}</p>
+                        <p>Approval: {legalOperatorHighlight.gate}</p>
+                        {legalOperatorHighlight.blockers.length > 0 && (
+                          <p>Bloqueios: {legalOperatorHighlight.blockers.join(", ")}</p>
+                        )}
+                      </div>
+                    </div>
+                  )}
+
                   {msg.role === 'model' && financeArtifactHighlights.length > 0 && (
                     <div className="mt-3 space-y-2 rounded-xl border border-[#CCA761]/20 bg-[#CCA761]/5 p-3">
                       {financeArtifactHighlights.map((highlight) => (
+                        <div key={highlight.artifactType} className="space-y-2">
+                          <div className="flex flex-wrap items-center gap-2">
+                            <span className="rounded-full border border-[#CCA761]/30 bg-[#CCA761]/10 px-2.5 py-1 text-[10px] font-black uppercase tracking-[0.18em] text-[#E2C37A]">
+                              {highlight.label}
+                            </span>
+                            <span className="text-[10px] uppercase tracking-[0.16em] text-gray-500">
+                              {highlight.status}
+                            </span>
+                          </div>
+                          {highlight.details.length > 0 && (
+                            <div className="flex flex-wrap gap-1.5">
+                              {highlight.details.map((detail) => (
+                                <span key={detail} className="rounded-full border border-white/10 bg-black/30 px-2 py-1 text-[10px] text-gray-400">
+                                  {detail}
+                                </span>
+                              ))}
+                            </div>
+                          )}
+                        </div>
+                      ))}
+                    </div>
+                  )}
+
+                  {msg.role === 'model' && managementArtifactHighlights.length > 0 && (
+                    <div className="mt-3 space-y-2 rounded-xl border border-[#CCA761]/20 bg-black/25 p-3">
+                      {managementArtifactHighlights.map((highlight) => (
                         <div key={highlight.artifactType} className="space-y-2">
                           <div className="flex flex-wrap items-center gap-2">
                             <span className="rounded-full border border-[#CCA761]/30 bg-[#CCA761]/10 px-2.5 py-1 text-[10px] font-black uppercase tracking-[0.18em] text-[#E2C37A]">

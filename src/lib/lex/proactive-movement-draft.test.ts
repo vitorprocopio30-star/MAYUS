@@ -80,11 +80,46 @@ describe("classifyProactiveLegalDraftTrigger", () => {
     });
   });
 
+  it("detecta prazo generico revisado como checklist sem Draft Factory automatica", () => {
+    const trigger = classifyProactiveLegalDraftTrigger({
+      eventType: "PRAZO",
+      movementText: "Intimacao para manifestacao sobre documentos no prazo legal.",
+      deadlineDescription: "Manifestar-se sobre documentos.",
+      metadata: {
+        requer_acao: true,
+        obrigacao_de_quem: "escritorio",
+      },
+    });
+
+    expect(trigger).toMatchObject({
+      id: "lex.escavador.prazo_manifestacao_generica",
+      actionType: "artifact_only",
+      artifactType: "lex_proactive_manifestation_checklist",
+      recommendedPieceInput: null,
+      recommendedPieceLabel: "Manifestacao",
+      requiresHumanReview: true,
+    });
+  });
+
   it("ignora eventos sem playbook correspondente", () => {
     const trigger = classifyProactiveLegalDraftTrigger({
       eventType: "DESPACHO",
       movementText: "Conclusos para despacho de mero expediente.",
       deadlineDescription: "Despacho generico.",
+    });
+
+    expect(trigger).toBeNull();
+  });
+
+  it("ignora recurso do proprio polo representado recebido por chamada direta do Draft Factory", () => {
+    const trigger = classifyProactiveLegalDraftTrigger({
+      eventType: "RECURSO",
+      movementText: "Recurso de apelacao interposto pela parte autora.",
+      deadlineDescription: "Prazo para contrarrazoes.",
+      metadata: {
+        requer_acao: false,
+        obrigacao_de_quem: "parte_contraria",
+      },
     });
 
     expect(trigger).toBeNull();

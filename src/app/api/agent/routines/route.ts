@@ -7,6 +7,12 @@ import {
   type MayusAgenticRoutine,
   type MayusRoutineHeartbeatResult,
 } from "@/lib/agent/runtime/routines";
+import { buildMayusAgentControlPlane } from "@/lib/agent/runtime/control-plane";
+import { buildLegalOperatorMissionSnapshots } from "@/lib/brain/legal-operator-missions";
+import {
+  buildBrainMissionControlSnapshots,
+  type BrainMissionControlSnapshot,
+} from "@/lib/brain/mission-control";
 
 export const dynamic = "force-dynamic";
 export const maxDuration = 60;
@@ -48,6 +54,20 @@ type RoutineEventRow = {
   payload?: Record<string, unknown> | null;
 };
 
+type BrainRelationRow = Record<string, unknown> & {
+  id?: string | null;
+  task_id?: string | null;
+  step_id?: string | null;
+};
+
+type MissionControlDiagnostics = {
+  status: "ready" | "degraded";
+  canReconstruct: boolean;
+  reason: string;
+  nextAction: string;
+  sources: string[];
+};
+
 const ROUTINE_EVENT_NAMES = [
   "agentic_routine_woken",
   "agentic_routine_blocked",
@@ -70,7 +90,7 @@ function sanitizeText(value: unknown, fallback = "scheduler_error") {
   const text = typeof value === "string" && value.trim() ? value.trim() : fallback;
   return text
     .replace(/Bearer\s+[A-Za-z0-9._~+/=-]+/gi, "Bearer [redacted]")
-    .replace(/(service[_-]?role|secret|token|api[_-]?key|authorization)(["'\s:=]+)[^"',\s}]+/gi, "$1$2[redacted]")
+    .replace(/(service[_-]?role[_-]?key|service[_-]?role|secret|token|api[_-]?key|authorization)(["'\s:=_-]+)[^"',\s}]+/gi, "$1$2[redacted]")
     .slice(0, 280);
 }
 
@@ -228,6 +248,188 @@ function getRoutineIdFromEvent(event: RoutineEventRow) {
   const payload = getRecord(event.payload);
   const routineId = payload.routine_id || payload.routineId;
   return typeof routineId === "string" ? routineId : "";
+}
+
+function uniqueIds(values: Array<string | null | undefined>) {
+  return Array.from(new Set(values.filter((value): value is string => typeof value === "string" && value.trim().length > 0)));
+}
+
+async function loadAgentControlMissionSnapshots(params: {
+  client: RoutineClient;
+  tenantId: string;
+}): Promise<{
+  snapshots: BrainMissionControlSnapshot[];
+  diagnostics: MissionControlDiagnostics;
+}> {
+  const sources = [
+    "brain_tasks",
+    "brain_runs",
+    "brain_steps",
+    "brain_approvals",
+    "brain_artifacts",
+    "learning_events",
+    "brain_memories",
+  ];
+
+  try {
+    const [
+      { data: pendingApprovals, error: pendingError },
+      { data: recentApprovals, error: recentApprovalsError },
+      { data: recentTasks, error: recentTasksError },
+      { data: recentArtifacts, error: recentArtifactsError },
+      { data: recentEvents, error: recentEventsError },
+    ] = await Promise.all([
+      params.client
+        .from("brain_approvals")
+        .select("id, task_id, step_id, status, risk_level, created_at, updated_at, approved_at, decision_notes, approval_context")
+        .eq("tenant_id", params.tenantId)
+        .eq("status", "pending")
+        .order("created_at", { ascending: true })
+        .limit(20),
+      params.client
+        .from("brain_approvals")
+        .select("id, task_id, step_id, status, risk_level, created_at, updated_at, approved_at, decision_notes, approval_context")
+        .eq("tenant_id", params.tenantId)
+        .neq("status", "pending")
+        .order("updated_at", { ascending: false })
+        .limit(8),
+      params.client
+        .from("brain_tasks")
+        .select("id, tenant_id, title, goal, module, channel, status, created_at, updated_at, started_at, result_summary, error_message, task_input, task_context, policy_snapshot")
+        .eq("tenant_id", params.tenantId)
+        .order("updated_at", { ascending: false })
+        .limit(12),
+      params.client
+        .from("brain_artifacts")
+        .select("id, task_id, artifact_type, title, source_module, metadata, created_at")
+        .eq("tenant_id", params.tenantId)
+        .order("created_at", { ascending: false })
+        .limit(16),
+      params.client
+        .from("learning_events")
+        .select("id, task_id, step_id, event_type, source_module, payload, created_at")
+        .eq("tenant_id", params.tenantId)
+        .order("created_at", { ascending: false })
+        .limit(20),
+    ]);
+
+    if (pendingError || recentApprovalsError || recentTasksError || recentArtifactsError || recentEventsError) {
+      throw pendingError || recentApprovalsError || recentTasksError || recentArtifactsError || recentEventsError;
+    }
+
+    const approvals = [
+      ...((pendingApprovals || []) as BrainRelationRow[]),
+      ...((recentApprovals || []) as BrainRelationRow[]),
+    ];
+    const artifacts = (recentArtifacts || []) as BrainRelationRow[];
+    const events = (recentEvents || []) as BrainRelationRow[];
+    const tasks = (recentTasks || []) as BrainRelationRow[];
+    const taskIds = uniqueIds([
+      ...tasks.map((task) => task.id),
+      ...approvals.map((approval) => approval.task_id),
+      ...artifacts.map((artifact) => artifact.task_id),
+      ...events.map((event) => event.task_id),
+    ]);
+    const stepIds = uniqueIds([
+      ...approvals.map((approval) => approval.step_id),
+      ...events.map((event) => event.step_id),
+    ]);
+
+    const [
+      { data: taskRows, error: taskRowsError },
+      { data: runRows, error: runRowsError },
+      { data: stepRows, error: stepRowsError },
+      { data: memoryRows, error: memoryRowsError },
+    ] = await Promise.all([
+      taskIds.length > 0
+        ? params.client
+            .from("brain_tasks")
+            .select("id, tenant_id, title, goal, module, channel, status, created_at, updated_at, started_at, result_summary, error_message, task_input, task_context, policy_snapshot")
+            .eq("tenant_id", params.tenantId)
+            .in("id", taskIds)
+        : Promise.resolve({ data: [], error: null }),
+      taskIds.length > 0
+        ? params.client
+            .from("brain_runs")
+            .select("id, task_id, status, attempt_number, created_at, updated_at, started_at, completed_at, error_message, output_payload")
+            .eq("tenant_id", params.tenantId)
+            .in("task_id", taskIds)
+        : Promise.resolve({ data: [], error: null }),
+      taskIds.length > 0
+        ? params.client
+            .from("brain_steps")
+            .select("id, task_id, run_id, order_index, step_key, title, status, step_type, capability_name, handler_type, input_payload, output_payload, error_message, created_at, updated_at, started_at, completed_at")
+            .eq("tenant_id", params.tenantId)
+            .in("task_id", taskIds)
+        : stepIds.length > 0
+          ? params.client
+              .from("brain_steps")
+              .select("id, task_id, run_id, order_index, step_key, title, status, step_type, capability_name, handler_type, input_payload, output_payload, error_message, created_at, updated_at, started_at, completed_at")
+              .eq("tenant_id", params.tenantId)
+              .in("id", stepIds)
+          : Promise.resolve({ data: [], error: null }),
+      taskIds.length > 0
+        ? params.client
+            .from("brain_memories")
+            .select("id, task_id, memory_key, value, source, confidence, promoted, created_at, updated_at")
+            .eq("tenant_id", params.tenantId)
+            .in("task_id", taskIds)
+        : Promise.resolve({ data: [], error: null }),
+    ]);
+
+    if (taskRowsError || runRowsError || stepRowsError || memoryRowsError) {
+      throw taskRowsError || runRowsError || stepRowsError || memoryRowsError;
+    }
+
+    const legalOperatorMissions = buildLegalOperatorMissionSnapshots({
+      approvals: approvals as any,
+      artifacts: artifacts as any,
+      events: events as any,
+    });
+
+    const snapshots = buildBrainMissionControlSnapshots({
+      tasks: [...((taskRows || []) as any[]), ...(tasks as any[])],
+      runs: (runRows || []) as any[],
+      steps: (stepRows || []) as any[],
+      approvals: approvals as any[],
+      artifacts: artifacts as any[],
+      events: events as any[],
+      memories: (memoryRows || []) as any[],
+      legalOperatorMissions,
+    }).slice(0, 12);
+
+    return {
+      snapshots,
+      diagnostics: snapshots.length > 0
+        ? {
+            status: "ready",
+            canReconstruct: true,
+            reason: "Mission Control reconstruiu missoes reais com owner, blockers, policy OpenClaw e trajectory Hermes.",
+            nextAction: "Usar mission_control_snapshots como fonte de leitura para coordenacao interna.",
+            sources,
+          }
+        : {
+            status: "degraded",
+            canReconstruct: false,
+            reason: "Nenhum snapshot real de Mission Control foi encontrado para este tenant.",
+            nextAction: "Acordar uma rotina Paperclip ou verificar se brain_tasks/approvals/artifacts/events existem para este tenant.",
+            sources,
+          },
+    };
+  } catch (error) {
+    const safeError = sanitizeError(error);
+    console.warn("[agent/routines] mission snapshots unavailable", safeError);
+    return {
+      snapshots: [],
+      diagnostics: {
+        status: "degraded",
+        canReconstruct: false,
+        reason: `Mission Control indisponivel: ${safeError.message}`,
+        nextAction: "Verificar schema brain_*, learning_events, brain_memories e credenciais server-side antes de confiar no painel.",
+        sources,
+      },
+    };
+  }
 }
 
 function getLastRoutineEventAt(events: RoutineEventRow[], routineId: string) {
@@ -497,8 +699,33 @@ export async function GET() {
       tenantId: auth.context!.tenantId,
       client: brainAdminSupabase,
     });
+    const missionControl = await loadAgentControlMissionSnapshots({
+      tenantId: auth.context!.tenantId,
+      client: brainAdminSupabase,
+    });
+    const missionControlSnapshots = missionControl.snapshots;
+    const controlPlane = buildMayusAgentControlPlane({
+      routines,
+      missionSnapshots: missionControlSnapshots,
+      tenantId: auth.context!.tenantId,
+    });
 
-    return NextResponse.json({ routines });
+    return NextResponse.json({
+      routines,
+      agents: controlPlane.agents,
+      summary: controlPlane.summary,
+      control_plane: controlPlane,
+      tenant_readiness: controlPlane.tenant_readiness,
+      mission_control: {
+        ...missionControl.diagnostics,
+        tenant_readiness: controlPlane.tenant_readiness,
+        snapshots: missionControlSnapshots,
+      },
+      mission_control_degradation: missionControl.diagnostics.status === "degraded"
+        ? missionControl.diagnostics
+        : null,
+      mission_control_snapshots: missionControlSnapshots,
+    });
   } catch (error) {
     console.error("[agent/routines] GET", sanitizeError(error));
     return NextResponse.json({ error: "Nao foi possivel carregar rotinas agenticas." }, { status: 500 });

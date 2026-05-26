@@ -97,6 +97,204 @@ function mergeMetadata(row: PendingWhatsAppReplyMessage, patch: Record<string, a
   };
 }
 
+type WhatsAppBrainTrace = {
+  taskId: string | null;
+  runId: string | null;
+  stepId: string | null;
+  error?: string | null;
+};
+
+function inferWhatsAppBrainRoute(metadata?: Record<string, any> | null) {
+  const operatingPartner = metadata?.mayus_operating_partner || {};
+  const classification = metadata?.conversation_classification || operatingPartner.conversation_classification || {};
+  const processStatus = metadata?.process_status_context || operatingPartner.process_status_context || null;
+  const intent = String(operatingPartner.intent || metadata?.intent || classification.class || "").trim();
+  const route = String(classification.class || intent || metadata?.reply_source || "unknown").trim() || "unknown";
+  let skill = "mayus_operating_partner";
+
+  if (processStatus || route === "process_status" || intent === "process_status") {
+    skill = processStatus?.verified === true ? "support_case_status" : "whatsapp_process_query";
+  } else if (route === "commercial" || intent === "sales_qualification" || intent === "sales_closing") {
+    skill = "lead_qualify";
+  } else if (route === "legal_triage" || intent === "legal_triage") {
+    skill = "lead_intake";
+  }
+
+  return {
+    route,
+    skill,
+    actorContext: metadata?.whatsapp_actor_context || operatingPartner.whatsapp_actor_context || null,
+    turnResolution: metadata?.conversation_frame?.resolution_type || operatingPartner.conversation_frame?.resolution_type || null,
+  };
+}
+
+async function createWhatsAppBrainTrace(params: {
+  supabase: SupabaseClient;
+  row: PendingWhatsAppReplyMessage;
+}): Promise<WhatsAppBrainTrace> {
+  const now = new Date().toISOString();
+  try {
+    const { data: task, error: taskError } = await params.supabase
+      .from("brain_tasks")
+      .insert({
+        tenant_id: params.row.tenant_id,
+        created_by: null,
+        channel: "whatsapp",
+        module: "whatsapp",
+        status: "executing",
+        title: "Atendimento WhatsApp",
+        goal: "Responder turno de WhatsApp com roteamento agentico supervisionado.",
+        task_input: {
+          source: "whatsapp.reply_processor",
+          inbound_message_id: params.row.id,
+          contact_id: params.row.contact_id,
+          trigger: replyTrigger(params.row),
+        },
+        task_context: {
+          media_processing_status: params.row.media_processing_status,
+          reply_target_message_id: params.row.id,
+          reply_target_created_at: params.row.created_at,
+        },
+        policy_snapshot: {
+          tenant_only: true,
+          auto_send_guarded: true,
+          external_side_effects: "whatsapp_reply_only",
+          sensitive_legal_actions_allowed: false,
+        },
+        started_at: now,
+      })
+      .select("id")
+      .single<{ id: string }>();
+
+    if (taskError || !task?.id) throw taskError || new Error("brain_task_missing");
+
+    const { data: run, error: runError } = await params.supabase
+      .from("brain_runs")
+      .insert({
+        task_id: task.id,
+        tenant_id: params.row.tenant_id,
+        attempt_number: 1,
+        status: "executing",
+        summary: "Preparando resposta WhatsApp supervisionada.",
+        started_at: now,
+      })
+      .select("id")
+      .single<{ id: string }>();
+
+    if (runError || !run?.id) throw runError || new Error("brain_run_missing");
+
+    const { data: step, error: stepError } = await params.supabase
+      .from("brain_steps")
+      .insert({
+        task_id: task.id,
+        run_id: run.id,
+        tenant_id: params.row.tenant_id,
+        order_index: 1,
+        step_key: "whatsapp_reply",
+        title: "Preparar resposta WhatsApp",
+        step_type: "capability",
+        capability_name: "mayus_operating_partner",
+        handler_type: "whatsapp_reply_processor",
+        status: "running",
+        input_payload: {
+          inbound_message_id: params.row.id,
+          contact_id: params.row.contact_id,
+          trigger: replyTrigger(params.row),
+        },
+        started_at: now,
+      })
+      .select("id")
+      .single<{ id: string }>();
+
+    if (stepError || !step?.id) throw stepError || new Error("brain_step_missing");
+
+    return { taskId: task.id, runId: run.id, stepId: step.id };
+  } catch (error) {
+    return {
+      taskId: null,
+      runId: null,
+      stepId: null,
+      error: truncateError(error instanceof Error ? error.message : String(error)),
+    };
+  }
+}
+
+async function finishWhatsAppBrainTrace(params: {
+  supabase: SupabaseClient;
+  trace: WhatsAppBrainTrace | null;
+  metadata?: Record<string, any> | null;
+  nextStatus: "processed" | "pending" | "failed";
+  autoSent?: boolean;
+  durationMs?: number;
+  error?: string | null;
+}) {
+  const inferred = inferWhatsAppBrainRoute(params.metadata);
+  const completedAt = new Date().toISOString();
+  const traceStatus = params.nextStatus === "failed"
+    ? "failed"
+    : params.nextStatus === "pending"
+      ? "completed_with_warnings"
+      : "completed";
+  const stepStatus = params.nextStatus === "failed" ? "failed" : "completed";
+  const traceMetadata = {
+    brain_task_id: params.trace?.taskId || null,
+    brain_run_id: params.trace?.runId || null,
+    brain_step_id: params.trace?.stepId || null,
+    skill: inferred.skill,
+    route: inferred.route,
+    actor_context: inferred.actorContext,
+    turn_resolution: inferred.turnResolution,
+    brain_trace_status: traceStatus,
+    brain_trace_error: params.error || params.trace?.error || null,
+  };
+
+  if (!params.trace?.taskId || !params.trace.runId || !params.trace.stepId) {
+    return traceMetadata;
+  }
+
+  await Promise.all([
+    params.supabase
+      .from("brain_steps")
+      .update({
+        status: stepStatus,
+        capability_name: inferred.skill,
+        handler_type: "whatsapp_agentic_reply",
+        output_payload: {
+          route: inferred.route,
+          skill: inferred.skill,
+          actor_context: inferred.actorContext,
+          turn_resolution: inferred.turnResolution,
+          auto_sent: params.autoSent === true,
+          reply_processing_status: params.nextStatus,
+          duration_ms: params.durationMs || null,
+        },
+        error_payload: params.error ? { error: params.error } : {},
+        completed_at: completedAt,
+      })
+      .eq("id", params.trace.stepId),
+    params.supabase
+      .from("brain_runs")
+      .update({
+        status: traceStatus,
+        summary: params.error || `${inferred.route} via ${inferred.skill}`,
+        error_message: params.error || null,
+        completed_at: completedAt,
+      })
+      .eq("id", params.trace.runId),
+    params.supabase
+      .from("brain_tasks")
+      .update({
+        status: traceStatus,
+        result_summary: params.error || `${inferred.route} via ${inferred.skill}`,
+        error_message: params.error || null,
+        completed_at: completedAt,
+      })
+      .eq("id", params.trace.taskId),
+  ]);
+
+  return traceMetadata;
+}
+
 export async function enqueueWhatsAppReply(params: {
   supabase: SupabaseClient;
   messageId: string;
@@ -126,7 +324,7 @@ export async function enqueueWhatsAppReply(params: {
 async function recordReplyEvent(params: {
   supabase: SupabaseClient;
   row: PendingWhatsAppReplyMessage;
-  eventName: "whatsapp_reply_processed" | "whatsapp_reply_failed" | "whatsapp_reply_stale_pending" | "whatsapp_reply_stale_processing_recovered" | "whatsapp_reply_stale_processing_suppressed";
+  eventName: "whatsapp_reply_processed" | "whatsapp_reply_failed" | "whatsapp_reply_stale_pending" | "whatsapp_reply_stale_processing_recovered" | "whatsapp_reply_stale_processing_suppressed" | "whatsapp_reply_superseded_by_newer_message";
   status: "ok" | "error" | "warning";
   durationMs?: number;
   error?: string | null;
@@ -279,6 +477,7 @@ async function processOneReply(params: {
   row: PendingWhatsAppReplyMessage;
 }) {
   const startedAt = Date.now();
+  let brainTrace: WhatsAppBrainTrace | null = null;
   const staleMs = params.row.created_at ? Date.now() - new Date(params.row.created_at).getTime() : 0;
   const currentStatus = getReplyProcessingStatus(params.row);
 
@@ -367,6 +566,40 @@ async function processOneReply(params: {
       });
     }
 
+    if (currentStatus !== "processing" && await hasNewerMessageThan({ supabase: params.supabase, row: params.row })) {
+      const supersededAt = new Date().toISOString();
+      await params.supabase
+        .from("whatsapp_messages")
+        .update({
+          metadata: mergeMetadata(params.row, {
+            reply_processing_status: "processed",
+            reply_processed_at: supersededAt,
+            reply_auto_sent: false,
+            reply_skipped_reason: "newer_message_exists",
+            reply_superseded_at: supersededAt,
+          }),
+        })
+        .eq("id", params.row.id)
+        .eq("metadata->>reply_processing_status", "pending");
+
+      await recordReplyEvent({
+        supabase: params.supabase,
+        row: params.row,
+        eventName: "whatsapp_reply_superseded_by_newer_message",
+        status: "warning",
+        durationMs: Date.now() - startedAt,
+        extraPayload: { reason: "newer_message_exists" },
+      });
+
+      return {
+        message_id: params.row.id,
+        status: "processed" as const,
+        auto_sent: false,
+        duration_ms: Date.now() - startedAt,
+        skipped_reason: "newer_message_exists",
+      };
+    }
+
     const claimed = await claimReply({
       supabase: params.supabase,
       row: params.row,
@@ -381,6 +614,23 @@ async function processOneReply(params: {
         skipped_reason: "already_claimed",
       };
     }
+
+    brainTrace = await createWhatsAppBrainTrace({
+      supabase: params.supabase,
+      row: params.row,
+    });
+    const startedBrainMetadata = mergeMetadata(params.row, {
+      brain_task_id: brainTrace.taskId,
+      brain_run_id: brainTrace.runId,
+      brain_step_id: brainTrace.stepId,
+      brain_trace_status: brainTrace.error ? "unavailable" : "running",
+      brain_trace_error: brainTrace.error || null,
+    });
+    await params.supabase
+      .from("whatsapp_messages")
+      .update({ metadata: startedBrainMetadata })
+      .eq("id", params.row.id);
+    params.row.metadata = startedBrainMetadata;
 
     const preferredProvider = params.row.metadata?.reply_preferred_provider === "meta_cloud" || params.row.metadata?.reply_preferred_provider === "evolution"
       ? params.row.metadata.reply_preferred_provider
@@ -401,6 +651,9 @@ async function processOneReply(params: {
         notify: true,
         autoSendFirstResponse: true,
         preferredProvider,
+        replyTargetMessageId: params.row.id,
+        replyTargetCreatedAt: params.row.created_at,
+        brainTrace,
       }),
     });
     const durationMs = Date.now() - startedAt;
@@ -414,6 +667,14 @@ async function processOneReply(params: {
       ? agentTimeoutAttempts
       : nonAgenticAttempts;
     const nextStatus = agenticRetryReason && retryAttempts < retryLimit ? "pending" : "processed";
+    const brainTraceMetadata = await finishWhatsAppBrainTrace({
+      supabase: params.supabase,
+      trace: brainTrace,
+      metadata: prepared.metadata,
+      nextStatus,
+      autoSent: prepared.autoSendResult.status === "sent",
+      durationMs,
+    });
 
     await params.supabase
       .from("whatsapp_messages")
@@ -429,6 +690,12 @@ async function processOneReply(params: {
           reply_agent_timeout_attempts: agenticRetryReason === "operating_partner_timeout_no_agentic_answer" ? agentTimeoutAttempts : params.row.metadata?.reply_agent_timeout_attempts || null,
           reply_non_agentic_attempts: agenticRetryReason && agenticRetryReason !== "operating_partner_timeout_no_agentic_answer" ? nonAgenticAttempts : params.row.metadata?.reply_non_agentic_attempts || null,
           reply_blocked_reason: prepared.metadata?.first_response_policy?.blocked_reason || null,
+          reply_target_message_id: prepared.metadata?.reply_target_message_id || params.row.id,
+          reply_target_created_at: prepared.metadata?.reply_target_created_at || params.row.created_at || null,
+          latest_inbound_message_id_at_decision: prepared.metadata?.latest_inbound_message_id_at_decision || null,
+          latest_inbound_message_id_at_send: prepared.metadata?.latest_inbound_message_id_at_send || null,
+          reply_aborted_reason: prepared.metadata?.reply_aborted_reason || null,
+          ...brainTraceMetadata,
         }),
       })
       .eq("id", params.row.id);
@@ -459,6 +726,15 @@ async function processOneReply(params: {
   } catch (error: any) {
     const message = error?.message || "Falha ao preparar resposta WhatsApp.";
     const durationMs = Date.now() - startedAt;
+    const brainTraceMetadata = await finishWhatsAppBrainTrace({
+      supabase: params.supabase,
+      trace: brainTrace,
+      metadata: params.row.metadata,
+      nextStatus: "failed",
+      autoSent: false,
+      durationMs,
+      error: message,
+    });
     await params.supabase
       .from("whatsapp_messages")
       .update({
@@ -466,6 +742,7 @@ async function processOneReply(params: {
           reply_processing_status: "failed",
           reply_failed_at: new Date().toISOString(),
           reply_processing_error: message,
+          ...brainTraceMetadata,
         }),
       })
       .eq("id", params.row.id);

@@ -609,7 +609,7 @@ async function ensureOfficeKnowledgeProfile(tenantId: string, supabase: DoctorSu
       category: "skills",
       status: "warning",
       title: "Perfil operacional do escritorio incompleto",
-      detail: `Faltam sinais para o MAYUS operar como socio virtual: ${missing.join(", ")}.`,
+      detail: `Faltam sinais para o MAYUS operar como Operating Partner supervisionado: ${missing.join(", ")}.`,
       autoFixable: true,
       nextAction: "Rodar o Auto Setup Doctor para criar defaults seguros e depois validar areas, triagem, handoff, tom, documentos, preco, permissoes, agenda, financeiro, playbooks e departamentos do escritorio.",
     });
@@ -773,7 +773,7 @@ async function ensureMayusOperatingPartner(tenantId: string, supabase: DoctorSup
       id: "agent:mayus_operating_partner",
       category: "skills",
       status: "ok",
-      title: "MAYUS socio virtual ativo",
+      title: "MAYUS Operating Partner supervisionado ativo",
       detail: `Autonomia operacional: ${operatingPartner.autonomy_mode}.`,
       autoFixable: true,
     });
@@ -784,10 +784,10 @@ async function ensureMayusOperatingPartner(tenantId: string, supabase: DoctorSup
       id: "agent:mayus_operating_partner",
       category: "skills",
       status: "warning",
-      title: "MAYUS socio virtual ainda nao ativado",
+      title: "MAYUS Operating Partner supervisionado ainda nao ativado",
       detail: "O tenant ainda nao tem a camada central que organiza vendas, suporte, CRM, tarefas e auto-setup.",
       autoFixable: true,
-      nextAction: "Rodar o Auto Setup Doctor para ativar o MAYUS como socio virtual supervisionado.",
+      nextAction: "Rodar o Auto Setup Doctor para ativar o MAYUS como Operating Partner supervisionado.",
     });
   }
 
@@ -811,7 +811,7 @@ async function ensureMayusOperatingPartner(tenantId: string, supabase: DoctorSup
     id: "agent:mayus_operating_partner",
     category: "skills",
     status: "fixed",
-    title: "MAYUS socio virtual ativado",
+    title: "MAYUS Operating Partner supervisionado ativado",
     detail: "MAYUS agora tem defaults para operar setup, vendas, suporte, triagem juridica, CRM e tarefas com autonomia supervisionada alta.",
     autoFixable: true,
     fixed: true,

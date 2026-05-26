@@ -155,12 +155,13 @@ async function fetchTenantAiFeatures(tenantId: string) {
   return data?.ai_features && typeof data.ai_features === "object" ? data.ai_features : {};
 }
 
-async function markOwnerAudioCommandSuppressed(params: {
+async function markOwnerAudioCommandNotHandled(params: {
   messageId: string;
   metadata: Record<string, any> | null;
   transcript?: string | null;
   reason: string;
 }) {
+  const hasTranscript = Boolean(params.transcript?.trim());
   await supabase
     .from("whatsapp_messages")
     .update({
@@ -168,19 +169,21 @@ async function markOwnerAudioCommandSuppressed(params: {
       metadata: {
         ...(params.metadata || {}),
         owner_audio_command_attempted: true,
-        owner_audio_command_suppressed: true,
-        owner_audio_command_suppressed_reason: params.reason,
-        owner_audio_command_suppressed_at: new Date().toISOString(),
-        reply_processing_status: "processed",
-        reply_processed_at: new Date().toISOString(),
-        reply_auto_sent: false,
-        media_reply_suppressed: "owner_audio",
+        owner_audio_command_handled: false,
+        owner_audio_command_unhandled_reason: params.reason,
+        owner_audio_command_checked_at: new Date().toISOString(),
+        owner_audio_command_fallback_to_conversation: hasTranscript,
+        ...(hasTranscript ? {} : {
+          reply_processing_status: "processed",
+          reply_processed_at: new Date().toISOString(),
+          reply_auto_sent: false,
+        }),
       },
     })
     .eq("id", params.messageId);
 }
 
-async function sendOwnerAudioFallback(params: {
+async function sendAudioTranscriptionFallback(params: {
   tenantId: string;
   contactId: string;
   phoneNumber: string;
@@ -192,10 +195,10 @@ async function sendOwnerAudioFallback(params: {
     contactId: params.contactId,
     phoneNumber: params.phoneNumber,
     preferredProvider: "evolution",
-    text: "Nao consegui entender esse audio como comando interno. Pode mandar em texto ou dizer: Mayus, relatorio do escritorio.",
+    text: "Nao consegui ouvir bem esse audio. Me manda de novo ou escreve em uma frase?",
     humanizeDelivery: true,
     metadata: {
-      source: "owner_audio_command_fallback",
+      source: "audio_transcription_fallback",
       reason: params.reason,
       external_customer_reply: false,
     },
@@ -491,7 +494,7 @@ export async function POST(req: Request) {
         evolution_message_payload: messagePayload,
         ...(isOwnerAudioCommandCandidate ? {
           owner_audio_command_attempted: true,
-          media_reply_suppressed: "owner_audio",
+          owner_audio_command_mode: "try_internal_then_conversation",
         } : {}),
       } : { reply_trigger: "evolution_webhook" };
 
@@ -533,6 +536,7 @@ export async function POST(req: Request) {
 
           if (savedMessage?.id) {
             if (messageType === "audio") {
+              let processedAudio: Awaited<ReturnType<typeof readProcessedAudioTranscript>> | null = null;
               try {
                 await processImmediateMedia({
                   messageId: savedMessage.id,
@@ -544,7 +548,7 @@ export async function POST(req: Request) {
               }
 
               try {
-                const processedAudio = await readProcessedAudioTranscript(savedMessage.id);
+                processedAudio = await readProcessedAudioTranscript(savedMessage.id);
                 if (processedAudio.transcript) {
                   const internalCommand = await handleWhatsAppInternalCommand({
                     supabase,
@@ -570,53 +574,87 @@ export async function POST(req: Request) {
                   }
                 }
 
-                if (isOwnerAudioCommandCandidate) {
-                  const reason = processedAudio.transcript ? "unknown_internal_command_intent" : "audio_transcription_unavailable";
-                  await markOwnerAudioCommandSuppressed({
+                if (isOwnerAudioCommandCandidate && processedAudio.transcript) {
+                  await markOwnerAudioCommandNotHandled({
                     messageId: savedMessage.id,
                     metadata: processedAudio.metadata || messageMetadata,
                     transcript: processedAudio.transcript,
-                    reason,
+                    reason: "unknown_internal_command_intent",
                   });
-                  await sendOwnerAudioFallback({
-                    tenantId,
-                    contactId,
-                    phoneNumber: remoteJid,
-                    reason,
+                  await enqueueWhatsAppReply({
+                    supabase,
+                    trigger: "evolution_webhook",
+                    messageId: savedMessage.id,
+                    preferredProvider: "evolution",
                   });
-                  return NextResponse.json({ success: true, owner_audio_command: true, handled: false, reason });
+
+                  try {
+                    await sendEvolutionPresence({ tenantId, remoteJid, presence: "composing", delayMs: 1200 });
+                    await processQueuedReply({ messageId: savedMessage.id });
+                  } catch (replyError) {
+                    console.error("[Evolution Webhook] Erro ao processar audio transcrito como conversa:", replyError);
+                  } finally {
+                    await sendEvolutionPresence({ tenantId, remoteJid, presence: "paused" });
+                  }
+                  return NextResponse.json({
+                    success: true,
+                    owner_audio_command: true,
+                    handled: false,
+                    routed_to_conversation: true,
+                    audio_transcribed: true,
+                  });
                 }
               } catch (commandError) {
                 console.error("[Evolution Webhook] Erro ao processar audio como comando interno MAYUS:", commandError);
                 if (isOwnerAudioCommandCandidate) {
                   const reason = "owner_audio_command_error";
-                  await markOwnerAudioCommandSuppressed({
+                  await markOwnerAudioCommandNotHandled({
                     messageId: savedMessage.id,
                     metadata: messageMetadata,
                     reason,
                   });
-                  await sendOwnerAudioFallback({
+                  await sendAudioTranscriptionFallback({
                     tenantId,
                     contactId,
                     phoneNumber: remoteJid,
                     reason,
                   });
-                  return NextResponse.json({ success: true, owner_audio_command: true, handled: false, reason });
+                  return NextResponse.json({ success: true, audio_transcribed: false, handled: false, reason });
                 }
+              }
+
+              if (mediaAlreadyProcessed && !processedAudio?.transcript) {
+                const reason = "audio_transcription_unavailable";
+                if (isOwnerAudioCommandCandidate) {
+                  await markOwnerAudioCommandNotHandled({
+                    messageId: savedMessage.id,
+                    metadata: processedAudio?.metadata || messageMetadata,
+                    reason,
+                  });
+                }
+                await sendAudioTranscriptionFallback({
+                  tenantId,
+                  contactId,
+                  phoneNumber: remoteJid,
+                  reason,
+                });
+                return NextResponse.json({ success: true, audio_transcribed: false, handled: false, reason });
               }
             }
 
             try {
-              await sendImmediateMediaAck({
-                tenantId,
-                contactId,
-                messageId: savedMessage.id,
-                phoneNumber: remoteJid,
-                messageType,
-                content,
-                filename: mediaFilename,
-                metadata: messageMetadata,
-              });
+              if (!(messageType === "audio" && mediaAlreadyProcessed)) {
+                await sendImmediateMediaAck({
+                  tenantId,
+                  contactId,
+                  messageId: savedMessage.id,
+                  phoneNumber: remoteJid,
+                  messageType,
+                  content,
+                  filename: mediaFilename,
+                  metadata: messageMetadata,
+                });
+              }
             } catch (ackError) {
               console.error("[Evolution Webhook] Erro ao enviar confirmacao imediata de midia:", ackError);
             }

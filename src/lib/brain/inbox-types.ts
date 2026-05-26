@@ -1,3 +1,6 @@
+import type { LegalOperatorMissionSnapshot } from "@/lib/brain/legal-operator-missions";
+import type { BrainMissionControlSnapshot } from "@/lib/brain/mission-control";
+
 export interface BrainInboxTaskItem {
   id: string;
   title: string | null;
@@ -60,6 +63,16 @@ export interface BrainInboxApprovalItem {
     proposedActionLabel?: string;
     processLabel?: string;
     missionGoal?: string;
+    legalOperatorState?: Record<string, unknown>;
+    processMissionContext?: Record<string, unknown>;
+    methodology?: Record<string, unknown>;
+    sources?: Record<string, unknown>;
+    gaps?: Record<string, unknown>;
+    recommendedAction?: string;
+    sideEffectGuardrail?: Record<string, unknown> | null;
+    agenticGovernance?: Record<string, unknown>;
+    openclawPolicy?: Record<string, unknown>;
+    hermesTrajectory?: Record<string, unknown>;
     policyDecision?: {
       outcome?: string;
       surface?: string;
@@ -78,4 +91,6 @@ export interface BrainInboxResponse {
   recent_tasks: BrainInboxTaskItem[];
   recent_artifacts: BrainInboxArtifactItem[];
   recent_events: BrainInboxEventItem[];
+  legal_operator_missions?: LegalOperatorMissionSnapshot[];
+  mission_control_snapshots?: BrainMissionControlSnapshot[];
 }

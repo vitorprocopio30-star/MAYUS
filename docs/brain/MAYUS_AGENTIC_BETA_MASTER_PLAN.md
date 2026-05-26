@@ -1,16 +1,44 @@
 # Plano Mestre do Beta Agentico MAYUS
 
-Atualizado em: 2026-05-19
+Atualizado em: 2026-05-23
 
 ## Direcao do Produto
 
 O MAYUS e o sistema operacional do escritorio juridico brasileiro AI First.
 
-O beta nao e um chatbot generico e tambem nao e autonomia total sem supervisao. O beta e um socio operacional juridico supervisionado que configura o escritorio, organiza o trabalho, cria artifacts, pede aprovacao, executa acoes internas seguras e aprende com revisao humana.
+O beta nao e um chatbot generico e tambem nao e autonomia total sem supervisao. O beta e uma camada operacional juridica supervisionada que configura o escritorio, organiza o trabalho, cria artifacts, pede aprovacao, executa acoes internas seguras e aprende com revisao humana.
 
 O objeto central do produto e o MAYUS Operating Partner. Agentes especializados sao frentes internas que servem ao Operating Partner, nao produtos separados.
 
 O loop oficial de melhoria do beta e `Observa -> Aprende -> Corrige -> Aplica`: eventos reais alimentam aprendizado supervisionado, padroes repetidos geram proposta de memoria/correcao, e somente correcoes de baixo risco podem ser aplicadas antes de efeito externo. Correcao juridica, financeira, operacional sensivel ou externa continua virando aprovacao, bloqueio ou artifact supervisionado. Em 2026-05-19, o ciclo de auto-correcao passou smoke autenticado real na tela de Memoria: 3 eventos `self_correction_failed` -> rotina `mayus-self-improvement-review` -> proposta `self_improvement_loop` -> aprovacao humana -> entrada `office_institutional_memory.enforced=true`, com cleanup.
+
+Tese oficial do MVP Beta: **Se o escritorio ja tem metodo, o MAYUS aprende. Se ainda nao tem, ajuda a construir.**
+
+O eixo do beta passa a ser **Metodologia Operacional do Escritorio**. Playbooks continuam existindo, mas viram artefatos secundarios da metodologia: roteiros por canal, area, tarefa ou equipe. A metodologia e a fonte principal para atendimento, vendas, triagem, documentos, fases do caso, responsaveis, criterios de avanco/trava, pesquisa externa auditavel e melhoria supervisionada.
+
+## Metodologia Operacional do Escritorio
+
+A primeira entrega do beta deve provar que o MAYUS conversa com o escritorio, monta uma metodologia v0, sugere base quando o dono nao sabe responder, salva como rascunho/recomendacao/aprovada e usa isso em atendimento, juridico, documentos, Growth e financeiro sem aplicar nada sensivel sem aprovacao.
+
+Regra-mae do beta: o aprendizado operacional e **individual por tenant**. Uma metodologia criada, aprovada ou rejeitada em um escritorio nao e promovida nem reutilizada em outro escritorio. Quando este plano usar a palavra "global", ela significa apenas base padrao do produto MAYUS, policy/plataforma ou agenda compartilhada interna do proprio tenant, nunca aprendizado coletivo entre escritorios.
+
+Modelo MVP sem tabela nova:
+
+- `tenant_settings.ai_features.operational_methodology`
+- contrato interno `TenantOperationalMethodologyContext`, consumido por Operating Partner, Lex e runtime agentico
+- artifact `office_operational_methodology`
+- capability `office_setup_conversation` evoluida para capturar metodologia
+- learning events `office_operational_methodology_created`, `office_operational_methodology_recommended`, `office_operational_methodology_approved` e equivalentes quando houver revisao/rejeicao
+
+Estrutura minima:
+
+- status: `draft`, `recommended`, `approved`, `rejected`
+- identity: PUV, cliente ideal, areas, anti-cliente, tom e promessas proibidas
+- intake: perguntas obrigatorias, documentos, handoff humano e politica de informacao faltante
+- case_flow: fases, responsaveis, criterios de avanco e criterios de trava
+- area_methods: variacoes por area, inicialmente Trabalhista, Previdenciario e Bancario/RMC quando o escritorio nao sabe por onde comecar
+- improvement_rules: sugestoes pendentes/aprovadas/rejeitadas, sempre com revisao humana
+- internet_policy: fonte, link, data, motivo, fato/inferencia e proibicao de mudar regra ativa automaticamente
 
 ## Aproveitamento de Codigo de Agentes Publicos
 
@@ -100,7 +128,7 @@ Adaptacao para o MAYUS:
 | OpenClaw | Validacao de configuracao e Doctor | Falhar de forma clara quando ferramenta/perfil obrigatorio estiver ausente; explicar por que bloqueou e como corrigir. | Auto Setup Doctor, debugger de politica, modulos de readiness. | `[~]` Doctor/readiness existe; UX completa de debug de politica/ferramenta ainda falta. | OpenClaw Extraction Agent + Setup Agent | Nao degradar silenciosamente uma ferramenta ausente para comportamento apenas textual. |
 | Hermes | Gerenciador de memoria | Memoria persistente com origem, confianca, escopo, revogacao e promocao supervisionada. | `brain_memories`, propostas de memoria, Configuracoes > Memoria. | `[~]` Fluxo de proposta/aprovacao de memoria, painel de auto-correcao e revisao manual de self-improvement existem; smoke real autenticado validou proposta gerada por `self_correction_failed` virando memoria institucional enforced. Uso cross-module ainda pendente. | Hermes Extraction Agent + MAYUS Integrator | Nao deixar autoaperfeicoamento escrever verdade automaticamente. |
 | Hermes | Skills procedurais e ciclo de vida | Skills como memoria operacional de "como fazer": criar, versionar, testar, aprovar, revogar e promover. | Registry de skills MAYUS, playbooks do escritorio, procedimentos juridicos/financeiros/CRM. | `[~]` Helpers de lifecycle constroem payloads persistiveis de memoria/aprendizado sem autoaprovacao, e `POST /api/agent/memory` cria propostas supervisionadas de lifecycle Hermes em `brain_memories` e `learning_events`; smoke autenticado de tenant com cleanup passou. | Hermes Extraction Agent | Nao instalar skills terceiros sem revisao na execucao do tenant. |
-| Hermes | Doctor/setup | Wizard de setup e health checks que configuram providers, ferramentas, canais e comportamento do workspace. | Auto-Configuracao AI First, conversa de setup, readiness. | `[~]` Doctor/readiness/conversa de setup existem, e `office_setup_conversation` roda pelo caminho deterministico do Chat MAYUS para onboarding confirmado, com permissoes, agenda, politica financeira, notas de playbook e `practice_area_playbooks` para defaults de pipeline/documentos por area; smoke autenticado com backend real e cleanup passou, enquanto a validacao completa por area/equipe ainda esta pendente. | Hermes Extraction Agent + Setup Agent | Nao expor segredos nem exigir conhecimento tecnico do dono no onboarding. |
+| Hermes | Doctor/setup | Wizard de setup e health checks que configuram providers, ferramentas, canais e comportamento do workspace. | Auto-Configuracao AI First, conversa de setup, readiness e metodologia operacional. | `[~]` Doctor/readiness/conversa de setup existem, e `office_setup_conversation` agora monta `operational_methodology`, cria artifact `office_operational_methodology`, preserva `office_knowledge_profile` confirmado, sugere Metodologia Base MAYUS para Trabalhista/Previdenciario/Bancario-RMC quando falta processo e mantem playbooks como artefatos secundarios; validacao real por area/equipe e uso cross-module completo ainda pendentes. | Hermes Extraction Agent + Setup Agent | Nao expor segredos nem exigir conhecimento tecnico do dono no onboarding. |
 | Hermes | Scheduler | Automacoes agendadas em linguagem natural entregues ao canal certo. | Rotinas/heartbeat para operacoes do escritorio, checagem de prazos, follow-ups e revisao financeira. | `[~]` Endpoint unificado de scheduler de rotinas existe e e invocado pelo workflow local de processors do GitHub Actions; verificador dry-run existe; prova de workflow manual/producao continua pendente ate deploy/merge. | Hermes Extraction Agent + Paperclip Extraction Agent | Nao rodar acoes sensiveis sem politica/aprovacao. |
 | Hermes | Trajetoria e loop de aprendizado | Guardar trajetoria de missao, licoes comprimiveis, falhas e procedimentos bem-sucedidos. | `brain_steps`, `learning_events`, futuro conjunto supervisionado de treino/avaliacao. | `[~]` Helpers de trajetoria existem e routine heartbeat carrega Hermes trajectory; uso de avaliacao cross-module ainda pendente. | Hermes Extraction Agent | Nao tratar trajetoria como conselho juridico visivel ao cliente ou fato final. |
 | Hermes | Continuidade multicanal | Mesma memoria/contexto do agente entre CLI, chat, WhatsApp e outros canais. | Operating Partner em dashboard, chat, WhatsApp e futura voz. | `[~]` WhatsApp/chat compartilham partes do contexto; continuidade unificada de canais pendente. | Hermes Extraction Agent + Client Service Agent | Nao deixar um canal contornar aprovacoes, escopo de tenant ou consentimento do usuario. |
@@ -163,6 +191,9 @@ A primeira versao deve evitar migrations remotas e usar tabelas existentes.
 
 Superficie implementada nesta fatia:
 
+- `src/lib/setup/office-setup-conversation.ts`
+- `src/lib/agent/kernel/router.ts`
+- `src/lib/agent/capabilities/dispatcher.ts`
 - `src/lib/agent/runtime/policy.ts`
 - `src/lib/agent/runtime/governance.ts`
 - `src/lib/agent/runtime/readiness.ts`
@@ -184,6 +215,10 @@ O Doctor precisa retornar:
 
 - Um escritorio novo recebe diagnostico claro de setup em minutos.
 - MAYUS diz o que esta pronto, o que falta, o que ele pode corrigir e o que precisa do humano.
+- MAYUS cria Metodologia Operacional v0 por chat, usando metodo existente ou sugerindo uma base supervisionada quando o escritorio ainda nao tem processo definido.
+- A metodologia fica em `tenant_settings.ai_features.operational_methodology`, aparece como artifact e nao vira regra ativa sensivel sem aprovacao humana.
+- `ProcessMissionContext` consome a metodologia do tenant por area, expondo documentos esperados, fases, estrutura documental, perguntas, lacunas, review reasons e blockers para Lex/Draft Factory sem alterar a fonte de verdade do setup. Em 2026-05-23, o envelope beta processual passou a viajar em artifacts/aprovacoes com `processMissionContext`, `legalOperatorState`, `methodology`, `sources`, `gaps`, `recommendedAction`, `sideEffectGuardrail` e `agentic_governance`.
+- Paperclip, OpenClaw e Hermes aparecem como coordenadores internos: Paperclip preserva owner/missao/next action/approval pendente, OpenClaw explica bloqueio por `tenant_methodology` ou `legal_decision`, e Hermes mostra trajectory/lifecycle como leitura tenant-only sem autoaprovar memoria.
 - Usuario pode escolher autonomia por modulo.
 - Toda tarefa importante vira missao, artifact, aprovacao ou evento.
 - BYOK aparece como provider/model/status, nunca como chave crua.
@@ -194,18 +229,22 @@ O Doctor precisa retornar:
 ## Proxima Fila de Trabalho
 
 - [x] Conectar decisoes de politica ao executor agentico existente para que toda capability receba uma decisao comum de autonomia, gate de presenca de credencial e contexto de auditoria sanitizado.
+- [x] Fechar Beta Juridico + WhatsApp Agentic local: Lex transforma pedido de peca em missao processual antes da Draft Factory; approval de `legal_first_draft_generate` carrega `piece_context`, checklist de minuta, fontes/lacunas/guardrails e OpenClaw; WhatsApp Operating Partner classifica conversa e grava Paperclip/OpenClaw/Hermes no metadata. Evidencia 2026-05-23: 159 testes focados verdes, typecheck verde, diff-check do corte e HTTP smoke local das superficies principais.
+- [~] Provar Beta Juridico + WhatsApp Agentic em ambiente real: Configuracoes > Agente ja passou smoke real autenticado via API, e o card de Aprovações passou smoke visual com fixture controlada; seguem pendentes Chat/Lex ponta a ponta com tenant/processo controlado e smoke Evolution/WhatsApp real. Se faltar sessao, credencial, canal ou alias publico, classificar como bloqueio de ambiente/deploy, nao como bug de produto local.
+- [~] Bloqueio de prova real registrado em 2026-05-23: o dev server local aceitou conexao TCP, mas nao serviu HTTP para `/dashboard/mayus`, `/dashboard/aprovacoes`, `/dashboard/conversas/whatsapp` e `/dashboard/configuracoes/agente`; o E2E Lex contra `127.0.0.1:3001` tambem ficou preso ate timeout. A bateria focada e o typecheck seguem verdes. Evolution real nao foi testado porque as credenciais/canal nao estavam visiveis na sessao.
+- [~] Agent Control Plane v1.2: registro interno de `Setup Agent`, `Legal Operations Agent`, `Monitoring Agent`, `Client Service Agent`, `Growth Agent`, `Finance Agent` e `MAYUS Integrator` agora agrega rotina, owner, health, budget, approvals reais, snapshots de missao, artifacts, learning events, metodologia tenant-scoped, OpenClaw debugger, Hermes lifecycle, matriz `publicAgents` e proxima acao em `/api/agent/routines`, Configuracoes > Agente e Mission Control. Paperclip/OpenClaw/Hermes leem o handoff Metodologia -> Juridico/Lex -> Agentic Core sem editar a metodologia do escritorio; Configuracoes > Agente tambem reconstrui `Missao processual Lex` quando o snapshot vem de artifact juridico. Falta smoke autenticado com dados reais do Brain depois de alinhar schema/ambiente real.
 - [~] Converter endpoints pagos do Escavador para a politica compartilhada de budget antes de qualquer busca paga; `buscar-completo`, `sincronizar-oab` e `importar-lote` estao protegidos em codigo/testes, incluindo guard cache-first, mas smoke real ainda esta pendente.
-- [~] Adicionar capability de conversa de setup que escreve respostas aprovadas em `tenant_settings.ai_features`; `office_setup_conversation` agora coleta respostas do perfil do escritorio, incluindo permissoes, agenda, politica financeira e notas de playbook, cria `practice_area_playbooks` em draft com perguntas de intake, documentos, pipeline e estrutura de pastas por area, persiste `office_knowledge_profile` confirmado, registra artifact/evento, propoe memorias, roda pelo caminho deterministico do Chat MAYUS para onboarding explicito e passou smoke autenticado com backend real mais cleanup; validacao por area/equipe ainda esta pendente.
-- [~] Adicionar filtros do centro de aprovacoes para setup, juridico, financeiro, Escavador e mensagens externas; `/dashboard/aprovacoes` ja filtra aprovacoes pendentes/recentes por skill, handler, modulo e superficie de policy, mas smoke visual autenticado ainda esta pendente.
+- [~] Adicionar capability de conversa de setup que escreve respostas aprovadas em `tenant_settings.ai_features`; `office_setup_conversation` agora coleta Metodologia Operacional do Escritorio, persiste `operational_methodology` como draft/recommended/approved, cria artifact `office_operational_methodology`, mantem `office_knowledge_profile` confirmado para compatibilidade, propoe memorias quando validado, roteia frases como "monte a metodologia do meu escritorio" e sugere base MAYUS quando o escritorio nao tem processo definido. O helper `TenantOperationalMethodologyContext` ja normaliza status/ativacao/review reasons e separa regra aprovada de sugestao supervisionada; faltam aprovacao visual completa e rotina real por area/equipe.
+- [~] Adicionar filtros do centro de aprovacoes para setup, juridico, financeiro, Escavador e mensagens externas; `/dashboard/aprovacoes` ja filtra aprovacoes pendentes/recentes por skill, handler, modulo e superficie de policy, e o card juridico de `legal_first_draft_generate` mostra processo, peca, lacunas, fontes, guardrails de beta, motivo OpenClaw e trilha Hermes. Falta repetir smoke autenticado com dados reais do Brain apos alinhar schema/ambiente.
 - [~] Adicionar fluxo de promocao de memoria: `brain_memories` recebe propostas supervisionadas com origem/confianca, `/api/agent/memory` aprova/rejeita/revoga com learning events sanitizados, expoe resumo de `self_correction_*`, propoe entradas de lifecycle Hermes, Configuracoes > Memoria mostra propostas pendentes, painel de auto-correcao e botao de revisao manual `mayus-self-improvement-review`, Inbox do Brain mostra auto-correcao/self-improvement no feed canonico com filtro `Correcoes MAYUS`, office setup validado cria lotes de proposta, API Hermes lifecycle passou autenticada com cleanup, e o smoke real `e2e/configuracoes-memoria-self-correction-real-smoke.spec.ts` validou auto-correcao -> self-improvement -> aprovacao -> memoria enforced. Uso cross-module de aprendizado ainda pendente.
 - [~] Rodar smoke autenticado para telas Configuracoes e Agente; `e2e/configuracoes-agente-smoke.spec.ts` cobre mocks de UI harness e `e2e/configuracoes-agente-real-smoke.spec.ts` passou com APIs reais de backend para Configuracoes > Agente. Observacao de workflow em producao segue pendente porque o workflow/alias remoto `main` ainda nao tem a nova rota de routines.
 
 ## Backlog de Extracao
 
 - [~] Paperclip governanca/budget/atividade: politica, helpers de governanca, filtros de aprovacao, budget Escavador, rotinas heartbeat, rota/workflow do scheduler, verificador, artifacts e eventos existem; faltam observacao do scheduler em producao apos deploy, portabilidade e timeline unificada de atividade.
-- [~] OpenClaw perfis de politica: executor usa politica de tenant e superficies seguras; faltam schema formal de perfil, debugger de motivo bloqueado, matriz completa de ferramentas e docs de precedencia na UI.
+- [~] OpenClaw perfis de politica: executor usa politica de tenant e superficies seguras; Agent Control Plane e matriz `publicAgents` expoem a precedencia `platform_default -> tenant -> module -> agent -> tool -> channel`, outcome, camada bloqueada, motivo e proximos modulos sem permitir que camada inferior reabra deny superior; smoke autenticado nao destrutivo passou em Configuracoes > Agente, faltam matriz completa de ferramentas e smoke real.
 - [~] Hermes memoria/doctor: readiness, Doctor, conversa deterministica de setup no chat, captura de permissoes/agenda/financeiro/playbook, playbooks por area em draft, propostas de memoria e route wiring de lifecycle existem; Hermes lifecycle tenant smoke e office setup chat smoke passaram com cleanup; falta uso cross-module completo.
-- [~] Paperclip heartbeat/rotinas: runtime, dry-run API/UI, workflow de scheduler e verificador agora transformam rotinas habilitadas em missoes internas reconstruiveis com dono, budget, bloqueio, approval id e proxima acao; smoke real autenticado de Configuracoes > Agente passou, mas observacao de workflow em producao ainda esta pendente porque o alias publico retorna 404 para `/api/agent/routines`.
+- [~] Paperclip heartbeat/rotinas: runtime, dry-run API/UI, workflow de scheduler, Agent Control Plane e verificador agora transformam rotinas habilitadas e missoes processuais em trabalho reconstruivel com agente interno, dono, budget, bloqueio, approval id e proxima acao; smoke real autenticado de Configuracoes > Agente passou antes do corte processual beta, mas observacao de workflow em producao ainda esta pendente porque o alias publico retorna 404 para `/api/agent/routines`.
 - [ ] Paperclip portabilidade: exportar/importar configuracao do escritorio com remocao de segredos, tratamento de colisao de tenant e revisao humana antes de importar.
-- [~] Hermes skill lifecycle: criar, versionar, propor, aprovar, revogar e construir propostas persistiveis de memoria/aprendizado do tenant; `POST /api/agent/memory` persiste entradas propostas de lifecycle sem autoaprovacao, e `e2e/agent-memory-hermes-lifecycle-smoke.spec.ts` passou com backend real mais cleanup; pendente uso cross-module antes de governar execucao.
-- [~] Hermes trajetoria: registrar trajetoria de missao para aprendizado e avaliacao supervisionados, nunca como verdade automatica; pendente uso de avaliacao cross-module mais amplo.
+- [~] Hermes skill lifecycle: criar, versionar, propor, aprovar, revogar e construir propostas persistiveis de memoria/aprendizado do tenant; `POST /api/agent/memory` persiste entradas propostas de lifecycle sem autoaprovacao, Mission Control/Control Plane mostram memoria aplicada, proposta pendente, skill/procedimento sugerido e revogacao por agente, e `e2e/agent-memory-hermes-lifecycle-smoke.spec.ts` passou com backend real mais cleanup; pendente uso cross-module real em producao.
+- [~] Hermes trajetoria: registrar trajetoria de missao para aprendizado e avaliacao supervisionados, nunca como verdade automatica; Mission Control agora avalia completude minima, eventos faltantes, approval, lifecycle/memoria e proxima acao segura, inclusive para missao processual beta com OpenClaw; smoke autenticado nao destrutivo passou em Aprovacoes antes do corte atual, e segue pendente uso de avaliacao cross-module mais amplo em ambiente real.

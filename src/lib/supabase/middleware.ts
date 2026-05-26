@@ -2,6 +2,15 @@ import { createServerClient } from "@supabase/ssr";
 import { NextResponse, type NextRequest } from "next/server";
 import { hasAccess } from "@/lib/permissions";
 
+function isLocalDevAutoLoginEnabled(request: NextRequest) {
+  if (process.env.NODE_ENV === "production") return false;
+
+  const host = request.headers.get("host") || request.nextUrl.host;
+  return host.startsWith("localhost:")
+    || host.startsWith("127.0.0.1:")
+    || host.startsWith("[::1]:");
+}
+
 export async function updateSession(request: NextRequest) {
   let supabaseResponse = NextResponse.next({
     request,
@@ -16,6 +25,16 @@ export async function updateSession(request: NextRequest) {
     request.nextUrl.pathname.startsWith("/favicon.ico") ||
     request.nextUrl.pathname.match(/\.(?:svg|png|jpg|jpeg|gif|webp)$/)
   ) {
+    return supabaseResponse;
+  }
+
+  if (isLocalDevAutoLoginEnabled(request)) {
+    if (request.nextUrl.pathname === "/login" || request.nextUrl.pathname === "/dashboard") {
+      const url = request.nextUrl.clone();
+      url.pathname = "/dashboard/operacoes/prazos";
+      return NextResponse.redirect(url);
+    }
+
     return supabaseResponse;
   }
 
@@ -55,7 +74,17 @@ export async function updateSession(request: NextRequest) {
   );
 
   // Se não está logado e tenta acessar rota protegida → redireciona para /login
+  if (!user && request.nextUrl.pathname === "/login" && isLocalDevAutoLoginEnabled(request)) {
+    const url = request.nextUrl.clone();
+    url.pathname = "/dashboard/operacoes/prazos";
+    return NextResponse.redirect(url);
+  }
+
   if (!user && !isPublicRoute) {
+    if (isLocalDevAutoLoginEnabled(request)) {
+      return supabaseResponse;
+    }
+
     const url = request.nextUrl.clone();
     url.pathname = "/login";
     return NextResponse.redirect(url);

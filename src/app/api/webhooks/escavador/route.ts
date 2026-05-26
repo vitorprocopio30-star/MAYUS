@@ -464,15 +464,41 @@ export async function POST(req: NextRequest) {
           .eq('id', processo.id)
           .eq('tenant_id', processo.tenant_id)
 
-        // Persiste movimentação na tabela de histórico
-        const { data: movimentacaoPersistida } = await adminSupabase.from('process_movimentacoes').insert({
-          tenant_id: processo.tenant_id,
-          numero_cnj,
-          data: normalizarDataEvento(novaMovimentacao.data),
-          conteudo: novaMovimentacao.conteudo,
-          fonte: 'diario_oficial',
-          escavador_movimentacao_id: movimentacaoId,
-        }).select('id').maybeSingle()
+        // Persiste movimentacao na tabela de historico sem duplicar pelo id do Escavador.
+        let movimentacaoPersistida: { id: string } | null = null
+        if (movimentacaoId) {
+          const { data: existente } = await adminSupabase
+            .from('process_movimentacoes')
+            .select('id')
+            .eq('tenant_id', processo.tenant_id)
+            .eq('escavador_movimentacao_id', movimentacaoId)
+            .maybeSingle()
+          movimentacaoPersistida = existente
+        }
+
+        if (movimentacaoPersistida?.id) {
+          await adminSupabase
+            .from('process_movimentacoes')
+            .update({
+              numero_cnj,
+              data: normalizarDataEvento(novaMovimentacao.data),
+              conteudo: novaMovimentacao.conteudo,
+              fonte: 'diario_oficial',
+            })
+            .eq('id', movimentacaoPersistida.id)
+            .eq('tenant_id', processo.tenant_id)
+        } else {
+          const { data } = await adminSupabase.from('process_movimentacoes').insert({
+            tenant_id: processo.tenant_id,
+            numero_cnj,
+            data: normalizarDataEvento(novaMovimentacao.data),
+            conteudo: novaMovimentacao.conteudo,
+            fonte: 'diario_oficial',
+            escavador_movimentacao_id: movimentacaoId,
+            tipo_evento: 'movimentacao',
+          }).select('id').maybeSingle()
+          movimentacaoPersistida = data
+        }
 
         await adminSupabase
           .from('process_movimentacoes_inbox')

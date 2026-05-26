@@ -51,6 +51,17 @@ function includesAny(value: string, patterns: RegExp[]) {
   return patterns.some((pattern) => pattern.test(value));
 }
 
+function metadataText(input: ProactiveEventInput, key: string): string {
+  const value = input.metadata?.[key];
+  return typeof value === "string" ? normalizeText(value) : "";
+}
+
+function isOwnSideLegalAct(input: ProactiveEventInput): boolean {
+  const obrigacaoDeQuem = metadataText(input, "obrigacao_de_quem");
+  const requerAcao = input.metadata?.requer_acao;
+  return obrigacaoDeQuem === "parte_contraria" || requerAcao === false;
+}
+
 const escavadorLexResolvers: ProactiveEventResolver[] = [
   (input) => {
     const eventType = normalizedEventType(input);
@@ -110,6 +121,7 @@ const escavadorLexResolvers: ProactiveEventResolver[] = [
     const eventType = normalizedEventType(input);
     const text = combinedText(input);
     if (eventType !== "RECURSO") return null;
+    if (isOwnSideLegalAct(input)) return null;
     if (!includesAny(text, [/\bapelac/, /\brecurso\b/, /\bagravo\b/, /\bembargos?\b/, /\bcontrarrazo/])) return null;
 
     const isAppeal = includesAny(text, [/\bapelac/, /\bcontrarrazo/]);
@@ -188,6 +200,34 @@ const escavadorLexResolvers: ProactiveEventResolver[] = [
       ],
     };
   },
+  (input) => {
+    const eventType = normalizedEventType(input);
+    const text = combinedText(input);
+    if (!["PRAZO", "INTIMACAO", "INTIMACAO_PRAZO"].includes(eventType)) return null;
+    if (isOwnSideLegalAct(input)) return null;
+    if (!includesAny(text, [/\bintimac/, /\bprazo\b/, /\bmanifest/, /\bdespacho\b/, /\bcumpra/, /\bpronunc/])) return null;
+
+    return {
+      id: "lex.escavador.prazo_manifestacao_generica",
+      domain: "lex",
+      source: "escavador",
+      actionType: "artifact_only",
+      title: "Checklist de manifestacao juridica",
+      missionGoal: "Preparar checklist seguro para manifestacao juridica revisada por humano, sem gerar minuta automatica.",
+      recommendedPieceInput: null,
+      recommendedPieceLabel: "Manifestacao",
+      artifactType: "lex_proactive_manifestation_checklist",
+      riskLevel: "medium",
+      requiresHumanReview: true,
+      blocksExternalActionUntilHumanOk: true,
+      reason: "Prazo/intimacao revisado por humano; preparar checklist operacional antes de qualquer manifestacao.",
+      checklist: [
+        "Conferir teor completo da intimacao e prazo.",
+        "Confirmar se a providencia cabe ao escritorio, cliente ou parte contraria.",
+        "Definir se basta checklist, manifestacao simples ou peca tecnica especifica.",
+      ],
+    };
+  },
 ];
 
 export function resolveProactiveEventPlaybook(input: ProactiveEventInput) {
@@ -209,5 +249,6 @@ export function listProactiveEventPlaybooks() {
     "lex.escavador.recurso_interposto",
     "lex.escavador.citacao_recebida",
     "lex.escavador.audiencia_designada",
+    "lex.escavador.prazo_manifestacao_generica",
   ];
 }

@@ -48,6 +48,27 @@ export type HermesMissionTrajectory = {
   updatedAt: string;
 };
 
+export type HermesMissionApprovalStatus =
+  | "not_requested"
+  | "requested"
+  | "approved"
+  | "rejected";
+
+export type HermesMissionTrajectoryEvaluationEvent = {
+  type: HermesTrajectoryEventType;
+  summary?: unknown;
+  payload?: Record<string, unknown> | null;
+  createdAt?: string | null;
+};
+
+export type HermesMissionTrajectoryEvaluation = {
+  minimumComplete: boolean;
+  completionRatio: number;
+  missingEventTypes: HermesTrajectoryEventType[];
+  approvalStatus: HermesMissionApprovalStatus;
+  nextSafeAction: string;
+};
+
 export type HermesTrajectoryEventInput = {
   type: HermesTrajectoryEventType;
   summary: unknown;
@@ -92,6 +113,16 @@ const EVENT_LABELS: Record<HermesTrajectoryEventType, string> = {
   artifact: "Artifact",
   approval: "Approval",
   result: "Resultado",
+};
+
+const MISSING_EVENT_LABELS: Record<HermesTrajectoryEventType, string> = {
+  objective: "objetivo",
+  step: "etapa",
+  decision: "decisao",
+  block: "bloqueio/revisao",
+  artifact: "artifact",
+  approval: "approval humano",
+  result: "resultado",
 };
 
 function toIsoDate(value?: Date | string): string {
@@ -332,4 +363,88 @@ export function isApprovedHermesTrajectoryEvent(
   event: HermesTrajectoryEvent,
 ): boolean {
   return event.type === "approval" && event.payload.decision === "approved";
+}
+
+function latestEvaluationEvent(
+  events: readonly HermesMissionTrajectoryEvaluationEvent[],
+  type?: HermesTrajectoryEventType,
+): HermesMissionTrajectoryEvaluationEvent | null {
+  const filtered = type ? events.filter((event) => event.type === type) : [...events];
+  return filtered.sort((left, right) => (
+    Date.parse(String(right.createdAt || "")) - Date.parse(String(left.createdAt || ""))
+  ))[0] || filtered[filtered.length - 1] || null;
+}
+
+function approvalStatusFromEvent(
+  event: HermesMissionTrajectoryEvaluationEvent | null,
+): HermesMissionApprovalStatus {
+  if (!event) return "not_requested";
+  const decision = sanitizeHermesPersistedText(event.payload?.decision);
+  if (decision === "approved") return "approved";
+  if (decision === "rejected") return "rejected";
+  return "requested";
+}
+
+function buildHermesNextSafeAction(input: {
+  status?: string | null;
+  missingEventTypes: readonly HermesTrajectoryEventType[];
+  approvalStatus: HermesMissionApprovalStatus;
+  lastBlockSummary: string | null;
+  hasResultEvent: boolean;
+}) {
+  if (input.approvalStatus === "requested") {
+    return "Aguardar approval humano antes de promover memoria, skill ou procedimento.";
+  }
+  if (input.approvalStatus === "rejected") {
+    return "Revisar rejeicao humana e abrir nova missao supervisionada antes de reutilizar o aprendizado.";
+  }
+  if (input.status === "blocked") {
+    return input.lastBlockSummary || "Resolver bloqueio Hermes antes de qualquer efeito externo.";
+  }
+  if (input.missingEventTypes.length > 0) {
+    const missing = input.missingEventTypes
+      .map((type) => MISSING_EVENT_LABELS[type])
+      .join(", ");
+    return `Completar trajectory Hermes antes de reutilizar aprendizado: faltam ${missing}.`;
+  }
+  if (input.approvalStatus !== "approved") {
+    return "Registrar approval humano antes de transformar a missao em memoria, skill ou procedimento.";
+  }
+  if (input.status === "completed" || input.hasResultEvent) {
+    return "Manter artifact, memoria e auditoria vinculados; qualquer novo uso exige novo ciclo supervisionado.";
+  }
+  return "Registrar resultado final e manter a trilha Hermes auditavel.";
+}
+
+export function evaluateHermesMissionTrajectory(input: {
+  status?: HermesMissionStatus | string | null;
+  events: readonly HermesMissionTrajectoryEvaluationEvent[];
+}): HermesMissionTrajectoryEvaluation {
+  const events = input.events.filter((event) => (
+    HERMES_MINIMUM_TRAJECTORY_TYPES.includes(event.type)
+  ));
+  const present = new Set(events.map((event) => event.type));
+  const missingEventTypes = HERMES_MINIMUM_TRAJECTORY_TYPES.filter((type) => !present.has(type));
+  const approvalStatus = approvalStatusFromEvent(latestEvaluationEvent(events, "approval"));
+  const lastBlockSummary = sanitizeHermesPersistedText(
+    latestEvaluationEvent(events, "block")?.summary,
+  ) || null;
+  const status = sanitizeHermesPersistedText(input.status).slice(0, 80) || null;
+
+  return {
+    minimumComplete: missingEventTypes.length === 0,
+    completionRatio: Number(
+      ((HERMES_MINIMUM_TRAJECTORY_TYPES.length - missingEventTypes.length)
+        / HERMES_MINIMUM_TRAJECTORY_TYPES.length).toFixed(2),
+    ),
+    missingEventTypes,
+    approvalStatus,
+    nextSafeAction: buildHermesNextSafeAction({
+      status,
+      missingEventTypes,
+      approvalStatus,
+      lastBlockSummary,
+      hasResultEvent: present.has("result"),
+    }),
+  };
 }

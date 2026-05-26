@@ -342,6 +342,63 @@ describe("processPendingWhatsAppMediaBatch", () => {
     }));
   });
 
+  it("prepara resposta para audio de dono quando comando interno caiu para conversa normal", async () => {
+    const row = {
+      id: "message-owner-audio-chat",
+      tenant_id: "tenant-1",
+      contact_id: "contact-1",
+      direction: "inbound",
+      message_type: "audio",
+      content: "[Audio]",
+      media_filename: "audio.ogg",
+      media_provider: "evolution",
+      media_processing_status: "pending",
+      message_id_from_evolution: "evo-audio-1",
+      created_at: "2026-05-05T17:40:00.000Z",
+      metadata: {
+        provider_media_id: "evo-audio-1",
+        media_kind: "audio",
+        webhook_trigger: "evolution_webhook",
+        owner_audio_command_attempted: true,
+        owner_audio_command_fallback_to_conversation: true,
+        evolution_instance: "mayus-dutra",
+        evolution_message_envelope: { key: { id: "evo-audio-1" }, message: { audioMessage: {} } },
+        evolution_message_payload: { audioMessage: {} },
+      },
+    };
+    const { supabase } = makeSupabase(row);
+    mocks.listTenantIntegrationsResolved.mockResolvedValueOnce([
+      { provider: "evolution", api_key: "evolution-key", instance_name: "https://evolution.example|mayus-dutra" },
+    ]);
+    mocks.processEvolutionMedia.mockResolvedValueOnce({
+      media_url: null,
+      media_storage_path: "tenant-1/contact-1/audio.ogg",
+      media_mime_type: "audio/ogg",
+      media_filename: "audio.ogg",
+      media_size_bytes: 456,
+      media_provider: "evolution",
+      media_processing_status: "processed",
+      media_text: "Quero saber como esta o processo do Bradesco.",
+      media_summary: "Audio transcrito: pedido de status processual.",
+      metadata: {
+        provider_media_id: "evo-audio-1",
+        media_kind: "audio",
+        owner_audio_command_attempted: true,
+        owner_audio_command_fallback_to_conversation: true,
+      },
+    });
+
+    const result = await processPendingWhatsAppMediaBatch({ supabase, limit: 1 });
+
+    expect(result).toMatchObject({ picked: 1, processed: 1, failed: 0, replies_prepared: 1 });
+    expect(mocks.prepareWhatsAppSalesReplyForContact).toHaveBeenCalledWith(expect.objectContaining({
+      tenantId: "tenant-1",
+      contactId: "contact-1",
+      trigger: "evolution_webhook",
+      autoSendFirstResponse: true,
+    }));
+  });
+
   it("nao autoenvia resposta de midia antiga quando o cliente ja mandou nova mensagem", async () => {
     const row = {
       id: "message-old-media",

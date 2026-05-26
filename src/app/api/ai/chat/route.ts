@@ -56,6 +56,7 @@ const MAX_CHAT_HISTORY_ITEMS = 100;
 const DETERMINISTIC_ROUTER_INTENTS = new Set([
   "support_case_status",
   "collections_followup",
+  "management_intelligence_brief",
   "office_setup_conversation",
   "legal_process_mission_plan",
   "legal_process_mission_execute_next",
@@ -105,7 +106,7 @@ REGRAS DE EXECUÇÃO DE SKILLS:
 - Quando tiver todas as informações mínimas (nome + valor + vencimento), execute a skill diretamente sem fazer perguntas.
 - Para investigar o lead em bate-papo comercial, gravar sinais e adaptar atendimento consultivo de alta performance pelo metodo DEF (descoberta, encantamento, fechamento), use a skill sales_consultation.
 - Para auto-configurar a base comercial do escritorio com cliente ideal, solucao central, PUV, pilares e anti-cliente, conversando com o usuario e gravando o perfil para reduzir configuracoes manuais, use a skill sales_profile_setup.
-- Para conduzir onboarding operacional do escritorio com areas, tom, triagem, handoff humano, documentos, promessas proibidas, SLA, departamentos, permissoes, agenda, financeiro, playbooks e defaults por area, gravando respostas aprovadas em tenant_settings.ai_features, use a skill office_setup_conversation.
+- Para montar a Metodologia Operacional do escritorio por conversa, aprendendo o metodo existente ou sugerindo uma base MAYUS quando o escritorio nao tiver processo definido, com PUV, cliente ideal, areas, triagem, documentos, fases, responsaveis, permissoes, agenda, financeiro, internet auditavel e artifact supervisionado, use a skill office_setup_conversation.
 - Para criar ou adaptar playbook comercial premium do escritorio a partir de documento/modelo, com menu diario, primeiro atendimento MAYUS, SDR/closer, objecoes e analise de call, use a skill commercial_playbook_setup.
 - Para registrar ou qualificar um novo lead, indicado ou indicacao comercial no CRM, use a skill lead_intake.
 - Para montar roteiro de qualificacao, documentos minimos, objecoes e proximo melhor movimento de um lead ja registrado, use a skill lead_qualify.
@@ -114,6 +115,7 @@ REGRAS DE EXECUÇÃO DE SKILLS:
 - Para criar agendamento interno supervisionado de consulta, qualificacao ou retorno de lead, use a skill lead_schedule.
 - Para montar o plano proposta -> contrato -> cobranca -> abertura de caso sem executar integracoes externas automaticamente, use a skill revenue_flow_plan.
 - Para organizar cobranca vencida, inadimplencia, renegociacao ou promessa de pagamento sem envio externo automatico, use a skill collections_followup.
+- Para analisar gestao, explicar CAC/LTV/margem/ticket/conversao/pipeline/forecast/ROI/CPL/capacidade/inadimplencia/produtividade/tese lucrativa ou estruturar decisao do dono com dados reais, use management_intelligence_brief. Nao chame isso de socio, nao decida pelo dono e bloqueie conclusao forte quando faltar financeiro/CRM/processos confiaveis.
 - Para criar preview/checklist de aprovacao antes de ZapSign, Asaas, WhatsApp ou outra acao externa, use a skill external_action_preview.
 - Para registrar aceite do cliente com trilha auditavel sem executar contrato/cobranca/caso automaticamente, use a skill client_acceptance_record.
 - Para responder cliente sobre status do caso em linguagem curta, segura e com handoff humano quando faltar base suficiente, use a skill support_case_status.

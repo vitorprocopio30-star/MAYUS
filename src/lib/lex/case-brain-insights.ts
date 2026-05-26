@@ -66,6 +66,15 @@ export type CaseBrainInsights = {
   factMap: CaseBrainFactMap;
   likelyNextActs: string[];
   groundingGaps: string[];
+  operationalThesis: {
+    thesis: string;
+    rationale: string[];
+    sourcesUsed: string[];
+    gaps: string[];
+    blockers: string[];
+    nextActionBeforeDraftFactory: string;
+    openClawReason: string;
+  };
   evidence: {
     documentCount: number;
     extractedDocumentCount: number;
@@ -420,6 +429,7 @@ export function buildCaseBrainInsights(snapshot: LegalCaseContextSnapshot, evide
     factMap,
     likelyNextActs,
     groundingGaps,
+    operationalThesis: mission.operationalThesis,
     evidence: {
       documentCount: evidence.documents?.length || 0,
       extractedDocumentCount: (evidence.documents || []).filter((document) => document.extractionStatus === "extracted").length,
@@ -456,6 +466,8 @@ export function buildCaseBrainInsightsReply(insights: CaseBrainInsights) {
     `- Evidencias carregadas: ${insights.evidence.documentCount} documento(s), ${insights.evidence.movementCount} movimentacao(oes)`,
     `- Confianca: ${insights.confidence}`,
     `- Acao recomendada: ${insights.recommendedAction}`,
+    `- Tese operacional: ${insights.operationalThesis.thesis}`,
+    `- Motivo OpenClaw: ${insights.operationalThesis.openClawReason}`,
     "",
     "### Cronologia estruturada",
     ...timeline,
@@ -475,6 +487,12 @@ export function buildCaseBrainInsightsReply(insights: CaseBrainInsights) {
     "",
     "### Proximos atos provaveis",
     ...nextActs,
+    "",
+    "### Fontes e lacunas antes da Draft Factory",
+    ...(insights.operationalThesis.sourcesUsed.length > 0 ? insights.operationalThesis.sourcesUsed.map((item) => `- Fonte: ${item}`) : ["- Fonte: nenhuma fonte canonica carregada."]),
+    ...(insights.operationalThesis.gaps.length > 0 ? insights.operationalThesis.gaps.map((item) => `- Lacuna: ${item}`) : ["- Lacuna: nenhuma lacuna critica registrada."]),
+    ...(insights.operationalThesis.blockers.length > 0 ? insights.operationalThesis.blockers.map((item) => `- Bloqueio: ${item}`) : ["- Bloqueio: nenhum bloqueio critico registrado."]),
+    `- Proxima acao supervisionada: ${insights.operationalThesis.nextActionBeforeDraftFactory}`,
     "",
     "Guardrail: este diagnostico nao executa protocolo, publicacao, envio externo ou alteracao no Drive. Use como base para revisao humana e proxima missao supervisionada.",
   ].filter((line): line is string => line !== null).join("\n");

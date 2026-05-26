@@ -187,8 +187,53 @@ function getMeaningfulTokens(value: string | null | undefined) {
     .filter((token) => token.length >= 4 && !stopwords.has(token));
 }
 
+function getNameTokens(value: string | null | undefined) {
+  return normalizeText(value)
+    .split(" ")
+    .filter((token) => token.length > 0);
+}
+
+function getSourceFolderName(item: Pick<DriveScanDiscoveredItem, "parentPath">) {
+  return item.parentPath[item.parentPath.length - 1] || null;
+}
+
+function matchesNameWithInitials(folderName: string, clientName: string) {
+  const folderTokens = getNameTokens(folderName);
+  const clientTokens = getNameTokens(clientName);
+
+  if (folderTokens.length < 2 || clientTokens.length < 2) return false;
+  if (folderTokens[0] !== clientTokens[0]) return false;
+  if (folderTokens.length > clientTokens.length) return false;
+
+  return folderTokens.every((token, index) => {
+    const clientToken = clientTokens[index];
+    if (!clientToken) return false;
+    if (token === clientToken) return true;
+    return token.length === 1 && clientToken.startsWith(token);
+  });
+}
+
+function getClientFolderMatch(
+  item: Pick<DriveScanDiscoveredItem, "parentPath">,
+  clientName: string | null | undefined
+): "client_folder_exact" | "client_folder_name_initial" | null {
+  const normalizedClientName = normalizeText(clientName);
+  if (!normalizedClientName || normalizedClientName.length < 4) return null;
+
+  for (const folderName of item.parentPath) {
+    const normalizedFolderName = normalizeText(folderName);
+    if (!normalizedFolderName || normalizedFolderName.length < 2) continue;
+    if (normalizedFolderName === normalizedClientName) return "client_folder_exact";
+    if (matchesNameWithInitials(folderName, normalizedClientName)) return "client_folder_name_initial";
+  }
+
+  return null;
+}
+
 function formatMatchReason(signals: string[]) {
   if (signals.includes("process_number_exact")) return "Numero do processo encontrado no arquivo ou caminho.";
+  if (signals.includes("client_folder_exact")) return "Pasta de origem bate exatamente com cliente ja cadastrado no MAYUS.";
+  if (signals.includes("client_folder_name_initial")) return "Pasta de origem com nome e inicial bate com cliente ja cadastrado no MAYUS.";
   if (signals.includes("client_name")) return "Nome do cliente encontrado no arquivo ou caminho.";
   if (signals.includes("party_name")) return "Nome de parte do processo encontrado no arquivo ou caminho.";
   if (signals.includes("oab_match")) return "Registro OAB confirmado no contexto do processo foi encontrado no arquivo ou caminho.";
@@ -252,6 +297,17 @@ export function scoreDriveFileProcessMatch(
   }
 
   const clientName = normalizeText(process.client_name);
+  const clientFolderMatch = getClientFolderMatch(item, process.client_name);
+  if (clientFolderMatch === "client_folder_exact") {
+    score += 55;
+    signals.push("client_folder_exact");
+  }
+
+  if (clientFolderMatch === "client_folder_name_initial") {
+    score += 80;
+    signals.push("client_folder_name_initial");
+  }
+
   if (clientName && clientName.length >= 4 && normalizedTarget.includes(clientName)) {
     score += 35;
     signals.push("client_name");
@@ -294,6 +350,61 @@ export function scoreDriveFileProcessMatch(
   };
 }
 
+function getLegacyClientFolderSignal(match: DriveScanProcessMatch) {
+  return match.signals.find((signal) =>
+    signal === "client_folder_exact" || signal === "client_folder_name_initial"
+  ) || null;
+}
+
+function shouldDemoteLegacyClientFolderAmbiguity(match: DriveScanProcessMatch, allMatches: DriveScanProcessMatch[]) {
+  const legacySignal = getLegacyClientFolderSignal(match);
+  if (!legacySignal) return false;
+  if (match.signals.some((signal) => ["process_number_exact", "party_name", "oab_match"].includes(signal))) {
+    return false;
+  }
+
+  return allMatches.some((candidate) =>
+    candidate.process.id !== match.process.id &&
+    getLegacyClientFolderSignal(candidate) === legacySignal &&
+    candidate.score >= match.score - 5
+  );
+}
+
+function applyLegacyClientFolderAmbiguityGuard(matches: DriveScanProcessMatch[]) {
+  return matches.map((match) => {
+    if (!shouldDemoteLegacyClientFolderAmbiguity(match, matches)) return match;
+
+    return {
+      ...match,
+      score: Math.min(match.score, 79),
+      confidence: "medium" as const,
+      reason: "Pasta de origem bate em mais de um processo; exige revisao humana.",
+      signals: Array.from(new Set([...match.signals, "ambiguous_legacy_client_folder"])),
+    };
+  });
+}
+
+function buildSourceAuditPayload(item: DriveScanDiscoveredItem) {
+  const sourceFolderName = getSourceFolderName(item);
+
+  return {
+    parent_folder_id: item.parentFolderId,
+    parent_path: item.parentPath,
+    source_folder_name: sourceFolderName,
+    source_path_label: [...item.parentPath, item.name].filter(Boolean).join(" / "),
+    name: item.name,
+  };
+}
+
+function buildLegacySourceSignals(item: DriveScanDiscoveredItem, bestMatch: DriveScanProcessMatch | null) {
+  return {
+    source_folder_name: getSourceFolderName(item),
+    source_path_label: [...item.parentPath, item.name].filter(Boolean).join(" / "),
+    legacy_client_folder_match: bestMatch ? getLegacyClientFolderSignal(bestMatch) : null,
+    ambiguous_legacy_client_folder: Boolean(bestMatch?.signals.includes("ambiguous_legacy_client_folder")),
+  };
+}
+
 export function buildDriveScanPreviewPlan(input: {
   items: DriveScanDiscoveredItem[];
   processes: DriveScanProcess[];
@@ -322,9 +433,11 @@ export function buildDriveScanPreviewPlan(input: {
       mimeType: item.mimeType,
       folderLabel: item.parentPath[item.parentPath.length - 1] || null,
     });
-    const matches = input.processes
+    const processMatches = input.processes
       .map((process) => scoreDriveFileProcessMatch(item, process))
       .filter((match): match is DriveScanProcessMatch => Boolean(match))
+      .sort((a, b) => b.score - a.score);
+    const matches = applyLegacyClientFolderAmbiguityGuard(processMatches)
       .sort((a, b) => b.score - a.score)
       .slice(0, 5);
 
@@ -353,6 +466,7 @@ export function buildDriveScanPreviewPlan(input: {
       ...item,
       detectedSignals: {
         cnj_numbers: extractCnjNumbers(`${item.parentPath.join(" ")} ${item.name}`),
+        ...buildLegacySourceSignals(item, bestMatch),
         duplicate_candidate: isDuplicate,
         document_type: documentOrganization.documentType,
         folder_label: documentOrganization.folderLabel,
@@ -377,13 +491,10 @@ export function buildDriveScanPreviewPlan(input: {
         targetProcessTaskId: bestMatch?.process.id || null,
         targetFolderLabel: null,
         targetDriveFolderId: null,
-        beforePayload: {
-          parent_folder_id: item.parentFolderId,
-          parent_path: item.parentPath,
-          name: item.name,
-        },
+        beforePayload: buildSourceAuditPayload(item),
         afterPayload: {
           duplicate_candidate: true,
+          legacy_source: buildLegacySourceSignals(item, bestMatch),
         },
         confidence: "low",
         reason: "Possivel duplicidade detectada por nome, tipo e tamanho.",
@@ -399,14 +510,11 @@ export function buildDriveScanPreviewPlan(input: {
         targetProcessTaskId: null,
         targetFolderLabel: documentOrganization.folderLabel,
         targetDriveFolderId: null,
-        beforePayload: {
-          parent_folder_id: item.parentFolderId,
-          parent_path: item.parentPath,
-          name: item.name,
-        },
+        beforePayload: buildSourceAuditPayload(item),
         afterPayload: {
           document_type: documentOrganization.documentType,
           folder_label: documentOrganization.folderLabel,
+          legacy_source: buildLegacySourceSignals(item, bestMatch),
         },
         confidence: "low",
         reason: "Arquivo precisa de revisao humana antes de vinculo com processo.",
@@ -426,16 +534,15 @@ export function buildDriveScanPreviewPlan(input: {
       targetProcessTaskId: bestMatch.process.id,
       targetFolderLabel: documentOrganization.folderLabel,
       targetDriveFolderId: bestMatch.process.drive_folder_id || null,
-      beforePayload: {
-        parent_folder_id: item.parentFolderId,
-        parent_path: item.parentPath,
-        name: item.name,
-      },
+      beforePayload: buildSourceAuditPayload(item),
       afterPayload: {
         document_type: documentOrganization.documentType,
         folder_label: documentOrganization.folderLabel,
+        mayus_model_folder_label: documentOrganization.folderLabel,
+        legacy_source: buildLegacySourceSignals(item, bestMatch),
         process_number: bestMatch.process.process_number || null,
         process_title: bestMatch.process.title || null,
+        process_client_name: bestMatch.process.client_name || null,
         process_drive_folder_id: bestMatch.process.drive_folder_id || null,
       },
       confidence: actionConfidence,
@@ -893,7 +1000,7 @@ export async function createDriveDocumentScanPreview(params: {
   const [{ data: processes, error: processError }, discoveredItems] = await Promise.all([
     supabase
       .from("process_tasks")
-      .select("id, title, client_name, process_number, drive_folder_id, drive_link, reu")
+      .select("id, title, client_name, process_number, drive_folder_id, drive_link, reu, partes, oab_estado, oab_numero, oab_registro, advogado_nome")
       .eq("tenant_id", params.tenantId),
     discoverDriveItems({
       accessToken: params.accessToken,
