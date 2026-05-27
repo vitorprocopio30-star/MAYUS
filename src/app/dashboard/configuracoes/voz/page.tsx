@@ -24,6 +24,8 @@ export default function VozConfiguracoesPage() {
   const [elevenVoiceId, setElevenVoiceId] = useState("");
   const [elevenAgentId, setElevenAgentId] = useState("");
   const [isElevenConfigured, setIsElevenConfigured] = useState(false);
+  const [isElevenApiConfigured, setIsElevenApiConfigured] = useState(false);
+  const [isElevenVoiceConfigured, setIsElevenVoiceConfigured] = useState(false);
 
   useEffect(() => {
     if (!profileLoading) {
@@ -45,6 +47,8 @@ export default function VozConfiguracoesPage() {
       setProvider(data.voice_provider);
       setOpenAiVoice(data.openai_voice);
       setIsElevenConfigured(data.elevenlabs_configured);
+      setIsElevenApiConfigured(data.elevenlabs_api_configured || data.elevenlabs_configured);
+      setIsElevenVoiceConfigured(data.elevenlabs_voice_configured || Boolean(data.elevenlabs_voice_id));
       setElevenVoiceId(data.elevenlabs_voice_id);
       setElevenAgentId(data.elevenlabs_agent_id || "");
     } catch (error) {
@@ -180,7 +184,12 @@ export default function VozConfiguracoesPage() {
               <h3 className="text-sm font-black uppercase tracking-widest text-white">Ajustes — ElevenLabs</h3>
               {isElevenConfigured && (
                  <span className="flex items-center gap-1.5 text-[10px] font-bold uppercase tracking-widest text-[#CCA761] bg-[#CCA761]/10 px-2.5 py-1 rounded-lg border border-[#CCA761]/30">
-                   <CheckCircle2 size={12} /> API Configurada
+                   <CheckCircle2 size={12} /> MAYUSOrb pronta
+                 </span>
+              )}
+              {!isElevenConfigured && isElevenApiConfigured && !isElevenVoiceConfigured && (
+                 <span className="text-[10px] font-bold uppercase tracking-widest text-yellow-300 bg-yellow-300/10 px-2.5 py-1 rounded-lg border border-yellow-300/30">
+                   ElevenLabs conectado, mas sem Voice ID
                  </span>
               )}
             </div>
@@ -191,7 +200,7 @@ export default function VozConfiguracoesPage() {
                  type="password"
                  value={elevenApi} 
                  onChange={e => setElevenApi(e.target.value)}
-                 placeholder={isElevenConfigured ? "Deixe em branco para manter a atual..." : "sk_..."}
+                 placeholder={isElevenApiConfigured ? "Deixe em branco para manter a atual..." : "sk_..."}
                  className="w-full bg-[#111] border border-white/10 rounded-lg px-4 py-2.5 text-sm text-white focus:outline-none focus:border-[#CCA761] font-mono"
                />
             </div>

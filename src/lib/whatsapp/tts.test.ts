@@ -6,6 +6,9 @@ vi.mock("@/lib/integrations/server", () => ({
 }));
 
 import { synthesizeWhatsAppReplyAudio } from "./tts";
+import { getTenantIntegrationResolved } from "@/lib/integrations/server";
+
+const getTenantIntegrationResolvedMock = vi.mocked(getTenantIntegrationResolved);
 
 function makeSupabase(aiFeatures: Record<string, any>) {
   const uploads: any[] = [];
@@ -49,8 +52,12 @@ describe("whatsapp tts", () => {
   });
 
   it("usa ElevenLabs MAYUSOrb como voz auditavel do WhatsApp", async () => {
-    process.env.ELEVENLABS_API_KEY = "eleven-key";
-    process.env.ELEVENLABS_VOICE_ID = "voice-mayusorb";
+    process.env.ELEVENLABS_API_KEY = "env-eleven-key";
+    process.env.ELEVENLABS_VOICE_ID = "env-wrong-voice";
+    getTenantIntegrationResolvedMock.mockResolvedValue({
+      api_key: "tenant-eleven-key",
+      instance_name: "voice-mayusorb",
+    } as any);
     const supabase = makeSupabase({ voice_provider: "elevenlabs" });
     const fetcher = vi.fn(async () => ({
       ok: true,
@@ -69,13 +76,36 @@ describe("whatsapp tts", () => {
       expect.stringContaining("/text-to-speech/voice-mayusorb"),
       expect.objectContaining({
         method: "POST",
-        headers: expect.objectContaining({ "xi-api-key": "eleven-key" }),
+        headers: expect.objectContaining({ "xi-api-key": "tenant-eleven-key" }),
       }),
     );
     expect(result.provider).toBe("elevenlabs");
     expect(result.ttsProvider).toBe("elevenlabs");
     expect(result.voiceProfile).toBe("mayusorb");
+    expect(result.voiceIdSource).toBe("tenant_integration");
     expect(result.audioUrl).toContain("https://storage.test/");
     expect(supabase.uploads[0].options.contentType).toBe("audio/mpeg");
+  });
+
+  it("nao finge MAYUSOrb quando ElevenLabs do tenant nao tem Voice ID", async () => {
+    process.env.ELEVENLABS_API_KEY = "env-eleven-key";
+    process.env.ELEVENLABS_VOICE_ID = "env-generic-voice";
+    getTenantIntegrationResolvedMock.mockResolvedValue({
+      api_key: "tenant-eleven-key",
+      instance_name: null,
+      status: "connected",
+    } as any);
+    const supabase = makeSupabase({ voice_provider: "elevenlabs" });
+    const fetcher = vi.fn() as any;
+
+    await expect(synthesizeWhatsAppReplyAudio({
+      supabase: supabase as any,
+      tenantId: "tenant-1",
+      contactId: "contact-1",
+      text: "Resposta em audio do MAYUS.",
+      fetcher,
+    })).rejects.toThrow(/Voice ID da MAYUSOrb/);
+
+    expect(fetcher).not.toHaveBeenCalled();
   });
 });

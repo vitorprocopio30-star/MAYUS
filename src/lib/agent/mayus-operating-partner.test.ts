@@ -2867,15 +2867,41 @@ describe("mayus-operating-partner", () => {
           highlights: [],
         },
       },
+      processStatusContext: {
+        verified: true,
+        confidence: "high",
+        accessScope: "tenant_authorized",
+        senderPhoneAuthorized: true,
+        processTaskId: null,
+        clientName: "Margarete Marques da Silva",
+        processNumber: null,
+        title: null,
+        currentStage: null,
+        detectedPhase: "sem_fase_confiavel",
+        detectedPhaseLabel: null,
+        lastMovementAt: null,
+        lastMovementText: null,
+        deadlineAt: null,
+        pendingItems: [],
+        nextStep: null,
+        riskFlags: [],
+        clientReply: null,
+        candidateProcesses: [
+          { processTaskId: "old-margarete", clientName: "Margarete Marques da Silva", processNumber: "0811162-44.2024.8.19.0008", title: "Margarete x Estado", opposingParty: "Estado do Rio de Janeiro", summary: "processo antigo", currentStage: "Ativo", lastMovementAt: "2026-05-20", lastMovementText: "Movimento antigo" },
+          { processTaskId: "old-blablart", clientName: "Blablart Producoes Artisticas Ltda", processNumber: "5004911-65.2023.4.02.5110", title: "Blablart x Associacao", opposingParty: "Associacao as Teatrais", summary: "processo antigo", currentStage: "Ativo", lastMovementAt: "2026-05-19", lastMovementText: "Movimento antigo" },
+        ],
+        grounding: { factualSources: [], inferenceNotes: [], missingSignals: [] },
+      },
       operatingPartner: { enabled: true, autonomy_mode: "high_supervised" },
       fetcher,
     });
 
     expect(decision.conversation_frame?.resolution_type).toBe("owner_multi_intent");
+    expect(decision.conversation_frame?.candidate_summaries).toEqual([]);
     expect(decision.conversation_frame?.known_facts.join(" ")).toContain("retomar solicitacao pendente anterior");
     expect(decision.reply).toMatch(/processo/i);
     expect(decision.reply).toMatch(/vendas hoje/i);
-    expect(decision.reply).not.toMatch(/Margarete|qual banco|qual tema|qual assunto/i);
+    expect(decision.reply).not.toMatch(/Margarete|Blablart|Associacao|qual banco|qual tema|qual assunto/i);
   });
 
   it("bloqueia autoenvio quando cliente pergunta chance de ganhar mesmo com processo verificado", async () => {

@@ -408,6 +408,7 @@ function lastMessageLooksLikeName(value?: string | null) {
   const text = cleanText(value) || "";
   const normalized = normalizeText(text);
   if (!normalized || isNaturalPureGreetingText(text)) return false;
+  if (isOwnerReplyNudgeText(text)) return false;
   if (/\d|@|processo|cnj|cpf|cnpj|boa noite|bom dia|boa tarde|oi|ola/.test(normalized)) return false;
   const words = text.split(/\s+/).filter(Boolean);
   return words.length >= 2 && words.length <= 8 && words.every((word) => /^[A-Za-zÀ-ÿ'’-]{2,}$/.test(word));
@@ -419,6 +420,14 @@ function isNameLookupFollowupText(value?: string | null) {
   return /\bpelo nome\b|\bpor nome\b|consegue.{0,30}\bnome\b|consigo.{0,30}\bnome\b|busc(a|ar|ando).{0,30}\bnome\b|procur(a|ar).{0,30}\bnome\b|localiz(a|ar).{0,30}\bnome\b|acha(r)?.{0,30}\bnome\b/.test(text);
 }
 
+function isOwnerReplyNudgeText(value?: string | null) {
+  const text = normalizeText(value)
+    .replace(/[?!.,;:]+/g, " ")
+    .replace(/\s+/g, " ")
+    .trim();
+  return /^(pode me responder|me responde|me responda|responde|responder|me fala|me diga|cade|cad[eÃª]|e ai|e a[iÃ­]|conseguiu|viu|retorna pra mim|retorno)$/.test(text);
+}
+
 function previousAskedForProcessIdentifier(messages: WhatsAppSalesMessage[]) {
   const previous = previousMessages(messages).slice(-6);
   const text = normalizeText(previous.map((message) => message.content || "").join(" "));
@@ -428,6 +437,7 @@ function previousAskedForProcessIdentifier(messages: WhatsAppSalesMessage[]) {
 export function isProcessStatusRequest(messages: WhatsAppSalesMessage[]) {
   const lastText = getLastInboundText(messages);
   if (isNaturalPureGreetingText(lastText)) return false;
+  if (isOwnerReplyNudgeText(lastText)) return false;
   if (extractSelectedProcessNumber(messages)) return true;
   if (extractProcessChoiceReferenceFromText(lastText) && previousAskedForProcessIdentifier(messages)) return true;
   if (isNameLookupFollowupText(lastText) && extractRecentNameReferenceForGenericRequest(messages)) return true;

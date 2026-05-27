@@ -68,10 +68,16 @@ export async function GET(req: NextRequest) {
       .eq("provider", "elevenlabs")
       .maybeSingle();
 
+    const hasElevenApi = integration?.status === "connected";
+    const hasElevenVoiceId = Boolean(String(integration?.instance_name || "").trim());
+
     return NextResponse.json({
       voice_provider,
       openai_voice,
-      elevenlabs_configured: integration?.status === "connected",
+      elevenlabs_configured: hasElevenApi && hasElevenVoiceId,
+      elevenlabs_api_configured: hasElevenApi,
+      elevenlabs_voice_configured: hasElevenVoiceId,
+      elevenlabs_missing_voice_id: hasElevenApi && !hasElevenVoiceId,
       elevenlabs_voice_id: integration?.instance_name || "",
       elevenlabs_agent_id: integration?.metadata?.agent_id || "",
     });
