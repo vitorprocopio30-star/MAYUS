@@ -808,7 +808,7 @@ describe("/api/evolution-webhook", () => {
         instance: "mayus-dutra",
         data: {
           key: {
-            remoteJid: "5521999990000@s.whatsapp.net",
+            remoteJid: "5511888887777@s.whatsapp.net",
             fromMe: false,
             id: "msg-text-2",
           },
@@ -840,6 +840,56 @@ describe("/api/evolution-webhook", () => {
       presence: "paused",
     }));
     expect(prepareWhatsAppSalesReplyForContactMock).not.toHaveBeenCalled();
+  }, 10_000);
+
+  it("nao usa composing artificial para texto do dono autorizado", async () => {
+    handleWhatsAppInternalCommandMock.mockResolvedValue({ handled: false });
+    const { POST } = await import("./route");
+    const request = new Request("http://localhost/api/evolution-webhook", {
+      method: "POST",
+      body: JSON.stringify({
+        event: "MESSAGES_UPSERT",
+        instance: "mayus-dutra",
+        data: {
+          key: {
+            remoteJid: "5521999990000@s.whatsapp.net",
+            fromMe: false,
+            id: "msg-owner-text-1",
+          },
+          pushName: "Dono Teste",
+          message: {
+            conversation: "Quero saber sobre o processo e se teve alguma venda hoje",
+          },
+        },
+      }),
+    });
+
+    const response = await POST(request);
+    const presences = sendEvolutionPresenceMock.mock.calls.map((call) => call[0]?.presence);
+
+    expect(response.status).toBe(200);
+    expect(enqueueWhatsAppReplyMock).toHaveBeenCalledWith(expect.objectContaining({
+      messageId: "message-1",
+      trigger: "evolution_webhook",
+      preferredProvider: "evolution",
+    }));
+    expect(processPendingWhatsAppRepliesBatchMock).toHaveBeenCalledWith(expect.objectContaining({
+      messageId: "message-1",
+      limit: 1,
+    }));
+    expect(presences).toContain("available");
+    expect(presences).not.toContain("composing");
+    expect(presences).not.toContain("paused");
+    expect(supabaseMock.messageInserts).toEqual([
+      expect.objectContaining({
+        metadata: expect.objectContaining({
+          owner_sender: true,
+          reply_actor_role: "office_operator",
+          reply_delivery_profile: "office_operator_instant",
+          humanize_delivery: false,
+        }),
+      }),
+    ]);
   });
 
   it("enfileira pedido de contracheque para resposta agentica sem fast-path deterministico", async () => {

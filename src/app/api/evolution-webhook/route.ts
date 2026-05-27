@@ -417,12 +417,12 @@ export async function POST(req: Request) {
         return NextResponse.json({ success: true, updated: Boolean(messageId) });
       }
 
-      const aiFeatures = !fromMe && isSupportedMedia
+      const aiFeatures = !fromMe
         ? await fetchTenantAiFeatures(tenantId)
         : {};
-      const isOwnerMediaSender = !fromMe
-        && isSupportedMedia
+      const isOwnerSender = !fromMe
         && isAuthorizedWhatsAppCommandSender({ senderPhone: remoteJid, aiFeatures });
+      const isOwnerMediaSender = isOwnerSender && isSupportedMedia;
       const isOwnerAudioCommandCandidate = isOwnerMediaSender && messageType === "audio";
 
       if (!fromMe) {
@@ -486,7 +486,17 @@ export async function POST(req: Request) {
           }).eq("id", contactId);
       }
 
+      const ownerReplyMetadata = isOwnerSender ? {
+        owner_sender: true,
+        reply_actor_role: "office_operator",
+        reply_delivery_profile: "office_operator_instant",
+        delivery_profile: "office_operator_instant",
+        humanize_delivery: false,
+        humanize_delivery_mode: "none",
+      } : {};
+
       const messageMetadata = isSupportedMedia ? {
+        ...ownerReplyMetadata,
         provider_media_id: messageId || null,
         media_kind: messageType,
         webhook_trigger: "evolution_webhook",
@@ -499,7 +509,10 @@ export async function POST(req: Request) {
           owner_audio_command_attempted: true,
           owner_audio_command_mode: "try_internal_then_conversation",
         } : {}),
-      } : { reply_trigger: "evolution_webhook" };
+      } : {
+        reply_trigger: "evolution_webhook",
+        ...ownerReplyMetadata,
+      };
 
       // 3. Salvar a Mensagem
       const { data: savedMessage, error: msgErr } = await supabase
@@ -592,12 +605,16 @@ export async function POST(req: Request) {
                   });
 
                   try {
-                    await sendEvolutionPresence({ tenantId, remoteJid, presence: "composing", delayMs: 1200 });
+                    if (!isOwnerSender) {
+                      await sendEvolutionPresence({ tenantId, remoteJid, presence: "composing", delayMs: 1200 });
+                    }
                     await processQueuedReply({ messageId: savedMessage.id });
                   } catch (replyError) {
                     console.error("[Evolution Webhook] Erro ao processar audio transcrito como conversa:", replyError);
                   } finally {
-                    await sendEvolutionPresence({ tenantId, remoteJid, presence: "paused" });
+                    if (!isOwnerSender) {
+                      await sendEvolutionPresence({ tenantId, remoteJid, presence: "paused" });
+                    }
                   }
                   return NextResponse.json({
                     success: true,
@@ -744,12 +761,16 @@ export async function POST(req: Request) {
           });
 
           try {
-            await sendEvolutionPresence({ tenantId, remoteJid, presence: "composing", delayMs: 8000 });
+            if (!isOwnerSender) {
+              await sendEvolutionPresence({ tenantId, remoteJid, presence: "composing", delayMs: 8000 });
+            }
             await processQueuedReply({ messageId: savedMessage.id });
           } catch (replyError) {
             console.error("[Evolution Webhook] Erro ao processar resposta agentica enfileirada:", replyError);
           } finally {
-            await sendEvolutionPresence({ tenantId, remoteJid, presence: "paused" });
+            if (!isOwnerSender) {
+              await sendEvolutionPresence({ tenantId, remoteJid, presence: "paused" });
+            }
           }
         }
       }
