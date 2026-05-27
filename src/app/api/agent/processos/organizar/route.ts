@@ -22,6 +22,46 @@ function createRequestSupabaseClient(req: NextRequest) {
   )
 }
 
+let serviceSupabase: any = null
+
+function getServiceSupabase() {
+  if (!serviceSupabase) {
+    serviceSupabase = createSupabaseClient(
+      process.env.NEXT_PUBLIC_SUPABASE_URL!,
+      process.env.SUPABASE_SERVICE_ROLE_KEY!
+    )
+  }
+  return serviceSupabase
+}
+
+async function recordProcessOrganizationEvent(params: {
+  tenantId: string
+  userId: string
+  processId: string
+  processNumber?: string | null
+  status: string
+  payload: Record<string, unknown>
+}) {
+  try {
+    await getServiceSupabase().from('system_event_logs').insert({
+      tenant_id: params.tenantId,
+      user_id: params.userId,
+      source: 'monitoramento',
+      provider: 'mayus',
+      event_name: 'process_ai_organization_completed',
+      status: params.status,
+      payload: {
+        process_id: params.processId,
+        numero_processo: params.processNumber ?? null,
+        ...params.payload,
+      },
+      created_at: new Date().toISOString(),
+    })
+  } catch (error) {
+    console.warn('[ORGANIZAR_PROCESSO] Falha ao auditar organizacao IA.', error)
+  }
+}
+
 function normalizarDescricaoPrazo(value: string | null | undefined): string {
   const texto = String(value ?? '')
     .toLowerCase()
@@ -120,6 +160,20 @@ function escolherEtapaSemantica(stages: any[], sinais: string[]) {
   }
 
   return null
+}
+
+function stringArray(value: unknown) {
+  return Array.isArray(value)
+    ? value.map((item) => String(item || '').trim()).filter(Boolean).slice(0, 20)
+    : []
+}
+
+function normalizeRiskLevel(value: unknown) {
+  const raw = String(value || '').toLowerCase()
+  if (raw === 'vermelho' || raw === 'alta' || raw === 'urgente') return 'high'
+  if (raw === 'amarelo' || raw === 'media') return 'medium'
+  if (raw === 'verde' || raw === 'baixa') return 'low'
+  return 'medium'
 }
 
 export async function POST(req: NextRequest) {
@@ -294,7 +348,13 @@ Retorne exatamente este JSON:
       "prioridade": "baixa|media|alta"
     }
   ],
-  "peca_sugerida": "Nome da peça processual a elaborar agora (ou null)"
+  "peca_sugerida": "Nome da peça processual a elaborar agora (ou null)",
+  "confianca": "alta|media|baixa",
+  "fontes_consideradas": ["monitored_processes", "movimentacoes", "documentos", "kanban"],
+  "lacunas": ["lacuna relevante antes do proximo passo"],
+  "documentos_esperados": ["documento que o escritorio deveria conferir"],
+  "openclaw_reason": "Motivo de politica/supervisao para bloquear ou liberar apenas organizacao interna",
+  "approval_required": true
 }`
 
   // 5. Chamar IA com fallback seguro entre provedores configurados
@@ -341,6 +401,42 @@ Retorne exatamente este JSON:
   const etapaEscolhidaId = (etapaValida && !etapaEhMovimentacoes(etapaValida.name)
     ? etapaValida.id
     : etapaSemantica || etapaFallbackId) || null
+  const prazosSugeridos = Array.isArray(resultado.prazos) ? resultado.prazos : []
+  const approvalRequired = Boolean(
+    resultado.approval_required === true ||
+    resultado.peca_sugerida ||
+    prazosSugeridos.some((prazo: any) => prazo?.data_vencimento_iso)
+  )
+  const agenticOrganization = {
+    summary: resultado.resumo_curto ?? null,
+    riskLevel: normalizeRiskLevel(resultado.urgencia_nivel || resultado.urgencia_motivo),
+    urgency: resultado.urgencia_nivel || null,
+    nextAction: resultado.proxima_acao_sugerida ?? null,
+    owner: null,
+    stageRecommendation: etapaEscolhidaId,
+    deadlines: prazosSugeridos,
+    missingDocuments: stringArray(resultado.documentos_esperados),
+    confidence: resultado.confianca || (approvalRequired ? 'media' : 'alta'),
+    sources: Array.from(new Set([
+      'monitored_processes',
+      'movimentacoes',
+      pipelineId ? 'kanban' : null,
+      proc.linked_task_id ? 'process_tasks' : null,
+      ...stringArray(resultado.fontes_consideradas),
+    ].filter(Boolean))),
+    gaps: stringArray(resultado.lacunas),
+    openclawReason: resultado.openclaw_reason
+      || (approvalRequired
+        ? 'OpenClaw exige aprovacao humana antes de peca, prazo sensivel ou providencia externa.'
+        : 'Organizacao interna liberada; nenhuma acao externa sera executada automaticamente.'),
+    hermesTrajectory: [
+      'Processo carregado',
+      'Movimentacoes interpretadas',
+      'Etapa e proxima acao sugeridas',
+      approvalRequired ? 'Aguardando supervisao para acao sensivel' : 'Organizacao interna concluida',
+    ],
+    approvalRequired,
+  }
 
   // 6. Persistir resultado
   const agora = new Date().toISOString()
@@ -352,7 +448,7 @@ Retorne exatamente este JSON:
       proxima_acao_sugerida:   resultado.proxima_acao_sugerida,
       urgencia_nivel:          resultado.urgencia_nivel || 'verde',
       ultima_organizacao_ia:   agora,
-      organizacao_ia_json:     resultado,
+      organizacao_ia_json:     { ...resultado, agentic_organization: agenticOrganization },
       updated_at:              agora
     })
     .eq('id', processo_id)
@@ -522,6 +618,25 @@ Retorne exatamente este JSON:
     documentOrganization = buildDocumentOrganizationSummary(documents || [])
     documentMemory = memory || null
   }
+  const finalAgenticOrganization = {
+    ...agenticOrganization,
+    processTaskId: organizedTaskId,
+    documentState: documentOrganization,
+  }
+
+  await recordProcessOrganizationEvent({
+    tenantId: proc.tenant_id,
+    userId: user.id,
+    processId: processo_id,
+    processNumber: proc.numero_processo,
+    status: approvalRequired ? 'approval_required' : 'organized',
+    payload: {
+      process_task_id: organizedTaskId,
+      prazos_criados: prazosSugeridos.length,
+      peca_sugerida: resultado.peca_sugerida ?? null,
+      agentic_organization: finalAgenticOrganization,
+    },
+  })
 
   return NextResponse.json({
     success: true,
@@ -534,6 +649,7 @@ Retorne exatamente este JSON:
     process_task_id:     organizedTaskId,
     document_organization: documentOrganization,
     document_memory:     documentMemory,
+    agentic_organization: finalAgenticOrganization,
     ai_notice:           aiNotice
   })
 }

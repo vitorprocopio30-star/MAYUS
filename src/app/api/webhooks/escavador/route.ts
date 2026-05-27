@@ -12,6 +12,37 @@ const adminSupabase = createClient(
 
 const MAX_ESCAVADOR_WEBHOOK_BODY_BYTES = 1024 * 1024
 
+async function recordEscavadorWebhookEvent(params: {
+  tenantId?: string | null
+  eventName: string
+  status: string
+  evento?: string | null
+  numeroCnj?: string | null
+  monitoramentoId?: string | null
+  reason?: string | null
+  metadata?: Record<string, unknown>
+}) {
+  try {
+    await adminSupabase.from('system_event_logs').insert({
+      tenant_id: params.tenantId ?? null,
+      source: 'monitoramento',
+      provider: 'escavador',
+      event_name: params.eventName,
+      status: params.status,
+      payload: {
+        evento: params.evento ?? null,
+        numero_cnj: params.numeroCnj ?? null,
+        monitoramento_id: params.monitoramentoId ?? null,
+        reason: params.reason ?? null,
+        ...(params.metadata ?? {}),
+      },
+      created_at: new Date().toISOString(),
+    })
+  } catch (error) {
+    console.warn('[ESCAVADOR_WEBHOOK] Falha ao auditar evento.', error)
+  }
+}
+
 function safeSecretEquals(expected: string, provided: string) {
   const expectedBuffer = Buffer.from(expected)
   const providedBuffer = Buffer.from(provided)
@@ -212,6 +243,15 @@ export async function POST(req: NextRequest) {
     hasProcesso: Boolean(body?.processo),
     monitoramentos: Array.isArray(body?.monitoramentos) ? body.monitoramentos.length : body?.monitoramento ? 1 : 0,
   })
+  await recordEscavadorWebhookEvent({
+    eventName: 'escavador_webhook_received',
+    status: 'received',
+    evento,
+    metadata: {
+      has_processo: Boolean(body?.processo),
+      monitoramentos_count: Array.isArray(body?.monitoramentos) ? body.monitoramentos.length : body?.monitoramento ? 1 : 0,
+    },
+  })
 
   // Evento: processo novo detectado via monitoramento por OAB
   if (evento === 'novo_processo' || evento === 'processo_encontrado') {
@@ -330,6 +370,13 @@ export async function POST(req: NextRequest) {
       const numero_cnj = mon.numero ?? mon.termo ?? mon.valor ?? mon.processo?.numero_novo ?? mon.processo?.numero
       if (!numero_cnj) {
         console.warn('[ESCAVADOR_WEBHOOK] Monitoramento sem número identificável:', mon)
+        await recordEscavadorWebhookEvent({
+          eventName: 'escavador_webhook_movement_skipped',
+          status: 'ignored',
+          evento,
+          monitoramentoId: String(mon.id ?? '').trim() || null,
+          reason: 'missing_process_number',
+        })
         continue
       }
 
@@ -377,6 +424,14 @@ export async function POST(req: NextRequest) {
       if (!processos || processos.length === 0) {
         if (!contextoOab?.tenantId) {
           console.warn(`[ESCAVADOR_WEBHOOK] Sem tenant para inbox de ${numero_cnj}`)
+          await recordEscavadorWebhookEvent({
+            eventName: 'escavador_webhook_movement_skipped',
+            status: 'blocked',
+            evento,
+            numeroCnj: numero_cnj,
+            monitoramentoId: monitoramentoIdEscavador,
+            reason: 'missing_tenant_context',
+          })
           continue
         }
 
@@ -423,6 +478,19 @@ export async function POST(req: NextRequest) {
             monitorado: false,
             updated_at: new Date().toISOString(),
           }, { onConflict: 'tenant_id,numero_cnj' })
+
+        await recordEscavadorWebhookEvent({
+          tenantId: contextoOab.tenantId,
+          eventName: 'escavador_webhook_movement_inbox_created',
+          status: 'pending_monitoring',
+          evento,
+          numeroCnj: numero_cnj,
+          monitoramentoId: monitoramentoIdEscavador,
+          metadata: {
+            movement_id_present: Boolean(movimentacaoId),
+            quantidade_eventos: movimentacoesInbox.length,
+          },
+        })
 
         continue
       }
@@ -505,6 +573,20 @@ export async function POST(req: NextRequest) {
           .delete()
           .eq('tenant_id', processo.tenant_id)
           .eq('numero_cnj', numero_cnj)
+
+        await recordEscavadorWebhookEvent({
+          tenantId: processo.tenant_id,
+          eventName: 'escavador_webhook_movement_persisted',
+          status: 'completed',
+          evento,
+          numeroCnj: numero_cnj,
+          monitoramentoId: monitoramentoIdEscavador,
+          metadata: {
+            process_id: processo.id,
+            movement_id_present: Boolean(movimentacaoId),
+            process_movimentacao_id: movimentacaoPersistida?.id ?? null,
+          },
+        })
 
         // Dispara analisador jurídico. Em beta, só alta confiança executa; demais casos entram em revisão humana.
         let paidSummaryRecommended = false
