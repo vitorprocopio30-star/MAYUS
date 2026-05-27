@@ -3,6 +3,7 @@ import { NextRequest } from "next/server";
 
 const {
   fromMock,
+  rpcMock,
   escavadorFetchMock,
   requireTenantApiKeyMock,
   queueUpdates,
@@ -11,6 +12,7 @@ const {
   eventInserts,
 } = vi.hoisted(() => ({
   fromMock: vi.fn(),
+  rpcMock: vi.fn(),
   escavadorFetchMock: vi.fn(),
   requireTenantApiKeyMock: vi.fn(),
   queueUpdates: [] as any[],
@@ -20,7 +22,7 @@ const {
 }));
 
 vi.mock("@supabase/supabase-js", () => ({
-  createClient: vi.fn(() => ({ from: fromMock })),
+  createClient: vi.fn(() => ({ from: fromMock, rpc: rpcMock })),
 }));
 
 vi.mock("@/lib/services/escavador-client", () => ({
@@ -106,9 +108,14 @@ describe("GET /api/agents/update-processos", () => {
     movementInserts.length = 0;
     eventInserts.length = 0;
     fromMock.mockReset();
+    rpcMock.mockReset();
     escavadorFetchMock.mockReset();
     requireTenantApiKeyMock.mockReset();
     vi.stubEnv("CRON_SECRET", "cron-secret");
+    rpcMock.mockResolvedValue({
+      data: null,
+      error: { code: "42883", message: "function claim_process_update_queue_batch does not exist" },
+    });
 
     fromMock.mockImplementation((table: string) => {
       if (table === "process_update_queue") return makeQueueQuery();
@@ -215,6 +222,53 @@ describe("GET /api/agents/update-processos", () => {
           status: "ok",
           retry_count: 1,
           dead_letter: false,
+        }),
+      }),
+    }));
+  });
+
+  it("usa claim atomico via RPC quando a migration formal esta aplicada", async () => {
+    rpcMock.mockResolvedValueOnce({
+      data: [{
+        id: "queue-1",
+        numero_cnj: "3002575-03.2026.8.19.0000",
+        tenant_id: "tenant-1",
+        evento: "nova_movimentacao",
+        payload: { source: "webhook", update_agent: { retry_count: 1 } },
+        attempt_count: 1,
+        created_at: "2026-05-27T10:00:00.000Z",
+      }],
+      error: null,
+    });
+
+    const response = await GET(new NextRequest("http://localhost:3000/api/agents/update-processos?limit=10"));
+    const body = await response.json();
+
+    expect(response.status).toBe(200);
+    expect(body).toEqual(expect.objectContaining({
+      ok: true,
+      picked: 1,
+      processed: 1,
+      failed: 0,
+      claim_source: "rpc",
+    }));
+    expect(rpcMock).toHaveBeenCalledWith("claim_process_update_queue_batch", expect.objectContaining({
+      p_limit: 10,
+      p_lock_seconds: 90,
+    }));
+    expect(queueUpdates).not.toContainEqual(expect.objectContaining({ status: "PROCESSANDO" }));
+    expect(queueUpdates.at(-1)).toEqual(expect.objectContaining({
+      status: "CONCLUIDO",
+      locked_at: null,
+      lock_expires_at: null,
+      locked_by: null,
+      last_error: null,
+      attempt_count: 1,
+      payload: expect.objectContaining({
+        update_agent: expect.objectContaining({
+          status: "ok",
+          claim_source: "rpc",
+          retry_count: 1,
         }),
       }),
     }));

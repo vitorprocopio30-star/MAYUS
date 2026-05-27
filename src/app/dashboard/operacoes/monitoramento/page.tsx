@@ -94,6 +94,14 @@ interface MonitoringHealth {
     oldestPendingAt?: string | null
     oldestPendingProcess?: string | null
     oldestPendingAgeMinutes?: number | null
+    leaseSchema?: 'formal' | 'legacy' | 'unknown'
+    retryScheduled?: number | null
+    deadLettered?: number | null
+    locked?: number | null
+    maxAttempt?: number | null
+    lastError?: string | null
+    lastErrorAt?: string | null
+    oldestLockExpiresAt?: string | null
     status?: 'healthy' | 'working' | 'blocked' | 'needs_attention'
   }
 }
@@ -1145,7 +1153,7 @@ function MonitoramentoContent() {
         {feedback && <div className="p-4 bg-green-500/5 border border-green-500/20 rounded-2xl flex items-center gap-3 text-green-400 text-xs font-bold animate-in slide-in-from-top-4 uppercase tracking-widest"><CheckCircle size={18} strokeWidth={3} /> {feedback}</div>}
 
         {monitoringHealth?.queue && (
-          <div className={`grid gap-3 rounded-2xl border px-4 py-3 text-xs font-bold uppercase tracking-widest md:grid-cols-4 ${
+          <div className={`grid gap-3 rounded-2xl border px-4 py-3 text-xs font-bold uppercase tracking-widest md:grid-cols-5 ${
             monitoringHealth.queue.status === 'blocked' || monitoringHealth.queue.status === 'needs_attention'
               ? 'border-red-500/20 bg-red-500/5 text-red-300'
               : 'border-[#CCA761]/20 bg-[#CCA761]/5 text-[#f0ead8]'
@@ -1165,6 +1173,10 @@ function MonitoramentoContent() {
             <div className="flex items-center gap-2">
               <AlertCircle size={16} className={monitoringHealth.queue.pending ? 'text-yellow-400' : 'text-green-400'} />
               <span>Fila: {monitoringHealth.queue.pending ?? 0} pend. / mais antiga {formatarAtras(monitoringHealth.queue.oldestPendingAgeMinutes)}</span>
+            </div>
+            <div className="flex items-center gap-2">
+              <RefreshCw size={16} className={monitoringHealth.queue.deadLettered ? 'text-red-400' : 'text-[#CCA761]'} />
+              <span>Retry: {monitoringHealth.queue.retryScheduled ?? 0} / DLQ {monitoringHealth.queue.deadLettered ?? 0}</span>
             </div>
           </div>
         )}
