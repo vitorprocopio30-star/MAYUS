@@ -8,6 +8,8 @@ export type WhatsAppReplyAudioResult = {
   audioUrl: string;
   storagePath: string;
   provider: "openai" | "elevenlabs";
+  ttsProvider: "openai" | "elevenlabs";
+  voiceProfile: string | null;
   mimeType: "audio/mpeg";
   filename: string;
 };
@@ -34,6 +36,7 @@ async function loadVoiceSettings(supabase: SupabaseClient, tenantId: string) {
   return {
     provider: features.voice_provider === "elevenlabs" ? "elevenlabs" as const : "openai" as const,
     openAiVoice: cleanText(features.openai_voice) || "nova",
+    voiceProfile: cleanText(features.voice_profile) || (features.voice_provider === "elevenlabs" ? "mayusorb" : null),
   };
 }
 
@@ -143,6 +146,8 @@ export async function synthesizeWhatsAppReplyAudio(params: {
     audioUrl: signedData.signedUrl,
     storagePath,
     provider,
+    ttsProvider: provider,
+    voiceProfile: settings.voiceProfile || (provider === "elevenlabs" ? "mayusorb" : settings.openAiVoice),
     mimeType: "audio/mpeg",
     filename,
   };

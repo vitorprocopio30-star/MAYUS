@@ -17,6 +17,7 @@ import {
   type MayusOperatingPartnerConfig,
   type MayusOperatingPartnerCrmContext,
   type MayusOperatingPartnerDecision,
+  type MayusOwnerOfficeSnapshot,
   type MayusWhatsAppActorContext,
   type MayusOfficeKnowledgeProfile,
   type MayusPreviousConversationEvent,
@@ -440,6 +441,89 @@ async function loadCrmContext(params: {
   }
 }
 
+function saoPauloDateKey(date = new Date()) {
+  return new Intl.DateTimeFormat("en-CA", {
+    timeZone: "America/Sao_Paulo",
+    year: "numeric",
+    month: "2-digit",
+    day: "2-digit",
+  }).format(date);
+}
+
+async function loadOwnerOfficeSnapshot(params: {
+  supabase: SupabaseClient;
+  tenantId: string;
+  actorContext: MayusWhatsAppActorContext;
+}): Promise<MayusOwnerOfficeSnapshot | null> {
+  if (params.actorContext.role !== "office_operator") return null;
+
+  const today = saoPauloDateKey();
+
+  try {
+    const query = params.supabase.from("sales");
+    if (typeof (query as any).select !== "function") {
+      return {
+        sales_today: {
+          checked: false,
+          date: today,
+          source: "none",
+          count: 0,
+          amount: null,
+          highlights: [],
+          note: "Tabela de vendas indisponivel no cliente Supabase.",
+        },
+      };
+    }
+
+    const { data, error } = await query
+      .select("id, client_name, ticket_total, status, contract_date, created_at")
+      .eq("tenant_id", params.tenantId)
+      .eq("contract_date", today)
+      .order("created_at", { ascending: false })
+      .limit(10);
+
+    if (error) throw error;
+
+    const rows = Array.isArray(data) ? data as Array<{
+      client_name: string | null;
+      ticket_total: number | string | null;
+      status: string | null;
+    }> : [];
+    const total = rows.reduce((sum, row) => {
+      const value = Number(row.ticket_total || 0);
+      return sum + (Number.isFinite(value) ? value : 0);
+    }, 0);
+
+    return {
+      sales_today: {
+        checked: true,
+        date: today,
+        source: "sales",
+        count: rows.length,
+        amount: rows.length ? total : 0,
+        highlights: rows.slice(0, 5).map((row) => ({
+          title: getStringValue(row.client_name) || "Venda sem cliente",
+          value: Number.isFinite(Number(row.ticket_total || 0)) ? Number(row.ticket_total || 0) : null,
+          status: getStringValue(row.status),
+        })),
+        note: rows.length ? "Vendas encontradas na tabela sales." : "Nenhuma venda registrada na tabela sales para hoje.",
+      },
+    };
+  } catch (error) {
+    return {
+      sales_today: {
+        checked: false,
+        date: today,
+        source: "none",
+        count: 0,
+        amount: null,
+        highlights: [],
+        note: sanitizeFallbackReason(error),
+      },
+    };
+  }
+}
+
 async function loadPreviousMayusEvent(params: {
   supabase: SupabaseClient;
   tenantId: string;
@@ -784,6 +868,11 @@ export async function prepareWhatsAppSalesReplyForContact(params: {
     processStatusContext,
     crmContext,
   });
+  const ownerOfficeSnapshot = await loadOwnerOfficeSnapshot({
+    supabase: params.supabase,
+    tenantId: params.tenantId,
+    actorContext: whatsappActorContext,
+  });
   const agentTurnV2 = buildWhatsAppAgentTurnV2({
     messages: orderedMessages,
     actorContext: whatsappActorContext,
@@ -832,6 +921,7 @@ export async function prepareWhatsAppSalesReplyForContact(params: {
     model_used: "deterministic",
     fallback_reason: null,
     whatsapp_actor_context: whatsappActorContext,
+    owner_office_snapshot: ownerOfficeSnapshot,
     reply_modality: replyModalityPreference.modality,
     audio_policy: replyModalityPreference.policy,
     audio_requested_reason: replyModalityPreference.reason,
@@ -858,6 +948,7 @@ export async function prepareWhatsAppSalesReplyForContact(params: {
         officePlaybookProfile: runtimeSettings.officePlaybookProfile,
         institutionalMemory,
         crmContext,
+        ownerOfficeSnapshot,
         processStatusContext,
         whatsappActorContext,
         previousMayusEvent,
@@ -900,6 +991,7 @@ export async function prepareWhatsAppSalesReplyForContact(params: {
           whatsapp_actor_context: resolvedActorContext,
           actor_context: resolvedActorContext,
           process_status_context: processStatusContext,
+          owner_office_snapshot: ownerOfficeSnapshot,
           conversation_frame: operatingPartnerDecision.conversation_frame,
           conversation_resolution: conversationResolution,
           quality_check: operatingPartnerDecision.quality_check,
@@ -924,6 +1016,7 @@ export async function prepareWhatsAppSalesReplyForContact(params: {
         paperclip_mission: operatingPartnerDecision.agentic_governance?.paperclip_mission,
         reasoning_summary_for_team: operatingPartnerDecision.reasoning_summary_for_team,
         process_status_context: processStatusContext,
+        owner_office_snapshot: ownerOfficeSnapshot,
         whatsapp_actor_context: resolvedActorContext,
         actor_context: resolvedActorContext,
         conversation_frame: operatingPartnerDecision.conversation_frame,
@@ -1223,6 +1316,8 @@ export async function prepareWhatsAppSalesReplyForContact(params: {
       let replyBlockCount = 0;
       let actualReplyModality: WhatsAppReplyModality = replyModalityPreference.modality;
       let audioProvider: string | null = null;
+      let ttsProvider: string | null = null;
+      let voiceProfile: string | null = null;
       let audioStoragePath: string | null = null;
       let audioFallbackReason: string | null = null;
       const baseSendMetadata = {
@@ -1264,6 +1359,8 @@ export async function prepareWhatsAppSalesReplyForContact(params: {
             text: autoReply.text,
           });
           audioProvider = audio.provider;
+          ttsProvider = audio.ttsProvider;
+          voiceProfile = audio.voiceProfile;
           audioStoragePath = audio.storagePath;
           replyBlockCount = 1;
           sendResult = await sendWhatsAppMessage({
@@ -1283,6 +1380,8 @@ export async function prepareWhatsAppSalesReplyForContact(params: {
               ...baseSendMetadata,
               reply_modality: "audio",
               audio_provider: audio.provider,
+              tts_provider: audio.ttsProvider,
+              voice_profile: audio.voiceProfile,
               audio_storage_path: audio.storagePath,
               reply_block_index: 1,
               reply_block_count: 1,
@@ -1325,6 +1424,8 @@ export async function prepareWhatsAppSalesReplyForContact(params: {
         ...metadata,
         reply_modality: actualReplyModality,
         audio_provider: audioProvider,
+        tts_provider: ttsProvider,
+        voice_profile: voiceProfile,
         audio_storage_path: audioStoragePath,
         audio_fallback_reason: audioFallbackReason,
         output_modality: actualReplyModality,
@@ -1355,6 +1456,8 @@ export async function prepareWhatsAppSalesReplyForContact(params: {
           audio_policy: replyModalityPreference.policy,
           audio_requested_reason: replyModalityPreference.reason,
           audio_provider: audioProvider,
+          tts_provider: ttsProvider,
+          voice_profile: voiceProfile,
           audio_storage_path: audioStoragePath,
           audio_fallback_reason: audioFallbackReason,
           delivery_profile: deliveryPolicy.profile,
