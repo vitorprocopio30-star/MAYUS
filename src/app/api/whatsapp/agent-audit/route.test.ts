@@ -8,6 +8,8 @@ const mocks = vi.hoisted(() => {
     createClient: vi.fn(() => admin),
     createServerClient: vi.fn(),
     getUser: vi.fn(),
+    processMedia: vi.fn(),
+    processReplies: vi.fn(),
   };
 });
 
@@ -23,9 +25,19 @@ vi.mock("@supabase/supabase-js", () => ({
   createClient: mocks.createClient,
 }));
 
-function buildRequest(search = "") {
+vi.mock("@/lib/whatsapp/media-processor", () => ({
+  processPendingWhatsAppMediaBatch: mocks.processMedia,
+}));
+
+vi.mock("@/lib/whatsapp/reply-processor", () => ({
+  processPendingWhatsAppRepliesBatch: mocks.processReplies,
+}));
+
+function buildRequest(search = "", init?: { method?: string; body?: unknown }) {
   return new NextRequest(`http://localhost:3000/api/whatsapp/agent-audit${search}`, {
-    method: "GET",
+    method: init?.method || "GET",
+    headers: init?.body ? { "content-type": "application/json" } : undefined,
+    body: init?.body ? JSON.stringify(init.body) : undefined,
   });
 }
 
@@ -50,12 +62,24 @@ function eventsQuery(data: unknown, error: unknown = null) {
   return query;
 }
 
+function messagesQuery(data: unknown, error: unknown = null) {
+  const query: any = {
+    select: vi.fn(() => query),
+    eq: vi.fn(() => query),
+    order: vi.fn(() => query),
+    limit: vi.fn(async () => ({ data, error })),
+  };
+  return query;
+}
+
 describe("/api/whatsapp/agent-audit", () => {
   beforeEach(() => {
     vi.resetModules();
     vi.clearAllMocks();
     mocks.getUser.mockResolvedValue({ data: { user: { id: "user-1" } }, error: null });
     mocks.createServerClient.mockReturnValue({ auth: { getUser: mocks.getUser } });
+    mocks.processMedia.mockResolvedValue({ picked: 0, processed: 0, unsupported: 0, failed: 0, replies_prepared: 0, results: [] });
+    mocks.processReplies.mockResolvedValue({ picked: 0, processed: 0, failed: 0, skipped: 0, auto_sent: 0, results: [] });
     mocks.admin.from.mockImplementation((table: string) => {
       if (table === "profiles") {
         return profileQuery({ id: "user-1", tenant_id: "tenant-1", role: "Administrador" });
@@ -120,6 +144,37 @@ describe("/api/whatsapp/agent-audit", () => {
           },
         ]);
       }
+      if (table === "whatsapp_messages") {
+        return messagesQuery([
+          {
+            id: "msg-inbound",
+            direction: "inbound",
+            message_type: "text",
+            status: "received",
+            media_processing_status: null,
+            created_at: "2026-05-25T11:59:00.000Z",
+            metadata: {
+              reply_processing_status: "pending",
+              conversation_classification: { class: "process_status" },
+              model_used: "openai/gpt-5.4-nano",
+              final_response_source: "llm_repaired",
+              brain_run_id: "run-1",
+              agentic_governance: {
+                openclaw_policy: { reason: "status verificado antes de responder" },
+              },
+            },
+          },
+          {
+            id: "msg-outbound",
+            direction: "outbound",
+            message_type: "text",
+            status: "sent",
+            media_processing_status: null,
+            created_at: "2026-05-25T12:01:00.000Z",
+            metadata: {},
+          },
+        ]);
+      }
       return {};
     });
   });
@@ -139,6 +194,22 @@ describe("/api/whatsapp/agent-audit", () => {
       safe_fallback: 1,
       warnings: 1,
       blocked: 1,
+    }));
+    expect(body.health).toEqual(expect.objectContaining({
+      status: "needs_attention",
+      label: "WhatsApp Operating Partner",
+      queue: expect.objectContaining({
+        pending_replies: 1,
+        recent_messages: 2,
+      }),
+      latest: expect.objectContaining({
+        conversation_class: "process_status",
+        model_used: "openai/gpt-5.4-nano",
+        brain_run_id: "run-1",
+      }),
+      governance: expect.objectContaining({
+        sensitive_actions: "human_approval_required",
+      }),
     }));
     expect(body.entries[0]).toEqual(expect.objectContaining({
       id: "event-prepared",
@@ -171,6 +242,31 @@ describe("/api/whatsapp/agent-audit", () => {
     const response = await GET(buildRequest());
 
     expect(response.status).toBe(403);
+  });
+
+  it("processa pendencias do tenant para executivo", async () => {
+    const { POST } = await import("./route");
+
+    const response = await POST(buildRequest("", {
+      method: "POST",
+      body: { action: "process_pending", limit: 7 },
+    }));
+    const body = await response.json();
+
+    expect(response.status).toBe(200);
+    expect(body.ok).toBe(true);
+    expect(body.action).toBe("process_pending");
+    expect(mocks.processMedia).toHaveBeenCalledWith(expect.objectContaining({
+      supabase: mocks.admin,
+      limit: 7,
+      tenantId: "tenant-1",
+    }));
+    expect(mocks.processReplies).toHaveBeenCalledWith(expect.objectContaining({
+      supabase: mocks.admin,
+      limit: 7,
+      tenantId: "tenant-1",
+    }));
+    expect(body.health.queue.pending_replies).toBe(1);
   });
 
   it("bloqueia usuario sem sessao", async () => {

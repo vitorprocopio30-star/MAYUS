@@ -8,7 +8,8 @@ import {
   Search, ChevronDown, ChevronLeft, ChevronRight, Phone, Send,
   MessageCircle, Bot, Lock, CheckCircle2,
   Zap, Filter, FileText, Mic, Clock, Plus, X, Smartphone, Loader2, Smile, Paperclip, MoreVertical,
-  Users, UserCheck, LayoutPanelLeft, Share2, ClipboardList, Building2, Download
+  Users, UserCheck, LayoutPanelLeft, Share2, ClipboardList, Building2, Download,
+  Activity, AlertTriangle, RefreshCw
 } from "lucide-react";
 import { toast } from "sonner";
 import EmojiPicker, { Theme as EmojiTheme } from "emoji-picker-react";
@@ -47,6 +48,22 @@ const inferWhatsAppMediaType = (file: File) => {
 
 const labelColorOptions = ["#CCA761", "#25D366", "#60A5FA", "#F97316", "#EF4444", "#A855F7"];
 
+const whatsappAgentStatusStyles: Record<string, string> = {
+  working: "border-emerald-400/25 bg-emerald-400/10 text-emerald-300",
+  needs_attention: "border-yellow-400/25 bg-yellow-400/10 text-yellow-300",
+  blocked: "border-red-400/25 bg-red-400/10 text-red-300",
+  awaiting_approval: "border-orange-400/25 bg-orange-400/10 text-orange-300",
+  read_only: "border-sky-400/25 bg-sky-400/10 text-sky-300",
+};
+
+const whatsappAgentStatusLabels: Record<string, string> = {
+  working: "working",
+  needs_attention: "needs_attention",
+  blocked: "blocked",
+  awaiting_approval: "awaiting_approval",
+  read_only: "read_only",
+};
+
 type WhatsAppMediaObservability = {
   generated_at: string;
   window_hours: number;
@@ -79,6 +96,60 @@ type WhatsAppMediaObservability = {
     failed: number | null;
     error: string | null;
   }>;
+};
+
+type WhatsAppAgentAudit = {
+  generated_at: string;
+  metrics: {
+    total: number;
+    blocked: number;
+    repaired: number;
+    warnings: number;
+    errors: number;
+  };
+  health: {
+    status: "working" | "needs_attention" | "blocked" | "awaiting_approval" | "read_only";
+    label: string;
+    owner: string;
+    queue: {
+      pending_replies: number;
+      processing_replies: number;
+      failed_replies: number;
+      pending_media: number;
+      processing_media: number;
+      failed_media: number;
+      recent_messages: number;
+      inbound: number;
+      outbound: number;
+      oldest_pending_at: string | null;
+    };
+    latest: {
+      inbound_at: string | null;
+      reply_at: string | null;
+      event_at: string | null;
+      event_name: string | null;
+      model_used: string | null;
+      final_response_source: string | null;
+      conversation_class: string | null;
+      openclaw_reason: string | null;
+      brain_run_id: string | null;
+    };
+    governance: {
+      paperclip_owner: string;
+      openclaw_state: string;
+      openclaw_reason: string;
+      hermes_trajectory: string;
+      auto_send_policy: string;
+      sensitive_actions: string;
+    };
+    audit: {
+      blocked: number;
+      repaired: number;
+      warnings: number;
+      top_flags: Array<{ flag: string; count: number }>;
+    };
+    next_action: string;
+  };
 };
 
 export default function WhatsAppChatPremiumPage() {
@@ -132,6 +203,9 @@ export default function WhatsAppChatPremiumPage() {
   const [areConversationFiltersExpanded, setAreConversationFiltersExpanded] = useState(true);
   const [mediaObservability, setMediaObservability] = useState<WhatsAppMediaObservability | null>(null);
   const [isLoadingMediaObservability, setIsLoadingMediaObservability] = useState(false);
+  const [agentAudit, setAgentAudit] = useState<WhatsAppAgentAudit | null>(null);
+  const [isLoadingAgentAudit, setIsLoadingAgentAudit] = useState(false);
+  const [isProcessingWhatsAppAgent, setIsProcessingWhatsAppAgent] = useState(false);
 
   // Permissoes
   const isAdmin = profile?.role === 'Administrador' || profile?.role === 'mayus_admin' || profile?.role === 'Sócio';
@@ -755,10 +829,47 @@ export default function WhatsAppChatPremiumPage() {
     }
   }, [isAdmin]);
 
+  const loadAgentAudit = useCallback(async () => {
+    if (!isAdmin) return;
+    setIsLoadingAgentAudit(true);
+    try {
+      const response = await fetch('/api/whatsapp/agent-audit?limit=24', { cache: 'no-store' });
+      const data = await response.json().catch(() => null);
+      if (!response.ok) throw new Error(data?.error || "Falha ao carregar auditoria do agente.");
+      setAgentAudit(data);
+    } catch (error: any) {
+      toast.error(error?.message || "Falha ao carregar saude do agente WhatsApp.");
+    } finally {
+      setIsLoadingAgentAudit(false);
+    }
+  }, [isAdmin]);
+
+  const handleProcessWhatsAppPending = async () => {
+    if (!isAdmin || isProcessingWhatsAppAgent) return;
+    setIsProcessingWhatsAppAgent(true);
+    try {
+      const response = await fetch('/api/whatsapp/agent-audit', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ action: "process_pending", limit: 5 }),
+      });
+      const data = await response.json().catch(() => null);
+      if (!response.ok) throw new Error(data?.error || "Falha ao processar pendencias.");
+      setAgentAudit((current) => data?.health ? { ...(current || data), ...data, health: data.health } : current);
+      toast.success(`WhatsApp processado: ${data?.replies?.processed ?? 0} respostas e ${data?.media?.processed ?? 0} midias.`);
+      await Promise.all([loadAgentAudit(), loadMediaObservability(), fetchContacts()]);
+    } catch (error: any) {
+      toast.error(error?.message || "Falha ao processar pendencias WhatsApp.");
+    } finally {
+      setIsProcessingWhatsAppAgent(false);
+    }
+  };
+
   useEffect(() => {
     if (!profile?.tenant_id || !isAdmin) return;
     loadMediaObservability();
-  }, [profile?.tenant_id, isAdmin, loadMediaObservability]);
+    loadAgentAudit();
+  }, [profile?.tenant_id, isAdmin, loadMediaObservability, loadAgentAudit]);
 
   const handleSaveContactLabel = async () => {
     const label = labelDraft.trim().slice(0, 40);
@@ -938,6 +1049,13 @@ export default function WhatsAppChatPremiumPage() {
       </div>
     );
   };
+
+  const agentHealth = agentAudit?.health;
+  const agentStatus = agentHealth?.status || (isLoadingAgentAudit ? "read_only" : "needs_attention");
+  const agentStatusStyle = whatsappAgentStatusStyles[agentStatus] || whatsappAgentStatusStyles.needs_attention;
+  const agentPendingTotal = agentHealth
+    ? agentHealth.queue.pending_replies + agentHealth.queue.processing_replies + agentHealth.queue.pending_media + agentHealth.queue.processing_media
+    : 0;
 
   const handleSendZapSignContract = async () => {
     if (!activeContact || isSendingContract) return;
@@ -1499,6 +1617,112 @@ export default function WhatsAppChatPremiumPage() {
                    <h3 className="text-2xl font-bold text-white text-center italic group-hover:text-[#CCA761] transition-colors">{activeContact.name}</h3>
                    <div className="bg-[#CCA761]/10 border border-[#CCA761]/20 text-[#CCA761] px-4 py-1.5 rounded-full text-[9px] font-black uppercase mt-3 tracking-widest">{serviceStatusLabel}</div>
                 </div>
+
+                {isAdmin && (
+                  <div className="space-y-4">
+                    <div className="flex items-center justify-between gap-3">
+                      <div className="flex items-center gap-2 text-gray-500 font-black uppercase text-[10px] tracking-widest">
+                        <Activity size={14} className="text-[#CCA761]" /> Agente WhatsApp
+                      </div>
+                      <div className="flex items-center gap-2">
+                        <span className={`rounded-full border px-2.5 py-1 text-[8px] font-black uppercase tracking-widest ${agentStatusStyle}`}>
+                          {whatsappAgentStatusLabels[agentStatus] || agentStatus}
+                        </span>
+                        <button
+                          onClick={loadAgentAudit}
+                          disabled={isLoadingAgentAudit}
+                          className="rounded-full border border-white/10 bg-white/5 p-1.5 text-gray-400 transition-colors hover:border-[#CCA761]/40 hover:text-[#CCA761] disabled:opacity-40"
+                          title="Atualizar saude do agente"
+                        >
+                          <RefreshCw size={12} className={isLoadingAgentAudit ? "animate-spin" : ""} />
+                        </button>
+                      </div>
+                    </div>
+                    <div className="rounded-2xl border border-[#CCA761]/10 bg-[#CCA761]/[0.04] p-5 space-y-4">
+                      <div className="flex items-start justify-between gap-3">
+                        <div className="min-w-0">
+                          <p className="text-xs font-black uppercase tracking-widest text-white">
+                            {agentHealth?.label || "WhatsApp Operating Partner"}
+                          </p>
+                          <p className="mt-1 line-clamp-2 text-[10px] leading-relaxed text-gray-500">
+                            {agentHealth?.next_action || "Carregando health, fila e auditoria agentica do canal."}
+                          </p>
+                        </div>
+                        <button
+                          onClick={handleProcessWhatsAppPending}
+                          disabled={isProcessingWhatsAppAgent}
+                          className="shrink-0 rounded-xl border border-[#CCA761]/25 bg-[#CCA761] px-3 py-2 text-[8px] font-black uppercase tracking-widest text-black transition-transform hover:scale-105 disabled:cursor-not-allowed disabled:opacity-50"
+                          title="Processar pendencias agora"
+                        >
+                          {isProcessingWhatsAppAgent ? <Loader2 size={13} className="animate-spin" /> : "Processar"}
+                        </button>
+                      </div>
+
+                      <div className="grid grid-cols-3 gap-2">
+                        <div className="rounded-xl border border-white/5 bg-[#111] p-3">
+                          <span className="block text-[8px] font-black uppercase tracking-widest text-gray-600">Fila</span>
+                          <span className="text-lg font-black text-white">{agentPendingTotal}</span>
+                        </div>
+                        <div className="rounded-xl border border-white/5 bg-[#111] p-3">
+                          <span className="block text-[8px] font-black uppercase tracking-widest text-gray-600">Bloqueios</span>
+                          <span className={`text-lg font-black ${(agentHealth?.audit.blocked || 0) > 0 ? "text-orange-300" : "text-emerald-300"}`}>
+                            {agentHealth?.audit.blocked ?? 0}
+                          </span>
+                        </div>
+                        <div className="rounded-xl border border-white/5 bg-[#111] p-3">
+                          <span className="block text-[8px] font-black uppercase tracking-widest text-gray-600">Reparos</span>
+                          <span className="text-lg font-black text-sky-300">{agentHealth?.audit.repaired ?? 0}</span>
+                        </div>
+                      </div>
+
+                      <div className="rounded-xl border border-white/5 bg-black/40 p-3 space-y-2">
+                        <div className="flex items-center justify-between gap-2">
+                          <span className="text-[8px] font-black uppercase tracking-widest text-gray-600">Ultimo sinal</span>
+                          <span className="text-[8px] font-bold uppercase text-gray-500">
+                            {agentHealth?.latest.event_at ? formatTime(agentHealth.latest.event_at) : "sem evento"}
+                          </span>
+                        </div>
+                        <p className="truncate text-[10px] font-bold text-gray-300">
+                          {agentHealth?.latest.conversation_class || "classe nao observada"} / {agentHealth?.latest.final_response_source || "sem fonte"}
+                        </p>
+                        <p className="truncate text-[10px] text-gray-500">
+                          {agentHealth?.latest.model_used || "modelo nao registrado"} {agentHealth?.latest.brain_run_id ? `- Brain ${agentHealth.latest.brain_run_id}` : ""}
+                        </p>
+                        <p className="line-clamp-2 text-[10px] text-[#f0d9a6]">
+                          OpenClaw: {agentHealth?.latest.openclaw_reason || agentHealth?.governance.openclaw_reason || "sem bloqueio recente"}
+                        </p>
+                      </div>
+
+                      <div className="grid grid-cols-2 gap-2 text-[10px]">
+                        <div className="rounded-xl border border-white/5 bg-black/30 p-3">
+                          <span className="block text-[8px] font-black uppercase tracking-widest text-gray-600">Inbound</span>
+                          <strong className="text-gray-200">{agentHealth?.latest.inbound_at ? formatTime(agentHealth.latest.inbound_at) : "sem sinal"}</strong>
+                        </div>
+                        <div className="rounded-xl border border-white/5 bg-black/30 p-3">
+                          <span className="block text-[8px] font-black uppercase tracking-widest text-gray-600">Resposta</span>
+                          <strong className="text-gray-200">{agentHealth?.latest.reply_at ? formatTime(agentHealth.latest.reply_at) : "sem sinal"}</strong>
+                        </div>
+                      </div>
+
+                      {(agentHealth?.audit.top_flags || []).length > 0 ? (
+                        <div className="space-y-2">
+                          <span className="text-[8px] font-black uppercase tracking-widest text-gray-600">Flags</span>
+                          {(agentHealth?.audit.top_flags || []).slice(0, 3).map((flag) => (
+                            <div key={flag.flag} className="flex items-center justify-between gap-2 rounded-xl border border-white/5 bg-black/30 px-3 py-2">
+                              <span className="truncate text-[10px] text-gray-400">{flag.flag}</span>
+                              <span className="text-[9px] font-black text-[#CCA761]">{flag.count}</span>
+                            </div>
+                          ))}
+                        </div>
+                      ) : (
+                        <div className="flex items-start gap-2 rounded-xl border border-white/5 bg-black/30 p-3 text-[10px] leading-relaxed text-gray-500">
+                          <AlertTriangle size={13} className="mt-0.5 shrink-0 text-[#CCA761]" />
+                          Smoke real Evolution ainda e o aceite final para marcar esta frente como fechada.
+                        </div>
+                      )}
+                    </div>
+                  </div>
+                )}
 
                 {isAdmin && (
                   <div className="space-y-4">

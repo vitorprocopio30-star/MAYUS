@@ -27,6 +27,7 @@ type ProcessWhatsAppMediaBatchParams = {
   supabase: SupabaseClient;
   limit?: number;
   messageId?: string | null;
+  tenantId?: string | null;
 };
 
 type ProcessedMediaResult = {
@@ -581,6 +582,10 @@ export async function processPendingWhatsAppMediaBatch(params: ProcessWhatsAppMe
     .eq("media_processing_status", "pending")
     .order("created_at", { ascending: true })
     .limit(normalizeLimit(params.limit));
+
+  if (params.tenantId) {
+    query = query.eq("tenant_id", params.tenantId);
+  }
 
   if (params.messageId) {
     query = query.eq("id", params.messageId);

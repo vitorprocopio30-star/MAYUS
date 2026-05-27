@@ -21,6 +21,7 @@ type ProcessWhatsAppReplyBatchParams = {
   supabase: SupabaseClient;
   limit?: number;
   messageId?: string | null;
+  tenantId?: string | null;
 };
 
 function normalizeLimit(value: number | null | undefined) {
@@ -800,6 +801,10 @@ export async function processPendingWhatsAppRepliesBatch(params: ProcessWhatsApp
     .order("created_at", { ascending: true })
     .limit(normalizeLimit(params.limit));
 
+  if (params.tenantId) {
+    query = query.eq("tenant_id", params.tenantId);
+  }
+
   if (params.messageId) {
     query = query.eq("id", params.messageId);
   }
@@ -809,7 +814,7 @@ export async function processPendingWhatsAppRepliesBatch(params: ProcessWhatsApp
 
   let staleProcessingRows: PendingWhatsAppReplyMessage[] = [];
   if (!params.messageId) {
-    const { data: processingData, error: processingError } = await params.supabase
+    let processingQuery = params.supabase
       .from("whatsapp_messages")
       .select("id, tenant_id, contact_id, direction, media_processing_status, metadata, created_at")
       .eq("direction", "inbound")
@@ -817,18 +822,30 @@ export async function processPendingWhatsAppRepliesBatch(params: ProcessWhatsApp
       .order("created_at", { ascending: true })
       .limit(normalizeLimit(params.limit));
 
+    if (params.tenantId) {
+      processingQuery = processingQuery.eq("tenant_id", params.tenantId);
+    }
+
+    const { data: processingData, error: processingError } = await processingQuery;
+
     if (processingError) throw processingError;
     staleProcessingRows = ((processingData || []) as PendingWhatsAppReplyMessage[])
       .filter((row) => row.media_processing_status !== "pending")
       .filter(isStaleProcessingReply);
   } else if (!data?.length) {
-    const { data: processingData, error: processingError } = await params.supabase
+    let processingQuery = params.supabase
       .from("whatsapp_messages")
       .select("id, tenant_id, contact_id, direction, media_processing_status, metadata, created_at")
       .eq("id", params.messageId)
       .eq("direction", "inbound")
       .eq("metadata->>reply_processing_status", "processing")
       .limit(1);
+
+    if (params.tenantId) {
+      processingQuery = processingQuery.eq("tenant_id", params.tenantId);
+    }
+
+    const { data: processingData, error: processingError } = await processingQuery;
 
     if (processingError) throw processingError;
     staleProcessingRows = ((processingData || []) as PendingWhatsAppReplyMessage[])

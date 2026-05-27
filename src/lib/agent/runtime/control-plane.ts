@@ -549,7 +549,7 @@ export const MAYUS_AGENTIC_WORKSTREAM_REGISTRY: MayusAgenticWorkstreamProfile[] 
     id: "front_b_agentic_core",
     label: "Frente B Agentic Core",
     owner: "Time Agentic Core",
-    scope: "Control Plane, rotinas, profiles, Hermes, OpenClaw, Paperclip, approvals, health e mission snapshots.",
+    scope: "Control Plane, rotinas, profiles, WhatsApp Operating Partner, Hermes, OpenClaw, Paperclip, approvals, health e mission snapshots.",
     internalAgentIds: [
       "mayus_integrator",
       "monitoring_agent",
@@ -558,7 +558,7 @@ export const MAYUS_AGENTIC_WORKSTREAM_REGISTRY: MayusAgenticWorkstreamProfile[] 
       "finance_agent",
     ],
     ownedModules: ["core", "monitoring", "client_service", "growth", "finance"],
-    ownedSurfaces: ["dashboard", "brain", "configuracoes", "aprovacoes", "monitoramento", "crm", "financeiro"],
+    ownedSurfaces: ["dashboard", "brain", "configuracoes", "aprovacoes", "monitoramento", "whatsapp", "crm", "financeiro"],
     ownership: [
       "Coordenar runtime agentico, policy OpenClaw, budget Paperclip, trajectory Hermes e approvals.",
       "Expor health, bloqueios, memoria e proximo passo coordenado por agente.",
@@ -685,8 +685,8 @@ export const MAYUS_INTERNAL_AGENT_REGISTRY: MayusAgentControlPlaneProfile[] = [
   },
   {
     id: "client_service_agent",
-    label: "Client Service Agent",
-    role: "Prepara atendimento, respostas supervisionadas e status para clientes.",
+    label: "WhatsApp Operating Partner",
+    role: "Prepara atendimento WhatsApp, respostas supervisionadas, status processual verificado e handoff humano.",
     module: "client_service",
     allowedSurfaces: ["whatsapp", "clientes", "aprovacoes", "brain"],
     autonomyMode: "supervised",

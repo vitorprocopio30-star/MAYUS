@@ -291,6 +291,13 @@ const PUBLIC_AGENT_STATUS_STYLES: Record<AgentControlPlanePublicAgent["status"],
   read_only: "text-sky-300 border-sky-500/30 bg-sky-500/10",
 };
 
+const PUBLIC_AGENT_STATUS_LABELS: Record<AgentControlPlanePublicAgent["status"], string> = {
+  ready: "working",
+  needs_attention: "needs_attention",
+  blocked: "blocked",
+  read_only: "read_only",
+};
+
 type AgentHealthFilter = "all" | AgentControlPlaneAgent["health"]["status"];
 
 const AGENT_HEALTH_FILTERS: Array<{ id: AgentHealthFilter; label: string }> = [
@@ -787,9 +794,9 @@ export default function AgentSkillRegistryPage() {
           <div data-testid="public-agents-matrix" className="mt-4 rounded-xl border border-white/10 bg-black/10 p-3">
             <div className="flex flex-wrap items-center justify-between gap-2">
               <div className="min-w-0">
-                <p className="text-[10px] font-black uppercase tracking-widest text-[#CCA761]">Public Agents Matrix</p>
+                <p className="text-[10px] font-black uppercase tracking-widest text-[#CCA761]">Agentes Publicos / Core Agentico</p>
                 <p className="text-gray-500 text-[10px] leading-relaxed mt-1">
-                  Paperclip, OpenClaw e Hermes reaproveitados como primitivas internas.
+                  Paperclip, OpenClaw e Hermes supervisionam Lex, monitoramento, WhatsApp, Growth e Finance.
                 </p>
               </div>
               <span className="rounded-full border border-white/10 bg-black/20 px-2.5 py-1 text-[9px] font-black uppercase tracking-widest text-gray-400">
@@ -800,6 +807,7 @@ export default function AgentSkillRegistryPage() {
             <div className="grid gap-3 mt-3 lg:grid-cols-3">
               {publicAgents.map((publicAgent) => {
                 const statusStyle = PUBLIC_AGENT_STATUS_STYLES[publicAgent.status] ?? PUBLIC_AGENT_STATUS_STYLES.needs_attention;
+                const statusLabel = PUBLIC_AGENT_STATUS_LABELS[publicAgent.status] ?? publicAgent.status;
                 return (
                   <div
                     key={publicAgent.id}
@@ -809,7 +817,7 @@ export default function AgentSkillRegistryPage() {
                     <div className="flex flex-wrap items-center justify-between gap-2">
                       <p className="text-white text-xs font-black truncate">{publicAgent.label}</p>
                       <span className={`rounded-full border px-2 py-0.5 text-[9px] font-black uppercase tracking-widest ${statusStyle}`}>
-                        {publicAgent.status}
+                        {statusLabel}
                       </span>
                     </div>
                     <p className="text-gray-500 text-[10px] leading-relaxed mt-1 line-clamp-2">{publicAgent.reusedAs}</p>
