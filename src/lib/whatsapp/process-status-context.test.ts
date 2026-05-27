@@ -1010,6 +1010,28 @@ describe("process-status-context", () => {
     expect(from).not.toHaveBeenCalled();
   });
 
+  it("cobranca curta do operador nao vira nome nem busca candidatos antigos", async () => {
+    const from = vi.fn(() => makeQuery({ data: [{ id: "old-process" }], error: null }));
+    const messages = [
+      { direction: "outbound" as const, content: "Encontrei processos para Margarete." },
+      { direction: "inbound" as const, content: "Quero saber sobre o processo e se teve venda hoje" },
+      { direction: "inbound" as const, content: "Pode me responder" },
+    ];
+
+    expect(isProcessStatusRequest(messages)).toBe(false);
+
+    const context = await fetchWhatsAppProcessStatusContext({
+      supabase: { from } as any,
+      tenantId: "tenant-1",
+      contact: { phone_number: "5521999990000@s.whatsapp.net", name: "Vitor" },
+      messages,
+      senderPhoneAuthorized: true,
+    });
+
+    expect(context).toBeNull();
+    expect(from).not.toHaveBeenCalled();
+  });
+
   it("retorna contexto nao verificado quando nao localiza processo", async () => {
     const from = vi.fn((table: string) => {
       if (table === "clients") return makeQuery({ data: null, error: null });

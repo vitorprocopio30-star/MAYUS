@@ -811,13 +811,21 @@ function buildWhatsAppConversationFrame(input: MayusOperatingPartnerInput, param
     : null;
   const lastMessage = cleanText(nudgeSource?.content) || rawLastInbound;
   const isOwnerNudgeContinuation = Boolean(nudgeSource);
-  const candidates = collectProcessCandidates(input, params.fallbackState);
-  const referencedCandidate = findReferencedProcessCandidate(lastMessage, candidates);
   const otherProcessReference = isOtherProcessReference(lastMessage);
-  const lastAnsweredCandidate = findLastAnsweredProcessCandidate(input.messages, candidates);
   const genericProcessRequest = isGenericProcessStatusRequestWithoutReference(lastMessage);
+  const ownerMultiIntentRequest = isOfficeOperatorActor(params.actorContext, input.processStatusContext)
+    && isOwnerProcessRequest(lastMessage)
+    && isOwnerSalesTodayRequest(lastMessage);
+  const ownerMultiIntentHasExplicitProcessReference = hasExplicitCurrentProcessReference(lastMessage);
+  const suppressHistoricalProcessCandidates = isOwnerNudgeContinuation
+    && !ownerMultiIntentHasExplicitProcessReference
+    && (ownerMultiIntentRequest || genericProcessRequest);
+  const candidates = suppressHistoricalProcessCandidates ? [] : collectProcessCandidates(input, params.fallbackState);
+  const referencedCandidate = findReferencedProcessCandidate(lastMessage, candidates);
+  const lastAnsweredCandidate = findLastAnsweredProcessCandidate(input.messages, candidates);
   const singleVerifiedProcessCandidate = input.processStatusContext?.verified === true
     && normalizeProcessCandidateMemory(input.processStatusContext.candidateProcesses || []).length <= 1
+    && !suppressHistoricalProcessCandidates
     ? processStatusContextAsCandidate(input.processStatusContext)
     : null;
   const statusFollowupCandidate = isResolvedProcessStatusFollowup(lastMessage)
@@ -835,17 +843,13 @@ function buildWhatsAppConversationFrame(input: MayusOperatingPartnerInput, param
   const shortProcessNudge = isShortProcessNudge(input.messages, input.processStatusContext);
   const commercialTriage = isCommercialTriageMessage(lastMessage) && (input.processStatusContext || previousAskedForProcessIdentifier(input.messages));
   const hasVerifiedProcessCandidates = input.processStatusContext?.verified === true
+    && !suppressHistoricalProcessCandidates
     && normalizeProcessCandidateMemory(input.processStatusContext.candidateProcesses || []).length > 1;
   const unverifiedProcessStatus = (params.deterministicIntent === "process_status" || genericProcessRequest)
     && input.processStatusContext?.verified !== true;
   const unmatchedProcessReference = !referencedCandidate
     && Boolean(explicitProcessReference)
     && hasRecentProcessContext(input, params.fallbackState, candidates);
-  const ownerMultiIntentRequest = isOfficeOperatorActor(params.actorContext, input.processStatusContext)
-    && isOwnerProcessRequest(lastMessage)
-    && isOwnerSalesTodayRequest(lastMessage);
-  const ownerMultiIntentHasExplicitProcessReference = hasExplicitCurrentProcessReference(lastMessage);
-
   let resolutionType: MayusWhatsAppConversationResolutionType = "open_llm";
   let recommendedIntent = params.deterministicIntent;
   let conversationGoal = params.fallbackState.conversation_goal || "responder com naturalidade e seguranca";

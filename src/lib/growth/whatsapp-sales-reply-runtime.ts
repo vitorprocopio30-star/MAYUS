@@ -1318,6 +1318,7 @@ export async function prepareWhatsAppSalesReplyForContact(params: {
       let audioProvider: string | null = null;
       let ttsProvider: string | null = null;
       let voiceProfile: string | null = null;
+      let voiceIdSource: string | null = null;
       let audioStoragePath: string | null = null;
       let audioFallbackReason: string | null = null;
       const baseSendMetadata = {
@@ -1361,6 +1362,7 @@ export async function prepareWhatsAppSalesReplyForContact(params: {
           audioProvider = audio.provider;
           ttsProvider = audio.ttsProvider;
           voiceProfile = audio.voiceProfile;
+          voiceIdSource = audio.voiceIdSource;
           audioStoragePath = audio.storagePath;
           replyBlockCount = 1;
           sendResult = await sendWhatsAppMessage({
@@ -1382,6 +1384,7 @@ export async function prepareWhatsAppSalesReplyForContact(params: {
               audio_provider: audio.provider,
               tts_provider: audio.ttsProvider,
               voice_profile: audio.voiceProfile,
+              voice_id_source: audio.voiceIdSource,
               audio_storage_path: audio.storagePath,
               reply_block_index: 1,
               reply_block_count: 1,
@@ -1426,6 +1429,7 @@ export async function prepareWhatsAppSalesReplyForContact(params: {
         audio_provider: audioProvider,
         tts_provider: ttsProvider,
         voice_profile: voiceProfile,
+        voice_id_source: voiceIdSource,
         audio_storage_path: audioStoragePath,
         audio_fallback_reason: audioFallbackReason,
         output_modality: actualReplyModality,
@@ -1458,6 +1462,7 @@ export async function prepareWhatsAppSalesReplyForContact(params: {
           audio_provider: audioProvider,
           tts_provider: ttsProvider,
           voice_profile: voiceProfile,
+          voice_id_source: voiceIdSource,
           audio_storage_path: audioStoragePath,
           audio_fallback_reason: audioFallbackReason,
           delivery_profile: deliveryPolicy.profile,
