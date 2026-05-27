@@ -1,4 +1,4 @@
-import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
+import { beforeEach, describe, expect, it, vi } from "vitest";
 import { NextRequest } from "next/server";
 
 const {
@@ -8,7 +8,6 @@ const {
   queueUpdates,
   monitoredUpdates,
   movementInserts,
-  eventInserts,
 } = vi.hoisted(() => ({
   fromMock: vi.fn(),
   escavadorFetchMock: vi.fn(),
@@ -16,7 +15,6 @@ const {
   queueUpdates: [] as any[],
   monitoredUpdates: [] as any[],
   movementInserts: [] as any[],
-  eventInserts: [] as any[],
 }));
 
 vi.mock("@supabase/supabase-js", () => ({
@@ -89,31 +87,19 @@ function makeMovementsQuery() {
   return query;
 }
 
-function makeSystemEventsQuery() {
-  return {
-    insert: vi.fn(async (payload: any) => {
-      eventInserts.push(payload);
-      return { data: null, error: null };
-    }),
-  };
-}
-
 describe("GET /api/agents/update-processos", () => {
   beforeEach(() => {
     queueUpdates.length = 0;
     monitoredUpdates.length = 0;
     movementInserts.length = 0;
-    eventInserts.length = 0;
     fromMock.mockReset();
     escavadorFetchMock.mockReset();
     requireTenantApiKeyMock.mockReset();
-    vi.stubEnv("CRON_SECRET", "cron-secret");
 
     fromMock.mockImplementation((table: string) => {
       if (table === "process_update_queue") return makeQueueQuery();
       if (table === "monitored_processes") return makeMonitoredQuery();
       if (table === "process_movimentacoes") return makeMovementsQuery();
-      if (table === "system_event_logs") return makeSystemEventsQuery();
       return makeQueueQuery();
     });
 
@@ -133,52 +119,6 @@ describe("GET /api/agents/update-processos", () => {
         }],
       }],
     });
-  });
-
-  afterEach(() => {
-    vi.unstubAllEnvs();
-  });
-
-  it("bloqueia chamadas de producao sem segredo da Vercel", async () => {
-    vi.stubEnv("NODE_ENV", "production");
-
-    const response = await GET(new NextRequest("http://localhost:3000/api/agents/update-processos"));
-    const body = await response.json();
-
-    expect(response.status).toBe(403);
-    expect(body).toEqual({ error: "Forbidden" });
-    expect(fromMock).not.toHaveBeenCalled();
-  });
-
-  it("aceita Authorization Bearer do Vercel Cron em producao", async () => {
-    vi.stubEnv("NODE_ENV", "production");
-
-    const response = await GET(new NextRequest("http://localhost:3000/api/agents/update-processos", {
-      headers: { authorization: "Bearer cron-secret" },
-    }));
-    const body = await response.json();
-
-    expect(response.status).toBe(200);
-    expect(body).toEqual(expect.objectContaining({ ok: true, processed: 1 }));
-    expect(eventInserts.at(-1)).toEqual(expect.objectContaining({
-      source: "monitoramento",
-      event_name: "process_update_queue_processed",
-      status: "completed",
-      payload: expect.objectContaining({ auth_method: "authorization_bearer" }),
-    }));
-  });
-
-  it("mantem compatibilidade com x-cron-secret em producao", async () => {
-    vi.stubEnv("NODE_ENV", "production");
-
-    const response = await GET(new NextRequest("http://localhost:3000/api/agents/update-processos", {
-      headers: { "x-cron-secret": "cron-secret" },
-    }));
-    const body = await response.json();
-
-    expect(response.status).toBe(200);
-    expect(body).toEqual(expect.objectContaining({ ok: true, processed: 1 }));
-    expect(eventInserts.at(-1)?.payload).toEqual(expect.objectContaining({ auth_method: "x-cron-secret" }));
   });
 
   it("drena lote maior, atualiza ultima movimentacao e marca item como concluido", async () => {

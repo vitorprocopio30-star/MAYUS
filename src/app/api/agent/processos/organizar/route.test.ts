@@ -41,9 +41,6 @@ function createSupabaseMock() {
         select: vi.fn(() => chain),
         eq: vi.fn(() => chain),
         limit: vi.fn(() => chain),
-        update: vi.fn(() => chain),
-        insert: vi.fn(() => chain),
-        upsert: vi.fn(() => chain),
         single: vi.fn(async () => {
           if (table === "monitored_processes") {
             return {
@@ -83,7 +80,6 @@ function createSupabaseMock() {
           }
           return chain;
         }),
-        then: (resolve: any) => resolve({ data: null, error: null }),
       };
       return chain;
     }),
@@ -128,52 +124,6 @@ describe("POST /api/agent/processos/organizar", () => {
       tenantId: "tenant-1",
       useCase: "organizar_processo",
       request: expect.objectContaining({ max_tokens: 1500 }),
-    }));
-  });
-
-  it("returns agentic organization context for successful process organization", async () => {
-    callLLMWithFallbackMock.mockResolvedValueOnce({
-      ok: true,
-      notice: null,
-      data: {
-        choices: [{
-          message: {
-            content: JSON.stringify({
-              resumo_curto: "Processo com movimentacao recente e necessidade de avaliacao.",
-              proxima_acao_sugerida: "Preparar manifestacao supervisionada.",
-              urgencia_nivel: "amarelo",
-              urgencia_motivo: "Movimentacao recente pode exigir providencia.",
-              kanban_stage_id: "stage-1",
-              prazos: [],
-              tarefas: [],
-              peca_sugerida: "Manifestacao",
-              confianca: "media",
-              fontes_consideradas: ["monitored_processes", "movimentacoes"],
-              lacunas: ["Conferir inteiro teor da movimentacao."],
-              documentos_esperados: ["Publicacao completa"],
-              openclaw_reason: "Revisao humana antes da peca.",
-              approval_required: true,
-            }),
-          },
-        }],
-      },
-    } as any);
-
-    const response = await POST(new NextRequest("http://localhost:3000/api/agent/processos/organizar", {
-      method: "POST",
-      body: JSON.stringify({ processo_id: "process-1" }),
-    }));
-    const body = await response.json();
-
-    expect(response.status).toBe(200);
-    expect(body).toEqual(expect.objectContaining({
-      success: true,
-      agentic_organization: expect.objectContaining({
-        riskLevel: "medium",
-        stageRecommendation: "stage-1",
-        approvalRequired: true,
-        openclawReason: "Revisao humana antes da peca.",
-      }),
     }));
   });
 });

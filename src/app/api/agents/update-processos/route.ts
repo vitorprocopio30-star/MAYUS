@@ -101,54 +101,6 @@ function mergeQueuePayload(payload: unknown, patch: Record<string, unknown>) {
   }
 }
 
-function getCronAuthState(req: NextRequest) {
-  if (process.env.NODE_ENV !== 'production') {
-    return { authorized: true, method: 'development', missingSecret: false }
-  }
-
-  const secret = String(process.env.CRON_SECRET || '').trim()
-  if (!secret) return { authorized: false, method: null, missingSecret: true }
-
-  const cronHeader = String(req.headers.get('x-cron-secret') || '').trim()
-  const bearer = String(req.headers.get('authorization') || '').replace(/^Bearer\s+/i, '').trim()
-
-  if (bearer === secret) return { authorized: true, method: 'authorization_bearer', missingSecret: false }
-  if (cronHeader === secret) return { authorized: true, method: 'x-cron-secret', missingSecret: false }
-
-  return { authorized: false, method: null, missingSecret: false }
-}
-
-async function recordUpdateAgentEvent(params: {
-  tenantId?: string | null
-  eventName: string
-  status: string
-  numeroCnj?: string | null
-  queueId?: string | null
-  error?: string | null
-  processedAt?: string | null
-  metadata?: Record<string, unknown>
-}) {
-  try {
-    await adminSupabase.from('system_event_logs').insert({
-      tenant_id: params.tenantId ?? null,
-      source: 'monitoramento',
-      provider: 'mayus',
-      event_name: params.eventName,
-      status: params.status,
-      payload: {
-        numero_cnj: params.numeroCnj ?? null,
-        queue_id: params.queueId ?? null,
-        error: params.error ?? null,
-        processed_at: params.processedAt ?? null,
-        ...(params.metadata ?? {}),
-      },
-      created_at: new Date().toISOString(),
-    })
-  } catch (error) {
-    console.warn('[UPDATE_AGENT] Falha ao auditar processamento da fila.', error)
-  }
-}
-
 async function persistMovementIfNew(params: {
   tenantId: string
   numeroCnj: string
@@ -183,15 +135,18 @@ async function persistMovementIfNew(params: {
 }
 
 export async function GET(req: NextRequest) {
-  const auth = getCronAuthState(req)
-  if (!auth.authorized) {
+  const cronSecret = req.headers.get('x-cron-secret')
+  if (
+    cronSecret !== process.env.CRON_SECRET &&
+    process.env.NODE_ENV === 'production'
+  ) {
     return NextResponse.json({ error: 'Forbidden' }, { status: 403 })
   }
 
   const limit = batchSize(req)
   const { data: fila, error: filaError } = await adminSupabase
     .from('process_update_queue')
-    .select('id, numero_cnj, tenant_id, payload, evento, created_at')
+    .select('id, numero_cnj, tenant_id, payload')
     .eq('status', 'PENDENTE')
     .order('created_at', { ascending: true })
     .limit(limit)
@@ -294,20 +249,6 @@ export async function GET(req: NextRequest) {
 
       if (itemSucceeded) processed++
       else failed++
-
-      await recordUpdateAgentEvent({
-        tenantId: item.tenant_id,
-        eventName: 'process_update_queue_processed',
-        status: itemSucceeded ? 'completed' : 'failed',
-        numeroCnj: item.numero_cnj,
-        queueId: item.id,
-        error: itemSucceeded ? null : itemError || 'unknown_error',
-        processedAt,
-        metadata: {
-          evento: item.evento ?? null,
-          auth_method: auth.method,
-        },
-      })
     } catch (error) {
       failed++
       console.error('[UPDATE_AGENT] Erro:', error)
@@ -323,20 +264,6 @@ export async function GET(req: NextRequest) {
           }),
         })
         .eq('id', item.id)
-
-      await recordUpdateAgentEvent({
-        tenantId: item.tenant_id,
-        eventName: 'process_update_queue_processed',
-        status: 'failed',
-        numeroCnj: item.numero_cnj,
-        queueId: item.id,
-        error: error instanceof Error ? error.message.slice(0, 300) : 'unknown_error',
-        processedAt,
-        metadata: {
-          evento: item.evento ?? null,
-          auth_method: auth.method,
-        },
-      })
     }
   }
 

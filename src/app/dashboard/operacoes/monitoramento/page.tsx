@@ -76,28 +76,6 @@ interface BuscaResult {
   fonte?: 'cache' | 'escavador'
 }
 
-interface MonitoringHealth {
-  latestMovementDate?: string | null
-  latestMovementCreatedAt?: string | null
-  latestInboxDate?: string | null
-  latestInboxCreatedAt?: string | null
-  latestReceivedAt?: string | null
-  queue?: {
-    pending?: number | null
-    processing?: number | null
-    error?: number | null
-    completed?: number | null
-    lastProcessedAt?: string | null
-    lastProcessedProcess?: string | null
-    lastReceivedAt?: string | null
-    lastReceivedProcess?: string | null
-    oldestPendingAt?: string | null
-    oldestPendingProcess?: string | null
-    oldestPendingAgeMinutes?: number | null
-    status?: 'healthy' | 'working' | 'blocked' | 'needs_attention'
-  }
-}
-
 interface ConfirmacaoLote {
   total?: number
   custo_estimado?: number
@@ -112,19 +90,11 @@ interface ConfirmacaoLote {
 
 type FilterStatus = 'TODOS' | 'ATIVO' | 'ARQUIVADO' | 'monitorado' | 'nao_monitorado'
 type SortOrder = 'distribuicao' | 'urgencia' | 'tribunal'
-type OrganizingState = 'idle' | 'loading' | 'done' | 'error'
 
 const STATUS_COLOR: Record<string, string> = {
   'ATIVO': 'text-green-400 bg-green-500/10 border-green-500/20',
   'ARQUIVADO': 'text-zinc-500 bg-zinc-500/10 border-zinc-500/20',
   'SUSPENSO': 'text-yellow-500 bg-yellow-500/10 border-yellow-500/20'
-}
-
-const QUEUE_STATUS_LABEL: Record<'healthy' | 'working' | 'blocked' | 'needs_attention', string> = {
-  healthy: 'Saudável',
-  working: 'Processando',
-  blocked: 'Fila travada',
-  needs_attention: 'Atenção'
 }
 
 // ─── Funções Auxiliares ───
@@ -199,31 +169,6 @@ function formatarData(data: string | null) {
 
     return data
   } catch { return '--/--/----' }
-}
-
-function formatarMomento(data: string | null | undefined) {
-  if (!data) return 'sem registro'
-  try {
-    const normalized = data.includes(' ') && data.includes('-') ? data.replace(' ', 'T') : data
-    const parsed = new Date(normalized)
-    if (Number.isNaN(parsed.getTime())) return formatarData(data)
-    return new Intl.DateTimeFormat('pt-BR', {
-      day: '2-digit',
-      month: '2-digit',
-      hour: '2-digit',
-      minute: '2-digit'
-    }).format(parsed)
-  } catch {
-    return formatarData(data)
-  }
-}
-
-function formatarAtras(minutos: number | null | undefined) {
-  if (minutos === null || minutos === undefined) return 'sem pendência'
-  if (minutos < 60) return `${minutos} min`
-  const horas = Math.floor(minutos / 60)
-  const resto = minutos % 60
-  return resto > 0 ? `${horas}h ${resto}min` : `${horas}h`
 }
 
 function diasDesde(data: string | null) {
@@ -350,7 +295,7 @@ function ModalConfirmacaoCusto({ dados, onConfirmar, onCancelar, loading }: { da
   )
 }
 
-function ProcessoCard({ p, onSelect, selecionado, onAction, onRemover, onArquivar, loadingId, organizandoState, onOrganizar, onAbrirResumo }: { p: Processo, onSelect: () => void, selecionado: boolean, onAction: () => void, onRemover: () => void, onArquivar: () => void, loadingId: string | null, organizandoState: OrganizingState, onOrganizar: () => void, onAbrirResumo: (r: string) => void }) {
+function ProcessoCard({ p, onSelect, selecionado, onAction, onRemover, onArquivar, loadingId, organizandoState, onOrganizar, onAbrirResumo }: { p: Processo, onSelect: () => void, selecionado: boolean, onAction: () => void, onRemover: () => void, onArquivar: () => void, loadingId: string | null, organizandoState: 'idle' | 'loading' | 'done', onOrganizar: () => void, onAbrirResumo: (r: string) => void }) {
   const ultimaMov = getDataUltimaMovimentacao(p)
   const d = diasDesde(ultimaMov)
   const isUpdating = loadingId === p.numero_processo
@@ -494,16 +439,9 @@ function ProcessoCard({ p, onSelect, selecionado, onAction, onRemover, onArquiva
                 <button
                  onClick={onOrganizar}
                 disabled={organizandoState === 'loading'}
-                className={`h-11 bg-secondary dark:bg-zinc-900 hover:bg-accent dark:hover:bg-zinc-800 border text-[10px] font-black uppercase rounded-2xl transition-all flex items-center justify-center gap-2 disabled:opacity-60 ${
-                  organizandoState === 'done'
-                    ? 'border-green-500/30 text-green-400'
-                    : organizandoState === 'error'
-                      ? 'border-red-500/30 text-red-400'
-                      : 'border-border dark:border-zinc-800 text-muted-foreground dark:text-zinc-400 hover:text-white'
-                }`}
+                className="h-11 bg-secondary dark:bg-zinc-900 hover:bg-accent dark:hover:bg-zinc-800 border border-border dark:border-zinc-800 text-muted-foreground dark:text-zinc-400 hover:text-white text-[10px] font-black uppercase rounded-2xl transition-all flex items-center justify-center gap-2"
                >
-                 {organizandoState === 'loading' ? <Loader2 size={14} className="animate-spin" /> : <Sparkles size={14} />}
-                 {organizandoState === 'done' ? 'Organizado' : organizandoState === 'error' ? 'Revisar erro' : 'Organizar IA'}
+                 <Sparkles size={14} /> Organizar IA
                </button>
              </>
            )}
@@ -546,10 +484,9 @@ function MonitoramentoContent() {
   const [selecionados, setSelecionados] = useState<Set<string>>(new Set())
   const [loadingId, setLoadingId] = useState<string | null>(null)
   const [lastExternalSyncAt, setLastExternalSyncAt] = useState<string | null>(null)
-  const [monitoringHealth, setMonitoringHealth] = useState<MonitoringHealth | null>(null)
 
   // Estado para os botões "Organizar IA"
-  const [organizando, setOrganizando] = useState<Record<string, OrganizingState>>({})
+  const [organizando, setOrganizando] = useState<Record<string, 'idle' | 'loading' | 'done'>>({})
 
   // Estado para o Modo de Leitura (Documento)
   const [resumoModal, setResumoModal] = useState<string | null>(null)
@@ -564,15 +501,6 @@ function MonitoramentoContent() {
     setPagina(p)
     window.scrollTo({ top: 300, behavior: 'smooth' })
   }
-
-  const carregarSaudeMonitoramento = useCallback(async () => {
-    try {
-      const res = await fetch('/api/operacoes/movimentacoes?limit=50', { cache: 'no-store' })
-      if (!res.ok) return
-      const data = await res.json().catch(() => null)
-      setMonitoringHealth(data?.health || null)
-    } catch {}
-  }, [])
 
   const carregarBaseOab = useCallback(async (estado: string, numero: string) => {
     if (!numero.trim()) return
@@ -608,12 +536,6 @@ function MonitoramentoContent() {
       carregarBaseOab(e || 'RJ', s)
     }
   }, [carregarBaseOab])
-
-  useEffect(() => {
-    carregarSaudeMonitoramento()
-    const interval = window.setInterval(carregarSaudeMonitoramento, 60000)
-    return () => window.clearInterval(interval)
-  }, [carregarSaudeMonitoramento])
 
   const carregarBaseSalva = useCallback(async () => {
     if (!oabNumero.trim()) return
@@ -878,10 +800,6 @@ function MonitoramentoContent() {
   }, [])
 
   const handleOrganizar = useCallback(async (processoId: string) => {
-    if (!processoId) {
-      setError('Este processo ainda precisa estar monitorado antes de organizar com IA.')
-      return
-    }
     setOrganizando(prev => ({ ...prev, [processoId]: 'loading' }))
     try {
       const res = await fetch('/api/agent/processos/organizar', {
@@ -901,27 +819,23 @@ function MonitoramentoContent() {
           ? ` Acervo: ${docs.total} documento(s), ${docs.extracted || 0} com texto extraido, ${docs.pendingReviewCount || 0} para revisar.`
           : ' Acervo sem documentos sincronizados ainda.'
         setFeedback(`Organização concluída e card atualizado no fluxo jurídico.${docsLabel}`)
-        void carregarSaudeMonitoramento()
       } else {
-        setOrganizando(prev => ({ ...prev, [processoId]: 'error' }))
+        setOrganizando(prev => ({ ...prev, [processoId]: 'idle' }))
         setError(data?.error || 'Não foi possível organizar este processo com IA.')
       }
     } catch {
-      setOrganizando(prev => ({ ...prev, [processoId]: 'error' }))
+      setOrganizando(prev => ({ ...prev, [processoId]: 'idle' }))
       setError('Erro de comunicação ao organizar processo com IA.')
     }
-  }, [carregarSaudeMonitoramento])
+  }, [])
 
   const handleOrganizarTodos = useCallback(async () => {
     if (!result) return
-    const monitorados = result.processos.filter(p => p.id && p.monitorado && !processoArquivado(p))
+    const monitorados = result.processos.filter(p => p.id)
     if (monitorados.length === 0) return
 
     setOrganizandoTodos(true)
     setProgressoOrg(0)
-    setError(null)
-    let concluidos = 0
-    let falhas = 0
 
     for (let i = 0; i < monitorados.length; i++) {
       const pid = monitorados[i].id!
@@ -934,27 +848,23 @@ function MonitoramentoContent() {
         })
         const data = await res.json()
         if (data.success) {
-          concluidos++
           setOrganizando(prev => ({ ...prev, [pid]: 'done' }))
           setResult(prev => prev ? {
             ...prev,
             processos: prev.processos.map(p => p.id === pid ? { ...p, ...data.processo_atualizado } : p)
           } : prev)
         } else {
-          falhas++
-          setOrganizando(prev => ({ ...prev, [pid]: 'error' }))
+          setOrganizando(prev => ({ ...prev, [pid]: 'idle' }))
         }
       } catch {
-        falhas++
-        setOrganizando(prev => ({ ...prev, [pid]: 'error' }))
+        setOrganizando(prev => ({ ...prev, [pid]: 'idle' }))
       }
       setProgressoOrg(i + 1)
       if (i < monitorados.length - 1) await new Promise(r => setTimeout(r, 1000))
     }
     setOrganizandoTodos(false)
-    void carregarSaudeMonitoramento()
-    setFeedback(`Organização em lote concluída: ${concluidos} organizado(s), ${falhas} com atenção, ${monitorados.length} ativo(s) avaliados.`)
-  }, [carregarSaudeMonitoramento, result])
+    setFeedback(`Organizacao em lote concluida para ${monitorados.length} processo(s).`)
+  }, [result])
 
   const exportarCsv = () => {
     const rows = processosFiltrados
@@ -1044,7 +954,6 @@ function MonitoramentoContent() {
   const totalArquivadosAmostra = result?.processos.filter((p) => processoArquivado(p)).length ?? 0
   const totalAtivosPainel = Math.max(0, totalProcessosBase - totalArquivadosAmostra)
   const totalAtivosPendentes = result?.processos.filter((p) => !p.monitorado && !processoArquivado(p)).length ?? 0
-  const totalProcessosOrganizaveis = result?.processos.filter((p) => p.id && p.monitorado && !processoArquivado(p)).length ?? 0
   const diferencaTotal = result?.total && result?.total_retornado && result.total !== result.total_retornado
   const minutosDesdeUltimaSync = useMemo(() => {
     const base = lastExternalSyncAt || result?.ultima_sincronizacao || null
@@ -1144,31 +1053,6 @@ function MonitoramentoContent() {
         {error && <div className="p-4 bg-red-500/5 border border-red-500/20 rounded-2xl flex items-center gap-3 text-red-500 text-xs font-bold animate-shake uppercase tracking-widest"><AlertCircle size={18} /> {error}</div>}
         {feedback && <div className="p-4 bg-green-500/5 border border-green-500/20 rounded-2xl flex items-center gap-3 text-green-400 text-xs font-bold animate-in slide-in-from-top-4 uppercase tracking-widest"><CheckCircle size={18} strokeWidth={3} /> {feedback}</div>}
 
-        {monitoringHealth?.queue && (
-          <div className={`grid gap-3 rounded-2xl border px-4 py-3 text-xs font-bold uppercase tracking-widest md:grid-cols-4 ${
-            monitoringHealth.queue.status === 'blocked' || monitoringHealth.queue.status === 'needs_attention'
-              ? 'border-red-500/20 bg-red-500/5 text-red-300'
-              : 'border-[#CCA761]/20 bg-[#CCA761]/5 text-[#f0ead8]'
-          }`}>
-            <div className="flex items-center gap-2">
-              <Shield size={16} className="text-[#CCA761]" />
-              <span>{QUEUE_STATUS_LABEL[monitoringHealth.queue.status || 'healthy']}</span>
-            </div>
-            <div className="flex items-center gap-2">
-              <Clock size={16} className="text-[#CCA761]" />
-              <span>Recebido: {formatarMomento(monitoringHealth.queue.lastReceivedAt || monitoringHealth.latestReceivedAt)}</span>
-            </div>
-            <div className="flex items-center gap-2">
-              <CheckCircle size={16} className="text-green-400" />
-              <span>Processado: {formatarMomento(monitoringHealth.queue.lastProcessedAt)}</span>
-            </div>
-            <div className="flex items-center gap-2">
-              <AlertCircle size={16} className={monitoringHealth.queue.pending ? 'text-yellow-400' : 'text-green-400'} />
-              <span>Fila: {monitoringHealth.queue.pending ?? 0} pend. / mais antiga {formatarAtras(monitoringHealth.queue.oldestPendingAgeMinutes)}</span>
-            </div>
-          </div>
-        )}
-
         <div className="bg-card dark:bg-zinc-900/30 border border-border dark:border-zinc-800 rounded-2xl p-3 space-y-3">
           <div className="flex items-center justify-between gap-3">
             <span className="text-foreground dark:text-zinc-200 text-[11px] font-black uppercase tracking-[0.2em]">Pesquisar OAB</span>
@@ -1230,20 +1114,20 @@ function MonitoramentoContent() {
                         Vigiar {selecionados.size} Selecionados
                      </button>
                   )}
-                   {totalProcessosOrganizaveis > 0 && (
-                     <button
-                       onClick={handleOrganizarTodos}
-                       disabled={organizandoTodos}
+                   {result.processos.filter(p => p.id).length > 0 && (
+                    <button
+                      onClick={handleOrganizarTodos}
+                      disabled={organizandoTodos}
                       className="flex items-center gap-2 px-4 py-2 rounded-xl
                                  bg-[#CCA761]/10 border border-[#CCA761]/30
                                  text-[#CCA761] text-xs font-bold uppercase
                                  hover:bg-[#CCA761]/20 transition-all disabled:opacity-60">
                       {organizandoTodos ? (
-                         <>
-                           <Loader2 size={14} className="animate-spin" />
-                           Organizando {progressoOrg}/{totalProcessosOrganizaveis}...
-                         </>
-                       ) : (
+                        <>
+                          <Loader2 size={14} className="animate-spin" />
+                          Organizando {progressoOrg}/{result.processos.filter(p => p.id).length}...
+                        </>
+                      ) : (
                         <>
                           <Sparkles size={14} /> Organizar Todos com IA
                         </>
