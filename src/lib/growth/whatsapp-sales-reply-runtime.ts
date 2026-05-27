@@ -304,6 +304,7 @@ async function loadSalesRuntimeSettings(params: {
 function sanitizeFallbackReason(error: unknown) {
   const message = error instanceof Error ? error.message : String(error || "");
   if (!message.trim()) return "unknown_error";
+  if (/voice id|voice_id|mayusorb/i.test(message)) return "voice_id_missing";
   if (/401|403|unauthorized|forbidden|api key|token|credential|chave/i.test(message)) return "provider_auth_or_credentials";
   if (/429|rate limit|quota|limite/i.test(message)) return "provider_rate_limited";
   if (/timeout|timed out|aborted/i.test(message)) return "provider_timeout";

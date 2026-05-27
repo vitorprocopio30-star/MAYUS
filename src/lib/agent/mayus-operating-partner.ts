@@ -1028,6 +1028,7 @@ function buildWhatsAppConversationFrame(input: MayusOperatingPartnerInput, param
   }
 
   const hardGuardrailReason = hardGuardrailReasonForResolution(resolutionType);
+  const frameCandidates = resolutionType === "greeting" ? [] : candidates;
 
   return {
     resolution_type: resolutionType,
@@ -1043,7 +1044,7 @@ function buildWhatsAppConversationFrame(input: MayusOperatingPartnerInput, param
     forbidden_moves: Array.from(forbiddenMoves),
     response_guidance: Array.from(responseGuidance),
     resolved_reference: resolvedReference,
-    candidate_summaries: processCandidateSummaries(candidates),
+    candidate_summaries: processCandidateSummaries(frameCandidates),
     safe_fallback_reply: safeFallbackReply,
   };
 }
@@ -1119,15 +1120,23 @@ function getLastOutbound(messages: WhatsAppSalesMessage[]) {
   return [...messages].reverse().find((message) => message.direction === "outbound" && cleanText(message.content)) || null;
 }
 
-function isPureGreeting(value?: string | null) {
-  const text = normalizeText(value)
+const MAYUS_STT_NAME_ALIASES = /\b(mayus|maya|maius|maios|maia|marios|mario|marius|mais)\b/g;
+
+function normalizeGreetingCandidateText(value?: string | null) {
+  return normalizeText(value)
     .replace(/[?!.,;:]+/g, " ")
-    .replace(/\b(mayus|maya)\b/g, " ")
+    .replace(/\b(foi|foy)\s+(mayus|maya|maius|maios|maia|marios|mario|marius|mais)\b/g, "oi ")
+    .replace(MAYUS_STT_NAME_ALIASES, " ")
+    .replace(/^(foi|foy)\s+(bom dia|boa tarde|boa noite|boa|oi|ola|tudo bem)\b/, "oi $2")
     .replace(/\s+/g, " ")
     .trim();
+}
+
+function isPureGreeting(value?: string | null) {
+  const text = normalizeGreetingCandidateText(value);
   if (!text) return false;
   if (/processo|caso|cliente|cpf|cnj|andamento|status|atualizacao|novidade|documento|boleto|contrato|prazo/.test(text)) return false;
-  return /^(oi|ola|bom dia|boa tarde|boa noite|boa|tudo bem|oi tudo bem|ola tudo bem|bom dia tudo bem|boa tarde tudo bem|boa noite tudo bem|tudo bem e vc|tudo bem e voce|oi tudo bem e vc|oi tudo bem e voce)$/.test(text);
+  return /^(oi|ola|bom dia|boa tarde|boa noite|boa|tudo bem|oi bom dia|oi boa tarde|oi boa noite|oi tudo bem|ola tudo bem|bom dia tudo bem|boa tarde tudo bem|boa noite tudo bem|tudo bem e vc|tudo bem e voce|oi tudo bem e vc|oi tudo bem e voce)$/.test(text);
 }
 
 function looksLikeFullName(value?: string | null) {
@@ -2418,7 +2427,7 @@ function buildReplyQualityCheck(params: {
   const reasons: string[] = [];
 
   if (params.frame.resolution_type === "greeting") {
-    if (/processo|custas|preparo|cnj|banco|bradesco|caixa|master|contracheque|beneficio/.test(text)) {
+    if (/processo|custas|preparo|cnj|banco|bradesco|caixa|master|santander|michele|margarete|marcio|foppolos|blablart|contracheque|beneficio|tjrj|trf/.test(text)) {
       flags.push("stale_context_leak");
       reasons.push("Saudacao limpa puxou contexto antigo.");
     }

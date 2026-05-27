@@ -393,15 +393,19 @@ function previousMessages(messages: WhatsAppSalesMessage[]) {
   return typeof lastInboundIndex === "number" ? messages.slice(0, lastInboundIndex) : messages;
 }
 
+const MAYUS_STT_NAME_ALIASES = /\b(mayus|maya|maius|maios|maia|marios|mario|marius|mais)\b/g;
+
 function isNaturalPureGreetingText(value?: string | null) {
   const text = normalizeText(value)
     .replace(/[?!.,;:]+/g, " ")
-    .replace(/\b(mayus|maya)\b/g, " ")
+    .replace(/\b(foi|foy)\s+(mayus|maya|maius|maios|maia|marios|mario|marius|mais)\b/g, "oi ")
+    .replace(MAYUS_STT_NAME_ALIASES, " ")
+    .replace(/^(foi|foy)\s+(bom dia|boa tarde|boa noite|boa|oi|ola|tudo bem)\b/, "oi $2")
     .replace(/\s+/g, " ")
     .trim();
   if (!text) return false;
   if (/processo|caso|cliente|cpf|cnj|andamento|status|situacao|atualizacao|novidade|documento|boleto|contrato|prazo/.test(text)) return false;
-  return /^(oi|ola|bom dia|boa tarde|boa noite|boa|tudo bem|oi tudo bem|ola tudo bem|bom dia tudo bem|boa tarde tudo bem|boa noite tudo bem|tudo bem e vc|tudo bem e voce|oi tudo bem e vc|oi tudo bem e voce)$/.test(text);
+  return /^(oi|ola|bom dia|boa tarde|boa noite|boa|tudo bem|oi bom dia|oi boa tarde|oi boa noite|oi tudo bem|ola tudo bem|bom dia tudo bem|boa tarde tudo bem|boa noite tudo bem|tudo bem e vc|tudo bem e voce|oi tudo bem e vc|oi tudo bem e voce)$/.test(text);
 }
 
 function lastMessageLooksLikeName(value?: string | null) {

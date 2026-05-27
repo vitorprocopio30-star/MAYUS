@@ -265,6 +265,29 @@ describe("process-status-context", () => {
     expect(context?.clientName).toBe("Marcio da Silva Machado");
   });
 
+  it("ignora saudacoes de audio transcritas com alias estranho do Mayus", async () => {
+    const from = vi.fn(() => makeQuery({ data: [{ id: "old-process" }], error: null }));
+    const messages = [
+      { direction: "outbound" as const, content: "Encontrei Michele Cristina x Santander." },
+      { direction: "inbound" as const, content: "Foi mais, boa tarde." },
+    ];
+
+    expect(isProcessStatusRequest([{ direction: "inbound", content: "Foi mais, boa tarde." }])).toBe(false);
+    expect(isProcessStatusRequest([{ direction: "inbound", content: "Oi Marios, boa noite" }])).toBe(false);
+    expect(isProcessStatusRequest(messages)).toBe(false);
+
+    const context = await fetchWhatsAppProcessStatusContext({
+      supabase: { from } as any,
+      tenantId: "tenant-1",
+      contact: { phone_number: "5521999990000@s.whatsapp.net", name: "Vitor" },
+      messages,
+      senderPhoneAuthorized: true,
+    });
+
+    expect(context).toBeNull();
+    expect(from).not.toHaveBeenCalled();
+  });
+
   it("prioriza nome explicito enviado no ultimo turno em vez do contato ou telefone", async () => {
     const processOrFilters: string[] = [];
     const from = vi.fn((table: string) => {

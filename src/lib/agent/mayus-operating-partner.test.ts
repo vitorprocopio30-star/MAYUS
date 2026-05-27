@@ -739,6 +739,72 @@ describe("mayus-operating-partner", () => {
     expect(decision.final_response_source).toBe("deterministic_guardrail");
   });
 
+  it.each([
+    "Boa noite Mayus",
+    "Foi mais, boa tarde.",
+    "Oi Marios, boa noite",
+  ])("trata saudacao/transcricao '%s' como conversa limpa sem contexto antigo", async (lastInbound) => {
+    const fetcher = vi.fn(async () => {
+      throw new Error("LLM nao deveria ser chamada");
+    }) as any;
+
+    const decision = await buildMayusOperatingPartnerDecision({
+      supabase: {} as any,
+      tenantId: "tenant-1",
+      channel: "whatsapp",
+      contactName: "Vitor",
+      messages: [
+        { direction: "outbound", content: "Encontrei Michele Cristina x Santander." },
+        { direction: "inbound", content: lastInbound, created_at: "2026-05-27T19:23:00.000Z" },
+      ],
+      previousMayusEvent: {
+        created_at: new Date().toISOString(),
+        conversation_state: {
+          last_process_candidates: [
+            { processTaskId: "old-michele", clientName: "Michele Cristina Pinto Foppolos Santos", processNumber: "0811126-78.2025.8.19.0213", title: "Michele x Santander", opposingParty: "Santander", summary: "contexto antigo", currentStage: "Ativo", lastMovementAt: "2026-05-20" },
+          ],
+        },
+      },
+      processStatusContext: {
+        verified: true,
+        confidence: "high",
+        accessScope: "tenant_authorized",
+        senderPhoneAuthorized: true,
+        processTaskId: null,
+        clientName: "Michele Cristina Pinto Foppolos Santos",
+        processNumber: null,
+        title: null,
+        currentStage: null,
+        detectedPhase: "sem_fase_confiavel",
+        detectedPhaseLabel: null,
+        lastMovementAt: null,
+        lastMovementText: null,
+        deadlineAt: null,
+        pendingItems: [],
+        nextStep: null,
+        riskFlags: [],
+        clientReply: null,
+        candidateProcesses: [
+          { processTaskId: "old-michele", clientName: "Michele Cristina Pinto Foppolos Santos", processNumber: "0811126-78.2025.8.19.0213", title: "Michele x Santander", opposingParty: "Santander", summary: "contexto antigo", currentStage: "Ativo", lastMovementAt: "2026-05-20" },
+        ],
+        grounding: { factualSources: [], inferenceNotes: [], missingSignals: [] },
+      },
+      whatsappActorContext: { role: "office_operator", sender_phone_authorized: true, reason: "daily_playbook_authorized_phone" },
+      officeKnowledgeProfile: { assistantName: "Maya", officeName: "Dutra" },
+      operatingPartner: { enabled: true, autonomy_mode: "high_supervised" },
+      fetcher,
+    });
+
+    expect(fetcher).not.toHaveBeenCalled();
+    expect(getLLMClientMock).not.toHaveBeenCalled();
+    expect(decision.reply).not.toMatch(/Michele|Santander|processo|CNJ|banco/i);
+    expect(decision.conversation_state.last_process_candidates).toBeUndefined();
+    expect(decision.conversation_frame?.candidate_summaries).toEqual([]);
+    expect(decision.conversation_frame?.resolution_type).toBe("greeting");
+    expect(decision.conversation_frame?.llm_writer_allowed).toBe(false);
+    expect(decision.final_response_source).toBe("deterministic_guardrail");
+  });
+
   it("nao usa MAYUS como nome visivel do escritorio na apresentacao", async () => {
     const fetcher = vi.fn(async () => {
       throw new Error("LLM nao deveria ser chamada");
