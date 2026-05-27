@@ -1601,6 +1601,72 @@ export default function WhatsAppChatPremiumPage() {
             </div>
          )}
 
+         {!activeContact && rightPanelMode === "expanded" && isAdmin && (
+            <div className="h-full overflow-y-auto no-scrollbar p-8 space-y-6 animate-in slide-in-from-right-4 duration-500">
+              <div className="rounded-2xl border border-[#CCA761]/15 bg-[#CCA761]/[0.04] p-5 space-y-4">
+                <div className="flex items-center justify-between gap-3">
+                  <div className="flex items-center gap-2 text-gray-500 font-black uppercase text-[10px] tracking-widest">
+                    <Activity size={14} className="text-[#CCA761]" /> Agente WhatsApp
+                  </div>
+                  <span className={`rounded-full border px-2.5 py-1 text-[8px] font-black uppercase tracking-widest ${agentStatusStyle}`}>
+                    {whatsappAgentStatusLabels[agentStatus] || agentStatus}
+                  </span>
+                </div>
+                <div className="min-w-0">
+                  <p className="text-xs font-black uppercase tracking-widest text-white">
+                    {agentHealth?.label || "WhatsApp Operating Partner"}
+                  </p>
+                  <p className="mt-1 line-clamp-3 text-[10px] leading-relaxed text-gray-500">
+                    {agentHealth?.next_action || "Carregando health, fila e auditoria agentica do canal."}
+                  </p>
+                </div>
+                <div className="grid grid-cols-3 gap-2">
+                  <div className="rounded-xl border border-white/5 bg-[#111] p-3">
+                    <span className="block text-[8px] font-black uppercase tracking-widest text-gray-600">Fila</span>
+                    <span className="text-lg font-black text-white">{agentPendingTotal}</span>
+                  </div>
+                  <div className="rounded-xl border border-white/5 bg-[#111] p-3">
+                    <span className="block text-[8px] font-black uppercase tracking-widest text-gray-600">Bloqueios</span>
+                    <span className={`text-lg font-black ${(agentHealth?.audit.blocked || 0) > 0 ? "text-orange-300" : "text-emerald-300"}`}>
+                      {agentHealth?.audit.blocked ?? 0}
+                    </span>
+                  </div>
+                  <div className="rounded-xl border border-white/5 bg-[#111] p-3">
+                    <span className="block text-[8px] font-black uppercase tracking-widest text-gray-600">Reparos</span>
+                    <span className="text-lg font-black text-sky-300">{agentHealth?.audit.repaired ?? 0}</span>
+                  </div>
+                </div>
+                <div className="flex gap-2">
+                  <button
+                    onClick={loadAgentAudit}
+                    disabled={isLoadingAgentAudit}
+                    className="flex-1 rounded-xl border border-white/10 bg-white/5 px-3 py-2 text-[8px] font-black uppercase tracking-widest text-gray-300 transition-colors hover:border-[#CCA761]/40 hover:text-[#CCA761] disabled:opacity-40"
+                  >
+                    {isLoadingAgentAudit ? "Atualizando" : "Atualizar"}
+                  </button>
+                  <button
+                    onClick={handleProcessWhatsAppPending}
+                    disabled={isProcessingWhatsAppAgent}
+                    className="flex-1 rounded-xl border border-[#CCA761]/25 bg-[#CCA761] px-3 py-2 text-[8px] font-black uppercase tracking-widest text-black transition-transform hover:scale-[1.02] disabled:cursor-not-allowed disabled:opacity-50"
+                  >
+                    {isProcessingWhatsAppAgent ? "Processando" : "Processar"}
+                  </button>
+                </div>
+                <div className="rounded-xl border border-white/5 bg-black/30 p-3 space-y-1">
+                  <div className="flex items-center justify-between gap-2">
+                    <span className="text-[8px] font-black uppercase tracking-widest text-gray-600">Ultimo sinal</span>
+                    <span className="text-[8px] font-bold uppercase text-gray-500">
+                      {agentHealth?.latest.event_at ? formatTime(agentHealth.latest.event_at) : "sem evento"}
+                    </span>
+                  </div>
+                  <p className="line-clamp-2 text-[10px] text-[#f0d9a6]">
+                    OpenClaw: {agentHealth?.latest.openclaw_reason || agentHealth?.governance.openclaw_reason || "sem bloqueio recente"}
+                  </p>
+                </div>
+              </div>
+            </div>
+         )}
+
          {activeContact && rightPanelMode === "expanded" && (
             <div className="h-full overflow-y-auto no-scrollbar p-8 space-y-8 animate-in slide-in-from-right-4 duration-500">
                {/* Header Perfil */}
