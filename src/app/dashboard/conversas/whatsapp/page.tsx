@@ -13,6 +13,7 @@ import {
 } from "lucide-react";
 import { toast } from "sonner";
 import EmojiPicker, { Theme as EmojiTheme } from "emoji-picker-react";
+import { isBrainExecutiveRole } from "@/lib/brain/roles";
 
 const montserrat = Montserrat({ subsets: ["latin"], weight: ["300", "400", "500", "600", "700"] });
 const cormorant = Cormorant_Garamond({ subsets: ["latin"], weight: ["400", "500", "600", "700"], style: ["normal", "italic"] });
@@ -208,7 +209,7 @@ export default function WhatsAppChatPremiumPage() {
   const [isProcessingWhatsAppAgent, setIsProcessingWhatsAppAgent] = useState(false);
 
   // Permissoes
-  const isAdmin = profile?.role === 'Administrador' || profile?.role === 'mayus_admin' || profile?.role === 'Sócio';
+  const isAdmin = isBrainExecutiveRole(profile?.role);
 
   // Carregar Departamentos e Membros
   useEffect(() => {
