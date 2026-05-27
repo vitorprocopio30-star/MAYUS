@@ -37,6 +37,13 @@ async function countQueue(tenantId: string, status: string) {
   return count ?? 0;
 }
 
+function queueAgeMinutes(value?: string | null) {
+  if (!value) return null;
+  const time = new Date(value).getTime();
+  if (!Number.isFinite(time)) return null;
+  return Math.max(0, Math.floor((Date.now() - time) / 60000));
+}
+
 export async function GET(req: NextRequest) {
   let session;
   try {
@@ -57,7 +64,10 @@ export async function GET(req: NextRequest) {
     pendingCount,
     processingCount,
     errorCount,
+    completedCount,
     latestQueueRes,
+    oldestPendingRes,
+    latestCreatedQueueRes,
   ] = await Promise.all([
     supabaseAdmin
       .from("process_movimentacoes")
@@ -80,12 +90,28 @@ export async function GET(req: NextRequest) {
     countQueue(tenantId, "PENDENTE"),
     countQueue(tenantId, "PROCESSANDO"),
     countQueue(tenantId, "ERRO"),
+    countQueue(tenantId, "CONCLUIDO"),
     supabaseAdmin
       .from("process_update_queue")
       .select("id, numero_cnj, status, processed_at, created_at")
       .eq("tenant_id", tenantId)
       .not("processed_at", "is", null)
       .order("processed_at", { ascending: false, nullsFirst: false })
+      .limit(1)
+      .maybeSingle(),
+    supabaseAdmin
+      .from("process_update_queue")
+      .select("id, numero_cnj, evento, status, created_at")
+      .eq("tenant_id", tenantId)
+      .eq("status", "PENDENTE")
+      .order("created_at", { ascending: true, nullsFirst: false })
+      .limit(1)
+      .maybeSingle(),
+    supabaseAdmin
+      .from("process_update_queue")
+      .select("id, numero_cnj, evento, status, created_at")
+      .eq("tenant_id", tenantId)
+      .order("created_at", { ascending: false, nullsFirst: false })
       .limit(1)
       .maybeSingle(),
   ]);
@@ -106,12 +132,24 @@ export async function GET(req: NextRequest) {
   const movementInboxRecords = inboxRes.data || [];
   const latestMovement = movementRecords[0] || null;
   const latestInbox = movementInboxRecords[0] || null;
+  const oldestPendingAgeMinutes = queueAgeMinutes(oldestPendingRes.data?.created_at || null);
   const latestReceivedAt = maxIso([
     latestMovement?.created_at,
     latestMovement?.data,
     latestInbox?.latest_created_at,
     latestInbox?.latest_data,
+    latestCreatedQueueRes.data?.created_at,
   ]);
+  const pending = pendingCount ?? 0;
+  const processing = processingCount ?? 0;
+  const errors = errorCount ?? 0;
+  const queueStatus = errors > 0
+    ? "needs_attention"
+    : oldestPendingAgeMinutes !== null && oldestPendingAgeMinutes >= 10
+      ? "blocked"
+      : pending > 0 || processing > 0
+        ? "working"
+        : "healthy";
 
   return NextResponse.json({
     movementRecords,
@@ -125,11 +163,18 @@ export async function GET(req: NextRequest) {
       latestInboxCreatedAt: latestInbox?.latest_created_at || null,
       latestReceivedAt,
       queue: {
-        pending: pendingCount,
-        processing: processingCount,
-        error: errorCount,
+        pending,
+        processing,
+        error: errors,
+        completed: completedCount ?? 0,
         lastProcessedAt: latestQueueRes.data?.processed_at || null,
         lastProcessedProcess: latestQueueRes.data?.numero_cnj || null,
+        lastReceivedAt: latestCreatedQueueRes.data?.created_at || null,
+        lastReceivedProcess: latestCreatedQueueRes.data?.numero_cnj || null,
+        oldestPendingAt: oldestPendingRes.data?.created_at || null,
+        oldestPendingProcess: oldestPendingRes.data?.numero_cnj || null,
+        oldestPendingAgeMinutes,
+        status: queueStatus,
       },
     },
   });
