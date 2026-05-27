@@ -197,7 +197,7 @@ describe("sendWhatsAppMessage", () => {
   });
 
   it("sinaliza digitando e pausado quando envio Evolution e humanizado", async () => {
-    const { supabase } = makeSupabase();
+    const { supabase, inserts } = makeSupabase();
     const fetcher = vi.fn(async () => new Response(JSON.stringify({ key: { id: "msg-humanized-1" } }), { status: 200 }));
     listTenantIntegrationsResolvedMock.mockResolvedValueOnce([
       {
@@ -221,6 +221,8 @@ describe("sendWhatsAppMessage", () => {
       phoneNumber: "5511999999999@s.whatsapp.net",
       text: "Resposta humana do MAYUS",
       humanizeDelivery: true,
+      humanizeDeliveryMode: "bounded",
+      humanizeDeliveryMaxDelayMs: 1200,
       fetcher: fetcher as any,
     });
 
@@ -238,6 +240,13 @@ describe("sendWhatsAppMessage", () => {
       "https://evolution.example.com/message/sendText/mayus",
       expect.objectContaining({ method: "POST" }),
     );
+    expect(inserts[0].payload[0]).toEqual(expect.objectContaining({
+      metadata: expect.objectContaining({
+        humanize_delivery: true,
+        humanize_delivery_mode: "bounded",
+        humanize_delivery_max_delay_ms: 1200,
+      }),
+    }));
   });
 
   it("envia audio por Evolution, pulsa presenca curta e salva texto auditavel no metadata", async () => {

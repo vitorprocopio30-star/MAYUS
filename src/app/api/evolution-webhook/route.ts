@@ -417,12 +417,13 @@ export async function POST(req: Request) {
         return NextResponse.json({ success: true, updated: Boolean(messageId) });
       }
 
-      const aiFeatures = !fromMe && messageType === "audio"
+      const aiFeatures = !fromMe
         ? await fetchTenantAiFeatures(tenantId)
         : {};
-      const isOwnerAudioCommandCandidate = !fromMe
-        && messageType === "audio"
+      const isOwnerSender = !fromMe
         && isAuthorizedWhatsAppCommandSender({ senderPhone: remoteJid, aiFeatures });
+      const isOwnerMediaSender = isOwnerSender && isSupportedMedia;
+      const isOwnerAudioCommandCandidate = isOwnerMediaSender && messageType === "audio";
 
       if (!fromMe) {
         await markEvolutionMessageAsRead({ tenantId, remoteJid, messageId });
@@ -485,18 +486,33 @@ export async function POST(req: Request) {
           }).eq("id", contactId);
       }
 
+      const ownerReplyMetadata = isOwnerSender ? {
+        owner_sender: true,
+        reply_actor_role: "office_operator",
+        reply_delivery_profile: "office_operator_instant",
+        delivery_profile: "office_operator_instant",
+        humanize_delivery: false,
+        humanize_delivery_mode: "none",
+      } : {};
+
       const messageMetadata = isSupportedMedia ? {
+        ...ownerReplyMetadata,
         provider_media_id: messageId || null,
         media_kind: messageType,
         webhook_trigger: "evolution_webhook",
         evolution_instance: instanceName,
         evolution_message_envelope: messageEnvelope,
         evolution_message_payload: messagePayload,
+        owner_media_sender: isOwnerMediaSender,
+        media_ack_policy: isOwnerMediaSender ? "owner_direct_conversation" : "external_ack_then_process",
         ...(isOwnerAudioCommandCandidate ? {
           owner_audio_command_attempted: true,
           owner_audio_command_mode: "try_internal_then_conversation",
         } : {}),
-      } : { reply_trigger: "evolution_webhook" };
+      } : {
+        reply_trigger: "evolution_webhook",
+        ...ownerReplyMetadata,
+      };
 
       // 3. Salvar a Mensagem
       const { data: savedMessage, error: msgErr } = await supabase
@@ -589,12 +605,16 @@ export async function POST(req: Request) {
                   });
 
                   try {
-                    await sendEvolutionPresence({ tenantId, remoteJid, presence: "composing", delayMs: 1200 });
+                    if (!isOwnerSender) {
+                      await sendEvolutionPresence({ tenantId, remoteJid, presence: "composing", delayMs: 1200 });
+                    }
                     await processQueuedReply({ messageId: savedMessage.id });
                   } catch (replyError) {
                     console.error("[Evolution Webhook] Erro ao processar audio transcrito como conversa:", replyError);
                   } finally {
-                    await sendEvolutionPresence({ tenantId, remoteJid, presence: "paused" });
+                    if (!isOwnerSender) {
+                      await sendEvolutionPresence({ tenantId, remoteJid, presence: "paused" });
+                    }
                   }
                   return NextResponse.json({
                     success: true,
@@ -643,7 +663,7 @@ export async function POST(req: Request) {
             }
 
             try {
-              if (!(messageType === "audio" && mediaAlreadyProcessed)) {
+              if (!isOwnerMediaSender && !(messageType === "audio" && mediaAlreadyProcessed)) {
                 await sendImmediateMediaAck({
                   tenantId,
                   contactId,
@@ -665,6 +685,37 @@ export async function POST(req: Request) {
               } catch (mediaError) {
                 console.error("[Evolution Webhook] Erro ao processar midia imediata:", mediaError);
               }
+            }
+
+            if (isOwnerMediaSender && messageType !== "audio") {
+              await enqueueWhatsAppReply({
+                supabase,
+                trigger: "evolution_webhook",
+                messageId: savedMessage.id,
+                preferredProvider: "evolution",
+              });
+
+              try {
+                await processQueuedReply({ messageId: savedMessage.id });
+              } catch (replyError) {
+                console.error("[Evolution Webhook] Erro ao processar midia do dono como conversa:", replyError);
+              }
+
+              await supabase.from("notifications").insert([{
+                tenant_id: tenantId,
+                user_id: null,
+                title: `WhatsApp: ${pushName}`,
+                message: `${content.substring(0, 100)} Midia do operador roteada para o agente V2.`.slice(0, 180),
+                type: "info",
+                link_url: "/dashboard/conversas/whatsapp",
+              }]);
+
+              return NextResponse.json({
+                success: true,
+                owner_media: true,
+                routed_to_conversation: true,
+                pending_media: true,
+              });
             }
           }
 
@@ -710,12 +761,16 @@ export async function POST(req: Request) {
           });
 
           try {
-            await sendEvolutionPresence({ tenantId, remoteJid, presence: "composing", delayMs: 8000 });
+            if (!isOwnerSender) {
+              await sendEvolutionPresence({ tenantId, remoteJid, presence: "composing", delayMs: 8000 });
+            }
             await processQueuedReply({ messageId: savedMessage.id });
           } catch (replyError) {
             console.error("[Evolution Webhook] Erro ao processar resposta agentica enfileirada:", replyError);
           } finally {
-            await sendEvolutionPresence({ tenantId, remoteJid, presence: "paused" });
+            if (!isOwnerSender) {
+              await sendEvolutionPresence({ tenantId, remoteJid, presence: "paused" });
+            }
           }
         }
       }

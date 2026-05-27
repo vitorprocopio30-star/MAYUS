@@ -45,6 +45,22 @@ function replyTrigger(row: PendingWhatsAppReplyMessage): WhatsAppReplyTrigger {
   return row.metadata?.reply_trigger === "meta_webhook" ? "meta_webhook" : "evolution_webhook";
 }
 
+function isOfficeOperatorInstantReply(row: PendingWhatsAppReplyMessage) {
+  const metadata = row.metadata || {};
+  const actorContext = metadata.actor_context
+    || metadata.whatsapp_actor_context
+    || metadata.mayus_operating_partner?.actor_context
+    || metadata.mayus_operating_partner?.whatsapp_actor_context
+    || null;
+
+  return metadata.owner_sender === true
+    || metadata.owner_media_sender === true
+    || metadata.reply_actor_role === "office_operator"
+    || metadata.reply_delivery_profile === "office_operator_instant"
+    || metadata.delivery_profile === "office_operator_instant"
+    || actorContext?.role === "office_operator";
+}
+
 async function runWithEvolutionTypingPulse<T>(params: {
   enabled: boolean;
   supabase: SupabaseClient;
@@ -635,7 +651,9 @@ async function processOneReply(params: {
     const preferredProvider = params.row.metadata?.reply_preferred_provider === "meta_cloud" || params.row.metadata?.reply_preferred_provider === "evolution"
       ? params.row.metadata.reply_preferred_provider
       : null;
-    const shouldSignalEvolutionTyping = replyTrigger(params.row) === "evolution_webhook" && preferredProvider !== "meta_cloud";
+    const shouldSignalEvolutionTyping = replyTrigger(params.row) === "evolution_webhook"
+      && preferredProvider !== "meta_cloud"
+      && !isOfficeOperatorInstantReply(params.row);
 
     let prepared: Awaited<ReturnType<typeof prepareWhatsAppSalesReplyForContact>>;
     prepared = await runWithEvolutionTypingPulse({
