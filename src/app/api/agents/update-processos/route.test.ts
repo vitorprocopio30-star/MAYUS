@@ -51,6 +51,7 @@ function makeQueueQuery() {
       queueUpdates.push(payload);
       return query;
     }),
+    maybeSingle: vi.fn(async () => ({ data: { id: "queue-1" }, error: null })),
     then: (resolve: any) => resolve({ data: null, error: null }),
   };
   return query;
@@ -190,7 +191,7 @@ describe("GET /api/agents/update-processos", () => {
       picked: 1,
       processed: 1,
       failed: 0,
-      limit: 75,
+      limit: 25,
     }));
     expect(escavadorFetchMock).toHaveBeenCalledWith(
       "/processos/numero_cnj/3002575-03.2026.8.19.0000",
@@ -210,7 +211,11 @@ describe("GET /api/agents/update-processos", () => {
       status: "CONCLUIDO",
       processed_at: expect.any(String),
       payload: expect.objectContaining({
-        update_agent: expect.objectContaining({ status: "ok" }),
+        update_agent: expect.objectContaining({
+          status: "ok",
+          retry_count: 1,
+          dead_letter: false,
+        }),
       }),
     }));
   });

@@ -10,8 +10,9 @@ const adminSupabase = createClient(
   process.env.SUPABASE_SERVICE_ROLE_KEY!
 )
 
-const DEFAULT_BATCH_SIZE = 50
-const MAX_BATCH_SIZE = 100
+const DEFAULT_BATCH_SIZE = 10
+const MAX_BATCH_SIZE = 25
+const MAX_RETRY_ATTEMPTS = 3
 
 function batchSize(req: NextRequest) {
   const parsed = Number(req.nextUrl.searchParams.get('limit') || DEFAULT_BATCH_SIZE)
@@ -97,6 +98,70 @@ function mergeQueuePayload(payload: unknown, patch: Record<string, unknown>) {
     update_agent: {
       ...(isRecord((payload as any)?.update_agent) ? (payload as any).update_agent : {}),
       ...patch,
+    },
+  }
+}
+
+function updateAgentPayload(payload: unknown) {
+  const record = isRecord(payload) ? payload : {}
+  return isRecord(record.update_agent) ? record.update_agent : {}
+}
+
+function retryCount(payload: unknown) {
+  const raw = updateAgentPayload(payload).retry_count
+  const parsed = typeof raw === 'number' ? raw : Number(raw || 0)
+  return Number.isFinite(parsed) && parsed > 0 ? Math.trunc(parsed) : 0
+}
+
+function isRetryableQueueError(error: string | null) {
+  return error === 'escavador_fetch_failed' || error === 'unknown_error'
+}
+
+async function claimQueueItem(params: {
+  id: string
+  payload: unknown
+  authMethod: string | null
+}) {
+  const claimedAt = new Date().toISOString()
+  const attempt = retryCount(params.payload) + 1
+  const { data, error } = await adminSupabase
+    .from('process_update_queue')
+    .update({
+      status: 'PROCESSANDO',
+      payload: mergeQueuePayload(params.payload, {
+        status: 'processing',
+        retry_count: attempt,
+        lock_acquired_at: claimedAt,
+        auth_method: params.authMethod,
+      }),
+    })
+    .eq('id', params.id)
+    .eq('status', 'PENDENTE')
+    .select('id')
+    .maybeSingle()
+
+  if (error) throw error
+  return Boolean(data?.id)
+}
+
+function queueFailurePatch(params: {
+  payload: unknown
+  error: string
+  processedAt: string
+}) {
+  const attempt = retryCount(params.payload) + 1
+  const retryable = isRetryableQueueError(params.error) && attempt < MAX_RETRY_ATTEMPTS
+  return {
+    nextStatus: retryable ? 'PENDENTE' : 'ERRO',
+    eventStatus: retryable ? 'retry_scheduled' : 'failed',
+    patch: {
+      status: retryable ? 'retry_scheduled' : 'error',
+      error: params.error,
+      retry_count: attempt,
+      retryable,
+      dead_letter: !retryable,
+      processed_at: params.processedAt,
+      next_retry_after: retryable ? new Date(Date.now() + 5 * 60 * 1000).toISOString() : null,
     },
   }
 }
@@ -204,6 +269,7 @@ export async function GET(req: NextRequest) {
 
   let processed = 0
   let failed = 0
+  let skipped = 0
 
   for (const item of fila) {
     const processedAt = new Date().toISOString()
@@ -211,10 +277,16 @@ export async function GET(req: NextRequest) {
     let itemError: string | null = null
 
     try {
-      await adminSupabase
-        .from('process_update_queue')
-        .update({ status: 'PROCESSANDO' })
-        .eq('id', item.id)
+      const claimed = await claimQueueItem({
+        id: item.id,
+        payload: item.payload,
+        authMethod: auth.method,
+      })
+
+      if (!claimed) {
+        skipped++
+        continue
+      }
 
       let processQuery = adminSupabase
         .from('monitored_processes')
@@ -279,16 +351,28 @@ export async function GET(req: NextRequest) {
         itemSucceeded = true
       }
 
+      const failure = itemSucceeded
+        ? null
+        : queueFailurePatch({
+            payload: item.payload,
+            error: itemError || 'unknown_error',
+            processedAt,
+          })
+
       await adminSupabase
         .from('process_update_queue')
         .update({
-          status: itemSucceeded ? 'CONCLUIDO' : 'ERRO',
-          processed_at: processedAt,
-          payload: mergeQueuePayload(item.payload, {
-            status: itemSucceeded ? 'ok' : 'error',
-            error: itemSucceeded ? null : itemError || 'unknown_error',
-            processed_at: processedAt,
-          }),
+          status: itemSucceeded ? 'CONCLUIDO' : failure!.nextStatus,
+          processed_at: itemSucceeded || failure!.nextStatus === 'ERRO' ? processedAt : null,
+          payload: mergeQueuePayload(item.payload, itemSucceeded
+            ? {
+                status: 'ok',
+                error: null,
+                retry_count: retryCount(item.payload) + 1,
+                dead_letter: false,
+                processed_at: processedAt,
+              }
+            : failure!.patch),
         })
         .eq('id', item.id)
 
@@ -298,7 +382,7 @@ export async function GET(req: NextRequest) {
       await recordUpdateAgentEvent({
         tenantId: item.tenant_id,
         eventName: 'process_update_queue_processed',
-        status: itemSucceeded ? 'completed' : 'failed',
+        status: itemSucceeded ? 'completed' : failure!.eventStatus,
         numeroCnj: item.numero_cnj,
         queueId: item.id,
         error: itemSucceeded ? null : itemError || 'unknown_error',
@@ -311,26 +395,29 @@ export async function GET(req: NextRequest) {
     } catch (error) {
       failed++
       console.error('[UPDATE_AGENT] Erro:', error)
+      const errorMessage = error instanceof Error ? error.message.slice(0, 300) : 'unknown_error'
+      const failure = queueFailurePatch({
+        payload: item.payload,
+        error: errorMessage,
+        processedAt,
+      })
+
       await adminSupabase
         .from('process_update_queue')
         .update({
-          status: 'ERRO',
-          processed_at: processedAt,
-          payload: mergeQueuePayload(item.payload, {
-            status: 'error',
-            error: error instanceof Error ? error.message.slice(0, 300) : 'unknown_error',
-            processed_at: processedAt,
-          }),
+          status: failure.nextStatus,
+          processed_at: failure.nextStatus === 'ERRO' ? processedAt : null,
+          payload: mergeQueuePayload(item.payload, failure.patch),
         })
         .eq('id', item.id)
 
       await recordUpdateAgentEvent({
         tenantId: item.tenant_id,
         eventName: 'process_update_queue_processed',
-        status: 'failed',
+        status: failure.eventStatus,
         numeroCnj: item.numero_cnj,
         queueId: item.id,
-        error: error instanceof Error ? error.message.slice(0, 300) : 'unknown_error',
+        error: errorMessage,
         processedAt,
         metadata: {
           evento: item.evento ?? null,
@@ -340,5 +427,5 @@ export async function GET(req: NextRequest) {
     }
   }
 
-  return NextResponse.json({ ok: true, picked: fila.length, processed, failed, limit })
+  return NextResponse.json({ ok: true, picked: fila.length, processed, failed, skipped, limit })
 }
