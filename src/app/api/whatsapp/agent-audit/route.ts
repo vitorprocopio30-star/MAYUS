@@ -174,12 +174,22 @@ function extractQualityCheck(payload: Record<string, unknown>, mayus: Record<str
   return firstRecord(payload.quality_check, mayus?.quality_check);
 }
 
+function extractContextPolicy(payload: Record<string, unknown>, mayus: Record<string, unknown> | null) {
+  return firstRecord(
+    payload.context_policy,
+    mayus?.context_policy,
+    asRecord(payload.conversation_frame)?.context_policy,
+    asRecord(mayus?.conversation_frame)?.context_policy,
+  );
+}
+
 function sanitizeAuditEvent(row: AuditEventRow) {
   const payload = row.payload || {};
   const mayus = asRecord(payload.mayus_operating_partner);
   const actor = extractActorContext(payload, mayus);
   const resolution = extractConversationResolution(payload, mayus);
   const quality = extractQualityCheck(payload, mayus);
+  const contextPolicy = extractContextPolicy(payload, mayus);
   const qualityFlags = unique([
     ...textList(quality?.flags),
     ...textList(payload.risk_flags),
@@ -239,6 +249,11 @@ function sanitizeAuditEvent(row: AuditEventRow) {
     blocked,
     repaired,
     reason,
+    context_policy_scope: text(contextPolicy?.scope, 80),
+    context_reset_reason: text(contextPolicy?.reset_reason, 120),
+    context_allowed_previous_event: contextPolicy?.allowed_previous_event === true,
+    context_allowed_process_candidates: contextPolicy?.allowed_process_candidates === true,
+    context_prompt_message_count: typeof contextPolicy?.prompt_message_count === "number" ? contextPolicy.prompt_message_count : null,
     original_reply_preview: originalPreview,
     final_reply_preview: finalPreview,
   };
@@ -279,12 +294,24 @@ function messageBrainRunId(row: WhatsAppMessageAuditRow) {
   );
 }
 
+function messageContextPolicy(row: WhatsAppMessageAuditRow) {
+  const metadata = row.metadata || {};
+  const mayus = asRecord(metadata.mayus_operating_partner);
+  return firstRecord(
+    metadata.context_policy,
+    mayus?.context_policy,
+    asRecord(metadata.conversation_frame)?.context_policy,
+    asRecord(mayus?.conversation_frame)?.context_policy,
+  );
+}
+
 function buildTopFlags(entries: ReturnType<typeof sanitizeAuditEvent>[]) {
   const counts = new Map<string, number>();
   for (const entry of entries) {
     for (const flag of unique([...entry.quality_flags, ...entry.risk_flags])) {
       counts.set(flag, (counts.get(flag) || 0) + 1);
     }
+    if (entry.context_policy_scope) counts.set(`context:${entry.context_policy_scope}`, (counts.get(`context:${entry.context_policy_scope}`) || 0) + 1);
     if (entry.blocked && entry.reason) counts.set(`blocked:${entry.reason}`, (counts.get(`blocked:${entry.reason}`) || 0) + 1);
   }
   return Array.from(counts.entries())
@@ -342,6 +369,7 @@ async function buildWhatsAppAgentHealth(params: {
   const latestOpenClawReason = messageOpenClawReason(latestMessageWithAgentMetadata || messages[0] || {} as WhatsAppMessageAuditRow)
     || latestEntry?.reason
     || null;
+  const latestMessageContextPolicy = messageContextPolicy(latestMessageWithAgentMetadata || messages[0] || {} as WhatsAppMessageAuditRow);
   const topFlags = buildTopFlags(params.entries);
 
   return {
@@ -373,6 +401,9 @@ async function buildWhatsAppAgentHealth(params: {
       conversation_class: latestClass,
       openclaw_reason: latestOpenClawReason,
       brain_run_id: messageBrainRunId(latestMessageWithAgentMetadata || messages[0] || {} as WhatsAppMessageAuditRow) || latestEntry?.brain_run_id || null,
+      context_policy_scope: latestEntry?.context_policy_scope || text(latestMessageContextPolicy?.scope, 80),
+      context_reset_reason: latestEntry?.context_reset_reason || text(latestMessageContextPolicy?.reset_reason, 120),
+      context_prompt_message_count: latestEntry?.context_prompt_message_count ?? (typeof latestMessageContextPolicy?.prompt_message_count === "number" ? latestMessageContextPolicy.prompt_message_count : null),
     },
     governance: {
       paperclip_owner: "WhatsApp Operating Partner",

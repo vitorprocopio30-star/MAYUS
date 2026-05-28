@@ -26,6 +26,16 @@ vi.mock("./sales-llm-reply", () => ({
   })),
 }));
 
+vi.mock("@/lib/llm-router", () => ({
+  buildHeaders: vi.fn(() => ({ authorization: "Bearer test" })),
+  getLLMClient: vi.fn(() => ({
+    endpoint: "https://llm.example.com/chat/completions",
+    apiKey: "test-key",
+    defaultModel: "test-model",
+    provider: "test",
+  })),
+}));
+
 vi.mock("@/lib/whatsapp/send-message", () => ({
   sendWhatsAppMessage: sendWhatsAppMessageMock,
 }));
@@ -34,22 +44,26 @@ vi.mock("@/lib/whatsapp/tts", () => ({
   synthesizeWhatsAppReplyAudio: synthesizeWhatsAppReplyAudioMock,
 }));
 
-vi.mock("@/lib/agent/mayus-operating-partner", () => ({
-  buildMayusOperatingPartnerDecision: buildMayusOperatingPartnerDecisionMock,
-  normalizeMayusOperatingPartnerConfig: vi.fn((config) => ({
-    enabled: config?.enabled !== false,
-    autonomy_mode: config?.autonomy_mode || "high_supervised",
-    confidence_thresholds: config?.confidence_thresholds || { auto_send: 0.78, auto_execute: 0.82, approval: 0.65 },
-    active_modules: config?.active_modules || {
-      setup: true,
-      sales: true,
-      client_support: true,
-      legal_triage: true,
-      crm: true,
-      tasks: true,
-    },
-  })),
-}));
+vi.mock("@/lib/agent/mayus-operating-partner", async (importOriginal) => {
+  const actual = await importOriginal<typeof import("@/lib/agent/mayus-operating-partner")>();
+  return {
+    ...actual,
+    buildMayusOperatingPartnerDecision: buildMayusOperatingPartnerDecisionMock,
+    normalizeMayusOperatingPartnerConfig: vi.fn((config) => ({
+      enabled: config?.enabled !== false,
+      autonomy_mode: config?.autonomy_mode || "high_supervised",
+      confidence_thresholds: config?.confidence_thresholds || { auto_send: 0.78, auto_execute: 0.82, approval: 0.65 },
+      active_modules: config?.active_modules || {
+        setup: true,
+        sales: true,
+        client_support: true,
+        legal_triage: true,
+        crm: true,
+        tasks: true,
+      },
+    })),
+  };
+});
 
 vi.mock("@/lib/agent/mayus-operating-partner-actions", () => ({
   executeMayusOperatingPartnerActions: executeMayusOperatingPartnerActionsMock,
@@ -1515,6 +1529,146 @@ describe("prepareWhatsAppSalesReplyForContact", () => {
       actor_context: expect.objectContaining({ role: "office_operator" }),
       conversation_resolution: expect.objectContaining({ type: "referenced_process" }),
     }));
+  });
+
+  it("escopa o prompt ao turno atual e nao envia evento anterior para nova triagem", async () => {
+    const inserts: Array<{ table: string; payload: any }> = [];
+    const contextPolicy = {
+      scope: "current_turn",
+      reset_reason: null,
+      continuation_reason: null,
+      allowed_previous_event: false,
+      allowed_process_candidates: false,
+      prompt_message_count: 1,
+    };
+    buildMayusOperatingPartnerDecisionMock.mockResolvedValueOnce({
+      provider: "openrouter",
+      model_used: "openai/gpt-5.4-nano",
+      reply: "Entendi. Esse desconto aparece com qual nome no documento?",
+      intent: "legal_triage",
+      confidence: 0.9,
+      risk_flags: [],
+      next_action: "qualificar desconto",
+      should_auto_send: false,
+      requires_approval: false,
+      actions_to_execute: [],
+      conversation_state: { stage: "discovery", conversation_role: "legal_triage", conversation_goal: "qualificar desconto", customer_temperature: "interested" },
+      closing_readiness: { score: 0, status: "not_ready", reasons: [] },
+      support_summary: { is_existing_client: false, issue_type: "none", verified_case_reference: false, summary: "triagem" },
+      reasoning_summary_for_team: "Nova demanda sem herdar processo antigo.",
+      expected_outcome: "cliente informa desconto",
+      whatsapp_actor_context: { role: "office_operator", sender_phone_authorized: true, reason: "daily_playbook_authorized_phone" },
+      context_policy: contextPolicy,
+      conversation_frame: {
+        resolution_type: "open_llm",
+        actor_context: { role: "office_operator", sender_phone_authorized: true, reason: "daily_playbook_authorized_phone" },
+        last_message: "Tenho desconto no beneficio",
+        recommended_intent: "legal_triage",
+        writer_mode: "llm_natural",
+        llm_writer_allowed: true,
+        hard_guardrail_reason: null,
+        context_policy: contextPolicy,
+        conversation_goal: "qualificar desconto",
+        known_facts: [],
+        missing_data: [],
+        forbidden_moves: [],
+        response_guidance: [],
+        candidate_summaries: [],
+        safe_fallback_reply: "Entendi. Me diga o ponto principal.",
+      },
+      quality_check: { status: "pass", flags: [], reasons: [] },
+      final_response_source: "llm_natural",
+    });
+
+    const systemEventQuery = () => {
+      const query: any = {
+        select: vi.fn(() => query),
+        eq: vi.fn(() => query),
+        order: vi.fn(() => query),
+        limit: vi.fn(() => query),
+        maybeSingle: vi.fn(async () => ({
+          data: {
+            created_at: "2026-05-26T10:01:00.000Z",
+            payload: {
+              contact_id: "contact-ctx",
+              intent: "process_status",
+              next_action: "retomar processo antigo",
+              conversation_state: {
+                conversation_role: "case_status",
+                conversation_goal: "retomar processo antigo",
+                last_process_candidates: [
+                  { processTaskId: "old-process", title: "Cliente antigo x Banco", processNumber: "1111111-11.2024.8.26.0100", currentStage: "Conhecimento" },
+                ],
+              },
+            },
+          },
+          error: null,
+        })),
+        insert: vi.fn(async (payload: any) => {
+          inserts.push({ table: "system_event_logs", payload });
+          return { error: null };
+        }),
+      };
+      return query;
+    };
+
+    const supabase: any = {
+      from: vi.fn((table: string) => {
+        if (table === "whatsapp_contacts") {
+          return makeSelectQuery({ data: { id: "contact-ctx", name: "Dono", phone_number: "5521999990000@s.whatsapp.net", assigned_user_id: null }, error: null });
+        }
+        if (table === "tenant_settings") {
+          return makeSelectQuery({ data: { ai_features: { daily_playbook: { authorizedPhones: ["5521999990000"] }, mayus_operating_partner: { enabled: true }, sales_llm_testbench: { enabled: false } } }, error: null });
+        }
+        if (table === "whatsapp_messages") {
+          return makeSelectQuery({
+            data: [
+              { direction: "inbound", content: "Tenho desconto no beneficio", message_type: "text", created_at: "2026-05-27T13:00:00.000Z" },
+              { direction: "outbound", content: "Localizei o processo antigo.", message_type: "text", created_at: "2026-05-26T10:01:00.000Z" },
+              { direction: "inbound", content: "Como esta o processo antigo?", message_type: "text", created_at: "2026-05-26T10:00:00.000Z" },
+            ],
+            error: null,
+          });
+        }
+        if (table === "crm_tasks") return makeSelectQuery({ data: null, error: null });
+        if (table === "system_event_logs") return systemEventQuery();
+        return { insert: vi.fn(async (payload: any) => { inserts.push({ table, payload }); return { error: null }; }) };
+      }),
+    };
+
+    const prepared = await prepareWhatsAppSalesReplyForContact({
+      supabase,
+      tenantId: "tenant-1",
+      contactId: "contact-ctx",
+      trigger: "manual",
+      autoSendFirstResponse: false,
+    });
+
+    expect(buildMayusOperatingPartnerDecisionMock).toHaveBeenCalledWith(expect.objectContaining({
+      messages: [expect.objectContaining({ content: "Tenho desconto no beneficio" })],
+      previousMayusEvent: null,
+      processStatusContext: null,
+      contextPolicy: expect.objectContaining({
+        scope: "current_turn",
+        allowed_previous_event: false,
+        prompt_message_count: 1,
+      }),
+    }));
+    expect(prepared.metadata.context_policy).toEqual(expect.objectContaining({
+      scope: "current_turn",
+      allowed_previous_event: false,
+      prompt_message_count: 1,
+    }));
+    expect(inserts).toEqual(expect.arrayContaining([
+      expect.objectContaining({
+        table: "system_event_logs",
+        payload: expect.objectContaining({
+          payload: expect.objectContaining({
+            context_policy: expect.objectContaining({ scope: "current_turn" }),
+          }),
+        }),
+      }),
+    ]));
   });
 
   it("aborta autoenvio quando uma nova mensagem chega durante a geracao", async () => {

@@ -11,8 +11,11 @@ import {
   type SalesLlmTestbenchConfig,
 } from "./sales-llm-reply";
 import {
+  applyMayusWhatsAppContextPolicy,
   buildMayusOperatingPartnerDecision,
+  buildMayusWhatsAppContextPolicy,
   DEFAULT_MAYUS_OPERATING_PARTNER,
+  getMayusWhatsAppPromptMessages,
   normalizeMayusOperatingPartnerConfig,
   type MayusOperatingPartnerConfig,
   type MayusOperatingPartnerCrmContext,
@@ -843,7 +846,7 @@ export async function prepareWhatsAppSalesReplyForContact(params: {
     senderPhone: contact.phone_number || "",
     aiFeatures: runtimeSettings.aiFeatures,
   });
-  const [crmContext, previousMayusEvent, processStatusContext, institutionalMemory] = await Promise.all([
+  const [crmContext, previousMayusEvent, institutionalMemory] = await Promise.all([
     loadCrmContext({
       supabase: params.supabase,
       tenantId: params.tenantId,
@@ -854,27 +857,48 @@ export async function prepareWhatsAppSalesReplyForContact(params: {
       tenantId: params.tenantId,
       contactId: contact.id,
     }),
-    fetchWhatsAppProcessStatusContext({
-      supabase: params.supabase,
-      tenantId: params.tenantId,
-      contact,
-      messages: orderedMessages,
-      senderPhoneAuthorized,
-    }),
     loadEnforcedInstitutionalMemory(params.supabase, params.tenantId, { limit: 12 }),
   ]);
+  const processContextPolicy = buildMayusWhatsAppContextPolicy({
+    messages: orderedMessages,
+    previousMayusEvent,
+  });
+  const processContextMessages = getMayusWhatsAppPromptMessages(orderedMessages, processContextPolicy);
+  const rawProcessStatusContext = await fetchWhatsAppProcessStatusContext({
+    supabase: params.supabase,
+    tenantId: params.tenantId,
+    contact,
+    messages: processContextMessages,
+    senderPhoneAuthorized,
+  });
   const whatsappActorContext = buildWhatsAppActorContext({
     senderPhoneAuthorized,
-    processStatusContext,
+    processStatusContext: rawProcessStatusContext,
     crmContext,
   });
+  const scopedContextInput = applyMayusWhatsAppContextPolicy({
+    supabase: params.supabase,
+    tenantId: params.tenantId,
+    channel: "whatsapp",
+    contactName: contact.name,
+    phoneNumber: contact.phone_number,
+    messages: orderedMessages,
+    crmContext,
+    processStatusContext: rawProcessStatusContext,
+    whatsappActorContext,
+    previousMayusEvent,
+  }, processContextPolicy);
+  const contextPolicy = scopedContextInput.contextPolicy || processContextPolicy;
+  const promptMessages = scopedContextInput.messages;
+  const processStatusContext = scopedContextInput.processStatusContext;
+  const allowedPreviousMayusEvent = scopedContextInput.previousMayusEvent;
   const ownerOfficeSnapshot = await loadOwnerOfficeSnapshot({
     supabase: params.supabase,
     tenantId: params.tenantId,
     actorContext: whatsappActorContext,
   });
   const agentTurnV2 = buildWhatsAppAgentTurnV2({
-    messages: orderedMessages,
+    messages: promptMessages,
     actorContext: whatsappActorContext,
     trigger: params.trigger,
   });
@@ -909,7 +933,7 @@ export async function prepareWhatsAppSalesReplyForContact(params: {
   const reply = buildWhatsAppSalesReply({
     contactName: contact.name,
     phoneNumber: contact.phone_number,
-    messages: orderedMessages,
+    messages: promptMessages,
     salesProfile: runtimeSettings.salesProfile,
   });
   const deterministicMetadata = buildWhatsAppSalesReplyMetadata(reply);
@@ -922,6 +946,7 @@ export async function prepareWhatsAppSalesReplyForContact(params: {
     fallback_reason: null,
     whatsapp_actor_context: whatsappActorContext,
     owner_office_snapshot: ownerOfficeSnapshot,
+    context_policy: contextPolicy,
     reply_modality: replyModalityPreference.modality,
     audio_policy: replyModalityPreference.policy,
     audio_requested_reason: replyModalityPreference.reason,
@@ -942,7 +967,7 @@ export async function prepareWhatsAppSalesReplyForContact(params: {
         channel: "whatsapp",
         contactName: contact.name,
         phoneNumber: contact.phone_number,
-        messages: orderedMessages,
+        messages: promptMessages,
         salesProfile: runtimeSettings.salesProfile,
         officeKnowledgeProfile: runtimeSettings.officeKnowledgeProfile,
         officePlaybookProfile: runtimeSettings.officePlaybookProfile,
@@ -951,7 +976,8 @@ export async function prepareWhatsAppSalesReplyForContact(params: {
         ownerOfficeSnapshot,
         processStatusContext,
         whatsappActorContext,
-        previousMayusEvent,
+        previousMayusEvent: allowedPreviousMayusEvent,
+        contextPolicy,
         salesTestbench: runtimeSettings.salesLlmTestbench,
         operatingPartner: runtimeSettings.mayusOperatingPartner,
       }), params.trigger === "manual" ? OPERATING_PARTNER_TIMEOUT_MS.manual : OPERATING_PARTNER_TIMEOUT_MS.webhook, "MAYUS Operating Partner");
@@ -975,6 +1001,7 @@ export async function prepareWhatsAppSalesReplyForContact(params: {
         requires_human_review: operatingPartnerDecision.requires_approval || !operatingPartnerDecision.should_auto_send || operatingPartnerDecision.risk_flags.length > 0,
         institutional_memory_loaded: institutionalMemoryPrompt.totalAvailable,
         institutional_memory_applied: institutionalMemoryPrompt.appliedCount,
+        context_policy: operatingPartnerDecision.context_policy || contextPolicy,
         mayus_operating_partner: {
           enabled: true,
           provider: operatingPartnerDecision.provider,
@@ -1005,6 +1032,7 @@ export async function prepareWhatsAppSalesReplyForContact(params: {
           expected_outcome: operatingPartnerDecision.expected_outcome,
           institutional_memory_loaded: institutionalMemoryPrompt.totalAvailable,
           institutional_memory_applied: institutionalMemoryPrompt.appliedCount,
+          context_policy: operatingPartnerDecision.context_policy || contextPolicy,
         },
         conversation_state: operatingPartnerDecision.conversation_state,
         closing_readiness: operatingPartnerDecision.closing_readiness,
@@ -1035,11 +1063,13 @@ export async function prepareWhatsAppSalesReplyForContact(params: {
         model_used: "deterministic",
         fallback_reason: fallbackReasons.join("|"),
         whatsapp_actor_context: whatsappActorContext,
+        context_policy: contextPolicy,
         mayus_operating_partner: {
           enabled: true,
           failed: true,
           failure_reason: reason,
           fallback: runtimeSettings.salesLlmTestbench?.enabled && reason !== "provider_timeout" ? "sales_llm_reply" : "deterministic_whatsapp_sales_reply",
+          context_policy: contextPolicy,
         },
       };
     }
@@ -1056,7 +1086,7 @@ export async function prepareWhatsAppSalesReplyForContact(params: {
         tenantId: params.tenantId,
         contactName: contact.name,
         phoneNumber: contact.phone_number,
-        messages: orderedMessages,
+        messages: promptMessages,
         salesProfile: runtimeSettings.salesProfile,
         testbench: runtimeSettings.salesLlmTestbench,
         autonomyMode: runtimeSettings.autonomyMode,
@@ -1073,6 +1103,7 @@ export async function prepareWhatsAppSalesReplyForContact(params: {
         risk_flags: Array.from(new Set([...deterministicMetadata.risk_flags, ...llmReply.risk_flags])),
         may_auto_send: llmReply.should_auto_send,
         requires_human_review: !llmReply.should_auto_send || llmReply.risk_flags.length > 0,
+        context_policy: contextPolicy,
         sales_llm: {
           enabled: true,
           provider: llmReply.provider,
@@ -1096,6 +1127,7 @@ export async function prepareWhatsAppSalesReplyForContact(params: {
         reply_source: "deterministic_fallback",
         model_used: "deterministic",
         fallback_reason: fallbackReasons.join("|"),
+        context_policy: contextPolicy,
         sales_llm: {
           enabled: true,
           failed: true,
@@ -1221,6 +1253,7 @@ export async function prepareWhatsAppSalesReplyForContact(params: {
     route: metadata.route || runtimeRoute,
     actor_context: metadata.actor_context || metadata.whatsapp_actor_context || whatsappActorContext,
     conversation_resolution: metadata.conversation_resolution || buildConversationResolutionMetadata(operatingPartnerDecision),
+    context_policy: metadata.context_policy || contextPolicy,
     reply_modality: replyModalityPreference.modality,
     audio_policy: replyModalityPreference.policy,
     audio_requested_reason: replyModalityPreference.reason,
@@ -1334,6 +1367,7 @@ export async function prepareWhatsAppSalesReplyForContact(params: {
         lead_stage: autoReply.leadStage,
         confidence: autoReply.confidence,
         expected_outcome: autoReply.expectedOutcome,
+        context_policy: contextPolicy,
         audio_policy: replyModalityPreference.policy,
         audio_requested_reason: replyModalityPreference.reason,
         agent_version: agentTurnV2.agentVersion,
@@ -1455,6 +1489,7 @@ export async function prepareWhatsAppSalesReplyForContact(params: {
           lead_stage: autoReply.leadStage,
           intent: autoReply.intent,
           confidence: autoReply.confidence,
+          context_policy: contextPolicy,
           send_provider: sendResult.provider,
           reply_modality: actualReplyModality,
           audio_policy: replyModalityPreference.policy,
@@ -1495,6 +1530,7 @@ export async function prepareWhatsAppSalesReplyForContact(params: {
           contact_id: contact.id,
           trigger: params.trigger,
           model_used: autoReply.modelUsed,
+          context_policy: contextPolicy,
           reply_modality: replyModalityPreference.modality,
           audio_policy: replyModalityPreference.policy,
           delivery_profile: deliveryPolicy.profile,

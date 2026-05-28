@@ -134,6 +134,9 @@ type WhatsAppAgentAudit = {
       conversation_class: string | null;
       openclaw_reason: string | null;
       brain_run_id: string | null;
+      context_policy_scope: string | null;
+      context_reset_reason: string | null;
+      context_prompt_message_count: number | null;
     };
     governance: {
       paperclip_owner: string;
@@ -1662,6 +1665,9 @@ export default function WhatsAppChatPremiumPage() {
                   <p className="line-clamp-2 text-[10px] text-[#f0d9a6]">
                     OpenClaw: {agentHealth?.latest.openclaw_reason || agentHealth?.governance.openclaw_reason || "sem bloqueio recente"}
                   </p>
+                  <p className="truncate text-[10px] text-gray-500">
+                    Contexto: {agentHealth?.latest.context_policy_scope || "sem politica"}{agentHealth?.latest.context_reset_reason ? ` / ${agentHealth.latest.context_reset_reason}` : ""}
+                  </p>
                 </div>
               </div>
             </div>
@@ -1757,6 +1763,9 @@ export default function WhatsAppChatPremiumPage() {
                         </p>
                         <p className="line-clamp-2 text-[10px] text-[#f0d9a6]">
                           OpenClaw: {agentHealth?.latest.openclaw_reason || agentHealth?.governance.openclaw_reason || "sem bloqueio recente"}
+                        </p>
+                        <p className="truncate text-[10px] text-gray-500">
+                          Contexto: {agentHealth?.latest.context_policy_scope || "sem politica"}{agentHealth?.latest.context_reset_reason ? ` / ${agentHealth.latest.context_reset_reason}` : ""}
                         </p>
                       </div>
 
