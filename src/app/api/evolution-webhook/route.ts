@@ -482,8 +482,8 @@ export async function POST(req: Request) {
          await supabase.from("whatsapp_contacts").update({
             last_message_at: new Date().toISOString(),
             unread_count: fromMe ? 0 : 1, // Se foi do cliente, marca 1 (simplificado)
-            ...(avatarUrl && !contact?.profile_pic_url ? { profile_pic_url: avatarUrl } : {}),
-          }).eq("id", contactId);
+            ...(avatarUrl && avatarUrl !== contact?.profile_pic_url ? { profile_pic_url: avatarUrl } : {}),
+         }).eq("id", contactId);
       }
 
       const ownerReplyMetadata = isOwnerSender ? {

@@ -45,15 +45,17 @@ vi.mock("@supabase/supabase-js", () => ({
   createClient: createClientMock,
 }));
 
-function buildSupabaseMock() {
+function buildSupabaseMock(options: { contact?: any } = {}) {
   const messageInserts: unknown[] = [];
   const contactInserts: unknown[] = [];
+  const contactUpdates: unknown[] = [];
   const messageUpdates: unknown[] = [];
   const messageRows: Record<string, any> = {};
   const notificationInserts: unknown[] = [];
   return {
     messageInserts,
     contactInserts,
+    contactUpdates,
     messageUpdates,
     messageRows,
     notificationInserts,
@@ -93,7 +95,7 @@ function buildSupabaseMock() {
           select: vi.fn(() => ({
             eq: vi.fn(() => ({
               eq: vi.fn(() => ({
-                single: vi.fn(async () => ({ data: null })),
+                single: vi.fn(async () => ({ data: options.contact || null })),
               })),
             })),
           })),
@@ -105,7 +107,10 @@ function buildSupabaseMock() {
               }),
             })),
           })),
-          update: vi.fn(() => ({ eq: vi.fn(async () => ({ error: null })) })),
+          update: vi.fn((values: unknown) => {
+            contactUpdates.push(values);
+            return { eq: vi.fn(async () => ({ error: null })) };
+          }),
         };
       }
 
@@ -250,6 +255,48 @@ describe("/api/evolution-webhook", () => {
       remoteJid: "5521999990000@s.whatsapp.net",
       presence: "available",
     }));
+  });
+
+  it("renova foto de perfil vencida em contato Evolution existente", async () => {
+    supabaseMock = buildSupabaseMock({
+      contact: {
+        id: "contact-1",
+        profile_pic_url: "https://pps.whatsapp.net/old-expired-avatar.jpg",
+      },
+    });
+    createClientMock.mockReturnValue(supabaseMock);
+    handleWhatsAppInternalCommandMock.mockResolvedValue({ handled: false });
+
+    const { POST } = await import("./route");
+    const request = new Request("http://localhost/api/evolution-webhook", {
+      method: "POST",
+      body: JSON.stringify({
+        event: "MESSAGES_UPSERT",
+        instance: "mayus-dutra",
+        data: {
+          key: {
+            remoteJid: "5521999990000@s.whatsapp.net",
+            fromMe: false,
+            id: "msg-avatar-refresh-1",
+          },
+          pushName: "Cliente Teste",
+          message: {
+            conversation: "Boa tarde",
+          },
+        },
+      }),
+    });
+
+    const response = await POST(request);
+    const body = await response.json();
+
+    expect(response.status).toBe(200);
+    expect(body.success).toBe(true);
+    expect(supabaseMock.contactUpdates).toEqual([
+      expect.objectContaining({
+        profile_pic_url: "https://cdn.example/avatar.jpg",
+      }),
+    ]);
   });
 
   it("atualiza messages.update sem inserir mensagem duplicada", async () => {

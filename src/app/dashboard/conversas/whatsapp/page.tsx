@@ -49,6 +49,54 @@ const inferWhatsAppMediaType = (file: File) => {
 
 const labelColorOptions = ["#CCA761", "#25D366", "#60A5FA", "#F97316", "#EF4444", "#A855F7"];
 
+function contactInitials(name?: string | null, phone?: string | null) {
+  const source = (name || phone || "WA").trim();
+  const words = source.split(/\s+/).filter(Boolean);
+  const initials = words.length > 1
+    ? `${words[0]?.[0] || ""}${words[1]?.[0] || ""}`
+    : source.slice(0, 2);
+  return initials.toUpperCase() || "WA";
+}
+
+function WhatsAppContactAvatar({
+  src,
+  name,
+  phone,
+  imageClassName = "h-full w-full object-cover",
+  fallbackClassName = "flex h-full w-full items-center justify-center text-[#CCA761] font-black",
+}: {
+  src?: string | null;
+  name?: string | null;
+  phone?: string | null;
+  imageClassName?: string;
+  fallbackClassName?: string;
+}) {
+  const [failedSrc, setFailedSrc] = useState<string | null>(null);
+  const canRenderImage = Boolean(src && failedSrc !== src);
+
+  useEffect(() => {
+    setFailedSrc(null);
+  }, [src]);
+
+  if (canRenderImage) {
+    return (
+      <img
+        src={src || ""}
+        alt=""
+        className={imageClassName}
+        referrerPolicy="no-referrer"
+        onError={() => setFailedSrc(src || null)}
+      />
+    );
+  }
+
+  return (
+    <span className={fallbackClassName}>
+      {contactInitials(name, phone)}
+    </span>
+  );
+}
+
 const whatsappAgentStatusStyles: Record<string, string> = {
   working: "border-emerald-400/25 bg-emerald-400/10 text-emerald-300",
   needs_attention: "border-yellow-400/25 bg-yellow-400/10 text-yellow-300",
@@ -1216,8 +1264,8 @@ export default function WhatsAppChatPremiumPage() {
               <div className="flex flex-col items-center justify-center h-40 opacity-20"><Loader2 className="animate-spin" /></div>
            ) : filteredContacts.map((contact) => (
               <div key={contact.id} onClick={() => setActiveContact(contact)} className={`group relative flex items-start gap-4 p-4 rounded-2xl cursor-pointer transition-all border ${activeContact?.id === contact.id ? "bg-[#111] border-[#CCA761]/30" : "hover:bg-white/5 border-transparent opacity-80 hover:opacity-100"}`}>
-                 <div className="w-12 h-12 rounded-full border border-[#CCA761]/20 bg-gray-200 dark:bg-black flex flex-shrink-0 items-center justify-center text-[#CCA761] font-black shadow-inner overflow-hidden">
-                     {contact.profile_pic_url ? <img src={contact.profile_pic_url} alt="" className="w-full h-full object-cover" /> : contact.name?.substring(0, 2).toUpperCase()}
+                  <div className="w-12 h-12 rounded-full border border-[#CCA761]/20 bg-gray-200 dark:bg-black flex flex-shrink-0 items-center justify-center text-[#CCA761] font-black shadow-inner overflow-hidden">
+                      <WhatsAppContactAvatar src={contact.profile_pic_url} name={contact.name} phone={contact.phone_number} />
                  </div>
                  <div className="flex-1 min-w-0">
                      <div className="flex justify-between items-center mb-1">
@@ -1253,8 +1301,8 @@ export default function WhatsAppChatPremiumPage() {
               <>
                 <div className="h-16 border-b border-white/5 flex items-center justify-between px-6 bg-[#0a0a0a] z-10 flex-shrink-0">
                     <div className="flex items-center gap-3">
-                       <div className="w-8 h-8 rounded-full bg-[#111] border border-white/10 flex items-center justify-center text-white font-bold overflow-hidden">
-                           {activeContact?.profile_pic_url ? <img src={activeContact.profile_pic_url} alt="" className="w-full h-full object-cover" /> : (activeContact?.name?.substring(0, 2).toUpperCase() || "TS")}
+                        <div className="w-8 h-8 rounded-full bg-[#111] border border-white/10 flex items-center justify-center text-white font-bold overflow-hidden">
+                            <WhatsAppContactAvatar src={activeContact?.profile_pic_url} name={activeContact?.name} phone={activeContact?.phone_number} fallbackClassName="flex h-full w-full items-center justify-center text-xs font-black text-white" />
                        </div>
                        <div>
                          <h2 className="text-white font-bold tracking-wide flex items-center gap-2">
@@ -1562,13 +1610,7 @@ export default function WhatsAppChatPremiumPage() {
                  className="h-11 w-11 rounded-full border border-[#CCA761]/40 bg-gray-200 dark:bg-black p-0.5 shadow-[0_0_18px_rgba(204,167,97,0.12)]"
                  title="Expandir painel do contato"
                >
-                  {activeContact.profile_pic_url ? (
-                    <img src={activeContact.profile_pic_url} alt="" className="h-full w-full rounded-full object-cover" />
-                  ) : (
-                    <span className="flex h-full w-full items-center justify-center rounded-full text-xs font-black text-[#CCA761]">
-                      {activeContact.name?.substring(0, 2).toUpperCase()}
-                    </span>
-                  )}
+                  <WhatsAppContactAvatar src={activeContact.profile_pic_url} name={activeContact.name} phone={activeContact.phone_number} imageClassName="h-full w-full rounded-full object-cover" fallbackClassName="flex h-full w-full items-center justify-center rounded-full text-xs font-black text-[#CCA761]" />
                </button>
                <div className="h-px w-8 bg-white/10" />
                <button
@@ -1678,13 +1720,7 @@ export default function WhatsAppChatPremiumPage() {
                {/* Header Perfil */}
                 <div className="flex flex-col items-center">
                    <div className="w-28 h-28 rounded-full border-2 border-[#CCA761] bg-gray-200 dark:bg-black p-1 mb-5 relative group">
-                     {activeContact.profile_pic_url ? (
-                        <img src={activeContact.profile_pic_url} alt="" className="w-full h-full object-cover rounded-full" />
-                     ) : (
-                        <div className="w-full h-full rounded-full flex items-center justify-center text-3xl font-black text-[#CCA761]">
-                           {activeContact.name?.substring(0, 2).toUpperCase()}
-                        </div>
-                     )}
+                      <WhatsAppContactAvatar src={activeContact.profile_pic_url} name={activeContact.name} phone={activeContact.phone_number} imageClassName="w-full h-full object-cover rounded-full" fallbackClassName="w-full h-full rounded-full flex items-center justify-center text-3xl font-black text-[#CCA761]" />
                      <div className="absolute bottom-2 right-2 w-5 h-5 bg-[#25D366] rounded-full border-4 border-[#050505] shadow-[0_0_10px_#22c55e]" />
                   </div>
                    <h3 className="text-2xl font-bold text-white text-center italic group-hover:text-[#CCA761] transition-colors">{activeContact.name}</h3>
