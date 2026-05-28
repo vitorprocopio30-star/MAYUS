@@ -457,7 +457,7 @@ export function isProcessStatusRequest(messages: WhatsAppSalesMessage[]) {
   if (/nome completo\s+(?:e|é|eh)\s+/i.test(cleanText(lastText) || "") && previousAskedForProcessIdentifier(messages)) return true;
   if (lastMessageLooksLikeName(lastText) && previousAskedForProcessIdentifier(messages)) return true;
   const text = normalizeText(lastText);
-  return /andamento|status|situacao|meu processo|meu caso|processos? d[aeo]|casos? d[aeo]|gostaria de saber (sobre |de |do |da )?(o |um )?processo|queria saber (sobre |de |do |da )?(o |um )?processo|quero saber (sobre |de |do |da )?(o |um )?processo|saber (sobre |de |do |da )?(o |um )?processo|saber como esta (o |um )?processo|como esta (o |um )?processo|atualizacao do processo|atualizacao do caso|novidade no processo|numero do processo|cnj|movimentacao|movimentacao|qual fase|saiu decisao|teve novidade|processo andou/.test(text);
+  return /andamento|status|situacao|meu processo|meu caso|processos? d[aeo]|casos? d[aeo]|gostaria de saber (sobre |de |do |da )?(o |um )?processo|queria saber (sobre |de |do |da )?(o |um )?processo|quero saber (sobre |de |do |da )?(o |um )?processo|quero sabe (sobre |de |do |da )?(o |um )?processo|saber (sobre |de |do |da )?(o |um )?processo|sabe (sobre |de |do |da )?(o |um )?processo|saber como esta (o |um )?processo|como esta (o |um )?processo|atualizacao do processo|atualizacao do caso|novidade no processo|numero do processo|cnj|movimentacao|movimentacao|qual fase|saiu decisao|teve novidade|processo andou/.test(text);
 }
 
 function isGenericProcessRequestWithoutReference(messages: WhatsAppSalesMessage[]) {
@@ -467,7 +467,7 @@ function isGenericProcessRequestWithoutReference(messages: WhatsAppSalesMessage[
   if (/\d{7}-\d{2}|cnj|cpf|cnpj|processos? d[aeo]\s+[a-z]{2,}|casos? d[aeo]\s+[a-z]{2,}|nome completo\s+(e|eh|é)/.test(text)) return false;
   if (lastMessageLooksLikeName(lastText)) return false;
   if (/^(o\s+)?(ultimo|último|ultima|última|esse|essa|isso|este|esta|primeiro|segundo|terceiro|1|2|3)\.?$/.test(text)) return false;
-  return /um processo|sobre (o |um )?processo|saber sobre (o |um )?processo|situacao do processo|situacao do caso|me pass(a|e|ar).{0,30}situacao|quero saber (sobre |de )?(o |um )?processo|gostaria de saber (sobre |de )?(o |um )?processo|queria saber (sobre |de )?(o |um )?processo|saber como esta (o |um )?processo|como esta (o |um )?processo/.test(text);
+  return /^(e\s+)?(o\s+)?processo\??$|um processo|sobre (o |um )?processo|do processo|saber (sobre |de |do )?(o |um )?processo|sabe (sobre |de |do )?(o |um )?processo|situacao do processo|situacao do caso|me pass(a|e|ar).{0,30}situacao|quero saber (sobre |de |do )?(o |um )?processo|quero sabe (sobre |de |do )?(o |um )?processo|gostaria de saber (sobre |de |do )?(o |um )?processo|queria saber (sobre |de |do )?(o |um )?processo|saber como esta (o |um )?processo|como esta (o |um )?processo|andamento do processo|status do processo|novidade do processo/.test(text);
 }
 
 function extractProcessNumber(messages: WhatsAppSalesMessage[]) {

@@ -138,6 +138,12 @@ function buildConversationResolutionMetadata(decision?: MayusOperatingPartnerDec
     final_response_source: decision?.final_response_source || null,
     quality_status: decision?.quality_check?.status || null,
     quality_flags: decision?.quality_check?.flags || [],
+    quality_gate_action: decision?.quality_check?.status === "repair"
+      ? (decision.final_response_source === "deterministic_guardrail" || decision.final_response_source === "safe_fallback" ? "repaired_with_guardrail" : "repair_required")
+      : decision?.quality_check?.status === "block"
+        ? "blocked"
+        : "pass",
+    quality_gate_reason: decision?.quality_check?.reasons?.[0] || null,
   };
 }
 
@@ -1136,6 +1142,13 @@ export async function prepareWhatsAppSalesReplyForContact(params: {
         actor_context: resolvedActorContext,
         conversation_frame: operatingPartnerDecision.conversation_frame,
         conversation_resolution: conversationResolution,
+        current_user_request: turnRuntimeContext.current_user_request,
+        route: operatingPartnerDecision.intent,
+        resolution: conversationResolution.type,
+        resolved_reference: conversationResolution.resolved_reference,
+        allowed_process_candidates: (operatingPartnerDecision.context_policy || contextPolicy)?.allowed_process_candidates ?? null,
+        quality_gate_action: conversationResolution.quality_gate_action,
+        quality_gate_reason: conversationResolution.quality_gate_reason,
         quality_check: operatingPartnerDecision.quality_check,
         final_response_source: operatingPartnerDecision.final_response_source,
       };

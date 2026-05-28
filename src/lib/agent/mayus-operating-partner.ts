@@ -864,6 +864,7 @@ function buildWhatsAppConversationFrame(input: MayusOperatingPartnerInput, param
       })
     : [];
   const shortProcessNudge = isShortProcessNudge(input.messages, input.processStatusContext);
+  const shortAckAfterProcessIdentifierPrompt = isShortAcknowledgement(lastMessage) && previousAskedForProcessIdentifier(input.messages);
   const commercialTriage = isCommercialTriageMessage(lastMessage) && (input.processStatusContext || previousAskedForProcessIdentifier(input.messages));
   const hasVerifiedProcessCandidates = input.processStatusContext?.verified === true
     && !suppressHistoricalProcessCandidates
@@ -1015,9 +1016,12 @@ function buildWhatsAppConversationFrame(input: MayusOperatingPartnerInput, param
     responseGuidance.add("tratar a referencia como uma nova busca/conferencia");
     forbiddenMoves.add("nao perguntar se a referencia e algum candidato antigo");
     forbiddenMoves.add("nao oferecer Bradesco/Caixa se o usuario disse Banco Master");
+    forbiddenMoves.add("nao transformar referencia de banco em triagem de desconto, RMC ou contracheque");
+    responseGuidance.add("se a referencia nao foi localizada, pedir apenas numero/CNJ ou outra parte");
     safeFallbackReply = isOfficeOperatorActor(params.actorContext, input.processStatusContext)
       ? `${cleanText(input.contactName) || "Entendi"}, você tem razão. Vou tratar como ${explicitProcessReference} mesmo, sem confundir com outro banco. Na base carregada agora eu não encontrei esse processo com segurança; deixei como conferência por ${explicitProcessReference}.`
       : `Entendi. Vou tratar como ${explicitProcessReference} mesmo. Para não te passar informação errada, vou conferir esse processo na base antes de afirmar o andamento.`;
+    safeFallbackReply = buildUnmatchedProcessReferenceReply(explicitProcessReference, input.contactName, params.actorContext, input.processStatusContext);
   } else if (hasVerifiedProcessCandidates) {
     resolutionType = "process_candidates";
     recommendedIntent = "process_status";
@@ -1047,6 +1051,14 @@ function buildWhatsAppConversationFrame(input: MayusOperatingPartnerInput, param
     conversationGoal = "responder cobranca curta mantendo localizacao segura";
     responseGuidance.add("ser direto e nao retomar processo sem fonte");
     safeFallbackReply = "Estou localizando com segurança. Se tiver o número do processo/CNJ, me mande que eu confirmo mais rápido.";
+  } else if (shortAckAfterProcessIdentifierPrompt) {
+    resolutionType = "generic_process_request";
+    recommendedIntent = "process_status";
+    conversationGoal = "manter pedido de identificador minimo sem abrir triagem comercial";
+    missingData.add(isOfficeOperatorActor(params.actorContext, input.processStatusContext) ? "nome completo do cliente ou numero do processo" : "numero do processo/CNJ ou CPF");
+    responseGuidance.add("nao gerar novo assunto a partir de confirmacao curta");
+    forbiddenMoves.add("nao transformar ok, sim ou isso em triagem de desconto, RMC ou contracheque");
+    safeFallbackReply = safeGenericProcessIdentifierReply(input.processStatusContext, params.actorContext);
   } else if (commercialTriage) {
     resolutionType = "commercial_triage";
     recommendedIntent = "legal_triage";
@@ -1238,7 +1250,7 @@ function isContextContinuationText(value?: string | null) {
   if (isOwnerReplyNudge(value)) return true;
   if (/^(e|sobre|quanto a|em relacao a|em relação a)\b/.test(text)) return true;
   if (/^(sim|isso|esse|essa|este|esta|ele|ela|ok|certo|pode|manda|mande|responde|responda|continua|continue)\b/.test(text)) return true;
-  if (/\b(outro processo|acompanhar|como esta|situacao|me passar a situacao|saber da situacao|saber do processo)\b/.test(text)) return true;
+  if (/\b(outro processo|acompanhar|como esta|situacao|me passar a situacao|saber da situacao)\b/.test(text)) return true;
   return /^(as |os |o |a |e as |e os |e o |e a )?(custas|preparo|guia|prazo|audiencia|audiencia|contrato|boleto|valor|honorarios|desconto|outro|outra|restante|demais)\b/.test(text);
 }
 
@@ -1262,6 +1274,14 @@ function previousEventIsAllowed(event?: MayusPreviousConversationEvent | null) {
   if (!event) return false;
   if (!event.created_at) return true;
   return isPreviousMayusEventRecent(event, PREVIOUS_EVENT_WINDOW_MS);
+}
+
+function previousOutboundHasProcessReference(messages: WhatsAppSalesMessage[]) {
+  const lastInboundIndex = getLastInboundIndex(messages);
+  const previousOutboundIndex = getLastOutboundIndexBefore(messages, lastInboundIndex >= 0 ? lastInboundIndex : messages.length);
+  if (previousOutboundIndex < 0) return false;
+  const text = normalizeText(messageTextWithMedia(messages[previousOutboundIndex]!));
+  return /\d{7}-\d{2}\.\d{4}\.\d\.\d{2}\.\d{4}|bradesco|caixa|master|santander|processo do|processo da/.test(text);
 }
 
 function scopedMessagesForPolicy(messages: WhatsAppSalesMessage[], policy: Pick<MayusWhatsAppContextPolicy, "scope">) {
@@ -1296,6 +1316,9 @@ export function buildMayusWhatsAppContextPolicy(input: {
   const latestHasProcessReference = hasCurrentProcessReference(latestText);
   const latestHasProcessTopic = hasCurrentProcessTopic(latestText);
   const latestHasCurrentTopic = latestHasProcessReference || latestHasProcessTopic || isCommercialTriageMessage(latestText);
+  const latestGenericProcessRequest = isGenericProcessStatusRequestWithoutReference(latestText);
+  const latestShortAcknowledgement = isShortAcknowledgement(latestText);
+  const canUsePreviousAnsweredProcess = previousOutboundHasProcessReference(input.messages);
   let scope: MayusWhatsAppContextScope = "current_turn";
   let resetReason: string | null = null;
   let continuationReason: string | null = null;
@@ -1334,7 +1357,7 @@ export function buildMayusWhatsAppContextPolicy(input: {
     reset_reason: resetReason,
     continuation_reason: continuationReason,
     allowed_previous_event: allowedPreviousEvent,
-    allowed_process_candidates: scope === "continuation" || latestHasProcessReference,
+    allowed_process_candidates: latestHasProcessReference || (scope === "continuation" && !latestShortAcknowledgement && (!latestGenericProcessRequest || canUsePreviousAnsweredProcess)),
     prompt_message_count: scopedMessages.length,
   };
 }
@@ -1349,6 +1372,8 @@ export function applyMayusWhatsAppContextPolicy(input: MayusOperatingPartnerInpu
   const latestInbound = getLastInbound(input.messages);
   const latestText = latestInbound ? cleanText(messageTextWithMedia(latestInbound)) : null;
   const latestLooksLikeProcessStatus = /processo|caso|andamento|status|situacao|atualizacao|novidade/.test(normalizeText(latestText));
+  const latestGenericProcessRequest = isGenericProcessStatusRequestWithoutReference(latestText);
+  const canUsePreviousAnsweredProcess = previousOutboundHasProcessReference(input.messages);
   const promptMessages = getMayusWhatsAppPromptMessages(input.messages, resolvedPolicy);
   const keepProcessContext = resolvedPolicy.scope === "continuation"
     || hasCurrentProcessReference(latestText)
@@ -1357,10 +1382,9 @@ export function applyMayusWhatsAppContextPolicy(input: MayusOperatingPartnerInpu
       && Boolean(input.processStatusContext)
       && latestLooksLikeProcessStatus
     );
-  const allowProcessCandidates = keepProcessContext && (
+  const allowProcessCandidates = keepProcessContext && (!latestGenericProcessRequest || canUsePreviousAnsweredProcess) && (
     resolvedPolicy.allowed_process_candidates
     || input.processStatusContext?.verified === true
-    || (resolvedPolicy.scope === "current_turn" && latestLooksLikeProcessStatus)
   );
 
   return {
@@ -1732,6 +1756,8 @@ function buildPrompt(input: MayusOperatingPartnerInput, config: MayusOperatingPa
     "Voce e o escritor natural da resposta: nao copie frase pronta, nao use template, nao exponha o frame, nao explique o bastidor. Escreva como uma pessoa atenta no WhatsApp.",
     "Se writer_mode for llm_natural, voce e o escritor principal: responda com naturalidade usando os fatos do frame, sem criar entrevista.",
     "Se houver processo verificado ou referencia processual resolvida, responda o resumo disponivel do processo. Nao pergunte objetivo, foco, providencia, urgencia, consulta mesmo ou o que a pessoa precisa decidir.",
+    "Se o frame/recommended_intent for process_status, voce esta consultando andamento/status de processo ja existente. Nao fale de RMC, consignado, cartao beneficio, desconto em folha, contracheque ou captacao comercial, a menos que a mensagem atual pergunte explicitamente sobre isso.",
+    "Se a mensagem atual pedir processo/status/andamento e faltar identificador, peca apenas CNJ, numero do processo ou nome completo. Nao pergunte banco, tema, desconto, objetivo juridico ou tipo de acao.",
     "Se o operador pedir para analisar e passar ao cliente, entregue um resumo claro que o operador possa encaminhar, com status, ultima movimentacao e lacunas, sem nova pergunta.",
     "Se o frame trouxer resolved_reference, responda esse item diretamente. Se o frame for greeting, responda so a saudacao limpa. Se o frame pedir identificador minimo, peca apenas esse dado.",
     "Sempre escolha primeiro o papel da conversa: seller, support, case_status, billing, legal_triage ou handoff. A resposta deve cumprir esse papel.",
@@ -2117,18 +2143,34 @@ function isGenericProcessStatusRequestWithoutReference(value?: string | null) {
   const text = normalizeText(value);
   if (!/processo|caso|andamento|status|situacao|atualizacao|novidade/.test(text)) return false;
   if (/\d{7}-\d{2}|cnj|cpf|cnpj|processos? d[aeo]\s+[a-z]{2,}|casos? d[aeo]\s+[a-z]{2,}|nome completo\s+(e|eh)/.test(text)) return false;
-  return /um processo|sobre um processo|saber sobre um processo|situacao do processo|situacao do caso|me pass(a|e|ar).{0,30}situacao|gostaria de saber (sobre |de )?(o |um )?processo|queria saber (sobre |de )?(o |um )?processo|saber como esta (o |um )?processo|como esta (o |um )?processo/.test(text);
+  return /^(e\s+)?(o\s+)?processo\??$|um processo|sobre (o |um )?processo|do processo|saber (sobre |de |do )?(o |um )?processo|sabe (sobre |de |do )?(o |um )?processo|situacao do processo|situacao do caso|me pass(a|e|ar).{0,30}situacao|gostaria de saber (sobre |de |do )?(o |um )?processo|queria saber (sobre |de |do )?(o |um )?processo|quero saber (sobre |de |do )?(o |um )?processo|quero sabe (sobre |de |do )?(o |um )?processo|saber como esta (o |um )?processo|como esta (o |um )?processo|andamento do processo|status do processo|novidade do processo/.test(text);
 }
 
 function isCommercialTriageMessage(value?: string | null) {
   const text = normalizeText(value);
-  return /contracheque|holerite|folha|desconto|descontando|consignado|credcesta|rmc|rcc|cartao beneficio|cartao consignado|beneficio|beneficio do inss|inss|aposentadoria|bpc|loas/.test(text);
+  if (!text) return false;
+  const hasHardCommercialSignal = /contracheque|holerite|folha|desconto|descontando|consignado|credcesta|rmc|rcc|cartao beneficio|cartao consignado|cobranca indevida|fui descontado|quero entrar com acao|tenho problema com/.test(text);
+  if (hasHardCommercialSignal) return true;
+  return /\bbeneficio\b/.test(text) && !hasCurrentProcessTopic(value);
 }
 
 function safeGenericProcessIdentifierReply(processStatusContext?: WhatsAppProcessStatusContext | null, actorContext?: MayusWhatsAppActorContext | null) {
   return isOfficeOperatorActor(actorContext, processStatusContext)
     ? "Claro. Para eu localizar com segurança, me mande o nome completo do cliente ou o número do processo."
     : "Claro. Para eu localizar com segurança, me mande o número do processo/CNJ ou CPF.";
+}
+
+function buildUnmatchedProcessReferenceReply(
+  reference: string | null,
+  contactName?: string | null,
+  actorContext?: MayusWhatsAppActorContext | null,
+  processStatusContext?: WhatsAppProcessStatusContext | null,
+) {
+  const target = cleanText(reference) || "essa referencia";
+  const prefix = isOfficeOperatorActor(actorContext, processStatusContext) && cleanText(contactName)
+    ? `${cleanText(contactName)}, `
+    : "";
+  return `${prefix}nao localizei processo contra ${target} entre os que encontrei agora. Me passa o numero/CNJ desse processo, ou ele esta no nome de outra parte?`;
 }
 
 function previousAskedForProcessIdentifier(messages: WhatsAppSalesMessage[]) {
@@ -2143,6 +2185,11 @@ function isShortProcessNudge(messages: WhatsAppSalesMessage[], processStatusCont
   const lastInbound = normalizeText(getLastInbound(messages)?.content);
   if (!/^(cade|e ai|e agora|alguma novidade|conseguiu|viu|tem retorno|ta vendo|esta vendo)\??$/.test(lastInbound)) return false;
   return Boolean(processStatusContext || previousAskedForProcessIdentifier(messages));
+}
+
+function isShortAcknowledgement(value?: string | null) {
+  const text = normalizeText(value).replace(/[?!.,;:]+/g, " ").replace(/\s+/g, " ").trim();
+  return /^(ok|sim|isso|certo|blz|beleza|pode ser|ta|t[aá] bom|perfeito|entendi)$/.test(text);
 }
 
 function hasFirstResponseIntroduction(state: MayusConversationState) {
@@ -2653,6 +2700,10 @@ function asksProcessCandidateInterviewQuestion(text: string) {
   return /assunto principal|qual .*assunto|qual .*objetivo|objetivo principal|danos morais.*ou.*(fgts|inpc|caixa)|fgts.*ou.*bradesco|indenizacao.*ou.*atualizacao|qual desses|qual deles|qual outro|qual processo|tratar desconto|desconto\/valores|desconto ou valores|andamento.{0,80}(ou|\/).{0,80}(desconto|valor|custas|pagamento)|se (voce )?nao souber.*(numero do processo|foto do documento)/.test(text);
 }
 
+function hasForbiddenCommercialTermsForProcessStatus(text: string) {
+  return /contracheque|holerite|desconto|descontando|rmc|rcc|cartao beneficio|cartao consignado|consignado|credcesta|especie iv/.test(text);
+}
+
 function buildReplyQualityCheck(params: {
   reply: string | null | undefined;
   frame: MayusWhatsAppConversationFrame;
@@ -2662,6 +2713,14 @@ function buildReplyQualityCheck(params: {
   const text = normalizeText(reply);
   const flags: string[] = [];
   const reasons: string[] = [];
+  const currentRequest = normalizeText(params.frame.last_message);
+  const currentRequestIsProcessStatus = hasCurrentProcessTopic(currentRequest) || params.frame.recommended_intent === "process_status";
+  const currentRequestHasCommercialSignal = isCommercialTriageMessage(currentRequest);
+
+  if (currentRequestIsProcessStatus && !currentRequestHasCommercialSignal && hasForbiddenCommercialTermsForProcessStatus(text)) {
+    flags.push("process_status_commercial_contamination");
+    reasons.push("Pedido atual e de processo/status, mas a resposta puxou RMC, desconto, consignado ou contracheque.");
+  }
 
   if (params.frame.resolution_type === "greeting") {
     if (/processo|custas|preparo|cnj|banco|bradesco|caixa|master|contracheque|beneficio/.test(text)) {
@@ -2991,6 +3050,7 @@ const REPAIRABLE_RISK_FLAGS = [
   "missing_explicit_reference",
   "asks_unneeded_process_choice",
   "asks_unneeded_process_subject",
+  "process_status_commercial_contamination",
   "robotic_self_reference",
 ];
 
@@ -3314,6 +3374,47 @@ export async function buildMayusOperatingPartnerDecision(input: MayusOperatingPa
       requiresApproval: false,
       expectedOutcome: "abrir turno limpo sem gastar LLM nem puxar historico antigo",
       reasoning: "Politica de contexto reset; MAYUS respondeu por guardrail deterministico e bloqueou memoria antiga.",
+      assistantName: scopedInput.officeKnowledgeProfile?.assistantName,
+      officeName: scopedInput.officeKnowledgeProfile?.officeName,
+      contactName: scopedInput.contactName,
+      whatsappActorContext,
+      conversationFrame,
+      qualityCheck,
+      finalResponseSource: "deterministic_guardrail",
+    });
+  }
+
+  if (conversationFrame.hard_guardrail_reason && conversationFrame.resolution_type !== "complaint") {
+    const qualityCheck = buildReplyQualityCheck({
+      reply: conversationFrame.safe_fallback_reply,
+      frame: conversationFrame,
+      conversationState: fallbackState,
+    });
+    const deterministicIntent = conversationFrame.recommended_intent;
+    return buildDeterministicDecision({
+      config,
+      reply: conversationFrame.safe_fallback_reply,
+      intent: deterministicIntent,
+      confidence: 0.92,
+      state: {
+        ...fallbackState,
+        conversation_role: deterministicIntent === "process_status" ? "case_status" : fallbackState.conversation_role,
+        conversation_goal: conversationFrame.conversation_goal,
+        stage: deterministicIntent === "process_status" ? "client_support" : fallbackState.stage,
+        next_action: conversationFrame.conversation_goal,
+      },
+      closingReadiness: fallbackClosingReadiness,
+      supportSummary: {
+        ...fallbackSupportSummary,
+        issue_type: deterministicIntent === "process_status" ? "process_status" : fallbackSupportSummary.issue_type,
+        verified_case_reference: Boolean(conversationFrame.resolved_reference),
+      },
+      riskFlags: qualityCheck.flags,
+      nextAction: conversationFrame.conversation_goal,
+      actions: [{ type: deterministicIntent === "process_status" ? "answer_support" : "none", title: "Responder por roteador deterministico WhatsApp", requires_approval: false }],
+      requiresApproval: qualityCheck.status !== "pass",
+      expectedOutcome: "responder o turno sem contaminar status processual com triagem comercial",
+      reasoning: `Guardrail deterministico aplicado antes do LLM: ${conversationFrame.hard_guardrail_reason}.`,
       assistantName: scopedInput.officeKnowledgeProfile?.assistantName,
       officeName: scopedInput.officeKnowledgeProfile?.officeName,
       contactName: scopedInput.contactName,
