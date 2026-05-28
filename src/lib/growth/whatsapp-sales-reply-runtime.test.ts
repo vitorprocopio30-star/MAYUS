@@ -6,6 +6,7 @@ const {
   executeMayusOperatingPartnerActionsMock,
   loadEnforcedInstitutionalMemoryMock,
   sendWhatsAppMessageMock,
+  resolveWhatsAppReplyVoiceStatusMock,
   synthesizeWhatsAppReplyAudioMock,
 } = vi.hoisted(() => ({
   buildSalesLlmReplyMock: vi.fn(),
@@ -13,6 +14,7 @@ const {
   executeMayusOperatingPartnerActionsMock: vi.fn(),
   loadEnforcedInstitutionalMemoryMock: vi.fn(),
   sendWhatsAppMessageMock: vi.fn(),
+  resolveWhatsAppReplyVoiceStatusMock: vi.fn(),
   synthesizeWhatsAppReplyAudioMock: vi.fn(),
 }));
 
@@ -41,6 +43,7 @@ vi.mock("@/lib/whatsapp/send-message", () => ({
 }));
 
 vi.mock("@/lib/whatsapp/tts", () => ({
+  resolveWhatsAppReplyVoiceStatus: resolveWhatsAppReplyVoiceStatusMock,
   synthesizeWhatsAppReplyAudio: synthesizeWhatsAppReplyAudioMock,
 }));
 
@@ -114,11 +117,23 @@ describe("prepareWhatsAppSalesReplyForContact", () => {
     loadEnforcedInstitutionalMemoryMock.mockReset();
     loadEnforcedInstitutionalMemoryMock.mockResolvedValue([]);
     sendWhatsAppMessageMock.mockReset();
+    resolveWhatsAppReplyVoiceStatusMock.mockReset();
+    resolveWhatsAppReplyVoiceStatusMock.mockResolvedValue({
+      enabled: true,
+      provider: "openai",
+      displayLabel: "OpenAI nova",
+      voiceProfile: "nova",
+      voiceIdSource: null,
+      blockedReason: null,
+    });
     synthesizeWhatsAppReplyAudioMock.mockReset();
     synthesizeWhatsAppReplyAudioMock.mockResolvedValue({
       audioUrl: "https://storage.example.com/audio.mp3",
       storagePath: "tenant-1/contact-1/outbound-audio/mayus-reply.mp3",
       provider: "openai",
+      ttsProvider: "openai",
+      voiceProfile: "nova",
+      voiceIdSource: null,
       mimeType: "audio/mpeg",
       filename: "mayus-reply.mp3",
     });
@@ -1343,6 +1358,7 @@ describe("prepareWhatsAppSalesReplyForContact", () => {
               direction: "inbound",
               content: "Quero saber como esta o processo 1234567-89.2024.8.26.0100",
               message_type: "audio",
+              media_processing_status: "processed",
               media_text: "Quero saber como esta o processo 1234567-89.2024.8.26.0100",
               media_summary: "Audio transcrito: pedido de status do processo",
               created_at: "2026-05-24T15:00:00.000Z",
@@ -1406,11 +1422,28 @@ describe("prepareWhatsAppSalesReplyForContact", () => {
         reply_modality: "audio",
         audio_policy: "mirror_audio",
         audio_provider: "openai",
+        tts_provider: "openai",
+        voice_profile: "nova",
+        voice_display_label: "OpenAI nova",
         audio_storage_path: "tenant-1/contact-1/outbound-audio/mayus-reply.mp3",
+        whatsapp_turn_context: expect.objectContaining({
+          input_modality: "audio",
+          current_user_request: expect.stringContaining("Quero saber como esta o processo"),
+          transcription_status: "processed",
+        }),
+        conversation_filesystem_manifest: expect.objectContaining({
+          version: "whatsapp_case_filesystem_v1",
+          storage: "supabase_storage",
+          item_count: 1,
+        }),
         reply_text: expect.stringContaining("localizei o processo"),
       }),
     }));
     expect(prepared.metadata.reply_modality).toBe("audio");
+    expect(prepared.metadata.whatsapp_turn_context).toEqual(expect.objectContaining({
+      input_modality: "audio",
+      transcription_status: "processed",
+    }));
     expect(prepared.metadata.audio_storage_path).toBe("tenant-1/contact-1/outbound-audio/mayus-reply.mp3");
     expect(inserts).toEqual(expect.arrayContaining([
       expect.objectContaining({
@@ -1560,6 +1593,74 @@ describe("prepareWhatsAppSalesReplyForContact", () => {
     }));
   });
 
+  it("autoenvia status verificado para operador autorizado mesmo quando o writer marcou revisao", async () => {
+    const inserts: Array<{ table: string; payload: any }> = [];
+    buildMayusOperatingPartnerDecisionMock.mockResolvedValueOnce({
+      provider: "openrouter",
+      model_used: "openai/gpt-5.4-nano",
+      reply: "Encontrei 4 processos vinculados ao nome informado. Me diga qual deles quer abrir.",
+      intent: "process_status",
+      confidence: 0.74,
+      risk_flags: [],
+      next_action: "listar processos encontrados",
+      should_auto_send: false,
+      requires_approval: false,
+      actions_to_execute: [],
+      conversation_state: { stage: "client_support", conversation_role: "case_status", conversation_goal: "listar processos", customer_temperature: "existing_client" },
+      closing_readiness: { score: 0, status: "not_ready", reasons: [] },
+      support_summary: { is_existing_client: true, issue_type: "process_status", verified_case_reference: true, summary: "status verificado" },
+      reasoning_summary_for_team: "Operador autorizado consultou processo verificado.",
+      expected_outcome: "operador recebe resposta sem revisao humana",
+      conversation_classification: { class: "process_status", surface: "support_response", owner: "MAYUS Operating Partner", confidence: 0.74, requires_human_review: true, next_action: "listar processos", reason: "baixo score do writer" },
+    });
+    sendWhatsAppMessageMock.mockResolvedValueOnce({ provider: "evolution", apiResponse: { ok: true } });
+
+    const supabase: any = {
+      from: vi.fn((table: string) => {
+        if (table === "whatsapp_contacts") return makeSelectQuery({ data: { id: "contact-owner", name: "Vitor", phone_number: "5521999990000@s.whatsapp.net", assigned_user_id: null }, error: null });
+        if (table === "tenant_settings") return makeSelectQuery({ data: { ai_features: { daily_playbook: { authorizedPhones: ["5521999990000"] }, mayus_operating_partner: { enabled: true }, whatsapp_agent: { autonomy_mode: "auto_respond" } } }, error: null });
+        if (table === "whatsapp_messages") return makeSelectQuery({ data: [
+          { direction: "inbound", content: "Quero saber sobre um processo", message_type: "text", created_at: "2026-05-28T18:29:00.000Z" },
+          { direction: "inbound", content: "Michele Cristina foppolos santos", message_type: "text", created_at: "2026-05-28T18:30:00.000Z" },
+        ], error: null });
+        if (table === "clients") return makeSelectQuery({ data: null, error: null });
+        if (table === "process_tasks") return makeSelectQuery({ data: [{ id: "process-1", title: "Michele x Banco", description: "Ativo.", phone: null, client_name: "Michele Cristina Foppolos Santos", process_number: "1111111-11.2024.8.19.0001", processo_1grau: null, processo_2grau: null, andamento_1grau: "Ativo", andamento_2grau: null, orgao_julgador: null, tutela_urgencia: null, sentenca: null, prazo_fatal: null, liminar_deferida: false, data_ultima_movimentacao: "2026-05-10T00:00:00.000Z", tags: [], urgency: "ROTINA", process_stages: { name: "Ativo" } }], error: null });
+        if (table === "process_movimentacoes_inbox") return makeSelectQuery({ data: null, error: null });
+        return { insert: vi.fn(async (payload: any) => { inserts.push({ table, payload }); return { error: null }; }) };
+      }),
+    };
+
+    const prepared = await prepareWhatsAppSalesReplyForContact({
+      supabase,
+      tenantId: "tenant-1",
+      contactId: "contact-owner",
+      trigger: "evolution_webhook",
+      autoSendFirstResponse: true,
+      preferredProvider: "evolution",
+    });
+
+    expect(prepared.autoSendResult.status).toBe("sent");
+    expect(prepared.metadata.office_operator_verified_process_status_auto_send).toBe(true);
+    expect(prepared.metadata.requires_human_review).toBe(false);
+    expect(sendWhatsAppMessageMock).toHaveBeenCalledWith(expect.objectContaining({
+      text: expect.stringContaining("Encontrei 4 processos"),
+    }));
+    expect(inserts).toEqual(expect.arrayContaining([
+      expect.objectContaining({
+        table: "system_event_logs",
+        payload: expect.objectContaining({
+          event_name: "whatsapp_sales_reply_prepared",
+          payload: expect.objectContaining({
+            first_response_policy: expect.objectContaining({
+              can_auto_send: true,
+              blocked_reason: null,
+            }),
+          }),
+        }),
+      }),
+    ]));
+  });
+
   it("escopa o prompt ao turno atual e nao envia evento anterior para nova triagem", async () => {
     const inserts: Array<{ table: string; payload: any }> = [];
     const contextPolicy = {
@@ -1698,6 +1799,66 @@ describe("prepareWhatsAppSalesReplyForContact", () => {
         }),
       }),
     ]));
+  });
+
+  it("cai para texto auditavel quando o audio pede voz mas TTS nao esta configurado", async () => {
+    resolveWhatsAppReplyVoiceStatusMock.mockResolvedValueOnce({
+      enabled: false,
+      provider: "elevenlabs",
+      displayLabel: "Sem voz configurada",
+      voiceProfile: "mayusorb",
+      voiceIdSource: null,
+      blockedReason: "missing_elevenlabs_voice_id_or_api_key",
+    });
+    buildMayusOperatingPartnerDecisionMock.mockResolvedValueOnce({
+      provider: "openrouter",
+      model_used: "openai/gpt-5.4-nano",
+      reply: "Vitor, recebi o audio e consigo seguir pelo texto: qual processo voce quer consultar?",
+      intent: "process_status",
+      confidence: 0.9,
+      risk_flags: [],
+      next_action: "pedir identificador minimo",
+      should_auto_send: true,
+      requires_approval: false,
+      actions_to_execute: [],
+      conversation_state: { stage: "client_support", conversation_role: "case_status", conversation_goal: "identificar processo", customer_temperature: "existing_client" },
+      closing_readiness: { score: 0, status: "not_ready", reasons: [] },
+      support_summary: { is_existing_client: true, issue_type: "process_status", verified_case_reference: false, summary: "pedido em audio" },
+      reasoning_summary_for_team: "Audio transcrito sem TTS configurado.",
+      expected_outcome: "operador recebe fallback em texto",
+    });
+    sendWhatsAppMessageMock.mockResolvedValueOnce({ provider: "evolution", apiResponse: { ok: true } });
+
+    const supabase: any = {
+      from: vi.fn((table: string) => {
+        if (table === "whatsapp_contacts") return makeSelectQuery({ data: { id: "contact-1", name: "Vitor", phone_number: "5521999990000@s.whatsapp.net", assigned_user_id: null }, error: null });
+        if (table === "tenant_settings") return makeSelectQuery({ data: { ai_features: { daily_playbook: { authorizedPhones: ["5521999990000"] }, mayus_operating_partner: { enabled: true }, whatsapp_agent: { autonomy_mode: "auto_respond" } } }, error: null });
+        if (table === "whatsapp_messages") return makeSelectQuery({ data: [{ id: "message-audio-1", direction: "inbound", content: "[Audio recebido]", message_type: "audio", media_text: "Quero consultar um processo", media_summary: "Audio transcrito", media_processing_status: "processed", created_at: "2026-05-24T15:00:00.000Z" }], error: null });
+        if (table === "clients" || table === "process_tasks" || table === "process_movimentacoes_inbox") return makeSelectQuery({ data: null, error: null });
+        return { insert: vi.fn(async () => ({ error: null })) };
+      }),
+    };
+
+    const prepared = await prepareWhatsAppSalesReplyForContact({
+      supabase,
+      tenantId: "tenant-1",
+      contactId: "contact-1",
+      trigger: "evolution_webhook",
+      autoSendFirstResponse: true,
+      preferredProvider: "evolution",
+    });
+
+    expect(synthesizeWhatsAppReplyAudioMock).not.toHaveBeenCalled();
+    expect(sendWhatsAppMessageMock).toHaveBeenCalledWith(expect.objectContaining({
+      text: expect.stringContaining("recebi o audio"),
+      metadata: expect.objectContaining({
+        reply_modality: "text",
+        audio_fallback_reason: "missing_elevenlabs_voice_id_or_api_key",
+        voice_display_label: "Sem voz configurada",
+      }),
+    }));
+    expect(prepared.metadata.reply_modality).toBe("text");
+    expect(prepared.metadata.audio_fallback_reason).toBe("missing_elevenlabs_voice_id_or_api_key");
   });
 
   it("aborta autoenvio quando uma nova mensagem chega durante a geracao", async () => {

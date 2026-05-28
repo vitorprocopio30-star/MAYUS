@@ -1,4 +1,5 @@
-import type { MayusWhatsAppActorContext } from "@/lib/agent/mayus-operating-partner";
+import type { MayusWhatsAppActorContext, MayusWhatsAppContextPolicy } from "@/lib/agent/mayus-operating-partner";
+import type { WhatsAppProcessStatusContext } from "@/lib/whatsapp/process-status-context";
 
 export type WhatsAppInputModality = "text" | "audio" | "image" | "document" | "video" | "sticker" | "unknown";
 export type WhatsAppOutputModality = "text" | "audio";
@@ -44,6 +45,53 @@ export type WhatsAppAgentTurn = {
   outputModalityPolicy: "mirror_audio" | "requested_audio" | "text_default";
   outputModalityReason: string;
   deliveryPolicy: WhatsAppDeliveryPolicy;
+};
+
+export type WhatsAppTurnRuntimeContext = {
+  version: "whatsapp_turn_context_v1";
+  input_text: string | null;
+  input_modality: WhatsAppInputModality;
+  transcription_status: string | null;
+  transcription_confidence: WhatsAppMediaContext["confidence"] | null;
+  current_user_request: string | null;
+  allowed_context: {
+    scope: MayusWhatsAppContextPolicy["scope"] | null;
+    reset_reason: string | null;
+    continuation_reason: string | null;
+    allowed_previous_event: boolean;
+    allowed_process_candidates: boolean;
+    prompt_message_count: number;
+    raw_message_count: number;
+  };
+  target_process_reference: {
+    verified: boolean;
+    confidence: WhatsAppProcessStatusContext["confidence"] | null;
+    access_scope: WhatsAppProcessStatusContext["accessScope"] | null;
+    process_task_id: string | null;
+    process_number: string | null;
+    client_name: string | null;
+    title: string | null;
+    current_stage: string | null;
+    last_movement_at: string | null;
+    candidate_count: number;
+  } | null;
+  conversation_filesystem_manifest: {
+    version: "whatsapp_case_filesystem_v1";
+    storage: "supabase_storage";
+    item_count: number;
+    items: Array<{
+      index: number;
+      direction: string | null;
+      kind: WhatsAppInputModality;
+      content_preview: string | null;
+      media_status: string | null;
+      media_intent: WhatsAppMediaIntent | null;
+      media_text_preview: string | null;
+      media_summary_preview: string | null;
+      filename: string | null;
+      mime_type: string | null;
+    }>;
+  };
 };
 
 type WhatsAppAgentMessage = {
@@ -161,10 +209,15 @@ function latestInbound(messages: WhatsAppAgentMessage[]) {
 function messageTextForModality(message: WhatsAppAgentMessage | null) {
   if (!message) return "";
   return [
-    message.content,
     message.media_text,
+    message.content,
     message.media_summary,
   ].map((value) => cleanText(value)).filter(Boolean).join(" ");
+}
+
+function truncatePreview(value?: string | null, maxLength = 220) {
+  const text = cleanText(value);
+  return text ? text.slice(0, maxLength) : null;
 }
 
 export function wantsAudioReply(text?: string | null) {
@@ -278,5 +331,83 @@ export function buildWhatsAppAgentTurnV2(params: {
     outputModalityPolicy: output.policy,
     outputModalityReason: output.reason,
     deliveryPolicy,
+  };
+}
+
+export function buildWhatsAppTurnRuntimeContext(params: {
+  messages: WhatsAppAgentMessage[];
+  promptMessages?: WhatsAppAgentMessage[];
+  contextPolicy?: MayusWhatsAppContextPolicy | null;
+  processStatusContext?: WhatsAppProcessStatusContext | null;
+  agentTurn?: WhatsAppAgentTurn | null;
+}): WhatsAppTurnRuntimeContext {
+  const rawMessages = params.messages || [];
+  const promptMessages = params.promptMessages || rawMessages;
+  const agentTurn = params.agentTurn || buildWhatsAppAgentTurnV2({ messages: promptMessages });
+  const latest = latestInbound(rawMessages) || latestInbound(promptMessages);
+  const inputModality = normalizeMessageKind(latest?.message_type);
+  const rawLatestMedia = latest ? buildWhatsAppMediaContexts([latest])[0] || null : null;
+  const latestMedia = rawLatestMedia
+    || (agentTurn.latestMediaContext && agentTurn.latestMediaContext.kind === inputModality
+      ? agentTurn.latestMediaContext
+      : null);
+  const inputText = truncatePreview(messageTextForModality(latest), 1400);
+  const currentUserRequest = inputModality === "audio"
+    ? truncatePreview(latestMedia?.text || latest?.media_text || latest?.content, 1400)
+    : inputText;
+  const contextPolicy = params.contextPolicy || null;
+  const processStatus = params.processStatusContext || null;
+
+  return {
+    version: "whatsapp_turn_context_v1",
+    input_text: inputText,
+    input_modality: inputModality,
+    transcription_status: inputModality === "audio" ? (latestMedia?.status || mediaStatus(latest || {})) : null,
+    transcription_confidence: inputModality === "audio" ? (latestMedia?.confidence || null) : null,
+    current_user_request: currentUserRequest,
+    allowed_context: {
+      scope: contextPolicy?.scope || null,
+      reset_reason: contextPolicy?.reset_reason || null,
+      continuation_reason: contextPolicy?.continuation_reason || null,
+      allowed_previous_event: contextPolicy?.allowed_previous_event === true,
+      allowed_process_candidates: contextPolicy?.allowed_process_candidates === true,
+      prompt_message_count: promptMessages.length,
+      raw_message_count: rawMessages.length,
+    },
+    target_process_reference: processStatus
+      ? {
+        verified: processStatus.verified === true,
+        confidence: processStatus.confidence || null,
+        access_scope: processStatus.accessScope || null,
+        process_task_id: processStatus.processTaskId || null,
+        process_number: processStatus.processNumber || null,
+        client_name: processStatus.clientName || null,
+        title: processStatus.title || null,
+        current_stage: processStatus.currentStage || null,
+        last_movement_at: processStatus.lastMovementAt || null,
+        candidate_count: processStatus.candidateProcesses?.length || 0,
+      }
+      : null,
+    conversation_filesystem_manifest: {
+      version: "whatsapp_case_filesystem_v1",
+      storage: "supabase_storage",
+      item_count: rawMessages.length,
+      items: rawMessages.slice(-20).map((message, index) => {
+        const kind = normalizeMessageKind(message.message_type);
+        const context = buildWhatsAppMediaContexts([message])[0] || null;
+        return {
+          index,
+          direction: cleanText(message.direction) || null,
+          kind,
+          content_preview: truncatePreview(message.content),
+          media_status: context?.status || cleanText(message.media_processing_status),
+          media_intent: context?.intent || null,
+          media_text_preview: truncatePreview(message.media_text),
+          media_summary_preview: truncatePreview(message.media_summary),
+          filename: cleanText(message.media_filename),
+          mime_type: cleanText(message.media_mime_type),
+        };
+      }),
+    },
   };
 }

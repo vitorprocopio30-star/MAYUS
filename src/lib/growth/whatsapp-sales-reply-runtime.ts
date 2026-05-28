@@ -31,7 +31,7 @@ import {
 } from "@/lib/agent/mayus-operating-partner-actions";
 import { sendWhatsAppMessage, type SendWhatsAppMessageResult } from "@/lib/whatsapp/send-message";
 import type { WhatsAppSendProvider } from "@/lib/whatsapp/send-message";
-import { synthesizeWhatsAppReplyAudio } from "@/lib/whatsapp/tts";
+import { resolveWhatsAppReplyVoiceStatus, synthesizeWhatsAppReplyAudio } from "@/lib/whatsapp/tts";
 import {
   RMC_FORBIDDEN_CLAIMS,
   RMC_OFFER_POSITIONING,
@@ -42,7 +42,7 @@ import {
 } from "@/lib/growth/rmc-playbook";
 import { normalizeOfficePlaybookProfile, summarizeOfficePlaybookForPrompt } from "@/lib/growth/office-playbook-profile";
 import { fetchWhatsAppProcessStatusContext, type WhatsAppProcessStatusContext } from "@/lib/whatsapp/process-status-context";
-import { buildWhatsAppAgentTurnV2, resolveWhatsAppDeliveryPolicy } from "@/lib/whatsapp/agent-v2";
+import { buildWhatsAppAgentTurnV2, buildWhatsAppTurnRuntimeContext, resolveWhatsAppDeliveryPolicy, type WhatsAppTurnRuntimeContext } from "@/lib/whatsapp/agent-v2";
 import { isAuthorizedWhatsAppCommandSender } from "@/lib/mayus/whatsapp-command-center";
 import {
   buildInstitutionalMemoryPromptBlock,
@@ -320,6 +320,49 @@ function normalizeRiskFlagsForProcessStatus(flags: string[], processStatusContex
   if (processStatusContext?.verified !== true) return unique;
   const cleaned = unique.filter((flag) => flag !== "case_status_unverified");
   return cleaned.includes("case_status_verified") ? cleaned : [...cleaned, "case_status_verified"];
+}
+
+const OFFICE_OPERATOR_PROCESS_STATUS_SAFE_FLAGS = new Set([
+  "case_status_verified",
+  "early_discovery",
+  "low_confidence",
+  "missing_firm_profile",
+]);
+
+function hasSensitiveRiskFlags(flags: string[] | undefined | null) {
+  return (flags || []).some((flag) => !OFFICE_OPERATOR_PROCESS_STATUS_SAFE_FLAGS.has(flag));
+}
+
+function isOfficeOperatorVerifiedProcessStatusAutoSend(params: {
+  decision: MayusOperatingPartnerDecision | null;
+  actorContext: MayusWhatsAppActorContext;
+  processStatusContext: Awaited<ReturnType<typeof fetchWhatsAppProcessStatusContext>>;
+  metadata: Record<string, any>;
+}) {
+  const decision = params.decision;
+  if (!decision) return false;
+  if (params.actorContext.role !== "office_operator" || params.actorContext.sender_phone_authorized !== true) return false;
+  if (decision.intent !== "process_status") return false;
+  const hasVerifiedProcessReference = params.processStatusContext?.verified === true
+    || decision.support_summary?.verified_case_reference === true
+    || Boolean(decision.conversation_frame?.resolved_reference || decision.conversation_frame?.candidate_summaries?.length);
+  if (!hasVerifiedProcessReference) return false;
+  if (decision.requires_approval === true) return false;
+  if (hasSensitiveRiskFlags(decision.risk_flags) || hasSensitiveRiskFlags(params.metadata.risk_flags)) return false;
+  return true;
+}
+
+function buildAudioInputGuardrailReply(turnContext: WhatsAppTurnRuntimeContext | null) {
+  if (!turnContext || turnContext.input_modality !== "audio") return null;
+  const status = turnContext.transcription_status;
+  const text = turnContext.current_user_request || turnContext.input_text || "";
+  const hasTranscript = text.trim().length >= 4 && !/^\[?(audio|áudio) recebido\]?$/i.test(text.trim());
+  if (hasTranscript && status === "processed") return null;
+
+  return {
+    text: "Nao consegui ouvir bem esse audio. Me manda de novo ou escreve em uma frase?",
+    reason: hasTranscript ? "audio_transcription_not_processed" : "audio_transcription_unavailable",
+  };
 }
 
 const OPERATING_PARTNER_TIMEOUT_MS = {
@@ -639,6 +682,7 @@ function getAutoSendBlockedReason(params: {
   if (params.trigger === "manual") return "manual_trigger";
   if (params.assignedUserId && !params.canAutoRespondAssigned && !params.canAutoRespondAssignedSafely) return "assigned_contact_blocked";
   if (!params.phoneNumber) return "missing_phone_number";
+  if (params.autoReply.source === "whatsapp_audio_guardrail_auto_reply") return null;
   if (params.autoReply.source !== "mayus_operating_partner_auto_reply") {
     return params.autoReply.source === "deterministic_whatsapp_auto_reply"
       ? params.metadata.fallback_reason === "operating_partner:provider_timeout"
@@ -902,14 +946,36 @@ export async function prepareWhatsAppSalesReplyForContact(params: {
     actorContext: whatsappActorContext,
     trigger: params.trigger,
   });
+  const turnRuntimeContext = buildWhatsAppTurnRuntimeContext({
+    messages: orderedMessages,
+    promptMessages,
+    contextPolicy,
+    processStatusContext,
+    agentTurn: agentTurnV2,
+  });
+  const voiceStatus = await resolveWhatsAppReplyVoiceStatus({
+    supabase: params.supabase,
+    tenantId: params.tenantId,
+  });
+  const audioGuardrailReply = buildAudioInputGuardrailReply(turnRuntimeContext);
   const replyModalityPreference = {
-    modality: agentTurnV2.outputModality,
+    modality: voiceStatus.enabled ? agentTurnV2.outputModality : "text" as const,
     policy: agentTurnV2.outputModalityPolicy,
-    reason: agentTurnV2.outputModalityReason,
+    reason: voiceStatus.enabled ? agentTurnV2.outputModalityReason : `${agentTurnV2.outputModalityReason}:voice_not_configured`,
   };
   const agentV2Metadata = {
     agent_version: agentTurnV2.agentVersion,
     input_modalities: agentTurnV2.inputModalities,
+    whatsapp_turn_context: turnRuntimeContext,
+    conversation_filesystem_manifest: turnRuntimeContext.conversation_filesystem_manifest,
+    current_user_request: turnRuntimeContext.current_user_request,
+    input_text: turnRuntimeContext.input_text,
+    input_modality: turnRuntimeContext.input_modality,
+    transcription_status: turnRuntimeContext.transcription_status,
+    transcription_confidence: turnRuntimeContext.transcription_confidence,
+    target_process_reference: turnRuntimeContext.target_process_reference,
+    voice_status: voiceStatus,
+    voice_display_label: voiceStatus.displayLabel,
     media_contexts: agentTurnV2.mediaContexts,
     latest_media_context: agentTurnV2.latestMediaContext,
     media_processing_status: agentTurnV2.latestMediaContext?.status || null,
@@ -959,7 +1025,28 @@ export async function prepareWhatsAppSalesReplyForContact(params: {
     status: "skipped",
   };
 
-  if (runtimeSettings.mayusOperatingPartner?.enabled) {
+  if (audioGuardrailReply) {
+    metadata = {
+      ...metadata,
+      reply_source: "audio_input_guardrail",
+      model_used: "deterministic",
+      mode: "suggested_reply",
+      suggested_reply: audioGuardrailReply.text,
+      internal_note: "Audio sem transcricao confiavel. MAYUS pediu reenvio curto sem chamar LLM.",
+      risk_flags: [],
+      may_auto_send: true,
+      requires_human_review: false,
+      fallback_reason: audioGuardrailReply.reason,
+      audio_input_guardrail: {
+        triggered: true,
+        reason: audioGuardrailReply.reason,
+        transcription_status: turnRuntimeContext.transcription_status,
+        current_user_request: turnRuntimeContext.current_user_request,
+      },
+    };
+  }
+
+  if (!audioGuardrailReply && runtimeSettings.mayusOperatingPartner?.enabled) {
     try {
       operatingPartnerDecision = await withOperationalTimeout(buildMayusOperatingPartnerDecision({
         supabase: params.supabase,
@@ -1079,7 +1166,7 @@ export async function prepareWhatsAppSalesReplyForContact(params: {
   const shouldTrySalesLlm = runtimeSettings.salesLlmTestbench?.enabled
     && !(operatingPartnerTimedOut && params.trigger !== "manual");
 
-  if (!operatingPartnerDecision && shouldTrySalesLlm) {
+  if (!audioGuardrailReply && !operatingPartnerDecision && shouldTrySalesLlm) {
     try {
       llmReply = await buildSalesLlmReply({
         supabase: params.supabase,
@@ -1139,7 +1226,22 @@ export async function prepareWhatsAppSalesReplyForContact(params: {
     }
   }
 
-  const autoReply = operatingPartnerDecision
+  const autoReply = audioGuardrailReply
+    ? {
+      shouldAutoSend: true,
+      text: audioGuardrailReply.text,
+      replyBlocks: [audioGuardrailReply.text],
+      source: "whatsapp_audio_guardrail_auto_reply",
+      modelUsed: "deterministic",
+      provider: "mayus",
+      intent: "audio_transcription_fallback",
+      confidence: 1,
+      leadStage: null,
+      expectedOutcome: "cliente reenvia audio ou escreve pedido atual",
+      sentEventName: "whatsapp_mayus_operating_partner_auto_sent",
+      failedEventName: "whatsapp_mayus_operating_partner_auto_send_failed",
+    }
+    : operatingPartnerDecision
     ? {
       shouldAutoSend: operatingPartnerDecision.should_auto_send,
       text: operatingPartnerDecision.reply,
@@ -1186,9 +1288,29 @@ export async function prepareWhatsAppSalesReplyForContact(params: {
         }
         : null;
   const canAutoRespondAssigned = runtimeSettings.autonomyMode === "auto_respond_assigned";
-  const assignedSafeAutoReply = canAutoRespondAssignedSafely({ decision: operatingPartnerDecision, processStatusContext });
+  const officeOperatorVerifiedProcessStatusAutoSend = isOfficeOperatorVerifiedProcessStatusAutoSend({
+    decision: operatingPartnerDecision,
+    actorContext: whatsappActorContext,
+    processStatusContext,
+    metadata,
+  });
+  if (officeOperatorVerifiedProcessStatusAutoSend) {
+    metadata = {
+      ...metadata,
+      mode: "suggested_reply",
+      may_auto_send: true,
+      requires_human_review: false,
+      office_operator_verified_process_status_auto_send: true,
+      first_response_policy_override: "office_operator_verified_process_status",
+    };
+  }
+  const effectiveAutoReply = autoReply && officeOperatorVerifiedProcessStatusAutoSend
+    ? { ...autoReply, shouldAutoSend: true }
+    : autoReply;
+  const assignedSafeAutoReply = officeOperatorVerifiedProcessStatusAutoSend
+    || canAutoRespondAssignedSafely({ decision: operatingPartnerDecision, processStatusContext });
   let blockedReason = getAutoSendBlockedReason({
-    autoReply,
+    autoReply: effectiveAutoReply,
     metadata,
     autoSendFirstResponse: params.autoSendFirstResponse,
     trigger: params.trigger,
@@ -1198,8 +1320,8 @@ export async function prepareWhatsAppSalesReplyForContact(params: {
     phoneNumber: contact.phone_number,
   });
   let canAutoSend = Boolean(
-    autoReply?.shouldAutoSend
-    && autoReply.source === "mayus_operating_partner_auto_reply"
+    effectiveAutoReply?.shouldAutoSend
+    && (effectiveAutoReply.source === "mayus_operating_partner_auto_reply" || effectiveAutoReply.source === "whatsapp_audio_guardrail_auto_reply")
     && metadata.may_auto_send === true
     && params.autoSendFirstResponse === true
     && params.trigger !== "manual"
@@ -1228,7 +1350,7 @@ export async function prepareWhatsAppSalesReplyForContact(params: {
     actorContext: effectiveActorContext,
     outputModality: replyModalityPreference.modality,
     trigger: params.trigger,
-    replyText: autoReply?.text || llmReply?.reply || operatingPartnerDecision?.reply || reply.suggestedReply || null,
+    replyText: effectiveAutoReply?.text || llmReply?.reply || operatingPartnerDecision?.reply || reply.suggestedReply || null,
   });
   const runtimeRoute = metadata.conversation_classification?.class
     || operatingPartnerDecision?.intent
@@ -1257,6 +1379,7 @@ export async function prepareWhatsAppSalesReplyForContact(params: {
     reply_modality: replyModalityPreference.modality,
     audio_policy: replyModalityPreference.policy,
     audio_requested_reason: replyModalityPreference.reason,
+    audio_fallback_reason: agentTurnV2.outputModality === "audio" && !voiceStatus.enabled ? voiceStatus.blockedReason : metadata.audio_fallback_reason,
     output_modality: replyModalityPreference.modality,
     delivery_profile: deliveryPolicy.profile,
     humanize_delivery: deliveryPolicy.humanizeDelivery,
@@ -1265,7 +1388,7 @@ export async function prepareWhatsAppSalesReplyForContact(params: {
     max_blocking_delay_ms: deliveryPolicy.maxBlockingDelayMs,
     reply_block_gap_ms: deliveryPolicy.replyBlockGapMs,
     delivery_policy_reason: deliveryPolicy.reason,
-    reply_text: autoReply?.text || llmReply?.reply || operatingPartnerDecision?.reply || reply.suggestedReply || null,
+    reply_text: effectiveAutoReply?.text || llmReply?.reply || operatingPartnerDecision?.reply || reply.suggestedReply || null,
     reply_target_message_id: replyTarget.id,
     reply_target_created_at: replyTarget.created_at,
     latest_inbound_message_id_at_decision: latestInboundAtDecision.id,
@@ -1343,7 +1466,7 @@ export async function prepareWhatsAppSalesReplyForContact(params: {
     });
   }
 
-  if (autoReply && canAutoSend) {
+  if (effectiveAutoReply && canAutoSend) {
     try {
       let sendResult: Awaited<ReturnType<typeof sendWhatsAppMessage>> | null = null;
       let replyBlockCount = 0;
@@ -1353,20 +1476,22 @@ export async function prepareWhatsAppSalesReplyForContact(params: {
       let voiceProfile: string | null = null;
       let voiceIdSource: string | null = null;
       let audioStoragePath: string | null = null;
-      let audioFallbackReason: string | null = null;
+      let audioFallbackReason: string | null = agentTurnV2.outputModality === "audio" && !voiceStatus.enabled
+        ? voiceStatus.blockedReason
+        : null;
       const baseSendMetadata = {
-        source: autoReply.source,
-        provider: autoReply.provider,
-        model_used: autoReply.modelUsed,
-        intent: autoReply.intent,
+        source: effectiveAutoReply.source,
+        provider: effectiveAutoReply.provider,
+        model_used: effectiveAutoReply.modelUsed,
+        intent: effectiveAutoReply.intent,
         brain_task_id: params.brainTrace?.taskId || null,
         brain_run_id: params.brainTrace?.runId || null,
         brain_step_id: params.brainTrace?.stepId || null,
         skill: metadata.skill || null,
-        route: metadata.conversation_classification?.class || autoReply.intent,
-        lead_stage: autoReply.leadStage,
-        confidence: autoReply.confidence,
-        expected_outcome: autoReply.expectedOutcome,
+        route: metadata.conversation_classification?.class || effectiveAutoReply.intent,
+        lead_stage: effectiveAutoReply.leadStage,
+        confidence: effectiveAutoReply.confidence,
+        expected_outcome: effectiveAutoReply.expectedOutcome,
         context_policy: metadata.context_policy || contextPolicy,
         process_status_context: metadata.process_status_context || processStatusContext || null,
         conversation_frame: metadata.conversation_frame || null,
@@ -1378,8 +1503,17 @@ export async function prepareWhatsAppSalesReplyForContact(params: {
         actor_context: metadata.actor_context || metadata.whatsapp_actor_context || whatsappActorContext,
         audio_policy: replyModalityPreference.policy,
         audio_requested_reason: replyModalityPreference.reason,
+        audio_fallback_reason: audioFallbackReason,
+        voice_status: voiceStatus,
+        voice_display_label: voiceStatus.displayLabel,
         agent_version: agentTurnV2.agentVersion,
         input_modalities: agentTurnV2.inputModalities,
+        whatsapp_turn_context: turnRuntimeContext,
+        conversation_filesystem_manifest: turnRuntimeContext.conversation_filesystem_manifest,
+        current_user_request: turnRuntimeContext.current_user_request,
+        transcription_status: turnRuntimeContext.transcription_status,
+        transcription_confidence: turnRuntimeContext.transcription_confidence,
+        target_process_reference: turnRuntimeContext.target_process_reference,
         output_modality: replyModalityPreference.modality,
         media_processing_status: agentTurnV2.latestMediaContext?.status || null,
         transcription_source: agentTurnV2.latestMediaContext?.transcriptionSource || null,
@@ -1390,7 +1524,7 @@ export async function prepareWhatsAppSalesReplyForContact(params: {
         typing_delay_ms: deliveryPolicy.typingDelayMs,
         max_blocking_delay_ms: deliveryPolicy.maxBlockingDelayMs,
         reply_block_gap_ms: deliveryPolicy.replyBlockGapMs,
-        reply_text: autoReply.text,
+        reply_text: effectiveAutoReply.text,
       };
 
       if (replyModalityPreference.modality === "audio") {
@@ -1399,7 +1533,7 @@ export async function prepareWhatsAppSalesReplyForContact(params: {
             supabase: params.supabase,
             tenantId: params.tenantId,
             contactId: contact.id,
-            text: autoReply.text,
+            text: effectiveAutoReply.text,
           });
           audioProvider = audio.provider;
           ttsProvider = audio.ttsProvider;
@@ -1440,7 +1574,7 @@ export async function prepareWhatsAppSalesReplyForContact(params: {
       }
 
       if (!sendResult) {
-        const blocks = autoReply.replyBlocks?.length ? autoReply.replyBlocks : splitWhatsAppReplyBlocks(autoReply.text);
+        const blocks = effectiveAutoReply.replyBlocks?.length ? effectiveAutoReply.replyBlocks : splitWhatsAppReplyBlocks(effectiveAutoReply.text);
         replyBlockCount = blocks.length;
         for (let index = 0; index < blocks.length; index += 1) {
           const block = blocks[index];
@@ -1488,26 +1622,30 @@ export async function prepareWhatsAppSalesReplyForContact(params: {
         user_id: params.actorUserId || null,
         source: "whatsapp",
         provider: "mayus",
-        event_name: autoReply.sentEventName,
+          event_name: effectiveAutoReply.sentEventName,
         status: "ok",
         payload: {
           contact_id: contact.id,
           trigger: params.trigger,
-          model_used: autoReply.modelUsed,
-          lead_stage: autoReply.leadStage,
-          intent: autoReply.intent,
-          confidence: autoReply.confidence,
+          model_used: effectiveAutoReply.modelUsed,
+          lead_stage: effectiveAutoReply.leadStage,
+          intent: effectiveAutoReply.intent,
+          confidence: effectiveAutoReply.confidence,
           context_policy: contextPolicy,
           send_provider: sendResult.provider,
           reply_modality: actualReplyModality,
           audio_policy: replyModalityPreference.policy,
           audio_requested_reason: replyModalityPreference.reason,
+          voice_status: voiceStatus,
+          voice_display_label: voiceStatus.displayLabel,
           audio_provider: audioProvider,
           tts_provider: ttsProvider,
           voice_profile: voiceProfile,
           voice_id_source: voiceIdSource,
           audio_storage_path: audioStoragePath,
           audio_fallback_reason: audioFallbackReason,
+          whatsapp_turn_context: turnRuntimeContext,
+          conversation_filesystem_manifest: turnRuntimeContext.conversation_filesystem_manifest,
           delivery_profile: deliveryPolicy.profile,
           humanize_delivery: deliveryPolicy.humanizeDelivery,
           humanize_delivery_mode: deliveryPolicy.humanizeDeliveryMode,
@@ -1532,15 +1670,17 @@ export async function prepareWhatsAppSalesReplyForContact(params: {
         user_id: params.actorUserId || null,
         source: "whatsapp",
         provider: "mayus",
-        event_name: autoReply.failedEventName,
+        event_name: effectiveAutoReply.failedEventName,
         status: "error",
         payload: {
           contact_id: contact.id,
           trigger: params.trigger,
-          model_used: autoReply.modelUsed,
+          model_used: effectiveAutoReply.modelUsed,
           context_policy: contextPolicy,
           reply_modality: replyModalityPreference.modality,
           audio_policy: replyModalityPreference.policy,
+          voice_status: voiceStatus,
+          voice_display_label: voiceStatus.displayLabel,
           delivery_profile: deliveryPolicy.profile,
           humanize_delivery: deliveryPolicy.humanizeDelivery,
           humanize_delivery_mode: deliveryPolicy.humanizeDeliveryMode,

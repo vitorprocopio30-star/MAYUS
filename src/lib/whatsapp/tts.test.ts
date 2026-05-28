@@ -5,10 +5,11 @@ vi.mock("@/lib/integrations/server", () => ({
   requireTenantApiKey: vi.fn(),
 }));
 
-import { synthesizeWhatsAppReplyAudio } from "./tts";
-import { getTenantIntegrationResolved } from "@/lib/integrations/server";
+import { resolveWhatsAppReplyVoiceStatus, synthesizeWhatsAppReplyAudio } from "./tts";
+import { getTenantIntegrationResolved, requireTenantApiKey } from "@/lib/integrations/server";
 
 const getTenantIntegrationResolvedMock = vi.mocked(getTenantIntegrationResolved);
+const requireTenantApiKeyMock = vi.mocked(requireTenantApiKey);
 
 function makeSupabase(aiFeatures: Record<string, any>) {
   const uploads: any[] = [];
@@ -107,5 +108,41 @@ describe("whatsapp tts", () => {
     })).rejects.toThrow(/Voice ID da MAYUSOrb/);
 
     expect(fetcher).not.toHaveBeenCalled();
+  });
+
+  it("expõe no status quando a voz real da MayusOrb esta configurada", async () => {
+    getTenantIntegrationResolvedMock.mockResolvedValue({
+      api_key: "tenant-eleven-key",
+      instance_name: "voice-mayusorb",
+    } as any);
+    const supabase = makeSupabase({ voice_provider: "elevenlabs" });
+
+    await expect(resolveWhatsAppReplyVoiceStatus({
+      supabase: supabase as any,
+      tenantId: "tenant-1",
+    })).resolves.toEqual(expect.objectContaining({
+      enabled: true,
+      provider: "elevenlabs",
+      displayLabel: "MayusOrb/ElevenLabs",
+      voiceProfile: "mayusorb",
+      voiceIdSource: "tenant_integration",
+      blockedReason: null,
+    }));
+  });
+
+  it("mostra OpenAI nova sem chamar isso de MayusOrb", async () => {
+    requireTenantApiKeyMock.mockResolvedValue({ apiKey: "openai-key", integration: null } as any);
+    const supabase = makeSupabase({});
+
+    await expect(resolveWhatsAppReplyVoiceStatus({
+      supabase: supabase as any,
+      tenantId: "tenant-1",
+    })).resolves.toEqual(expect.objectContaining({
+      enabled: true,
+      provider: "openai",
+      displayLabel: "OpenAI nova",
+      voiceProfile: "nova",
+      voiceIdSource: null,
+    }));
   });
 });

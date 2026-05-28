@@ -183,6 +183,20 @@ function extractContextPolicy(payload: Record<string, unknown>, mayus: Record<st
   );
 }
 
+function extractTurnContext(payload: Record<string, unknown>, mayus: Record<string, unknown> | null) {
+  return firstRecord(
+    payload.whatsapp_turn_context,
+    mayus?.whatsapp_turn_context,
+  );
+}
+
+function extractVoiceStatus(payload: Record<string, unknown>, mayus: Record<string, unknown> | null) {
+  return firstRecord(
+    payload.voice_status,
+    mayus?.voice_status,
+  );
+}
+
 function sanitizeAuditEvent(row: AuditEventRow) {
   const payload = row.payload || {};
   const mayus = asRecord(payload.mayus_operating_partner);
@@ -190,6 +204,10 @@ function sanitizeAuditEvent(row: AuditEventRow) {
   const resolution = extractConversationResolution(payload, mayus);
   const quality = extractQualityCheck(payload, mayus);
   const contextPolicy = extractContextPolicy(payload, mayus);
+  const turnContext = extractTurnContext(payload, mayus);
+  const voiceStatus = extractVoiceStatus(payload, mayus);
+  const latestMedia = firstRecord(payload.latest_media_context, mayus?.latest_media_context);
+  const filesystem = firstRecord(payload.conversation_filesystem_manifest, mayus?.conversation_filesystem_manifest);
   const qualityFlags = unique([
     ...textList(quality?.flags),
     ...textList(payload.risk_flags),
@@ -254,6 +272,15 @@ function sanitizeAuditEvent(row: AuditEventRow) {
     context_allowed_previous_event: contextPolicy?.allowed_previous_event === true,
     context_allowed_process_candidates: contextPolicy?.allowed_process_candidates === true,
     context_prompt_message_count: typeof contextPolicy?.prompt_message_count === "number" ? contextPolicy.prompt_message_count : null,
+    input_modality: text(payload.input_modality, 80) || text(turnContext?.input_modality, 80),
+    current_user_request: text(payload.current_user_request, 220) || text(turnContext?.current_user_request, 220),
+    transcription_status: text(payload.transcription_status, 80) || text(turnContext?.transcription_status, 80) || text(latestMedia?.status, 80),
+    transcription_source: text(payload.transcription_source, 120) || text(latestMedia?.transcriptionSource, 120),
+    voice_display_label: text(payload.voice_display_label, 120) || text(voiceStatus?.displayLabel, 120),
+    voice_provider: text(voiceStatus?.provider, 80) || text(payload.audio_provider, 80) || text(payload.tts_provider, 80),
+    voice_profile: text(payload.voice_profile, 120) || text(voiceStatus?.voiceProfile, 120),
+    audio_fallback_reason: text(payload.audio_fallback_reason, 160) || text(voiceStatus?.blockedReason, 160),
+    filesystem_item_count: typeof filesystem?.item_count === "number" ? filesystem.item_count : null,
     original_reply_preview: originalPreview,
     final_reply_preview: finalPreview,
   };
@@ -303,6 +330,18 @@ function messageContextPolicy(row: WhatsAppMessageAuditRow) {
     asRecord(metadata.conversation_frame)?.context_policy,
     asRecord(mayus?.conversation_frame)?.context_policy,
   );
+}
+
+function messageVoiceStatus(row: WhatsAppMessageAuditRow) {
+  const metadata = row.metadata || {};
+  const mayus = asRecord(metadata.mayus_operating_partner);
+  return firstRecord(metadata.voice_status, mayus?.voice_status);
+}
+
+function messageTurnContext(row: WhatsAppMessageAuditRow) {
+  const metadata = row.metadata || {};
+  const mayus = asRecord(metadata.mayus_operating_partner);
+  return firstRecord(metadata.whatsapp_turn_context, mayus?.whatsapp_turn_context);
 }
 
 function buildTopFlags(entries: ReturnType<typeof sanitizeAuditEvent>[]) {
@@ -370,6 +409,8 @@ async function buildWhatsAppAgentHealth(params: {
     || latestEntry?.reason
     || null;
   const latestMessageContextPolicy = messageContextPolicy(latestMessageWithAgentMetadata || messages[0] || {} as WhatsAppMessageAuditRow);
+  const latestMessageVoiceStatus = messageVoiceStatus(latestMessageWithAgentMetadata || messages[0] || {} as WhatsAppMessageAuditRow);
+  const latestMessageTurnContext = messageTurnContext(latestMessageWithAgentMetadata || messages[0] || {} as WhatsAppMessageAuditRow);
   const topFlags = buildTopFlags(params.entries);
 
   return {
@@ -404,6 +445,13 @@ async function buildWhatsAppAgentHealth(params: {
       context_policy_scope: latestEntry?.context_policy_scope || text(latestMessageContextPolicy?.scope, 80),
       context_reset_reason: latestEntry?.context_reset_reason || text(latestMessageContextPolicy?.reset_reason, 120),
       context_prompt_message_count: latestEntry?.context_prompt_message_count ?? (typeof latestMessageContextPolicy?.prompt_message_count === "number" ? latestMessageContextPolicy.prompt_message_count : null),
+      input_modality: latestEntry?.input_modality || text(latestMessageTurnContext?.input_modality, 80),
+      transcription_status: latestEntry?.transcription_status || text(latestMessageTurnContext?.transcription_status, 80),
+      voice_display_label: latestEntry?.voice_display_label || text(latestMessageVoiceStatus?.displayLabel, 120),
+      voice_provider: latestEntry?.voice_provider || text(latestMessageVoiceStatus?.provider, 80),
+      voice_profile: latestEntry?.voice_profile || text(latestMessageVoiceStatus?.voiceProfile, 120),
+      audio_fallback_reason: latestEntry?.audio_fallback_reason || text(latestMessageVoiceStatus?.blockedReason, 160),
+      filesystem_item_count: latestEntry?.filesystem_item_count ?? null,
     },
     governance: {
       paperclip_owner: "WhatsApp Operating Partner",

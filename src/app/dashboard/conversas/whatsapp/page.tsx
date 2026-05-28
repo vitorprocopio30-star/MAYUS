@@ -185,6 +185,13 @@ type WhatsAppAgentAudit = {
       context_policy_scope: string | null;
       context_reset_reason: string | null;
       context_prompt_message_count: number | null;
+      input_modality: string | null;
+      transcription_status: string | null;
+      voice_display_label: string | null;
+      voice_provider: string | null;
+      voice_profile: string | null;
+      audio_fallback_reason: string | null;
+      filesystem_item_count: number | null;
     };
     governance: {
       paperclip_owner: string;
@@ -1710,6 +1717,9 @@ export default function WhatsAppChatPremiumPage() {
                   <p className="truncate text-[10px] text-gray-500">
                     Contexto: {agentHealth?.latest.context_policy_scope || "sem politica"}{agentHealth?.latest.context_reset_reason ? ` / ${agentHealth.latest.context_reset_reason}` : ""}
                   </p>
+                  <p className="truncate text-[10px] text-gray-500">
+                    Voz: {agentHealth?.latest.voice_display_label || "sem leitura"}{agentHealth?.latest.audio_fallback_reason ? ` / ${agentHealth.latest.audio_fallback_reason}` : ""}
+                  </p>
                 </div>
               </div>
             </div>
@@ -1802,6 +1812,12 @@ export default function WhatsAppChatPremiumPage() {
                         </p>
                         <p className="truncate text-[10px] text-gray-500">
                           Contexto: {agentHealth?.latest.context_policy_scope || "sem politica"}{agentHealth?.latest.context_reset_reason ? ` / ${agentHealth.latest.context_reset_reason}` : ""}
+                        </p>
+                        <p className="truncate text-[10px] text-gray-500">
+                          Voz: {agentHealth?.latest.voice_display_label || "sem leitura"}{agentHealth?.latest.audio_fallback_reason ? ` / ${agentHealth.latest.audio_fallback_reason}` : ""}
+                        </p>
+                        <p className="truncate text-[10px] text-gray-500">
+                          Turno: {agentHealth?.latest.input_modality || "sem modalidade"}{agentHealth?.latest.transcription_status ? ` / ${agentHealth.latest.transcription_status}` : ""} / FS {agentHealth?.latest.filesystem_item_count ?? 0}
                         </p>
                       </div>
 

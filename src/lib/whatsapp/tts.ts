@@ -15,6 +15,15 @@ export type WhatsAppReplyAudioResult = {
   filename: string;
 };
 
+export type WhatsAppReplyVoiceStatus = {
+  enabled: boolean;
+  provider: "openai" | "elevenlabs";
+  displayLabel: string;
+  voiceProfile: string | null;
+  voiceIdSource: "tenant_integration" | "env_fallback" | null;
+  blockedReason: string | null;
+};
+
 function cleanText(value?: string | null) {
   const text = String(value || "").replace(/\s+/g, " ").trim();
   return text || null;
@@ -38,6 +47,46 @@ async function loadVoiceSettings(supabase: SupabaseClient, tenantId: string) {
     provider: features.voice_provider === "elevenlabs" ? "elevenlabs" as const : "openai" as const,
     openAiVoice: cleanText(features.openai_voice) || "nova",
     voiceProfile: cleanText(features.voice_profile) || (features.voice_provider === "elevenlabs" ? "mayusorb" : null),
+  };
+}
+
+export async function resolveWhatsAppReplyVoiceStatus(params: {
+  supabase: SupabaseClient;
+  tenantId: string;
+}): Promise<WhatsAppReplyVoiceStatus> {
+  const settings = await loadVoiceSettings(params.supabase, params.tenantId);
+
+  if (settings.provider === "elevenlabs") {
+    const integration = await getTenantIntegrationResolved(params.tenantId, "elevenlabs").catch(() => null);
+    const tenantApiKey = cleanText(integration?.api_key);
+    const tenantVoiceId = cleanText(integration?.instance_name);
+    const envApiKey = cleanText(process.env.ELEVENLABS_API_KEY);
+    const envVoiceId = cleanText(process.env.ELEVENLABS_VOICE_ID);
+    const useEnvFallback = !integration && Boolean(envApiKey && envVoiceId);
+    const voiceIdSource = tenantVoiceId ? "tenant_integration" as const : useEnvFallback ? "env_fallback" as const : null;
+    const enabled = Boolean((tenantApiKey || (useEnvFallback ? envApiKey : null)) && (tenantVoiceId || (useEnvFallback ? envVoiceId : null)));
+
+    return {
+      enabled,
+      provider: "elevenlabs",
+      displayLabel: enabled
+        ? voiceIdSource === "tenant_integration" ? "MayusOrb/ElevenLabs" : "ElevenLabs/env fallback"
+        : "Sem voz configurada",
+      voiceProfile: settings.voiceProfile || "mayusorb",
+      voiceIdSource,
+      blockedReason: enabled ? null : "missing_elevenlabs_voice_id_or_api_key",
+    };
+  }
+
+  const { apiKey } = await requireTenantApiKey(params.tenantId, "openai").catch(() => ({ apiKey: null }));
+  const enabled = Boolean(apiKey);
+  return {
+    enabled,
+    provider: "openai",
+    displayLabel: enabled ? `OpenAI ${settings.openAiVoice}` : "Sem voz configurada",
+    voiceProfile: settings.openAiVoice,
+    voiceIdSource: null,
+    blockedReason: enabled ? null : "missing_openai_api_key",
   };
 }
 
