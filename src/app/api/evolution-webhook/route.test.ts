@@ -52,6 +52,7 @@ function buildSupabaseMock(options: { contact?: any } = {}) {
   const messageUpdates: unknown[] = [];
   const messageRows: Record<string, any> = {};
   const notificationInserts: unknown[] = [];
+  const storageUploads: unknown[] = [];
   return {
     messageInserts,
     contactInserts,
@@ -59,6 +60,18 @@ function buildSupabaseMock(options: { contact?: any } = {}) {
     messageUpdates,
     messageRows,
     notificationInserts,
+    storageUploads,
+    storage: {
+      from: vi.fn(() => ({
+        upload: vi.fn(async (path: string, _bytes: unknown, options: unknown) => {
+          storageUploads.push({ path, options });
+          return { data: { path }, error: null };
+        }),
+        getPublicUrl: vi.fn((path: string) => ({
+          data: { publicUrl: `https://storage.example.com/${path}` },
+        })),
+      })),
+    },
     from: vi.fn((table: string) => {
       if (table === "tenant_integrations") {
         return {
@@ -299,6 +312,58 @@ describe("/api/evolution-webhook", () => {
     ]);
   });
 
+  it("cacheia foto de perfil valida no Storage antes de salvar no contato", async () => {
+    supabaseMock = buildSupabaseMock({
+      contact: {
+        id: "contact-1",
+        profile_pic_url: "https://pps.whatsapp.net/old-expired-avatar.jpg",
+      },
+    });
+    createClientMock.mockReturnValue(supabaseMock);
+    handleWhatsAppInternalCommandMock.mockResolvedValue({ handled: false });
+    global.fetch = vi.fn(async (url: string) => {
+      if (String(url).includes("/chat/fetchProfilePictureUrl/")) {
+        return new Response(JSON.stringify({ profilePictureUrl: "https://cdn.example/avatar.jpg" }), { status: 200 });
+      }
+      return new Response(new Uint8Array([1, 2, 3, 4]), {
+        status: 200,
+        headers: { "content-type": "image/jpeg" },
+      });
+    }) as any;
+
+    const { POST } = await import("./route");
+    const request = new Request("http://localhost/api/evolution-webhook", {
+      method: "POST",
+      body: JSON.stringify({
+        event: "MESSAGES_UPSERT",
+        instance: "mayus-dutra",
+        data: {
+          key: {
+            remoteJid: "5521999990000@s.whatsapp.net",
+            fromMe: false,
+            id: "msg-avatar-cache-1",
+          },
+          pushName: "Cliente Teste",
+          message: {
+            conversation: "Boa tarde",
+          },
+        },
+      }),
+    });
+
+    const response = await POST(request);
+
+    expect(response.status).toBe(200);
+    expect(supabaseMock.storageUploads[0]).toEqual(expect.objectContaining({
+      path: expect.stringMatching(/^whatsapp\/tenant-1\/5521999990000\/profile-[a-f0-9]{12}\.jpg$/),
+    }));
+    expect(supabaseMock.contactUpdates).toEqual([
+      expect.objectContaining({
+        profile_pic_url: expect.stringMatching(/^https:\/\/storage\.example\.com\/whatsapp\/tenant-1\/5521999990000\/profile-[a-f0-9]{12}\.jpg$/),
+      }),
+    ]);
+  });
+
   it("atualiza messages.update sem inserir mensagem duplicada", async () => {
     const { POST } = await import("./route");
     const request = new Request("http://localhost/api/evolution-webhook", {
@@ -444,7 +509,10 @@ describe("/api/evolution-webhook", () => {
     expect(prepareWhatsAppSalesReplyForContactMock).not.toHaveBeenCalled();
     expect(enqueueWhatsAppReplyMock).not.toHaveBeenCalled();
     expect(processPendingWhatsAppRepliesBatchMock).not.toHaveBeenCalled();
-    expect(global.fetch).toHaveBeenCalledTimes(1);
+    expect(global.fetch).toHaveBeenCalledWith(
+      "http://evolution.local/chat/fetchProfilePictureUrl/mayus-dutra",
+      expect.objectContaining({ method: "POST" }),
+    );
   });
 
   it("midia visual do dono autorizado vai direto para conversa agentica sem ACK generico", async () => {

@@ -2108,6 +2108,60 @@ describe("mayus-operating-partner", () => {
     expect(decision.should_auto_send).toBe(true);
   });
 
+  it("prioriza referencia explicita atual sobre ultimo processo respondido", async () => {
+    const fetcher = operatingPartnerFetcher({
+      reply: "Processo do Caixa Economica Federal Cef (5006349-29.2023.4.02.5110): esta em ATIVO.",
+      intent: "process_status",
+      next_action: "responder status processual",
+      conversation_state: {
+        conversation_role: "case_status",
+        conversation_goal: "acompanhar processos do cliente",
+        last_customer_message: "Me fale como esta o do banco bradesco",
+        next_action: "responder status processual",
+        conversation_summary: "Operador pediu Bradesco depois de lista Bradesco/Caixa.",
+      },
+      support_summary: { is_existing_client: true, issue_type: "process_status", verified_case_reference: true, summary: "referencia curta resolvida" },
+    });
+
+    const lastProcessCandidates = [
+      { processTaskId: "bradesco", clientName: "Marcio da Silva Machado", processNumber: "3000141-95.2026.8.19.0213", title: "Marcio x Bradesco", opposingParty: "Banco Bradesco S.A", summary: "fase inicial de regularizacao do pagamento de custas", currentStage: "ATIVO", lastMovementAt: "2026-03-13", lastMovementText: "Regularizacao de custas" },
+      { processTaskId: "caixa", clientName: "Marcio da Silva Machado", processNumber: "5006349-29.2023.4.02.5110", title: "Marcio x Caixa", opposingParty: "Caixa Economica Federal Cef", summary: "FGTS/atualizacao", currentStage: "ATIVO", lastMovementAt: "2023-06-10", lastMovementText: null },
+    ];
+
+    const decision = await buildMayusOperatingPartnerDecision({
+      supabase: {} as any,
+      tenantId: "tenant-1",
+      channel: "whatsapp",
+      contactName: "Vitor",
+      messages: [
+        { direction: "inbound", content: "Marcio da Silva Machado" },
+        { direction: "outbound", content: "Encontrei 2 processos do Marcio da Silva Machado." },
+        { direction: "outbound", content: "Banco Bradesco S.A (TJRJ, n 3000141-95.2026.8.19.0213): fase inicial de regularizacao do pagamento de custas." },
+        { direction: "outbound", content: "Caixa Economica Federal CEF (TRF2, n 5006349-29.2023.4.02.5110): aplicacao INPC/IPCA/atualizacao FGTS." },
+        { direction: "inbound", content: "Me fale como esta o do banco bradesco" },
+      ],
+      whatsappActorContext: { role: "office_operator", sender_phone_authorized: true, reason: "daily_playbook_authorized_phone" },
+      previousMayusEvent: {
+        intent: "process_status",
+        conversation_state: {
+          conversation_role: "case_status",
+          conversation_goal: "acompanhar processos do cliente",
+          last_process_candidates: lastProcessCandidates,
+          has_mayus_introduced: true,
+        },
+      },
+      operatingPartner: { enabled: true, autonomy_mode: "high_supervised" },
+      fetcher,
+    });
+
+    expect(decision.conversation_frame?.resolution_type).toBe("referenced_process");
+    expect(decision.conversation_frame?.resolved_reference?.opposingParty).toBe("Banco Bradesco S.A");
+    expect(decision.reply).toContain("Banco Bradesco");
+    expect(decision.reply).toContain("3000141-95.2026.8.19.0213");
+    expect(decision.reply).not.toMatch(/Caixa Economica Federal|5006349-29\.2023\.4\.02\.5110/i);
+    expect(decision.final_response_source).toBe("safe_fallback");
+  });
+
   it("responde pedido de situacao do processo ja escolhido sem nova entrevista", async () => {
     const badModelReply = "Pra eu te orientar no proximo passo: seu foco agora e saber so a situacao geral, ou e confirmar se tem algo a fazer na pratica?";
     const lastProcessCandidates = [

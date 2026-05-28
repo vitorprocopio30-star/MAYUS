@@ -19,6 +19,8 @@ const supabase = createClient(
 const IMMEDIATE_MEDIA_TIMEOUT_MS = 8000;
 const IMMEDIATE_AUDIO_COMMAND_TIMEOUT_MS = 25000;
 const QUEUED_REPLY_TIMEOUT_MS = 58000;
+const WHATSAPP_PROFILE_PICTURE_BUCKET = "avatars";
+const MAX_PROFILE_PICTURE_BYTES = 2 * 1024 * 1024;
 
 function verifySignature(body: string, signature: string | null): boolean {
   const secret = process.env.EVOLUTION_WEBHOOK_SECRET;
@@ -308,6 +310,60 @@ async function fetchEvolutionProfilePicture(params: {
   }
 }
 
+function profilePictureExtension(contentType: string | null, sourceUrl: string) {
+  const normalized = String(contentType || "").toLowerCase();
+  if (normalized.includes("png")) return "png";
+  if (normalized.includes("webp")) return "webp";
+  if (normalized.includes("gif")) return "gif";
+  if (/\.(png|webp|gif)(?:$|\?)/i.test(sourceUrl)) return sourceUrl.match(/\.(png|webp|gif)(?:$|\?)/i)?.[1]?.toLowerCase() || "jpg";
+  return "jpg";
+}
+
+async function cacheEvolutionProfilePicture(params: {
+  tenantId: string;
+  remoteJid: string;
+  sourceUrl: string | null;
+}) {
+  const sourceUrl = String(params.sourceUrl || "").trim();
+  if (!sourceUrl) return null;
+
+  try {
+    if (!supabase.storage?.from) return sourceUrl;
+
+    const response = await fetch(sourceUrl, {
+      headers: {
+        "User-Agent": "MAYUS WhatsApp avatar cache",
+        Accept: "image/avif,image/webp,image/apng,image/svg+xml,image/*,*/*;q=0.8",
+      },
+    });
+    const contentType = response.headers.get("content-type");
+    if (!response.ok || !String(contentType || "").toLowerCase().startsWith("image/")) {
+      return sourceUrl;
+    }
+
+    const bytes = Buffer.from(await response.arrayBuffer());
+    if (!bytes.length || bytes.length > MAX_PROFILE_PICTURE_BYTES) return sourceUrl;
+
+    const phone = cleanWhatsAppNumber(params.remoteJid) || "unknown";
+    const hash = crypto.createHash("sha1").update(sourceUrl).digest("hex").slice(0, 12);
+    const extension = profilePictureExtension(contentType, sourceUrl);
+    const storagePath = `whatsapp/${params.tenantId}/${phone}/profile-${hash}.${extension}`;
+    const bucket = supabase.storage.from(WHATSAPP_PROFILE_PICTURE_BUCKET);
+    const { error } = await bucket.upload(storagePath, bytes, {
+      upsert: true,
+      contentType: contentType || "image/jpeg",
+      cacheControl: "86400",
+    });
+    if (error) return sourceUrl;
+
+    const { data } = bucket.getPublicUrl(storagePath);
+    return data?.publicUrl || sourceUrl;
+  } catch (error) {
+    console.warn("[Evolution Webhook] Nao foi possivel cachear foto do contato:", error);
+    return sourceUrl;
+  }
+}
+
 export async function POST(req: Request) {
   try {
     const rawBody = await req.text();
@@ -443,10 +499,15 @@ export async function POST(req: Request) {
         }
       }
 
-      const avatarUrl = await fetchEvolutionProfilePicture({
+      const evolutionAvatarUrl = await fetchEvolutionProfilePicture({
         tenantId,
         instanceName,
         remoteJid,
+      });
+      const avatarUrl = await cacheEvolutionProfilePicture({
+        tenantId,
+        remoteJid,
+        sourceUrl: evolutionAvatarUrl,
       });
 
       // 2. Verificar/Criar o Contato (Lead/Cliente)

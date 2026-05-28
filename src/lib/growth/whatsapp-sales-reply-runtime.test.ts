@@ -680,6 +680,25 @@ describe("prepareWhatsAppSalesReplyForContact", () => {
       requires_approval: false,
       should_auto_send: true,
       expected_outcome: "cliente informa origem do desconto",
+      conversation_frame: {
+        resolution_type: "open_llm",
+        actor_context: { role: "lead_or_client", sender_phone_authorized: false, reason: "external_whatsapp_contact" },
+        last_message: "Quero saber sobre um desconto no contracheque",
+        recommended_intent: "legal_triage",
+        writer_mode: "llm_natural",
+        llm_writer_allowed: true,
+        hard_guardrail_reason: null,
+        conversation_goal: "qualificar dor do desconto",
+        known_facts: ["cliente quer entender desconto no contracheque"],
+        missing_data: ["nome do desconto"],
+        forbidden_moves: [],
+        response_guidance: [],
+        resolved_reference: null,
+        candidate_summaries: [],
+        safe_fallback_reply: "Entendi. Esse desconto aparece com qual nome no contracheque?",
+      },
+      quality_check: { status: "pass", flags: [], reasons: [] },
+      final_response_source: "llm_natural",
       conversation_classification: {
         class: "commercial",
         surface: "external_message",
@@ -940,6 +959,16 @@ describe("prepareWhatsAppSalesReplyForContact", () => {
       metadata: expect.objectContaining({
         source: "mayus_operating_partner_auto_reply",
         intent: "legal_triage",
+        conversation_frame: expect.objectContaining({
+          resolution_type: "open_llm",
+          last_message: "Quero saber sobre um desconto no contracheque",
+        }),
+        mayus_operating_partner: expect.objectContaining({
+          conversation_frame: expect.objectContaining({
+            resolution_type: "open_llm",
+          }),
+        }),
+        final_response_source: "llm_natural",
       }),
     }));
     expect(inserts).toEqual(expect.arrayContaining([

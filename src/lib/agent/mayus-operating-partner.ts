@@ -844,12 +844,15 @@ function buildWhatsAppConversationFrame(input: MayusOperatingPartnerInput, param
     : collectProcessCandidates(input, params.fallbackState);
   const referencedCandidate = findReferencedProcessCandidate(lastMessage, candidates);
   const lastAnsweredCandidate = findLastAnsweredProcessCandidate(input.messages, candidates);
+  const explicitProcessReference = extractExplicitProcessReference(lastMessage);
   const singleVerifiedProcessCandidate = input.processStatusContext?.verified === true
     && normalizeProcessCandidateMemory(input.processStatusContext.candidateProcesses || []).length <= 1
     && !suppressHistoricalProcessCandidates
     ? processStatusContextAsCandidate(input.processStatusContext)
     : null;
-  const statusFollowupCandidate = isResolvedProcessStatusFollowup(lastMessage)
+  const statusFollowupCandidate = !referencedCandidate
+    && !explicitProcessReference
+    && isResolvedProcessStatusFollowup(lastMessage)
     && (lastAnsweredCandidate || !genericProcessRequest)
     ? (lastAnsweredCandidate || (candidates.length === 1 ? candidates[0] : null))
     : null;
@@ -860,7 +863,6 @@ function buildWhatsAppConversationFrame(input: MayusOperatingPartnerInput, param
         return candidateKey && candidateKey !== answeredKey;
       })
     : [];
-  const explicitProcessReference = extractExplicitProcessReference(lastMessage);
   const shortProcessNudge = isShortProcessNudge(input.messages, input.processStatusContext);
   const commercialTriage = isCommercialTriageMessage(lastMessage) && (input.processStatusContext || previousAskedForProcessIdentifier(input.messages));
   const hasVerifiedProcessCandidates = input.processStatusContext?.verified === true
@@ -939,6 +941,27 @@ function buildWhatsAppConversationFrame(input: MayusOperatingPartnerInput, param
       hasExplicitProcessReference: false,
       snapshot: input.ownerOfficeSnapshot,
     });
+  } else if (isConversationComplaint(lastMessage)) {
+    resolutionType = "complaint";
+    recommendedIntent = "client_support";
+    conversationGoal = "reconhecer erro de contexto e pedir o ponto atual sem insistir na resposta anterior";
+    responseGuidance.add("pedir desculpa de forma curta e nao repetir a pergunta errada");
+    forbiddenMoves.add("nao defender a resposta anterior");
+    forbiddenMoves.add("nao retomar alternativas processuais antigas");
+    safeFallbackReply = `${cleanText(input.contactName) || "Entendi"}, você tem razão. Eu me confundi no contexto. Me diga só o ponto que você quer ver agora que eu sigo por ele.`;
+  } else if (referencedCandidate) {
+    resolutionType = "referenced_process";
+    recommendedIntent = "process_status";
+    resolvedReference = processCandidateFrame(referencedCandidate);
+    conversationGoal = "responder o processo que acabou de ser referenciado";
+    knownFacts.add(`referencia resolvida: ${resolvedReference.label || resolvedReference.processNumber || "processo"}`);
+    if (resolvedReference.summary) knownFacts.add(`resumo do processo: ${resolvedReference.summary}`);
+    if (resolvedReference.currentStage) knownFacts.add(`fase/status: ${resolvedReference.currentStage}`);
+    if (resolvedReference.lastMovementText) knownFacts.add(`ultimo registro: ${resolvedReference.lastMovementText}`);
+    responseGuidance.add("responder apenas o processo referenciado");
+    responseGuidance.add("nao perguntar assunto principal nem oferecer outros processos");
+    forbiddenMoves.add("nao misturar outros candidatos processuais na resposta");
+    safeFallbackReply = buildReferencedProcessCandidateReply(referencedCandidate);
   } else if (statusFollowupCandidate) {
     resolutionType = "referenced_process";
     recommendedIntent = "process_status";
@@ -953,14 +976,6 @@ function buildWhatsAppConversationFrame(input: MayusOperatingPartnerInput, param
     forbiddenMoves.add("nao transformar pedido de status em entrevista");
     forbiddenMoves.add("nao perguntar se quer acompanhar, baixar, agir ou aproveitar movimentacao");
     safeFallbackReply = buildReferencedProcessCandidateReply(statusFollowupCandidate);
-  } else if (isConversationComplaint(lastMessage)) {
-    resolutionType = "complaint";
-    recommendedIntent = "client_support";
-    conversationGoal = "reconhecer erro de contexto e pedir o ponto atual sem insistir na resposta anterior";
-    responseGuidance.add("pedir desculpa de forma curta e nao repetir a pergunta errada");
-    forbiddenMoves.add("nao defender a resposta anterior");
-    forbiddenMoves.add("nao retomar alternativas processuais antigas");
-    safeFallbackReply = `${cleanText(input.contactName) || "Entendi"}, você tem razão. Eu me confundi no contexto. Me diga só o ponto que você quer ver agora que eu sigo por ele.`;
   } else if (singleVerifiedProcessCandidate && (params.deterministicIntent === "process_status" || input.processStatusContext?.verified === true)) {
     resolutionType = "referenced_process";
     recommendedIntent = "process_status";
@@ -991,19 +1006,6 @@ function buildWhatsAppConversationFrame(input: MayusOperatingPartnerInput, param
       actorContext: params.actorContext,
       processStatusContext: input.processStatusContext,
     });
-  } else if (referencedCandidate) {
-    resolutionType = "referenced_process";
-    recommendedIntent = "process_status";
-    resolvedReference = processCandidateFrame(referencedCandidate);
-    conversationGoal = "responder o processo que acabou de ser referenciado";
-    knownFacts.add(`referencia resolvida: ${resolvedReference.label || resolvedReference.processNumber || "processo"}`);
-    if (resolvedReference.summary) knownFacts.add(`resumo do processo: ${resolvedReference.summary}`);
-    if (resolvedReference.currentStage) knownFacts.add(`fase/status: ${resolvedReference.currentStage}`);
-    if (resolvedReference.lastMovementText) knownFacts.add(`ultimo registro: ${resolvedReference.lastMovementText}`);
-    responseGuidance.add("responder apenas o processo referenciado");
-    responseGuidance.add("nao perguntar assunto principal nem oferecer outros processos");
-    forbiddenMoves.add("nao misturar outros candidatos processuais na resposta");
-    safeFallbackReply = buildReferencedProcessCandidateReply(referencedCandidate);
   } else if (unmatchedProcessReference) {
     resolutionType = "unmatched_process_reference";
     recommendedIntent = "process_status";

@@ -372,6 +372,19 @@ function scoreProcessChoiceMatch(task: ProcessTaskRow, reference?: string | null
   return score;
 }
 
+function extractExplicitChoiceEntity(value?: string | null) {
+  const text = normalizeText(value);
+  if (!text) return null;
+  const bankReference = text.match(/\b(?:banco\s+)?(?:master|bradesco|itau|ita[uú]|santander|pan|bmg|c6|safra|mercantil|daycoval|ole|ol[eé]|caixa)\b/);
+  if (bankReference?.[0]) {
+    const value = bankReference[0].replace(/^banco\s+/, "").trim();
+    if (value === "caixa") return "Caixa";
+    return `Banco ${value.split(/\s+/).map((part) => `${part.charAt(0).toUpperCase()}${part.slice(1)}`).join(" ")}`;
+  }
+  const entityReference = text.match(/\b(?:inss|fgts|previdencia|previdência)\b/);
+  return entityReference?.[0] ? entityReference[0].toUpperCase() : null;
+}
+
 function rankProcessTasksByChoice(tasks: ProcessTaskRow[], reference?: string | null) {
   if (!reference || tasks.length <= 1) return tasks;
   const ranked = tasks
@@ -477,6 +490,8 @@ function extractProcessChoiceReferenceFromText(value?: string | null) {
   const normalized = normalizeText(original);
   if (!original || !normalized || isNaturalPureGreetingText(original)) return null;
   if (isNameLookupFollowupText(original)) return null;
+  const explicitEntity = extractExplicitChoiceEntity(original);
+  if (explicitEntity) return explicitEntity;
   if (/processo|caso|andamento|status|situacao|atualizacao|novidade|cpf|cnj|\d{7}-\d{2}/.test(normalized)) return null;
   const stripped = normalized
     .replace(/^(e|eh|isso|esse|essa|seria|ser|o|a)\s+/, "")
