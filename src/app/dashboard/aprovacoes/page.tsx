@@ -64,6 +64,10 @@ type LegalMovementReviewItem = {
   tribunal: string | null;
   review_error?: string | null;
   review_note?: string | null;
+  supervision_context?: Record<string, unknown> | null;
+  contract?: Record<string, unknown> | null;
+  human_decision?: Record<string, unknown> | null;
+  side_effects?: Record<string, unknown> | null;
 };
 
 type WhatsAppAgentAuditEntry = {
@@ -611,6 +615,192 @@ function ReviewSignalGrid({ review }: { review: LegalMovementReviewItem }) {
   );
 }
 
+function firstRecord(...values: unknown[]) {
+  for (const value of values) {
+    const record = asRecordValue(value);
+    if (record) return record;
+  }
+  return null;
+}
+
+function firstText(...values: Array<string | null | undefined>) {
+  return values.find((value) => typeof value === "string" && value.trim().length > 0)?.trim() || null;
+}
+
+function getRecordNumber(record: Record<string, unknown> | null | undefined, key: string) {
+  const value = record?.[key];
+  if (typeof value === "number" && Number.isFinite(value)) return value;
+  if (typeof value === "string") {
+    const normalized = Number(value);
+    if (Number.isFinite(normalized)) return normalized;
+  }
+  return null;
+}
+
+function ReviewEvidenceList({ title, items }: { title: string; items: string[] }) {
+  if (items.length === 0) return null;
+
+  return (
+    <div className="rounded-lg border border-white/10 bg-black/20 p-2">
+      <p className="text-[9px] font-bold uppercase tracking-[0.16em] text-gray-500">{title}</p>
+      <ul className="mt-2 space-y-1 text-xs text-gray-300">
+        {items.slice(0, 4).map((item) => (
+          <li key={`${title}:${item}`} className="flex items-start gap-2">
+            <span className="mt-1.5 h-1.5 w-1.5 shrink-0 rounded-full bg-[#CCA761]/70" />
+            <span className="break-words">{item}</span>
+          </li>
+        ))}
+        {items.length > 4 && <li className="text-[11px] text-gray-500">+{items.length - 4} item(ns)</li>}
+      </ul>
+    </div>
+  );
+}
+
+function ReviewOperationalEvidence({ review }: { review: LegalMovementReviewItem }) {
+  const supervision = asRecordValue(review.supervision_context);
+  const contract = firstRecord(review.contract, supervision?.contract, supervision?.movement_contract);
+  const contractHumanDecision = firstRecord(contract?.human_decision, contract?.humanDecision);
+  const humanDecision = firstRecord(review.human_decision, supervision?.human_decision, supervision?.humanDecision, contractHumanDecision);
+  const sideEffects = firstRecord(review.side_effects, supervision?.side_effects, supervision?.sideEffects);
+  const caseBrain = firstRecord(
+    supervision?.case_brain,
+    supervision?.caseBrain,
+    supervision?.case_brain_snapshot,
+    supervision?.caseBrainSnapshot,
+  );
+
+  const contractStatus = firstText(
+    getRecordText(contract, "review_status"),
+    getRecordText(contract, "reviewStatus"),
+    getRecordText(contract, "status"),
+    review.status,
+  );
+  const contractSource = firstText(getRecordText(contract, "audit_source"), getRecordText(contract, "auditSource"), review.origem);
+  const decisionStatus = firstText(
+    getRecordText(humanDecision, "status"),
+    getRecordText(humanDecision, "decision"),
+    getRecordText(contract, "human_decision_status"),
+  );
+  const decisionActor = firstText(
+    getRecordText(humanDecision, "reviewed_by"),
+    getRecordText(humanDecision, "actor_id"),
+    getRecordText(humanDecision, "responsavel"),
+    getRecordText(contract, "reviewed_by"),
+  );
+  const decisionReason = firstText(
+    getRecordText(humanDecision, "justification"),
+    getRecordText(humanDecision, "reason"),
+    getRecordText(humanDecision, "note"),
+    getRecordText(contract, "review_note"),
+    review.review_note,
+  );
+
+  const riskCount = getRecordNumber(caseBrain, "high_risk_count") ?? getRecordNumber(caseBrain, "risks_count");
+  const contradictionCount = getRecordNumber(caseBrain, "high_contradiction_count") ?? getRecordNumber(caseBrain, "contradictions_count");
+  const gapCount = getRecordNumber(caseBrain, "grounding_gap_count") ?? getRecordNumber(caseBrain, "gaps_count");
+  const caseBrainSummary = firstText(
+    getRecordText(caseBrain, "summary"),
+    getRecordText(caseBrain, "resumo"),
+    getRecordText(supervision, "operational_thesis"),
+  );
+  const risks = getRecordList(caseBrain?.risks || caseBrain?.riscos || supervision?.risks);
+  const contradictions = getRecordList(caseBrain?.contradictions || caseBrain?.contradicoes || supervision?.contradictions);
+  const gaps = getRecordList(caseBrain?.gaps || caseBrain?.grounding_gaps || supervision?.gaps);
+  const missingDocuments = getRecordList(caseBrain?.missing_documents || caseBrain?.documents_missing || supervision?.missing_documents);
+  const unusedDocuments = getRecordList(caseBrain?.relevant_unused_documents || caseBrain?.documents_not_used || supervision?.relevant_unused_documents);
+  const sources = getRecordList(supervision?.sources_used || caseBrain?.sources_used);
+  const blockers = getRecordList(supervision?.blockers || sideEffects?.blockers);
+  const protectedSideEffects = getRecordList(
+    sideEffects?.protected_side_effects
+      || sideEffects?.blocked_side_effects
+      || supervision?.protected_side_effects
+      || supervision?.blocked_side_effects,
+  );
+  const sideEffectReason = firstText(
+    getRecordText(sideEffects, "reason"),
+    getRecordText(sideEffects, "blocked_reason"),
+    getRecordText(supervision, "next_action_before_draft_factory"),
+  );
+  const shouldRender = Boolean(
+    supervision
+      || contract
+      || humanDecision
+      || caseBrain
+      || contractStatus
+      || decisionStatus
+      || protectedSideEffects.length > 0,
+  );
+
+  if (!shouldRender) return null;
+
+  return (
+    <div className="rounded-xl border border-[#CCA761]/20 bg-[#CCA761]/[0.06] p-3 space-y-3">
+      <div className="flex flex-col gap-2 md:flex-row md:items-start md:justify-between">
+        <div>
+          <p className="text-[10px] font-bold uppercase tracking-[0.18em] text-[#E2C37A]">Evidencia operacional juridica</p>
+          <p className="mt-1 text-xs text-gray-300">Contrato persistente, decisao humana, Case Brain e side effects rastreados para esta movimentacao.</p>
+        </div>
+        <span className="rounded-full border border-white/10 bg-black/25 px-2.5 py-1 text-[9px] font-bold uppercase tracking-widest text-gray-300">
+          {contractStatus || "sem contrato"}
+        </span>
+      </div>
+
+      <div className="grid gap-2 md:grid-cols-4">
+        {[
+          { label: "Contrato da movimentacao", value: contractStatus || "sem snapshot disponivel" },
+          { label: "Decisao humana", value: decisionStatus || "pendente" },
+          { label: "Responsavel", value: decisionActor || "nao informado" },
+          { label: "Origem/auditoria", value: contractSource || "nao informado" },
+        ].map((item) => (
+          <div key={item.label} className="rounded-lg border border-white/10 bg-black/20 p-2">
+            <p className="text-[9px] uppercase tracking-[0.16em] text-gray-500">{item.label}</p>
+            <p className="mt-1 text-xs font-semibold text-gray-100 break-words">{item.value}</p>
+          </div>
+        ))}
+      </div>
+
+      {decisionReason && (
+        <p className="rounded-lg border border-white/10 bg-black/15 p-2 text-xs leading-relaxed text-gray-300">
+          <span className="font-semibold text-[#E2C37A]">Justificativa:</span> {decisionReason}
+        </p>
+      )}
+
+      <div className="rounded-lg border border-white/10 bg-black/20 p-2">
+        <div className="flex flex-col gap-2 md:flex-row md:items-start md:justify-between">
+          <div>
+            <p className="text-[9px] font-bold uppercase tracking-[0.16em] text-gray-500">Case Brain operacional</p>
+            <p className="mt-1 text-xs leading-relaxed text-gray-300">
+              {caseBrainSummary || "Sem snapshot Case Brain disponivel para esta revisao."}
+            </p>
+          </div>
+          <div className="flex flex-wrap gap-1.5 text-[10px] text-gray-300">
+            <span className="rounded-full border border-white/10 bg-white/5 px-2 py-1">Riscos: {riskCount ?? risks.length}</span>
+            <span className="rounded-full border border-white/10 bg-white/5 px-2 py-1">Contradicoes: {contradictionCount ?? contradictions.length}</span>
+            <span className="rounded-full border border-white/10 bg-white/5 px-2 py-1">Gaps: {gapCount ?? gaps.length}</span>
+          </div>
+        </div>
+      </div>
+
+      <div className="grid gap-2 md:grid-cols-2">
+        <ReviewEvidenceList title="Riscos" items={risks} />
+        <ReviewEvidenceList title="Contradicoes" items={contradictions} />
+        <ReviewEvidenceList title="Lacunas" items={gaps} />
+        <ReviewEvidenceList title="Documentos faltantes" items={missingDocuments} />
+        <ReviewEvidenceList title="Documentos relevantes nao usados" items={unusedDocuments} />
+        <ReviewEvidenceList title="Fontes usadas" items={sources} />
+        <ReviewEvidenceList title="Bloqueios" items={blockers} />
+        <ReviewEvidenceList title="Side effects protegidos" items={protectedSideEffects} />
+      </div>
+
+      {sideEffectReason && (
+        <p className="text-xs leading-relaxed text-orange-100">
+          Side effects bloqueados/liberados: {sideEffectReason}
+        </p>
+      )}
+    </div>
+  );
+}
+
 function isLegalDraftApproval(approval: BrainInboxApprovalItem) {
   return approval.awaiting_payload?.skillName === "legal_first_draft_generate";
 }
@@ -997,6 +1187,7 @@ function LegalMovementReviewCard({ review, onRefresh }: { review: LegalMovementR
       </div>
 
       <ReviewSignalGrid review={review} />
+      <ReviewOperationalEvidence review={review} />
 
       <div className="grid gap-3 md:grid-cols-2">
         <div className="rounded-xl border border-white/10 bg-black/20 p-3">
