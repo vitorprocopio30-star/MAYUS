@@ -173,3 +173,17 @@ Checks executados neste corte:
 - `$env:PLAYWRIGHT_BASE_URL='http://localhost:3145'; npx.cmd playwright test aprovacoes-legal-source-context-smoke.spec.ts documentos-source-gate-override-smoke.spec.ts --workers=1 --reporter=line` passou com 2 smokes.
 - `git diff --check -- src/app/dashboard/aprovacoes/page.tsx src/app/dashboard/documentos/page.tsx e2e/aprovacoes-legal-source-context-smoke.spec.ts e2e/documentos-source-gate-override-smoke.spec.ts docs/operations/monitoring-legal-100-rollout.md` passou; restaram apenas avisos LF/CRLF nos arquivos TSX.
 - `npm.cmd run build` passou no rerun auditavel de 2026-06-11; stderr vazio.
+
+## Publicacao do corte juridico e tentativa segura de sandbox em 2026-06-11
+
+Atualizado em 2026-06-11T17:13:00.4300153-03:00.
+
+- Branch publicada no GitHub: `codex/whatsapp-v2-multimodal-agent`.
+- Commits publicados:
+  - `47e81ab feat: expose legal evidence in approvals and documents`
+  - `1ff7865 refactor: extract legal evidence normalizers`
+- `npm.cmd run verify:monitoring-legal` retornou `ok=true` em 2026-06-11T20:11:45.604Z; Supabase remoto `agqjhiyoirtvsksvvenu` respondeu `200` para `tenants`, `platform_usage_snapshots`, `platform_overage_charges`, `platform_billing_events`, `legal_movement_analysis_contracts`, `legal_case_brain_insight_snapshots` e `system_event_logs`; gates de Escavador, Asaas e UI autenticada ficaram `true`.
+- `npx.cmd tsc --noEmit --pretty false` passou sem erros.
+- `npm.cmd run smoke:monitoring-legal:prepare-sandbox` abortou antes de criar tenant/customer/integracao com `ok=false`: `MAYUS_SMOKE_ESCAVADOR_API_KEY e obrigatoria para preparar o sandbox.`
+- Nenhum smoke real de Escavador/Asaas foi executado; nenhum tenant real foi usado; `Dutra Advocacia` continua fora de qualquer smoke.
+- Proximo passo operacional: configurar em runtime `MAYUS_SMOKE_ESCAVADOR_API_KEY`, `MAYUS_SMOKE_CNJ`, `MAYUS_SMOKE_OAB_UF`, `MAYUS_SMOKE_OAB_NUMBER`, `MAYUS_SMOKE_BASE_URL`, `MAYUS_SANDBOX_EMAIL`, `MAYUS_SANDBOX_PASSWORD` e `MAYUS_SMOKE_EXECUTE_REAL_CHARGES=true`, mantendo `ASAAS_ENV` fora de `production`.
