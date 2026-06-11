@@ -187,3 +187,13 @@ Atualizado em 2026-06-11T17:13:00.4300153-03:00.
 - `npm.cmd run smoke:monitoring-legal:prepare-sandbox` abortou antes de criar tenant/customer/integracao com `ok=false`: `MAYUS_SMOKE_ESCAVADOR_API_KEY e obrigatoria para preparar o sandbox.`
 - Nenhum smoke real de Escavador/Asaas foi executado; nenhum tenant real foi usado; `Dutra Advocacia` continua fora de qualquer smoke.
 - Proximo passo operacional: configurar em runtime `MAYUS_SMOKE_ESCAVADOR_API_KEY`, `MAYUS_SMOKE_CNJ`, `MAYUS_SMOKE_OAB_UF`, `MAYUS_SMOKE_OAB_NUMBER`, `MAYUS_SMOKE_BASE_URL`, `MAYUS_SANDBOX_EMAIL`, `MAYUS_SANDBOX_PASSWORD` e `MAYUS_SMOKE_EXECUTE_REAL_CHARGES=true`, mantendo `ASAAS_ENV` fora de `production`.
+
+## Nova checagem segura de sandbox em 2026-06-11
+
+Atualizado em 2026-06-11T17:23:04.5578229-03:00.
+
+- Leitura de runtime confirmou ausentes as envs explicitas `MAYUS_SMOKE_ESCAVADOR_API_KEY`, `MAYUS_SMOKE_CNJ`, `MAYUS_SMOKE_OAB_UF`, `MAYUS_SMOKE_OAB_NUMBER`, `MAYUS_SMOKE_BASE_URL`, `MAYUS_SANDBOX_EMAIL`, `MAYUS_SANDBOX_PASSWORD` e `MAYUS_SMOKE_EXECUTE_REAL_CHARGES`; nenhum valor sensivel foi registrado.
+- `npm.cmd run verify:monitoring-legal` retornou `ok=true` em 2026-06-11T20:21:35.655Z; gates de Escavador, Asaas e UI autenticada ficaram `true`.
+- `npx.cmd tsc --noEmit --pretty false` passou sem erros.
+- `npm.cmd run smoke:monitoring-legal:prepare-sandbox` abortou antes de qualquer efeito externo com `ok=false`: `MAYUS_SMOKE_ESCAVADOR_API_KEY e obrigatoria para preparar o sandbox.`
+- `npm.cmd run smoke:monitoring-legal:real` nao foi executado porque o prepare nao passou.
