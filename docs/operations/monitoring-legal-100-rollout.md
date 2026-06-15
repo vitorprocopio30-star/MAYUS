@@ -217,3 +217,17 @@ Checks executados neste corte:
 - `$env:PORT='3151'; $env:PLAYWRIGHT_BASE_URL='http://localhost:3151'; npx.cmd playwright test aprovacoes-legal-source-context-smoke.spec.ts --workers=1 --reporter=line` passou com 1 smoke autenticado mockado em 1.7m.
 - `git diff --check -- src/lib/juridico/analisador.ts src/lib/juridico/analisador.test.ts src/app/api/juridico/movement-reviews/route.ts src/app/api/juridico/movement-reviews/route.test.ts docs/operations/monitoring-legal-100-rollout.md` passou; restaram apenas avisos LF/CRLF.
 - `npm.cmd run build` passou em 2026-06-15; warnings restantes sao preexistentes de hooks/imagens fora deste corte.
+
+## Corte Calibragem Juridica Inicial em 2026-06-15
+
+Atualizado em 2026-06-15T19:17:00-03:00.
+
+- Commit local do corte fail-closed criado: `f367df9 fix: make legal movement automation fail closed`.
+- A calibragem inicial adicionou fixtures anonimizadas para intimação ambigua, juntada/certidao, concluso/remessa, protocolo/decurso, obrigacao da parte contraria e eventos sensiveis sem prazo operacional seguro.
+- A API `movement-reviews` ganhou regressao para o caminho positivo: uma revisao originalmente ambigua so cria card/prazo quando o humano confirma explicitamente `polo_representado` e `obrigacao_de_quem` nos overrides.
+
+Checks executados neste corte:
+
+- `npm.cmd test -- --run src\lib\juridico\analisador.test.ts src\app\api\juridico\movement-reviews\route.test.ts` passou com 2 arquivos e 53 testes.
+- `npx.cmd tsc --noEmit --pretty false` passou sem erros.
+- `git diff --check -- src/lib/juridico/analisador.test.ts src/app/api/juridico/movement-reviews/route.test.ts` passou; restaram apenas avisos LF/CRLF.

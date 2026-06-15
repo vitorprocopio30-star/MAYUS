@@ -850,6 +850,83 @@ describe("/api/juridico/movement-reviews", () => {
     expect(prepareProactiveMovementDraftMock).not.toHaveBeenCalled();
   });
 
+  it("aprova revisao ambigua quando humano confirma polo e obrigacao nos overrides", async () => {
+    adminFromMock.mockImplementation((table: string) => {
+      if (table === "profiles") return chain(table, { tenant_id: "tenant-1", role: "administrador" });
+      if (table === "system_event_logs") return chain(table, [{
+        ...reviewRow,
+        payload: {
+          ...reviewRow.payload,
+          polo_representado: "indeterminado",
+          obrigacao_de_quem: "indeterminada",
+        },
+      }]);
+      if (table === "process_movimentacoes") return chain(table, {
+        id: "movement-1",
+        numero_cnj: "0000001-11.2026.8.26.0100",
+        data: "2026-05-16",
+        conteudo: "Intimacao ambigua para manifestacao sobre peticao.",
+        tipo_evento: "PRAZO",
+        acao_sugerida: "Manifestar-se sobre peticao",
+        data_vencimento_extraida: "2026-05-20T00:00:00.000Z",
+        analise_json: { polo_representado: "indeterminado", obrigacao_de_quem: "indeterminada" },
+      });
+      if (table === "monitored_processes") return chain(table, {
+        id: "process-1",
+        numero_processo: "0000001-11.2026.8.26.0100",
+        cliente_nome: "Cliente Teste",
+        tribunal: "TJSP",
+        advogado_responsavel_id: "user-1",
+      });
+      return chain(table, null);
+    });
+
+    const response = await POST(request({
+      review_id: "review-1",
+      decision: "approved",
+      polo_representado: "autor",
+      obrigacao_de_quem: "escritorio",
+      note: "Confirmado manualmente pelo responsavel.",
+    }) as any);
+    const payload = await response.json();
+
+    expect(response.status).toBe(200);
+    expect(payload.ok).toBe(true);
+    expect(inserts).toEqual(expect.arrayContaining([
+      expect.objectContaining({
+        table: "process_tasks",
+        payload: expect.objectContaining({
+          tenant_id: "tenant-1",
+          andamento_1grau: "Manifestar-se sobre peticao",
+        }),
+      }),
+    ]));
+    expect(upserts).toEqual(expect.arrayContaining([
+      expect.objectContaining({
+        table: "process_prazos",
+        payload: expect.objectContaining({
+          monitored_process_id: "process-1",
+          process_task_id: "task-created-1",
+          descricao: "Manifestar-se sobre peticao",
+        }),
+      }),
+      expect.objectContaining({
+        table: "legal_movement_analysis_contracts",
+        payload: expect.objectContaining({
+          review_status: "approved",
+          human_decision: expect.objectContaining({ status: "approved" }),
+          polo_representado: "autor",
+          obrigacao_de_quem: "escritorio",
+        }),
+      }),
+    ]));
+    const finalized = updates.find((item) => item.table === "system_event_logs" && item.payload.status === "approved");
+    expect(finalized?.payload.payload.review_overrides).toEqual(expect.objectContaining({
+      polo_representado: "autor",
+      obrigacao_de_quem: "escritorio",
+    }));
+  });
+
   it("restaura pendencia quando criacao de card falha", async () => {
     adminFromMock.mockImplementation((table: string) => {
       if (table === "profiles") return chain(table, { tenant_id: "tenant-1", role: "administrador" });

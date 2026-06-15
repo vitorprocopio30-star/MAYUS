@@ -955,6 +955,141 @@ describe("analisarMovimentacao", () => {
     ]));
   });
 
+  describe("calibragem juridica com fixtures anonimizadas", () => {
+    it.each([
+      {
+        id: "fixture-intimacao-ambigua",
+        conteudo: "Intime-se. Prazo de 10 dias para manifestacao sobre documentos.",
+        expectedStatus: "review_required",
+        expectedReason: "duty_indeterminate",
+      },
+      {
+        id: "fixture-juntada-certidao",
+        conteudo: "Juntada de certidao de objeto e pe. Nada mais.",
+        expectedStatus: "none",
+        expectedReason: null,
+      },
+      {
+        id: "fixture-concluso-remessa",
+        conteudo: "Conclusos para despacho. Remessa interna certificada.",
+        expectedStatus: "none",
+        expectedReason: null,
+      },
+      {
+        id: "fixture-protocolo-decurso",
+        conteudo: "Certificado o protocolo da peticao e o decurso de prazo anterior.",
+        expectedStatus: "none",
+        expectedReason: null,
+      },
+      {
+        id: "fixture-obrigacao-parte-contraria",
+        conteudo: "Intime-se a parte re para apresentar contestacao no prazo de 15 dias uteis.",
+        expectedStatus: "none",
+        expectedReason: "opposite_party_obligation",
+      },
+    ])("nao cria tarefa indevida para $id", async ({ id, conteudo, expectedStatus, expectedReason }) => {
+      callLLMWithFallbackMock.mockResolvedValue({
+        ok: true,
+        data: {
+          choices: [{ message: { content: JSON.stringify({ gerar: false, motivo: "Fixture anonima sem acao automatica segura" }) } }],
+        },
+        usedClient: { provider: "openai", model: "test", endpoint: "https://example.test", source: "env" },
+        fallbackTrace: [],
+      });
+      const { analisarMovimentacao } = await import("./analisador");
+
+      const result = await analisarMovimentacao({
+        processo_id: "process-1",
+        numero_cnj: "0000001-11.2026.8.26.0100",
+        tenant_id: "tenant-1",
+        movimentacao: {
+          id,
+          conteudo,
+          data: "2026-05-13",
+        },
+        advogado_id: "lawyer-1",
+        escavador_movimentacao_id: id,
+        process_movimentacao_id: `pm-${id}`,
+      });
+
+      expect(result).toEqual(expect.objectContaining({
+        automation_status: expectedStatus,
+      }));
+      expect(upserts.filter((item) => item.table === "process_prazos")).toHaveLength(0);
+      expect(inserts.filter((item) => item.table === "process_tasks")).toHaveLength(0);
+
+      if (expectedReason) {
+        expect(inserts).toEqual(expect.arrayContaining([
+          expect.objectContaining({
+            table: "system_event_logs",
+            payload: expect.objectContaining({
+              event_name: "legal_movement_auto_create_blocked",
+              status: "blocked",
+              payload: expect.objectContaining({ block_reason: expectedReason }),
+            }),
+          }),
+        ]));
+      }
+    });
+
+    it.each([
+      {
+        tipo: "CITACAO",
+        conteudo: "Carta de citacao expedida sem comprovante de ciencia e sem prazo fatal confirmado.",
+        llmTipo: "citacao",
+      },
+      {
+        tipo: "SENTENCA",
+        conteudo: "Sentenca publicada. Ciencia pendente de confirmacao no diario oficial.",
+        llmTipo: "sentenca",
+      },
+      {
+        tipo: "RECURSO",
+        conteudo: "Recurso mencionado nos autos sem identificar recorrente, recorrido ou prazo fatal.",
+        llmTipo: "recurso",
+      },
+      {
+        tipo: "AUDIENCIA",
+        conteudo: "Audiencia designada, aguardando confirmacao de pauta e forma de comparecimento.",
+        llmTipo: "audiencia",
+      },
+    ])("exige revisao para $tipo sem prazo operacional seguro", async ({ tipo, conteudo, llmTipo }) => {
+      missingPrazoRuleForEvent.value = tipo;
+      callLLMWithFallbackMock.mockResolvedValue({
+        ok: true,
+        data: {
+          choices: [{ message: { content: JSON.stringify({ gerar: true, tipo: llmTipo, descricao: `Revisar ${tipo}`, motivo: "Fixture anonima sem prazo seguro" }) } }],
+        },
+        usedClient: { provider: "openai", model: "test", endpoint: "https://example.test", source: "env" },
+        fallbackTrace: [],
+      });
+      const { analisarMovimentacao } = await import("./analisador");
+
+      const result = await analisarMovimentacao({
+        processo_id: "process-1",
+        numero_cnj: "0000001-11.2026.8.26.0100",
+        tenant_id: "tenant-1",
+        movimentacao: {
+          id: `fixture-${tipo.toLowerCase()}`,
+          conteudo,
+          data: "2026-05-13",
+        },
+        advogado_id: "lawyer-1",
+        escavador_movimentacao_id: `fixture-${tipo.toLowerCase()}`,
+        process_movimentacao_id: `pm-fixture-${tipo.toLowerCase()}`,
+      });
+
+      expect(result).toEqual(expect.objectContaining({
+        automation_status: "review_required",
+        requires_human_review: true,
+        tipo_evento: tipo,
+        review_required: true,
+      }));
+      expect(upserts.filter((item) => item.table === "process_prazos")).toHaveLength(0);
+      expect(inserts.filter((item) => item.table === "process_tasks")).toHaveLength(0);
+    });
+  });
+
   it("envia arquivamento para revisao humana sem inativar automaticamente em beta", async () => {
     const { analisarMovimentacao } = await import("./analisador");
 
