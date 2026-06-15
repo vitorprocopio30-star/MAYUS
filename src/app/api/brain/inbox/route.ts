@@ -69,6 +69,15 @@ type RunRow = {
   output_payload: Record<string, unknown> | null;
 };
 
+type LegacyRunRow = Omit<RunRow, "output_payload"> & {
+  summary?: string | null;
+  output_payload?: Record<string, unknown> | null;
+};
+
+type LegacyStepRow = StepRow & {
+  error_payload?: Record<string, unknown> | null;
+};
+
 type ArtifactRow = {
   id: string;
   task_id: string;
@@ -111,6 +120,85 @@ function normalizeLimit(value: string | null, fallback: number, max: number) {
   const parsed = Number(value || fallback);
   if (!Number.isFinite(parsed) || parsed <= 0) return fallback;
   return Math.min(Math.floor(parsed), max);
+}
+
+function isMissingColumnError(error: unknown, column: string) {
+  if (!error || typeof error !== "object") return false;
+  const message = "message" in error ? String((error as { message?: unknown }).message || "") : "";
+  const code = "code" in error ? String((error as { code?: unknown }).code || "") : "";
+  return code === "42703" || message.includes(column);
+}
+
+function normalizeRunRows(rows: LegacyRunRow[] | null) {
+  return (rows || []).map((run) => ({
+    ...run,
+    output_payload: run.output_payload && typeof run.output_payload === "object"
+      ? run.output_payload
+      : run.summary
+        ? { summary: run.summary }
+        : {},
+  })) as RunRow[];
+}
+
+function errorMessageFromPayload(payload: Record<string, unknown> | null | undefined) {
+  if (!payload || typeof payload !== "object") return null;
+  const message = payload.error_message || payload.message || payload.error;
+  return typeof message === "string" && message.trim() ? message.trim() : null;
+}
+
+function normalizeStepRows(rows: LegacyStepRow[] | null) {
+  return (rows || []).map((step) => ({
+    ...step,
+    error_message: step.error_message || errorMessageFromPayload(step.error_payload),
+  })) as StepRow[];
+}
+
+async function loadRunRows(tenantId: string, taskIds: string[]) {
+  if (taskIds.length === 0) return { data: [] as RunRow[], error: null };
+
+  const result = await brainAdminSupabase
+    .from("brain_runs")
+    .select("id, task_id, status, attempt_number, created_at, updated_at, started_at, completed_at, error_message, output_payload")
+    .eq("tenant_id", tenantId)
+    .in("task_id", taskIds);
+
+  if (!isMissingColumnError(result.error, "output_payload")) {
+    return { data: normalizeRunRows(result.data as LegacyRunRow[] | null), error: result.error };
+  }
+
+  const legacyResult = await brainAdminSupabase
+    .from("brain_runs")
+    .select("id, task_id, status, attempt_number, created_at, updated_at, started_at, completed_at, error_message, summary")
+    .eq("tenant_id", tenantId)
+    .in("task_id", taskIds);
+
+  return { data: normalizeRunRows(legacyResult.data as LegacyRunRow[] | null), error: legacyResult.error };
+}
+
+async function loadStepRows(tenantId: string, taskIds: string[], stepIds: string[]) {
+  if (taskIds.length === 0 && stepIds.length === 0) return { data: [] as StepRow[], error: null };
+
+  const scopedCurrentQuery = brainAdminSupabase
+    .from("brain_steps")
+    .select("id, task_id, run_id, order_index, step_key, title, status, step_type, capability_name, handler_type, input_payload, output_payload, error_message, created_at, updated_at, started_at, completed_at")
+    .eq("tenant_id", tenantId);
+  const result = await (taskIds.length > 0
+    ? scopedCurrentQuery.in("task_id", taskIds)
+    : scopedCurrentQuery.in("id", stepIds));
+
+  if (!isMissingColumnError(result.error, "error_message")) {
+    return { data: normalizeStepRows(result.data as LegacyStepRow[] | null), error: result.error };
+  }
+
+  const scopedLegacyQuery = brainAdminSupabase
+    .from("brain_steps")
+    .select("id, task_id, run_id, order_index, step_key, title, status, step_type, capability_name, handler_type, input_payload, output_payload, error_payload, created_at, updated_at, started_at, completed_at")
+    .eq("tenant_id", tenantId);
+  const legacyResult = await (taskIds.length > 0
+    ? scopedLegacyQuery.in("task_id", taskIds)
+    : scopedLegacyQuery.in("id", stepIds));
+
+  return { data: normalizeStepRows(legacyResult.data as LegacyStepRow[] | null), error: legacyResult.error };
 }
 
 function normalizeApprovalRow(
@@ -272,26 +360,8 @@ export async function GET(req: NextRequest) {
             .eq("tenant_id", auth.context.tenantId)
             .in("id", taskIds)
         : Promise.resolve({ data: [], error: null } as { data: TaskRow[]; error: null }),
-      taskIds.length > 0
-        ? brainAdminSupabase
-            .from("brain_runs")
-            .select("id, task_id, status, attempt_number, created_at, updated_at, started_at, completed_at, error_message, output_payload")
-            .eq("tenant_id", auth.context.tenantId)
-            .in("task_id", taskIds)
-        : Promise.resolve({ data: [], error: null } as { data: RunRow[]; error: null }),
-      taskIds.length > 0
-        ? brainAdminSupabase
-            .from("brain_steps")
-            .select("id, task_id, run_id, order_index, step_key, title, status, step_type, capability_name, handler_type, input_payload, output_payload, error_message, created_at, updated_at, started_at, completed_at")
-            .eq("tenant_id", auth.context.tenantId)
-            .in("task_id", taskIds)
-        : stepIds.length > 0
-          ? brainAdminSupabase
-              .from("brain_steps")
-              .select("id, task_id, run_id, order_index, step_key, title, status, step_type, capability_name, handler_type, input_payload, output_payload, error_message, created_at, updated_at, started_at, completed_at")
-              .eq("tenant_id", auth.context.tenantId)
-              .in("id", stepIds)
-          : Promise.resolve({ data: [], error: null } as { data: StepRow[]; error: null }),
+      loadRunRows(auth.context.tenantId, taskIds),
+      loadStepRows(auth.context.tenantId, taskIds, stepIds),
       taskIds.length > 0
         ? brainAdminSupabase
             .from("brain_memories")

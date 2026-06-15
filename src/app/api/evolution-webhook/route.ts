@@ -19,6 +19,8 @@ const supabase = createClient(
 const IMMEDIATE_MEDIA_TIMEOUT_MS = 8000;
 const IMMEDIATE_AUDIO_COMMAND_TIMEOUT_MS = 25000;
 const QUEUED_REPLY_TIMEOUT_MS = 58000;
+const WHATSAPP_PROFILE_PICTURE_BUCKET = "avatars";
+const MAX_PROFILE_PICTURE_BYTES = 2 * 1024 * 1024;
 
 function verifySignature(body: string, signature: string | null): boolean {
   const secret = process.env.EVOLUTION_WEBHOOK_SECRET;
@@ -308,6 +310,60 @@ async function fetchEvolutionProfilePicture(params: {
   }
 }
 
+function profilePictureExtension(contentType: string | null, sourceUrl: string) {
+  const normalized = String(contentType || "").toLowerCase();
+  if (normalized.includes("png")) return "png";
+  if (normalized.includes("webp")) return "webp";
+  if (normalized.includes("gif")) return "gif";
+  if (/\.(png|webp|gif)(?:$|\?)/i.test(sourceUrl)) return sourceUrl.match(/\.(png|webp|gif)(?:$|\?)/i)?.[1]?.toLowerCase() || "jpg";
+  return "jpg";
+}
+
+async function cacheEvolutionProfilePicture(params: {
+  tenantId: string;
+  remoteJid: string;
+  sourceUrl: string | null;
+}) {
+  const sourceUrl = String(params.sourceUrl || "").trim();
+  if (!sourceUrl) return null;
+
+  try {
+    if (!supabase.storage?.from) return sourceUrl;
+
+    const response = await fetch(sourceUrl, {
+      headers: {
+        "User-Agent": "MAYUS WhatsApp avatar cache",
+        Accept: "image/avif,image/webp,image/apng,image/svg+xml,image/*,*/*;q=0.8",
+      },
+    });
+    const contentType = response.headers.get("content-type");
+    if (!response.ok || !String(contentType || "").toLowerCase().startsWith("image/")) {
+      return sourceUrl;
+    }
+
+    const bytes = Buffer.from(await response.arrayBuffer());
+    if (!bytes.length || bytes.length > MAX_PROFILE_PICTURE_BYTES) return sourceUrl;
+
+    const phone = cleanWhatsAppNumber(params.remoteJid) || "unknown";
+    const hash = crypto.createHash("sha1").update(sourceUrl).digest("hex").slice(0, 12);
+    const extension = profilePictureExtension(contentType, sourceUrl);
+    const storagePath = `whatsapp/${params.tenantId}/${phone}/profile-${hash}.${extension}`;
+    const bucket = supabase.storage.from(WHATSAPP_PROFILE_PICTURE_BUCKET);
+    const { error } = await bucket.upload(storagePath, bytes, {
+      upsert: true,
+      contentType: contentType || "image/jpeg",
+      cacheControl: "86400",
+    });
+    if (error) return sourceUrl;
+
+    const { data } = bucket.getPublicUrl(storagePath);
+    return data?.publicUrl || sourceUrl;
+  } catch (error) {
+    console.warn("[Evolution Webhook] Nao foi possivel cachear foto do contato:", error);
+    return sourceUrl;
+  }
+}
+
 export async function POST(req: Request) {
   try {
     const rawBody = await req.text();
@@ -417,12 +473,13 @@ export async function POST(req: Request) {
         return NextResponse.json({ success: true, updated: Boolean(messageId) });
       }
 
-      const aiFeatures = !fromMe && messageType === "audio"
+      const aiFeatures = !fromMe
         ? await fetchTenantAiFeatures(tenantId)
         : {};
-      const isOwnerAudioCommandCandidate = !fromMe
-        && messageType === "audio"
+      const isOwnerSender = !fromMe
         && isAuthorizedWhatsAppCommandSender({ senderPhone: remoteJid, aiFeatures });
+      const isOwnerMediaSender = isOwnerSender && isSupportedMedia;
+      const isOwnerAudioCommandCandidate = isOwnerMediaSender && messageType === "audio";
 
       if (!fromMe) {
         await markEvolutionMessageAsRead({ tenantId, remoteJid, messageId });
@@ -442,10 +499,15 @@ export async function POST(req: Request) {
         }
       }
 
-      const avatarUrl = await fetchEvolutionProfilePicture({
+      const evolutionAvatarUrl = await fetchEvolutionProfilePicture({
         tenantId,
         instanceName,
         remoteJid,
+      });
+      const avatarUrl = await cacheEvolutionProfilePicture({
+        tenantId,
+        remoteJid,
+        sourceUrl: evolutionAvatarUrl,
       });
 
       // 2. Verificar/Criar o Contato (Lead/Cliente)
@@ -481,22 +543,37 @@ export async function POST(req: Request) {
          await supabase.from("whatsapp_contacts").update({
             last_message_at: new Date().toISOString(),
             unread_count: fromMe ? 0 : 1, // Se foi do cliente, marca 1 (simplificado)
-            ...(avatarUrl && !contact?.profile_pic_url ? { profile_pic_url: avatarUrl } : {}),
-          }).eq("id", contactId);
+            ...(avatarUrl && avatarUrl !== contact?.profile_pic_url ? { profile_pic_url: avatarUrl } : {}),
+         }).eq("id", contactId);
       }
 
+      const ownerReplyMetadata = isOwnerSender ? {
+        owner_sender: true,
+        reply_actor_role: "office_operator",
+        reply_delivery_profile: "office_operator_instant",
+        delivery_profile: "office_operator_instant",
+        humanize_delivery: false,
+        humanize_delivery_mode: "none",
+      } : {};
+
       const messageMetadata = isSupportedMedia ? {
+        ...ownerReplyMetadata,
         provider_media_id: messageId || null,
         media_kind: messageType,
         webhook_trigger: "evolution_webhook",
         evolution_instance: instanceName,
         evolution_message_envelope: messageEnvelope,
         evolution_message_payload: messagePayload,
+        owner_media_sender: isOwnerMediaSender,
+        media_ack_policy: isOwnerMediaSender ? "owner_direct_conversation" : "external_ack_then_process",
         ...(isOwnerAudioCommandCandidate ? {
           owner_audio_command_attempted: true,
           owner_audio_command_mode: "try_internal_then_conversation",
         } : {}),
-      } : { reply_trigger: "evolution_webhook" };
+      } : {
+        reply_trigger: "evolution_webhook",
+        ...ownerReplyMetadata,
+      };
 
       // 3. Salvar a Mensagem
       const { data: savedMessage, error: msgErr } = await supabase
@@ -589,12 +666,16 @@ export async function POST(req: Request) {
                   });
 
                   try {
-                    await sendEvolutionPresence({ tenantId, remoteJid, presence: "composing", delayMs: 1200 });
+                    if (!isOwnerSender) {
+                      await sendEvolutionPresence({ tenantId, remoteJid, presence: "composing", delayMs: 1200 });
+                    }
                     await processQueuedReply({ messageId: savedMessage.id });
                   } catch (replyError) {
                     console.error("[Evolution Webhook] Erro ao processar audio transcrito como conversa:", replyError);
                   } finally {
-                    await sendEvolutionPresence({ tenantId, remoteJid, presence: "paused" });
+                    if (!isOwnerSender) {
+                      await sendEvolutionPresence({ tenantId, remoteJid, presence: "paused" });
+                    }
                   }
                   return NextResponse.json({
                     success: true,
@@ -643,7 +724,7 @@ export async function POST(req: Request) {
             }
 
             try {
-              if (!(messageType === "audio" && mediaAlreadyProcessed)) {
+              if (!isOwnerMediaSender && !(messageType === "audio" && mediaAlreadyProcessed)) {
                 await sendImmediateMediaAck({
                   tenantId,
                   contactId,
@@ -665,6 +746,37 @@ export async function POST(req: Request) {
               } catch (mediaError) {
                 console.error("[Evolution Webhook] Erro ao processar midia imediata:", mediaError);
               }
+            }
+
+            if (isOwnerMediaSender && messageType !== "audio") {
+              await enqueueWhatsAppReply({
+                supabase,
+                trigger: "evolution_webhook",
+                messageId: savedMessage.id,
+                preferredProvider: "evolution",
+              });
+
+              try {
+                await processQueuedReply({ messageId: savedMessage.id });
+              } catch (replyError) {
+                console.error("[Evolution Webhook] Erro ao processar midia do dono como conversa:", replyError);
+              }
+
+              await supabase.from("notifications").insert([{
+                tenant_id: tenantId,
+                user_id: null,
+                title: `WhatsApp: ${pushName}`,
+                message: `${content.substring(0, 100)} Midia do operador roteada para o agente V2.`.slice(0, 180),
+                type: "info",
+                link_url: "/dashboard/conversas/whatsapp",
+              }]);
+
+              return NextResponse.json({
+                success: true,
+                owner_media: true,
+                routed_to_conversation: true,
+                pending_media: true,
+              });
             }
           }
 
@@ -710,12 +822,16 @@ export async function POST(req: Request) {
           });
 
           try {
-            await sendEvolutionPresence({ tenantId, remoteJid, presence: "composing", delayMs: 8000 });
+            if (!isOwnerSender) {
+              await sendEvolutionPresence({ tenantId, remoteJid, presence: "composing", delayMs: 8000 });
+            }
             await processQueuedReply({ messageId: savedMessage.id });
           } catch (replyError) {
             console.error("[Evolution Webhook] Erro ao processar resposta agentica enfileirada:", replyError);
           } finally {
-            await sendEvolutionPresence({ tenantId, remoteJid, presence: "paused" });
+            if (!isOwnerSender) {
+              await sendEvolutionPresence({ tenantId, remoteJid, presence: "paused" });
+            }
           }
         }
       }

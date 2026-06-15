@@ -1,39 +1,50 @@
 import { NextResponse } from "next/server";
-import { createClient } from "@/lib/supabase/server";
+import { supabaseAdmin } from "@/lib/supabase/admin";
+
+function safeString(value: unknown, maxLength = 500) {
+  if (typeof value !== "string") return null;
+  const normalized = value.trim();
+  if (!normalized) return null;
+  return normalized
+    .replace(/(password|senha|token|secret|key)\s*[:=]\s*[^,\s]+/gi, "$1=[redacted]")
+    .slice(0, maxLength);
+}
+
+function firstIp(req: Request) {
+  const forwardedFor = req.headers.get("x-forwarded-for");
+  const candidate = forwardedFor?.split(",")[0]?.trim() || req.headers.get("x-real-ip") || "0.0.0.0";
+  return safeString(candidate, 80) || "0.0.0.0";
+}
 
 export async function POST(req: Request) {
   try {
     const { email, success, userId, tenantId, errorMsg } = await req.json();
-    const supabase = createClient();
-    
-    // Captura metadados do navegador e rede do Edge
-    const ip = req.headers.get("x-forwarded-for") || req.headers.get("x-real-ip") || "0.0.0.0";
-    const userAgent = req.headers.get("user-agent") || "Unknown";
+    const ip = firstIp(req);
+    const userAgent = safeString(req.headers.get("user-agent"), 300) || "Unknown";
 
-    // Insere no nosso Banco de Auditoria protegido
     const action = success ? "LOGIN_SUCCESS" : "LOGIN_FAILED";
-    
-    const { error: logError } = await supabase
+
+    const { error: logError } = await supabaseAdmin
       .from("audit_logs")
       .insert({
-        tenant_id: tenantId || null,
-        actor_id: userId || null, 
+        tenant_id: safeString(tenantId, 80),
+        actor_id: safeString(userId, 80),
         action: action,
         entity: "auth",
         ip_address: ip,
         user_agent: userAgent,
         new_data: {
-          email_attempt: email,
-          error_message: errorMsg || null
+          email_attempt: safeString(email, 320),
+          error_message: safeString(errorMsg),
         }
       });
 
     if (logError) {
-      console.error("Erro gravando Audit Log:", logError);
-      return NextResponse.json({ error: "Log failed" }, { status: 500 });
+      console.warn("[audit/login] log insert failed", logError.message);
+      return NextResponse.json({ success: true, audit_logged: false });
     }
 
-    return NextResponse.json({ success: true });
+    return NextResponse.json({ success: true, audit_logged: true });
   } catch (err) {
     return NextResponse.json({ error: "Invalid request" }, { status: 400 });
   }

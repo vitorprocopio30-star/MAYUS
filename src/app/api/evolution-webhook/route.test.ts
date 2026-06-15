@@ -45,18 +45,33 @@ vi.mock("@supabase/supabase-js", () => ({
   createClient: createClientMock,
 }));
 
-function buildSupabaseMock() {
+function buildSupabaseMock(options: { contact?: any } = {}) {
   const messageInserts: unknown[] = [];
   const contactInserts: unknown[] = [];
+  const contactUpdates: unknown[] = [];
   const messageUpdates: unknown[] = [];
   const messageRows: Record<string, any> = {};
   const notificationInserts: unknown[] = [];
+  const storageUploads: unknown[] = [];
   return {
     messageInserts,
     contactInserts,
+    contactUpdates,
     messageUpdates,
     messageRows,
     notificationInserts,
+    storageUploads,
+    storage: {
+      from: vi.fn(() => ({
+        upload: vi.fn(async (path: string, _bytes: unknown, options: unknown) => {
+          storageUploads.push({ path, options });
+          return { data: { path }, error: null };
+        }),
+        getPublicUrl: vi.fn((path: string) => ({
+          data: { publicUrl: `https://storage.example.com/${path}` },
+        })),
+      })),
+    },
     from: vi.fn((table: string) => {
       if (table === "tenant_integrations") {
         return {
@@ -93,7 +108,7 @@ function buildSupabaseMock() {
           select: vi.fn(() => ({
             eq: vi.fn(() => ({
               eq: vi.fn(() => ({
-                single: vi.fn(async () => ({ data: null })),
+                single: vi.fn(async () => ({ data: options.contact || null })),
               })),
             })),
           })),
@@ -105,7 +120,10 @@ function buildSupabaseMock() {
               }),
             })),
           })),
-          update: vi.fn(() => ({ eq: vi.fn(async () => ({ error: null })) })),
+          update: vi.fn((values: unknown) => {
+            contactUpdates.push(values);
+            return { eq: vi.fn(async () => ({ error: null })) };
+          }),
         };
       }
 
@@ -252,6 +270,100 @@ describe("/api/evolution-webhook", () => {
     }));
   });
 
+  it("renova foto de perfil vencida em contato Evolution existente", async () => {
+    supabaseMock = buildSupabaseMock({
+      contact: {
+        id: "contact-1",
+        profile_pic_url: "https://pps.whatsapp.net/old-expired-avatar.jpg",
+      },
+    });
+    createClientMock.mockReturnValue(supabaseMock);
+    handleWhatsAppInternalCommandMock.mockResolvedValue({ handled: false });
+
+    const { POST } = await import("./route");
+    const request = new Request("http://localhost/api/evolution-webhook", {
+      method: "POST",
+      body: JSON.stringify({
+        event: "MESSAGES_UPSERT",
+        instance: "mayus-dutra",
+        data: {
+          key: {
+            remoteJid: "5521999990000@s.whatsapp.net",
+            fromMe: false,
+            id: "msg-avatar-refresh-1",
+          },
+          pushName: "Cliente Teste",
+          message: {
+            conversation: "Boa tarde",
+          },
+        },
+      }),
+    });
+
+    const response = await POST(request);
+    const body = await response.json();
+
+    expect(response.status).toBe(200);
+    expect(body.success).toBe(true);
+    expect(supabaseMock.contactUpdates).toEqual([
+      expect.objectContaining({
+        profile_pic_url: "https://cdn.example/avatar.jpg",
+      }),
+    ]);
+  });
+
+  it("cacheia foto de perfil valida no Storage antes de salvar no contato", async () => {
+    supabaseMock = buildSupabaseMock({
+      contact: {
+        id: "contact-1",
+        profile_pic_url: "https://pps.whatsapp.net/old-expired-avatar.jpg",
+      },
+    });
+    createClientMock.mockReturnValue(supabaseMock);
+    handleWhatsAppInternalCommandMock.mockResolvedValue({ handled: false });
+    global.fetch = vi.fn(async (url: string) => {
+      if (String(url).includes("/chat/fetchProfilePictureUrl/")) {
+        return new Response(JSON.stringify({ profilePictureUrl: "https://cdn.example/avatar.jpg" }), { status: 200 });
+      }
+      return new Response(new Uint8Array([1, 2, 3, 4]), {
+        status: 200,
+        headers: { "content-type": "image/jpeg" },
+      });
+    }) as any;
+
+    const { POST } = await import("./route");
+    const request = new Request("http://localhost/api/evolution-webhook", {
+      method: "POST",
+      body: JSON.stringify({
+        event: "MESSAGES_UPSERT",
+        instance: "mayus-dutra",
+        data: {
+          key: {
+            remoteJid: "5521999990000@s.whatsapp.net",
+            fromMe: false,
+            id: "msg-avatar-cache-1",
+          },
+          pushName: "Cliente Teste",
+          message: {
+            conversation: "Boa tarde",
+          },
+        },
+      }),
+    });
+
+    const response = await POST(request);
+
+    expect(response.status).toBe(200);
+    expect(supabaseMock.storageUploads[0]).toEqual(expect.objectContaining({
+      path: expect.stringMatching(/^whatsapp\/tenant-1\/5521999990000\/profile-[a-f0-9]{12}\.jpg$/),
+    }));
+    expect(supabaseMock.contactUpdates).toEqual([
+      expect.objectContaining({
+        profile_pic_url: expect.stringMatching(/^https:\/\/storage\.example\.com\/whatsapp\/tenant-1\/5521999990000\/profile-[a-f0-9]{12}\.jpg$/),
+      }),
+    ]);
+  });
+
   it("atualiza messages.update sem inserir mensagem duplicada", async () => {
     const { POST } = await import("./route");
     const request = new Request("http://localhost/api/evolution-webhook", {
@@ -331,7 +443,7 @@ describe("/api/evolution-webhook", () => {
         instance: "mayus-dutra",
         data: {
           key: {
-            remoteJid: "5521999990000@s.whatsapp.net",
+            remoteJid: "5511888887777@s.whatsapp.net",
             fromMe: false,
             id: "msg-media-1",
           },
@@ -373,7 +485,7 @@ describe("/api/evolution-webhook", () => {
     expect(sendWhatsAppMessageMock).toHaveBeenCalledWith(expect.objectContaining({
       tenantId: "tenant-1",
       contactId: "contact-1",
-      phoneNumber: "5521999990000@s.whatsapp.net",
+      phoneNumber: "5511888887777@s.whatsapp.net",
       preferredProvider: "evolution",
       text: expect.stringContaining("Recebi a imagem"),
       metadata: expect.objectContaining({
@@ -397,7 +509,79 @@ describe("/api/evolution-webhook", () => {
     expect(prepareWhatsAppSalesReplyForContactMock).not.toHaveBeenCalled();
     expect(enqueueWhatsAppReplyMock).not.toHaveBeenCalled();
     expect(processPendingWhatsAppRepliesBatchMock).not.toHaveBeenCalled();
-    expect(global.fetch).toHaveBeenCalledTimes(1);
+    expect(global.fetch).toHaveBeenCalledWith(
+      "http://evolution.local/chat/fetchProfilePictureUrl/mayus-dutra",
+      expect.objectContaining({ method: "POST" }),
+    );
+  });
+
+  it("midia visual do dono autorizado vai direto para conversa agentica sem ACK generico", async () => {
+    processPendingWhatsAppMediaBatchMock.mockImplementationOnce(async ({ messageId }: { messageId: string }) => {
+      supabaseMock.messageRows[messageId] = {
+        ...(supabaseMock.messageRows[messageId] || {}),
+        media_summary: "Print de processo com CNJ 0811126-78.2025.8.19.0213.",
+        metadata: {
+          ...(supabaseMock.messageRows[messageId]?.metadata || {}),
+          media_processed_at: "2026-05-06T12:00:00.000Z",
+        },
+      };
+      return { picked: 1, processed: 1, failed: 0, replies_prepared: 0, results: [] };
+    });
+
+    const { POST } = await import("./route");
+    const request = new Request("http://localhost/api/evolution-webhook", {
+      method: "POST",
+      body: JSON.stringify({
+        event: "MESSAGES_UPSERT",
+        instance: "mayus-dutra",
+        data: {
+          key: {
+            remoteJid: "5521999990000@s.whatsapp.net",
+            fromMe: false,
+            id: "msg-owner-image-1",
+          },
+          pushName: "Dono Teste",
+          message: {
+            imageMessage: {
+              caption: "Confere esse processo",
+              mimetype: "image/jpeg",
+              fileName: "processo.jpg",
+              mediaKey: "media-key",
+            },
+          },
+        },
+      }),
+    });
+
+    const response = await POST(request);
+    const body = await response.json();
+
+    expect(response.status).toBe(200);
+    expect(body).toEqual({
+      success: true,
+      owner_media: true,
+      routed_to_conversation: true,
+      pending_media: true,
+    });
+    expect(sendWhatsAppMessageMock).not.toHaveBeenCalledWith(expect.objectContaining({
+      metadata: expect.objectContaining({ source: "immediate_media_ack" }),
+    }));
+    expect(enqueueWhatsAppReplyMock).toHaveBeenCalledWith(expect.objectContaining({
+      messageId: "message-1",
+      preferredProvider: "evolution",
+    }));
+    expect(processPendingWhatsAppRepliesBatchMock).toHaveBeenCalledWith(expect.objectContaining({
+      messageId: "message-1",
+      limit: 1,
+    }));
+    expect(supabaseMock.messageInserts).toEqual([
+      expect.objectContaining({
+        metadata: expect.objectContaining({
+          owner_media_sender: true,
+          media_ack_policy: "owner_direct_conversation",
+        }),
+      }),
+    ]);
   });
 
   it("transcreve audio antes do ACK e roteia comando interno quando for pedido MAYUS", async () => {
@@ -704,7 +888,7 @@ describe("/api/evolution-webhook", () => {
         instance: "mayus-dutra",
         data: {
           key: {
-            remoteJid: "5521999990000@s.whatsapp.net",
+            remoteJid: "5511888887777@s.whatsapp.net",
             fromMe: false,
             id: "msg-pdf-1",
           },
@@ -739,7 +923,7 @@ describe("/api/evolution-webhook", () => {
         instance: "mayus-dutra",
         data: {
           key: {
-            remoteJid: "5521999990000@s.whatsapp.net",
+            remoteJid: "5511888887777@s.whatsapp.net",
             fromMe: false,
             id: "msg-text-2",
           },
@@ -771,6 +955,56 @@ describe("/api/evolution-webhook", () => {
       presence: "paused",
     }));
     expect(prepareWhatsAppSalesReplyForContactMock).not.toHaveBeenCalled();
+  }, 10_000);
+
+  it("nao usa composing artificial para texto do dono autorizado", async () => {
+    handleWhatsAppInternalCommandMock.mockResolvedValue({ handled: false });
+    const { POST } = await import("./route");
+    const request = new Request("http://localhost/api/evolution-webhook", {
+      method: "POST",
+      body: JSON.stringify({
+        event: "MESSAGES_UPSERT",
+        instance: "mayus-dutra",
+        data: {
+          key: {
+            remoteJid: "5521999990000@s.whatsapp.net",
+            fromMe: false,
+            id: "msg-owner-text-1",
+          },
+          pushName: "Dono Teste",
+          message: {
+            conversation: "Quero saber sobre o processo e se teve alguma venda hoje",
+          },
+        },
+      }),
+    });
+
+    const response = await POST(request);
+    const presences = sendEvolutionPresenceMock.mock.calls.map((call) => call[0]?.presence);
+
+    expect(response.status).toBe(200);
+    expect(enqueueWhatsAppReplyMock).toHaveBeenCalledWith(expect.objectContaining({
+      messageId: "message-1",
+      trigger: "evolution_webhook",
+      preferredProvider: "evolution",
+    }));
+    expect(processPendingWhatsAppRepliesBatchMock).toHaveBeenCalledWith(expect.objectContaining({
+      messageId: "message-1",
+      limit: 1,
+    }));
+    expect(presences).toContain("available");
+    expect(presences).not.toContain("composing");
+    expect(presences).not.toContain("paused");
+    expect(supabaseMock.messageInserts).toEqual([
+      expect.objectContaining({
+        metadata: expect.objectContaining({
+          owner_sender: true,
+          reply_actor_role: "office_operator",
+          reply_delivery_profile: "office_operator_instant",
+          humanize_delivery: false,
+        }),
+      }),
+    ]);
   });
 
   it("enfileira pedido de contracheque para resposta agentica sem fast-path deterministico", async () => {

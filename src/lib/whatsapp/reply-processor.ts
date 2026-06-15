@@ -21,6 +21,7 @@ type ProcessWhatsAppReplyBatchParams = {
   supabase: SupabaseClient;
   limit?: number;
   messageId?: string | null;
+  tenantId?: string | null;
 };
 
 function normalizeLimit(value: number | null | undefined) {
@@ -43,6 +44,22 @@ function truncateError(value: string | null | undefined) {
 
 function replyTrigger(row: PendingWhatsAppReplyMessage): WhatsAppReplyTrigger {
   return row.metadata?.reply_trigger === "meta_webhook" ? "meta_webhook" : "evolution_webhook";
+}
+
+function isOfficeOperatorInstantReply(row: PendingWhatsAppReplyMessage) {
+  const metadata = row.metadata || {};
+  const actorContext = metadata.actor_context
+    || metadata.whatsapp_actor_context
+    || metadata.mayus_operating_partner?.actor_context
+    || metadata.mayus_operating_partner?.whatsapp_actor_context
+    || null;
+
+  return metadata.owner_sender === true
+    || metadata.owner_media_sender === true
+    || metadata.reply_actor_role === "office_operator"
+    || metadata.reply_delivery_profile === "office_operator_instant"
+    || metadata.delivery_profile === "office_operator_instant"
+    || actorContext?.role === "office_operator";
 }
 
 async function runWithEvolutionTypingPulse<T>(params: {
@@ -635,7 +652,9 @@ async function processOneReply(params: {
     const preferredProvider = params.row.metadata?.reply_preferred_provider === "meta_cloud" || params.row.metadata?.reply_preferred_provider === "evolution"
       ? params.row.metadata.reply_preferred_provider
       : null;
-    const shouldSignalEvolutionTyping = replyTrigger(params.row) === "evolution_webhook" && preferredProvider !== "meta_cloud";
+    const shouldSignalEvolutionTyping = replyTrigger(params.row) === "evolution_webhook"
+      && preferredProvider !== "meta_cloud"
+      && !isOfficeOperatorInstantReply(params.row);
 
     let prepared: Awaited<ReturnType<typeof prepareWhatsAppSalesReplyForContact>>;
     prepared = await runWithEvolutionTypingPulse({
@@ -782,6 +801,10 @@ export async function processPendingWhatsAppRepliesBatch(params: ProcessWhatsApp
     .order("created_at", { ascending: true })
     .limit(normalizeLimit(params.limit));
 
+  if (params.tenantId) {
+    query = query.eq("tenant_id", params.tenantId);
+  }
+
   if (params.messageId) {
     query = query.eq("id", params.messageId);
   }
@@ -791,7 +814,7 @@ export async function processPendingWhatsAppRepliesBatch(params: ProcessWhatsApp
 
   let staleProcessingRows: PendingWhatsAppReplyMessage[] = [];
   if (!params.messageId) {
-    const { data: processingData, error: processingError } = await params.supabase
+    let processingQuery = params.supabase
       .from("whatsapp_messages")
       .select("id, tenant_id, contact_id, direction, media_processing_status, metadata, created_at")
       .eq("direction", "inbound")
@@ -799,18 +822,30 @@ export async function processPendingWhatsAppRepliesBatch(params: ProcessWhatsApp
       .order("created_at", { ascending: true })
       .limit(normalizeLimit(params.limit));
 
+    if (params.tenantId) {
+      processingQuery = processingQuery.eq("tenant_id", params.tenantId);
+    }
+
+    const { data: processingData, error: processingError } = await processingQuery;
+
     if (processingError) throw processingError;
     staleProcessingRows = ((processingData || []) as PendingWhatsAppReplyMessage[])
       .filter((row) => row.media_processing_status !== "pending")
       .filter(isStaleProcessingReply);
   } else if (!data?.length) {
-    const { data: processingData, error: processingError } = await params.supabase
+    let processingQuery = params.supabase
       .from("whatsapp_messages")
       .select("id, tenant_id, contact_id, direction, media_processing_status, metadata, created_at")
       .eq("id", params.messageId)
       .eq("direction", "inbound")
       .eq("metadata->>reply_processing_status", "processing")
       .limit(1);
+
+    if (params.tenantId) {
+      processingQuery = processingQuery.eq("tenant_id", params.tenantId);
+    }
+
+    const { data: processingData, error: processingError } = await processingQuery;
 
     if (processingError) throw processingError;
     staleProcessingRows = ((processingData || []) as PendingWhatsAppReplyMessage[])

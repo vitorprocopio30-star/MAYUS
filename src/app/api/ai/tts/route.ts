@@ -106,25 +106,17 @@ export async function GET(req: NextRequest) {
 
     // 4. Execução condicional: ElevenLabs
     if (provider === "elevenlabs") {
-      // Tenta pegar do Ambiente primeiro (Global/Fallback)
-      let apiKey = process.env.ELEVENLABS_API_KEY;
-      let voiceId = process.env.ELEVENLABS_VOICE_ID;
+      // Usa Voice ID do tenant antes de qualquer fallback global.
+      const integration = await getTenantIntegrationResolved(tenantId, "elevenlabs");
+      const apiKey = integration?.api_key || process.env.ELEVENLABS_API_KEY;
+      const voiceId = voiceParam || integration?.instance_name || (!integration ? process.env.ELEVENLABS_VOICE_ID : null);
 
       // Se não houver no ambiente, busca no Banco Integration (Tenant-specific)
       if (!apiKey || !voiceId) {
-        const integration = await getTenantIntegrationResolved(tenantId, "elevenlabs");
-        
-        if (integration?.api_key) apiKey = integration.api_key;
-        if (integration?.instance_name) voiceId = integration.instance_name;
+        return NextResponse.json({ error: "ElevenLabs API Key ou Voice ID da MAYUSOrb ausentes." }, { status: 400 });
       }
 
-      if (!apiKey || !voiceId) {
-        return NextResponse.json({ error: "ElevenLabs API Key ou Voice ID ausentes (Ambiente/Banco)." }, { status: 400 });
-      }
-
-      const elevenVoiceId = voiceParam || voiceId;
-
-      const response = await fetch(`https://api.elevenlabs.io/v1/text-to-speech/${elevenVoiceId}?output_format=mp3_44100_128`, {
+      const response = await fetch(`https://api.elevenlabs.io/v1/text-to-speech/${voiceId}?output_format=mp3_44100_128`, {
         method: "POST",
         headers: {
           "xi-api-key": apiKey,

@@ -37,6 +37,51 @@ async function countQueue(tenantId: string, status: string) {
   return count ?? 0;
 }
 
+async function loadQueueLeaseHealth(tenantId: string) {
+  const { data, error } = await supabaseAdmin
+    .from("process_update_queue")
+    .select("id, status, attempt_count, locked_at, lock_expires_at, locked_by, next_retry_at, last_error, dead_lettered_at, created_at, processed_at")
+    .eq("tenant_id", tenantId)
+    .order("created_at", { ascending: false, nullsFirst: false })
+    .limit(200);
+
+  if (error) {
+    const message = String(error.message || "");
+    const schemaMissing = String((error as { code?: string }).code || "") === "42703"
+      || message.includes("attempt_count")
+      || message.includes("lock_expires_at")
+      || message.includes("dead_lettered_at");
+    return schemaMissing ? { schema: "legacy" as const } : { schema: "unknown" as const, error: message };
+  }
+
+  const rows = data || [];
+  const retryScheduled = rows.filter((row) => row.status === "PENDENTE" && row.next_retry_at).length;
+  const deadLettered = rows.filter((row) => row.dead_lettered_at).length;
+  const locked = rows.filter((row) => row.status === "PROCESSANDO" && row.lock_expires_at).length;
+  const lastErrorRow = rows.find((row) => row.last_error);
+  const maxAttempt = rows.reduce((max, row) => Math.max(max, Number(row.attempt_count || 0)), 0);
+
+  return {
+    schema: "formal" as const,
+    retryScheduled,
+    deadLettered,
+    locked,
+    maxAttempt,
+    lastError: lastErrorRow?.last_error || null,
+    lastErrorAt: lastErrorRow?.processed_at || lastErrorRow?.created_at || null,
+    oldestLockExpiresAt: rows
+      .filter((row) => row.status === "PROCESSANDO" && row.lock_expires_at)
+      .sort((a, b) => new Date(String(a.lock_expires_at)).getTime() - new Date(String(b.lock_expires_at)).getTime())[0]?.lock_expires_at || null,
+  };
+}
+
+function queueAgeMinutes(value?: string | null) {
+  if (!value) return null;
+  const time = new Date(value).getTime();
+  if (!Number.isFinite(time)) return null;
+  return Math.max(0, Math.floor((Date.now() - time) / 60000));
+}
+
 export async function GET(req: NextRequest) {
   let session;
   try {
@@ -57,7 +102,11 @@ export async function GET(req: NextRequest) {
     pendingCount,
     processingCount,
     errorCount,
+    completedCount,
     latestQueueRes,
+    oldestPendingRes,
+    latestCreatedQueueRes,
+    leaseHealth,
   ] = await Promise.all([
     supabaseAdmin
       .from("process_movimentacoes")
@@ -80,6 +129,7 @@ export async function GET(req: NextRequest) {
     countQueue(tenantId, "PENDENTE"),
     countQueue(tenantId, "PROCESSANDO"),
     countQueue(tenantId, "ERRO"),
+    countQueue(tenantId, "CONCLUIDO"),
     supabaseAdmin
       .from("process_update_queue")
       .select("id, numero_cnj, status, processed_at, created_at")
@@ -88,6 +138,22 @@ export async function GET(req: NextRequest) {
       .order("processed_at", { ascending: false, nullsFirst: false })
       .limit(1)
       .maybeSingle(),
+    supabaseAdmin
+      .from("process_update_queue")
+      .select("id, numero_cnj, evento, status, created_at")
+      .eq("tenant_id", tenantId)
+      .eq("status", "PENDENTE")
+      .order("created_at", { ascending: true, nullsFirst: false })
+      .limit(1)
+      .maybeSingle(),
+    supabaseAdmin
+      .from("process_update_queue")
+      .select("id, numero_cnj, evento, status, created_at")
+      .eq("tenant_id", tenantId)
+      .order("created_at", { ascending: false, nullsFirst: false })
+      .limit(1)
+      .maybeSingle(),
+    loadQueueLeaseHealth(tenantId),
   ]);
 
   if (movimentacoesRes.error) {
@@ -106,12 +172,24 @@ export async function GET(req: NextRequest) {
   const movementInboxRecords = inboxRes.data || [];
   const latestMovement = movementRecords[0] || null;
   const latestInbox = movementInboxRecords[0] || null;
+  const oldestPendingAgeMinutes = queueAgeMinutes(oldestPendingRes.data?.created_at || null);
   const latestReceivedAt = maxIso([
     latestMovement?.created_at,
     latestMovement?.data,
     latestInbox?.latest_created_at,
     latestInbox?.latest_data,
+    latestCreatedQueueRes.data?.created_at,
   ]);
+  const pending = pendingCount ?? 0;
+  const processing = processingCount ?? 0;
+  const errors = errorCount ?? 0;
+  const queueStatus = errors > 0
+    ? "needs_attention"
+    : oldestPendingAgeMinutes !== null && oldestPendingAgeMinutes >= 10
+      ? "blocked"
+      : pending > 0 || processing > 0
+        ? "working"
+        : "healthy";
 
   return NextResponse.json({
     movementRecords,
@@ -125,11 +203,26 @@ export async function GET(req: NextRequest) {
       latestInboxCreatedAt: latestInbox?.latest_created_at || null,
       latestReceivedAt,
       queue: {
-        pending: pendingCount,
-        processing: processingCount,
-        error: errorCount,
+        pending,
+        processing,
+        error: errors,
+        completed: completedCount ?? 0,
         lastProcessedAt: latestQueueRes.data?.processed_at || null,
         lastProcessedProcess: latestQueueRes.data?.numero_cnj || null,
+        lastReceivedAt: latestCreatedQueueRes.data?.created_at || null,
+        lastReceivedProcess: latestCreatedQueueRes.data?.numero_cnj || null,
+        oldestPendingAt: oldestPendingRes.data?.created_at || null,
+        oldestPendingProcess: oldestPendingRes.data?.numero_cnj || null,
+        oldestPendingAgeMinutes,
+        leaseSchema: leaseHealth.schema,
+        retryScheduled: "retryScheduled" in leaseHealth ? leaseHealth.retryScheduled : null,
+        deadLettered: "deadLettered" in leaseHealth ? leaseHealth.deadLettered : null,
+        locked: "locked" in leaseHealth ? leaseHealth.locked : null,
+        maxAttempt: "maxAttempt" in leaseHealth ? leaseHealth.maxAttempt : null,
+        lastError: "lastError" in leaseHealth ? leaseHealth.lastError : null,
+        lastErrorAt: "lastErrorAt" in leaseHealth ? leaseHealth.lastErrorAt : null,
+        oldestLockExpiresAt: "oldestLockExpiresAt" in leaseHealth ? leaseHealth.oldestLockExpiresAt : null,
+        status: queueStatus,
       },
     },
   });

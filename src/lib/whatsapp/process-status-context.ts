@@ -372,6 +372,19 @@ function scoreProcessChoiceMatch(task: ProcessTaskRow, reference?: string | null
   return score;
 }
 
+function extractExplicitChoiceEntity(value?: string | null) {
+  const text = normalizeText(value);
+  if (!text) return null;
+  const bankReference = text.match(/\b(?:banco\s+)?(?:master|bradesco|itau|ita[uú]|santander|pan|bmg|c6|safra|mercantil|daycoval|ole|ol[eé]|caixa)\b/);
+  if (bankReference?.[0]) {
+    const value = bankReference[0].replace(/^banco\s+/, "").trim();
+    if (value === "caixa") return "Caixa";
+    return `Banco ${value.split(/\s+/).map((part) => `${part.charAt(0).toUpperCase()}${part.slice(1)}`).join(" ")}`;
+  }
+  const entityReference = text.match(/\b(?:inss|fgts|previdencia|previdência)\b/);
+  return entityReference?.[0] ? entityReference[0].toUpperCase() : null;
+}
+
 function rankProcessTasksByChoice(tasks: ProcessTaskRow[], reference?: string | null) {
   if (!reference || tasks.length <= 1) return tasks;
   const ranked = tasks
@@ -408,6 +421,7 @@ function lastMessageLooksLikeName(value?: string | null) {
   const text = cleanText(value) || "";
   const normalized = normalizeText(text);
   if (!normalized || isNaturalPureGreetingText(text)) return false;
+  if (isOwnerReplyNudgeText(text)) return false;
   if (/\d|@|processo|cnj|cpf|cnpj|boa noite|bom dia|boa tarde|oi|ola/.test(normalized)) return false;
   const words = text.split(/\s+/).filter(Boolean);
   return words.length >= 2 && words.length <= 8 && words.every((word) => /^[A-Za-zÀ-ÿ'’-]{2,}$/.test(word));
@@ -419,6 +433,14 @@ function isNameLookupFollowupText(value?: string | null) {
   return /\bpelo nome\b|\bpor nome\b|consegue.{0,30}\bnome\b|consigo.{0,30}\bnome\b|busc(a|ar|ando).{0,30}\bnome\b|procur(a|ar).{0,30}\bnome\b|localiz(a|ar).{0,30}\bnome\b|acha(r)?.{0,30}\bnome\b/.test(text);
 }
 
+function isOwnerReplyNudgeText(value?: string | null) {
+  const text = normalizeText(value)
+    .replace(/[?!.,;:]+/g, " ")
+    .replace(/\s+/g, " ")
+    .trim();
+  return /^(pode me responder|me responde|me responda|responde|responder|me fala|me diga|cade|cad[eÃª]|e ai|e a[iÃ­]|conseguiu|viu|retorna pra mim|retorno)$/.test(text);
+}
+
 function previousAskedForProcessIdentifier(messages: WhatsAppSalesMessage[]) {
   const previous = previousMessages(messages).slice(-6);
   const text = normalizeText(previous.map((message) => message.content || "").join(" "));
@@ -428,13 +450,14 @@ function previousAskedForProcessIdentifier(messages: WhatsAppSalesMessage[]) {
 export function isProcessStatusRequest(messages: WhatsAppSalesMessage[]) {
   const lastText = getLastInboundText(messages);
   if (isNaturalPureGreetingText(lastText)) return false;
+  if (isOwnerReplyNudgeText(lastText)) return false;
   if (extractSelectedProcessNumber(messages)) return true;
   if (extractProcessChoiceReferenceFromText(lastText) && previousAskedForProcessIdentifier(messages)) return true;
   if (isNameLookupFollowupText(lastText) && extractRecentNameReferenceForGenericRequest(messages)) return true;
   if (/nome completo\s+(?:e|é|eh)\s+/i.test(cleanText(lastText) || "") && previousAskedForProcessIdentifier(messages)) return true;
   if (lastMessageLooksLikeName(lastText) && previousAskedForProcessIdentifier(messages)) return true;
   const text = normalizeText(lastText);
-  return /andamento|status|situacao|meu processo|meu caso|processos? d[aeo]|casos? d[aeo]|gostaria de saber (sobre |de |do |da )?(o |um )?processo|queria saber (sobre |de |do |da )?(o |um )?processo|quero saber (sobre |de |do |da )?(o |um )?processo|saber (sobre |de |do |da )?(o |um )?processo|saber como esta (o |um )?processo|como esta (o |um )?processo|atualizacao do processo|atualizacao do caso|novidade no processo|numero do processo|cnj|movimentacao|movimentacao|qual fase|saiu decisao|teve novidade|processo andou/.test(text);
+  return /andamento|status|situacao|meu processo|meu caso|processos? d[aeo]|casos? d[aeo]|gostaria de saber (sobre |de |do |da )?(o |um )?processo|queria saber (sobre |de |do |da )?(o |um )?processo|quero saber (sobre |de |do |da )?(o |um )?processo|quero sabe (sobre |de |do |da )?(o |um )?processo|saber (sobre |de |do |da )?(o |um )?processo|sabe (sobre |de |do |da )?(o |um )?processo|saber como esta (o |um )?processo|como esta (o |um )?processo|atualizacao do processo|atualizacao do caso|novidade no processo|numero do processo|cnj|movimentacao|movimentacao|qual fase|saiu decisao|teve novidade|processo andou/.test(text);
 }
 
 function isGenericProcessRequestWithoutReference(messages: WhatsAppSalesMessage[]) {
@@ -444,7 +467,7 @@ function isGenericProcessRequestWithoutReference(messages: WhatsAppSalesMessage[
   if (/\d{7}-\d{2}|cnj|cpf|cnpj|processos? d[aeo]\s+[a-z]{2,}|casos? d[aeo]\s+[a-z]{2,}|nome completo\s+(e|eh|é)/.test(text)) return false;
   if (lastMessageLooksLikeName(lastText)) return false;
   if (/^(o\s+)?(ultimo|último|ultima|última|esse|essa|isso|este|esta|primeiro|segundo|terceiro|1|2|3)\.?$/.test(text)) return false;
-  return /um processo|sobre (o |um )?processo|saber sobre (o |um )?processo|situacao do processo|situacao do caso|me pass(a|e|ar).{0,30}situacao|quero saber (sobre |de )?(o |um )?processo|gostaria de saber (sobre |de )?(o |um )?processo|queria saber (sobre |de )?(o |um )?processo|saber como esta (o |um )?processo|como esta (o |um )?processo/.test(text);
+  return /^(e\s+)?(o\s+)?processo\??$|um processo|sobre (o |um )?processo|do processo|saber (sobre |de |do )?(o |um )?processo|sabe (sobre |de |do )?(o |um )?processo|situacao do processo|situacao do caso|me pass(a|e|ar).{0,30}situacao|quero saber (sobre |de |do )?(o |um )?processo|quero sabe (sobre |de |do )?(o |um )?processo|gostaria de saber (sobre |de |do )?(o |um )?processo|queria saber (sobre |de |do )?(o |um )?processo|saber como esta (o |um )?processo|como esta (o |um )?processo|andamento do processo|status do processo|novidade do processo/.test(text);
 }
 
 function extractProcessNumber(messages: WhatsAppSalesMessage[]) {
@@ -467,6 +490,8 @@ function extractProcessChoiceReferenceFromText(value?: string | null) {
   const normalized = normalizeText(original);
   if (!original || !normalized || isNaturalPureGreetingText(original)) return null;
   if (isNameLookupFollowupText(original)) return null;
+  const explicitEntity = extractExplicitChoiceEntity(original);
+  if (explicitEntity) return explicitEntity;
   if (/processo|caso|andamento|status|situacao|atualizacao|novidade|cpf|cnj|\d{7}-\d{2}/.test(normalized)) return null;
   const stripped = normalized
     .replace(/^(e|eh|isso|esse|essa|seria|ser|o|a)\s+/, "")

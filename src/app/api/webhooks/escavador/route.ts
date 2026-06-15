@@ -1,7 +1,7 @@
 // Force Trigger Deploy: 2026-04-10T15:40
 import { NextRequest, NextResponse } from 'next/server'
 import { createClient } from '@supabase/supabase-js'
-import { timingSafeEqual } from 'crypto'
+import { createHash, timingSafeEqual } from 'crypto'
 import { requireTenantApiKey } from '@/lib/integrations/server'
 import { solicitarResumoIA, buscarESalvarResumo } from '@/lib/services/escavador-ia'
 
@@ -11,6 +11,37 @@ const adminSupabase = createClient(
 )
 
 const MAX_ESCAVADOR_WEBHOOK_BODY_BYTES = 1024 * 1024
+
+async function recordEscavadorWebhookEvent(params: {
+  tenantId?: string | null
+  eventName: string
+  status: string
+  evento?: string | null
+  numeroCnj?: string | null
+  monitoramentoId?: string | null
+  reason?: string | null
+  metadata?: Record<string, unknown>
+}) {
+  try {
+    await adminSupabase.from('system_event_logs').insert({
+      tenant_id: params.tenantId ?? null,
+      source: 'monitoramento',
+      provider: 'escavador',
+      event_name: params.eventName,
+      status: params.status,
+      payload: {
+        evento: params.evento ?? null,
+        numero_cnj: params.numeroCnj ?? null,
+        monitoramento_id: params.monitoramentoId ?? null,
+        reason: params.reason ?? null,
+        ...(params.metadata ?? {}),
+      },
+      created_at: new Date().toISOString(),
+    })
+  } catch (error) {
+    console.warn('[ESCAVADOR_WEBHOOK] Falha ao auditar evento.', error)
+  }
+}
 
 function safeSecretEquals(expected: string, provided: string) {
   const expectedBuffer = Buffer.from(expected)
@@ -86,6 +117,111 @@ function isEventoNovaMovimentacao(evento: string) {
     'nova_movimentacao_diario',
     'nova_movimentacao_diario_oficial',
   ].includes(evento)
+}
+
+function stableStringify(value: unknown): string {
+  if (value === undefined) return 'null'
+  if (value === null || typeof value !== 'object') return JSON.stringify(value)
+  if (Array.isArray(value)) return `[${value.map(stableStringify).join(',')}]`
+  return `{${Object.keys(value as Record<string, unknown>).sort().map((key) => `${JSON.stringify(key)}:${stableStringify((value as Record<string, unknown>)[key])}`).join(',')}}`
+}
+
+function buildQueueEventHash(params: {
+  tenantId?: string | null
+  numeroCnj: string
+  evento?: string | null
+  payload?: unknown
+}) {
+  const payload = params.payload as any
+  const movementId = String(
+    payload?.movimentacao?.id
+    ?? payload?.movimentacao?.id_movimentacao
+    ?? payload?.uuid
+    ?? payload?.id
+    ?? ''
+  ).trim()
+  const monitoramentoId = String(
+    payload?.monitoramento?.id
+    ?? payload?.monitoramentos?.[0]?.id
+    ?? payload?.app?.monitor?.id
+    ?? ''
+  ).trim()
+  const fallbackPayload = movementId ? '' : stableStringify({
+    evento: params.evento ?? null,
+    numero_cnj: params.numeroCnj,
+    movimentacao: payload?.movimentacao ?? null,
+    processo: payload?.processo ?? null,
+  })
+
+  return createHash('sha256')
+    .update([
+      params.tenantId || '__global__',
+      params.numeroCnj,
+      params.evento || '__evento__',
+      movementId || '__sem_movimentacao_id__',
+      monitoramentoId || '__sem_monitoramento_id__',
+      fallbackPayload,
+    ].join('|'))
+    .digest('hex')
+}
+
+function isMissingQueueEventHashColumn(error: unknown) {
+  if (!error || typeof error !== 'object') return false
+  const code = String((error as { code?: unknown }).code || '')
+  const message = String((error as { message?: unknown }).message || '').toLowerCase()
+  return code === '42703' || message.includes('event_hash')
+}
+
+function isDuplicateQueueEvent(error: unknown) {
+  if (!error || typeof error !== 'object') return false
+  return String((error as { code?: unknown }).code || '') === '23505'
+}
+
+async function insertProcessUpdateQueue(params: {
+  tenantId?: string | null
+  numeroCnj: string
+  evento?: string | null
+  payload?: unknown
+  status?: string
+  createdAt?: string
+}) {
+  const eventHash = buildQueueEventHash({
+    tenantId: params.tenantId,
+    numeroCnj: params.numeroCnj,
+    evento: params.evento,
+    payload: params.payload,
+  })
+  const baseRow = {
+    tenant_id: params.tenantId ?? null,
+    numero_cnj: params.numeroCnj,
+    evento: params.evento ?? null,
+    payload: params.payload ?? null,
+    status: params.status ?? 'PENDENTE',
+    created_at: params.createdAt ?? new Date().toISOString(),
+  }
+
+  const { error } = await adminSupabase
+    .from('process_update_queue')
+    .insert({ ...baseRow, event_hash: eventHash })
+
+  if (!error) return { inserted: true, eventHash }
+  if (isDuplicateQueueEvent(error)) return { inserted: false, duplicate: true, eventHash }
+
+  if (!isMissingQueueEventHashColumn(error)) {
+    console.warn('[ESCAVADOR_WEBHOOK] Falha ao enfileirar evento.', error)
+    return { inserted: false, error, eventHash }
+  }
+
+  const legacyResult = await adminSupabase
+    .from('process_update_queue')
+    .insert(baseRow)
+
+  return {
+    inserted: !legacyResult.error,
+    error: legacyResult.error,
+    eventHash: null,
+    legacy: true,
+  }
 }
 
 function extrairOabDeTexto(value?: string | null) {
@@ -212,6 +348,15 @@ export async function POST(req: NextRequest) {
     hasProcesso: Boolean(body?.processo),
     monitoramentos: Array.isArray(body?.monitoramentos) ? body.monitoramentos.length : body?.monitoramento ? 1 : 0,
   })
+  await recordEscavadorWebhookEvent({
+    eventName: 'escavador_webhook_received',
+    status: 'received',
+    evento,
+    metadata: {
+      has_processo: Boolean(body?.processo),
+      monitoramentos_count: Array.isArray(body?.monitoramentos) ? body.monitoramentos.length : body?.monitoramento ? 1 : 0,
+    },
+  })
 
   // Evento: processo novo detectado via monitoramento por OAB
   if (evento === 'novo_processo' || evento === 'processo_encontrado') {
@@ -304,11 +449,11 @@ export async function POST(req: NextRequest) {
       }
     }
 
-    await adminSupabase.from('process_update_queue').insert({
-      tenant_id: tenantId,
-      numero_cnj: numeroCnj,
-      status: 'PENDENTE',
-      created_at: new Date().toISOString()
+    await insertProcessUpdateQueue({
+      tenantId,
+      numeroCnj,
+      evento,
+      payload: body,
     })
 
     console.log(`[webhook-escavador] ✅ Processo novo importado automaticamente: ${numeroCnj}`)
@@ -330,6 +475,13 @@ export async function POST(req: NextRequest) {
       const numero_cnj = mon.numero ?? mon.termo ?? mon.valor ?? mon.processo?.numero_novo ?? mon.processo?.numero
       if (!numero_cnj) {
         console.warn('[ESCAVADOR_WEBHOOK] Monitoramento sem número identificável:', mon)
+        await recordEscavadorWebhookEvent({
+          eventName: 'escavador_webhook_movement_skipped',
+          status: 'ignored',
+          evento,
+          monitoramentoId: String(mon.id ?? '').trim() || null,
+          reason: 'missing_process_number',
+        })
         continue
       }
 
@@ -377,6 +529,14 @@ export async function POST(req: NextRequest) {
       if (!processos || processos.length === 0) {
         if (!contextoOab?.tenantId) {
           console.warn(`[ESCAVADOR_WEBHOOK] Sem tenant para inbox de ${numero_cnj}`)
+          await recordEscavadorWebhookEvent({
+            eventName: 'escavador_webhook_movement_skipped',
+            status: 'blocked',
+            evento,
+            numeroCnj: numero_cnj,
+            monitoramentoId: monitoramentoIdEscavador,
+            reason: 'missing_tenant_context',
+          })
           continue
         }
 
@@ -396,13 +556,11 @@ export async function POST(req: NextRequest) {
           continue
         }
 
-        await adminSupabase.from('process_update_queue').insert({
-          tenant_id: contextoOab.tenantId,
-          numero_cnj,
+        await insertProcessUpdateQueue({
+          tenantId: contextoOab.tenantId,
+          numeroCnj: numero_cnj,
           evento,
           payload: body,
-          status: 'PENDENTE',
-          created_at: new Date().toISOString()
         })
 
         const movimentacoesInbox = [novaMovimentacao, ...historicoAtual].slice(0, 50)
@@ -424,6 +582,19 @@ export async function POST(req: NextRequest) {
             updated_at: new Date().toISOString(),
           }, { onConflict: 'tenant_id,numero_cnj' })
 
+        await recordEscavadorWebhookEvent({
+          tenantId: contextoOab.tenantId,
+          eventName: 'escavador_webhook_movement_inbox_created',
+          status: 'pending_monitoring',
+          evento,
+          numeroCnj: numero_cnj,
+          monitoramentoId: monitoramentoIdEscavador,
+          metadata: {
+            movement_id_present: Boolean(movimentacaoId),
+            quantidade_eventos: movimentacoesInbox.length,
+          },
+        })
+
         continue
       }
 
@@ -437,13 +608,11 @@ export async function POST(req: NextRequest) {
           continue
         }
 
-        await adminSupabase.from('process_update_queue').insert({
-          tenant_id: processo.tenant_id,
-          numero_cnj,
+        await insertProcessUpdateQueue({
+          tenantId: processo.tenant_id,
+          numeroCnj: numero_cnj,
           evento,
           payload: body,
-          status: 'PENDENTE',
-          created_at: new Date().toISOString()
         })
 
         // Mantém histórico dos últimos 50 movimentos
@@ -506,6 +675,20 @@ export async function POST(req: NextRequest) {
           .eq('tenant_id', processo.tenant_id)
           .eq('numero_cnj', numero_cnj)
 
+        await recordEscavadorWebhookEvent({
+          tenantId: processo.tenant_id,
+          eventName: 'escavador_webhook_movement_persisted',
+          status: 'completed',
+          evento,
+          numeroCnj: numero_cnj,
+          monitoramentoId: monitoramentoIdEscavador,
+          metadata: {
+            process_id: processo.id,
+            movement_id_present: Boolean(movimentacaoId),
+            process_movimentacao_id: movimentacaoPersistida?.id ?? null,
+          },
+        })
+
         // Dispara analisador jurídico. Em beta, só alta confiança executa; demais casos entram em revisão humana.
         let paidSummaryRecommended = false
         const { analisarMovimentacao } = await import('@/lib/juridico/analisador')
@@ -552,11 +735,10 @@ export async function POST(req: NextRequest) {
   if (evento === 'update_time' || evento === 'resultado_processo_async' || evento === 'atualizacao_processo_concluida') {
     const numero_cnj = body.processo?.numero_unico ?? body.app?.monitor?.valor
     if (numero_cnj) {
-      await adminSupabase.from('process_update_queue').insert({
-        numero_cnj,
+      await insertProcessUpdateQueue({
+        numeroCnj: numero_cnj,
         evento,
         payload: body,
-        status: 'PENDENTE'
       })
     }
   }

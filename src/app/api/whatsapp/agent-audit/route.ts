@@ -3,6 +3,8 @@ import { cookies } from "next/headers";
 import { createServerClient } from "@supabase/ssr";
 import { createClient } from "@supabase/supabase-js";
 import { isBrainExecutiveRole } from "@/lib/brain/roles";
+import { processPendingWhatsAppMediaBatch } from "@/lib/whatsapp/media-processor";
+import { processPendingWhatsAppRepliesBatch } from "@/lib/whatsapp/reply-processor";
 
 export const dynamic = "force-dynamic";
 
@@ -16,6 +18,10 @@ const AUDIT_EVENT_NAMES = [
   "whatsapp_sales_reply_prepared",
   "mayus_operating_partner_reply_repaired",
   "whatsapp_reply_aborted_by_newer_message",
+  "whatsapp_reply_processed",
+  "whatsapp_reply_failed",
+  "whatsapp_reply_stale_pending",
+  "whatsapp_reply_stale_processing_suppressed",
   "whatsapp_mayus_operating_partner_auto_sent",
   "whatsapp_mayus_operating_partner_auto_send_failed",
 ];
@@ -28,6 +34,16 @@ type AuditEventRow = {
   provider?: string | null;
   payload: Record<string, unknown> | null;
   created_at: string;
+};
+
+type WhatsAppMessageAuditRow = {
+  id: string;
+  direction: string | null;
+  message_type: string | null;
+  status: string | null;
+  media_processing_status: string | null;
+  metadata: Record<string, unknown> | null;
+  created_at: string | null;
 };
 
 async function getAuthenticatedProfile() {
@@ -88,6 +104,34 @@ function unique(values: string[]) {
   return Array.from(new Set(values.map((value) => value.trim()).filter(Boolean)));
 }
 
+function countBy<T>(values: T[], predicate: (value: T) => boolean) {
+  return values.reduce((total, value) => total + (predicate(value) ? 1 : 0), 0);
+}
+
+function latestDate(values: Array<string | null | undefined>) {
+  return values
+    .map((value) => text(value, 120))
+    .filter(Boolean)
+    .sort()
+    .at(-1) || null;
+}
+
+function oldestDate(values: Array<string | null | undefined>) {
+  return values
+    .map((value) => text(value, 120))
+    .filter(Boolean)
+    .sort()
+    .at(0) || null;
+}
+
+function firstText(...values: unknown[]) {
+  for (const value of values) {
+    const normalized = text(value, 180);
+    if (normalized) return normalized;
+  }
+  return null;
+}
+
 function firstRecord(...values: unknown[]) {
   for (const value of values) {
     const record = asRecord(value);
@@ -130,12 +174,40 @@ function extractQualityCheck(payload: Record<string, unknown>, mayus: Record<str
   return firstRecord(payload.quality_check, mayus?.quality_check);
 }
 
+function extractContextPolicy(payload: Record<string, unknown>, mayus: Record<string, unknown> | null) {
+  return firstRecord(
+    payload.context_policy,
+    mayus?.context_policy,
+    asRecord(payload.conversation_frame)?.context_policy,
+    asRecord(mayus?.conversation_frame)?.context_policy,
+  );
+}
+
+function extractTurnContext(payload: Record<string, unknown>, mayus: Record<string, unknown> | null) {
+  return firstRecord(
+    payload.whatsapp_turn_context,
+    mayus?.whatsapp_turn_context,
+  );
+}
+
+function extractVoiceStatus(payload: Record<string, unknown>, mayus: Record<string, unknown> | null) {
+  return firstRecord(
+    payload.voice_status,
+    mayus?.voice_status,
+  );
+}
+
 function sanitizeAuditEvent(row: AuditEventRow) {
   const payload = row.payload || {};
   const mayus = asRecord(payload.mayus_operating_partner);
   const actor = extractActorContext(payload, mayus);
   const resolution = extractConversationResolution(payload, mayus);
   const quality = extractQualityCheck(payload, mayus);
+  const contextPolicy = extractContextPolicy(payload, mayus);
+  const turnContext = extractTurnContext(payload, mayus);
+  const voiceStatus = extractVoiceStatus(payload, mayus);
+  const latestMedia = firstRecord(payload.latest_media_context, mayus?.latest_media_context);
+  const filesystem = firstRecord(payload.conversation_filesystem_manifest, mayus?.conversation_filesystem_manifest);
   const qualityFlags = unique([
     ...textList(quality?.flags),
     ...textList(payload.risk_flags),
@@ -195,9 +267,218 @@ function sanitizeAuditEvent(row: AuditEventRow) {
     blocked,
     repaired,
     reason,
+    context_policy_scope: text(contextPolicy?.scope, 80),
+    context_reset_reason: text(contextPolicy?.reset_reason, 120),
+    context_allowed_previous_event: contextPolicy?.allowed_previous_event === true,
+    context_allowed_process_candidates: contextPolicy?.allowed_process_candidates === true,
+    context_prompt_message_count: typeof contextPolicy?.prompt_message_count === "number" ? contextPolicy.prompt_message_count : null,
+    input_modality: text(payload.input_modality, 80) || text(turnContext?.input_modality, 80),
+    current_user_request: text(payload.current_user_request, 220) || text(turnContext?.current_user_request, 220),
+    transcription_status: text(payload.transcription_status, 80) || text(turnContext?.transcription_status, 80) || text(latestMedia?.status, 80),
+    transcription_source: text(payload.transcription_source, 120) || text(latestMedia?.transcriptionSource, 120),
+    voice_display_label: text(payload.voice_display_label, 120) || text(voiceStatus?.displayLabel, 120),
+    voice_provider: text(voiceStatus?.provider, 80) || text(payload.audio_provider, 80) || text(payload.tts_provider, 80),
+    voice_profile: text(payload.voice_profile, 120) || text(voiceStatus?.voiceProfile, 120),
+    audio_fallback_reason: text(payload.audio_fallback_reason, 160) || text(voiceStatus?.blockedReason, 160),
+    filesystem_item_count: typeof filesystem?.item_count === "number" ? filesystem.item_count : null,
     original_reply_preview: originalPreview,
     final_reply_preview: finalPreview,
   };
+}
+
+function messageReplyStatus(row: WhatsAppMessageAuditRow) {
+  return text(row.metadata?.reply_processing_status, 80);
+}
+
+function messageConversationClass(row: WhatsAppMessageAuditRow) {
+  const metadata = row.metadata || {};
+  const mayus = asRecord(metadata.mayus_operating_partner);
+  const classification = firstRecord(metadata.conversation_classification, mayus?.conversation_classification);
+  return text(classification?.class, 120) || text(metadata.route, 120) || text(metadata.intent, 120);
+}
+
+function messageOpenClawReason(row: WhatsAppMessageAuditRow) {
+  const metadata = row.metadata || {};
+  const mayus = asRecord(metadata.mayus_operating_partner);
+  const governance = firstRecord(metadata.agentic_governance, mayus?.agentic_governance);
+  const openclaw = firstRecord(metadata.openclaw_policy, governance?.openclaw_policy, mayus?.openclaw_policy);
+  return firstText(
+    openclaw?.reason,
+    openclaw?.blocked_reason,
+    metadata.reply_aborted_reason,
+    metadata.reply_processing_recovery_reason,
+    metadata.reply_processing_error,
+  );
+}
+
+function messageBrainRunId(row: WhatsAppMessageAuditRow) {
+  const brainTrace = asRecord(row.metadata?.brain_trace);
+  const mayus = asRecord(row.metadata?.mayus_operating_partner);
+  return firstText(
+    row.metadata?.brain_run_id,
+    brainTrace?.brain_run_id,
+    mayus?.brain_run_id,
+  );
+}
+
+function messageContextPolicy(row: WhatsAppMessageAuditRow) {
+  const metadata = row.metadata || {};
+  const mayus = asRecord(metadata.mayus_operating_partner);
+  return firstRecord(
+    metadata.context_policy,
+    mayus?.context_policy,
+    asRecord(metadata.conversation_frame)?.context_policy,
+    asRecord(mayus?.conversation_frame)?.context_policy,
+  );
+}
+
+function messageVoiceStatus(row: WhatsAppMessageAuditRow) {
+  const metadata = row.metadata || {};
+  const mayus = asRecord(metadata.mayus_operating_partner);
+  return firstRecord(metadata.voice_status, mayus?.voice_status);
+}
+
+function messageTurnContext(row: WhatsAppMessageAuditRow) {
+  const metadata = row.metadata || {};
+  const mayus = asRecord(metadata.mayus_operating_partner);
+  return firstRecord(metadata.whatsapp_turn_context, mayus?.whatsapp_turn_context);
+}
+
+function buildTopFlags(entries: ReturnType<typeof sanitizeAuditEvent>[]) {
+  const counts = new Map<string, number>();
+  for (const entry of entries) {
+    for (const flag of unique([...entry.quality_flags, ...entry.risk_flags])) {
+      counts.set(flag, (counts.get(flag) || 0) + 1);
+    }
+    if (entry.context_policy_scope) counts.set(`context:${entry.context_policy_scope}`, (counts.get(`context:${entry.context_policy_scope}`) || 0) + 1);
+    if (entry.blocked && entry.reason) counts.set(`blocked:${entry.reason}`, (counts.get(`blocked:${entry.reason}`) || 0) + 1);
+  }
+  return Array.from(counts.entries())
+    .sort((left, right) => right[1] - left[1])
+    .slice(0, 6)
+    .map(([flag, count]) => ({ flag, count }));
+}
+
+async function buildWhatsAppAgentHealth(params: {
+  tenantId: string;
+  entries: ReturnType<typeof sanitizeAuditEvent>[];
+}) {
+  const { data, error } = await adminSupabase
+    .from("whatsapp_messages")
+    .select("id, direction, message_type, status, media_processing_status, metadata, created_at")
+    .eq("tenant_id", params.tenantId)
+    .order("created_at", { ascending: false })
+    .limit(200);
+
+  if (error) throw error;
+
+  const messages = (data || []) as WhatsAppMessageAuditRow[];
+  const pendingReplies = countBy(messages, (row) => row.direction === "inbound" && messageReplyStatus(row) === "pending");
+  const processingReplies = countBy(messages, (row) => row.direction === "inbound" && messageReplyStatus(row) === "processing");
+  const failedReplies = countBy(messages, (row) => row.direction === "inbound" && messageReplyStatus(row) === "failed");
+  const pendingMedia = countBy(messages, (row) => row.media_processing_status === "pending");
+  const processingMedia = countBy(messages, (row) => row.media_processing_status === "processing");
+  const failedMedia = countBy(messages, (row) => row.media_processing_status === "failed");
+  const inbound = messages.filter((row) => row.direction === "inbound");
+  const outbound = messages.filter((row) => row.direction === "outbound");
+  const latestMessageWithAgentMetadata = messages.find((row) => (
+    row.metadata?.mayus_operating_partner
+    || row.metadata?.conversation_classification
+    || row.metadata?.agentic_governance
+    || row.metadata?.model_used
+  ));
+  const latestEntry = params.entries[0] || null;
+  const blockedEntries = params.entries.filter((entry) => entry.blocked);
+  const repairedEntries = params.entries.filter((entry) => entry.repaired);
+  const warningEntries = params.entries.filter((entry) => entry.status === "warning" || entry.status === "error");
+  const queueTotal = pendingReplies + processingReplies + pendingMedia + processingMedia;
+  const status = failedReplies > 0 || failedMedia > 0 || params.entries.some((entry) => entry.status === "error")
+    ? "blocked"
+    : queueTotal > 0 || warningEntries.length > 0 || blockedEntries.length > 0
+      ? "needs_attention"
+      : "working";
+  const latestClass = messageConversationClass(latestMessageWithAgentMetadata || messages[0] || {} as WhatsAppMessageAuditRow)
+    || latestEntry?.conversation_type
+    || null;
+  const latestModel = firstText(
+    latestMessageWithAgentMetadata?.metadata?.model_used,
+    latestMessageWithAgentMetadata?.metadata?.mayus_operating_partner && asRecord(latestMessageWithAgentMetadata.metadata.mayus_operating_partner)?.model_used,
+    latestEntry?.provider,
+  );
+  const latestOpenClawReason = messageOpenClawReason(latestMessageWithAgentMetadata || messages[0] || {} as WhatsAppMessageAuditRow)
+    || latestEntry?.reason
+    || null;
+  const latestMessageContextPolicy = messageContextPolicy(latestMessageWithAgentMetadata || messages[0] || {} as WhatsAppMessageAuditRow);
+  const latestMessageVoiceStatus = messageVoiceStatus(latestMessageWithAgentMetadata || messages[0] || {} as WhatsAppMessageAuditRow);
+  const latestMessageTurnContext = messageTurnContext(latestMessageWithAgentMetadata || messages[0] || {} as WhatsAppMessageAuditRow);
+  const topFlags = buildTopFlags(params.entries);
+
+  return {
+    status,
+    label: "WhatsApp Operating Partner",
+    owner: "Paperclip / OpenClaw / Hermes",
+    generated_at: new Date().toISOString(),
+    queue: {
+      pending_replies: pendingReplies,
+      processing_replies: processingReplies,
+      failed_replies: failedReplies,
+      pending_media: pendingMedia,
+      processing_media: processingMedia,
+      failed_media: failedMedia,
+      recent_messages: messages.length,
+      inbound: inbound.length,
+      outbound: outbound.length,
+      oldest_pending_at: oldestDate(messages
+        .filter((row) => messageReplyStatus(row) === "pending" || row.media_processing_status === "pending")
+        .map((row) => row.created_at)),
+    },
+    latest: {
+      inbound_at: latestDate(inbound.map((row) => row.created_at)),
+      reply_at: latestDate(outbound.map((row) => row.created_at)),
+      event_at: latestEntry?.created_at || null,
+      event_name: latestEntry?.event_name || null,
+      model_used: latestModel,
+      final_response_source: latestEntry?.final_response_source || firstText(latestMessageWithAgentMetadata?.metadata?.final_response_source),
+      conversation_class: latestClass,
+      openclaw_reason: latestOpenClawReason,
+      brain_run_id: messageBrainRunId(latestMessageWithAgentMetadata || messages[0] || {} as WhatsAppMessageAuditRow) || latestEntry?.brain_run_id || null,
+      context_policy_scope: latestEntry?.context_policy_scope || text(latestMessageContextPolicy?.scope, 80),
+      context_reset_reason: latestEntry?.context_reset_reason || text(latestMessageContextPolicy?.reset_reason, 120),
+      context_prompt_message_count: latestEntry?.context_prompt_message_count ?? (typeof latestMessageContextPolicy?.prompt_message_count === "number" ? latestMessageContextPolicy.prompt_message_count : null),
+      input_modality: latestEntry?.input_modality || text(latestMessageTurnContext?.input_modality, 80),
+      transcription_status: latestEntry?.transcription_status || text(latestMessageTurnContext?.transcription_status, 80),
+      voice_display_label: latestEntry?.voice_display_label || text(latestMessageVoiceStatus?.displayLabel, 120),
+      voice_provider: latestEntry?.voice_provider || text(latestMessageVoiceStatus?.provider, 80),
+      voice_profile: latestEntry?.voice_profile || text(latestMessageVoiceStatus?.voiceProfile, 120),
+      audio_fallback_reason: latestEntry?.audio_fallback_reason || text(latestMessageVoiceStatus?.blockedReason, 160),
+      filesystem_item_count: latestEntry?.filesystem_item_count ?? null,
+    },
+    governance: {
+      paperclip_owner: "WhatsApp Operating Partner",
+      openclaw_state: status === "blocked" ? "blocked" : status === "needs_attention" ? "needs_attention" : "working",
+      openclaw_reason: latestOpenClawReason || (status === "working" ? "low_risk_supervised_channel" : "verificar pendencias e warnings"),
+      hermes_trajectory: latestEntry?.brain_run_id ? "brain_trace_linked" : "event_log_only",
+      auto_send_policy: "low_risk_only",
+      sensitive_actions: "human_approval_required",
+    },
+    audit: {
+      blocked: blockedEntries.length,
+      repaired: repairedEntries.length,
+      warnings: warningEntries.length,
+      top_flags: topFlags,
+    },
+    next_action: status === "blocked"
+      ? "Abrir auditoria, resolver falhas e manter autoenvio bloqueado para casos sensiveis."
+      : status === "needs_attention"
+        ? "Processar pendentes, revisar flags e executar smoke real Evolution controlado."
+        : "Executar a matriz de smoke real e manter GitHub Actions como scheduler ate upgrade Pro.",
+  };
+}
+
+function normalizeManualProcessLimit(value: unknown) {
+  const parsed = Number(value || 5);
+  if (!Number.isFinite(parsed)) return 5;
+  return Math.min(Math.max(Math.floor(parsed), 1), 10);
 }
 
 export async function GET(req: NextRequest) {
@@ -235,12 +516,59 @@ export async function GET(req: NextRequest) {
       generated_at: new Date().toISOString(),
       event_names: AUDIT_EVENT_NAMES,
       metrics,
+      health: await buildWhatsAppAgentHealth({ tenantId: auth.profile.tenant_id!, entries }),
       entries,
     });
   } catch (error: any) {
     console.error("[whatsapp-agent-audit]", error);
     return NextResponse.json(
       { error: error?.message || "Erro ao carregar auditoria do WhatsApp MAYUS." },
+      { status: 500 },
+    );
+  }
+}
+
+export async function POST(req: NextRequest) {
+  try {
+    const auth = await getAuthenticatedProfile();
+    if ("error" in auth) return NextResponse.json({ error: auth.error }, { status: auth.status });
+
+    const body = await req.json().catch(() => ({}));
+    const action = text(asRecord(body)?.action, 80) || "process_pending";
+    if (action !== "process_pending") {
+      return NextResponse.json({ error: "Acao de auditoria WhatsApp nao suportada." }, { status: 400 });
+    }
+
+    const limit = normalizeManualProcessLimit(asRecord(body)?.limit);
+    const startedAt = Date.now();
+    const media = await processPendingWhatsAppMediaBatch({ supabase: adminSupabase, limit, tenantId: auth.profile.tenant_id! });
+    const replies = await processPendingWhatsAppRepliesBatch({ supabase: adminSupabase, limit, tenantId: auth.profile.tenant_id! });
+
+    const { data, error } = await adminSupabase
+      .from("system_event_logs")
+      .select("id, event_name, status, source, provider, payload, created_at")
+      .eq("tenant_id", auth.profile.tenant_id!)
+      .in("event_name", AUDIT_EVENT_NAMES)
+      .order("created_at", { ascending: false })
+      .limit(24);
+
+    if (error) throw error;
+
+    const entries = ((data || []) as AuditEventRow[]).map(sanitizeAuditEvent);
+
+    return NextResponse.json({
+      ok: true,
+      action,
+      limit,
+      duration_ms: Date.now() - startedAt,
+      media,
+      replies,
+      health: await buildWhatsAppAgentHealth({ tenantId: auth.profile.tenant_id!, entries }),
+    });
+  } catch (error: any) {
+    console.error("[whatsapp-agent-audit:post]", error);
+    return NextResponse.json(
+      { error: error?.message || "Erro ao processar pendencias WhatsApp." },
       { status: 500 },
     );
   }

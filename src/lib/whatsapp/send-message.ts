@@ -21,6 +21,8 @@ export type SendWhatsAppMessageInput = {
   mediaStoragePath?: string | null;
   metadata?: Record<string, unknown> | null;
   humanizeDelivery?: boolean | null;
+  humanizeDeliveryMode?: "none" | "blocking" | "bounded" | null;
+  humanizeDeliveryMaxDelayMs?: number | null;
   fetcher?: typeof fetch;
 };
 
@@ -195,11 +197,14 @@ async function sendViaEvolution(input: SendWhatsAppMessageInput, provider: Resol
   return apiResponse;
 }
 
-function getHumanizedDelayMs(text?: string | null) {
+function getHumanizedDelayMs(text?: string | null, maxDelayMs?: number | null) {
   if (process.env.NODE_ENV === "test") return 0;
   const length = String(text || "").trim().length;
   if (length <= 0) return 0;
-  return Math.min(6500, Math.max(700, 420 + length * 14));
+  const delay = Math.min(6500, Math.max(700, 420 + length * 14));
+  return typeof maxDelayMs === "number" && maxDelayMs >= 0
+    ? Math.min(delay, maxDelayMs)
+    : delay;
 }
 
 async function sleep(ms: number) {
@@ -235,8 +240,9 @@ async function sendEvolutionTypingPulse(input: SendWhatsAppMessageInput, delayMs
 }
 
 async function sendViaEvolutionHumanized(input: SendWhatsAppMessageInput, provider: ResolvedTenantIntegration) {
-  const shouldHumanize = Boolean(input.humanizeDelivery && input.text && !input.audioUrl && !input.mediaUrl);
-  const shouldPulseAudio = Boolean(input.humanizeDelivery && input.audioUrl && !input.mediaUrl);
+  const mode = input.humanizeDeliveryMode || "blocking";
+  const shouldHumanize = Boolean(input.humanizeDelivery && mode !== "none" && input.text && !input.audioUrl && !input.mediaUrl);
+  const shouldPulseAudio = Boolean(input.humanizeDelivery && mode !== "none" && input.audioUrl && !input.mediaUrl);
   if (shouldPulseAudio) {
     try {
       await sendEvolutionTypingPulse(input, process.env.NODE_ENV === "test" ? 0 : 900);
@@ -254,7 +260,7 @@ async function sendViaEvolutionHumanized(input: SendWhatsAppMessageInput, provid
   if (!shouldHumanize) return sendViaEvolution(input, provider);
 
   try {
-    await sendEvolutionTypingPulse(input, getHumanizedDelayMs(input.text));
+    await sendEvolutionTypingPulse(input, getHumanizedDelayMs(input.text, input.humanizeDeliveryMaxDelayMs));
     return await sendViaEvolution(input, provider);
   } finally {
     await sendEvolutionPresence({
@@ -292,6 +298,11 @@ export async function sendWhatsAppMessage(input: SendWhatsAppMessageInput): Prom
 
   const metadata = {
     ...(input.metadata || {}),
+    ...(input.humanizeDelivery ? {
+      humanize_delivery: true,
+      humanize_delivery_mode: input.humanizeDeliveryMode || "blocking",
+      humanize_delivery_max_delay_ms: input.humanizeDeliveryMaxDelayMs ?? null,
+    } : {}),
     ...(input.audioUrl && !input.mediaStoragePath ? { audio_url: input.audioUrl } : {}),
     ...(input.mediaUrl && !input.mediaStoragePath ? { media_url: input.mediaUrl, media_type: getOutgoingMessageType(input) } : {}),
     ...(input.mediaStoragePath ? { media_storage_path: input.mediaStoragePath, media_type: getOutgoingMessageType(input) } : {}),

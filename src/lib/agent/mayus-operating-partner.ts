@@ -143,6 +143,17 @@ export type MayusWhatsAppActorContext = {
   reason?: string | null;
 };
 
+export type MayusWhatsAppContextScope = "current_turn" | "continuation" | "reset";
+
+export type MayusWhatsAppContextPolicy = {
+  scope: MayusWhatsAppContextScope;
+  reset_reason: string | null;
+  continuation_reason: string | null;
+  allowed_previous_event: boolean;
+  allowed_process_candidates: boolean;
+  prompt_message_count: number;
+};
+
 export type MayusWhatsAppConversationResolutionType =
   | "greeting"
   | "complaint"
@@ -150,6 +161,7 @@ export type MayusWhatsAppConversationResolutionType =
   | "unmatched_process_reference"
   | "process_candidates"
   | "generic_process_request"
+  | "owner_multi_intent"
   | "short_process_nudge"
   | "commercial_triage"
   | "unverified_process_status"
@@ -163,6 +175,7 @@ export type MayusWhatsAppConversationFrame = {
   writer_mode: "llm_natural" | "deterministic_guardrail";
   llm_writer_allowed: boolean;
   hard_guardrail_reason: string | null;
+  context_policy?: MayusWhatsAppContextPolicy;
   conversation_goal: string;
   known_facts: string[];
   missing_data: string[];
@@ -250,6 +263,22 @@ export type MayusOperatingPartnerCrmContext = {
   last_movement_at?: string | null;
 };
 
+export type MayusOwnerOfficeSnapshot = {
+  sales_today?: {
+    checked: boolean;
+    date: string | null;
+    source: "sales" | "crm_tasks" | "sales+crm_tasks" | "none";
+    count: number;
+    amount: number | null;
+    highlights: Array<{
+      title: string;
+      value?: number | null;
+      status?: string | null;
+    }>;
+    note?: string | null;
+  } | null;
+};
+
 export type MayusOfficeKnowledgeProfile = {
   assistantName?: string | null;
   officeName?: string | null;
@@ -300,6 +329,7 @@ export type MayusOperatingPartnerDecision = {
   whatsapp_actor_context?: MayusWhatsAppActorContext;
   conversation_frame?: MayusWhatsAppConversationFrame;
   quality_check?: MayusWhatsAppReplyQualityCheck;
+  context_policy?: MayusWhatsAppContextPolicy;
   final_response_source?: "llm_natural" | "llm_repaired" | "safe_fallback" | "deterministic_guardrail";
   conversation_classification?: MayusOperatingPartnerConversationClassification;
   agentic_governance?: MayusOperatingPartnerAgenticGovernance;
@@ -329,9 +359,11 @@ export type MayusOperatingPartnerInput = {
   officePlaybookProfile?: OfficePlaybookProfile | null;
   institutionalMemory?: InstitutionalMemoryEntry[] | null;
   crmContext?: MayusOperatingPartnerCrmContext | null;
+  ownerOfficeSnapshot?: MayusOwnerOfficeSnapshot | null;
   processStatusContext?: WhatsAppProcessStatusContext | null;
   whatsappActorContext?: MayusWhatsAppActorContext | null;
   previousMayusEvent?: MayusPreviousConversationEvent | null;
+  contextPolicy?: MayusWhatsAppContextPolicy | null;
   operatingPartner?: Partial<MayusOperatingPartnerConfig> | null;
   salesTestbench?: Partial<SalesLlmTestbenchConfig> | null;
   fetcher?: typeof fetch;
@@ -489,12 +521,15 @@ function formatShortDateLabel(value?: string | null) {
 
 function collectProcessCandidates(input: MayusOperatingPartnerInput, state: MayusConversationState) {
   if (isPureGreeting(getLastInbound(input.messages)?.content)) return [];
+  const policy = input.contextPolicy || buildMayusWhatsAppContextPolicy(input);
+  const allowProcessCandidates = policy.allowed_process_candidates === true;
+  const allowPreviousEvent = policy.allowed_previous_event === true;
 
   const candidates = [
-    processStatusContextAsCandidate(input.processStatusContext),
-    ...normalizeProcessCandidateMemory(input.processStatusContext?.candidateProcesses || []),
-    ...normalizeProcessCandidateMemory(input.previousMayusEvent?.conversation_state?.last_process_candidates || []),
-    ...(state.last_process_candidates || []),
+    allowProcessCandidates ? processStatusContextAsCandidate(input.processStatusContext) : null,
+    ...(allowProcessCandidates ? normalizeProcessCandidateMemory(input.processStatusContext?.candidateProcesses || []) : []),
+    ...(allowPreviousEvent || allowProcessCandidates ? normalizeProcessCandidateMemory(input.previousMayusEvent?.conversation_state?.last_process_candidates || []) : []),
+    ...(allowPreviousEvent || allowProcessCandidates ? state.last_process_candidates || [] : []),
   ].filter(Boolean) as ProcessCandidateMemory[];
   const seen = new Set<string>();
   return candidates.filter((candidate) => {
@@ -607,10 +642,83 @@ function extractExplicitProcessReference(message: string | null | undefined) {
   return entityReference?.[0] ? entityReference[0].toUpperCase() : null;
 }
 
+function isOwnerReplyNudge(value?: string | null) {
+  const text = normalizeText(value).replace(/[?!.,;:]+/g, " ").replace(/\s+/g, " ").trim();
+  return /^(pode me responder|me responde|me responda|responde|responder|me fala|me diga|cade|cad[eê]|e ai|e a[ií]|conseguiu|viu|retorna pra mim|retorno)\s*$/.test(text);
+}
+
+function getPreviousMeaningfulInbound(messages: WhatsAppSalesMessage[]) {
+  const inbound = messages
+    .filter((message) => message.direction === "inbound" && cleanText(message.content))
+    .slice(0, -1)
+    .reverse();
+
+  return inbound.find((message) => {
+    const content = cleanText(message.content);
+    return content && !isPureGreeting(content) && !isOwnerReplyNudge(content);
+  }) || null;
+}
+
+function isOwnerSalesTodayRequest(value?: string | null) {
+  const text = normalizeText(value);
+  if (!text) return false;
+  const hasCommercialSignal = /\b(venda|vendas|contrato|contratos|fechou|fechamento|fechado|lead|leads|crm|comercial|sdr|closer)\b/.test(text);
+  const hasTodaySignal = /\b(hoje|hj|dia|agora)\b/.test(text);
+  return hasCommercialSignal && hasTodaySignal;
+}
+
+function isOwnerProcessRequest(value?: string | null) {
+  const text = normalizeText(value);
+  return /\b(processo|processos|caso|casos|andamento|status|situacao|situacao processual|cnj|movimentacao|cliente)\b/.test(text);
+}
+
+function hasExplicitCurrentProcessReference(value?: string | null) {
+  const raw = cleanText(value);
+  const text = normalizeText(raw);
+  if (!text) return false;
+  if (/\d{7}-\d{2}|\bcnj\b|\bcpf\b|\bcnpj\b|\bprocesso\s+\d/.test(text)) return true;
+  if (extractExplicitProcessReference(raw)) return true;
+  const nameMatch = raw?.match(/\b(?:processo|caso)\s+(?:da|do|de)\s+([A-Za-zÀ-ÿ'’-]{2,}(?:\s+[A-Za-zÀ-ÿ'’-]{2,}){1,7})/i);
+  if (nameMatch?.[1] && looksLikeFullName(nameMatch[1])) return true;
+  return looksLikeFullName(raw);
+}
+
+function buildOwnerSalesTodayLine(snapshot?: MayusOwnerOfficeSnapshot | null) {
+  const salesToday = snapshot?.sales_today;
+  if (!salesToday?.checked) {
+    return "Sobre vendas hoje, eu ainda nao tenho uma leitura confiavel do comercial neste turno.";
+  }
+
+  if (salesToday.count > 0) {
+    const amount = typeof salesToday.amount === "number" && Number.isFinite(salesToday.amount)
+      ? `, somando R$ ${salesToday.amount.toLocaleString("pt-BR", { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`
+      : "";
+    const highlights = salesToday.highlights?.length
+      ? `: ${salesToday.highlights.slice(0, 3).map((item) => item.title).join("; ")}`
+      : ".";
+    return `Sobre vendas hoje, encontrei ${salesToday.count} registro(s) no MAYUS${amount}${highlights}`;
+  }
+
+  return "Sobre vendas hoje, nao encontrei venda registrada no MAYUS com seguranca agora.";
+}
+
+function buildOwnerMultiIntentFallback(params: {
+  contactName?: string | null;
+  hasExplicitProcessReference: boolean;
+  snapshot?: MayusOwnerOfficeSnapshot | null;
+}) {
+  const salutation = cleanText(params.contactName) || "Vitor";
+  const processLine = params.hasExplicitProcessReference
+    ? "Sobre o processo, vou usar a referencia que voce acabou de mandar e conferir na base antes de afirmar andamento."
+    : "Sobre o processo, me manda o nome do cliente ou o CNJ para eu nao misturar com contexto antigo.";
+  return `${salutation}, entendi.\n\n${processLine}\n\n${buildOwnerSalesTodayLine(params.snapshot)}`;
+}
+
 function hasRecentProcessContext(input: MayusOperatingPartnerInput, state: MayusConversationState, candidates: ProcessCandidateMemory[]) {
+  const policy = input.contextPolicy || buildMayusWhatsAppContextPolicy(input);
   return candidates.length > 0
     || input.processStatusContext?.verified === true
-    || input.previousMayusEvent?.intent === "process_status"
+    || (policy.allowed_previous_event === true && input.previousMayusEvent?.intent === "process_status")
     || state.conversation_role === "case_status"
     || /processo|banco|bradesco|caixa|master|cnj/.test(normalizeText(state.conversation_summary));
 }
@@ -715,17 +823,37 @@ function buildWhatsAppConversationFrame(input: MayusOperatingPartnerInput, param
   fallbackSupportSummary: MayusSupportSummary;
   actorContext: MayusWhatsAppActorContext;
 }): MayusWhatsAppConversationFrame {
-  const lastMessage = cleanText(getLastInbound(input.messages)?.content);
-  const candidates = collectProcessCandidates(input, params.fallbackState);
-  const referencedCandidate = findReferencedProcessCandidate(lastMessage, candidates);
+  const contextPolicy = input.contextPolicy || buildMayusWhatsAppContextPolicy(input);
+  const rawLastInbound = cleanText(getLastInbound(input.messages)?.content);
+  const nudgeSource = isOfficeOperatorActor(params.actorContext, input.processStatusContext) && isOwnerReplyNudge(rawLastInbound)
+    ? getPreviousMeaningfulInbound(input.messages)
+    : null;
+  const lastMessage = cleanText(nudgeSource?.content) || rawLastInbound;
+  const isOwnerNudgeContinuation = Boolean(nudgeSource);
   const otherProcessReference = isOtherProcessReference(lastMessage);
-  const lastAnsweredCandidate = findLastAnsweredProcessCandidate(input.messages, candidates);
   const genericProcessRequest = isGenericProcessStatusRequestWithoutReference(lastMessage);
+  const ownerMultiIntentRequest = isOfficeOperatorActor(params.actorContext, input.processStatusContext)
+    && isOwnerProcessRequest(lastMessage)
+    && isOwnerSalesTodayRequest(lastMessage);
+  const ownerMultiIntentHasExplicitProcessReference = hasExplicitCurrentProcessReference(lastMessage);
+  const suppressHistoricalProcessCandidates = isOwnerNudgeContinuation
+    && !ownerMultiIntentHasExplicitProcessReference
+    && (ownerMultiIntentRequest || genericProcessRequest);
+  const candidates = suppressHistoricalProcessCandidates || contextPolicy.allowed_process_candidates !== true
+    ? []
+    : collectProcessCandidates(input, params.fallbackState);
+  const referencedCandidate = findReferencedProcessCandidate(lastMessage, candidates);
+  const lastAnsweredCandidate = findLastAnsweredProcessCandidate(input.messages, candidates);
+  const explicitProcessReference = extractExplicitProcessReference(lastMessage);
   const singleVerifiedProcessCandidate = input.processStatusContext?.verified === true
     && normalizeProcessCandidateMemory(input.processStatusContext.candidateProcesses || []).length <= 1
+    && !suppressHistoricalProcessCandidates
     ? processStatusContextAsCandidate(input.processStatusContext)
     : null;
-  const statusFollowupCandidate = isResolvedProcessStatusFollowup(lastMessage) && (lastAnsweredCandidate || !genericProcessRequest)
+  const statusFollowupCandidate = !referencedCandidate
+    && !explicitProcessReference
+    && isResolvedProcessStatusFollowup(lastMessage)
+    && (lastAnsweredCandidate || !genericProcessRequest)
     ? (lastAnsweredCandidate || (candidates.length === 1 ? candidates[0] : null))
     : null;
   const remainingProcessCandidates = otherProcessReference && lastAnsweredCandidate
@@ -735,17 +863,17 @@ function buildWhatsAppConversationFrame(input: MayusOperatingPartnerInput, param
         return candidateKey && candidateKey !== answeredKey;
       })
     : [];
-  const explicitProcessReference = extractExplicitProcessReference(lastMessage);
   const shortProcessNudge = isShortProcessNudge(input.messages, input.processStatusContext);
+  const shortAckAfterProcessIdentifierPrompt = isShortAcknowledgement(lastMessage) && previousAskedForProcessIdentifier(input.messages);
   const commercialTriage = isCommercialTriageMessage(lastMessage) && (input.processStatusContext || previousAskedForProcessIdentifier(input.messages));
   const hasVerifiedProcessCandidates = input.processStatusContext?.verified === true
+    && !suppressHistoricalProcessCandidates
     && normalizeProcessCandidateMemory(input.processStatusContext.candidateProcesses || []).length > 1;
   const unverifiedProcessStatus = (params.deterministicIntent === "process_status" || genericProcessRequest)
     && input.processStatusContext?.verified !== true;
   const unmatchedProcessReference = !referencedCandidate
     && Boolean(explicitProcessReference)
     && hasRecentProcessContext(input, params.fallbackState, candidates);
-
   let resolutionType: MayusWhatsAppConversationResolutionType = "open_llm";
   let recommendedIntent = params.deterministicIntent;
   let conversationGoal = params.fallbackState.conversation_goal || "responder com naturalidade e seguranca";
@@ -764,10 +892,28 @@ function buildWhatsAppConversationFrame(input: MayusOperatingPartnerInput, param
   ]);
   let resolvedReference: MayusWhatsAppConversationFrame["resolved_reference"] = null;
 
+  knownFacts.add(`politica de contexto: ${contextPolicy.scope}`);
+  if (contextPolicy.reset_reason) {
+    knownFacts.add(`contexto anterior bloqueado: ${contextPolicy.reset_reason}`);
+  }
+  if (contextPolicy.allowed_previous_event !== true) {
+    forbiddenMoves.add("nao usar ultimo evento MAYUS como memoria conversacional deste turno");
+  }
+  if (contextPolicy.allowed_process_candidates !== true) {
+    forbiddenMoves.add("nao usar candidatos processuais antigos sem referencia atual segura");
+  }
+
   if (isOfficeOperatorActor(params.actorContext, input.processStatusContext)) {
     forbiddenMoves.add("nao perguntar se o interlocutor e cliente ou escritorio");
     forbiddenMoves.add("nao tratar processo do cliente como 'seu processo' do operador");
     responseGuidance.add("falar como copiloto interno do escritorio");
+  }
+
+  if (isOwnerNudgeContinuation) {
+    knownFacts.add(`ultima mensagem real do operador: ${rawLastInbound}`);
+    knownFacts.add(`retomar solicitacao pendente anterior: ${lastMessage}`);
+    responseGuidance.add("tratar cobranca curta do operador como pedido para responder a solicitacao anterior");
+    forbiddenMoves.add("nao gerar assunto novo nem listar processo antigo so porque houve cobranca curta");
   }
 
   if (isPureGreeting(lastMessage)) {
@@ -778,6 +924,45 @@ function buildWhatsAppConversationFrame(input: MayusOperatingPartnerInput, param
     responseGuidance.add("apenas cumprimentar e perguntar como pode ajudar");
     forbiddenMoves.add("nao se reapresentar se a conversa ja existe");
     safeFallbackReply = buildNaturalGreetingReply(lastMessage, input.contactName);
+  } else if (ownerMultiIntentRequest && !ownerMultiIntentHasExplicitProcessReference) {
+    resolutionType = "owner_multi_intent";
+    recommendedIntent = "client_support";
+    conversationGoal = "responder pedido interno misto sem puxar processo antigo";
+    knownFacts.add("pedido interno multi-intencao: processo + vendas/CRM de hoje");
+    knownFacts.add(buildOwnerSalesTodayLine(input.ownerOfficeSnapshot));
+    missingData.add("nome do cliente ou CNJ do processo");
+    responseGuidance.add("responder em blocos naturais: processo e vendas/CRM");
+    responseGuidance.add("para processo sem referencia segura, pedir apenas nome do cliente ou CNJ");
+    responseGuidance.add("para vendas/CRM, usar o snapshot do MAYUS; se nao houver dado confiavel, assumir a lacuna");
+    forbiddenMoves.add("nao reaproveitar Margarete, Michele, Bradesco ou qualquer processo antigo sem referencia segura no turno");
+    forbiddenMoves.add("nao listar candidatos processuais antigos");
+    forbiddenMoves.add("nao perguntar qual banco, tema, assunto ou objetivo");
+    safeFallbackReply = buildOwnerMultiIntentFallback({
+      contactName: input.contactName,
+      hasExplicitProcessReference: false,
+      snapshot: input.ownerOfficeSnapshot,
+    });
+  } else if (isConversationComplaint(lastMessage)) {
+    resolutionType = "complaint";
+    recommendedIntent = "client_support";
+    conversationGoal = "reconhecer erro de contexto e pedir o ponto atual sem insistir na resposta anterior";
+    responseGuidance.add("pedir desculpa de forma curta e nao repetir a pergunta errada");
+    forbiddenMoves.add("nao defender a resposta anterior");
+    forbiddenMoves.add("nao retomar alternativas processuais antigas");
+    safeFallbackReply = `${cleanText(input.contactName) || "Entendi"}, você tem razão. Eu me confundi no contexto. Me diga só o ponto que você quer ver agora que eu sigo por ele.`;
+  } else if (referencedCandidate) {
+    resolutionType = "referenced_process";
+    recommendedIntent = "process_status";
+    resolvedReference = processCandidateFrame(referencedCandidate);
+    conversationGoal = "responder o processo que acabou de ser referenciado";
+    knownFacts.add(`referencia resolvida: ${resolvedReference.label || resolvedReference.processNumber || "processo"}`);
+    if (resolvedReference.summary) knownFacts.add(`resumo do processo: ${resolvedReference.summary}`);
+    if (resolvedReference.currentStage) knownFacts.add(`fase/status: ${resolvedReference.currentStage}`);
+    if (resolvedReference.lastMovementText) knownFacts.add(`ultimo registro: ${resolvedReference.lastMovementText}`);
+    responseGuidance.add("responder apenas o processo referenciado");
+    responseGuidance.add("nao perguntar assunto principal nem oferecer outros processos");
+    forbiddenMoves.add("nao misturar outros candidatos processuais na resposta");
+    safeFallbackReply = buildReferencedProcessCandidateReply(referencedCandidate);
   } else if (statusFollowupCandidate) {
     resolutionType = "referenced_process";
     recommendedIntent = "process_status";
@@ -792,14 +977,6 @@ function buildWhatsAppConversationFrame(input: MayusOperatingPartnerInput, param
     forbiddenMoves.add("nao transformar pedido de status em entrevista");
     forbiddenMoves.add("nao perguntar se quer acompanhar, baixar, agir ou aproveitar movimentacao");
     safeFallbackReply = buildReferencedProcessCandidateReply(statusFollowupCandidate);
-  } else if (isConversationComplaint(lastMessage)) {
-    resolutionType = "complaint";
-    recommendedIntent = "client_support";
-    conversationGoal = "reconhecer erro de contexto e pedir o ponto atual sem insistir na resposta anterior";
-    responseGuidance.add("pedir desculpa de forma curta e nao repetir a pergunta errada");
-    forbiddenMoves.add("nao defender a resposta anterior");
-    forbiddenMoves.add("nao retomar alternativas processuais antigas");
-    safeFallbackReply = `${cleanText(input.contactName) || "Entendi"}, você tem razão. Eu me confundi no contexto. Me diga só o ponto que você quer ver agora que eu sigo por ele.`;
   } else if (singleVerifiedProcessCandidate && (params.deterministicIntent === "process_status" || input.processStatusContext?.verified === true)) {
     resolutionType = "referenced_process";
     recommendedIntent = "process_status";
@@ -830,19 +1007,6 @@ function buildWhatsAppConversationFrame(input: MayusOperatingPartnerInput, param
       actorContext: params.actorContext,
       processStatusContext: input.processStatusContext,
     });
-  } else if (referencedCandidate) {
-    resolutionType = "referenced_process";
-    recommendedIntent = "process_status";
-    resolvedReference = processCandidateFrame(referencedCandidate);
-    conversationGoal = "responder o processo que acabou de ser referenciado";
-    knownFacts.add(`referencia resolvida: ${resolvedReference.label || resolvedReference.processNumber || "processo"}`);
-    if (resolvedReference.summary) knownFacts.add(`resumo do processo: ${resolvedReference.summary}`);
-    if (resolvedReference.currentStage) knownFacts.add(`fase/status: ${resolvedReference.currentStage}`);
-    if (resolvedReference.lastMovementText) knownFacts.add(`ultimo registro: ${resolvedReference.lastMovementText}`);
-    responseGuidance.add("responder apenas o processo referenciado");
-    responseGuidance.add("nao perguntar assunto principal nem oferecer outros processos");
-    forbiddenMoves.add("nao misturar outros candidatos processuais na resposta");
-    safeFallbackReply = buildReferencedProcessCandidateReply(referencedCandidate);
   } else if (unmatchedProcessReference) {
     resolutionType = "unmatched_process_reference";
     recommendedIntent = "process_status";
@@ -852,9 +1016,12 @@ function buildWhatsAppConversationFrame(input: MayusOperatingPartnerInput, param
     responseGuidance.add("tratar a referencia como uma nova busca/conferencia");
     forbiddenMoves.add("nao perguntar se a referencia e algum candidato antigo");
     forbiddenMoves.add("nao oferecer Bradesco/Caixa se o usuario disse Banco Master");
+    forbiddenMoves.add("nao transformar referencia de banco em triagem de desconto, RMC ou contracheque");
+    responseGuidance.add("se a referencia nao foi localizada, pedir apenas numero/CNJ ou outra parte");
     safeFallbackReply = isOfficeOperatorActor(params.actorContext, input.processStatusContext)
       ? `${cleanText(input.contactName) || "Entendi"}, você tem razão. Vou tratar como ${explicitProcessReference} mesmo, sem confundir com outro banco. Na base carregada agora eu não encontrei esse processo com segurança; deixei como conferência por ${explicitProcessReference}.`
       : `Entendi. Vou tratar como ${explicitProcessReference} mesmo. Para não te passar informação errada, vou conferir esse processo na base antes de afirmar o andamento.`;
+    safeFallbackReply = buildUnmatchedProcessReferenceReply(explicitProcessReference, input.contactName, params.actorContext, input.processStatusContext);
   } else if (hasVerifiedProcessCandidates) {
     resolutionType = "process_candidates";
     recommendedIntent = "process_status";
@@ -884,6 +1051,14 @@ function buildWhatsAppConversationFrame(input: MayusOperatingPartnerInput, param
     conversationGoal = "responder cobranca curta mantendo localizacao segura";
     responseGuidance.add("ser direto e nao retomar processo sem fonte");
     safeFallbackReply = "Estou localizando com segurança. Se tiver o número do processo/CNJ, me mande que eu confirmo mais rápido.";
+  } else if (shortAckAfterProcessIdentifierPrompt) {
+    resolutionType = "generic_process_request";
+    recommendedIntent = "process_status";
+    conversationGoal = "manter pedido de identificador minimo sem abrir triagem comercial";
+    missingData.add(isOfficeOperatorActor(params.actorContext, input.processStatusContext) ? "nome completo do cliente ou numero do processo" : "numero do processo/CNJ ou CPF");
+    responseGuidance.add("nao gerar novo assunto a partir de confirmacao curta");
+    forbiddenMoves.add("nao transformar ok, sim ou isso em triagem de desconto, RMC ou contracheque");
+    safeFallbackReply = safeGenericProcessIdentifierReply(input.processStatusContext, params.actorContext);
   } else if (commercialTriage) {
     resolutionType = "commercial_triage";
     recommendedIntent = "legal_triage";
@@ -908,6 +1083,7 @@ function buildWhatsAppConversationFrame(input: MayusOperatingPartnerInput, param
     writer_mode: hardGuardrailReason ? "deterministic_guardrail" : "llm_natural",
     llm_writer_allowed: !hardGuardrailReason,
     hard_guardrail_reason: hardGuardrailReason,
+    context_policy: contextPolicy,
     conversation_goal: conversationGoal,
     known_facts: Array.from(knownFacts).slice(0, 12),
     missing_data: Array.from(missingData).slice(0, 10),
@@ -1010,6 +1186,221 @@ function looksLikeFullName(value?: string | null) {
   return words.length >= 2 && words.length <= 8 && words.every((word) => /^[A-Za-zÀ-ÿ'’-]{2,}$/.test(word));
 }
 
+const CURRENT_TURN_WINDOW_MS = 10 * 60 * 1000;
+const CONTINUATION_WINDOW_MS = 30 * 60 * 1000;
+const PREVIOUS_EVENT_WINDOW_MS = 12 * 60 * 60 * 1000;
+
+function messageTimeMs(message?: WhatsAppSalesMessage | null) {
+  const value = new Date(message?.created_at || "").getTime();
+  return Number.isFinite(value) ? value : null;
+}
+
+function messagesAreWithinWindow(left?: WhatsAppSalesMessage | null, right?: WhatsAppSalesMessage | null, windowMs = CURRENT_TURN_WINDOW_MS) {
+  const leftMs = messageTimeMs(left);
+  const rightMs = messageTimeMs(right);
+  if (leftMs == null || rightMs == null) return true;
+  return Math.abs(rightMs - leftMs) <= windowMs;
+}
+
+function getLastInboundIndex(messages: WhatsAppSalesMessage[]) {
+  for (let index = messages.length - 1; index >= 0; index -= 1) {
+    const message = messages[index];
+    if (message?.direction === "inbound" && cleanText(messageTextWithMedia(message))) return index;
+  }
+  return -1;
+}
+
+function getLastOutboundIndexBefore(messages: WhatsAppSalesMessage[], beforeIndex: number) {
+  for (let index = Math.min(beforeIndex - 1, messages.length - 1); index >= 0; index -= 1) {
+    const message = messages[index];
+    if (message?.direction === "outbound" && cleanText(messageTextWithMedia(message))) return index;
+  }
+  return -1;
+}
+
+function isExplicitContextReset(value?: string | null) {
+  const text = normalizeText(value);
+  return /\b(novo assunto|outro assunto|outra demanda|outra coisa|mudar de assunto|trocar de assunto|esquece isso|ignora isso|nao era isso|nada a ver|comecar de novo|começar de novo)\b/.test(text);
+}
+
+function hasCurrentProcessReference(value?: string | null) {
+  const raw = cleanText(value);
+  const text = normalizeText(raw);
+  if (!text) return false;
+  if (isCommercialTriageMessage(raw)) return false;
+  if (/\d{7}-\d{2}\.\d{4}\.\d\.\d{2}\.\d{4}|\bcnj\b|\bcpf\b|\bcnpj\b/.test(text)) return true;
+  if (extractExplicitProcessReference(raw)) return true;
+  if (looksLikeFullName(raw)) return true;
+  return /\b(?:processo|caso)\s+(?:da|do|de)\s+[a-zà-ÿ]{2,}(?:\s+[a-zà-ÿ]{2,}){1,7}\b/.test(text);
+}
+
+function hasCurrentProcessTopic(value?: string | null) {
+  const text = normalizeText(value);
+  if (!text) return false;
+  if (/processo|caso|andamento|status|situacao|atualizacao|novidade|movimentacao/.test(text)) return true;
+  return /\b(?:custas|preparo|guia|prazo|audiencia|contrato|boleto|valor|honorarios)\b.{0,40}\b(?:da|do|de)\s+[a-z]{2,}/.test(text);
+}
+
+function isContextContinuationText(value?: string | null) {
+  const text = normalizeText(value)
+    .replace(/[?!.,;:]+/g, " ")
+    .replace(/\s+/g, " ")
+    .trim();
+  if (!text) return false;
+  if (isOwnerReplyNudge(value)) return true;
+  if (/^(e|sobre|quanto a|em relacao a|em relação a)\b/.test(text)) return true;
+  if (/^(sim|isso|esse|essa|este|esta|ele|ela|ok|certo|pode|manda|mande|responde|responda|continua|continue)\b/.test(text)) return true;
+  if (/\b(outro processo|acompanhar|como esta|situacao|me passar a situacao|saber da situacao)\b/.test(text)) return true;
+  return /^(as |os |o |a |e as |e os |e o |e a )?(custas|preparo|guia|prazo|audiencia|audiencia|contrato|boleto|valor|honorarios|desconto|outro|outra|restante|demais)\b/.test(text);
+}
+
+function isShortAmbiguousWithoutReference(value?: string | null) {
+  const text = normalizeText(value);
+  if (!text) return false;
+  if (isPureGreeting(value) || isConversationComplaint(value) || isExplicitContextReset(value)) return true;
+  if (hasCurrentProcessReference(value) || isCommercialTriageMessage(value)) return false;
+  if (/processo|caso|andamento|status|situacao|atualizacao|novidade|contracheque|beneficio|inss|contrato|boleto|pagamento|valor|preco|honorario|documento/.test(text)) return false;
+  const words = text.split(/\s+/).filter(Boolean);
+  return words.length > 0 && words.length <= 4;
+}
+
+function previousContextIsRecent(messages: WhatsAppSalesMessage[]) {
+  const latest = getLastInbound(messages);
+  const previous = getPreviousMeaningfulInbound(messages);
+  return Boolean(latest && previous && messagesAreWithinWindow(previous, latest, CONTINUATION_WINDOW_MS));
+}
+
+function previousEventIsAllowed(event?: MayusPreviousConversationEvent | null) {
+  if (!event) return false;
+  if (!event.created_at) return true;
+  return isPreviousMayusEventRecent(event, PREVIOUS_EVENT_WINDOW_MS);
+}
+
+function previousOutboundHasProcessReference(messages: WhatsAppSalesMessage[]) {
+  const lastInboundIndex = getLastInboundIndex(messages);
+  const previousOutboundIndex = getLastOutboundIndexBefore(messages, lastInboundIndex >= 0 ? lastInboundIndex : messages.length);
+  if (previousOutboundIndex < 0) return false;
+  const text = normalizeText(messageTextWithMedia(messages[previousOutboundIndex]!));
+  return /\d{7}-\d{2}\.\d{4}\.\d\.\d{2}\.\d{4}|bradesco|caixa|master|santander|processo do|processo da/.test(text);
+}
+
+function scopedMessagesForPolicy(messages: WhatsAppSalesMessage[], policy: Pick<MayusWhatsAppContextPolicy, "scope">) {
+  const lastInboundIndex = getLastInboundIndex(messages);
+  if (lastInboundIndex < 0) return messages.slice(-1);
+  const latest = messages[lastInboundIndex];
+  if (!latest) return messages.slice(-1);
+
+  if (policy.scope === "reset") return [latest];
+
+  if (policy.scope === "continuation") {
+    const start = Math.max(0, lastInboundIndex - 7);
+    const window = messages.slice(start, lastInboundIndex + 1);
+    return window.filter((message) => messagesAreWithinWindow(message, latest, CONTINUATION_WINDOW_MS)).slice(-8);
+  }
+
+  const lastOutboundIndex = getLastOutboundIndexBefore(messages, lastInboundIndex);
+  const currentTurn = messages
+    .slice(lastOutboundIndex + 1, lastInboundIndex + 1)
+    .filter((message) => messagesAreWithinWindow(message, latest, CURRENT_TURN_WINDOW_MS));
+  return (currentTurn.length ? currentTurn : [latest]).slice(-6);
+}
+
+export function buildMayusWhatsAppContextPolicy(input: {
+  messages: WhatsAppSalesMessage[];
+  previousMayusEvent?: MayusPreviousConversationEvent | null;
+  processStatusContext?: WhatsAppProcessStatusContext | null;
+}): MayusWhatsAppContextPolicy {
+  const latest = getLastInbound(input.messages);
+  const latestText = cleanText(latest ? messageTextWithMedia(latest) : null);
+  const hasRecentPrevious = previousContextIsRecent(input.messages);
+  const latestHasProcessReference = hasCurrentProcessReference(latestText);
+  const latestHasProcessTopic = hasCurrentProcessTopic(latestText);
+  const latestHasCurrentTopic = latestHasProcessReference || latestHasProcessTopic || isCommercialTriageMessage(latestText);
+  const latestGenericProcessRequest = isGenericProcessStatusRequestWithoutReference(latestText);
+  const latestShortAcknowledgement = isShortAcknowledgement(latestText);
+  const canUsePreviousAnsweredProcess = previousOutboundHasProcessReference(input.messages);
+  let scope: MayusWhatsAppContextScope = "current_turn";
+  let resetReason: string | null = null;
+  let continuationReason: string | null = null;
+
+  if (!latestText) {
+    scope = "reset";
+    resetReason = "empty_turn";
+  } else if (isPureGreeting(latestText)) {
+    scope = "reset";
+    resetReason = "pure_greeting";
+  } else if (isConversationComplaint(latestText)) {
+    scope = "reset";
+    resetReason = "context_complaint";
+  } else if (isExplicitContextReset(latestText)) {
+    scope = "reset";
+    resetReason = "explicit_reset";
+  } else if (isContextContinuationText(latestText) && hasRecentPrevious) {
+    scope = "continuation";
+    continuationReason = "explicit_recent_followup";
+  } else if (latestHasProcessTopic && hasRecentPrevious && input.previousMayusEvent?.intent === "process_status") {
+    scope = "continuation";
+    continuationReason = "recent_process_followup";
+  } else if (isContextContinuationText(latestText) && !latestHasCurrentTopic) {
+    scope = "reset";
+    resetReason = "stale_continuation_reference";
+  } else if (isShortAmbiguousWithoutReference(latestText)) {
+    scope = "reset";
+    resetReason = "short_without_reference";
+  }
+
+  const scopedMessages = scopedMessagesForPolicy(input.messages, { scope });
+  const allowedPreviousEvent = scope === "continuation" && previousEventIsAllowed(input.previousMayusEvent);
+
+  return {
+    scope,
+    reset_reason: resetReason,
+    continuation_reason: continuationReason,
+    allowed_previous_event: allowedPreviousEvent,
+    allowed_process_candidates: latestHasProcessReference || (scope === "continuation" && !latestShortAcknowledgement && (!latestGenericProcessRequest || canUsePreviousAnsweredProcess)),
+    prompt_message_count: scopedMessages.length,
+  };
+}
+
+export function getMayusWhatsAppPromptMessages(messages: WhatsAppSalesMessage[], policy: MayusWhatsAppContextPolicy) {
+  return scopedMessagesForPolicy(messages, policy);
+}
+
+export function applyMayusWhatsAppContextPolicy(input: MayusOperatingPartnerInput, policy?: MayusWhatsAppContextPolicy): MayusOperatingPartnerInput {
+  const resolvedPolicy = policy || input.contextPolicy || buildMayusWhatsAppContextPolicy(input);
+  const rawActorContext = normalizeWhatsAppActorContext(input);
+  const latestInbound = getLastInbound(input.messages);
+  const latestText = latestInbound ? cleanText(messageTextWithMedia(latestInbound)) : null;
+  const latestLooksLikeProcessStatus = /processo|caso|andamento|status|situacao|atualizacao|novidade/.test(normalizeText(latestText));
+  const latestGenericProcessRequest = isGenericProcessStatusRequestWithoutReference(latestText);
+  const canUsePreviousAnsweredProcess = previousOutboundHasProcessReference(input.messages);
+  const promptMessages = getMayusWhatsAppPromptMessages(input.messages, resolvedPolicy);
+  const keepProcessContext = resolvedPolicy.scope === "continuation"
+    || hasCurrentProcessReference(latestText)
+    || (
+      resolvedPolicy.scope === "current_turn"
+      && Boolean(input.processStatusContext)
+      && latestLooksLikeProcessStatus
+    );
+  const allowProcessCandidates = keepProcessContext && (!latestGenericProcessRequest || canUsePreviousAnsweredProcess) && (
+    resolvedPolicy.allowed_process_candidates
+    || input.processStatusContext?.verified === true
+  );
+
+  return {
+    ...input,
+    messages: promptMessages,
+    previousMayusEvent: (resolvedPolicy.allowed_previous_event || resolvedPolicy.allowed_process_candidates) ? input.previousMayusEvent || null : null,
+    processStatusContext: keepProcessContext ? input.processStatusContext || null : null,
+    whatsappActorContext: input.whatsappActorContext || rawActorContext,
+    contextPolicy: {
+      ...resolvedPolicy,
+      prompt_message_count: promptMessages.length,
+      allowed_process_candidates: allowProcessCandidates,
+    },
+  };
+}
+
 function isRecentMessage(message: WhatsAppSalesMessage, referenceTime: number, windowMs: number) {
   const createdAt = new Date(message.created_at || "").getTime();
   if (!Number.isFinite(createdAt)) return false;
@@ -1058,21 +1449,25 @@ function buildMessageDigest(messages: WhatsAppSalesMessage[]) {
 
 function inferConversationState(input: MayusOperatingPartnerInput, deterministicIntent: MayusOperatingPartnerIntent): MayusConversationState {
   const digest = buildMessageDigest(input.messages);
-  const turnStartsClean = isPureGreeting(digest.lastInbound);
-  const previous = turnStartsClean ? {} : input.previousMayusEvent?.conversation_state || {};
+  const contextPolicy = input.contextPolicy || buildMayusWhatsAppContextPolicy(input);
+  const turnStartsClean = contextPolicy.scope === "reset" || isPureGreeting(digest.lastInbound);
+  const previous = contextPolicy.allowed_previous_event ? input.previousMayusEvent?.conversation_state || {} : {};
+  const previousCandidateState = contextPolicy.allowed_process_candidates ? input.previousMayusEvent?.conversation_state || {} : {};
   const facts = new Set<string>();
   const missing = new Set<string>();
   const objections = new Set<string>();
   const documents = new Set<string>();
   const text = digest.normalized;
   const hasCrm = !turnStartsClean && Boolean(input.crmContext?.crm_task_id);
-  const hasVerifiedProcessStatus = !turnStartsClean && input.processStatusContext?.verified === true;
+  const hasVerifiedProcessStatus = !turnStartsClean && contextPolicy.allowed_process_candidates === true && input.processStatusContext?.verified === true;
   const actorContext = normalizeWhatsAppActorContext(input);
   const hasIntroduced = hasMayusIntroducedRecently(input.messages);
   const hasDocumentContext = input.messages.some((message) => Boolean(cleanText(message.media_summary) || cleanText(message.media_text) || /documento|imagem|pdf|contracheque/i.test(String(message.content || ""))));
   const processCandidates = turnStartsClean
     ? []
-    : normalizeProcessCandidateMemory(input.processStatusContext?.candidateProcesses || previous.last_process_candidates);
+    : contextPolicy.allowed_process_candidates
+      ? normalizeProcessCandidateMemory(input.processStatusContext?.candidateProcesses || previousCandidateState.last_process_candidates)
+      : [];
 
   if (digest.lastInbound) facts.add(`ultima mensagem do cliente: ${digest.lastInbound}`);
   if (isOfficeOperatorActor(actorContext, input.processStatusContext)) facts.add("interlocutor e dono/equipe autorizada do escritorio; tratar como pedido interno");
@@ -1206,7 +1601,7 @@ function inferConversationState(input: MayusOperatingPartnerInput, deterministic
     last_customer_message: digest.lastInbound,
     last_mayus_message: digest.lastOutbound,
     last_commitment: cleanText(String(previous.last_commitment || "")) || null,
-    next_action: cleanText(input.previousMayusEvent?.next_action) || nextAction,
+    next_action: contextPolicy.allowed_previous_event ? cleanText(input.previousMayusEvent?.next_action) || nextAction : nextAction,
     has_mayus_introduced: hasIntroduced,
     conversation_summary: summarizeMessages(input.messages).slice(0, 1200),
     last_process_candidates: processCandidates.length ? processCandidates : undefined,
@@ -1302,7 +1697,7 @@ function detectDeterministicIntentAndRisk(messages: WhatsAppSalesMessage[], proc
   }
 
   if (/garantia|garantido|causa ganha|ganhar|promete|chance de ganhar/.test(lastInbound)) riskFlags.push("legal_result_risk");
-  if (/urgente|liminar|audiencia|bloqueio|prisao|despejo|prazo fatal|hoje/.test(lastInbound)) riskFlags.push("legal_urgency");
+  if (/urgente|liminar|audiencia|bloqueio|prisao|despejo|prazo fatal|hoje/.test(lastInbound) && !isOwnerSalesTodayRequest(rawLastInbound)) riskFlags.push("legal_urgency");
   if (/o que devo fazer juridicamente|posso processar|qual tese|qual recurso|me oriente juridicamente/.test(lastInbound)) riskFlags.push("sensitive_legal_advice");
   if (processStatusContext?.riskFlags?.length) riskFlags.push(...processStatusContext.riskFlags);
 
@@ -1361,6 +1756,8 @@ function buildPrompt(input: MayusOperatingPartnerInput, config: MayusOperatingPa
     "Voce e o escritor natural da resposta: nao copie frase pronta, nao use template, nao exponha o frame, nao explique o bastidor. Escreva como uma pessoa atenta no WhatsApp.",
     "Se writer_mode for llm_natural, voce e o escritor principal: responda com naturalidade usando os fatos do frame, sem criar entrevista.",
     "Se houver processo verificado ou referencia processual resolvida, responda o resumo disponivel do processo. Nao pergunte objetivo, foco, providencia, urgencia, consulta mesmo ou o que a pessoa precisa decidir.",
+    "Se o frame/recommended_intent for process_status, voce esta consultando andamento/status de processo ja existente. Nao fale de RMC, consignado, cartao beneficio, desconto em folha, contracheque ou captacao comercial, a menos que a mensagem atual pergunte explicitamente sobre isso.",
+    "Se a mensagem atual pedir processo/status/andamento e faltar identificador, peca apenas CNJ, numero do processo ou nome completo. Nao pergunte banco, tema, desconto, objetivo juridico ou tipo de acao.",
     "Se o operador pedir para analisar e passar ao cliente, entregue um resumo claro que o operador possa encaminhar, com status, ultima movimentacao e lacunas, sem nova pergunta.",
     "Se o frame trouxer resolved_reference, responda esse item diretamente. Se o frame for greeting, responda so a saudacao limpa. Se o frame pedir identificador minimo, peca apenas esse dado.",
     "Sempre escolha primeiro o papel da conversa: seller, support, case_status, billing, legal_triage ou handoff. A resposta deve cumprir esse papel.",
@@ -1375,6 +1772,10 @@ function buildPrompt(input: MayusOperatingPartnerInput, config: MayusOperatingPa
     "Se o interlocutor for office_operator, trate como dono/equipe autorizada do escritorio: fale como copiloto interno, nao como atendimento externo.",
     "Para office_operator, nunca pergunte se ele e cliente ou do escritorio; isso ja foi verificado pelo telefone autorizado.",
     "Para office_operator em pedido processual, use cliente, processo, base e ponto de conferencia. Nao use 'seu processo' nem pergunte 'voce pagou' custas/preparo/guia.",
+    "Para office_operator em pedido misto, responda como copiloto interno em blocos naturais. Se ele perguntar processo e venda/CRM no mesmo turno, trate as duas partes; nao ignore a parte comercial.",
+    "Para office_operator, mensagens como 'Pode me responder' retomam a ultima solicitacao pendente do proprio operador. Nao gere assunto aleatorio nem use processo antigo.",
+    "Se o pedido processual do office_operator nao trouxer nome, CNJ ou referencia segura no turno, peca so esse identificador. Nao puxe Margarete, Michele, Bradesco ou outro processo antigo por memoria fraca.",
+    "Se houver snapshot de vendas/CRM do escritorio, use-o como fonte. Se o snapshot nao trouxer venda confiavel hoje, diga isso com naturalidade em vez de inventar.",
     "Se custas, preparo, guia ou gratuidade nao estiverem confirmados na base, diga que nao consta confirmacao e deixe como ponto interno de conferencia.",
     "Use CNJ apenas como identificador secundario quando indispensavel; a resposta principal deve ser por parte contraria/assunto e situacao.",
     "Quando a resposta tiver mais de uma parte, retorne reply_blocks com blocos independentes e curtos para WhatsApp. Cada bloco deve ter no maximo 3 frases.",
@@ -1459,14 +1860,20 @@ function buildPrompt(input: MayusOperatingPartnerInput, config: MayusOperatingPa
     "Contexto CRM do contato:",
     JSON.stringify(input.crmContext || null),
     "",
+    "Snapshot operacional do escritorio para dono/equipe:",
+    JSON.stringify(input.ownerOfficeSnapshot || null),
+    "",
     "Contexto processual verificado:",
     JSON.stringify(input.processStatusContext || null),
+    "",
+    "Politica de contexto WhatsApp:",
+    JSON.stringify(input.contextPolicy || conversationFrame.context_policy || null),
     "",
     "Conversation Brain Frame do MAYUS:",
     JSON.stringify(conversationFrame),
     "",
-    "Ultimo evento MAYUS para este contato:",
-    JSON.stringify(input.previousMayusEvent || null),
+    "Ultimo evento MAYUS permitido para este turno:",
+    JSON.stringify((input.contextPolicy || conversationFrame.context_policy)?.allowed_previous_event ? input.previousMayusEvent || null : null),
     "",
     "Historico recente:",
     summarizeMessages(input.messages) || "Sem historico.",
@@ -1728,7 +2135,7 @@ function usesExternalProcessPossessiveForInternalActor(reply: string | null | un
 
 function isSafeProcessIdentifierRequest(reply: string | null | undefined) {
   const text = normalizeText(reply);
-  if (!/nome completo|cnj|numero do processo|identificador|localizar com seguranca|confirmar.*nome|confirme.*nome|qual e o seu nome/.test(text)) return false;
+  if (!/nome completo|nome do cliente|cnj|numero do processo|identificador|localizar com seguranca|confirmar.*nome|confirme.*nome|qual e o seu nome/.test(text)) return false;
   return !/fase de|ultima movimentacao|prazo|sentenca|replica|contestacao juntada|liminar|audiencia|decisao saiu|ganhar/.test(text);
 }
 
@@ -1736,18 +2143,34 @@ function isGenericProcessStatusRequestWithoutReference(value?: string | null) {
   const text = normalizeText(value);
   if (!/processo|caso|andamento|status|situacao|atualizacao|novidade/.test(text)) return false;
   if (/\d{7}-\d{2}|cnj|cpf|cnpj|processos? d[aeo]\s+[a-z]{2,}|casos? d[aeo]\s+[a-z]{2,}|nome completo\s+(e|eh)/.test(text)) return false;
-  return /um processo|sobre um processo|saber sobre um processo|situacao do processo|situacao do caso|me pass(a|e|ar).{0,30}situacao|gostaria de saber (sobre |de )?(o |um )?processo|queria saber (sobre |de )?(o |um )?processo|saber como esta (o |um )?processo|como esta (o |um )?processo/.test(text);
+  return /^(e\s+)?(o\s+)?processo\??$|um processo|sobre (o |um )?processo|do processo|saber (sobre |de |do )?(o |um )?processo|sabe (sobre |de |do )?(o |um )?processo|situacao do processo|situacao do caso|me pass(a|e|ar).{0,30}situacao|gostaria de saber (sobre |de |do )?(o |um )?processo|queria saber (sobre |de |do )?(o |um )?processo|quero saber (sobre |de |do )?(o |um )?processo|quero sabe (sobre |de |do )?(o |um )?processo|saber como esta (o |um )?processo|como esta (o |um )?processo|andamento do processo|status do processo|novidade do processo/.test(text);
 }
 
 function isCommercialTriageMessage(value?: string | null) {
   const text = normalizeText(value);
-  return /contracheque|holerite|folha|desconto|descontando|consignado|credcesta|rmc|rcc|cartao beneficio|cartao consignado|beneficio|beneficio do inss|inss|aposentadoria|bpc|loas/.test(text);
+  if (!text) return false;
+  const hasHardCommercialSignal = /contracheque|holerite|folha|desconto|descontando|consignado|credcesta|rmc|rcc|cartao beneficio|cartao consignado|cobranca indevida|fui descontado|quero entrar com acao|tenho problema com/.test(text);
+  if (hasHardCommercialSignal) return true;
+  return /\bbeneficio\b/.test(text) && !hasCurrentProcessTopic(value);
 }
 
 function safeGenericProcessIdentifierReply(processStatusContext?: WhatsAppProcessStatusContext | null, actorContext?: MayusWhatsAppActorContext | null) {
   return isOfficeOperatorActor(actorContext, processStatusContext)
     ? "Claro. Para eu localizar com segurança, me mande o nome completo do cliente ou o número do processo."
     : "Claro. Para eu localizar com segurança, me mande o número do processo/CNJ ou CPF.";
+}
+
+function buildUnmatchedProcessReferenceReply(
+  reference: string | null,
+  contactName?: string | null,
+  actorContext?: MayusWhatsAppActorContext | null,
+  processStatusContext?: WhatsAppProcessStatusContext | null,
+) {
+  const target = cleanText(reference) || "essa referencia";
+  const prefix = isOfficeOperatorActor(actorContext, processStatusContext) && cleanText(contactName)
+    ? `${cleanText(contactName)}, `
+    : "";
+  return `${prefix}nao localizei processo contra ${target} entre os que encontrei agora. Me passa o numero/CNJ desse processo, ou ele esta no nome de outra parte?`;
 }
 
 function previousAskedForProcessIdentifier(messages: WhatsAppSalesMessage[]) {
@@ -1762,6 +2185,11 @@ function isShortProcessNudge(messages: WhatsAppSalesMessage[], processStatusCont
   const lastInbound = normalizeText(getLastInbound(messages)?.content);
   if (!/^(cade|e ai|e agora|alguma novidade|conseguiu|viu|tem retorno|ta vendo|esta vendo)\??$/.test(lastInbound)) return false;
   return Boolean(processStatusContext || previousAskedForProcessIdentifier(messages));
+}
+
+function isShortAcknowledgement(value?: string | null) {
+  const text = normalizeText(value).replace(/[?!.,;:]+/g, " ").replace(/\s+/g, " ").trim();
+  return /^(ok|sim|isso|certo|blz|beleza|pode ser|ta|t[aá] bom|perfeito|entendi)$/.test(text);
 }
 
 function hasFirstResponseIntroduction(state: MayusConversationState) {
@@ -2144,6 +2572,7 @@ function buildDeterministicDecision(params: {
     whatsapp_actor_context: params.whatsappActorContext,
     conversation_frame: params.conversationFrame,
     quality_check: params.qualityCheck,
+    context_policy: params.conversationFrame?.context_policy,
     final_response_source: params.finalResponseSource || "deterministic_guardrail",
   });
 }
@@ -2271,6 +2700,10 @@ function asksProcessCandidateInterviewQuestion(text: string) {
   return /assunto principal|qual .*assunto|qual .*objetivo|objetivo principal|danos morais.*ou.*(fgts|inpc|caixa)|fgts.*ou.*bradesco|indenizacao.*ou.*atualizacao|qual desses|qual deles|qual outro|qual processo|tratar desconto|desconto\/valores|desconto ou valores|andamento.{0,80}(ou|\/).{0,80}(desconto|valor|custas|pagamento)|se (voce )?nao souber.*(numero do processo|foto do documento)/.test(text);
 }
 
+function hasForbiddenCommercialTermsForProcessStatus(text: string) {
+  return /contracheque|holerite|desconto|descontando|rmc|rcc|cartao beneficio|cartao consignado|consignado|credcesta|especie iv/.test(text);
+}
+
 function buildReplyQualityCheck(params: {
   reply: string | null | undefined;
   frame: MayusWhatsAppConversationFrame;
@@ -2280,6 +2713,14 @@ function buildReplyQualityCheck(params: {
   const text = normalizeText(reply);
   const flags: string[] = [];
   const reasons: string[] = [];
+  const currentRequest = normalizeText(params.frame.last_message);
+  const currentRequestIsProcessStatus = hasCurrentProcessTopic(currentRequest) || params.frame.recommended_intent === "process_status";
+  const currentRequestHasCommercialSignal = isCommercialTriageMessage(currentRequest);
+
+  if (currentRequestIsProcessStatus && !currentRequestHasCommercialSignal && hasForbiddenCommercialTermsForProcessStatus(text)) {
+    flags.push("process_status_commercial_contamination");
+    reasons.push("Pedido atual e de processo/status, mas a resposta puxou RMC, desconto, consignado ou contracheque.");
+  }
 
   if (params.frame.resolution_type === "greeting") {
     if (/processo|custas|preparo|cnj|banco|bradesco|caixa|master|contracheque|beneficio/.test(text)) {
@@ -2365,6 +2806,17 @@ function buildReplyQualityCheck(params: {
     if (/assunto principal|qual .*assunto|tema|indenizacao|fgts|atualizacao|rmc|bancario|previdenciario|beneficio|consignado|execucao|familia|esse processo|processo d[ao]/.test(text)) {
       flags.push("asks_unneeded_process_subject");
       reasons.push("Pedido generico de processo pediu assunto juridico em vez de identificador minimo.");
+    }
+  }
+
+  if (params.frame.resolution_type === "owner_multi_intent") {
+    if (/margarete|bradesco|caixa|master|qual .*banco|qual .*tema|qual .*assunto|qual .*objetivo|como esta escrito na capa/.test(text)) {
+      flags.push("owner_multi_intent_stale_or_scripted");
+      reasons.push("Pedido interno misto reaproveitou contexto antigo ou pergunta de formulario.");
+    }
+    if (!/venda|crm|comercial|lead/.test(text)) {
+      flags.push("owner_multi_intent_missing_sales_answer");
+      reasons.push("Pedido interno misto nao respondeu a parte comercial.");
     }
   }
 
@@ -2480,7 +2932,11 @@ function normalizeDecision(parsed: any, params: {
   const safeUnverifiedProcessStatusReply = intent === "process_status"
     && params.processStatusContext?.verified !== true
     && isSafeProcessIdentifierRequest(replyForValidation);
-  const effectiveRiskFlags = safeUnverifiedProcessStatusReply
+  const safeOwnerMultiIntentIdentifierReply = params.conversationFrame.resolution_type === "owner_multi_intent"
+    && isOfficeOperatorActor(params.whatsappActorContext, params.processStatusContext)
+    && isSafeProcessIdentifierRequest(replyForValidation)
+    && /venda|crm|comercial|lead/.test(normalizeText(replyForValidation));
+  const effectiveRiskFlags = safeUnverifiedProcessStatusReply || safeOwnerMultiIntentIdentifierReply
     ? riskFlags.filter((flag) => flag !== "case_status_unverified")
     : riskFlags;
   const hasHighRisk = effectiveRiskFlags.some((flag) => HIGH_RISK_FLAGS.includes(flag));
@@ -2491,6 +2947,12 @@ function normalizeDecision(parsed: any, params: {
       || params.conversationFrame.resolution_type === "process_candidates"
       || params.conversationFrame.resolution_type === "generic_process_request"
     )
+    && qualityCheck.status === "pass"
+    && !hasHighRisk
+    && !riskFlags.includes("generic_reply_not_conversational")
+    && !riskFlags.includes("foreign_language_leak");
+  const safeOfficeOperatorOwnerMultiIntentReply = isOfficeOperatorActor(params.whatsappActorContext, params.processStatusContext)
+    && params.conversationFrame.resolution_type === "owner_multi_intent"
     && qualityCheck.status === "pass"
     && !hasHighRisk
     && !riskFlags.includes("generic_reply_not_conversational")
@@ -2515,7 +2977,7 @@ function normalizeDecision(parsed: any, params: {
     || riskFlags.includes("incomplete_conversation_control")
     || closingReadiness.status === "ready_for_human_close"
     || closingReadiness.status === "blocked"
-    || (!safeOfficeOperatorProcessReply && effectiveActions.some((action) => (
+    || (!safeOfficeOperatorProcessReply && !safeOfficeOperatorOwnerMultiIntentReply && effectiveActions.some((action) => (
       (action.requires_approval === true && action.type !== "recommend_handoff")
       || action.type === "prepare_proposal"
       || action.type === "mark_ready_for_closing"
@@ -2567,6 +3029,7 @@ function normalizeDecision(parsed: any, params: {
     whatsapp_actor_context: params.whatsappActorContext,
     conversation_frame: params.conversationFrame,
     quality_check: qualityCheck,
+    context_policy: params.conversationFrame.context_policy,
     final_response_source: useFrameGuardrailReply ? "deterministic_guardrail" : "llm_natural",
   });
 }
@@ -2587,6 +3050,7 @@ const REPAIRABLE_RISK_FLAGS = [
   "missing_explicit_reference",
   "asks_unneeded_process_choice",
   "asks_unneeded_process_subject",
+  "process_status_commercial_contamination",
   "robotic_self_reference",
 ];
 
@@ -2799,14 +3263,16 @@ async function recordReplyRepairEvent(params: {
 }
 
 export async function buildMayusOperatingPartnerDecision(input: MayusOperatingPartnerInput): Promise<MayusOperatingPartnerDecision> {
-  const config = normalizeMayusOperatingPartnerConfig(input.operatingPartner);
-  const selectedModel = chooseModel(input);
-  const whatsappActorContext = normalizeWhatsAppActorContext(input);
-  const deterministic = detectDeterministicIntentAndRisk(input.messages, input.processStatusContext);
-  const fallbackState = inferConversationState(input, deterministic.intent);
-  const fallbackClosingReadiness = inferClosingReadiness(fallbackState, deterministic.intent, input.processStatusContext);
-  const fallbackSupportSummary = inferSupportSummary(input, fallbackState, deterministic.intent);
-  const conversationFrame = buildWhatsAppConversationFrame(input, {
+  const contextPolicy = input.contextPolicy || buildMayusWhatsAppContextPolicy(input);
+  const scopedInput = applyMayusWhatsAppContextPolicy(input, contextPolicy);
+  const config = normalizeMayusOperatingPartnerConfig(scopedInput.operatingPartner);
+  const selectedModel = chooseModel(scopedInput);
+  const whatsappActorContext = normalizeWhatsAppActorContext(scopedInput);
+  const deterministic = detectDeterministicIntentAndRisk(scopedInput.messages, scopedInput.processStatusContext);
+  const fallbackState = inferConversationState(scopedInput, deterministic.intent);
+  const fallbackClosingReadiness = inferClosingReadiness(fallbackState, deterministic.intent, scopedInput.processStatusContext);
+  const fallbackSupportSummary = inferSupportSummary(scopedInput, fallbackState, deterministic.intent);
+  const conversationFrame = buildWhatsAppConversationFrame(scopedInput, {
     deterministicIntent: deterministic.intent,
     fallbackState,
     fallbackSupportSummary,
@@ -2847,9 +3313,9 @@ export async function buildMayusOperatingPartnerDecision(input: MayusOperatingPa
       requiresApproval: false,
       expectedOutcome: "abrir conversa limpa sem puxar processo, lead ou historico antigo",
       reasoning: "Saudacao pura detectada; MAYUS respondeu por guardrail deterministico e ignorou contexto processual antigo.",
-      assistantName: input.officeKnowledgeProfile?.assistantName,
-      officeName: input.officeKnowledgeProfile?.officeName,
-      contactName: input.contactName,
+      assistantName: scopedInput.officeKnowledgeProfile?.assistantName,
+      officeName: scopedInput.officeKnowledgeProfile?.officeName,
+      contactName: scopedInput.contactName,
       whatsappActorContext,
       conversationFrame,
       qualityCheck,
@@ -2857,13 +3323,115 @@ export async function buildMayusOperatingPartnerDecision(input: MayusOperatingPa
     });
   }
 
-  const llm = await getLLMClient(input.supabase, input.tenantId, "sdr_whatsapp", {
+  const resetReason = scopedInput.contextPolicy?.reset_reason || null;
+  const shouldAnswerResetDeterministically = [
+    "empty_turn",
+    "context_complaint",
+    "stale_continuation_reference",
+  ].includes(resetReason || "");
+
+  if (shouldAnswerResetDeterministically) {
+    const qualityCheck: MayusWhatsAppReplyQualityCheck = {
+      status: "pass",
+      flags: [],
+      reasons: [],
+    };
+    const isComplaintReset = conversationFrame.resolution_type === "complaint";
+    const isStaleContinuation = resetReason === "stale_continuation_reference";
+    const reply = isComplaintReset
+      ? conversationFrame.safe_fallback_reply
+      : isStaleContinuation
+        ? safeGenericProcessIdentifierReply(scopedInput.processStatusContext, whatsappActorContext)
+      : "Entendi. Me diga so o ponto principal que voce quer resolver agora.";
+
+    return buildDeterministicDecision({
+      config,
+      reply,
+      intent: conversationFrame.recommended_intent,
+      confidence: 0.9,
+      state: {
+        ...fallbackState,
+        conversation_role: "support",
+        conversation_goal: conversationFrame.conversation_goal,
+        customer_temperature: fallbackState.customer_temperature || "existing_client",
+        stage: "client_support",
+        facts_known: fallbackState.last_customer_message ? [`ultima mensagem do cliente: ${fallbackState.last_customer_message}`] : [],
+        missing_information: [],
+        objections: [],
+        documents_requested: [],
+        last_process_candidates: undefined,
+        next_action: "aguardar o assunto atual do interlocutor",
+      },
+      closingReadiness: fallbackClosingReadiness,
+      supportSummary: {
+        ...fallbackSupportSummary,
+        issue_type: "support",
+        verified_case_reference: false,
+      },
+      riskFlags: [],
+      nextAction: "aguardar o assunto atual do interlocutor",
+      actions: [{ type: "none", title: "Responder reset de contexto sem consultar LLM", requires_approval: false }],
+      requiresApproval: false,
+      expectedOutcome: "abrir turno limpo sem gastar LLM nem puxar historico antigo",
+      reasoning: "Politica de contexto reset; MAYUS respondeu por guardrail deterministico e bloqueou memoria antiga.",
+      assistantName: scopedInput.officeKnowledgeProfile?.assistantName,
+      officeName: scopedInput.officeKnowledgeProfile?.officeName,
+      contactName: scopedInput.contactName,
+      whatsappActorContext,
+      conversationFrame,
+      qualityCheck,
+      finalResponseSource: "deterministic_guardrail",
+    });
+  }
+
+  if (conversationFrame.hard_guardrail_reason && conversationFrame.resolution_type !== "complaint") {
+    const qualityCheck = buildReplyQualityCheck({
+      reply: conversationFrame.safe_fallback_reply,
+      frame: conversationFrame,
+      conversationState: fallbackState,
+    });
+    const deterministicIntent = conversationFrame.recommended_intent;
+    return buildDeterministicDecision({
+      config,
+      reply: conversationFrame.safe_fallback_reply,
+      intent: deterministicIntent,
+      confidence: 0.92,
+      state: {
+        ...fallbackState,
+        conversation_role: deterministicIntent === "process_status" ? "case_status" : fallbackState.conversation_role,
+        conversation_goal: conversationFrame.conversation_goal,
+        stage: deterministicIntent === "process_status" ? "client_support" : fallbackState.stage,
+        next_action: conversationFrame.conversation_goal,
+      },
+      closingReadiness: fallbackClosingReadiness,
+      supportSummary: {
+        ...fallbackSupportSummary,
+        issue_type: deterministicIntent === "process_status" ? "process_status" : fallbackSupportSummary.issue_type,
+        verified_case_reference: Boolean(conversationFrame.resolved_reference),
+      },
+      riskFlags: qualityCheck.flags,
+      nextAction: conversationFrame.conversation_goal,
+      actions: [{ type: deterministicIntent === "process_status" ? "answer_support" : "none", title: "Responder por roteador deterministico WhatsApp", requires_approval: false }],
+      requiresApproval: qualityCheck.status !== "pass",
+      expectedOutcome: "responder o turno sem contaminar status processual com triagem comercial",
+      reasoning: `Guardrail deterministico aplicado antes do LLM: ${conversationFrame.hard_guardrail_reason}.`,
+      assistantName: scopedInput.officeKnowledgeProfile?.assistantName,
+      officeName: scopedInput.officeKnowledgeProfile?.officeName,
+      contactName: scopedInput.contactName,
+      whatsappActorContext,
+      conversationFrame,
+      qualityCheck,
+      finalResponseSource: "deterministic_guardrail",
+    });
+  }
+
+  const llm = await getLLMClient(scopedInput.supabase, scopedInput.tenantId, "sdr_whatsapp", {
     preferredProvider: "openrouter",
     modelOverride: selectedModel,
   });
-  const fetcher = input.fetcher || fetch;
+  const fetcher = scopedInput.fetcher || fetch;
   const headers = buildHeaders(llm);
-  const originalPrompt = buildPrompt(input, config, llm.model, deterministic.intent, fallbackState, fallbackClosingReadiness, fallbackSupportSummary, whatsappActorContext, conversationFrame);
+  const originalPrompt = buildPrompt(scopedInput, config, llm.model, deterministic.intent, fallbackState, fallbackClosingReadiness, fallbackSupportSummary, whatsappActorContext, conversationFrame);
   const normalizationParams = {
     config,
     provider: llm.provider,
@@ -2873,12 +3441,12 @@ export async function buildMayusOperatingPartnerDecision(input: MayusOperatingPa
     fallbackState,
     fallbackClosingReadiness,
     fallbackSupportSummary,
-    processStatusContext: input.processStatusContext,
+    processStatusContext: scopedInput.processStatusContext,
     whatsappActorContext,
     conversationFrame,
-    assistantName: input.officeKnowledgeProfile?.assistantName,
-    officeName: input.officeKnowledgeProfile?.officeName,
-    contactName: input.contactName,
+    assistantName: scopedInput.officeKnowledgeProfile?.assistantName,
+    officeName: scopedInput.officeKnowledgeProfile?.officeName,
+    contactName: scopedInput.contactName,
   };
   let parsed: any;
   try {
@@ -2891,7 +3459,7 @@ export async function buildMayusOperatingPartnerDecision(input: MayusOperatingPa
     });
   } catch (error) {
     return buildSafeFallbackDecisionFromFrame({
-      input,
+      input: scopedInput,
       config,
       conversationFrame,
       fallbackState,
@@ -2918,8 +3486,8 @@ export async function buildMayusOperatingPartnerDecision(input: MayusOperatingPa
     repairedDecision = normalizeDecision(repairedParsed, normalizationParams);
     const repairedStillUnsafe = needsReplyRepair(repairedDecision);
     await recordReplyRepairEvent({
-      supabase: input.supabase,
-      tenantId: input.tenantId,
+      supabase: scopedInput.supabase,
+      tenantId: scopedInput.tenantId,
       status: repairedStillUnsafe ? "warning" : "ok",
       invalidDecision: decision,
       repairedDecision,
@@ -2933,8 +3501,8 @@ export async function buildMayusOperatingPartnerDecision(input: MayusOperatingPa
     return { ...repairedDecision, final_response_source: "llm_repaired" };
   } catch (error) {
     await recordReplyRepairEvent({
-      supabase: input.supabase,
-      tenantId: input.tenantId,
+      supabase: scopedInput.supabase,
+      tenantId: scopedInput.tenantId,
       status: "error",
       invalidDecision: decision,
       repairedDecision: null,

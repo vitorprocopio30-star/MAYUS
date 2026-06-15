@@ -8,8 +8,20 @@ export type WhatsAppReplyAudioResult = {
   audioUrl: string;
   storagePath: string;
   provider: "openai" | "elevenlabs";
+  ttsProvider: "openai" | "elevenlabs";
+  voiceProfile: string | null;
+  voiceIdSource: "tenant_integration" | "env_fallback" | null;
   mimeType: "audio/mpeg";
   filename: string;
+};
+
+export type WhatsAppReplyVoiceStatus = {
+  enabled: boolean;
+  provider: "openai" | "elevenlabs";
+  displayLabel: string;
+  voiceProfile: string | null;
+  voiceIdSource: "tenant_integration" | "env_fallback" | null;
+  blockedReason: string | null;
 };
 
 function cleanText(value?: string | null) {
@@ -34,6 +46,47 @@ async function loadVoiceSettings(supabase: SupabaseClient, tenantId: string) {
   return {
     provider: features.voice_provider === "elevenlabs" ? "elevenlabs" as const : "openai" as const,
     openAiVoice: cleanText(features.openai_voice) || "nova",
+    voiceProfile: cleanText(features.voice_profile) || (features.voice_provider === "elevenlabs" ? "mayusorb" : null),
+  };
+}
+
+export async function resolveWhatsAppReplyVoiceStatus(params: {
+  supabase: SupabaseClient;
+  tenantId: string;
+}): Promise<WhatsAppReplyVoiceStatus> {
+  const settings = await loadVoiceSettings(params.supabase, params.tenantId);
+
+  if (settings.provider === "elevenlabs") {
+    const integration = await getTenantIntegrationResolved(params.tenantId, "elevenlabs").catch(() => null);
+    const tenantApiKey = cleanText(integration?.api_key);
+    const tenantVoiceId = cleanText(integration?.instance_name);
+    const envApiKey = cleanText(process.env.ELEVENLABS_API_KEY);
+    const envVoiceId = cleanText(process.env.ELEVENLABS_VOICE_ID);
+    const useEnvFallback = !integration && Boolean(envApiKey && envVoiceId);
+    const voiceIdSource = tenantVoiceId ? "tenant_integration" as const : useEnvFallback ? "env_fallback" as const : null;
+    const enabled = Boolean((tenantApiKey || (useEnvFallback ? envApiKey : null)) && (tenantVoiceId || (useEnvFallback ? envVoiceId : null)));
+
+    return {
+      enabled,
+      provider: "elevenlabs",
+      displayLabel: enabled
+        ? voiceIdSource === "tenant_integration" ? "MayusOrb/ElevenLabs" : "ElevenLabs/env fallback"
+        : "Sem voz configurada",
+      voiceProfile: settings.voiceProfile || "mayusorb",
+      voiceIdSource,
+      blockedReason: enabled ? null : "missing_elevenlabs_voice_id_or_api_key",
+    };
+  }
+
+  const { apiKey } = await requireTenantApiKey(params.tenantId, "openai").catch(() => ({ apiKey: null }));
+  const enabled = Boolean(apiKey);
+  return {
+    enabled,
+    provider: "openai",
+    displayLabel: enabled ? `OpenAI ${settings.openAiVoice}` : "Sem voz configurada",
+    voiceProfile: settings.openAiVoice,
+    voiceIdSource: null,
+    blockedReason: enabled ? null : "missing_openai_api_key",
   };
 }
 
@@ -69,16 +122,19 @@ async function synthesizeElevenLabs(params: {
   text: string;
   fetcher: typeof fetch;
 }) {
-  let apiKey = process.env.ELEVENLABS_API_KEY || "";
-  let voiceId = process.env.ELEVENLABS_VOICE_ID || "";
+  const integration = await getTenantIntegrationResolved(params.tenantId, "elevenlabs");
+  const tenantApiKey = cleanText(integration?.api_key);
+  const tenantVoiceId = cleanText(integration?.instance_name);
+  const envApiKey = cleanText(process.env.ELEVENLABS_API_KEY);
+  const envVoiceId = cleanText(process.env.ELEVENLABS_VOICE_ID);
+  const apiKey = tenantApiKey || envApiKey || "";
+  const useEnvFallback = !integration && Boolean(envVoiceId);
+  const voiceId = tenantVoiceId || (useEnvFallback ? envVoiceId : "");
+  const voiceIdSource = tenantVoiceId ? "tenant_integration" as const : useEnvFallback ? "env_fallback" as const : null;
 
   if (!apiKey || !voiceId) {
-    const integration = await getTenantIntegrationResolved(params.tenantId, "elevenlabs");
-    apiKey = apiKey || String(integration?.api_key || "");
-    voiceId = voiceId || String(integration?.instance_name || "");
+    throw new Error("ElevenLabs API Key ou Voice ID da MAYUSOrb ausentes para audio WhatsApp.");
   }
-
-  if (!apiKey || !voiceId) throw new Error("ElevenLabs API Key ou Voice ID ausentes para audio WhatsApp.");
 
   const response = await params.fetcher(`https://api.elevenlabs.io/v1/text-to-speech/${voiceId}?output_format=mp3_44100_128`, {
     method: "POST",
@@ -97,7 +153,10 @@ async function synthesizeElevenLabs(params: {
   });
 
   if (!response.ok) throw new Error(`Falha ao gerar audio ElevenLabs: ${response.status}`);
-  return Buffer.from(await response.arrayBuffer());
+  return {
+    bytes: Buffer.from(await response.arrayBuffer()),
+    voiceIdSource,
+  };
 }
 
 export async function synthesizeWhatsAppReplyAudio(params: {
@@ -114,9 +173,11 @@ export async function synthesizeWhatsAppReplyAudio(params: {
   const settings = await loadVoiceSettings(params.supabase, params.tenantId);
   const input = text.slice(0, 1400);
   const provider = settings.provider;
-  const bytes = provider === "elevenlabs"
+  let voiceIdSource: WhatsAppReplyAudioResult["voiceIdSource"] = null;
+  const audio = provider === "elevenlabs"
     ? await synthesizeElevenLabs({ tenantId: params.tenantId, text: input, fetcher })
-    : await synthesizeOpenAi({ tenantId: params.tenantId, text: input, voice: settings.openAiVoice, fetcher });
+    : { bytes: await synthesizeOpenAi({ tenantId: params.tenantId, text: input, voice: settings.openAiVoice, fetcher }), voiceIdSource: null };
+  voiceIdSource = audio.voiceIdSource;
 
   const filename = `mayus-reply-${Date.now()}.mp3`;
   const storagePath = [
@@ -128,7 +189,7 @@ export async function synthesizeWhatsAppReplyAudio(params: {
 
   const { error: uploadError } = await params.supabase.storage
     .from(WHATSAPP_MEDIA_BUCKET)
-    .upload(storagePath, bytes, {
+    .upload(storagePath, audio.bytes, {
       contentType: "audio/mpeg",
       upsert: true,
     });
@@ -143,6 +204,9 @@ export async function synthesizeWhatsAppReplyAudio(params: {
     audioUrl: signedData.signedUrl,
     storagePath,
     provider,
+    ttsProvider: provider,
+    voiceProfile: settings.voiceProfile || (provider === "elevenlabs" ? "mayusorb" : settings.openAiVoice),
+    voiceIdSource,
     mimeType: "audio/mpeg",
     filename,
   };

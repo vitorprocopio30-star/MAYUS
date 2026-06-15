@@ -222,6 +222,39 @@ describe("whatsapp reply processor", () => {
     }));
   });
 
+  it("nao abre pulso de digitando para dono/equipe autorizado", async () => {
+    const row = {
+      id: "message-owner-1",
+      tenant_id: "tenant-1",
+      contact_id: "contact-1",
+      direction: "inbound",
+      media_processing_status: "none",
+      created_at: new Date().toISOString(),
+      metadata: {
+        reply_processing_status: "pending",
+        reply_trigger: "evolution_webhook",
+        reply_preferred_provider: "evolution",
+        owner_sender: true,
+        reply_actor_role: "office_operator",
+        reply_delivery_profile: "office_operator_instant",
+      },
+    };
+    const { supabase } = makeSupabase(row);
+    mocks.prepareWhatsAppSalesReplyForContact.mockResolvedValueOnce({
+      autoSendResult: { status: "sent" },
+      metadata: {
+        conversation_classification: { class: "owner_command" },
+        whatsapp_actor_context: { role: "office_operator" },
+      },
+    });
+
+    const result = await processPendingWhatsAppRepliesBatch({ supabase, limit: 1 });
+
+    expect(result).toMatchObject({ picked: 1, processed: 1, failed: 0, auto_sent: 1 });
+    expect(mocks.prepareWhatsAppSalesReplyForContact).toHaveBeenCalled();
+    expect(mocks.sendEvolutionPresenceForContact).not.toHaveBeenCalled();
+  });
+
   it("descarta resposta pendente quando ja chegou mensagem mais nova", async () => {
     const row = {
       id: "message-superseded",

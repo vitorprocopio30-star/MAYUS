@@ -8,6 +8,8 @@ import { useUserProfile } from "@/hooks/useUserProfile";
 import { isFullAccessRole } from "@/lib/permissions";
 import { GoogleDriveLogo } from "@/components/branding/GoogleDriveLogo";
 import { LEGAL_PIECE_SUGGESTIONS, PRACTICE_AREA_OPTIONS } from "@/lib/juridico/piece-catalog";
+import { evaluateLegalDraftSourceGate, type LegalDraftSourceGateAction } from "@/lib/lex/draft-source-gate";
+import { buildDraftCaseBrainEvidence, buildDraftSourceEvidence } from "@/lib/lex/legal-evidence-normalizers";
 import ReactMarkdown from "react-markdown";
 import {
   Copy,
@@ -848,6 +850,7 @@ export default function DocumentosPage() {
   const [draftVersionsLoadingTaskId, setDraftVersionsLoadingTaskId] = useState<string | null>(null);
   const [draftWorkflowBusyKey, setDraftWorkflowBusyKey] = useState<string | null>(null);
   const [draftRevisionBusyKey, setDraftRevisionBusyKey] = useState<string | null>(null);
+  const [sourceGateOverrideReasonByVersionId, setSourceGateOverrideReasonByVersionId] = useState<Record<string, string>>({});
   const [draftQueueHealth, setDraftQueueHealth] = useState<DraftFactoryQueueHealth | null>(null);
   const [driveScanRuns, setDriveScanRuns] = useState<DriveScanRunRecord[]>([]);
   const [driveScanDetail, setDriveScanDetail] = useState<DriveScanRunDetail | null>(null);
@@ -900,6 +903,30 @@ export default function DocumentosPage() {
 
     return null;
   }, [selectedDraftVersion, selectedDraftVersionStale]);
+  const selectedDraftDisplayedGateAction = useMemo<LegalDraftSourceGateAction | null>(() => {
+    if (!selectedDraftVersion) return null;
+    if (selectedDraftVersion.workflow_status === "draft") return "approve";
+    if (selectedDraftVersion.workflow_status === "approved") return "publish";
+    if (selectedDraftVersion.workflow_status === "published") return "premium_publish";
+    return null;
+  }, [selectedDraftVersion]);
+  const selectedDraftSourceGateDecision = useMemo(() => {
+    if (!selectedDraftVersion || !selectedDraftDisplayedGateAction) return null;
+    const reason = sourceGateOverrideReasonByVersionId[selectedDraftVersion.id]?.trim() || "";
+    return evaluateLegalDraftSourceGate({
+      action: selectedDraftDisplayedGateAction,
+      metadata: selectedDraftVersion.metadata,
+      override: reason ? { approved: true, reason } : null,
+    });
+  }, [selectedDraftDisplayedGateAction, selectedDraftVersion, sourceGateOverrideReasonByVersionId]);
+  const selectedDraftSourceEvidence = useMemo(
+    () => buildDraftSourceEvidence(selectedDraftVersion),
+    [selectedDraftVersion],
+  );
+  const selectedDraftCaseBrainEvidence = useMemo(
+    () => buildDraftCaseBrainEvidence(selectedDraftVersion, selectedCard?.caseBrainTaskId || null),
+    [selectedDraftVersion, selectedCard?.caseBrainTaskId],
+  );
   const canFormallyReviewDraft = isFullAccessRole(role);
 
   useEffect(() => {
@@ -1159,6 +1186,27 @@ export default function DocumentosPage() {
     }));
   }, []);
 
+  const getSourceGateDecisionForAction = useCallback((version: ProcessDraftVersion, action: LegalDraftSourceGateAction) => {
+    const reason = sourceGateOverrideReasonByVersionId[version.id]?.trim() || "";
+    return evaluateLegalDraftSourceGate({
+      action,
+      metadata: version.metadata,
+      override: reason ? { approved: true, reason } : null,
+    });
+  }, [sourceGateOverrideReasonByVersionId]);
+
+  const isSourceGateBlockedForAction = useCallback((version: ProcessDraftVersion, action: LegalDraftSourceGateAction) => {
+    const decision = getSourceGateDecisionForAction(version, action);
+    return decision.requiresOverride && !decision.allowed;
+  }, [getSourceGateDecisionForAction]);
+
+  const buildSourceGatePayload = useCallback((versionId: string) => {
+    const reason = sourceGateOverrideReasonByVersionId[versionId]?.trim() || "";
+    return reason.length >= 8
+      ? { source_gate_override: true, source_gate_override_reason: reason }
+      : {};
+  }, [sourceGateOverrideReasonByVersionId]);
+
   const handleDraftWorkflowAction = useCallback(async (taskId: string, versionId: string, action: "approve" | "publish") => {
     const busyKey = `${taskId}:${versionId}:${action}`;
     setDraftWorkflowBusyKey(busyKey);
@@ -1167,7 +1215,10 @@ export default function DocumentosPage() {
       const response = await fetch(`/api/documentos/processos/${taskId}/minutas/${versionId}`, {
         method: "PATCH",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ action }),
+        body: JSON.stringify({
+          action,
+          ...buildSourceGatePayload(versionId),
+        }),
       });
       const data = await response.json().catch(() => null);
 
@@ -1192,7 +1243,7 @@ export default function DocumentosPage() {
     } finally {
       setDraftWorkflowBusyKey((current) => (current === busyKey ? null : current));
     }
-  }, [loadDraftQueueHealth, loadDraftVersions, loadRepository]);
+  }, [buildSourceGatePayload, loadDraftQueueHealth, loadDraftVersions, loadRepository]);
 
   const handleResetDraftEditor = useCallback((version: ProcessDraftVersion) => {
     setDraftEditorContentByVersionId((current) => ({
@@ -1637,6 +1688,7 @@ export default function DocumentosPage() {
           pieceLabel: version.piece_label || "Peça Jurídica",
           versionId: version.id,
           publishToDrive: true,
+          ...buildSourceGatePayload(version.id),
         }),
       });
 
@@ -2239,9 +2291,226 @@ export default function DocumentosPage() {
                                   )}
                                 </div>
 
+                                <div
+                                  data-testid={`documents-case-brain-evidence-${selectedDraftVersion.id}`}
+                                  className={`rounded-xl border px-4 py-3 text-xs leading-relaxed ${
+                                    selectedDraftVersionStale
+                                      ? "border-amber-500/25 bg-amber-500/10 text-amber-100"
+                                      : "border-white/10 bg-black/25 text-gray-300"
+                                  }`}
+                                >
+                                  <div className="flex flex-col gap-3 lg:flex-row lg:items-start lg:justify-between">
+                                    <div>
+                                      <p className="font-black uppercase tracking-[0.18em] text-[10px] text-[#E2C37A]">
+                                        Case Brain da minuta
+                                      </p>
+                                      <p className="mt-2">
+                                        {selectedDraftCaseBrainEvidence.summary
+                                          || "Sem snapshot dedicado disponivel para esta versao."}
+                                      </p>
+                                    </div>
+                                    <div className="flex flex-wrap gap-1.5 text-[10px]">
+                                      <span className="rounded-full border border-white/10 bg-black/20 px-2 py-1">
+                                        Atual: {selectedDraftCaseBrainEvidence.currentCaseBrainTaskId || "nao informado"}
+                                      </span>
+                                      <span className="rounded-full border border-white/10 bg-black/20 px-2 py-1">
+                                        Usado: {selectedDraftCaseBrainEvidence.sourceCaseBrainTaskId || "nao informado"}
+                                      </span>
+                                      {selectedDraftVersionStale && (
+                                        <span className="rounded-full border border-amber-300/20 bg-amber-300/10 px-2 py-1 font-black uppercase tracking-widest">
+                                          Base desatualizada
+                                        </span>
+                                      )}
+                                    </div>
+                                  </div>
+
+                                  <div className="mt-3 grid gap-2 md:grid-cols-3">
+                                    <span>Riscos altos: {selectedDraftCaseBrainEvidence.highRiskCount}</span>
+                                    <span>Contradicoes altas: {selectedDraftCaseBrainEvidence.highContradictionCount}</span>
+                                    <span>Lacunas: {selectedDraftCaseBrainEvidence.groundingGapCount}</span>
+                                  </div>
+
+                                  {(selectedDraftCaseBrainEvidence.risks.length > 0
+                                    || selectedDraftCaseBrainEvidence.contradictions.length > 0
+                                    || selectedDraftCaseBrainEvidence.gaps.length > 0
+                                    || selectedDraftCaseBrainEvidence.missingDocuments.length > 0
+                                    || selectedDraftCaseBrainEvidence.relevantUnusedDocuments.length > 0
+                                    || selectedDraftCaseBrainEvidence.sourceGateStatus
+                                    || selectedDraftCaseBrainEvidence.premiumOverrideReason) && (
+                                    <div className="mt-3 grid gap-3 lg:grid-cols-2">
+                                      {[
+                                        { title: "Riscos do Case Brain", items: selectedDraftCaseBrainEvidence.risks },
+                                        { title: "Contradicoes", items: selectedDraftCaseBrainEvidence.contradictions },
+                                        { title: "Gaps do Case Brain", items: selectedDraftCaseBrainEvidence.gaps },
+                                        { title: "Documentos faltantes", items: selectedDraftCaseBrainEvidence.missingDocuments },
+                                        { title: "Documentos relevantes nao usados", items: selectedDraftCaseBrainEvidence.relevantUnusedDocuments },
+                                      ].filter((group) => group.items.length > 0).map((group) => (
+                                        <div key={group.title} className="rounded-lg border border-white/10 bg-black/15 p-2">
+                                          <p className="text-[9px] font-black uppercase tracking-[0.16em] opacity-80">{group.title}</p>
+                                          <ul className="mt-2 space-y-1">
+                                            {group.items.slice(0, 4).map((item) => (
+                                              <li key={`${group.title}:${item.label}:${item.href || ""}`} className="flex items-start gap-2">
+                                                <span className="mt-1 h-1.5 w-1.5 shrink-0 rounded-full bg-current opacity-60" />
+                                                {item.href ? (
+                                                  <a href={item.href} target="_blank" rel="noreferrer" className="break-words underline decoration-current/40 underline-offset-2">
+                                                    {item.label}
+                                                  </a>
+                                                ) : (
+                                                  <span className="break-words">{item.label}</span>
+                                                )}
+                                              </li>
+                                            ))}
+                                            {group.items.length > 4 && (
+                                              <li className="text-[11px] opacity-70">+{group.items.length - 4} item(ns)</li>
+                                            )}
+                                          </ul>
+                                        </div>
+                                      ))}
+
+                                      {(selectedDraftCaseBrainEvidence.sourceGateStatus || selectedDraftCaseBrainEvidence.premiumOverrideReason) && (
+                                        <div className="rounded-lg border border-white/10 bg-black/15 p-2">
+                                          <p className="text-[9px] font-black uppercase tracking-[0.16em] opacity-80">Vinculo source gate/premium</p>
+                                          <div className="mt-2 space-y-1">
+                                            {selectedDraftCaseBrainEvidence.sourceGateStatus && (
+                                              <p>Source gate: {selectedDraftCaseBrainEvidence.sourceGateStatus}</p>
+                                            )}
+                                            {selectedDraftCaseBrainEvidence.sourceGateAction && (
+                                              <p>Acao sensivel: {selectedDraftCaseBrainEvidence.sourceGateAction}</p>
+                                            )}
+                                            {selectedDraftCaseBrainEvidence.premiumOverrideReason && (
+                                              <p>Override premium: {selectedDraftCaseBrainEvidence.premiumOverrideReason}</p>
+                                            )}
+                                            {selectedDraftCaseBrainEvidence.premiumOverrideActor && (
+                                              <p>Responsavel: {selectedDraftCaseBrainEvidence.premiumOverrideActor}</p>
+                                            )}
+                                          </div>
+                                        </div>
+                                      )}
+                                    </div>
+                                  )}
+                                </div>
+
                                 {selectedDraftVersionStale && (
                                   <div className="rounded-xl border border-amber-500/20 bg-amber-500/10 px-4 py-3 text-xs text-amber-100 leading-relaxed">
                                     Esta versão foi gerada com um `Case Brain` anterior e não pode mais ser aprovada ou publicada como versão vigente.
+                                  </div>
+                                )}
+
+                                {selectedDraftSourceGateDecision && (
+                                  <div
+                                    data-testid={`documents-source-gate-${selectedDraftVersion.id}`}
+                                    className={`rounded-xl border px-4 py-3 text-xs leading-relaxed ${
+                                      selectedDraftSourceGateDecision.requiresOverride
+                                        ? "border-amber-500/25 bg-amber-500/10 text-amber-100"
+                                        : "border-emerald-500/20 bg-emerald-500/10 text-emerald-100"
+                                    }`}
+                                  >
+                                    <div className="flex flex-col gap-3 lg:flex-row lg:items-start lg:justify-between">
+                                      <div>
+                                        <p className="font-black uppercase tracking-[0.18em] text-[10px]">
+                                          Controle de fontes e override humano
+                                        </p>
+                                        <p className="mt-2">
+                                          {selectedDraftSourceGateDecision.requiresOverride
+                                            ? "Ha fonte, documento ou validacao pendente antes desta acao sensivel."
+                                            : "Fontes juridicas liberadas para a proxima acao formal."}
+                                        </p>
+                                      </div>
+                                      <span className="rounded-full border border-white/10 bg-black/20 px-2.5 py-1 text-[9px] font-black uppercase tracking-widest">
+                                        {selectedDraftSourceGateDecision.action}
+                                      </span>
+                                    </div>
+
+                                    <div className="mt-3 grid gap-2 md:grid-cols-4">
+                                      <span>Docs usados: {selectedDraftSourceGateDecision.sourceSummary.usedDocumentCount}</span>
+                                      <span>Pendencias: {selectedDraftSourceGateDecision.sourceSummary.pendingValidationCount}</span>
+                                      <span>Lacunas: {selectedDraftSourceGateDecision.sourceSummary.externalValidationGapCount}</span>
+                                      <span>Jurisprudencia: {selectedDraftSourceGateDecision.sourceSummary.validatedCaseLawReferenceCount}</span>
+                                    </div>
+
+                                    {(selectedDraftSourceEvidence.documents.length > 0
+                                      || selectedDraftSourceEvidence.missingDocuments.length > 0
+                                      || selectedDraftSourceEvidence.pendingValidations.length > 0
+                                      || selectedDraftSourceEvidence.externalGaps.length > 0
+                                      || selectedDraftSourceEvidence.lawReferences.length > 0
+                                      || selectedDraftSourceEvidence.caseLawReferences.length > 0
+                                      || selectedDraftSourceEvidence.relevantUnusedDocuments.length > 0) && (
+                                      <div className="mt-3 grid gap-3 lg:grid-cols-2">
+                                        {[
+                                          { title: "Documentos usados", items: selectedDraftSourceEvidence.documents },
+                                          { title: "Documentos faltantes", items: selectedDraftSourceEvidence.missingDocuments },
+                                          { title: "Validacoes pendentes", items: selectedDraftSourceEvidence.pendingValidations },
+                                          { title: "Lacunas externas", items: selectedDraftSourceEvidence.externalGaps },
+                                          { title: "Leis/sumulas/temas validados", items: selectedDraftSourceEvidence.lawReferences },
+                                          { title: "Jurisprudencia validada", items: selectedDraftSourceEvidence.caseLawReferences },
+                                          { title: "Documentos relevantes nao usados", items: selectedDraftSourceEvidence.relevantUnusedDocuments },
+                                        ].filter((group) => group.items.length > 0).map((group) => (
+                                          <div key={group.title} className="rounded-lg border border-white/10 bg-black/15 p-2">
+                                            <p className="text-[9px] font-black uppercase tracking-[0.16em] opacity-80">{group.title}</p>
+                                            <ul className="mt-2 space-y-1">
+                                              {group.items.slice(0, 4).map((item) => (
+                                                <li key={`${group.title}:${item.label}:${item.href || ""}`} className="flex items-start gap-2">
+                                                  <span className="mt-1 h-1.5 w-1.5 shrink-0 rounded-full bg-current opacity-60" />
+                                                  {item.href ? (
+                                                    <a href={item.href} target="_blank" rel="noreferrer" className="break-words underline decoration-current/40 underline-offset-2">
+                                                      {item.label}
+                                                    </a>
+                                                  ) : (
+                                                    <span className="break-words">{item.label}</span>
+                                                  )}
+                                                </li>
+                                              ))}
+                                              {group.items.length > 4 && (
+                                                <li className="text-[11px] opacity-70">+{group.items.length - 4} item(ns)</li>
+                                              )}
+                                            </ul>
+                                          </div>
+                                        ))}
+                                      </div>
+                                    )}
+
+                                    {selectedDraftSourceGateDecision.blockedReasons.length > 0 && (
+                                      <ul className="mt-3 space-y-1">
+                                        {selectedDraftSourceGateDecision.blockedReasons.map((reason) => (
+                                          <li key={reason} className="flex gap-2">
+                                            <AlertTriangle size={12} className="mt-0.5 shrink-0" />
+                                            <span>{reason}</span>
+                                          </li>
+                                        ))}
+                                      </ul>
+                                    )}
+
+                                    {selectedDraftSourceGateDecision.warnings.length > 0 && (
+                                      <p className="mt-2 text-[11px] opacity-90">
+                                        Alertas: {selectedDraftSourceGateDecision.warnings.join("; ")}
+                                      </p>
+                                    )}
+
+                                    {selectedDraftSourceGateDecision.requiresOverride && (
+                                      <div className="mt-3 space-y-2">
+                                        <label
+                                          htmlFor={`source-gate-override-${selectedDraftVersion.id}`}
+                                          className="block text-[10px] font-black uppercase tracking-[0.18em]"
+                                        >
+                                          Justificativa do responsavel
+                                        </label>
+                                        <textarea
+                                          id={`source-gate-override-${selectedDraftVersion.id}`}
+                                          data-testid={`documents-source-gate-override-reason-${selectedDraftVersion.id}`}
+                                          value={sourceGateOverrideReasonByVersionId[selectedDraftVersion.id] || ""}
+                                          onChange={(event) => setSourceGateOverrideReasonByVersionId((current) => ({
+                                            ...current,
+                                            [selectedDraftVersion.id]: event.target.value,
+                                          }))}
+                                          rows={3}
+                                          placeholder="Responsavel autenticado: registre a justificativa humana para prosseguir com override."
+                                          className="w-full rounded-xl border border-white/10 bg-black/30 px-3 py-2 text-xs text-white placeholder:text-gray-500 focus:border-[#CCA761]/50 focus:outline-none"
+                                        />
+                                        <p className="text-[11px] opacity-80">
+                                          Responsavel: usuario autenticado registrado no audit log.
+                                        </p>
+                                      </div>
+                                    )}
                                   </div>
                                 )}
 
@@ -2251,7 +2520,7 @@ export default function DocumentosPage() {
                                       type="button"
                                       onClick={() => handleDraftWorkflowAction(selectedCard.id, selectedDraftVersion.id, "approve")}
                                       data-testid={`documents-approve-version-${selectedDraftVersion.id}`}
-                                      disabled={selectedDraftVersionStale || selectedCurrentDraftHasUnsavedChanges || draftWorkflowBusyKey === `${selectedCard.id}:${selectedDraftVersion.id}:approve`}
+                                      disabled={selectedDraftVersionStale || selectedCurrentDraftHasUnsavedChanges || isSourceGateBlockedForAction(selectedDraftVersion, "approve") || draftWorkflowBusyKey === `${selectedCard.id}:${selectedDraftVersion.id}:approve`}
                                       className="inline-flex items-center justify-center gap-2 rounded-xl border border-emerald-500/25 bg-emerald-500/10 px-4 py-2.5 text-[10px] font-black uppercase tracking-[0.18em] text-emerald-200 disabled:opacity-50"
                                     >
                                       {draftWorkflowBusyKey === `${selectedCard.id}:${selectedDraftVersion.id}:approve` ? <Loader2 size={12} className="animate-spin" /> : <CheckCircle2 size={12} />}
@@ -2264,7 +2533,7 @@ export default function DocumentosPage() {
                                       type="button"
                                       onClick={() => handleDraftWorkflowAction(selectedCard.id, selectedDraftVersion.id, "publish")}
                                       data-testid={`documents-publish-version-${selectedDraftVersion.id}`}
-                                      disabled={selectedDraftVersionStale || selectedCurrentDraftHasUnsavedChanges || draftWorkflowBusyKey === `${selectedCard.id}:${selectedDraftVersion.id}:publish`}
+                                      disabled={selectedDraftVersionStale || selectedCurrentDraftHasUnsavedChanges || isSourceGateBlockedForAction(selectedDraftVersion, "publish") || draftWorkflowBusyKey === `${selectedCard.id}:${selectedDraftVersion.id}:publish`}
                                       className="inline-flex items-center justify-center gap-2 rounded-xl border border-sky-500/25 bg-sky-500/10 px-4 py-2.5 text-[10px] font-black uppercase tracking-[0.18em] text-sky-200 disabled:opacity-50"
                                     >
                                       {draftWorkflowBusyKey === `${selectedCard.id}:${selectedDraftVersion.id}:publish` ? <Loader2 size={12} className="animate-spin" /> : <ExternalLink size={12} />}
@@ -2302,7 +2571,7 @@ export default function DocumentosPage() {
                                       type="button"
                                       onClick={() => handlePublishPremiumArtifact(selectedCard.id, selectedDraftVersion)}
                                       data-testid={`documents-publish-premium-${selectedDraftVersion.id}`}
-                                      disabled={selectedCurrentDraftHasUnsavedChanges || premiumPublishBusyKey === `${selectedCard.id}:${selectedDraftVersion.id}`}
+                                      disabled={selectedCurrentDraftHasUnsavedChanges || isSourceGateBlockedForAction(selectedDraftVersion, "premium_publish") || premiumPublishBusyKey === `${selectedCard.id}:${selectedDraftVersion.id}`}
                                       className="inline-flex items-center justify-center gap-2 rounded-xl border border-[#CCA761]/25 bg-[#CCA761]/10 px-4 py-2.5 text-[10px] font-black uppercase tracking-[0.18em] text-[#e9d5a7] disabled:opacity-50"
                                     >
                                       {premiumPublishBusyKey === `${selectedCard.id}:${selectedDraftVersion.id}` ? <Loader2 size={12} className="animate-spin" /> : <Upload size={12} />}

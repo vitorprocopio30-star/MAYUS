@@ -360,7 +360,16 @@ describe("analisarMovimentacao", () => {
 
     expect(upserts.filter((item) => item.table === "process_prazos")).toHaveLength(0);
     expect(inserts.filter((item) => item.table === "process_tasks")).toHaveLength(0);
-    expect(inserts.filter((item) => item.table === "system_event_logs")).toHaveLength(0);
+    expect(inserts).toEqual(expect.arrayContaining([
+      expect.objectContaining({
+        table: "system_event_logs",
+        payload: expect.objectContaining({
+          event_name: "legal_movement_auto_create_blocked",
+          status: "blocked",
+          payload: expect.objectContaining({ block_reason: "opposite_party_obligation" }),
+        }),
+      }),
+    ]));
     expect(prepareProactiveMovementDraftMock).not.toHaveBeenCalled();
     expect(result).toEqual(expect.objectContaining({
       automation_status: "none",
@@ -472,7 +481,7 @@ describe("analisarMovimentacao", () => {
     expect(prepareProactiveMovementDraftMock).not.toHaveBeenCalled();
     expect(result).toEqual(expect.objectContaining({
       automation_status: "none",
-      tipo_evento: "RECURSO",
+      tipo_evento: "CONTRARRAZOES",
       requer_acao: false,
       obrigacao_de_quem: "parte_contraria",
       confidence: "alta",
@@ -777,6 +786,31 @@ describe("analisarMovimentacao", () => {
     ]));
   });
 
+  it("nao cria tarefa para concluso/remessa/protocolo sem providencia concreta", async () => {
+    const { analisarMovimentacao } = await import("./analisador");
+
+    const result = await analisarMovimentacao({
+      processo_id: "process-1",
+      numero_cnj: "0000001-11.2026.8.26.0100",
+      tenant_id: "tenant-1",
+      movimentacao: {
+        id: "mov-concluso",
+        conteudo: "Conclusos para despacho. Remessa interna e protocolo certificado.",
+        data: "2026-05-13",
+      },
+      escavador_movimentacao_id: "mov-concluso",
+      process_movimentacao_id: "pm-concluso",
+    });
+
+    expect(result).toEqual(expect.objectContaining({
+      automation_status: "none",
+      requires_human_review: false,
+      requer_acao: false,
+    }));
+    expect(upserts.filter((item) => item.table === "process_prazos")).toHaveLength(0);
+    expect(inserts.filter((item) => item.table === "process_tasks")).toHaveLength(0);
+  });
+
   it("nao cria prazo automatico quando a IA indica prazo sem vencimento confiavel", async () => {
     callLLMWithFallbackMock.mockResolvedValue({
       ok: true,
@@ -858,8 +892,8 @@ describe("analisarMovimentacao", () => {
     expect(result).toEqual(expect.objectContaining({
       automation_status: "review_required",
       requires_human_review: true,
-      confianca_analise: "media",
-      paid_summary_recommended: true,
+      confianca_analise: "baixa",
+      paid_summary_recommended: false,
     }));
     expect(inserts).toEqual(expect.arrayContaining([
       expect.objectContaining({
@@ -867,6 +901,193 @@ describe("analisarMovimentacao", () => {
         payload: expect.objectContaining({ event_name: "legal_movement_review_required" }),
       }),
     ]));
+  });
+
+  it("envia prazo explicito sem polo destinatario para revisao humana", async () => {
+    callLLMWithFallbackMock.mockResolvedValue({
+      ok: true,
+      data: {
+        choices: [{ message: { content: JSON.stringify({ gerar: false, motivo: "Sem analise acionavel" }) } }],
+      },
+      usedClient: { provider: "openai", model: "test", endpoint: "https://example.test", source: "env" },
+      fallbackTrace: [],
+    });
+    const { analisarMovimentacao } = await import("./analisador");
+
+    const result = await analisarMovimentacao({
+      processo_id: "process-1",
+      numero_cnj: "0000001-11.2026.8.26.0100",
+      tenant_id: "tenant-1",
+      movimentacao: {
+        id: "mov-prazo-ambiguo",
+        conteudo: "Intime-se. Prazo de 5 dias para apresentar documentos.",
+        data: "2026-05-13",
+      },
+      advogado_id: "lawyer-1",
+      escavador_movimentacao_id: "mov-prazo-ambiguo",
+      process_movimentacao_id: "pm-prazo-ambiguo",
+    });
+
+    expect(result).toEqual(expect.objectContaining({
+      automation_status: "review_required",
+      requires_human_review: true,
+      confianca_analise: "baixa",
+      obrigacao_de_quem: "indeterminada",
+    }));
+    expect(upserts.filter((item) => item.table === "process_prazos")).toHaveLength(0);
+    expect(inserts.filter((item) => item.table === "process_tasks")).toHaveLength(0);
+    expect(inserts).toEqual(expect.arrayContaining([
+      expect.objectContaining({
+        table: "system_event_logs",
+        payload: expect.objectContaining({
+          event_name: "legal_movement_auto_create_blocked",
+          status: "blocked",
+          payload: expect.objectContaining({ block_reason: "duty_indeterminate" }),
+        }),
+      }),
+      expect.objectContaining({
+        table: "system_event_logs",
+        payload: expect.objectContaining({
+          event_name: "legal_movement_review_required",
+          status: "review_required",
+        }),
+      }),
+    ]));
+  });
+
+  describe("calibragem juridica com fixtures anonimizadas", () => {
+    it.each([
+      {
+        id: "fixture-intimacao-ambigua",
+        conteudo: "Intime-se. Prazo de 10 dias para manifestacao sobre documentos.",
+        expectedStatus: "review_required",
+        expectedReason: "duty_indeterminate",
+      },
+      {
+        id: "fixture-juntada-certidao",
+        conteudo: "Juntada de certidao de objeto e pe. Nada mais.",
+        expectedStatus: "none",
+        expectedReason: null,
+      },
+      {
+        id: "fixture-concluso-remessa",
+        conteudo: "Conclusos para despacho. Remessa interna certificada.",
+        expectedStatus: "none",
+        expectedReason: null,
+      },
+      {
+        id: "fixture-protocolo-decurso",
+        conteudo: "Certificado o protocolo da peticao e o decurso de prazo anterior.",
+        expectedStatus: "none",
+        expectedReason: null,
+      },
+      {
+        id: "fixture-obrigacao-parte-contraria",
+        conteudo: "Intime-se a parte re para apresentar contestacao no prazo de 15 dias uteis.",
+        expectedStatus: "none",
+        expectedReason: "opposite_party_obligation",
+      },
+    ])("nao cria tarefa indevida para $id", async ({ id, conteudo, expectedStatus, expectedReason }) => {
+      callLLMWithFallbackMock.mockResolvedValue({
+        ok: true,
+        data: {
+          choices: [{ message: { content: JSON.stringify({ gerar: false, motivo: "Fixture anonima sem acao automatica segura" }) } }],
+        },
+        usedClient: { provider: "openai", model: "test", endpoint: "https://example.test", source: "env" },
+        fallbackTrace: [],
+      });
+      const { analisarMovimentacao } = await import("./analisador");
+
+      const result = await analisarMovimentacao({
+        processo_id: "process-1",
+        numero_cnj: "0000001-11.2026.8.26.0100",
+        tenant_id: "tenant-1",
+        movimentacao: {
+          id,
+          conteudo,
+          data: "2026-05-13",
+        },
+        advogado_id: "lawyer-1",
+        escavador_movimentacao_id: id,
+        process_movimentacao_id: `pm-${id}`,
+      });
+
+      expect(result).toEqual(expect.objectContaining({
+        automation_status: expectedStatus,
+      }));
+      expect(upserts.filter((item) => item.table === "process_prazos")).toHaveLength(0);
+      expect(inserts.filter((item) => item.table === "process_tasks")).toHaveLength(0);
+
+      if (expectedReason) {
+        expect(inserts).toEqual(expect.arrayContaining([
+          expect.objectContaining({
+            table: "system_event_logs",
+            payload: expect.objectContaining({
+              event_name: "legal_movement_auto_create_blocked",
+              status: "blocked",
+              payload: expect.objectContaining({ block_reason: expectedReason }),
+            }),
+          }),
+        ]));
+      }
+    });
+
+    it.each([
+      {
+        tipo: "CITACAO",
+        conteudo: "Carta de citacao expedida sem comprovante de ciencia e sem prazo fatal confirmado.",
+        llmTipo: "citacao",
+      },
+      {
+        tipo: "SENTENCA",
+        conteudo: "Sentenca publicada. Ciencia pendente de confirmacao no diario oficial.",
+        llmTipo: "sentenca",
+      },
+      {
+        tipo: "RECURSO",
+        conteudo: "Recurso mencionado nos autos sem identificar recorrente, recorrido ou prazo fatal.",
+        llmTipo: "recurso",
+      },
+      {
+        tipo: "AUDIENCIA",
+        conteudo: "Audiencia designada, aguardando confirmacao de pauta e forma de comparecimento.",
+        llmTipo: "audiencia",
+      },
+    ])("exige revisao para $tipo sem prazo operacional seguro", async ({ tipo, conteudo, llmTipo }) => {
+      missingPrazoRuleForEvent.value = tipo;
+      callLLMWithFallbackMock.mockResolvedValue({
+        ok: true,
+        data: {
+          choices: [{ message: { content: JSON.stringify({ gerar: true, tipo: llmTipo, descricao: `Revisar ${tipo}`, motivo: "Fixture anonima sem prazo seguro" }) } }],
+        },
+        usedClient: { provider: "openai", model: "test", endpoint: "https://example.test", source: "env" },
+        fallbackTrace: [],
+      });
+      const { analisarMovimentacao } = await import("./analisador");
+
+      const result = await analisarMovimentacao({
+        processo_id: "process-1",
+        numero_cnj: "0000001-11.2026.8.26.0100",
+        tenant_id: "tenant-1",
+        movimentacao: {
+          id: `fixture-${tipo.toLowerCase()}`,
+          conteudo,
+          data: "2026-05-13",
+        },
+        advogado_id: "lawyer-1",
+        escavador_movimentacao_id: `fixture-${tipo.toLowerCase()}`,
+        process_movimentacao_id: `pm-fixture-${tipo.toLowerCase()}`,
+      });
+
+      expect(result).toEqual(expect.objectContaining({
+        automation_status: "review_required",
+        requires_human_review: true,
+        tipo_evento: tipo,
+        review_required: true,
+      }));
+      expect(upserts.filter((item) => item.table === "process_prazos")).toHaveLength(0);
+      expect(inserts.filter((item) => item.table === "process_tasks")).toHaveLength(0);
+    });
   });
 
   it("envia arquivamento para revisao humana sem inativar automaticamente em beta", async () => {
@@ -904,6 +1125,229 @@ describe("analisarMovimentacao", () => {
     expect(updates.some((item) => item.table === "monitored_processes")).toBe(false);
   });
 
+  it("envia extincao para revisao humana sem encerrar automaticamente", async () => {
+    const { analisarMovimentacao } = await import("./analisador");
+
+    const result = await analisarMovimentacao({
+      processo_id: "process-1",
+      numero_cnj: "0000001-11.2026.8.26.0100",
+      tenant_id: "tenant-1",
+      movimentacao: {
+        id: "mov-extincao",
+        conteudo: "Processo extinto sem resolucao do merito.",
+        data: "2026-05-13",
+      },
+      escavador_movimentacao_id: "mov-extincao",
+      process_movimentacao_id: "pm-extincao",
+    });
+
+    expect(upserts.filter((item) => item.table === "process_prazos")).toHaveLength(0);
+    expect(result).toEqual(expect.objectContaining({
+      automation_status: "review_required",
+      requires_human_review: true,
+      tipo_evento: "EXTINCAO",
+    }));
+    expect(updates.some((item) => item.table === "monitored_processes")).toBe(false);
+    expect(inserts).toEqual(expect.arrayContaining([
+      expect.objectContaining({
+        table: "system_event_logs",
+        payload: expect.objectContaining({
+          event_name: "legal_movement_review_required",
+          status: "review_required",
+        }),
+      }),
+    ]));
+  });
+
+  it("envia cumprimento sem regra operacional para revisao humana", async () => {
+    missingPrazoRuleForEvent.value = "CUMPRIMENTO";
+    callLLMWithFallbackMock.mockResolvedValue({
+      ok: true,
+      data: {
+        choices: [{ message: { content: JSON.stringify({ gerar: true, tipo: "cumprimento", descricao: "Revisar cumprimento", motivo: "Cumprimento detectado" }) } }],
+      },
+      usedClient: { provider: "openai", model: "test", endpoint: "https://example.test", source: "env" },
+      fallbackTrace: [],
+    });
+    const { analisarMovimentacao } = await import("./analisador");
+
+    const result = await analisarMovimentacao({
+      processo_id: "process-1",
+      numero_cnj: "0000001-11.2026.8.26.0100",
+      tenant_id: "tenant-1",
+      movimentacao: {
+        id: "mov-cumprimento",
+        conteudo: "Iniciado o cumprimento de sentenca. Intime-se para providencias.",
+        data: "2026-05-13",
+      },
+      escavador_movimentacao_id: "mov-cumprimento",
+      process_movimentacao_id: "pm-cumprimento",
+    });
+
+    expect(upserts.filter((item) => item.table === "process_prazos")).toHaveLength(0);
+    expect(inserts.filter((item) => item.table === "process_tasks")).toHaveLength(0);
+    expect(result).toEqual(expect.objectContaining({
+      automation_status: "review_required",
+      requires_human_review: true,
+      tipo_evento: "CUMPRIMENTO",
+      requer_acao: true,
+      review_required: true,
+    }));
+    expect(inserts).toEqual(expect.arrayContaining([
+      expect.objectContaining({
+        table: "system_event_logs",
+        payload: expect.objectContaining({
+          event_name: "legal_movement_review_required",
+          status: "review_required",
+        }),
+      }),
+    ]));
+  });
+
+  it("envia audiencia futura sem regra operacional para revisao humana", async () => {
+    missingPrazoRuleForEvent.value = "AUDIENCIA";
+    callLLMWithFallbackMock.mockResolvedValue({
+      ok: true,
+      data: {
+        choices: [{ message: { content: JSON.stringify({ gerar: true, tipo: "audiencia", descricao: "Preparar audiencia", motivo: "Audiencia futura designada" }) } }],
+      },
+      usedClient: { provider: "openai", model: "test", endpoint: "https://example.test", source: "env" },
+      fallbackTrace: [],
+    });
+    const { analisarMovimentacao } = await import("./analisador");
+
+    const result = await analisarMovimentacao({
+      processo_id: "process-1",
+      numero_cnj: "0000001-11.2026.8.26.0100",
+      tenant_id: "tenant-1",
+      movimentacao: {
+        id: "mov-audiencia-sem-regra",
+        conteudo: "Designada audiencia de instrucao. Intime-se a parte autora para comparecimento.",
+        data: "2026-05-13",
+      },
+      escavador_movimentacao_id: "mov-audiencia-sem-regra",
+      process_movimentacao_id: "pm-audiencia-sem-regra",
+    });
+
+    expect(upserts.filter((item) => item.table === "process_prazos")).toHaveLength(0);
+    expect(inserts.filter((item) => item.table === "process_tasks")).toHaveLength(0);
+    expect(result).toEqual(expect.objectContaining({
+      automation_status: "review_required",
+      requires_human_review: true,
+      tipo_evento: "AUDIENCIA",
+      review_required: true,
+    }));
+  });
+
+  it("envia sentenca sem regra operacional para revisao humana", async () => {
+    missingPrazoRuleForEvent.value = "SENTENCA";
+    callLLMWithFallbackMock.mockResolvedValue({
+      ok: true,
+      data: {
+        choices: [{ message: { content: JSON.stringify({ gerar: true, tipo: "sentenca", descricao: "Avaliar sentenca", motivo: "Sentenca publicada sem prazo confiavel" }) } }],
+      },
+      usedClient: { provider: "openai", model: "test", endpoint: "https://example.test", source: "env" },
+      fallbackTrace: [],
+    });
+    const { analisarMovimentacao } = await import("./analisador");
+
+    const result = await analisarMovimentacao({
+      processo_id: "process-1",
+      numero_cnj: "0000001-11.2026.8.26.0100",
+      tenant_id: "tenant-1",
+      movimentacao: {
+        id: "mov-sentenca-sem-regra",
+        conteudo: "Sentenca publicada. Julgo improcedente o pedido.",
+        data: "2026-05-13",
+      },
+      escavador_movimentacao_id: "mov-sentenca-sem-regra",
+      process_movimentacao_id: "pm-sentenca-sem-regra",
+    });
+
+    expect(upserts.filter((item) => item.table === "process_prazos")).toHaveLength(0);
+    expect(inserts.filter((item) => item.table === "process_tasks")).toHaveLength(0);
+    expect(result).toEqual(expect.objectContaining({
+      automation_status: "review_required",
+      requires_human_review: true,
+      tipo_evento: "SENTENCA",
+      review_required: true,
+    }));
+  });
+
+  it("envia citacao direcionada ao cliente para revisao sem regra operacional", async () => {
+    missingPrazoRuleForEvent.value = "CITACAO";
+    callLLMWithFallbackMock.mockResolvedValue({
+      ok: true,
+      data: {
+        choices: [{ message: { content: JSON.stringify({ gerar: true, tipo: "citacao", descricao: "Revisar citacao", motivo: "Citacao direcionada ao polo representado" }) } }],
+      },
+      usedClient: { provider: "openai", model: "test", endpoint: "https://example.test", source: "env" },
+      fallbackTrace: [],
+    });
+    const { analisarMovimentacao } = await import("./analisador");
+
+    const result = await analisarMovimentacao({
+      processo_id: "process-1",
+      numero_cnj: "0000001-11.2026.8.26.0100",
+      tenant_id: "tenant-1",
+      movimentacao: {
+        id: "mov-citacao-cliente",
+        conteudo: "Parte autora citada para apresentar manifestacao nos autos.",
+        data: "2026-05-13",
+      },
+      escavador_movimentacao_id: "mov-citacao-cliente",
+      process_movimentacao_id: "pm-citacao-cliente",
+    });
+
+    expect(upserts.filter((item) => item.table === "process_prazos")).toHaveLength(0);
+    expect(inserts.filter((item) => item.table === "process_tasks")).toHaveLength(0);
+    expect(result).toEqual(expect.objectContaining({
+      automation_status: "review_required",
+      requires_human_review: true,
+      tipo_evento: "CITACAO",
+      polo_representado: "autor",
+      obrigacao_de_quem: "escritorio",
+      review_required: true,
+    }));
+  });
+
+  it("envia contrarrazoes sem regra operacional para revisao humana", async () => {
+    missingPrazoRuleForEvent.value = "CONTRARRAZOES";
+    callLLMWithFallbackMock.mockResolvedValue({
+      ok: true,
+      data: {
+        choices: [{ message: { content: JSON.stringify({ gerar: true, tipo: "contrarrazoes", descricao: "Preparar contrarrazoes", motivo: "Parte representada consta como apelada" }) } }],
+      },
+      usedClient: { provider: "openai", model: "test", endpoint: "https://example.test", source: "env" },
+      fallbackTrace: [],
+    });
+    const { analisarMovimentacao } = await import("./analisador");
+
+    const result = await analisarMovimentacao({
+      processo_id: "process-1",
+      numero_cnj: "0000001-11.2026.8.26.0100",
+      tenant_id: "tenant-1",
+      movimentacao: {
+        id: "mov-contrarrazoes-sem-regra",
+        conteudo: "Parte autora apelada. Vista para apresentar contrarrazoes.",
+        data: "2026-05-13",
+      },
+      escavador_movimentacao_id: "mov-contrarrazoes-sem-regra",
+      process_movimentacao_id: "pm-contrarrazoes-sem-regra",
+    });
+
+    expect(upserts.filter((item) => item.table === "process_prazos")).toHaveLength(0);
+    expect(inserts.filter((item) => item.table === "process_tasks")).toHaveLength(0);
+    expect(result).toEqual(expect.objectContaining({
+      automation_status: "review_required",
+      requires_human_review: true,
+      tipo_evento: "CONTRARRAZOES",
+      polo_representado: "autor",
+      obrigacao_de_quem: "escritorio",
+      review_required: true,
+    }));
+  });
+
   it("interpreta prazo por extenso e com numero entre parenteses", async () => {
     const { analisarMovimentacao } = await import("./analisador");
 
@@ -913,7 +1357,7 @@ describe("analisarMovimentacao", () => {
       tenant_id: "tenant-1",
       movimentacao: {
         id: "mov-quinze-dias",
-        conteudo: "Intime-se. Prazo de 15 (quinze) dias úteis para apresentar réplica.",
+        conteudo: "Intime-se a parte autora. Prazo de 15 (quinze) dias úteis para apresentar réplica.",
         data: "2026-05-13",
       },
       escavador_movimentacao_id: "mov-quinze-dias",

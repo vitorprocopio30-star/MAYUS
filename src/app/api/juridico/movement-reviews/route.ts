@@ -11,6 +11,7 @@ import {
   chooseSemanticLegalStage,
   resolveProcessPipelineContext,
 } from '@/lib/juridico/process-pipeline-resolver'
+import { upsertMovementAnalysisContract } from '@/lib/juridico/movement-analysis-contract'
 import { prepareProactiveMovementDraft } from '@/lib/lex/proactive-movement-draft'
 import { supabaseAdmin } from '@/lib/supabase/admin'
 
@@ -77,6 +78,8 @@ type ReviewSupervisionContext = {
 type ReviewOverrides = {
   acao_sugerida?: string | null
   data_vencimento_extraida?: string | null
+  polo_representado?: string | null
+  obrigacao_de_quem?: string | null
 }
 
 type ReviewDecision = 'approved' | 'ignored'
@@ -134,6 +137,38 @@ function parseDueDate(value: unknown) {
 function optionalText(value: unknown) {
   const raw = typeof value === 'string' ? value.trim() : ''
   return raw || null
+}
+
+function normalizedDutyValue(value: unknown) {
+  return optionalText(value)?.toLowerCase().normalize('NFD').replace(/[\u0300-\u036f]/g, '') || null
+}
+
+function resolveReviewedDuty(payload: ReviewPayload, movement: any, overrides?: ReviewOverrides) {
+  const movementAnalysis = normalizePayload(movement?.analise_json)
+  return {
+    polo: normalizedDutyValue(overrides?.polo_representado)
+      || normalizedDutyValue(payload.polo_representado)
+      || normalizedDutyValue(movementAnalysis.polo_representado)
+      || normalizedDutyValue(movement?.polo_representado),
+    duty: normalizedDutyValue(overrides?.obrigacao_de_quem)
+      || normalizedDutyValue(payload.obrigacao_de_quem)
+      || normalizedDutyValue(movementAnalysis.obrigacao_de_quem)
+      || normalizedDutyValue(movement?.obrigacao_de_quem),
+  }
+}
+
+function assertReviewedDutyAllowsTask(payload: ReviewPayload, movement: any, overrides?: ReviewOverrides) {
+  const { polo, duty } = resolveReviewedDuty(payload, movement, overrides)
+
+  if (polo !== 'autor' && polo !== 'reu') {
+    throw new Error('Confirme o polo representado antes de aprovar a criacao de card e prazo.')
+  }
+
+  if (duty !== 'escritorio' && duty !== 'cliente') {
+    throw new Error('Confirme que a obrigacao e do escritorio/cliente antes de aprovar a criacao de card e prazo.')
+  }
+
+  return { polo, duty }
 }
 
 function optionalSummaryText(value: unknown) {
@@ -290,6 +325,14 @@ function parseReviewOverrides(body: Record<string, unknown>): ReviewOverrides {
     overrides.data_vencimento_extraida = optionalText(body.data_vencimento_extraida)
   }
 
+  if (Object.prototype.hasOwnProperty.call(body, 'polo_representado')) {
+    overrides.polo_representado = optionalText(body.polo_representado)
+  }
+
+  if (Object.prototype.hasOwnProperty.call(body, 'obrigacao_de_quem')) {
+    overrides.obrigacao_de_quem = optionalText(body.obrigacao_de_quem)
+  }
+
   return overrides
 }
 
@@ -299,6 +342,8 @@ function serializeReviewOverrides(overrides?: ReviewOverrides) {
 
   if (overrides.acao_sugerida !== undefined) payload.acao_sugerida = optionalText(overrides.acao_sugerida)
   if (overrides.data_vencimento_extraida !== undefined) payload.data_vencimento_extraida = optionalText(overrides.data_vencimento_extraida)
+  if (overrides.polo_representado !== undefined) payload.polo_representado = optionalText(overrides.polo_representado)
+  if (overrides.obrigacao_de_quem !== undefined) payload.obrigacao_de_quem = optionalText(overrides.obrigacao_de_quem)
 
   return Object.keys(payload).length > 0 ? payload : null
 }
@@ -610,6 +655,8 @@ async function approveReview(params: { tenantId: string; userId: string; review:
     tipo_evento: tipoEvento,
     acao_sugerida: descricao,
     data_vencimento_extraida: dueDateIso,
+    polo_representado: params.overrides?.polo_representado ?? payload.polo_representado ?? null,
+    obrigacao_de_quem: params.overrides?.obrigacao_de_quem ?? payload.obrigacao_de_quem ?? null,
   }
 
   if (!process?.id) throw new Error('Processo monitorado nao encontrado para esta revisao.')
@@ -617,6 +664,9 @@ async function approveReview(params: { tenantId: string; userId: string; review:
     throw new Error('Encerramento/arquivamento ainda exige acao manual no beta.')
   }
   if (!dueDateIso) throw new Error('Esta movimentacao nao tem vencimento confiavel para aprovacao automatica.')
+  const reviewedDuty = assertReviewedDutyAllowsTask(reviewedPayload, movement, params.overrides)
+  reviewedPayload.polo_representado = reviewedDuty.polo
+  reviewedPayload.obrigacao_de_quem = reviewedDuty.duty
 
   const taskId = await createOrUpdateProcessCard({
     tenantId: params.tenantId,
@@ -801,7 +851,7 @@ async function decideReview(params: {
   const reviewedPayload = isRecord(actionResult.reviewed_payload) ? actionResult.reviewed_payload : {}
 
   const basePayload = normalizePayload(review.payload)
-  const nextPayload = {
+  const nextPayload: Record<string, unknown> = {
     ...(basePayload as Record<string, unknown>),
     agentic_governance: summarizeAgenticGovernance(basePayload, basePayload),
     ...reviewedPayload,
@@ -836,6 +886,24 @@ async function decideReview(params: {
   })
   if (auditError) throw auditError
 
+  const contractPayload = nextPayload as Record<string, unknown>
+  await upsertMovementAnalysisContract({
+    client: supabaseAdmin,
+    tenantId: params.tenantId,
+    numeroCnj: String(contractPayload.numero_cnj || ''),
+    processMovimentacaoId: optionalText(contractPayload.process_movimentacao_id),
+    escavadorMovimentacaoId: optionalText(contractPayload.escavador_movimentacao_id),
+    processoId: optionalText(contractPayload.processo_id),
+    linkedProcessTaskId: optionalText((actionResult as Record<string, unknown>).taskId),
+    auditUserId: params.userId,
+    auditSource: 'movement_review',
+    reviewedBy: params.userId,
+    reviewedAt: String(contractPayload.reviewed_at || new Date().toISOString()),
+    reviewNote: params.note || null,
+    reviewStatus: params.decision,
+    payload: nextPayload as ReviewPayload,
+  })
+
   return actionResult
 }
 
@@ -851,7 +919,7 @@ async function recoverReview(params: {
 
   const now = new Date().toISOString()
   const basePayload = normalizePayload(review.payload)
-  const nextPayload = {
+  const nextPayload: Record<string, unknown> = {
     ...(basePayload as Record<string, unknown>),
     agentic_governance: summarizeAgenticGovernance(basePayload, basePayload),
     review_decision: null,
@@ -885,6 +953,23 @@ async function recoverReview(params: {
     created_at: now,
   })
   if (auditError) throw auditError
+
+  await upsertMovementAnalysisContract({
+    client: supabaseAdmin,
+    tenantId: params.tenantId,
+    numeroCnj: String(nextPayload.numero_cnj || ''),
+    processMovimentacaoId: optionalText(nextPayload.process_movimentacao_id),
+    escavadorMovimentacaoId: optionalText(nextPayload.escavador_movimentacao_id),
+    processoId: optionalText(nextPayload.processo_id),
+    linkedProcessTaskId: optionalText(nextPayload.linked_process_task_id),
+    auditUserId: params.userId,
+    auditSource: 'movement_review_recovery',
+    reviewedBy: params.userId,
+    reviewedAt: now,
+    reviewNote: params.note,
+    reviewStatus: 'review_required',
+    payload: nextPayload as ReviewPayload,
+  })
 
   return { recovered: true }
 }
@@ -952,7 +1037,7 @@ export async function POST(req: NextRequest) {
       ? 404
       : message.includes('outro usuario') || message.includes('ja foi processada')
         ? 409
-        : message.includes('manual') || message.includes('vencimento') || message.includes('Acao revisada')
+        : message.includes('manual') || message.includes('vencimento') || message.includes('Acao revisada') || message.includes('Confirme')
           ? 422
           : 500
     return NextResponse.json({ error: message }, { status })

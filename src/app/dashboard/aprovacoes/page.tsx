@@ -19,6 +19,7 @@ import {
 import { toast } from "sonner";
 import { useUserProfile } from "@/hooks/useUserProfile";
 import { isBrainExecutiveRole } from "@/lib/brain/roles";
+import { normalizeMovementReviewEvidence } from "@/lib/juridico/movement-review-evidence";
 import type { BrainInboxApprovalItem, BrainInboxArtifactItem, BrainInboxEventItem, BrainInboxResponse, BrainInboxTaskItem } from "@/lib/brain/inbox-types";
 
 dayjs.extend(relativeTime);
@@ -64,6 +65,10 @@ type LegalMovementReviewItem = {
   tribunal: string | null;
   review_error?: string | null;
   review_note?: string | null;
+  supervision_context?: Record<string, unknown> | null;
+  contract?: Record<string, unknown> | null;
+  human_decision?: Record<string, unknown> | null;
+  side_effects?: Record<string, unknown> | null;
 };
 
 type WhatsAppAgentAuditEntry = {
@@ -611,6 +616,98 @@ function ReviewSignalGrid({ review }: { review: LegalMovementReviewItem }) {
   );
 }
 
+function ReviewEvidenceList({ title, items }: { title: string; items: string[] }) {
+  if (items.length === 0) return null;
+
+  return (
+    <div className="rounded-lg border border-white/10 bg-black/20 p-2">
+      <p className="text-[9px] font-bold uppercase tracking-[0.16em] text-gray-500">{title}</p>
+      <ul className="mt-2 space-y-1 text-xs text-gray-300">
+        {items.slice(0, 4).map((item) => (
+          <li key={`${title}:${item}`} className="flex items-start gap-2">
+            <span className="mt-1.5 h-1.5 w-1.5 shrink-0 rounded-full bg-[#CCA761]/70" />
+            <span className="break-words">{item}</span>
+          </li>
+        ))}
+        {items.length > 4 && <li className="text-[11px] text-gray-500">+{items.length - 4} item(ns)</li>}
+      </ul>
+    </div>
+  );
+}
+
+function ReviewOperationalEvidence({ review }: { review: LegalMovementReviewItem }) {
+  const evidence = normalizeMovementReviewEvidence(review);
+
+  if (!evidence.shouldRender) return null;
+
+  return (
+    <div className="rounded-xl border border-[#CCA761]/20 bg-[#CCA761]/[0.06] p-3 space-y-3">
+      <div className="flex flex-col gap-2 md:flex-row md:items-start md:justify-between">
+        <div>
+          <p className="text-[10px] font-bold uppercase tracking-[0.18em] text-[#E2C37A]">Evidencia operacional juridica</p>
+          <p className="mt-1 text-xs text-gray-300">Contrato persistente, decisao humana, Case Brain e side effects rastreados para esta movimentacao.</p>
+        </div>
+        <span className="rounded-full border border-white/10 bg-black/25 px-2.5 py-1 text-[9px] font-bold uppercase tracking-widest text-gray-300">
+          {evidence.contractStatus || "sem contrato"}
+        </span>
+      </div>
+
+      <div className="grid gap-2 md:grid-cols-4">
+        {[
+          { label: "Contrato da movimentacao", value: evidence.contractStatus || "sem snapshot disponivel" },
+          { label: "Decisao humana", value: evidence.decisionStatus || "pendente" },
+          { label: "Responsavel", value: evidence.decisionActor || "nao informado" },
+          { label: "Origem/auditoria", value: evidence.contractSource || "nao informado" },
+        ].map((item) => (
+          <div key={item.label} className="rounded-lg border border-white/10 bg-black/20 p-2">
+            <p className="text-[9px] uppercase tracking-[0.16em] text-gray-500">{item.label}</p>
+            <p className="mt-1 text-xs font-semibold text-gray-100 break-words">{item.value}</p>
+          </div>
+        ))}
+      </div>
+
+      {evidence.decisionReason && (
+        <p className="rounded-lg border border-white/10 bg-black/15 p-2 text-xs leading-relaxed text-gray-300">
+          <span className="font-semibold text-[#E2C37A]">Justificativa:</span> {evidence.decisionReason}
+        </p>
+      )}
+
+      <div className="rounded-lg border border-white/10 bg-black/20 p-2">
+        <div className="flex flex-col gap-2 md:flex-row md:items-start md:justify-between">
+          <div>
+            <p className="text-[9px] font-bold uppercase tracking-[0.16em] text-gray-500">Case Brain operacional</p>
+            <p className="mt-1 text-xs leading-relaxed text-gray-300">
+              {evidence.caseBrainSummary || "Sem snapshot Case Brain disponivel para esta revisao."}
+            </p>
+          </div>
+          <div className="flex flex-wrap gap-1.5 text-[10px] text-gray-300">
+            <span className="rounded-full border border-white/10 bg-white/5 px-2 py-1">Riscos: {evidence.riskCount ?? evidence.risks.length}</span>
+            <span className="rounded-full border border-white/10 bg-white/5 px-2 py-1">Contradicoes: {evidence.contradictionCount ?? evidence.contradictions.length}</span>
+            <span className="rounded-full border border-white/10 bg-white/5 px-2 py-1">Gaps: {evidence.gapCount ?? evidence.gaps.length}</span>
+          </div>
+        </div>
+      </div>
+
+      <div className="grid gap-2 md:grid-cols-2">
+        <ReviewEvidenceList title="Riscos" items={evidence.risks} />
+        <ReviewEvidenceList title="Contradicoes" items={evidence.contradictions} />
+        <ReviewEvidenceList title="Lacunas" items={evidence.gaps} />
+        <ReviewEvidenceList title="Documentos faltantes" items={evidence.missingDocuments} />
+        <ReviewEvidenceList title="Documentos relevantes nao usados" items={evidence.unusedDocuments} />
+        <ReviewEvidenceList title="Fontes usadas" items={evidence.sources} />
+        <ReviewEvidenceList title="Bloqueios" items={evidence.blockers} />
+        <ReviewEvidenceList title="Side effects protegidos" items={evidence.protectedSideEffects} />
+      </div>
+
+      {evidence.sideEffectReason && (
+        <p className="text-xs leading-relaxed text-orange-100">
+          Side effects bloqueados/liberados: {evidence.sideEffectReason}
+        </p>
+      )}
+    </div>
+  );
+}
+
 function isLegalDraftApproval(approval: BrainInboxApprovalItem) {
   return approval.awaiting_payload?.skillName === "legal_first_draft_generate";
 }
@@ -997,6 +1094,7 @@ function LegalMovementReviewCard({ review, onRefresh }: { review: LegalMovementR
       </div>
 
       <ReviewSignalGrid review={review} />
+      <ReviewOperationalEvidence review={review} />
 
       <div className="grid gap-3 md:grid-cols-2">
         <div className="rounded-xl border border-white/10 bg-black/20 p-3">
