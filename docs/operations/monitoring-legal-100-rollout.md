@@ -197,3 +197,23 @@ Atualizado em 2026-06-11T17:23:04.5578229-03:00.
 - `npx.cmd tsc --noEmit --pretty false` passou sem erros.
 - `npm.cmd run smoke:monitoring-legal:prepare-sandbox` abortou antes de qualquer efeito externo com `ok=false`: `MAYUS_SMOKE_ESCAVADOR_API_KEY e obrigatoria para preparar o sandbox.`
 - `npm.cmd run smoke:monitoring-legal:real` nao foi executado porque o prepare nao passou.
+
+## Corte Juridico Fail-Closed e Prazos/Tarefas em 2026-06-15
+
+Atualizado em 2026-06-15T18:20:00-03:00.
+
+- Nenhum smoke real de Escavador/Asaas foi executado neste corte; a frente ficou restrita a Juridico, Lex, auditoria e testes.
+- O analisador de movimentacoes agora so cria prazo/card automaticamente quando ha prazo explicito, polo representado claro, obrigacao do escritorio/cliente e confianca alta.
+- Movimentacoes genericas (`juntada`, `certidao`, `concluso`, `decurso`, `remessa`, `protocolo`, `devolucao`) nao criam card/prazo automaticamente.
+- Obrigacao da parte contraria, polo indeterminado, obrigacao indeterminada ou confianca abaixo de alta bloqueiam side effects e registram `system_event_logs` com `event_name=legal_movement_auto_create_blocked`, `status=blocked` e `block_reason`.
+- A API `movement-reviews` passou a exigir confirmacao de polo representado e obrigacao do escritorio/cliente antes de aprovar criacao de `process_tasks` + `process_prazos`; casos incompletos retornam `422` sem criar card nem prazo.
+- A tela `/dashboard/aprovacoes` ja exibe o contexto necessario via smoke mockado: motivo do bloqueio, polo, obrigacao, confianca, acao sugerida, vencimento, contrato persistente, Case Brain e side effects protegidos.
+
+Checks executados neste corte:
+
+- `npm.cmd test -- --run src\lib\juridico\analisador.test.ts src\app\api\juridico\movement-reviews\route.test.ts` passou com 2 arquivos e 43 testes.
+- `npm.cmd test -- --run src\lib\juridico\movement-analysis-contract.test.ts src\lib\juridico\publish-piece-premium.test.ts src\lib\juridico\analisador.test.ts src\lib\lex\draft-source-gate.test.ts src\lib\lex\draft-versions.test.ts src\lib\lex\case-brain-insights.test.ts src\app\api\juridico\movement-reviews\route.test.ts src\app\api\documentos\processos\[taskId]\exportar-peca\route.test.ts src\app\api\documentos\processos\[taskId]\minutas\[versionId]\route.test.ts` passou com 9 arquivos e 81 testes.
+- `npx.cmd tsc --noEmit --pretty false` passou sem erros.
+- `$env:PORT='3151'; $env:PLAYWRIGHT_BASE_URL='http://localhost:3151'; npx.cmd playwright test aprovacoes-legal-source-context-smoke.spec.ts --workers=1 --reporter=line` passou com 1 smoke autenticado mockado em 1.7m.
+- `git diff --check -- src/lib/juridico/analisador.ts src/lib/juridico/analisador.test.ts src/app/api/juridico/movement-reviews/route.ts src/app/api/juridico/movement-reviews/route.test.ts docs/operations/monitoring-legal-100-rollout.md` passou; restaram apenas avisos LF/CRLF.
+- `npm.cmd run build` passou em 2026-06-15; warnings restantes sao preexistentes de hooks/imagens fora deste corte.

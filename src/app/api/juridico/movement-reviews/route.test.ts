@@ -445,6 +445,22 @@ describe("/api/juridico/movement-reviews", () => {
         payload: expect.objectContaining({ event_name: "legal_movement_review_recovered" }),
       }),
     ]));
+    expect(upserts).toEqual(expect.arrayContaining([
+      expect.objectContaining({
+        table: "legal_movement_analysis_contracts",
+        payload: expect.objectContaining({
+          review_status: "review_required",
+          human_decision: expect.objectContaining({
+            status: "review_required",
+            reviewed_by: "user-1",
+            note: "Processamento ficou preso apos falha de rede.",
+          }),
+          source_payload: expect.objectContaining({
+            recovery_note: "Processamento ficou preso apos falha de rede.",
+          }),
+        }),
+      }),
+    ]));
   });
 
   it("exige nota para recuperar revisao travada", async () => {
@@ -474,6 +490,21 @@ describe("/api/juridico/movement-reviews", () => {
       expect.objectContaining({
         table: "system_event_logs",
         payload: expect.objectContaining({ event_name: "legal_movement_review_ignored" }),
+      }),
+    ]));
+    expect(upserts).toEqual(expect.arrayContaining([
+      expect.objectContaining({
+        table: "legal_movement_analysis_contracts",
+        payload: expect.objectContaining({
+          process_movimentacao_id: "movement-1",
+          reviewed_by: "user-1",
+          review_status: "ignored",
+          human_decision: expect.objectContaining({
+            status: "ignored",
+            reviewed_by: "user-1",
+            note: "Nao exige providencia.",
+          }),
+        }),
       }),
     ]));
     const finalized = updates.find((item) => item.table === "system_event_logs" && item.payload.status === "ignored");
@@ -544,6 +575,19 @@ describe("/api/juridico/movement-reviews", () => {
           monitored_process_id: "process-1",
           process_task_id: "task-created-1",
           descricao: "Manifestar-se sobre peticao",
+        }),
+      }),
+      expect.objectContaining({
+        table: "legal_movement_analysis_contracts",
+        payload: expect.objectContaining({
+          process_movimentacao_id: "movement-1",
+          linked_process_task_id: "task-created-1",
+          reviewed_by: "user-1",
+          review_status: "approved",
+          human_decision: expect.objectContaining({
+            status: "approved",
+            reviewed_by: "user-1",
+          }),
         }),
       }),
     ]));
@@ -733,6 +777,74 @@ describe("/api/juridico/movement-reviews", () => {
         }),
       }),
     ]));
+    expect(inserts.filter((item) => item.table === "process_tasks")).toHaveLength(0);
+    expect(upserts.filter((item) => item.table === "process_prazos")).toHaveLength(0);
+    expect(prepareProactiveMovementDraftMock).not.toHaveBeenCalled();
+  });
+
+  it("bloqueia aprovacao sem confirmacao de polo representado", async () => {
+    adminFromMock.mockImplementation((table: string) => {
+      if (table === "profiles") return chain(table, { tenant_id: "tenant-1", role: "administrador" });
+      if (table === "system_event_logs") return chain(table, [{
+        ...reviewRow,
+        payload: {
+          ...reviewRow.payload,
+          polo_representado: "indeterminado",
+          obrigacao_de_quem: "escritorio",
+        },
+      }]);
+      if (table === "process_movimentacoes") return chain(table, {
+        id: "movement-1",
+        numero_cnj: "0000001-11.2026.8.26.0100",
+        conteudo: "Intimacao ambigua para manifestacao.",
+        tipo_evento: "PRAZO",
+        acao_sugerida: "Manifestar-se",
+        data_vencimento_extraida: "2026-05-20T00:00:00.000Z",
+        analise_json: { polo_representado: "indeterminado", obrigacao_de_quem: "escritorio" },
+      });
+      if (table === "monitored_processes") return chain(table, { id: "process-1", numero_processo: "0000001-11.2026.8.26.0100" });
+      return chain(table, null);
+    });
+
+    const response = await POST(request({ review_id: "review-1", decision: "approved" }) as any);
+    const payload = await response.json();
+
+    expect(response.status).toBe(422);
+    expect(payload.error).toContain("polo representado");
+    expect(inserts.filter((item) => item.table === "process_tasks")).toHaveLength(0);
+    expect(upserts.filter((item) => item.table === "process_prazos")).toHaveLength(0);
+    expect(prepareProactiveMovementDraftMock).not.toHaveBeenCalled();
+  });
+
+  it("bloqueia aprovacao quando obrigacao confirmada e da parte contraria", async () => {
+    adminFromMock.mockImplementation((table: string) => {
+      if (table === "profiles") return chain(table, { tenant_id: "tenant-1", role: "administrador" });
+      if (table === "system_event_logs") return chain(table, [{
+        ...reviewRow,
+        payload: {
+          ...reviewRow.payload,
+          polo_representado: "autor",
+          obrigacao_de_quem: "parte_contraria",
+        },
+      }]);
+      if (table === "process_movimentacoes") return chain(table, {
+        id: "movement-1",
+        numero_cnj: "0000001-11.2026.8.26.0100",
+        conteudo: "Vista a parte re para manifestacao.",
+        tipo_evento: "PRAZO",
+        acao_sugerida: "Manifestar-se",
+        data_vencimento_extraida: "2026-05-20T00:00:00.000Z",
+        analise_json: { polo_representado: "autor", obrigacao_de_quem: "parte_contraria" },
+      });
+      if (table === "monitored_processes") return chain(table, { id: "process-1", numero_processo: "0000001-11.2026.8.26.0100" });
+      return chain(table, null);
+    });
+
+    const response = await POST(request({ review_id: "review-1", decision: "approved" }) as any);
+    const payload = await response.json();
+
+    expect(response.status).toBe(422);
+    expect(payload.error).toContain("obrigacao");
     expect(inserts.filter((item) => item.table === "process_tasks")).toHaveLength(0);
     expect(upserts.filter((item) => item.table === "process_prazos")).toHaveLength(0);
     expect(prepareProactiveMovementDraftMock).not.toHaveBeenCalled();
