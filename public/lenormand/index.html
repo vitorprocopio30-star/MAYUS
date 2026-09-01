@@ -1,0 +1,1742 @@
+<!DOCTYPE html>
+<html lang="es-419">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover, maximum-scale=1">
+<meta name="theme-color" content="#0A0608">
+<title>Baraja Lenormand · Protocolo del Compromiso</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Cormorant+Garamond:ital,wght@0,300;0,400;0,500;0,600;1,300;1,400;1,500&family=Jost:wght@300;400;500;600&display=swap" rel="stylesheet">
+<style>
+/* ==================================================================
+   PROTOCOLO DEL COMPROMISO · BARAJA LENORMAND
+   Mockup funcional mobile-first — HTML + CSS + JS puro
+   ================================================================== */
+
+/* ---------------- TOKENS ---------------- */
+:root{
+  --negro:#0A0608;
+  --negro-2:#120A0E;
+  --vino:#2A0A16;
+  --vino-2:#3A0F1E;
+  --bordo:#55162B;
+  --bordo-soft:#6B1F36;
+  --oro:#D8B87C;
+  --oro-claro:#EBD3A3;
+  --oro-viejo:#9C7A3C;
+  --crema:#F3E7D6;
+  --crema-dim:#CDBCA8;
+  --texto:#E8DCCB;
+  --texto-2:#A8988A;
+  --texto-3:#7A6D62;
+  --linea:rgba(216,184,124,.16);
+  --linea-fuerte:rgba(216,184,124,.34);
+  --sombra:0 18px 40px -18px rgba(0,0,0,.9);
+  --serif:'Cormorant Garamond',Georgia,'Times New Roman',serif;
+  --sans:'Jost','Helvetica Neue',Arial,sans-serif;
+  --r-lg:22px; --r-md:16px; --r-sm:11px;
+  --ease:cubic-bezier(.22,.61,.36,1);
+}
+
+*{box-sizing:border-box;-webkit-tap-highlight-color:transparent;}
+html,body{margin:0;padding:0;height:100%;}
+body{
+  background:#050304;
+  color:var(--texto);
+  font-family:var(--sans);
+  font-size:15px;line-height:1.55;
+  display:flex;align-items:center;justify-content:center;
+  overflow:hidden;
+}
+button{font-family:inherit;color:inherit;border:0;background:none;cursor:pointer;}
+img{max-width:100%;display:block;}
+
+/* ---------------- MARCO DEL DISPOSITIVO ---------------- */
+#app{
+  position:relative;
+  width:min(430px,100vw);
+  height:min(932px,100dvh);
+  background:
+    radial-gradient(120% 60% at 50% -12%, rgba(85,22,43,.55) 0%, rgba(42,10,22,.25) 42%, rgba(10,6,8,0) 72%),
+    radial-gradient(90% 50% at 85% 108%, rgba(156,122,60,.14) 0%, rgba(10,6,8,0) 70%),
+    linear-gradient(180deg,#0D0709 0%, #0A0608 55%, #080506 100%);
+  overflow:hidden;
+  display:flex;flex-direction:column;
+  box-shadow:0 40px 120px -30px rgba(0,0,0,1), 0 0 0 1px rgba(216,184,124,.08);
+}
+@media(min-width:520px) and (min-height:900px){
+  #app{border-radius:38px;}
+}
+#app::after{ /* grano sutil */
+  content:"";position:absolute;inset:0;pointer-events:none;z-index:60;opacity:.05;
+  background-image:url("data:image/svg+xml;utf8,<svg xmlns='http://www.w3.org/2000/svg' width='140' height='140'><filter id='n'><feTurbulence type='fractalNoise' baseFrequency='.85' numOctaves='3'/></filter><rect width='140' height='140' filter='url(%23n)' opacity='.6'/></svg>");
+  mix-blend-mode:overlay;
+}
+
+/* ---------------- HEADER ---------------- */
+.appbar{
+  position:relative;z-index:30;flex:0 0 auto;
+  padding:calc(env(safe-area-inset-top,0px) + 16px) 20px 13px;
+  display:flex;align-items:center;justify-content:space-between;gap:12px;
+  background:linear-gradient(180deg,rgba(10,6,8,.96),rgba(10,6,8,.62));
+  backdrop-filter:blur(14px);
+  border-bottom:1px solid var(--linea);
+}
+.appbar__title{
+  font-size:9.5px;letter-spacing:.34em;text-transform:uppercase;font-weight:500;
+  color:var(--oro);opacity:.92;
+}
+.appbar__dots{
+  width:34px;height:34px;border-radius:50%;display:grid;place-items:center;
+  color:var(--crema-dim);font-size:17px;line-height:1;letter-spacing:0;
+  transition:background .3s var(--ease),color .3s var(--ease);
+}
+.appbar__dots:active{background:rgba(216,184,124,.1);color:var(--oro);}
+
+/* ---------------- STAGE / PANTALLAS ---------------- */
+.stage{position:relative;flex:1 1 auto;overflow:hidden;}
+.screen{
+  position:absolute;inset:0;overflow-y:auto;overflow-x:hidden;
+  -webkit-overflow-scrolling:touch;
+  padding:22px 20px calc(112px + env(safe-area-inset-bottom,0px));
+  opacity:0;visibility:hidden;transform:translateY(10px) scale(.995);
+  transition:opacity .42s var(--ease),transform .42s var(--ease),visibility .42s;
+}
+.screen.is-active{opacity:1;visibility:visible;transform:none;}
+.screen::-webkit-scrollbar{width:0;}
+
+/* ---------------- TIPOGRAFÍA ---------------- */
+.eyebrow{
+  font-size:9px;letter-spacing:.32em;text-transform:uppercase;color:var(--oro-viejo);
+  font-weight:500;margin:0 0 10px;
+}
+.title{
+  font-family:var(--serif);font-weight:300;font-size:40px;line-height:1.02;
+  letter-spacing:.005em;color:var(--crema);margin:0 0 12px;
+}
+.title em{font-style:italic;color:var(--oro-claro);}
+.title--sm{font-size:30px;}
+.lede{font-size:13.5px;line-height:1.62;color:var(--texto-2);font-weight:300;margin:0;}
+.section-title{
+  font-size:9.5px;letter-spacing:.3em;text-transform:uppercase;color:var(--oro);
+  font-weight:500;margin:0 0 14px;display:flex;align-items:center;gap:10px;
+}
+.section-title::after{content:"";flex:1;height:1px;background:linear-gradient(90deg,var(--linea),transparent);}
+
+/* ---------------- BOTÓN VOLVER ---------------- */
+.back{
+  display:inline-flex;align-items:center;gap:8px;margin-bottom:20px;
+  font-size:9.5px;letter-spacing:.26em;text-transform:uppercase;color:var(--texto-3);
+  transition:color .3s var(--ease);
+}
+.back:active{color:var(--oro);}
+.back svg{width:13px;height:13px;}
+
+/* ---------------- BOTONES ---------------- */
+.btn{
+  display:flex;align-items:center;justify-content:center;gap:10px;width:100%;
+  padding:16px 20px;border-radius:var(--r-sm);
+  font-size:10.5px;letter-spacing:.26em;text-transform:uppercase;font-weight:500;
+  transition:transform .25s var(--ease),box-shadow .35s var(--ease),opacity .3s,background .3s;
+}
+.btn:active{transform:scale(.982);}
+.btn--gold{
+  background:linear-gradient(135deg,#EBD3A3 0%,#D8B87C 38%,#B08F4D 100%);
+  color:#2A0A16;font-weight:600;
+  box-shadow:0 12px 26px -12px rgba(216,184,124,.6), inset 0 1px 0 rgba(255,255,255,.45);
+}
+.btn--ghost{border:1px solid var(--linea-fuerte);color:var(--oro);background:rgba(216,184,124,.04);}
+.btn--quiet{color:var(--texto-3);font-size:9.5px;letter-spacing:.24em;padding:14px;}
+.btn--quiet:active{color:var(--oro);}
+.btn[disabled],.btn.is-off{opacity:.32;pointer-events:none;box-shadow:none;filter:grayscale(.4);}
+.btn-row{display:flex;gap:10px;}
+.btn-row .btn{padding:14px 10px;font-size:9px;letter-spacing:.18em;}
+
+/* ---------------- CARTAS (proporción 2:3) ---------------- */
+.card{position:relative;aspect-ratio:2/3;border-radius:12px;overflow:hidden;}
+.card__img{position:absolute;inset:0;width:100%;height:100%;object-fit:cover;z-index:2;}
+
+/* Reverso premium */
+.back-art{
+  position:absolute;inset:0;border-radius:inherit;overflow:hidden;
+  background:
+    radial-gradient(78% 55% at 50% 42%, rgba(107,31,54,.9) 0%, rgba(58,15,30,.96) 46%, rgba(26,8,15,1) 100%);
+  box-shadow:inset 0 0 0 1px rgba(216,184,124,.36), inset 0 0 0 5px rgba(10,6,8,.55), inset 0 0 0 6px rgba(216,184,124,.22), 0 10px 22px -12px rgba(0,0,0,.9);
+}
+.back-art::before{
+  content:"";position:absolute;inset:8px;border-radius:6px;
+  background-image:
+    repeating-linear-gradient(45deg, rgba(216,184,124,.13) 0 1px, transparent 1px 9px),
+    repeating-linear-gradient(-45deg, rgba(216,184,124,.13) 0 1px, transparent 1px 9px);
+  opacity:.9;
+}
+.back-art::after{
+  content:"";position:absolute;left:50%;top:50%;width:44%;aspect-ratio:1;transform:translate(-50%,-50%) rotate(45deg);
+  border:1px solid rgba(216,184,124,.5);border-radius:14%;
+  background:radial-gradient(circle at 50% 50%, rgba(216,184,124,.24), rgba(216,184,124,0) 68%);
+  box-shadow:0 0 22px rgba(216,184,124,.18);
+}
+.back-art .monogram{
+  position:absolute;left:50%;top:50%;transform:translate(-50%,-50%);
+  font-family:var(--serif);font-style:italic;font-size:clamp(13px,4.4vw,20px);
+  color:rgba(235,211,163,.82);letter-spacing:.02em;z-index:3;text-shadow:0 0 14px rgba(216,184,124,.35);
+}
+
+/* Anverso placeholder */
+.face-art{
+  position:absolute;inset:0;display:flex;flex-direction:column;align-items:center;justify-content:space-between;
+  padding:9% 7%;text-align:center;border-radius:inherit;
+  background:
+    radial-gradient(85% 60% at 50% 30%, #2E1420 0%, #1B0A12 55%, #120709 100%);
+  box-shadow:inset 0 0 0 1px rgba(216,184,124,.4), inset 0 0 0 4px rgba(10,6,8,.6), inset 0 0 0 5px rgba(216,184,124,.2);
+}
+.face-art .fa-num{
+  font-family:var(--serif);font-size:clamp(9px,2.9vw,12px);letter-spacing:.22em;color:var(--oro);opacity:.85;
+}
+.face-art .fa-sym{width:62%;opacity:.95;}
+.face-art .fa-name{
+  font-family:var(--serif);font-size:clamp(8px,2.6vw,12px);letter-spacing:.13em;text-transform:uppercase;
+  color:var(--crema);line-height:1.15;
+}
+.card--glow{box-shadow:0 0 0 1px rgba(216,184,124,.5), 0 0 26px -4px rgba(216,184,124,.35);}
+/* miniatura (historial): solo número y motivo, sin el nombre */
+.card--mini .face-art{justify-content:center;gap:5px;padding:8% 6%;}
+.card--mini .fa-name{display:none;}
+.card--mini .fa-sym{width:70%;}
+.card--mini .fa-num{font-size:8.5px;letter-spacing:.16em;}
+
+/* ---------------- PANTALLA 1 · ENTRADA ---------------- */
+.hero{position:relative;padding:6px 0 26px;text-align:center;}
+.deck-hero{
+  position:relative;width:120px;height:180px;margin:2px auto 24px;
+  animation:float 7s ease-in-out infinite;
+}
+.deck-hero .card{position:absolute;inset:0;transition:transform .6s var(--ease);}
+.deck-hero .card:nth-child(1){transform:translate(-16px,6px) rotate(-9deg) scale(.96);opacity:.72;}
+.deck-hero .card:nth-child(2){transform:translate(16px,6px) rotate(9deg) scale(.96);opacity:.72;}
+.deck-hero .card:nth-child(3){transform:translateY(-3px);}
+.deck-hero::after{
+  content:"";position:absolute;left:50%;bottom:-24px;transform:translateX(-50%);
+  width:150px;height:26px;border-radius:50%;
+  background:radial-gradient(closest-side, rgba(216,184,124,.2), transparent 72%);filter:blur(5px);
+}
+@keyframes float{0%,100%{transform:translateY(0)}50%{transform:translateY(-9px)}}
+
+.opts{display:flex;flex-direction:column;gap:11px;}
+.opt{
+  position:relative;display:flex;align-items:center;gap:15px;width:100%;text-align:left;
+  padding:16px 16px 16px 15px;border-radius:var(--r-md);
+  background:linear-gradient(135deg, rgba(85,22,43,.34) 0%, rgba(18,10,14,.86) 46%, rgba(12,7,9,.9) 100%);
+  border:1px solid var(--linea);box-shadow:var(--sombra);
+  transition:transform .28s var(--ease),border-color .3s,box-shadow .3s;
+  overflow:hidden;
+}
+.opt::before{
+  content:"";position:absolute;left:0;top:12%;height:76%;width:1px;
+  background:linear-gradient(180deg,transparent,var(--oro),transparent);opacity:.5;
+}
+.opt:active{transform:scale(.985);border-color:var(--linea-fuerte);box-shadow:0 0 26px -10px rgba(216,184,124,.4);}
+.opt__thumb{flex:0 0 46px;width:46px;}
+.opt__body{flex:1;min-width:0;}
+.opt__name{
+  font-family:var(--serif);font-size:19px;font-weight:400;letter-spacing:.02em;color:var(--crema);
+  line-height:1.15;margin:0 0 4px;
+}
+.opt__desc{font-size:11.5px;color:var(--texto-3);font-weight:300;line-height:1.45;margin:0;}
+.opt__arrow{flex:0 0 auto;color:var(--oro-viejo);opacity:.75;}
+.tag{
+  display:inline-block;font-size:7.5px;letter-spacing:.22em;text-transform:uppercase;font-weight:500;
+  padding:3px 7px;border-radius:3px;margin-bottom:6px;
+}
+.tag--free{color:#A8C7A0;border:1px solid rgba(168,199,160,.35);background:rgba(168,199,160,.07);}
+.tag--premium{
+  color:#2A0A16;font-weight:600;
+  background:linear-gradient(120deg,#EBD3A3,#C8A468);
+  box-shadow:0 4px 12px -6px rgba(216,184,124,.8);
+}
+.history-link{
+  margin-top:22px;width:100%;display:flex;align-items:center;justify-content:space-between;
+  padding:15px 4px;border-top:1px solid var(--linea);
+  font-size:9.5px;letter-spacing:.28em;text-transform:uppercase;color:var(--texto-2);
+  transition:color .3s;
+}
+.history-link:active{color:var(--oro);}
+
+/* ---------------- PANTALLA 2 · PREGUNTA ---------------- */
+.field{
+  position:relative;border-radius:var(--r-md);padding:16px 16px 12px;
+  background:linear-gradient(160deg, rgba(85,22,43,.22), rgba(14,8,11,.9));
+  border:1px solid var(--linea);transition:border-color .35s var(--ease),box-shadow .35s var(--ease);
+}
+.field:focus-within{border-color:var(--linea-fuerte);box-shadow:0 0 0 3px rgba(216,184,124,.07);}
+.field__label{font-size:9px;letter-spacing:.26em;text-transform:uppercase;color:var(--oro-viejo);margin-bottom:9px;}
+.field textarea{
+  width:100%;min-height:104px;resize:none;border:0;background:none;outline:none;
+  font-family:var(--serif);font-size:20px;font-weight:300;line-height:1.42;color:var(--crema);
+}
+.field textarea::placeholder{color:var(--texto-3);opacity:.65;font-style:italic;}
+.field__count{text-align:right;font-size:9px;letter-spacing:.14em;color:var(--texto-3);margin-top:6px;}
+.chips{display:flex;flex-direction:column;gap:8px;margin:20px 0 26px;}
+.chip{
+  text-align:left;padding:12px 14px;border-radius:10px;border:1px solid rgba(216,184,124,.13);
+  background:rgba(216,184,124,.03);color:var(--texto-2);
+  font-size:12.5px;font-weight:300;line-height:1.4;
+  transition:all .28s var(--ease);
+}
+.chip:active,.chip.is-on{border-color:var(--linea-fuerte);color:var(--crema);background:rgba(216,184,124,.09);}
+
+/* ---------------- PANTALLA 3 · BARAJAR ---------------- */
+.shuffle-wrap{
+  display:flex;flex-direction:column;align-items:center;justify-content:center;
+  min-height:calc(100% - 40px);text-align:center;
+}
+.deck-zone{position:relative;width:150px;height:225px;margin:16px 0 34px;cursor:pointer;}
+.deck-zone::after{
+  content:"";position:absolute;left:50%;bottom:-26px;transform:translateX(-50%);
+  width:170px;height:28px;border-radius:50%;
+  background:radial-gradient(closest-side, rgba(216,184,124,.22), transparent 72%);filter:blur(6px);
+  transition:opacity .5s;
+}
+.deck-zone .card{
+  position:absolute;inset:0;
+  transform:translate(calc(var(--i) * 0.6px), calc(var(--i) * -0.9px));
+  transition:transform .5s var(--ease);
+}
+.deck-zone.is-idle{animation:breathe 4.6s ease-in-out infinite;}
+@keyframes breathe{0%,100%{transform:scale(1)}50%{transform:scale(1.022)}}
+.deck-zone.is-shuffling{animation:none;}
+.deck-zone.is-shuffling .card{
+  animation:shuffleCard 2s var(--ease) forwards;
+  animation-delay:calc(var(--i) * 0.055s);
+}
+@keyframes shuffleCard{
+  0%  {transform:translate(0,0) rotate(0deg);}
+  18% {transform:translate(calc(var(--dx) * 1px), -14px) rotate(calc(var(--rz) * 1deg));}
+  42% {transform:translate(calc(var(--dx) * -1.35px), 10px) rotate(calc(var(--rz) * -1.2deg));}
+  64% {transform:translate(calc(var(--dx) * .75px), -6px) rotate(calc(var(--rz) * .7deg));}
+  82% {transform:translate(calc(var(--dx) * -.3px), 3px) rotate(calc(var(--rz) * -.3deg));}
+  100%{transform:translate(calc(var(--i) * 0.6px), calc(var(--i) * -0.9px)) rotate(0deg);}
+}
+.shuffle-hint{
+  font-size:9.5px;letter-spacing:.3em;text-transform:uppercase;color:var(--texto-3);
+  transition:opacity .4s,color .4s;
+}
+.shuffle-ready{
+  font-family:var(--serif);font-size:26px;font-style:italic;color:var(--oro-claro);
+  margin:0 0 22px;opacity:0;transform:translateY(8px);
+  transition:opacity .7s var(--ease),transform .7s var(--ease);
+}
+.shuffle-ready.is-on{opacity:1;transform:none;}
+.fade-block{opacity:0;transform:translateY(10px);transition:opacity .6s var(--ease),transform .6s var(--ease);pointer-events:none;}
+.fade-block.is-on{opacity:1;transform:none;pointer-events:auto;}
+
+/* ---------------- PANTALLA 4 · ELEGIR ---------------- */
+#scr-pick{display:flex;flex-direction:column;justify-content:center;}
+#scr-pick > .back{position:absolute;top:22px;left:20px;margin:0;}
+#scr-pick > .title{margin-top:30px;}
+.fan{position:relative;height:222px;margin:18px 0 10px;}
+.fan__card{
+  position:absolute;left:50%;top:22px;width:74px;margin-left:-37px;
+  transform-origin:50% 100%;
+  transition:transform .42s var(--ease),filter .42s var(--ease),box-shadow .42s;
+  will-change:transform;
+}
+.fan::after{ /* halo cálido bajo el abanico */
+  content:"";position:absolute;left:50%;bottom:6px;transform:translateX(-50%);
+  width:78%;height:34px;border-radius:50%;
+  background:radial-gradient(closest-side, rgba(216,184,124,.16), transparent 74%);filter:blur(6px);
+}
+.fan__card .card{box-shadow:0 12px 24px -14px rgba(0,0,0,.95);}
+.fan__card.is-picked{filter:drop-shadow(0 0 14px rgba(216,184,124,.45));}
+.fan__card.is-picked .card{box-shadow:0 0 0 1px rgba(216,184,124,.65), 0 0 30px -6px rgba(216,184,124,.5);}
+.fan__card.is-picked .back-art::after{background:radial-gradient(circle at 50% 50%, rgba(235,211,163,.45), rgba(216,184,124,0) 70%);border-color:rgba(235,211,163,.8);}
+.counter{
+  display:flex;align-items:center;justify-content:center;gap:12px;margin:6px 0 20px;
+}
+.counter__num{
+  font-family:var(--serif);font-size:15px;letter-spacing:.22em;color:var(--oro);
+}
+.counter__pips{display:flex;gap:6px;}
+.pip{width:5px;height:5px;border-radius:50%;background:rgba(216,184,124,.22);transition:all .4s var(--ease);}
+.pip.is-on{background:var(--oro);box-shadow:0 0 10px rgba(216,184,124,.8);transform:scale(1.25);}
+
+/* ---------------- PANTALLA 5 · REVELACIÓN ---------------- */
+#scr-reveal{display:flex;flex-direction:column;justify-content:center;}
+.spread{display:flex;justify-content:center;gap:9px;margin:26px 0 22px;}
+.spread--5{gap:5px;}
+.spread--5 .slot__name{display:none;}
+.spread--5 .slot__label{font-size:7px;letter-spacing:.14em;margin-top:9px;}
+.spread--5 .fa-name{font-size:7.5px;letter-spacing:.05em;}
+.spread--5 .fa-num{font-size:8px;}
+.slot{flex:1 1 0;min-width:0;max-width:112px;text-align:center;}
+.flip{perspective:1100px;}
+.flip__inner{
+  position:relative;width:100%;aspect-ratio:2/3;transform-style:preserve-3d;
+  transition:transform 1s cubic-bezier(.5,.05,.2,1);
+}
+.flip.is-flipped .flip__inner{transform:rotateY(180deg);}
+.flip__face{position:absolute;inset:0;backface-visibility:hidden;-webkit-backface-visibility:hidden;border-radius:12px;overflow:hidden;}
+.flip__face--back{transform:rotateY(180deg);}
+.flip.is-active .flip__inner{filter:drop-shadow(0 0 18px rgba(216,184,124,.35));}
+.slot__label{
+  margin-top:11px;font-size:8px;letter-spacing:.24em;text-transform:uppercase;color:var(--texto-3);
+  transition:color .5s;
+}
+.slot.is-on .slot__label{color:var(--oro);}
+.slot__name{
+  margin-top:5px;font-family:var(--serif);font-size:12px;color:var(--crema);letter-spacing:.04em;
+  opacity:0;transition:opacity .6s var(--ease);min-height:16px;line-height:1.2;
+}
+.slot.is-on .slot__name{opacity:1;}
+
+/* ---------------- PANTALLA 6 · RESULTADO ---------------- */
+.qcard{
+  border-radius:var(--r-md);padding:15px 17px;margin-bottom:22px;
+  background:linear-gradient(150deg, rgba(85,22,43,.3), rgba(14,8,11,.8));
+  border:1px solid var(--linea);
+}
+.qcard__lb{font-size:8.5px;letter-spacing:.26em;text-transform:uppercase;color:var(--oro-viejo);margin-bottom:7px;}
+.qcard__tx{font-family:var(--serif);font-style:italic;font-size:18px;font-weight:300;color:var(--crema);line-height:1.36;}
+
+.clarity{
+  border-radius:var(--r-md);padding:17px;margin-bottom:24px;
+  background:rgba(216,184,124,.035);border:1px solid var(--linea);
+}
+.clarity__top{display:flex;align-items:center;justify-content:space-between;margin-bottom:14px;}
+.clarity__lb{font-size:9px;letter-spacing:.28em;text-transform:uppercase;color:var(--oro);}
+.clarity__val{font-family:var(--serif);font-size:19px;letter-spacing:.1em;color:var(--crema);}
+.clarity__scale{display:flex;gap:6px;margin-bottom:11px;}
+.clarity__step{
+  flex:1;text-align:center;padding:8px 2px;border-radius:7px;
+  font-size:8px;letter-spacing:.2em;text-transform:uppercase;color:var(--texto-3);
+  border:1px solid rgba(216,184,124,.1);transition:all .5s var(--ease);
+}
+.clarity__step.is-on{
+  color:#2A0A16;font-weight:600;border-color:transparent;
+  background:linear-gradient(120deg,#EBD3A3,#C0995C);
+  box-shadow:0 6px 18px -8px rgba(216,184,124,.7);
+}
+.info-btn{
+  display:inline-flex;align-items:center;gap:7px;font-size:9px;letter-spacing:.16em;
+  text-transform:uppercase;color:var(--texto-3);
+}
+.info-btn i{
+  width:14px;height:14px;border-radius:50%;border:1px solid var(--linea-fuerte);
+  display:grid;place-items:center;font-style:normal;font-size:9px;color:var(--oro);
+}
+.tip{
+  max-height:0;overflow:hidden;opacity:0;
+  transition:max-height .5s var(--ease),opacity .4s,margin .4s;
+}
+.tip.is-on{max-height:130px;opacity:1;margin-top:11px;}
+.tip p{
+  margin:0;padding:11px 13px;border-radius:9px;background:rgba(10,6,8,.6);
+  border-left:2px solid var(--oro-viejo);
+  font-size:11.5px;line-height:1.55;color:var(--texto-2);font-weight:300;
+}
+
+.prose{font-size:14px;line-height:1.72;color:var(--texto-2);font-weight:300;margin:0;}
+.block{margin-bottom:30px;}
+
+.readcard{
+  border-radius:var(--r-md);padding:17px;margin-bottom:11px;
+  background:linear-gradient(155deg, rgba(85,22,43,.2), rgba(13,8,10,.85));
+  border:1px solid var(--linea);box-shadow:var(--sombra);
+  display:flex;gap:14px;
+}
+.readcard__thumb{flex:0 0 62px;}
+.readcard__num{font-family:var(--serif);font-size:17px;letter-spacing:.05em;color:var(--crema);margin-bottom:3px;}
+.readcard__pos{font-size:8px;letter-spacing:.24em;text-transform:uppercase;color:var(--oro);margin-bottom:9px;}
+.readcard__tx{font-size:12.5px;line-height:1.62;color:var(--texto-2);font-weight:300;margin:0;}
+
+.combo{
+  border-radius:12px;padding:14px 15px;margin-bottom:9px;
+  border:1px solid var(--linea);background:rgba(216,184,124,.03);
+}
+.combo__t{font-size:9px;letter-spacing:.2em;text-transform:uppercase;color:var(--oro);margin-bottom:7px;}
+.combo__d{font-size:12.5px;line-height:1.55;color:var(--texto-2);font-weight:300;margin:0;}
+
+.observe{
+  position:relative;border-radius:var(--r-lg);padding:24px 21px;margin-bottom:30px;overflow:hidden;
+  background:linear-gradient(150deg,#F3E7D6 0%,#E7D5BC 52%,#D9C2A2 100%);
+  color:#3A0F1E;box-shadow:0 22px 46px -20px rgba(216,184,124,.5);
+}
+.observe::before{
+  content:"";position:absolute;inset:7px;border:1px solid rgba(58,15,30,.22);border-radius:15px;pointer-events:none;
+}
+.observe::after{
+  content:"";position:absolute;right:-30px;top:-40px;width:150px;height:150px;border-radius:50%;
+  background:radial-gradient(circle, rgba(85,22,43,.14), transparent 68%);
+}
+.observe__t{
+  position:relative;font-size:9px;letter-spacing:.3em;text-transform:uppercase;
+  color:#6B1F36;margin-bottom:11px;font-weight:600;
+}
+.observe__x{
+  position:relative;font-family:var(--serif);font-size:19px;line-height:1.46;font-weight:400;color:#2A0A16;margin:0;
+}
+
+.upsell{
+  position:relative;border-radius:var(--r-md);padding:19px;margin:22px 0 8px;overflow:hidden;
+  border:1px solid var(--linea-fuerte);
+  background:linear-gradient(140deg, rgba(85,22,43,.6), rgba(20,10,14,.94));
+  text-align:center;
+}
+.upsell::after{
+  content:"";position:absolute;inset:0;
+  background:linear-gradient(115deg,transparent 30%,rgba(235,211,163,.12) 50%,transparent 70%);
+  transform:translateX(-100%);animation:sheen 5.5s ease-in-out infinite 1.4s;
+}
+@keyframes sheen{0%{transform:translateX(-100%)}45%,100%{transform:translateX(100%)}}
+.upsell__sub{font-size:11px;color:var(--texto-3);font-weight:300;margin:11px 0 0;line-height:1.5;position:relative;}
+
+/* ---------------- CARTA DEL DÍA ---------------- */
+.daily-wrap{text-align:center;}
+.daily-card{width:174px;margin:22px auto 20px;}
+.daily-name{font-family:var(--serif);font-size:32px;color:var(--crema);margin:0 0 4px;letter-spacing:.02em;}
+.daily-num{font-size:9.5px;letter-spacing:.34em;color:var(--oro);margin-bottom:16px;}
+.reflect{
+  border-radius:var(--r-md);padding:18px;margin:24px 0;text-align:left;
+  border:1px solid var(--linea);background:rgba(216,184,124,.04);
+}
+.reflect__t{font-size:9px;letter-spacing:.28em;text-transform:uppercase;color:var(--oro);margin-bottom:10px;}
+.reflect__q{font-family:var(--serif);font-style:italic;font-size:18px;line-height:1.45;color:var(--crema);margin:0;font-weight:300;}
+
+/* ---------------- HISTORIAL ---------------- */
+.hist{display:flex;flex-direction:column;gap:9px;}
+.hitem{
+  display:flex;align-items:center;gap:14px;width:100%;text-align:left;
+  padding:14px 15px;border-radius:12px;border:1px solid var(--linea);
+  background:linear-gradient(140deg,rgba(85,22,43,.16),rgba(13,8,10,.8));
+  transition:transform .25s var(--ease),border-color .3s;
+}
+.hitem:active{transform:scale(.986);border-color:var(--linea-fuerte);}
+.hitem__thumb{flex:0 0 34px;}
+.hitem__when{font-size:8.5px;letter-spacing:.24em;text-transform:uppercase;color:var(--oro-viejo);margin-bottom:4px;}
+.hitem__what{font-family:var(--serif);font-size:16px;color:var(--crema);line-height:1.2;}
+.hitem__q{font-size:11px;color:var(--texto-3);font-weight:300;margin-top:3px;
+  overflow:hidden;text-overflow:ellipsis;white-space:nowrap;}
+.empty{text-align:center;padding:50px 20px;color:var(--texto-3);font-size:12.5px;font-weight:300;}
+
+/* ---------------- BOTTOM SHEET ---------------- */
+.scrim{
+  position:absolute;inset:0;z-index:40;background:rgba(4,2,3,.72);backdrop-filter:blur(3px);
+  opacity:0;visibility:hidden;transition:opacity .4s var(--ease),visibility .4s;
+}
+.scrim.is-on{opacity:1;visibility:visible;}
+.sheet{
+  position:absolute;left:0;right:0;bottom:0;z-index:50;
+  border-radius:26px 26px 0 0;padding:12px 22px calc(28px + env(safe-area-inset-bottom,0px));
+  background:linear-gradient(180deg,#1B0C13 0%,#120809 100%);
+  border-top:1px solid var(--linea-fuerte);
+  box-shadow:0 -24px 60px -20px rgba(0,0,0,.95);
+  transform:translateY(102%);transition:transform .48s var(--ease);
+  max-height:86%;overflow-y:auto;
+}
+.sheet.is-on{transform:translateY(0);}
+.sheet__grab{width:38px;height:3px;border-radius:2px;background:rgba(216,184,124,.3);margin:0 auto 20px;}
+.sheet__t{font-family:var(--serif);font-size:27px;font-weight:300;color:var(--crema);margin:0 0 12px;line-height:1.15;}
+.sheet__p{font-size:13px;line-height:1.65;color:var(--texto-2);font-weight:300;margin:0 0 20px;}
+.sheet__list{list-style:none;margin:0 0 22px;padding:0;}
+.sheet__list li{
+  display:flex;gap:11px;align-items:flex-start;padding:9px 0;border-bottom:1px solid rgba(216,184,124,.08);
+  font-size:12.5px;color:var(--texto-2);font-weight:300;
+}
+.sheet__list li span{color:var(--oro);flex:0 0 auto;font-size:11px;line-height:1.5;}
+.menu-item{
+  width:100%;text-align:left;padding:15px 2px;border-bottom:1px solid rgba(216,184,124,.08);
+  font-size:10px;letter-spacing:.24em;text-transform:uppercase;color:var(--texto-2);
+}
+.menu-item:active{color:var(--oro);}
+
+/* ---------------- TOAST ---------------- */
+.toast{
+  position:absolute;left:50%;bottom:98px;z-index:55;transform:translate(-50%,14px);
+  padding:12px 20px;border-radius:40px;white-space:nowrap;
+  background:rgba(243,231,214,.96);color:#2A0A16;
+  font-size:9.5px;letter-spacing:.2em;text-transform:uppercase;font-weight:500;
+  box-shadow:0 16px 34px -14px rgba(0,0,0,.8);
+  opacity:0;visibility:hidden;transition:all .4s var(--ease);
+}
+.toast.is-on{opacity:1;visibility:visible;transform:translate(-50%,0);}
+
+/* ---------------- BOTTOM NAV ---------------- */
+.tabbar{
+  position:relative;z-index:30;flex:0 0 auto;
+  display:grid;grid-template-columns:repeat(4,1fr);
+  padding:9px 8px calc(env(safe-area-inset-bottom,0px) + 9px);
+  background:linear-gradient(180deg,rgba(10,6,8,.7),rgba(8,4,6,.98));
+  backdrop-filter:blur(16px);border-top:1px solid var(--linea);
+}
+.tab{
+  display:flex;flex-direction:column;align-items:center;gap:5px;padding:6px 2px;
+  color:var(--texto-3);transition:color .3s var(--ease);
+}
+.tab svg{width:19px;height:19px;stroke-width:1.3;}
+.tab span{font-size:7.5px;letter-spacing:.2em;text-transform:uppercase;}
+.tab.is-on{color:var(--oro);}
+.tab.is-on svg{filter:drop-shadow(0 0 7px rgba(216,184,124,.5));}
+
+/* ---------------- UTILIDADES ---------------- */
+.center{text-align:center;}
+.mb-s{margin-bottom:12px;} .mb-m{margin-bottom:22px;} .mb-l{margin-bottom:32px;}
+.stack{display:flex;flex-direction:column;gap:10px;}
+.hairline{height:1px;background:linear-gradient(90deg,transparent,var(--linea),transparent);margin:26px 0;}
+@media (prefers-reduced-motion:reduce){
+  *{animation-duration:.01ms !important;transition-duration:.12s !important;}
+}
+</style>
+</head>
+<body>
+
+<div id="app">
+
+  <!-- ============ HEADER GLOBAL ============ -->
+  <header class="appbar">
+    <div class="appbar__title">Protocolo del Compromiso</div>
+    <button class="appbar__dots" id="btnMenu" aria-label="Más opciones">⋮</button>
+  </header>
+
+  <!-- ============ STAGE ============ -->
+  <main class="stage" id="stage">
+
+    <!-- ---------- PANTALLA 1 · ENTRADA ---------- -->
+    <section class="screen" id="scr-home">
+      <div class="hero">
+        <p class="eyebrow">Lectura simbólica</p>
+        <h1 class="title">Baraja<br><em>Lenormand</em></h1>
+        <div class="deck-hero" id="heroDeck"></div>
+        <p class="lede">Haz una pregunta.<br>Las cartas pueden ayudarte a observar la situación desde otra perspectiva.</p>
+      </div>
+
+      <p class="section-title">Elige tu lectura</p>
+      <div class="opts" id="optsList"></div>
+
+      <button class="history-link" id="btnHistory">
+        <span>Mis lecturas</span>
+        <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5"><path d="M9 5l7 7-7 7"/></svg>
+      </button>
+    </section>
+
+    <!-- ---------- PANTALLA 2 · PREGUNTA ---------- -->
+    <section class="screen" id="scr-question">
+      <button class="back" data-back="home">
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6"><path d="M15 5l-7 7 7 7"/></svg>
+        Volver
+      </button>
+      <p class="eyebrow" id="qSpreadName">Lectura de 3 cartas</p>
+      <h2 class="title title--sm">Tu <em>pregunta</em></h2>
+      <p class="lede mb-m">Escribe aquello que quieres observar con más claridad.</p>
+
+      <div class="field">
+        <div class="field__label">¿Qué quieres consultar?</div>
+        <textarea id="qInput" maxlength="180" placeholder="Escribe tu pregunta aquí..."></textarea>
+        <div class="field__count"><span id="qCount">0</span> / 180</div>
+      </div>
+
+      <p class="section-title" style="margin-top:26px">Sugerencias</p>
+      <div class="chips" id="qChips"></div>
+
+      <button class="btn btn--gold is-off" id="qContinue">Continuar</button>
+      <button class="btn btn--quiet" id="qSkip">Continuar sin pregunta</button>
+    </section>
+
+    <!-- ---------- PANTALLA 3 · BARAJAR ---------- -->
+    <section class="screen" id="scr-shuffle">
+      <button class="back" data-back="question">
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6"><path d="M15 5l-7 7 7 7"/></svg>
+        Volver
+      </button>
+      <div class="shuffle-wrap">
+        <p class="eyebrow">36 cartas</p>
+        <h2 class="title title--sm center" style="margin-bottom:8px">Concéntrate<br>en tu <em>pregunta</em></h2>
+        <div class="deck-zone is-idle" id="deckZone"></div>
+        <p class="shuffle-hint" id="shuffleHint">Toca el mazo para barajar</p>
+        <p class="shuffle-ready" id="shuffleReady">Las cartas están listas</p>
+        <div class="fade-block" id="shuffleCta" style="width:100%">
+          <button class="btn btn--gold" id="btnChoose">Elegir mis cartas</button>
+        </div>
+      </div>
+    </section>
+
+    <!-- ---------- PANTALLA 4 · ELEGIR ---------- -->
+    <section class="screen" id="scr-pick">
+      <button class="back" data-back="shuffle">
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6"><path d="M15 5l-7 7 7 7"/></svg>
+        Volver
+      </button>
+      <h2 class="title title--sm center" id="pickTitle">Elige <em>3 cartas</em></h2>
+      <p class="lede center mb-s">Déjate guiar por tu elección.</p>
+      <div class="counter">
+        <div class="counter__num" id="pickCounter">0 DE 3</div>
+        <div class="counter__pips" id="pickPips"></div>
+      </div>
+      <div class="fan" id="fan"></div>
+      <div class="fade-block" id="pickCta">
+        <button class="btn btn--gold" id="btnReveal">Revelar mi lectura</button>
+      </div>
+    </section>
+
+    <!-- ---------- PANTALLA 5 · REVELACIÓN ---------- -->
+    <section class="screen" id="scr-reveal">
+      <p class="eyebrow center" style="letter-spacing:.3em">Tus cartas</p>
+      <h2 class="title title--sm center">La <em>revelación</em></h2>
+      <div class="spread" id="revealSpread"></div>
+      <div class="fade-block" id="revealCta">
+        <button class="btn btn--gold" id="btnSeeReading">Ver mi lectura</button>
+      </div>
+    </section>
+
+    <!-- ---------- PANTALLA 6 · RESULTADO ---------- -->
+    <section class="screen" id="scr-result">
+      <button class="back" data-back="home">
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6"><path d="M15 5l-7 7 7 7"/></svg>
+        Inicio
+      </button>
+      <p class="eyebrow" id="resSpreadName">Lectura de 3 cartas</p>
+      <h2 class="title title--sm">Tu <em>lectura</em></h2>
+
+      <div class="qcard" id="resQuestion"></div>
+      <div class="spread" id="resSpread"></div>
+
+      <div class="clarity">
+        <div class="clarity__top">
+          <div class="clarity__lb">Claridad de la lectura</div>
+          <div class="clarity__val" id="clarityVal">Moderada</div>
+        </div>
+        <div class="clarity__scale" id="clarityScale"></div>
+        <button class="info-btn" id="btnClarityTip"><i>i</i> Qué significa</button>
+        <div class="tip" id="clarityTip">
+          <p>La claridad indica qué tan coherentes son las cartas entre sí. No representa la probabilidad de que algo suceda.</p>
+        </div>
+      </div>
+
+      <div class="block">
+        <p class="section-title">Visión general</p>
+        <p class="prose" id="resOverview"></p>
+      </div>
+
+      <div class="block">
+        <p class="section-title">Las cartas</p>
+        <div id="resCards"></div>
+      </div>
+
+      <div class="block">
+        <p class="section-title">Cómo se conectan</p>
+        <div id="resCombos"></div>
+      </div>
+
+      <div class="observe">
+        <div class="observe__t">Qué observar</div>
+        <p class="observe__x" id="resObserve"></p>
+      </div>
+
+      <div class="stack">
+        <div class="btn-row">
+          <button class="btn btn--ghost" id="btnSave">Guardar lectura</button>
+          <button class="btn btn--ghost" id="btnShare">Compartir</button>
+        </div>
+        <button class="btn btn--ghost" id="btnAgain">Hacer otra pregunta</button>
+      </div>
+
+      <div class="upsell">
+        <button class="btn btn--gold" id="btnDeepen" style="position:relative">Profundizar esta lectura</button>
+        <p class="upsell__sub">Recibe una interpretación más detallada sin cambiar tus cartas.</p>
+      </div>
+    </section>
+
+    <!-- ---------- CARTA DEL DÍA ---------- -->
+    <section class="screen" id="scr-daily">
+      <button class="back" data-back="home">
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6"><path d="M15 5l-7 7 7 7"/></svg>
+        Volver
+      </button>
+      <div class="daily-wrap">
+        <p class="eyebrow">Gratis · Cada día</p>
+        <h2 class="title title--sm">Tu carta<br>de <em>hoy</em></h2>
+        <div class="daily-card" id="dailyCard"></div>
+        <p class="shuffle-hint" id="dailyHint">Toca para descubrir tu carta</p>
+
+        <div class="fade-block" id="dailyBody" style="text-align:left">
+          <div class="center">
+            <div class="daily-num" id="dailyNum"></div>
+            <h3 class="daily-name" id="dailyName"></h3>
+          </div>
+          <p class="prose center" id="dailyText" style="margin-bottom:4px"></p>
+          <div class="reflect">
+            <div class="reflect__t">Para reflexionar</div>
+            <p class="reflect__q" id="dailyReflect"></p>
+          </div>
+          <button class="btn btn--gold" id="btnDailyToReading">Hacer una pregunta personal</button>
+        </div>
+      </div>
+    </section>
+
+    <!-- ---------- HISTORIAL ---------- -->
+    <section class="screen" id="scr-history">
+      <button class="back" data-back="home">
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6"><path d="M15 5l-7 7 7 7"/></svg>
+        Volver
+      </button>
+      <p class="eyebrow">Tu archivo</p>
+      <h2 class="title title--sm">Mis <em>lecturas</em></h2>
+      <p class="lede mb-m">Tus lecturas guardadas se conservan en este dispositivo.</p>
+      <div class="hist" id="histList"></div>
+    </section>
+
+    <!-- ---------- SCRIM + SHEETS ---------- -->
+    <div class="scrim" id="scrim"></div>
+
+    <div class="sheet" id="sheetPremium">
+      <div class="sheet__grab"></div>
+      <h3 class="sheet__t">Profundiza tu lectura</h3>
+      <p class="sheet__p">Explora con más detalle cómo se conectan las cartas, qué patrones aparecen y qué señales podrías observar en tu situación.</p>
+      <ul class="sheet__list">
+        <li><span>◆</span> Interpretación extendida carta por carta, sin cambiar tu tirada.</li>
+        <li><span>◆</span> Combinaciones y patrones que se repiten en tus lecturas.</li>
+        <li><span>◆</span> Señales concretas para observar en las próximas semanas.</li>
+        <li><span>◆</span> Lecturas ilimitadas de 3, 5 cartas y Lectura del Amor.</li>
+      </ul>
+      <button class="btn btn--gold" id="btnUnlock">Desbloquear premium</button>
+      <button class="btn btn--quiet" data-close-sheet>Ahora no</button>
+    </div>
+
+    <div class="sheet" id="sheetMenu">
+      <div class="sheet__grab"></div>
+      <h3 class="sheet__t">Baraja Lenormand</h3>
+      <button class="menu-item" id="miHow">Cómo funciona la lectura</button>
+      <button class="menu-item" id="miHist">Mis lecturas</button>
+      <button class="menu-item" id="miReset">Reiniciar la experiencia</button>
+      <button class="btn btn--quiet" data-close-sheet style="margin-top:14px">Cerrar</button>
+    </div>
+
+    <div class="sheet" id="sheetHow">
+      <div class="sheet__grab"></div>
+      <h3 class="sheet__t">Cómo funciona</h3>
+      <p class="sheet__p">El Lenormand es un sistema simbólico de 36 cartas. No predice hechos: describe dinámicas, y sirve para observar una situación desde otro ángulo.</p>
+      <ul class="sheet__list">
+        <li><span>01</span> Formulas una pregunta concreta.</li>
+        <li><span>02</span> El mazo se baraja y tú eliges tus cartas.</li>
+        <li><span>03</span> Cada posición aporta una capa distinta de lectura.</li>
+        <li><span>04</span> Las combinaciones muestran cómo se relacionan entre sí.</li>
+      </ul>
+      <button class="btn btn--ghost" data-close-sheet>Entendido</button>
+    </div>
+
+    <div class="toast" id="toast"></div>
+  </main>
+
+  <!-- ============ NAVEGACIÓN INFERIOR ============ -->
+  <nav class="tabbar" id="tabbar">
+    <button class="tab" data-tab="inicio">
+      <svg viewBox="0 0 24 24" fill="none" stroke="currentColor"><path d="M3 10.5L12 3l9 7.5"/><path d="M5.5 9.5V20h13V9.5"/></svg>
+      <span>Inicio</span>
+    </button>
+    <button class="tab" data-tab="materiales">
+      <svg viewBox="0 0 24 24" fill="none" stroke="currentColor"><path d="M4 5.5A1.5 1.5 0 015.5 4H11v16H5.5A1.5 1.5 0 014 18.5z"/><path d="M20 5.5A1.5 1.5 0 0018.5 4H13v16h5.5a1.5 1.5 0 001.5-1.5z"/></svg>
+      <span>Materiales</span>
+    </button>
+    <button class="tab is-on" data-tab="hoy">
+      <svg viewBox="0 0 24 24" fill="none" stroke="currentColor"><circle cx="12" cy="12" r="3.4"/><path d="M12 2.6v2.6M12 18.8v2.6M2.6 12h2.6M18.8 12h2.6M5.4 5.4l1.8 1.8M16.8 16.8l1.8 1.8M18.6 5.4l-1.8 1.8M7.2 16.8l-1.8 1.8"/></svg>
+      <span>Hoy</span>
+    </button>
+    <button class="tab" data-tab="comunidad">
+      <svg viewBox="0 0 24 24" fill="none" stroke="currentColor"><circle cx="9" cy="8.5" r="3.2"/><path d="M3.5 19.5c0-3 2.5-5.2 5.5-5.2s5.5 2.2 5.5 5.2"/><path d="M16 5.6a3.2 3.2 0 010 6M17.5 14.6c2 .6 3.5 2.4 3.5 4.9"/></svg>
+      <span>Comunidad</span>
+    </button>
+  </nav>
+</div>
+
+<script>
+/* ==================================================================
+   1 · CARDS DATA — las 36 cartas del Lenormand
+   ------------------------------------------------------------------
+   cl  = peso de claridad (-1 confuso · 0 neutro · +1 definido)
+   sit / inf / ten = interpretación por posición
+   gs / gi / gt    = fragmentos para la visión general
+   f1 / f2         = fragmentos para las combinaciones
+   obs             = frase de "qué observar"
+   dia / refl      = carta del día y pregunta de reflexión
+   ================================================================== */
+
+/* Ruta de los assets reales. Si el archivo no existe, el mockup
+   muestra automáticamente un anverso/reverso ilustrado por CSS+SVG. */
+const ASSET_BASE = 'assets/lenormand/';
+const ASSET_EXT  = '.webp';
+const ASSET_BACK = ASSET_BASE + 'reverso_oficial' + ASSET_EXT;
+
+const CARDS = [
+{n:1,nombre:'El Jinete',clave:'noticias que llegan',cl:1,
+ sit:'Algo está en movimiento y llega desde afuera. La situación no está detenida: hay una noticia, un mensaje o una persona que activa el tema.',
+ inf:'Lo que influye viene de fuera de ti: una información reciente o el ritmo de alguien más está marcando el compás.',
+ ten:'La tendencia apunta a novedades próximas. Algo se mueve y te llega antes de lo que imaginas.',
+ gs:'un movimiento reciente que activa el tema',gi:'lo que llega desde afuera está marcando el ritmo',gt:'aparecen noticias o señales que ponen el asunto en marcha',
+ f1:'Una noticia que se mueve',f2:'algo que todavía está llegando',
+ obs:'Observa qué noticia o mensaje llega en los próximos días y qué te pide hacer con él.',
+ dia:'Hoy puede llegar una noticia, un mensaje o una respuesta que estabas esperando. Mantente disponible a lo que se mueve.',
+ refl:'¿Qué noticia estás esperando y qué harías si llegara hoy?'},
+{n:2,nombre:'El Trébol',clave:'una oportunidad breve',cl:0,
+ sit:'Hay una oportunidad presente, pero de duración corta. Es un momento favorable que pide ser aprovechado, no postergado.',
+ inf:'Influye una chispa de suerte o un pequeño alivio que cambia el ánimo, aunque no resuelve el fondo del asunto.',
+ ten:'La tendencia muestra una ventana breve. Si aparece la ocasión, dura poco.',
+ gs:'una oportunidad concreta pero pasajera',gi:'un alivio momentáneo está suavizando la lectura',gt:'se abre una ventana breve que conviene aprovechar',
+ f1:'Una oportunidad corta',f2:'un momento que dura poco',
+ obs:'Observa si aparece una ocasión pequeña y si la tomas o la dejas pasar por esperar algo mayor.',
+ dia:'Hoy puede aparecer una oportunidad pequeña y rápida. No todo lo bueno llega anunciado.',
+ refl:'¿Qué oportunidad breve estás dejando pasar por esperar el momento perfecto?'},
+{n:3,nombre:'El Barco',clave:'distancia y movimiento',cl:0,
+ sit:'La situación tiene un componente de distancia: física, emocional o de tiempo. Algo está lejos o en tránsito.',
+ inf:'Influye el alejamiento o el deseo de salir de donde estás. Hay una parte de este tema que no ocurre aquí.',
+ ten:'La tendencia es de desplazamiento: el asunto se mueve de lugar, cambia de contexto o avanza lentamente hacia otro punto.',
+ gs:'un tema atravesado por la distancia',gi:'la lejanía está condicionando lo que puede pasar',gt:'el asunto se desplaza y cambia de escenario',
+ f1:'Un movimiento a distancia',f2:'algo que ocurre lejos de ti',
+ obs:'Observa si la distancia es circunstancial o si se ha vuelto la forma habitual del vínculo.',
+ dia:'Hoy es buen día para mirar el tema con un poco de distancia. Alejarte un paso también es una manera de ver.',
+ refl:'¿Qué verías distinto si observaras esta situación desde lejos?'},
+{n:4,nombre:'La Casa',clave:'estabilidad e intimidad',cl:1,
+ sit:'El tema toca lo íntimo y lo estable: el hogar, la familia, lo que ya está construido y sostiene.',
+ inf:'Influye la necesidad de seguridad. Buscas un lugar donde apoyarte y eso pesa en tus decisiones.',
+ ten:'La tendencia se dirige a consolidar: lo que hoy se mueve busca convertirse en algo estable.',
+ gs:'una base estable que ya existe',gi:'la búsqueda de seguridad está pesando en tus decisiones',gt:'el asunto tiende a asentarse y a volverse cotidiano',
+ f1:'Una base estable',f2:'un terreno íntimo y protegido',
+ obs:'Observa si esta situación te da estabilidad real o solo la promesa de tenerla algún día.',
+ dia:'Hoy conviene volver a lo que te sostiene. Lo estable también merece atención y cuidado.',
+ refl:'¿Qué parte de tu vida necesita hoy más raíz y menos movimiento?'},
+{n:5,nombre:'El Árbol',clave:'crecimiento lento',cl:1,
+ sit:'Es un tema de raíz profunda y crecimiento lento. No es superficial ni reciente: viene de atrás.',
+ inf:'Influye el tiempo. Lo que está en juego no se resuelve con prisa, madura a su propio ritmo.',
+ ten:'La tendencia es de crecimiento gradual. Habrá avance, pero medido en meses, no en días.',
+ gs:'un vínculo con raíces más profundas de lo que parece',gi:'el tiempo está haciendo su parte más allá de tus intentos',gt:'lo que crece aquí lo hace despacio y de forma duradera',
+ f1:'Un proceso que crece despacio',f2:'algo que necesita tiempo para madurar',
+ obs:'Observa si tu ansiedad por resolver está compitiendo con un proceso que solo el tiempo puede madurar.',
+ dia:'Hoy la paciencia rinde más que la prisa. Hay procesos que solo avanzan con tiempo.',
+ refl:'¿Qué estás apurando que en realidad necesita madurar?'},
+{n:6,nombre:'Las Nubes',clave:'falta de claridad',cl:-1,
+ sit:'Hay confusión en el centro del tema. Faltan datos, o los que hay se contradicen entre sí.',
+ inf:'La falta de claridad está influyendo en la forma en que percibes la situación. Puede haber señales contradictorias o información que todavía no está suficientemente definida.',
+ ten:'La tendencia sigue sin definirse. Antes de que algo cambie, la niebla tiene que disiparse.',
+ gs:'una situación con partes todavía sin definir',gi:'todavía existen elementos que dificultan ver con claridad hacia dónde se dirige la situación',gt:'el panorama sigue sin aclararse del todo por ahora',
+ f1:'Incertidumbre',f2:'una situación todavía poco clara',
+ obs:'Observa qué información concreta te falta y a quién tendrías que preguntarle para obtenerla.',
+ dia:'Hoy puede haber más ruido que señal. Antes de decidir, espera a que la información se acomode.',
+ refl:'¿Qué dato te falta hoy para dejar de suponer?'},
+{n:7,nombre:'La Serpiente',clave:'un rodeo o una complicación',cl:-1,
+ sit:'El camino no es recto. Hay un rodeo, una complicación o una tercera presencia que enreda el tema.',
+ inf:'Influye algo indirecto: una intención no dicha, un interés paralelo o una manera poco transparente de manejar la situación.',
+ ten:'La tendencia se enreda antes de aclararse. El asunto va a dar vueltas antes de llegar a un punto.',
+ gs:'un tema que no avanza en línea recta',gi:'hay un elemento indirecto complicando el recorrido',gt:'el asunto dará algunas vueltas antes de definirse',
+ f1:'Un rodeo',f2:'una situación con vueltas y medias verdades',
+ obs:'Observa si las explicaciones que recibes se sostienen cuando las contrastas con los hechos.',
+ dia:'Hoy conviene mirar dos veces antes de aceptar la primera explicación.',
+ refl:'¿Qué situación estás simplificando cuando en realidad es más compleja?'},
+{n:8,nombre:'El Ataúd',clave:'un cierre necesario',cl:0,
+ sit:'Algo está terminando o ya terminó, aunque todavía no lo hayas nombrado. Hay un ciclo agotado.',
+ inf:'Influye un desgaste o una pausa. Falta energía en un punto del tema y eso frena todo lo demás.',
+ ten:'La tendencia es de cierre. Antes de un comienzo nuevo, algo tiene que terminar del todo.',
+ gs:'un ciclo que llega a su final',gi:'hay un desgaste que resta energía al tema',gt:'algo necesita cerrarse antes de que aparezca lo nuevo',
+ f1:'Un final',f2:'algo que ya está cerrando su ciclo',
+ obs:'Observa qué parte de esta historia ya terminó aunque sigas actuando como si continuara.',
+ dia:'Hoy puede pedir un cierre. Soltar también es una forma de avanzar.',
+ refl:'¿Qué estás sosteniendo hoy que ya terminó hace tiempo?'},
+{n:9,nombre:'El Ramo',clave:'un gesto que agrada',cl:1,
+ sit:'Hay un gesto amable en la situación: una invitación, un detalle o un reconocimiento que suaviza el clima.',
+ inf:'Influye lo agradable y lo bien intencionado. Alguien está poniendo cuidado en la forma.',
+ ten:'La tendencia es favorable y amable, aunque el gesto por sí solo no equivale a un compromiso.',
+ gs:'un clima amable alrededor del tema',gi:'los gestos de cuidado están endulzando la lectura',gt:'lo que viene llega con buena disposición',
+ f1:'Un gesto amable',f2:'un contexto agradable y bien intencionado',
+ obs:'Observa si los gestos bonitos vienen acompañados de constancia o si aparecen solo de vez en cuando.',
+ dia:'Hoy un detalle pequeño puede cambiar el tono del día, tuyo o de alguien más.',
+ refl:'¿A quién podrías reconocer hoy con un gesto concreto?'},
+{n:10,nombre:'La Guadaña',clave:'un corte rápido',cl:0,
+ sit:'Hay un corte en la situación: algo se interrumpe de golpe o pide una decisión firme.',
+ inf:'Influye la urgencia de cortar por lo sano. La ambigüedad ya no se sostiene.',
+ ten:'La tendencia trae una definición rápida, quizá abrupta. Lo que se decida, se decidirá de una vez.',
+ gs:'un punto que pide una decisión firme',gi:'la necesidad de cortar con algo está presionando',gt:'la definición llegará de forma rápida y clara',
+ f1:'Un corte',f2:'una definición rápida e inevitable',
+ obs:'Observa si estás postergando un corte que ya sabes que es necesario.',
+ dia:'Hoy puede pedir precisión: decidir algo de una vez en lugar de dejarlo a medias.',
+ refl:'¿Qué decisión estás alargando para no tener que sostenerla?'},
+{n:11,nombre:'El Látigo',clave:'repetición y desgaste',cl:-1,
+ sit:'Hay un patrón que se repite: la misma conversación, el mismo reclamo, el mismo desencuentro.',
+ inf:'Influye la fricción. La energía se está yendo en discutir lo mismo sin llegar a un acuerdo.',
+ ten:'La tendencia sigue repitiendo el ciclo mientras nadie cambie su parte.',
+ gs:'un patrón que se repite sin resolverse',gi:'la fricción está gastando la energía disponible',gt:'el ciclo se repetirá mientras no cambie algo concreto',
+ f1:'Una repetición desgastante',f2:'un desgaste que vuelve una y otra vez',
+ obs:'Observa cuántas veces has tenido exactamente esta misma conversación sin que nada cambie.',
+ dia:'Hoy conviene notar qué discusión se repite y qué parte de ella es tuya.',
+ refl:'¿Qué conversación estás repitiendo esperando un resultado distinto?'},
+{n:12,nombre:'Los Pájaros',clave:'conversaciones y nervios',cl:-1,
+ sit:'El tema está lleno de palabras: conversaciones, dudas, comentarios de terceros y mucho pensamiento en círculo.',
+ inf:'Influye la inquietud. Hay más ruido mental y ajeno del que la situación realmente necesita.',
+ ten:'La tendencia trae conversaciones cruzadas. Se hablará mucho antes de que algo se concrete.',
+ gs:'mucha conversación alrededor del tema',gi:'la inquietud y las opiniones ajenas están sumando ruido',gt:'habrá más palabras antes de que haya hechos',
+ f1:'Mucha conversación',f2:'un ambiente de dudas y comentarios',
+ obs:'Observa cuánto de lo que sientes viene de los hechos y cuánto de lo que imaginas o te cuentan.',
+ dia:'Hoy hay más ruido que información. Elige con cuidado a quién escuchas.',
+ refl:'¿Qué preocupación tuya es un hecho y cuál es solo una conversación en tu cabeza?'},
+{n:13,nombre:'El Niño',clave:'algo que comienza',cl:0,
+ sit:'Algo está empezando. Es reciente, todavía frágil, y no conviene exigirle lo que aún no puede dar.',
+ inf:'Influye la inocencia o la inmadurez del vínculo. Falta rodaje, no necesariamente intención.',
+ ten:'La tendencia es de comienzo: pequeño, prometedor y con necesidad de cuidado.',
+ gs:'algo que apenas está comenzando',gi:'la poca madurez del proceso está condicionando el ritmo',gt:'lo que se abre es nuevo y necesita cuidado para crecer',
+ f1:'Un comienzo pequeño',f2:'algo nuevo y todavía frágil',
+ obs:'Observa si le estás pidiendo a algo nuevo la solidez de algo que ya tiene años.',
+ dia:'Hoy algo nuevo puede empezar en pequeño. No lo midas por su tamaño inicial.',
+ refl:'¿Qué comienzo estás descartando por parecerte todavía pequeño?'},
+{n:14,nombre:'El Zorro',clave:'cautela necesaria',cl:-1,
+ sit:'Hay algo que no está siendo del todo transparente. No necesariamente mala fe, pero sí cálculo o conveniencia.',
+ inf:'Influye la desconfianza o la necesidad de protegerte. Una parte de ti está en guardia con razón.',
+ ten:'La tendencia pide cautela: conviene verificar antes de comprometerte.',
+ gs:'un elemento que no está del todo a la vista',gi:'la desconfianza está condicionando cómo lees los gestos',gt:'lo que viene pide cautela y verificación',
+ f1:'Una cautela necesaria',f2:'un terreno donde conviene verificar',
+ obs:'Observa si lo que te dicen coincide con lo que hacen cuando nadie está mirando.',
+ dia:'Hoy conviene confiar en tu instinto y verificar antes de comprometerte.',
+ refl:'¿Qué señal estás minimizando para no tener que actuar?'},
+{n:15,nombre:'El Oso',clave:'fuerza y protección',cl:1,
+ sit:'Hay una presencia fuerte en el tema: alguien que protege, sostiene o también controla.',
+ inf:'Influye el poder: quién decide, quién sostiene económicamente, quién marca los límites.',
+ ten:'La tendencia refuerza tu posición si eliges sostenerla con firmeza y sin dureza.',
+ gs:'una presencia fuerte que marca el terreno',gi:'el tema del poder y el control está pesando',gt:'la firmeza será determinante en lo que viene',
+ f1:'Una fuerza que protege',f2:'un terreno donde alguien marca los límites',
+ obs:'Observa si lo que llamas protección te sostiene o te limita.',
+ dia:'Hoy tu firmeza vale más que tu explicación. Sostén tu lugar con calma.',
+ refl:'¿Dónde necesitas hoy poner un límite claro y sin disculpas?'},
+{n:16,nombre:'Las Estrellas',clave:'orientación y claridad',cl:1,
+ sit:'Hay una dirección visible. El tema tiene sentido y puedes ver hacia dónde apunta.',
+ inf:'Influye la claridad interior: sabes lo que quieres, aunque el camino todavía no esté hecho.',
+ ten:'La tendencia se abre y se ordena. Lo que estaba disperso empieza a alinearse.',
+ gs:'una dirección que empieza a verse',gi:'tu claridad interna está ordenando el panorama',gt:'lo disperso empieza a alinearse hacia un mismo punto',
+ f1:'Una dirección clara',f2:'un horizonte que se está ordenando',
+ obs:'Observa si tus decisiones diarias apuntan hacia donde de verdad quieres llegar.',
+ dia:'Hoy la claridad está más cerca de lo que crees. Escribe lo que quieres y léelo en voz alta.',
+ refl:'¿Hacia dónde quieres ir realmente, más allá de lo que hoy es cómodo?'},
+{n:17,nombre:'La Cigüeña',clave:'un cambio en curso',cl:0,
+ sit:'La situación está cambiando de forma. Ya no es lo que era, aunque todavía no se vea su versión final.',
+ inf:'Influye la transición. Estás entre dos etapas y eso explica la sensación de inestabilidad.',
+ ten:'La tendencia trae un cambio concreto: de lugar, de ritmo o de rol dentro del vínculo.',
+ gs:'una situación en plena transformación',gi:'estar entre dos etapas explica la inestabilidad actual',gt:'viene un cambio concreto en la forma del vínculo',
+ f1:'Un cambio en curso',f2:'una etapa que está mudando de forma',
+ obs:'Observa qué cambió realmente en los últimos meses y qué solo cambió en tus expectativas.',
+ dia:'Hoy algo pequeño puede cambiar de forma. Deja espacio para lo que se está moviendo.',
+ refl:'¿Qué cambio ya empezó aunque todavía no lo hayas aceptado?'},
+{n:18,nombre:'El Perro',clave:'lealtad y confianza',cl:1,
+ sit:'Hay lealtad en juego. Alguien está presente de forma constante, o la confianza es el tema central.',
+ inf:'Influye el vínculo de confianza: quién acompaña de verdad y quién solo aparece cuando le conviene.',
+ ten:'La tendencia favorece los vínculos que se sostienen en el tiempo por sobre los intensos y breves.',
+ gs:'un vínculo con lealtad de fondo',gi:'la confianza es el eje sobre el que gira todo',gt:'lo constante pesará más que lo intenso',
+ f1:'Una lealtad sostenida',f2:'un vínculo de confianza',
+ obs:'Observa quién está presente en lo cotidiano y no solo en los momentos importantes.',
+ dia:'Hoy vale reconocer quién está de verdad. La constancia también es una forma de afecto.',
+ refl:'¿Quién te ha demostrado lealtad y hace cuánto no se lo dices?'},
+{n:19,nombre:'La Torre',clave:'límites y distancia',cl:0,
+ sit:'Hay una estructura y un límite. El tema tiene reglas, jerarquías o una distancia que alguien sostiene.',
+ inf:'Influye el aislamiento o la necesidad de mantener un espacio propio dentro del vínculo.',
+ ten:'La tendencia marca separación de espacios: cada quien en su lugar, al menos por ahora.',
+ gs:'un límite claro dentro de la situación',gi:'la distancia protectora está condicionando el acercamiento',gt:'los espacios seguirán marcados por un tiempo',
+ f1:'Un límite firme',f2:'una distancia que alguien sostiene',
+ obs:'Observa si el límite lo pusiste tú, la otra persona, o simplemente se instaló solo.',
+ dia:'Hoy tu espacio propio importa. Estar contigo también es una manera de estar acompañada.',
+ refl:'¿Qué límite necesitas sostener aunque incomode a alguien?'},
+{n:20,nombre:'El Jardín',clave:'lo social y lo visible',cl:0,
+ sit:'El tema tiene una dimensión pública: lo que otros ven, lo que se muestra o lo que se comenta.',
+ inf:'Influye el entorno. Lo social pesa: opiniones, comparaciones o la mirada de terceros.',
+ ten:'La tendencia lleva el asunto a un terreno más visible: se hará público o se compartirá con otros.',
+ gs:'una situación que también se juega frente a otros',gi:'la mirada del entorno está influyendo más de lo que parece',gt:'el tema se volverá más visible para los demás',
+ f1:'Una exposición social',f2:'un terreno donde otros miran y opinan',
+ obs:'Observa cuánto de lo que decides responde a ti y cuánto a lo que otros podrían pensar.',
+ dia:'Hoy el contacto con otras personas puede darte una perspectiva que sola no ves.',
+ refl:'¿Qué decisión estás tomando pensando en la mirada de los demás?'},
+{n:21,nombre:'La Montaña',clave:'un obstáculo real',cl:-1,
+ sit:'Hay un obstáculo concreto. Algo bloquea el paso y no se resuelve solo con voluntad.',
+ inf:'Influye una demora o una resistencia. El avance se hace lento por un motivo real.',
+ ten:'La tendencia es de freno. Habrá que rodear el obstáculo o esperar a que ceda.',
+ gs:'un obstáculo real que frena el avance',gi:'una resistencia concreta está retrasando todo',gt:'el proceso seguirá lento hasta que ese punto ceda',
+ f1:'Un obstáculo',f2:'un terreno lento y resistente',
+ obs:'Observa si el obstáculo es externo o si es una decisión que no quieres tomar.',
+ dia:'Hoy algo puede avanzar más lento de lo previsto. No lo fuerces: rodéalo.',
+ refl:'¿Qué obstáculo estás intentando empujar cuando podrías rodearlo?'},
+{n:22,nombre:'Los Caminos',clave:'una decisión pendiente',cl:-1,
+ sit:'Hay más de una opción sobre la mesa. La situación está pidiendo elegir y todavía no eliges.',
+ inf:'Influye la duda entre alternativas. Mientras no decidas, el tema queda suspendido.',
+ ten:'La tendencia lleva a un punto de elección. Se abrirá una bifurcación clara.',
+ gs:'una elección pendiente en el centro del tema',gi:'la duda entre dos caminos está deteniendo el avance',gt:'aparecerá un punto de elección difícil de esquivar',
+ f1:'Una elección pendiente',f2:'un cruce de caminos sin resolver',
+ obs:'Observa qué opción sigues descartando sin haberla mirado de verdad.',
+ dia:'Hoy puedes tener que elegir entre dos opciones. No decidir también es una decisión.',
+ refl:'¿Qué elección estás evitando y qué te costaría hacerla hoy?'},
+{n:23,nombre:'Los Ratones',clave:'desgaste silencioso',cl:-1,
+ sit:'Algo se está desgastando de a poco: la confianza, la energía o el entusiasmo del inicio.',
+ inf:'Influye una pérdida pequeña y continua. No hay un golpe, hay una fuga.',
+ ten:'La tendencia resta si nadie repara lo que se está gastando en silencio.',
+ gs:'un desgaste que avanza en silencio',gi:'una pérdida lenta está restando energía al vínculo',gt:'lo que no se repare seguirá gastándose de a poco',
+ f1:'Un desgaste silencioso',f2:'un contexto que va restando de a poco',
+ obs:'Observa qué te está costando esta situación en energía, tiempo y tranquilidad.',
+ dia:'Hoy conviene revisar dónde se te está yendo la energía sin que lo notes.',
+ refl:'¿Qué te está quitando energía todos los días sin que lo nombres?'},
+{n:24,nombre:'El Corazón',clave:'afecto genuino',cl:0,
+ sit:'El vínculo emocional ocupa un lugar importante en esta situación. Hay afecto, interés o una conexión que merece ser reconocida, aunque por sí sola esta carta no define compromiso.',
+ inf:'Lo que influye es el sentimiento. El afecto está presente y condiciona la manera en que lees cada gesto.',
+ ten:'La tendencia mantiene viva la conexión emocional, aunque el sentimiento por sí solo no ordena la situación.',
+ gs:'una conexión emocional importante',gi:'el afecto está tiñendo la forma en que lees cada gesto',gt:'el sentimiento seguirá presente aunque falte definirlo',
+ f1:'Afecto presente',f2:'un vínculo emocional real',
+ obs:'Observa si el afecto que sientes está siendo correspondido con presencia, no solo con palabras.',
+ dia:'Hoy el afecto pide espacio. Decir lo que sientes puede ordenar más que analizarlo.',
+ refl:'¿A quién quieres y hace cuánto no se lo dices con claridad?'},
+{n:25,nombre:'El Anillo',clave:'acuerdo y compromiso',cl:1,
+ sit:'Hay un acuerdo, un pacto o un compromiso en el centro del tema, explícito o implícito.',
+ inf:'Influye lo que ya está acordado, aunque nunca se haya nombrado en voz alta.',
+ ten:'El tema del vínculo, acuerdo o compromiso aparece como una dirección relevante. Las cartas no garantizan un resultado, pero muestran que la definición de la relación se vuelve central.',
+ gs:'un acuerdo que está en juego',gi:'lo pactado, dicho o no, condiciona todo lo demás',gt:'el tema del compromiso está presente, aunque necesita definirse con hechos',
+ f1:'Un compromiso en juego',f2:'la definición, acuerdo o compromiso',
+ obs:'Observa si la conexión emocional comienza a venir acompañada de conversaciones claras, decisiones y acciones consistentes.',
+ dia:'Hoy es buen día para revisar a qué le estás diciendo que sí, con palabras o con hechos.',
+ refl:'¿Qué acuerdo necesitas hacer explícito para dejar de suponerlo?'},
+{n:26,nombre:'El Libro',clave:'algo aún no revelado',cl:-1,
+ sit:'Hay información que todavía no está sobre la mesa. Algo permanece reservado o no se ha dicho.',
+ inf:'Influye lo que no sabes. Una parte del tema está fuera de tu campo de visión.',
+ ten:'La tendencia mantiene reservado un dato que, cuando aparezca, cambiará la lectura.',
+ gs:'un tema con una parte todavía reservada',gi:'hay información que aún no está sobre la mesa',gt:'algo se revelará más adelante y ordenará el panorama',
+ f1:'Un dato reservado',f2:'un terreno donde algo aún no se ha dicho',
+ obs:'Observa qué pregunta no has hecho todavía por miedo a la respuesta.',
+ dia:'Hoy puede aparecer una información que no tenías. Escucha antes de concluir.',
+ refl:'¿Qué pregunta llevas tiempo sin hacer y a quién se la debes?'},
+{n:27,nombre:'La Carta',clave:'un mensaje concreto',cl:1,
+ sit:'Hay un mensaje en juego: algo dicho, escrito o pendiente de decir que define el tema.',
+ inf:'Influye la comunicación. La forma en que se dicen las cosas está pesando tanto como el contenido.',
+ ten:'La tendencia trae una comunicación concreta: una conversación o un mensaje que aclara.',
+ gs:'una comunicación pendiente en el centro',gi:'la forma de decir las cosas pesa tanto como el fondo',gt:'llegará un mensaje o conversación que aclara el tema',
+ f1:'Un mensaje concreto',f2:'una conversación que aún debe darse',
+ obs:'Observa si la conversación importante se da o se sigue posponiendo con excusas amables.',
+ dia:'Hoy conviene decir claro lo que necesitas. Un mensaje bien puesto ordena más que mil suposiciones.',
+ refl:'¿Qué necesitas decir hoy y en qué palabras exactas lo dirías?'},
+{n:28,nombre:'El Hombre',clave:'una figura masculina',cl:0,
+ sit:'Hay una figura masculina implicada de forma directa en el tema, o una energía activa y resolutiva.',
+ inf:'Influye la posición de esa persona: lo que decide, lo que evita y el ritmo que impone.',
+ ten:'La tendencia depende en buena parte de lo que esa persona esté dispuesta a sostener.',
+ gs:'una figura concreta en el centro de la situación',gi:'lo que esa persona decide marca el ritmo del asunto',gt:'mucho dependerá de lo que esa persona sostenga con hechos',
+ f1:'Una presencia decisiva',f2:'la posición de la otra persona',
+ obs:'Observa si esa persona actúa en la misma dirección en que habla.',
+ dia:'Hoy alguien concreto puede ocupar tu atención. Míralo por lo que hace, no por lo que promete.',
+ refl:'¿Qué esperas de alguien que aún no le has pedido directamente?'},
+{n:29,nombre:'La Mujer',clave:'tú en la situación',cl:0,
+ sit:'La carta te señala a ti dentro del tema: tu lugar, tu papel y lo que estás sosteniendo.',
+ inf:'Influye tu propia posición. Parte de lo que ocurre responde a lo que permites o propones.',
+ ten:'La tendencia depende de ti más de lo que parece: tu decisión mueve la escena.',
+ gs:'tu propio lugar dentro de la escena',gi:'tu posición y lo que permites está definiendo el clima',gt:'tu decisión será la que mueva el asunto',
+ f1:'Tu propia posición',f2:'el lugar que ocupas en la escena',
+ obs:'Observa qué parte de esta situación depende de una decisión que solo tú puedes tomar.',
+ dia:'Hoy vuelve a ti. Antes de leer a los demás, revisa qué necesitas tú.',
+ refl:'¿Qué estás sosteniendo por otros que ya no quieres sostener?'},
+{n:30,nombre:'Los Lirios',clave:'madurez y calma',cl:1,
+ sit:'Hay madurez en el tema: experiencia, calma o un vínculo que sabe esperar sin dramatizar.',
+ inf:'Influye la serenidad y también el tiempo transcurrido. Nada aquí es improvisado.',
+ ten:'La tendencia es de estabilidad tranquila, más profunda que intensa.',
+ gs:'un tema atravesado por la madurez',gi:'la calma y la experiencia están ordenando la situación',gt:'lo que viene será más sereno que intenso',
+ f1:'Una calma madura',f2:'un terreno sereno y sin prisa',
+ obs:'Observa si confundes calma con distancia, o serenidad con falta de interés.',
+ dia:'Hoy la calma es tu mejor herramienta. No todo pide reacción inmediata.',
+ refl:'¿Dónde podrías responder hoy con serenidad en lugar de con urgencia?'},
+{n:31,nombre:'El Sol',clave:'claridad y energía',cl:1,
+ sit:'Hay energía y claridad. El tema se ve con nitidez y algo aquí funciona bien.',
+ inf:'Influye la confianza. Cuando te muestras clara, la situación también se aclara.',
+ ten:'La tendencia es favorable y visible: lo que estaba en sombra queda expuesto a la luz.',
+ gs:'un punto luminoso dentro de la situación',gi:'tu propia confianza está iluminando el panorama',gt:'lo que estaba en sombra se hará visible y claro',
+ f1:'Una claridad plena',f2:'un contexto luminoso y favorable',
+ obs:'Observa qué funciona bien en esta situación, no solo lo que falta.',
+ dia:'Hoy hay más luz de la que estás mirando. Reconoce lo que ya funciona.',
+ refl:'¿Qué está saliendo bien hoy y no te has detenido a mirar?'},
+{n:32,nombre:'La Luna',clave:'emoción y reconocimiento',cl:0,
+ sit:'El tema toca lo emocional profundo: lo que sientes, lo que intuyes y también el deseo de ser reconocida.',
+ inf:'Influye la intuición y la sensibilidad. Estás leyendo la situación más con el cuerpo que con datos.',
+ ten:'La tendencia trae reconocimiento emocional: algo que sientes empieza a hacerse visible.',
+ gs:'una carga emocional profunda en el tema',gi:'la intuición pesa más que los datos disponibles',gt:'lo emocional buscará ser reconocido y nombrado',
+ f1:'Una emoción profunda',f2:'un terreno íntimo e intuitivo',
+ obs:'Observa si tu intuición te está avisando algo que tu razón sigue negociando.',
+ dia:'Hoy tu intuición tiene información. Escúchala antes de justificarla.',
+ refl:'¿Qué sabes por dentro que aún no te has permitido nombrar?'},
+{n:33,nombre:'La Llave',clave:'una apertura segura',cl:1,
+ sit:'Hay una certeza o una solución disponible. Algo se abre y el tema encuentra su punto de acceso.',
+ inf:'Influye una decisión ya tomada, tuya o de alguien más, que destraba el asunto.',
+ ten:'La tendencia confirma: aparece la apertura, la respuesta o el sí que faltaba.',
+ gs:'una apertura concreta al alcance',gi:'una decisión ya tomada está destrabando el tema',gt:'aparece la respuesta o la apertura que faltaba',
+ f1:'Una apertura clara',f2:'una solución que ya está disponible',
+ obs:'Observa qué puerta ya está abierta y todavía no has cruzado.',
+ dia:'Hoy puede ser un buen momento para observar qué situación necesita una decisión más clara o qué puerta está lista para abrirse.',
+ refl:'¿Qué podrías resolver hoy si dejaras de posponer una decisión?'},
+{n:34,nombre:'Los Peces',clave:'recursos y flujo',cl:0,
+ sit:'Hay recursos en juego: dinero, tiempo, energía o disponibilidad emocional.',
+ inf:'Influye lo material o lo práctico. Las condiciones concretas están pesando en la decisión.',
+ ten:'La tendencia se mueve con fluidez si los recursos se administran con criterio.',
+ gs:'un tema donde los recursos importan',gi:'lo práctico y material está condicionando el margen',gt:'el flujo mejorará si las condiciones se administran bien',
+ f1:'Un flujo de recursos',f2:'un contexto de condiciones concretas',
+ obs:'Observa si esta situación te suma recursos o si te los está drenando.',
+ dia:'Hoy revisa tus recursos: tiempo, energía y dinero también hablan de tus prioridades.',
+ refl:'¿En qué estás invirtiendo hoy tu tiempo y qué te devuelve?'},
+{n:35,nombre:'El Ancla',clave:'permanencia',cl:1,
+ sit:'Hay algo que permanece. Este tema tiene arraigo y no se disuelve fácilmente.',
+ inf:'Influye la costumbre. Lo cotidiano sostiene la situación, incluso cuando no la mejora.',
+ ten:'La tendencia es de continuidad: esto sigue, con o sin cambios de forma.',
+ gs:'algo que se sostiene en el tiempo',gi:'la costumbre está sosteniendo la situación tal como está',gt:'el asunto continuará, aunque cambie de forma',
+ f1:'Una permanencia firme',f2:'un vínculo que se sostiene en el tiempo',
+ obs:'Observa si permaneces por elección o por costumbre.',
+ dia:'Hoy lo constante te sostiene. Cuida las rutinas que te hacen bien.',
+ refl:'¿Qué permanece en tu vida por elección y qué solo por costumbre?'},
+{n:36,nombre:'La Cruz',clave:'un peso que se atraviesa',cl:-1,
+ sit:'Hay un peso en el tema: una responsabilidad, una carga o una prueba que atraviesa la situación.',
+ inf:'Influye el deber o la culpa. Algo aquí se vive más como obligación que como elección.',
+ ten:'La tendencia atraviesa un tramo exigente, con una enseñanza al final del recorrido.',
+ gs:'una carga que atraviesa toda la situación',gi:'el peso del deber está condicionando tus decisiones',gt:'viene un tramo exigente que dejará un aprendizaje',
+ f1:'Un peso que atraviesa',f2:'un tramo exigente del camino',
+ obs:'Observa cuánto de este peso es tuyo y cuánto lo estás cargando por alguien más.',
+ dia:'Hoy algo puede sentirse pesado. No todo se resuelve hoy y está bien.',
+ refl:'¿Qué carga estás llevando que en realidad no te corresponde?'}
+];
+
+/* ==================================================================
+   2 · TIRADAS DISPONIBLES
+   ================================================================== */
+const SPREADS = {
+  dia:{id:'dia',nombre:'Carta del Día',count:1,tag:'free',tagText:'Gratis',
+       desc:'Una carta para acompañar tu día.'},
+  tres:{id:'tres',nombre:'Lectura de 3 cartas',count:3,tag:'premium',tagText:'Premium',
+        desc:'Situación · Influencia · Tendencia',
+        pos:[{lb:'Situación',f:'sit'},{lb:'Influencia',f:'inf'},{lb:'Tendencia',f:'ten'}]},
+  amor:{id:'amor',nombre:'Lectura del Amor',count:3,tag:'premium',tagText:'Premium',
+        desc:'Tú · La otra persona · La dinámica',
+        pos:[{lb:'Tú',f:'sit'},{lb:'La otra persona',f:'inf'},{lb:'La dinámica',f:'ten'}]},
+  cinco:{id:'cinco',nombre:'Lectura de 5 cartas',count:5,tag:'premium',tagText:'Premium',
+         desc:'Una mirada más profunda a tu situación.',
+         pos:[{lb:'Origen',f:'sit'},{lb:'Situación',f:'sit'},{lb:'Influencia',f:'inf'},
+              {lb:'Consejo',f:'obs'},{lb:'Tendencia',f:'ten'}]}
+};
+const SPREAD_ORDER = ['dia','tres','amor','cinco'];
+
+const SUGERENCIAS = [
+  '¿Qué necesito observar en esta relación?',
+  '¿Qué está bloqueando esta situación?',
+  '¿Qué dinámica está predominando ahora?',
+  '¿Qué debería considerar antes de decidir?'
+];
+
+/* ==================================================================
+   3 · STATE
+   ================================================================== */
+const STORE_KEY = 'pdc_lenormand_v1';
+const state = {
+  spread:null,      // objeto de SPREADS
+  question:'',      // pregunta de la usuaria
+  deck:[],          // mazo barajado (Fisher-Yates)
+  fanIdx:[],        // índices del mazo mostrados en el abanico
+  picks:[],         // posiciones elegidas por la usuaria
+  drawn:[],         // cartas resultantes
+  shuffled:false,
+  revealing:false
+};
+
+/* ==================================================================
+   4 · UI HELPERS
+   ================================================================== */
+const $  = (s,r=document)=>r.querySelector(s);
+const $$ = (s,r=document)=>[...r.querySelectorAll(s)];
+
+function slug(nombre){
+  return nombre.normalize('NFD').replace(/[\u0300-\u036f]/g,'')
+    .toLowerCase().replace(/[^a-z0-9]+/g,'_').replace(/^_|_$/g,'');
+}
+function assetOf(card){
+  return ASSET_BASE + String(card.n).padStart(2,'0') + '_' + slug(card.nombre) + ASSET_EXT;
+}
+/* Rosetón procedural: cada carta recibe un motivo propio derivado de su número */
+function rosette(n){
+  const petals = 5 + (n % 6), rot = (n * 13) % 360, r2 = 26 + (n % 4) * 3;
+  let p = '';
+  for(let i=0;i<petals;i++){
+    p += `<ellipse cx="50" cy="50" rx="9" ry="${r2}" transform="rotate(${rot + i*180/petals} 50 50)"/>`;
+  }
+  return `<svg class="fa-sym" viewBox="0 0 100 100" fill="none"
+    stroke="rgba(216,184,124,.55)" stroke-width="0.8">
+    <circle cx="50" cy="50" r="38" stroke="rgba(216,184,124,.3)"/>
+    <circle cx="50" cy="50" r="31" stroke="rgba(216,184,124,.18)"/>
+    ${p}
+    <circle cx="50" cy="50" r="6.5" fill="rgba(216,184,124,.22)" stroke="rgba(216,184,124,.7)"/>
+  </svg>`;
+}
+/* Reverso: usa el asset oficial si existe; si no, el arte CSS queda visible */
+function backHTML(extra='',style=''){
+  return `<div class="card ${extra}" style="${style}">
+    <div class="back-art"><span class="monogram">PC</span></div>
+    <img class="card__img" src="${ASSET_BACK}" alt="" onerror="this.remove()">
+  </div>`;
+}
+/* Anverso: idem, con placeholder ilustrado de respaldo */
+function faceHTML(card,extra=''){
+  return `<div class="card ${extra}">
+    <div class="face-art">
+      <div class="fa-num">${String(card.n).padStart(2,'0')}</div>
+      ${rosette(card.n)}
+      <div class="fa-name">${card.nombre}</div>
+    </div>
+    <img class="card__img" src="${assetOf(card)}" alt="${card.nombre}" onerror="this.remove()">
+  </div>`;
+}
+function up(s){ return s.toLocaleUpperCase('es'); }
+
+let toastT;
+function toast(msg){
+  const t = $('#toast');
+  t.textContent = msg; t.classList.add('is-on');
+  clearTimeout(toastT);
+  toastT = setTimeout(()=>t.classList.remove('is-on'), 2300);
+}
+
+/* ==================================================================
+   5 · NAVIGATION
+   ================================================================== */
+function show(id){
+  $$('.screen').forEach(s=>s.classList.toggle('is-active', s.id === 'scr-'+id));
+  const scr = $('#scr-'+id);
+  if(scr) scr.scrollTop = 0;
+  /* el stage nunca debe desplazarse: solo hace scroll la pantalla activa */
+  $('#stage').scrollTop = 0; $('#stage').scrollLeft = 0;
+  closeSheets();
+}
+/* si el navegador desplaza el stage (foco de teclado, scrollIntoView), lo devolvemos */
+$('#stage').addEventListener('scroll',()=>{ $('#stage').scrollTop = 0; $('#stage').scrollLeft = 0; });
+function openSheet(id){
+  closeSheets();
+  $('#scrim').classList.add('is-on');
+  $('#'+id).classList.add('is-on');
+}
+function closeSheets(){
+  $('#scrim').classList.remove('is-on');
+  $$('.sheet').forEach(s=>s.classList.remove('is-on'));
+}
+$('#scrim').addEventListener('click', closeSheets);
+$$('[data-close-sheet]').forEach(b=>b.addEventListener('click', closeSheets));
+$$('[data-back]').forEach(b=>b.addEventListener('click',()=>show(b.dataset.back)));
+$('#btnMenu').addEventListener('click',()=>openSheet('sheetMenu'));
+$('#miHow').addEventListener('click',()=>openSheet('sheetHow'));
+$('#miHist').addEventListener('click',()=>{ renderHistory(); show('history'); });
+$('#miReset').addEventListener('click',()=>{
+  localStorage.removeItem(STORE_KEY); seedHistory(); resetFlow(); show('home');
+  toast('Experiencia reiniciada');
+});
+$$('.tab').forEach(t=>t.addEventListener('click',()=>{
+  $$('.tab').forEach(x=>x.classList.remove('is-on'));
+  t.classList.add('is-on');
+  const k = t.dataset.tab;
+  if(k === 'inicio' || k === 'hoy') show('home');
+  else toast('Disponible en la app completa');
+}));
+
+/* ==================================================================
+   6 · SHUFFLE (Fisher-Yates) + DRAW
+   ================================================================== */
+function shuffleDeck(){
+  const d = CARDS.slice();
+  for(let i=d.length-1;i>0;i--){
+    const j = Math.floor(Math.random()*(i+1));
+    [d[i],d[j]] = [d[j],d[i]];
+  }
+  return d;
+}
+/* La carta que sale es exactamente la que ocupa la posición elegida */
+function drawFromPicks(){
+  return state.picks.map(i => state.deck[state.fanIdx[i]]);
+}
+
+/* ==================================================================
+   7 · PANTALLA 1 · ENTRADA
+   ================================================================== */
+function renderHome(){
+  $('#heroDeck').innerHTML = backHTML() + backHTML() + backHTML();
+  $('#optsList').innerHTML = SPREAD_ORDER.map(k=>{
+    const s = SPREADS[k];
+    return `<button class="opt" data-spread="${k}">
+      <div class="opt__thumb">${backHTML()}</div>
+      <div class="opt__body">
+        <span class="tag tag--${s.tag}">${up(s.tagText)}</span>
+        <div class="opt__name">${s.nombre}</div>
+        <p class="opt__desc">${s.desc}</p>
+      </div>
+      <svg class="opt__arrow" width="16" height="16" viewBox="0 0 24 24" fill="none"
+        stroke="currentColor" stroke-width="1.4"><path d="M9 5l7 7-7 7"/></svg>
+    </button>`;
+  }).join('');
+  $$('#optsList .opt').forEach(b=>b.addEventListener('click',()=>startSpread(b.dataset.spread)));
+}
+function startSpread(key){
+  resetFlow();
+  state.spread = SPREADS[key];
+  if(key === 'dia'){ openDaily(); return; }
+  $('#qSpreadName').textContent = state.spread.nombre;
+  $('#qInput').value = state.question = '';
+  $('#qCount').textContent = '0';
+  $('#qContinue').classList.add('is-off');
+  $$('#qChips .chip').forEach(c=>c.classList.remove('is-on'));
+  show('question');
+}
+function resetFlow(){
+  state.question=''; state.deck=[]; state.fanIdx=[]; state.picks=[];
+  state.drawn=[]; state.shuffled=false; state.revealing=false;
+}
+$('#btnHistory').addEventListener('click',()=>{ renderHistory(); show('history'); });
+
+/* ==================================================================
+   8 · PANTALLA 2 · PREGUNTA
+   ================================================================== */
+function renderChips(){
+  $('#qChips').innerHTML = SUGERENCIAS
+    .map(s=>`<button class="chip">${s}</button>`).join('');
+  $$('#qChips .chip').forEach(c=>c.addEventListener('click',()=>{
+    $$('#qChips .chip').forEach(x=>x.classList.remove('is-on'));
+    c.classList.add('is-on');
+    const t = $('#qInput');
+    t.value = c.textContent; syncQuestion(); t.focus();
+  }));
+}
+function syncQuestion(){
+  const v = $('#qInput').value.trim();
+  state.question = v;
+  $('#qCount').textContent = $('#qInput').value.length;
+  $('#qContinue').classList.toggle('is-off', v.length < 3);
+}
+$('#qInput').addEventListener('input', syncQuestion);
+$('#qContinue').addEventListener('click',()=>{
+  localStorage.setItem('pdc_last_question', state.question);
+  goShuffle();
+});
+$('#qSkip').addEventListener('click',()=>{ state.question=''; goShuffle(); });
+
+/* ==================================================================
+   9 · PANTALLA 3 · BARAJAR
+   ================================================================== */
+const DECK_VISUAL = 9;
+function goShuffle(){
+  const zone = $('#deckZone');
+  zone.innerHTML = Array.from({length:DECK_VISUAL},(_,i)=>{
+    const dx = (i - DECK_VISUAL/2) * 9, rz = (i % 2 ? 1 : -1) * (5 + i);
+    return backHTML('', `--i:${i};--dx:${dx};--rz:${rz}`);
+  }).join('');
+  zone.classList.remove('is-shuffling'); zone.classList.add('is-idle');
+  $('#shuffleHint').style.opacity = '1';
+  $('#shuffleHint').textContent = 'Toca el mazo para barajar';
+  $('#shuffleReady').classList.remove('is-on');
+  $('#shuffleCta').classList.remove('is-on');
+  state.shuffled = false;
+  show('shuffle');
+}
+$('#deckZone').addEventListener('click',()=>{
+  if(state.shuffled) return;
+  const zone = $('#deckZone');
+  state.deck = shuffleDeck();          /* el sorteo ocurre aquí, en el código */
+  state.shuffled = true;
+  zone.classList.remove('is-idle');
+  zone.classList.add('is-shuffling');
+  $('#shuffleHint').style.opacity = '0';
+  setTimeout(()=>{
+    zone.classList.remove('is-shuffling');
+    zone.classList.add('is-idle');
+    $('#shuffleReady').classList.add('is-on');
+    $('#shuffleCta').classList.add('is-on');
+  },2150);
+});
+$('#btnChoose').addEventListener('click', goPick);
+
+/* ==================================================================
+   10 · PANTALLA 4 · ELEGIR LAS CARTAS
+   ================================================================== */
+const FAN_SIZE = 13;
+function goPick(){
+  const n = state.spread.count;
+  state.picks = [];
+  state.fanIdx = Array.from({length:FAN_SIZE},(_,i)=>i);   /* posiciones del mazo ya barajado */
+  $('#pickTitle').innerHTML = `Elige <em>${n} cartas</em>`;
+  $('#pickPips').innerHTML = Array.from({length:n},()=>'<span class="pip"></span>').join('');
+  updateCounter();
+  const fan = $('#fan');
+  /* el ancho del abanico se adapta al ancho real del teléfono */
+  const anchoCarta = 74, mid = (FAN_SIZE-1)/2, ARCO = 28, GIRO = 19;
+  const ANCHO = Math.min(122, Math.max(76, ((fan.clientWidth || 350) - anchoCarta) / 2 * 0.79));
+  fan.innerHTML = state.fanIdx.map((_,i)=>{
+    const t = (i-mid)/mid;                       /* -1 .. 1 */
+    const tr = `translateX(${(t*ANCHO).toFixed(1)}px) translateY(${(t*t*ARCO).toFixed(1)}px) rotate(${(t*GIRO).toFixed(1)}deg)`;
+    return `<div class="fan__card" data-i="${i}" data-base="${tr}"
+      style="transform:${tr};z-index:${i}">${backHTML()}</div>`;
+  }).join('');
+  $$('#fan .fan__card').forEach(el=>el.addEventListener('click',()=>togglePick(el)));
+  $('#pickCta').classList.remove('is-on');
+  show('pick');
+}
+function togglePick(el){
+  const i = +el.dataset.i, n = state.spread.count;
+  const at = state.picks.indexOf(i);
+  const base = el.dataset.base;
+  if(at > -1){                       /* deseleccionar */
+    state.picks.splice(at,1);
+    el.classList.remove('is-picked');
+    el.style.transform = base;
+    el.style.zIndex = i;
+  }else{
+    if(state.picks.length >= n) return;   /* nunca más de las necesarias */
+    state.picks.push(i);
+    el.classList.add('is-picked');
+    el.style.transform = base + ' translateY(-24px) scale(1.04)';
+    el.style.zIndex = 60 + state.picks.length;
+  }
+  updateCounter();
+}
+function updateCounter(){
+  const n = state.spread.count, k = state.picks.length;
+  $('#pickCounter').textContent = `${k} DE ${n}`;
+  $$('#pickPips .pip').forEach((p,i)=>p.classList.toggle('is-on', i < k));
+  $('#pickCta').classList.toggle('is-on', k === n);
+}
+let resizeT;
+window.addEventListener('resize',()=>{      /* re-dibuja el abanico al rotar el teléfono */
+  if(!$('#scr-pick').classList.contains('is-active')) return;
+  clearTimeout(resizeT);
+  resizeT = setTimeout(()=>{ const p = state.picks.slice(); goPick(); p.forEach(i=>{
+    const el = $(`#fan .fan__card[data-i="${i}"]`); if(el) togglePick(el);
+  }); }, 200);
+});
+$('#btnReveal').addEventListener('click',()=>{
+  state.drawn = drawFromPicks();
+  goReveal();
+});
+
+/* ==================================================================
+   11 · PANTALLA 5 · REVELACIÓN
+   ================================================================== */
+function goReveal(){
+  const sp = $('#revealSpread'), n = state.spread.count;
+  sp.className = 'spread' + (n > 3 ? ' spread--5' : '');
+  sp.innerHTML = state.drawn.map((c,i)=>`
+    <div class="slot" data-i="${i}">
+      <div class="flip"><div class="flip__inner">
+        <div class="flip__face flip__face--front">${backHTML()}</div>
+        <div class="flip__face flip__face--back">${faceHTML(c)}</div>
+      </div></div>
+      <div class="slot__label">${up(state.spread.pos[i].lb)}</div>
+      <div class="slot__name">${c.n} · ${c.nombre}</div>
+    </div>`).join('');
+  $('#revealCta').classList.remove('is-on');
+  show('reveal');
+  state.revealing = true;
+  const slots = $$('#revealSpread .slot');
+  slots.forEach((s,i)=>{
+    setTimeout(()=>{
+      s.classList.add('is-on');
+      s.querySelector('.flip').classList.add('is-flipped','is-active');
+      setTimeout(()=>s.querySelector('.flip').classList.remove('is-active'),1200);
+      if(i === slots.length-1){
+        setTimeout(()=>{ $('#revealCta').classList.add('is-on'); state.revealing=false; },900);
+      }
+    }, 650 + i*1250);
+  });
+  sp.onclick = ()=>{   /* tocar para revelar todo de una vez */
+    if(!state.revealing) return;
+    slots.forEach(s=>{ s.classList.add('is-on'); s.querySelector('.flip').classList.add('is-flipped'); });
+    $('#revealCta').classList.add('is-on'); state.revealing = false;
+  };
+}
+$('#btnSeeReading').addEventListener('click',()=>renderReading(state.drawn, state.spread, state.question, true));
+
+/* ==================================================================
+   12 · READING · claridad, visión general, cartas y combinaciones
+   ================================================================== */
+function clarityOf(cards){
+  const avg = cards.reduce((a,c)=>a+c.cl,0) / cards.length;
+  if(avg >= 0.34) return 'Alta';
+  if(avg <= -0.34) return 'Baja';
+  return 'Moderada';
+}
+function overviewOf(cards){
+  const a = cards[0], b = cards[Math.floor(cards.length/2)], c = cards[cards.length-1];
+  return `Hay ${a.gs}, pero ${b.gi}. La tendencia muestra que ${c.gt}.`;
+}
+const COMBO_JOIN = ['dentro de','alrededor de','junto a'];
+function combosOf(cards){
+  const out = [];
+  for(let i=0;i<cards.length-1 && out.length<3;i++){
+    const a = cards[i], b = cards[i+1];
+    out.push({
+      t:`${up(a.nombre)} + ${up(b.nombre)}`,
+      d:`${a.f1} ${COMBO_JOIN[out.length % 3]} ${b.f2}.`
+    });
+  }
+  return out;
+}
+function renderReading(cards, spread, question, isNew){
+  state.drawn = cards; state.spread = spread; state.question = question || '';
+
+  $('#resSpreadName').textContent = spread.nombre;
+
+  /* pregunta */
+  $('#resQuestion').innerHTML = question
+    ? `<div class="qcard__lb">Tu pregunta</div><div class="qcard__tx">“${question}”</div>`
+    : `<div class="qcard__lb">Lectura abierta</div><div class="qcard__tx">Sin pregunta específica: una mirada general a este momento.</div>`;
+
+  /* cartas lado a lado */
+  const sp = $('#resSpread');
+  sp.className = 'spread' + (cards.length > 3 ? ' spread--5' : '');
+  sp.innerHTML = cards.map((c,i)=>`
+    <div class="slot is-on">
+      ${faceHTML(c)}
+      <div class="slot__label">${up(spread.pos[i].lb)}</div>
+    </div>`).join('');
+
+  /* claridad */
+  const niv = clarityOf(cards);
+  $('#clarityVal').textContent = niv;
+  $('#clarityScale').innerHTML = ['Baja','Moderada','Alta']
+    .map(x=>`<div class="clarity__step ${x===niv?'is-on':''}">${x}</div>`).join('');
+  $('#clarityTip').classList.remove('is-on');
+
+  /* visión general */
+  $('#resOverview').textContent = overviewOf(cards);
+
+  /* lectura carta por carta */
+  $('#resCards').innerHTML = cards.map((c,i)=>{
+    const pos = spread.pos[i];
+    return `<div class="readcard">
+      <div class="readcard__thumb">${faceHTML(c)}</div>
+      <div>
+        <div class="readcard__num">${String(c.n).padStart(2,'0')} · ${up(c.nombre)}</div>
+        <div class="readcard__pos">${up(pos.lb)}</div>
+        <p class="readcard__tx">${c[pos.f]}</p>
+      </div>
+    </div>`;
+  }).join('');
+
+  /* combinaciones */
+  $('#resCombos').innerHTML = combosOf(cards)
+    .map(c=>`<div class="combo"><div class="combo__t">${c.t}</div><p class="combo__d">${c.d}</p></div>`)
+    .join('');
+
+  /* qué observar */
+  $('#resObserve').textContent = cards[cards.length-1].obs;
+
+  if(isNew) saveReading(cards, spread, question);
+  show('result');
+}
+$('#btnClarityTip').addEventListener('click',()=>$('#clarityTip').classList.toggle('is-on'));
+$('#btnSave').addEventListener('click',()=>{
+  saveReading(state.drawn, state.spread, state.question, true);
+  toast('Lectura guardada');
+});
+$('#btnShare').addEventListener('click',()=>toast('Enlace copiado'));
+$('#btnAgain').addEventListener('click',()=>startSpread(state.spread.id === 'dia' ? 'tres' : state.spread.id));
+$('#btnDeepen').addEventListener('click',()=>openSheet('sheetPremium'));
+$('#btnUnlock').addEventListener('click',()=>{ closeSheets(); toast('Simulación · sin cobro real'); });
+
+/* ==================================================================
+   13 · HISTORY (localStorage)
+   ================================================================== */
+function readStore(){
+  try{ return JSON.parse(localStorage.getItem(STORE_KEY)) || []; }catch(e){ return []; }
+}
+function writeStore(list){
+  try{ localStorage.setItem(STORE_KEY, JSON.stringify(list.slice(0,30))); }catch(e){}
+}
+function saveReading(cards, spread, question, force){
+  const list = readStore();
+  const sig = spread.id + cards.map(c=>c.n).join('-');
+  if(!force && list[0] && list[0].sig === sig) return;
+  if(force && list[0] && list[0].sig === sig) return;
+  list.unshift({ sig, ts:Date.now(), spread:spread.id, question:question||'', cards:cards.map(c=>c.n) });
+  writeStore(list);
+}
+function seedHistory(){
+  if(readStore().length) return;
+  const d = 86400000, now = Date.now();
+  writeStore([
+    { sig:'seed1', ts:now,        spread:'tres',  question:'¿Esta situación está avanzando?', cards:[24,6,25] },
+    { sig:'seed2', ts:now - d,    spread:'dia',   question:'', cards:[33] },
+    { sig:'seed3', ts:new Date(new Date().getFullYear(),7,28,19,10).getTime(),
+      spread:'amor', question:'¿Qué dinámica está predominando ahora?', cards:[18,11,32] }
+  ]);
+}
+const MESES = ['ENE','FEB','MAR','ABR','MAY','JUN','JUL','AGO','SEP','OCT','NOV','DIC'];
+function whenLabel(ts){
+  const a = new Date(ts), b = new Date();
+  const day = x => new Date(x.getFullYear(),x.getMonth(),x.getDate()).getTime();
+  const diff = (day(b) - day(a)) / 86400000;
+  if(diff <= 0) return 'Hoy';
+  if(diff === 1) return 'Ayer';
+  return a.getDate() + ' ' + MESES[a.getMonth()];
+}
+function renderHistory(){
+  const list = readStore();
+  const box = $('#histList');
+  if(!list.length){ box.innerHTML = '<p class="empty">Todavía no tienes lecturas guardadas.</p>'; return; }
+  box.innerHTML = list.map((it,idx)=>{
+    const sp = SPREADS[it.spread] || SPREADS.tres;
+    const first = CARDS.find(c=>c.n === it.cards[0]) || CARDS[0];
+    return `<button class="hitem" data-idx="${idx}">
+      <div class="hitem__thumb">${faceHTML(first,'card--mini')}</div>
+      <div style="flex:1;min-width:0">
+        <div class="hitem__when">${up(whenLabel(it.ts))}</div>
+        <div class="hitem__what">${sp.nombre}</div>
+        ${it.question ? `<div class="hitem__q">“${it.question}”</div>` : ''}
+      </div>
+      <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="rgba(216,184,124,.6)"
+        stroke-width="1.4"><path d="M9 5l7 7-7 7"/></svg>
+    </button>`;
+  }).join('');
+  $$('#histList .hitem').forEach(b=>b.addEventListener('click',()=>{
+    const it = readStore()[+b.dataset.idx];
+    const cards = it.cards.map(n=>CARDS.find(c=>c.n === n));
+    if(it.spread === 'dia'){ openDaily(cards[0], true); return; }
+    renderReading(cards, SPREADS[it.spread] || SPREADS.tres, it.question, false);
+  }));
+}
+
+/* ==================================================================
+   14 · CARTA DEL DÍA
+   ================================================================== */
+function cardOfToday(){
+  const t = new Date();
+  const doy = Math.floor((t - new Date(t.getFullYear(),0,0)) / 86400000);
+  return CARDS[(doy * 7 + t.getFullYear()) % 36];
+}
+function openDaily(forced, revealed){
+  const card = forced || cardOfToday();
+  state.spread = SPREADS.dia; state.drawn = [card];
+  $('#dailyCard').innerHTML = `
+    <div class="flip" id="dailyFlip"><div class="flip__inner">
+      <div class="flip__face flip__face--front">${backHTML()}</div>
+      <div class="flip__face flip__face--back">${faceHTML(card)}</div>
+    </div></div>`;
+  $('#dailyNum').textContent = String(card.n).padStart(2,'0');
+  $('#dailyName').textContent = card.nombre;
+  $('#dailyText').textContent = card.dia;
+  $('#dailyReflect').textContent = card.refl;
+  const hint = $('#dailyHint'), body = $('#dailyBody'), flip = $('#dailyFlip');
+  if(revealed){
+    flip.classList.add('is-flipped'); hint.style.opacity='0'; body.classList.add('is-on');
+  }else{
+    flip.classList.remove('is-flipped'); hint.style.opacity='1'; body.classList.remove('is-on');
+    flip.addEventListener('click',()=>{
+      if(flip.classList.contains('is-flipped')) return;
+      flip.classList.add('is-flipped');
+      hint.style.opacity = '0';
+      setTimeout(()=>body.classList.add('is-on'), 620);
+      saveReading([card], SPREADS.dia, '');
+    }, {once:false});
+  }
+  show('daily');
+}
+$('#btnDailyToReading').addEventListener('click',()=>startSpread('tres'));
+
+/* ==================================================================
+   15 · INIT
+   ================================================================== */
+seedHistory();
+renderHome();
+renderChips();
+show('home');
+</script>
+</body>
+</html>
